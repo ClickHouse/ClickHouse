@@ -444,6 +444,7 @@ namespace FailPoints
     /// a batch of empty (or unused patch) parts: the first part is dropped and the per-part
     /// freshness re-check leaves the rest to the current leader.
     extern const char merge_tree_leader_election_stale_lease_mid_clear_empty_parts[];
+    extern const char merge_tree_grab_old_parts_skip[];
 
     /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of a sequence
     /// of permanent changes to the shared `detached/` namespace (`ATTACH PARTITION`): the first
@@ -4097,6 +4098,12 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
 {
     DataPartsVector res;
 
+    /// Test hook: simulate a cleanup round that cannot remove any outdated part yet (for
+    /// example, every part is still held by a long-running reader, or a delete rolled back
+    /// after an I/O failure). Used to check that dependent cleanup steps such as
+    /// `clearEmptyParts` do not act as if the outdated parts were gone.
+    fiu_do_on(FailPoints::merge_tree_grab_old_parts_skip, { return res; });
+
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(grab_old_parts_mutex, std::defer_lock);
     if (!lock.try_lock())
@@ -4715,6 +4722,27 @@ size_t MergeTreeData::clearEmptyParts()
             LOG_INFO(log, "Stopping the removal of empty parts after {} of {}: the leadership lease went stale; "
                 "the remaining parts are left to the current leader (leader_election)", dropped, parts_names_to_drop.size());
             break;
+        }
+
+        {
+            /// First remove all covered parts, then remove the covering empty part. The empty
+            /// covering part is the only durable tombstone for the outdated parts it covers:
+            /// if some covered part is still on disk (for example, a reader still holds it, or
+            /// its delete rolled back after an I/O error, or `old_parts_lifetime` has not
+            /// elapsed yet), dropping the covering part now would let the old part be loaded
+            /// again on the next ATTACH, server restart, or leader takeover — undoing the
+            /// TRUNCATE / DROP PARTITION / REPLACE PARTITION that produced the empty part.
+            /// This mirrors the `EMPTY_PART_COVERS_OTHER_PARTS` invariant in `grabOldParts`;
+            /// the skipped parts are retried on the next cleanup round.
+            auto parts_lock = lockParts();
+            auto part = getPartIfExistsUnlocked(name, {DataPartState::Active}, parts_lock);
+            if (!part)
+                continue;
+            if (!getCoveredOutdatedParts(part, parts_lock).empty())
+            {
+                LOG_TRACE(log, "Not dropping empty part {}: it still covers outdated parts that were not removed yet", name);
+                continue;
+            }
         }
 
         LOG_TRACE(log, "Will drop empty part {}", name);
