@@ -8,6 +8,8 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <Common/CurrentThread.h>
+
 namespace DB
 {
 
@@ -18,8 +20,18 @@ void TypoCorrection::collectCompoundExpressionValidIdentifiers(
     const Identifier & valid_identifier_prefix,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
+    /// Before the early return: cancellation must not depend on entering the walk.
+    CurrentThread::checkIfNotCancelled();
+
+    /// A subcolumn identifier has at least one part, so the size test in the callback can never
+    /// hold once the prefix alone is that long. The walk is exponential in the nesting depth.
+    if (valid_identifier_prefix.getPartsSize() >= unresolved_identifier.getPartsSize())
+        return;
+
     IDataType::forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
+        CurrentThread::checkIfNotCancelled();
+
         Identifier subcolumn_indentifier(name);
         size_t new_identifier_size = valid_identifier_prefix.getPartsSize() + subcolumn_indentifier.getPartsSize();
 
