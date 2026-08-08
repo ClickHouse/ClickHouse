@@ -103,6 +103,7 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool low_cardinality_allow_in_native_format;
+    extern const SettingsUInt64 max_query_size;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsBool partial_result_on_first_cancel;
@@ -2483,7 +2484,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     state->compression = static_cast<Protocol::Compression>(compression);
     last_block_in.compression = state->compression;
 
-    readStringBinary(state->query, *in);
+    readStringBinary(state->query, *in, session->sessionOrGlobalContext()->getSettingsRef()[Setting::max_query_size]);
 
     Settings passed_params;
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
