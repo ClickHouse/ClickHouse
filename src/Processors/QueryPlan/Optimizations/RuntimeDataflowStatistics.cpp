@@ -134,8 +134,8 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
     /// the arena its states live in, so `byteSize` degenerates to one pointer per row there. Size such
     /// columns from their serialized states instead - only the states, which is what
     /// `SerializationAggregateFunction` puts on the wire and what `Aggregator::estimateSizeOfCompressedState`
-    /// measures - sampling as many of them as that function does per bucket, so that both producers of the
-    /// `AggregationState` statistic measure the same thing. Serializing states is not cheap, and when
+    /// measures - sampling as many of them as that function does per hash table, so that both producers of
+    /// the `AggregationState` statistic measure the same thing. Serializing states is not cheap, and when
     /// `aggregation_in_order_max_block_bytes` splits large states into many small blocks, doing it per block
     /// would serialize every state of every block; so only the sampled blocks serialize, and the rest are
     /// extrapolated from the per-row figure the sampled blocks give, like the compression ratio is.
@@ -158,7 +158,11 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
     size_t compressed_bytes = 0;
     if (serialize_states)
     {
-        static constexpr size_t max_states_to_serialize = 100;
+        /// The same ~1000-sample target as `Aggregator::estimateSizeOfCompressedState` uses for a
+        /// single-level hash table: serialized state sizes can be arbitrarily skewed, and a sample of 100
+        /// swings the extrapolation several-fold depending on whether the few giant states land on the
+        /// sampled positions. Blocks of up to 1000 states are measured exactly.
+        static constexpr size_t max_states_to_serialize = 1000;
         for (const auto & col : cols)
             if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(col.column.get()))
             {
