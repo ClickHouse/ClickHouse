@@ -1023,8 +1023,13 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
 
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
-    settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
     settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
+
+    /// An absent name leaves the receiver at the declared default `true`, so only `false` has to travel. Patch
+    /// releases within one serialization version disagree on whether they know the name, so `version` cannot gate
+    /// it; a peer that does not know it fails closed instead of using the other String representation.
+    if (!params.serialize_string_with_zero_byte)
+        settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = false;
 
     /// A peer whose query-plan serialization version knows the name (this `version` is already the minimum of ours
     /// and the peer's) receives the value whenever the legacy method is requested, so the setting always takes

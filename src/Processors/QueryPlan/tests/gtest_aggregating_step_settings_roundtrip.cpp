@@ -42,6 +42,20 @@ bool roundTripSerializeStringWithZeroByte(const IQueryPlanStep & step)
     return read[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte];
 }
 
+/// The name as it appears in the binary settings stream written by `writeChangedBinary`. A peer that predates the
+/// setting rejects any plan carrying it (`readBinary` throws on an unknown name), so a plan must only carry it when
+/// the value cannot be left at the receiver's default.
+bool wireCarriesSerializeStringWithZeroByte(const IQueryPlanStep & step)
+{
+    QueryPlanSerializationSettings written;
+    step.serializeSettings(written, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    WriteBufferFromOwnString out;
+    written.writeChangedBinary(out);
+
+    return out.str().find("serialize_string_in_memory_with_zero_byte") != std::string::npos;
+}
+
 SharedHeader makeHeader()
 {
     auto type = std::make_shared<DataTypeUInt64>();
@@ -139,4 +153,19 @@ TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteTrueSurv
     tryRegisterAggregateFunctions();
 
     EXPECT_TRUE(roundTripSerializeStringWithZeroByte(*makeMergingAggregatedStep(true)));
+}
+
+/// Patch releases inside one query-plan serialization version disagree on whether they know this name
+/// (`v25.8.12.129-lts` does not, `v25.8.13.73-lts` does, both at version 0), so the version cannot gate it and the
+/// default value must stay off the wire for every receiver.
+TEST(AggregatingStepSettingsRoundTrip, DefaultValueStaysOffTheWire)
+{
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
+    EXPECT_FALSE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(true)));
+    EXPECT_FALSE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(true)));
+
+    EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(false)));
+    EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(false)));
 }
