@@ -66,6 +66,21 @@ CRAFTED_EXPLAIN_TRUE="replaceAll(parseQueryToJSON(\$\$EXPLAIN header = true SELE
 CRAFTED_EXPLAIN_TRUE_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_EXPLAIN_TRUE FORMAT TSVRaw")
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=clickhouse_json&enable_json_ast_dialect=1" --data-binary "$CRAFTED_EXPLAIN_TRUE_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
 
+# `BACKUP`/`RESTORE` settings also ride in an `ASTSetQuery`, but `ParserBackupQuery` accepts only
+# `name = value` pairs, so the flag is parser-impossible there too - even with the mandatory
+# `true`. It is not just a formatting hazard: `BackupSettings` and `RestoreSettings` read
+# `SettingChange::value` raw, so on a numeric setting a surviving flag would both execute
+# (`fieldToNumber` coerces Bool `true` to `1`) and format as `SETTINGS compression_level` that
+# the backup grammar fails to parse back. The check fires before the backup is attempted, so the
+# target does not need to exist.
+CRAFTED_BACKUP="replaceAll(parseQueryToJSON(\$\$BACKUP TABLE test_04699 TO Disk('backups', '04699') SETTINGS deduplicate_files = true\$\$), '{\"name\":\"deduplicate_files\"', '{\"name\":\"deduplicate_files\",\"shorthand\":true')"
+CRAFTED_BACKUP_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_BACKUP FORMAT TSVRaw")
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=clickhouse_json&enable_json_ast_dialect=1" --data-binary "$CRAFTED_BACKUP_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+
+CRAFTED_RESTORE="replaceAll(parseQueryToJSON(\$\$RESTORE TABLE test_04699 FROM Disk('backups', '04699') SETTINGS allow_non_empty_tables = true\$\$), '{\"name\":\"allow_non_empty_tables\"', '{\"name\":\"allow_non_empty_tables\",\"shorthand\":true')"
+CRAFTED_RESTORE_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_RESTORE FORMAT TSVRaw")
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=clickhouse_json&enable_json_ast_dialect=1" --data-binary "$CRAFTED_RESTORE_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+
 # The client parses the `clickhouse_json` dialect with the same `IAST::createFromJSON` and applies
 # the same check at parse. This closes the client's AST-to-SQL rewrite paths: e.g. under
 # `--allow_merge_tree_settings` with changed MergeTree settings (the test harness randomization),

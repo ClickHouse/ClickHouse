@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Core/BaseSettings.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTDictionary.h>
@@ -70,6 +71,13 @@ void checkValuelessSettingChanges(const IAST & ast)
         check_no_shorthand_in_set_query(column_declaration->getSettings());
     else if (const auto * explain_query = ast.as<ASTExplainQuery>())
         check_no_shorthand_in_set_query(explain_query->getSettings());
+    /// `BACKUP`/`RESTORE` settings also ride in an `ASTSetQuery`, but `ParserBackupQuery` accepts
+    /// only `name = value` pairs (`ParserSetQuery::parseNameValuePair`), so the valueless form is
+    /// parser-impossible there too. It is not just a formatting hazard: `BackupSettings` and
+    /// `RestoreSettings` consume `setting.value` raw, and numeric settings such as
+    /// `compression_level` would coerce the mandatory `Bool(true)` to a real value.
+    else if (const auto * backup_query = ast.as<ASTBackupQuery>())
+        check_no_shorthand_in_set_query(backup_query->settings);
 
     for (const auto & child : ast.children)
         checkValuelessSettingChanges(*child);
