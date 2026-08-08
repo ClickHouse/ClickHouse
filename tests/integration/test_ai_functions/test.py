@@ -173,6 +173,13 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"api_key = 'test-key'"
         )
         instance.query(
+            f"CREATE NAMED COLLECTION ai_anthropic_context_window AS "
+            f"provider = 'anthropic', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/context_window', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
             f"CREATE NAMED COLLECTION ai_anthropic_tool_use AS "
             f"provider = 'anthropic', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/tool_use', "
@@ -458,6 +465,33 @@ def test_generate_anthropic_max_tokens_throw(started_cluster):
         settings=AI_SETTINGS,
     )
     assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+
+
+def test_generate_anthropic_context_window_hint(started_cluster):
+    """`model_context_window_exceeded` is truncation too, but raising max_tokens reserves more output
+    space and makes it worse, so the hint must point at reducing the input instead."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_context_window'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_TRUNCATED" in error
+    assert "model_context_window_exceeded" in error
+    assert "ran out of context window" in error
+    assert "larger context window" in error
+    # The diagnosis must not name the output token limit either, since that is the wrong limit here.
+    assert "Increase max_tokens" not in error
+    assert "output token limit" not in error
+
+
+def test_generate_anthropic_max_tokens_hint(started_cluster):
+    """The output-cap case keeps the max_tokens advice, which is correct only for that case."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_max_tokens'))",
+        settings=AI_SETTINGS,
+    )
+    assert "output token limit" in error
+    assert "Increase max_tokens" in error
+    assert "context window" not in error
 
 
 def test_classify_anthropic_structured_output(started_cluster):

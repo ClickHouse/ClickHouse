@@ -38,6 +38,9 @@ Endpoints:
       a complete answer that must NOT be rejected as truncated.
   POST /v1/anthropic/max_tokens      — Anthropic-shaped HTTP 200 with `stop_reason="max_tokens"`,
       a truncated answer that must be rejected.
+  POST /v1/anthropic/context_window  — Anthropic-shaped HTTP 200 with
+      `stop_reason="model_context_window_exceeded"`, also a truncated answer, but one whose remedy is
+      the opposite of the `max_tokens` case.
   POST /v1/anthropic/tool_use        — Anthropic-shaped HTTP 200 with `stop_reason="tool_use"`, a
       successful structured-output (forced tool call) response that must NOT be rejected.
   POST /v1/error                     — always returns HTTP 500, a transient/server-side error that
@@ -292,6 +295,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # rejected.
             user_msg = extract_user_message(body)
             self._send_json(200, make_anthropic_response(user_msg, stop_reason="max_tokens"))
+            return
+
+        if parsed.path == "/v1/anthropic/context_window":
+            # Anthropic-shaped 200 with `stop_reason="model_context_window_exceeded"`: also truncated,
+            # but raising max_tokens would make it worse, so the hint must differ from the max_tokens
+            # case.
+            user_msg = extract_user_message(body)
+            self._send_json(
+                200,
+                make_anthropic_response(user_msg, stop_reason="model_context_window_exceeded"),
+            )
             return
 
         if parsed.path == "/v1/anthropic/tool_use":

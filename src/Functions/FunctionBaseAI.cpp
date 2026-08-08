@@ -475,11 +475,16 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                     case FinishReason::Unknown: /// Don't throw on Unknown, could be new valid reason in new API version
                         break;
                     case FinishReason::Truncated:
+                        /// Differentiate between model hitting our output cap and exhausting its context window
                         throw Exception(
                             ErrorCodes::AI_PROVIDER_RESPONSE_TRUNCATED,
-                            "AI provider returned a truncated response (finish_reason='{}'): the model hit the "
-                            "token limit before completing its answer. Increase max_tokens or reduce the input.",
-                            ai_response.raw_finish_reason);
+                            "AI provider returned a truncated response (finish_reason='{}'): {}",
+                            ai_response.raw_finish_reason,
+                            ai_response.raw_finish_reason == "model_context_window_exceeded"
+                                ? "the model ran out of context window before completing its answer. "
+                                  "Reduce the input or use a model with a larger context window."
+                                : "the model hit the output token limit before completing its answer. "
+                                  "Increase max_tokens or reduce the input.");
                     case FinishReason::ContentFilter:
                         throw Exception(
                             ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
