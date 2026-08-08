@@ -104,6 +104,13 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
 
 }
 
+bool temporaryFilesCodecIsExperimental(const String & compression_codec)
+{
+    if (compression_codec.empty())
+        return false;
+    return CompressionCodecFactory::instance().get(compression_codec)->isExperimental();
+}
+
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
     : metric_increment(metrics.current_metric)
 {

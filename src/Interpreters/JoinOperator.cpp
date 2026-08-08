@@ -13,6 +13,7 @@
 
 #include <fmt/ranges.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/ActionsDAG.h>
 
 
@@ -284,9 +285,10 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     /// `allow_experimental_codecs` is a plan-setting name older peers do not know, and
     /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire
-    /// only when it is `true` (a reader that does not receive it keeps the default `false`).
-    /// See the matching comment in `AggregatingStep::serializeSettings`.
-    if (allow_experimental_codecs)
+    /// only when the opt-in is `true` *and* the spill codec is actually experimental (a reader that does
+    /// not receive it keeps the default `false`, which for a non-experimental codec encodes the identical
+    /// spill behavior). See the matching comment in `AggregatingStep::serializeSettings`.
+    if (allow_experimental_codecs && temporaryFilesCodecIsExperimental(temporary_files_codec))
         settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
     settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;

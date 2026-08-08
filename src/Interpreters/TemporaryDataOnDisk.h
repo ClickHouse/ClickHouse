@@ -66,6 +66,10 @@ struct TemporaryDataOnDiskSettings
     TemporaryDataMetrics metrics;
 };
 
+/// Whether `compression_codec` (a `temporary_files_codec` value; empty means the default `LZ4`)
+/// resolves to an experimental codec, i.e. spilling with it requires the `allow_experimental_codecs` opt-in.
+bool temporaryFilesCodecIsExperimental(const String & compression_codec);
+
 /// Creates temporary files located on specified resource (disk, fs_cache, etc.)
 using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(const TemporaryDataOnDiskSettings &, size_t)>;
 TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume);
