@@ -1395,6 +1395,51 @@ TEST(PromQLParser, TimeSeriesNumberFormatsRemainDecimal)
 }
 
 
+TEST(PromQLParser, OctalRangesAndOffsets)
+{
+    EXPECT_EQ(parse("up[0755]"), R"(
+up[493]
+
+PrometheusQueryTree(RANGE_VECTOR):
+    RangeSelector:
+        range: 493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("up[0755:010]"), R"(
+up[493:8]
+
+PrometheusQueryTree(RANGE_VECTOR):
+    Subquery:
+        range: 493
+        step: 8
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("up offset 0755"), R"(
+up offset 493
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        offset: 493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("up offset -0755"), R"(
+up offset -493
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        offset: -493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+}
+
+
 TEST(PromQLParser, OtherQueries)
 {
     EXPECT_EQ(parse("0.74"), R"(
