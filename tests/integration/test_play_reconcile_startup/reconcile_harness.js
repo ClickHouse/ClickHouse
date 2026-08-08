@@ -1139,18 +1139,20 @@ async function main() {
         }
     }
 
-    /// Contract (a history write while the lexer is STILL LOADING publishes no stale binding):
-    /// the synchronous re-derivation above is only possible once `WebAssembly.instantiate` has
+    /// Contract (a history write while the lexer is STILL LOADING prunes textually): the
+    /// synchronous re-derivation above is only possible once `WebAssembly.instantiate` has
     /// resolved. Delay it past startup settlement, so the whole scenario runs inside the "first
     /// instantiate still in flight" window: the startup restore has not committed (`params_ok`
     /// pending), no `param_*` input was ever rebuilt, and `captureActiveTab` can neither trust
     /// the DOM nor re-derive. The entry a `closeTab` folds in that window must still not pair
-    /// the new draft with the previous text's binding — `writeHistoryEntry` publishes an empty
-    /// parameter map when the tab's snapshot is not provably coherent with the recorded text
-    /// (`paramsSyncedQuery`), rather than `{"query":"SELECT 1","params":{"x":"42"}}`.
+    /// the new draft with a binding for a placeholder the draft no longer has — but it also
+    /// must not clear a binding whose placeholder survived the edit: `writeHistoryEntry` prunes
+    /// the tab's snapshot textually against the recorded text (`pruneParamsToText`) when the
+    /// snapshot is not provably coherent with it (`paramsSyncedQuery`), so the removed-placeholder
+    /// edit publishes no `x` while the surviving-placeholder edit keeps `x=42`.
     {
         const param_query = 'SELECT {x:Int32}';
-        const r = await runScenario(js, {
+        const seed = () => ({
             href: base,
             historyState: null,
             wasmInstantiateDelayMs: 5000,
@@ -1161,24 +1163,50 @@ async function main() {
             ],
             seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
         });
-        /// Sanity: the startup persist has happened (the restore's editor sync schedules it), but
-        /// the delayed instantiate keeps the lexer genuinely unavailable — the racing close below
-        /// is meaningful only inside that window.
-        check('capture-races-lexer-load', 'the lexer module is still loading when the scenario acts',
-            vm.runInContext('typeof lexer_module', r.sandbox) === 'undefined',
-            vm.runInContext('typeof lexer_module', r.sandbox));
-        const closed_entry = JSON.parse(vm.runInContext(
-            "query_area.value = 'SELECT 1';" +
-            "onQueryInput({ type: 'input', isTrusted: true });" +
-            "closeTab(activeTabId);" +
-            "JSON.stringify(history.state)",
-            r.sandbox));
-        check('capture-races-lexer-load', 'the entry folded during the lexer load carries the draft',
-            closed_entry && closed_entry.query === 'SELECT 1',
-            closed_entry);
-        check('capture-races-lexer-load', 'the entry folded during the lexer load carries no stale binding',
-            closed_entry && !(closed_entry.params && 'x' in closed_entry.params),
-            closed_entry);
+
+        /// The edit REMOVES the placeholder: the entry folded inside the loading window must not
+        /// carry its binding.
+        {
+            const r = await runScenario(js, seed());
+            /// Sanity: the startup persist has happened (the restore's editor sync schedules it),
+            /// but the delayed instantiate keeps the lexer genuinely unavailable — the racing
+            /// close below is meaningful only inside that window.
+            check('capture-races-lexer-load', 'the lexer module is still loading when the scenario acts',
+                vm.runInContext('typeof lexer_module', r.sandbox) === 'undefined',
+                vm.runInContext('typeof lexer_module', r.sandbox));
+            const closed_entry = JSON.parse(vm.runInContext(
+                "query_area.value = 'SELECT 1';" +
+                "onQueryInput({ type: 'input', isTrusted: true });" +
+                "closeTab(activeTabId);" +
+                "JSON.stringify(history.state)",
+                r.sandbox));
+            check('capture-races-lexer-load', 'the entry folded during the lexer load carries the draft',
+                closed_entry && closed_entry.query === 'SELECT 1',
+                closed_entry);
+            check('capture-races-lexer-load', 'the entry folded during the lexer load carries no stale binding',
+                closed_entry && !(closed_entry.params && 'x' in closed_entry.params),
+                closed_entry);
+        }
+
+        /// The edit KEEPS the placeholder: the fail-closed publish must degrade to a textual
+        /// prune, not to an empty map — Back or a copied URL would otherwise recreate the draft
+        /// without a value that was still valid for a placeholder that survived.
+        {
+            const r = await runScenario(js, seed());
+            check('capture-races-lexer-load', 'the lexer module is still loading when the surviving-placeholder edit acts',
+                vm.runInContext('typeof lexer_module', r.sandbox) === 'undefined',
+                vm.runInContext('typeof lexer_module', r.sandbox));
+            const closed_entry = JSON.parse(vm.runInContext(
+                "query_area.value = 'SELECT {x:Int32} + 1';" +
+                "onQueryInput({ type: 'input', isTrusted: true });" +
+                "closeTab(activeTabId);" +
+                "JSON.stringify(history.state)",
+                r.sandbox));
+            check('capture-races-lexer-load', 'a surviving placeholder keeps its value through the lexer-load window',
+                closed_entry && closed_entry.query === 'SELECT {x:Int32} + 1'
+                    && closed_entry.params && closed_entry.params.x === '42',
+                closed_entry);
+        }
     }
 
     /// Contract (a run completing after the editor moved on records what it RAN): the entry a

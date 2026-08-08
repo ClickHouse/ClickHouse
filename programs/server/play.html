@@ -8392,9 +8392,10 @@ function captureActiveTab() {
     /// saved snapshot as the fallback seed. When even that is impossible (no lexer yet), keep the
     /// tab's last committed snapshot rather than adopt values known to describe different text —
     /// the snapshot stays in memory as the seed the pending rebuild will prune, but it is NOT
-    /// re-stamped for the captured text, so `writeHistoryEntry` will not publish it under this
-    /// draft (`paramsSyncedQuery`): an entry written in this window carries an empty parameter
-    /// map instead of a binding for a placeholder the draft may no longer have.
+    /// re-stamped for the captured text, so `writeHistoryEntry` will not publish it verbatim
+    /// under this draft (`paramsSyncedQuery`): an entry written in this window carries the
+    /// snapshot pruned textually against the draft (`pruneParamsToText`) — a surviving
+    /// placeholder keeps its value, a removed one does not leak its binding.
     const names = extractQueryParamNamesSync(tab.query);
     if (names === null) return;
     const dom = getParamValues();
@@ -9068,13 +9069,18 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     /// text whenever it can — so a mismatch here means the derivation was impossible (the first
     /// `WebAssembly.instantiate` of the lexer still in flight, a text too large to tokenize, or
     /// a tab restore that has not committed yet): the snapshot still describes an OLDER text,
-    /// and pairing it with the new draft would record `param_x=42` under a `SELECT 1` that no
-    /// longer has `{x:Int32}`. Record an empty map instead — coherent by construction; a missing
-    /// binding for a surviving placeholder is an ordinary unset parameter, unlike a binding for
-    /// a nonexistent one. `tab.params` itself is untouched, so the pending rebuild still prunes
-    /// and re-commits the real values for later writes.
+    /// and pairing it with the new draft as-is would record `param_x=42` under a `SELECT 1` that
+    /// no longer has `{x:Int32}`. Record the snapshot pruned textually against the recorded text
+    /// instead (`pruneParamsToText`): a binding whose placeholder opener is absent from the text
+    /// is provably gone and is dropped, while one whose placeholder survived the edit keeps its
+    /// still-valid value — clearing those too would regress the surviving-placeholder case (a
+    /// Back or a copied URL would recreate the draft without it). `tab.params` itself is
+    /// untouched, so the pending rebuild still prunes and re-commits the real values for later
+    /// writes.
     const recorded_params = recorded ? recorded.params
-                                     : (tab.paramsSyncedQuery === recorded_query ? tab.params : {});
+                                     : (tab.paramsSyncedQuery === recorded_query
+                                            ? tab.params
+                                            : pruneParamsToText(tab.params, recorded_query));
     /// Skip a fresh entry if neither the active tab nor its query changed.
     const cur = history.state;
     const sameTab = cur && cur.tabId === tab.id;
@@ -11887,6 +11893,29 @@ function extractQueryParamNamesSync(text)
     {
         return null;
     }
+}
+
+/// Prune a parameter snapshot against a query text WITHOUT the lexer: keep only the bindings
+/// whose placeholder opener (`{name:`, whitespace-tolerant) textually appears in `text`. Used by
+/// `writeHistoryEntry` when the snapshot is not provably coherent with the recorded text
+/// (`paramsSyncedQuery` mismatch) and the synchronous re-derivation was impossible too — the only
+/// question then is which of the OLD text's bindings survive in the new one, and that needs no
+/// tokenizer: a real placeholder always contains this opener literally, so a binding whose opener
+/// is absent is provably gone (dropping it is exactly what the pending rebuild will do), while a
+/// binding whose opener is present is kept. The check over-approximates — an opener inside a
+/// string literal or comment keeps a binding the rebuild would prune — but that failure is benign
+/// (an unused `param_*` in one URL, pruned again on restore), unlike dropping a live value for a
+/// placeholder that survived an edit. Names are constrained to identifiers (`extractQueryParams`
+/// binds nothing else), which also keeps the name safe to embed in the regexp.
+function pruneParamsToText(params, text)
+{
+    const pruned = {};
+    for (const name of Object.keys(params || {}))
+    {
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) continue;
+        if (new RegExp('\\{\\s*' + name + '\\s*:').test(text)) pruned[name] = params[name];
+    }
+    return pruned;
 }
 
 function extractQueryParams(tokens)
