@@ -266,7 +266,14 @@ if (NODE)
     add_test (NAME parser-cases
         COMMAND "${NODE}" "${CMAKE_CURRENT_SOURCE_DIR}/test.mjs" "$<TARGET_FILE:parser>")
 else ()
-    message (WARNING "node was not found, so the `parser-cases` test is not available")
+    # Still `parser-cases`, still failing: without Node.js the behavioral tests cannot run, and
+    # `ctest` must say so rather than quietly narrow itself to `parser-size` - the throw-recovery
+    # cases test.mjs drives are exactly what regressed under LTO. Building without testing
+    # remains possible; a green `ctest` without Node.js does not.
+    add_test (NAME parser-cases
+        COMMAND "${CMAKE_COMMAND}" -E echo "parser-cases needs Node.js, and node was not found")
+    set_tests_properties (parser-cases PROPERTIES WILL_FAIL ON)
+    message (WARNING "node was not found, so the `parser-cases` test will fail instead of running")
 endif ()
 
 add_test (NAME parser-size
