@@ -3130,24 +3130,26 @@ private:
             ctx->out.reset();
         }
 
+        /// `files_to_rename` may be a permutation (a chained rename collapses to the swap
+        /// {a -> b, b -> a}), so a destination may also be a later source. Erase, then assign from an
+        /// immutable snapshot: one pass would overwrite a destination before reading it.
+        const auto & source_files = ctx->source_part->checksums.files;
+        auto & files = ctx->new_data_part->checksums.files;
+
+        /// A file the writer just produced must survive, even when flagged for removal.
+        for (const auto & [rename_from, _] : ctx->files_to_rename)
+            if (!written_files.contains(rename_from))
+                files.erase(rename_from);
+
+        /// `files` is not a valid source of values: `MergedColumnOnlyOutputStream::fillChecksums`
+        /// erases entries from it.
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            /// A stream the writer rewrote for the new column type must survive: stale-file
-            /// accounting (`collectFilesForRenames`) can flag it for removal because its state-less
-            /// stream enumeration does not see data-dependent substreams (e.g. `variant_discr` of a
-            /// column that became Dynamic/JSON in this mutation).
-            if (written_files.contains(rename_from))
+            if (rename_to.empty() || written_files.contains(rename_to))
                 continue;
 
-            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
-            {
-                ctx->new_data_part->checksums.files.erase(rename_from);
-            }
-            else if (ctx->new_data_part->checksums.files.contains(rename_from))
-            {
-                ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
-                ctx->new_data_part->checksums.files.erase(rename_from);
-            }
+            if (auto source_it = source_files.find(rename_from); source_it != source_files.end())
+                files[rename_to] = source_it->second;
         }
 
         MutationHelpers::finalizeMutatedPart(
