@@ -321,9 +321,13 @@ Default value: `0`.
 
 ### `failed_file_ttl_sec` {#failed_file_ttl_sec}
 
-Maximum number of seconds to store failed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
-Failed files are files that could not be processed due to parsing errors, schema mismatches, or other exceptions.
-After the specified number of seconds, old failed file entries are automatically removed from ZooKeeper and the in-memory cache by the periodic cleanup task.
+Maximum number of seconds to store **terminal failed files** in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
+
+Failed files are files that could not be processed due to parsing errors, schema mismatches, or other exceptions. After the specified number of seconds, old **terminal** failed file entries are automatically removed from ZooKeeper and the in-memory cache by the periodic cleanup task.
+
+**What gets cleaned:**
+- Only **terminal failed files** (files that have exhausted all retries when `s3queue_loading_retries` is reached or set to 0)
+- Files actively retrying (still within the retry budget) are preserved to maintain retry state
 
 <Note>
 This setting only applies to **unordered mode** tables. For ordered mode tables, the setting is ignored and failed files are stored indefinitely.

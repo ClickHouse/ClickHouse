@@ -255,7 +255,7 @@ Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica 
 
 ## SYSTEM DROP S3QUEUE FAILED FILES {#drop-s3queue-failed-files}
 
-Manually clears all failed file entries from the ZooKeeper metadata of an S3Queue or AzureQueue table.
+Manually clears terminal failed file entries from the ZooKeeper metadata of an S3Queue or AzureQueue table.
 
 **Syntax**
 
@@ -267,8 +267,12 @@ SYSTEM DROP S3QUEUE FAILED FILES [db.]table
 
 Failed files are files that could not be processed due to parsing errors, schema mismatches, or other exceptions during S3Queue/AzureQueue ingestion. Their metadata is stored in ZooKeeper under the `/failed/` path and cached in memory.
 
+**What gets cleaned:**
+- **Terminal failed files** only: files that have exhausted all retries (when `s3queue_loading_retries` is reached or set to 0)
+- Files actively retrying (still within the retry budget) are preserved to maintain retry state
+
 This command:
-- Removes all failed file entries from ZooKeeper (the `/failed/` znodes)
+- Removes terminal failed file entries from ZooKeeper (the `/failed/` znodes without `.retriable` suffix)
 - Clears the corresponding entries from the in-memory metadata cache
 - Is idempotent (safe to run when there are no failed files)
 
@@ -278,7 +282,7 @@ The operation acquires a distributed lock to prevent concurrent cleanup operatio
 This command is currently supported only for **unordered mode** S3Queue/AzureQueue tables. For ordered mode tables, it throws a `NOT_IMPLEMENTED` error. Support for ordered mode will be added in a future release.
 </Note>
 
-Failed files can also be cleaned up automatically using the [`failed_file_ttl_sec`](/engines/table-engines/integrations/s3queue#failed_file_ttl_sec) table setting, which removes old failed file entries based on a time-to-live.
+Terminal failed files can also be cleaned up automatically using the [`failed_file_ttl_sec`](/engines/table-engines/integrations/s3queue#failed_file_ttl_sec) table setting, which removes old terminal failed file entries based on a time-to-live.
 
 **Required Permission**
 
