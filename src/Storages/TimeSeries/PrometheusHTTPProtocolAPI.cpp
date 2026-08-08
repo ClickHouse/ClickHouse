@@ -57,6 +57,13 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
     UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
 
+    if (!params.lookback_delta_param.empty())
+    {
+        const auto lookback_delta = parseTimeSeriesDuration(params.lookback_delta_param, timestamp_scale);
+        if (lookback_delta > 0)
+            evaluation_settings.instant_selector_window = lookback_delta;
+    }
+
     auto query_tree = std::make_shared<PrometheusQueryTree>();
     query_tree->parse(params.promql_query, timestamp_scale);
     LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());

@@ -119,6 +119,44 @@ def test_range_query_post_urlencoded():
     assert get_data == post_data
 
 
+def test_query_lookback_delta():
+    query = 'foo{shape="circle"}'
+    timestamp = 151
+
+    expected = '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [151, "16"]}]}'
+    assert execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp) == expected
+
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+            params={"lookback_delta": "500ms"},
+        )
+        == '{"resultType": "vector", "result": []}'
+    )
+
+    for lookback_delta in ("0", "-1"):
+        assert (
+            execute_query_via_http_api(
+                node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+                params={"lookback_delta": lookback_delta},
+            )
+            == expected
+        )
+
+
+def test_range_query_lookback_delta():
+    query = 'foo{shape="circle"}'
+
+    expected = '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[150, "16"]]}]}'
+    assert (
+        execute_range_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query_range", query, 150, 151, 1,
+            params={"lookback_delta": "0.5"},
+        )
+        == expected
+    )
+
+
 # Malformed PromQL is rejected at parse time.
 # The response must be a well-formed Prometheus error response `{"status":"error",...}`
 def test_error_while_parsing():
