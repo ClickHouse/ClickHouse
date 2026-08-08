@@ -18,6 +18,17 @@ ${CLICKHOUSE_CLIENT} --query "
 select_query_id="undrop-holder-${CLICKHOUSE_DATABASE}-$RANDOM"
 undrop_query_id="undrop-query-${CLICKHOUSE_DATABASE}-$RANDOM"
 
+# Clean up unconditionally: if any assertion below fails mid-way, the background queries must be
+# killed and the table dropped, or it would linger in the shared stateless database and break
+# unrelated tests.
+function cleanup()
+{
+    ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id IN ('$select_query_id', '$undrop_query_id') SYNC FORMAT Null"
+    wait
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_undrop_kill SYNC"
+}
+trap cleanup EXIT
+
 # A long-running SELECT keeps a reference to the storage. It is killed at the end of the test,
 # so its "query was cancelled" error is expected and suppressed.
 ${CLICKHOUSE_CLIENT} --query_id "$select_query_id" --function_sleep_max_microseconds_per_block 60000000 --query "
@@ -59,8 +70,8 @@ ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$select_query_id' SYN
 wait $select_pid || true
 
 # The metadata has been returned to the database before the wait, so the table can be attached.
+# The cleanup trap drops the table.
 ${CLICKHOUSE_CLIENT} --query "
     ATTACH TABLE t_undrop_kill;
     SELECT count() FROM t_undrop_kill;
-    DROP TABLE t_undrop_kill SYNC;
 "
