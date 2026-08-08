@@ -19,8 +19,9 @@ paired with `text`, `json` or unmarked response fences) are not parsed and not r
 parser to that form is a known follow-up, so edits to those pages are not checked by this runner
 yet.
 
-An example whose statements create global, server-wide objects (users, roles, quotas, databases)
-cannot be isolated inside the scratch database of its entity, so by default it is skipped and
+An example whose statements create or change global, server-wide state (users, roles, quotas,
+databases, writes through a table function into a file or external storage) cannot be isolated
+inside the scratch database of its entity, so by default it is skipped and
 reported as `skipped`: the runner can be pointed at an arbitrary existing server, and must not
 touch global state there. Pass `--global-objects` to run these examples too - which is only safe
 against a dedicated server, such as the one the CI job starts for the purpose.
@@ -102,14 +103,16 @@ UNSTABLE = "unstable"
 # The example creates global, server-wide objects and `--global-objects` was not given.
 SKIPPED = "skipped"
 
-# A statement that creates, changes or removes an object that lives outside the scratch database of
-# the entity: RBAC objects, databases, named collections, and the grants that go with them. Such an
-# example cannot run concurrently with another invocation of itself, and must not run against a
-# server that is not dedicated to this check.
+# A statement that creates, changes or removes state that lives outside the scratch database of
+# the entity: RBAC objects, databases, named collections, the grants that go with them, and writes
+# through a table function, which land in a file under `user_files` or in external storage rather
+# than in a table of the scratch database. Such an example cannot run concurrently with another
+# invocation of itself, and must not run against a server that is not dedicated to this check.
 GLOBAL_OBJECT_RE = re.compile(
     r"^\s*(?:CREATE|ATTACH|ALTER|DROP|RENAME)\s+(?:OR\s+REPLACE\s+)?"
     r"(?:USER|ROLE|ROW\s+POLICY|QUOTA|SETTINGS\s+PROFILE|PROFILE|DATABASE|NAMED\s+COLLECTION)\b"
-    r"|^\s*(?:GRANT|REVOKE)\b",
+    r"|^\s*(?:GRANT|REVOKE)\b"
+    r"|^\s*INSERT\s+INTO\s+(?:TABLE\s+)?FUNCTION\b",
     re.IGNORECASE,
 )
 
@@ -519,7 +522,8 @@ def main():
     parser.add_argument(
         "--global-objects",
         action="store_true",
-        help="run the examples that create global, server-wide objects (users, roles, databases);"
+        help="run the examples that create or change global, server-wide state (users, roles,"
+        " databases, files written through a table function);"
         " only safe against a server dedicated to this check",
     )
     parser.add_argument("--report", help="write the outcome of every example to this file, as JSON")
