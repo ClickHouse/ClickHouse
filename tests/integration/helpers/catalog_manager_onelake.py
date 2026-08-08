@@ -23,8 +23,7 @@ ONELAKE_BLOB_HOST = "onelake.blob.fabric.microsoft.com"
 ONELAKE_STORAGE_ENDPOINT = f"https://{ONELAKE_DFS_HOST}"
 ONELAKE_CATALOG_URL = "https://onelake.table.fabric.microsoft.com/iceberg"
 
-# All tables this manager creates -- including those produced by
-# `test_list_tables_pagination` (`e2e_pg_*`) -- start with this prefix.
+# All tables this manager creates start with this prefix.
 # Stale cleanup must restrict itself to this prefix so other workloads
 # sharing the same Fabric lakehouse are never touched.
 TABLE_NAME_PREFIX = "e2e_"
