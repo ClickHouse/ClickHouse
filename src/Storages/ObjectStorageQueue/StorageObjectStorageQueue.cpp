@@ -329,10 +329,10 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     }
     /// Deliberately setting-independent: this validates persisted table metadata, and the same
     /// stored path is revalidated on ATTACH / server startup with a different context, so whether
-    /// the table can load must not depend on the per-query `use_glob_ast_parser` setting. A path
-    /// the AST parser considers non-glob (e.g. a literal brace group "data_{x}.csv") is still
-    /// rejected at read time by the glob iterator instead of being silently routed through
-    /// prefix listing.
+    /// the table can load must not depend on the per-query `use_glob_ast_parser` setting. The read
+    /// path (`ObjectStorageQueueSource::FileIterator`) is pinned to the legacy classifier for the
+    /// same reason, so a path like "data_{x}.csv" (a glob for the legacy parser, literal text for
+    /// the AST parser) behaves identically to the legacy engine regardless of the setting.
     else if (!read_path.hasGlobs())
     {
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "ObjectStorageQueue url must either end with '/' or contain globs");

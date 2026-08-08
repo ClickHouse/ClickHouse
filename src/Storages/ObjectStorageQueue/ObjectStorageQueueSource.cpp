@@ -49,7 +49,6 @@ namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsUInt64 keeper_max_retries;
-    extern const SettingsBool use_glob_ast_parser;
 }
 
 namespace ObjectStorageQueueSetting
@@ -121,7 +120,14 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
 
     const auto & reading_path = configuration->getPathForRead();
-    const bool use_glob_ast = context_->getSettingsRef()[Setting::use_glob_ast_parser];
+    /// Deliberately pinned to the legacy glob classifier, matching the setting-independent path
+    /// validation in the `StorageObjectStorageQueue` constructor: the path is persisted table
+    /// metadata, and the queue is polled by background streaming whose context does not come from
+    /// the query that created the table, so whether an existing table can be read must not depend
+    /// on the per-session `use_glob_ast_parser` setting. Otherwise a path like `queue_{x}.csv`
+    /// (a glob for the legacy parser, literal text for the AST parser) would pass CREATE / ATTACH
+    /// and then fail every poll with "path without globs" as soon as the setting is enabled.
+    constexpr bool use_glob_ast = false;
 
     if (!reading_path.hasGlobs(use_glob_ast))
     {
