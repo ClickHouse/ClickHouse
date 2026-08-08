@@ -1,0 +1,12 @@
+modern_prefetching_used
+1
+no_prefetching_legacy_plain
+0
+legacy_reads_in_order
+1
+no_prefetching_legacy_residual_filter
+0
+legacy_residual_filter_correctness
+1	1
+no_prefetching_legacy_merge_child
+0

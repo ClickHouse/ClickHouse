@@ -535,6 +535,14 @@ private:
     /// Set by aggregation-in-order optimizer to prevent PrefetchingConcat from collapsing streams.
     bool prefer_multiple_streams = false;
 
+    /// True when reading in order was requested through `requestReadingInOrder` (the query-plan
+    /// optimizer entry points: `optimizeReadInOrder`, `applyOrder`, and `ReadFromMerge` forwarding).
+    /// The legacy path (`InterpreterSelectQuery` with `query_plan_read_in_order = 0`, including the
+    /// `query_info.order_optimizer` branch of `ReadFromMerge::createChildrenPlans`) sets
+    /// `query_info.input_order_info` directly instead, bypassing the opt-outs that stamp
+    /// `prefer_multiple_streams`; PrefetchingConcat must stay disabled there.
+    bool read_in_order_requested_by_plan_optimizer = false;
+
     PartitionIdToMaxBlockPtr max_block_numbers_to_read;
 
     /// Pre-computed value, needed to trigger sets creating for PK

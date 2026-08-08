@@ -554,6 +554,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// materialize them, so a rebuilt read without them keeps the rewritten filter but cannot produce
     /// its inputs (`optimizeLazyFinal` copies them for the same reason).
     parallel_replicas_step->prefer_multiple_streams = prefer_multiple_streams;
+    parallel_replicas_step->read_in_order_requested_by_plan_optimizer = read_in_order_requested_by_plan_optimizer;
     parallel_replicas_step->virtual_row_conversion = virtual_row_conversion;
     parallel_replicas_step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
     parallel_replicas_step->index_read_tasks = index_read_tasks;
@@ -1644,6 +1645,15 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             || prefer_multiple_streams
             || input_order_info->direction != 1
             || split_parts_and_ranges.size() <= 1)
+            return false;
+
+        /// The opt-outs that stamp `prefer_multiple_streams` (residual filter above the read,
+        /// non-trivial `ORDER BY` expression, `LIMIT BY`, aggregation-/distinct-in-order) are only
+        /// applied by the query-plan entry points that go through `requestReadingInOrder`. The
+        /// legacy `order_optimizer` path (`query_plan_read_in_order = 0` with the old analyzer,
+        /// including the `Merge` children it stamps directly) sets `query_info.input_order_info`
+        /// without that analysis, so it must not take the PrefetchingConcat fast path.
+        if (!read_in_order_requested_by_plan_optimizer)
             return false;
 
         /// Only enable PrefetchingConcat when there is per-chunk CPU work
@@ -3400,6 +3410,7 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     query_info.input_order_info = std::make_shared<InputOrderInfo>(SortDescription{}, prefix_size, direction, read_limit);
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
+    read_in_order_requested_by_plan_optimizer = true;
 
     /// The conversion only produces its own leading sort columns; the extra merge columns of a
     /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
@@ -3874,6 +3885,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->prefer_multiple_streams = prefer_multiple_streams;
+    cloned_step->read_in_order_requested_by_plan_optimizer = read_in_order_requested_by_plan_optimizer;
     cloned_step->virtual_row_conversion = virtual_row_conversion;
     cloned_step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
     /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
