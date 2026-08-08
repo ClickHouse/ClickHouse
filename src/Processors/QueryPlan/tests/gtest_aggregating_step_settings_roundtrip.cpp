@@ -155,24 +155,29 @@ TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteTrueSurv
     EXPECT_TRUE(roundTripSerializeStringWithZeroByte(*makeMergingAggregatedStep(true)));
 }
 
-/// Patch releases inside one query-plan serialization version disagree on whether they know this name
-/// (`v25.8.12.129-lts` does not, `v25.8.13.73-lts` does, both at version 0), so the version cannot gate it: the
-/// default must stay off the wire and `false` must reach the wire at EVERY version, including 0.
-TEST(AggregatingStepSettingsRoundTrip, DefaultValueStaysOffTheWireAtEveryVersion)
+/// Both directions must reach the wire, at every version. A receiver that predates the name serializes String keys
+/// with no trailing zero byte, which is what `false` means, so leaving `true` off the wire would silently give such
+/// a peer the other layout instead of the value the initiator ran with. The version cannot select those receivers
+/// either: `v25.8.12.129-lts` does not declare the name and `v25.8.13.73-lts` does, yet both advertise version 0.
+TEST(AggregatingStepSettingsRoundTrip, BothDirectionsReachTheWireAtEveryVersion)
 {
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
     for (UInt64 version : {UInt64{0}, UInt64{DBMS_QUERY_PLAN_SERIALIZATION_VERSION}})
     {
-        EXPECT_FALSE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(true), version)) << "version " << version;
-        EXPECT_FALSE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(true), version)) << "version " << version;
+        for (bool value : {false, true})
+        {
+            EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(value), version))
+                << "version " << version << ", value " << value;
+            EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(value), version))
+                << "version " << version << ", value " << value;
 
-        EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(false), version)) << "version " << version;
-        EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(false), version)) << "version " << version;
-
-        /// The value must also survive the full write -> read round trip, not merely appear on the wire.
-        EXPECT_FALSE(roundTripSerializeStringWithZeroByte(*makeAggregatingStep(false), version)) << "version " << version;
-        EXPECT_FALSE(roundTripSerializeStringWithZeroByte(*makeMergingAggregatedStep(false), version)) << "version " << version;
+            /// And survive the full write -> read round trip, not merely appear on the wire.
+            EXPECT_EQ(roundTripSerializeStringWithZeroByte(*makeAggregatingStep(value), version), value)
+                << "version " << version;
+            EXPECT_EQ(roundTripSerializeStringWithZeroByte(*makeMergingAggregatedStep(value), version), value)
+                << "version " << version;
+        }
     }
 }
