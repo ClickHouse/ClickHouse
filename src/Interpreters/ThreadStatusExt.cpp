@@ -150,6 +150,8 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent)
     , kind(ThreadGroupKind::Borrowed)
     , shared_data(parent->getSharedData())
 {
+    /// `new` (not `make_shared`): the companion constructor is private.
+    async_callback_group = ThreadGroupPtr(new ThreadGroup(*this, AsyncCallbackCompanionTag{}));
 }
 
 // Constructor for `createForFlushAsyncInsertQueue`
@@ -174,6 +176,45 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
     shared_data.throw_if_query_canceled_predicate = [this] ()
     {
         if (auto context_locked = query_context.lock())
+        {
+            if (auto elem = context_locked->getProcessListElementSafe())
+                elem->throwIfKilled();
+        }
+    };
+
+    /// `new` (not `make_shared`): the companion constructor is private.
+    async_callback_group = ThreadGroupPtr(new ThreadGroup(*this, AsyncCallbackCompanionTag{}));
+}
+
+/// Constructor for the async-callback companion of a borrowed group (see `getAsyncCallbackGroup`).
+/// It owns its accounting - `performance_counters` flush to the global counters and `memory_tracker`
+/// is parented to the total tracker - so capturing it cannot dereference or prolong the parent query
+/// group. Query metadata is copied, and the cancellation predicates capture only a weak pointer to the
+/// query context (never a `this` of another group), so they stay valid after the query finishes.
+ThreadGroup::ThreadGroup(ThreadGroup & borrowed, AsyncCallbackCompanionTag)
+    : master_thread_id(borrowed.master_thread_id)
+    , query_context(borrowed.query_context)
+    , global_context(borrowed.global_context)
+    , fatal_error_callback(borrowed.fatal_error_callback)
+    , os_threads_nice_value(borrowed.os_threads_nice_value)
+    , memory_spill_scheduler(borrowed.memory_spill_scheduler)
+    , shared_data(borrowed.getSharedData())
+{
+    memory_tracker.setDescription("Async callback (borrowed scope)");
+    memory_tracker.setParent(&total_memory_tracker);
+
+    /// The predicates copied with `shared_data` capture the `this` of the parent query group, which the
+    /// companion may outlive. Replace them with self-contained ones.
+    shared_data.query_is_canceled_predicate = [context = query_context] () -> bool {
+        if (auto context_locked = context.lock())
+        {
+            return context_locked->isCurrentQueryKilled();
+        }
+        return false;
+    };
+    shared_data.throw_if_query_canceled_predicate = [context = query_context] ()
+    {
+        if (auto context_locked = context.lock())
         {
             if (auto elem = context_locked->getProcessListElementSafe())
                 elem->throwIfKilled();
@@ -291,9 +332,15 @@ void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_has
 {
     auto hash = normalized_hash ? normalized_hash : normalizedQueryHash(query_, false);
 
-    std::lock_guard lock(mutex);
-    shared_data.query_for_logs = query_;
-    shared_data.normalized_query_hash = hash;
+    {
+        std::lock_guard lock(mutex);
+        shared_data.query_for_logs = query_;
+        shared_data.normalized_query_hash = hash;
+    }
+
+    /// Keep the async-callback companion of a borrowed group in sync (see `getAsyncCallbackGroup`).
+    if (async_callback_group)
+        async_callback_group->attachQueryForLog(query_, hash);
 }
 
 void ThreadStatus::attachQueryForLog(const String & query_)
@@ -309,8 +356,14 @@ void ThreadStatus::attachQueryForLog(const String & query_)
 
 void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
 {
-    std::lock_guard lock(mutex);
-    shared_data.profile_queue_ptr = profile_queue;
+    {
+        std::lock_guard lock(mutex);
+        shared_data.profile_queue_ptr = profile_queue;
+    }
+
+    /// Keep the async-callback companion of a borrowed group in sync (see `getAsyncCallbackGroup`).
+    if (async_callback_group)
+        async_callback_group->attachInternalProfileEventsQueue(profile_queue);
 }
 
 void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)

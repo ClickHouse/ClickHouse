@@ -78,8 +78,10 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
   * borrowed work runs. The price is that a borrowed group is only valid while the parent is alive, so it
   * must not be captured by asynchronous work: the async task may run on a pool thread after the parent
   * query finished and its group was destroyed, and would then dereference the freed parent counters
-  * (use-after-free). `getCurrentThreadGroupForAsyncCallback` returns nullptr for a borrowed group so async
-  * work runs under normal thread/global accounting instead.
+  * (use-after-free). `getCurrentThreadGroupForAsyncCallback` therefore never returns a borrowed group;
+  * for a borrowed group it returns its async-callback companion (see `getAsyncCallbackGroup`), which
+  * runs async work under normal thread/global accounting while preserving the query's cancellation
+  * predicates and metadata.
   */
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
@@ -92,6 +94,13 @@ public:
 
     /// A borrowed group aliases the parent query group's accounting; see the class comment.
     bool isBorrowed() const;
+
+    /// For a borrowed group: an owning companion group that async callbacks may safely capture.
+    /// It carries the query metadata and cancellation predicates of the borrowed scope (so canceling
+    /// the query still stops async work promptly), but owns its accounting - parented to the global
+    /// tracker and counters - so capturing it neither dereferences nor prolongs the parent query group.
+    /// Returns nullptr for a non-borrowed group.
+    ThreadGroupPtr getAsyncCallbackGroup() const { return async_callback_group; }
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -185,9 +194,17 @@ private:
     Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
     UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
+    /// Set only for borrowed groups: the companion returned by `getAsyncCallbackGroup`.
+    /// Created eagerly by the borrowing constructors, immutable afterwards.
+    ThreadGroupPtr async_callback_group;
+
     /// Borrowing constructors (mark the group `Borrowed`); private so only the factories create them.
     explicit ThreadGroup(ThreadGroupPtr parent);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
+
+    /// Constructor for the async-callback companion of a borrowed group (see `getAsyncCallbackGroup`).
+    struct AsyncCallbackCompanionTag {};
+    ThreadGroup(ThreadGroup & borrowed, AsyncCallbackCompanionTag);
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 };

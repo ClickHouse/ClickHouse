@@ -30,7 +30,7 @@ ThreadGroupPtr getCurrentThreadGroupForAsyncCallback()
 {
     ThreadGroupPtr result = getCurrentThreadGroup();
     if (result && result->isBorrowed())
-        result = nullptr;
+        result = result->getAsyncCallbackGroup();
 
     chassert(!result || !result->isBorrowed());
     return result;

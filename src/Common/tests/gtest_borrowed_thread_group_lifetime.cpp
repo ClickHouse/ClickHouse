@@ -172,6 +172,47 @@ TEST(BorrowedThreadGroupLifetime, LocalRunnerEnqueuedUnderBorrowedGroupRunsWitho
     t.join();
 }
 
+TEST(BorrowedThreadGroupLifetime, AsyncWorkFromBorrowedScopeKeepsCancellationContext)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        auto pool = makeSingleThreadPool();
+
+        auto root = std::make_shared<ThreadGroup>(context, 0);
+        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
+
+        CurrentThread::attachToGroupIfDetached(borrowed);
+        auto runner = threadPoolCallbackRunnerUnsafe<ThreadGroupPtr>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner([] { return getCurrentThreadGroup(); }, Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        auto observed = future.get();
+        pool->wait();
+
+        /// The pool thread must not run under the borrowed group itself (raw pointers into the parent)...
+        EXPECT_NE(observed, borrowed) << "async work must not run under a borrowed `ThreadGroup`";
+        /// ...but it must still run under a group carrying the query's cancellation predicates: with no
+        /// group at all, `CurrentThread::isQueryCanceled` / `checkIfNotCancelled` become no-ops on the
+        /// pool thread (e.g. in the S3 client retry loop), so a canceled query would keep reading and
+        /// retrying until the request finishes.
+        ASSERT_NE(observed, nullptr) << "async work from a borrowed scope must keep a cancellation context";
+        auto observed_shared_data = observed->getSharedData();
+        ASSERT_TRUE(observed_shared_data.query_is_canceled_predicate);
+        ASSERT_TRUE(observed_shared_data.throw_if_query_canceled_predicate);
+
+        /// The predicates must stay safe to evaluate after the borrowed group and the parent query group
+        /// are gone: async work may outlive the query.
+        borrowed.reset();
+        root.reset();
+        EXPECT_FALSE(observed_shared_data.query_is_canceled_predicate());
+        EXPECT_NO_THROW(observed_shared_data.throw_if_query_canceled_predicate());
+    });
+    t.join();
+}
+
 TEST(BorrowedThreadGroupLifetime, ChildDoesNotKeepParentAlive)
 {
     std::thread t([&]

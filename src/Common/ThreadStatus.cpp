@@ -214,9 +214,15 @@ ContextPtr ThreadStatus::getGlobalContext() const
 
 void ThreadGroup::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level)
 {
-    std::lock_guard lock(mutex);
-    shared_data.logs_queue_ptr = logs_queue;
-    shared_data.client_logs_level = logs_level;
+    {
+        std::lock_guard lock(mutex);
+        shared_data.logs_queue_ptr = logs_queue;
+        shared_data.client_logs_level = logs_level;
+    }
+
+    /// Keep the async-callback companion of a borrowed group in sync (see `getAsyncCallbackGroup`).
+    if (async_callback_group)
+        async_callback_group->attachInternalTextLogsQueue(logs_queue, logs_level);
 }
 
 void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue,
