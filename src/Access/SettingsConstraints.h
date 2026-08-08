@@ -68,13 +68,15 @@ public:
     SettingsConstraints & operator=(SettingsConstraints && src) noexcept;
     ~SettingsConstraints();
 
-    void clear();
     bool empty() const { return constraints.empty(); }
 
     void set(const String & full_name, const Field & min_value, const Field & max_value, const std::vector<Field> & disallowed_values, SettingConstraintWritability writability);
     void get(const Settings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
     void get(const MergeTreeSettings & current_settings, std::string_view short_name, Field & min_value, Field & max_value, std::vector<Field> & disallowed_values, SettingConstraintWritability & writability) const;
 
+    /// Layers `other` on top of these constraints. Key-monotonic: a setting which is constrained here
+    /// stays constrained, whether or not `other` mentions it. To replace a whole set of constraints,
+    /// for example when the profiles of a principal are recomputed, use `operator=` instead.
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
