@@ -16,6 +16,7 @@ struct JSONSubcolumnIndexInfo
     String json_column_name;       /// e.g., "json"
     String path;                   /// e.g., "a.b"
     size_t header_position;        /// position of JSONAllPaths column in the index header
+    bool has_subcolumn_after_type_hint;
 };
 
 struct JSONAllValuesIndexInfo

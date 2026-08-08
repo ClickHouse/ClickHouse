@@ -19,15 +19,15 @@ namespace DB
 ///   "a.b"            -> "a.b"
 ///   "a.b.:`Int64`"   -> "a.b"
 ///   "a.b.:`Array(Int64)`"  -> "a.b"
-static String extractPathFromSubcolumn(std::string_view subcolumn_name)
+static std::pair<String, bool> extractPathFromSubcolumn(std::string_view subcolumn_name)
 {
     /// Dynamic type subcolumn looks like "some.path.:`TypeName`..."
     /// Find the ".:`" pattern that marks the start of the type specifier.
     auto pos = subcolumn_name.find(".:`");
     if (pos == std::string_view::npos)
-        return String(subcolumn_name);
+        return {String(subcolumn_name), false};
 
-    return String(subcolumn_name.substr(0, pos));
+    return {String(subcolumn_name.substr(0, pos)), subcolumn_name.find("`.", pos + 3) != std::string_view::npos};
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
@@ -57,7 +57,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         if (subcolumn_part.starts_with("^"))
             return std::nullopt;
 
-        String path = extractPathFromSubcolumn(subcolumn_part);
+        auto [path, has_subcolumn_after_type_hint] = extractPathFromSubcolumn(subcolumn_part);
         if (path.empty())
             return std::nullopt;
 
@@ -67,6 +67,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
             .json_column_name = String(candidate_col),
             .path = std::move(path),
             .header_position = position,
+            .has_subcolumn_after_type_hint = has_subcolumn_after_type_hint,
         };
     }
 
@@ -144,7 +145,7 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
         {
             auto argument = function.getArgumentAt(0);
             auto json_info = tryMatchJSONSubcolumnToIndex(argument.getColumnName(), index_columns, "JSONAllValues");
-            if (!json_info)
+            if (!json_info || json_info->has_subcolumn_after_type_hint)
                 return std::nullopt;
 
             const auto * node_dag = node.getDAGNode();
@@ -165,7 +166,8 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
         }
     }
 
-    if (auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, "JSONAllValues"))
+    if (auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, "JSONAllValues");
+        json_info && !json_info->has_subcolumn_after_type_hint)
     {
         if (isJSONAllValuesMatchSafe(node, false))
             return JSONAllValuesIndexInfo{std::move(*json_info), false, false};
