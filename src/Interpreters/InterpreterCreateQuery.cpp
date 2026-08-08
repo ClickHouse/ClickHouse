@@ -169,11 +169,13 @@ namespace FailPoints
     extern const char atomic_populate_fail_before_subscription[];
     extern const char atomic_populate_pause_before_subscription[];
     extern const char atomic_populate_pause_after_view_publication[];
+    extern const char atomic_populate_pause_before_source_guard[];
 }
 
 namespace ErrorCodes
 {
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int UNKNOWN_TABLE;
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int INCORRECT_QUERY;
@@ -1994,8 +1996,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// the backfill reads the table that owned it before - or leave the subscription on a name nobody
     /// owns. The source guard also has to be held from *before* doCreateTable publishes the view: a
     /// RENAME of the source landing between the publication and the guard acquisition would make
-    /// getValidatedAtomicPopulateSource fall back to the legacy population, whose INSERT ... SELECT then
-    /// fails on the vanished name and leaves the just-published view behind. Queries that take several
+    /// getValidatedAtomicPopulateSource fail the CREATE on the vanished name (rolling the view back)
+    /// even though the source is still there under its new name. Queries that take several
     /// DDL guards (RENAME, EXCHANGE) acquire them in ascending (database, table) order, so to avoid
     /// deadlocks both guards are taken here, before the publication, in that canonical order
     /// (doCreateTable then sees the view's guard already held and does not re-acquire it).
@@ -2005,6 +2007,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         if (auto populate_source_name = tryGetAtomicPopulateSourceName(create))
         {
+            /// Covers the window between validating the view's SELECT (which resolved the source) and
+            /// acquiring the source-name guard below: a DROP of the source landing here must fail the
+            /// CREATE and roll the view back, not leave a half-created view behind
+            /// (see 04824_atomic_populate_materialized_view_source_dropped_before_guard).
+            FailPointInjection::pauseFailPoint(FailPoints::atomic_populate_pause_before_source_guard);
+
             UniqueTableName view_name{create.getDatabase(), create.getTable()};
             UniqueTableName source_name{populate_source_name->database, populate_source_name->table};
 
@@ -3030,10 +3038,19 @@ StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCre
 
     auto source = DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context);
 
-    /// The source does not exist yet: let the regular path run the population query and produce its
-    /// natural error, instead of inventing a different one here.
+    /// The view's SELECT was validated against the source before the view was published, so the source
+    /// existed then; not finding it now means it was dropped, renamed or exchanged away in the window
+    /// between that validation and the acquisition of the source-name DDL guard the caller holds. The
+    /// view is already published, so falling back to the legacy population is not an option: its
+    /// INSERT ... SELECT would fail on the vanished name *outside* the rollback scope of
+    /// `fillMaterializedViewAtomically`, leaving the just-created view behind (and subscribed to a name
+    /// nobody owns), so a retry would get TABLE_ALREADY_EXISTS. Throw instead - we are inside the
+    /// rollback scope, so the view is dropped and the failed CREATE leaves nothing behind.
     if (!source)
-        return nullptr;
+        throw Exception(ErrorCodes::UNKNOWN_TABLE,
+            "Table {} does not exist. It was dropped, renamed or exchanged concurrently with"
+            " CREATE MATERIALIZED VIEW ... POPULATE reading from it",
+            ref_dependencies.mv_from_dependency->getNameForLogs());
 
     /// Some sources (views, `Distributed`, `Merge`, `Buffer`, `Log` family, ...) cannot provide a pinned
     /// point-in-time snapshot, or are not in an `Atomic` database so the snapshot cannot be addressed by

@@ -133,9 +133,13 @@ private:
 
     /// Resolves the single source table that an atomically populated materialized view is subscribed to,
     /// if it can provide a pinned point-in-time snapshot. Returns nullptr when atomic population does not
-    /// apply: the view has no single source table, the source does not exist yet, or the source cannot be
-    /// pinned (a view, `Distributed`, `Merge`, `Log` family, or a table not in an `Atomic` database). In the
-    /// last case it logs a warning; the caller then falls back to the legacy non-atomic population.
+    /// apply: the view has no single source table, or the source cannot be pinned (a view, `Distributed`,
+    /// `Merge`, `Log` family, or a table not in an `Atomic` database). In the last case it logs a warning;
+    /// the caller then falls back to the legacy non-atomic population. Throws UNKNOWN_TABLE when the
+    /// source, which existed when the view's SELECT was validated, is gone - dropped, renamed or exchanged
+    /// away before the caller acquired the source-name DDL guard; the caller runs inside
+    /// fillMaterializedViewAtomically's rollback scope, so the just-published view is dropped rather than
+    /// left behind by a legacy population that would fail on the vanished name outside that scope.
     StoragePtr getValidatedAtomicPopulateSource(const ASTCreateQuery & create);
 
     /// Atomically populate a freshly created materialized view: subscribe the view to new inserts of its
@@ -143,8 +147,8 @@ private:
     /// exclusive lock on the source, then populate the view from that snapshot without holding the lock.
     /// This guarantees every row inserted concurrently with the population is delivered to the view exactly
     /// once. Returns std::nullopt when atomic population does not apply - there is no single source table to
-    /// subscribe to, the source does not exist yet, or it cannot provide a pinned snapshot (see
-    /// getValidatedAtomicPopulateSource); the caller then falls back to the regular, non-atomic path.
+    /// subscribe to, or it cannot provide a pinned snapshot (see getValidatedAtomicPopulateSource); the
+    /// caller then falls back to the regular, non-atomic path.
     ///
     /// The view itself was already created and started by doCreateTable before this runs, so on any failure
     /// here - an exclusive-lock timeout on a busy source, or a runtime failure of the population itself,
