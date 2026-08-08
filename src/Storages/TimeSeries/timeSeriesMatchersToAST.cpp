@@ -17,7 +17,14 @@ ASTPtr timeSeriesTagNameToAST(const String & tag_name, const std::unordered_map<
 
     auto it = column_name_by_tag_name.find(tag_name);
     if (it != column_name_by_tag_name.end())
-        return make_intrusive<ASTIdentifier>(it->second);
+    {
+        /// A dedicated tag column is allowed to be Nullable (e.g. `LowCardinality(Nullable(String))` in an external
+        /// tags table), and a series without this tag stores NULL there. Prometheus treats a missing label as equal
+        /// to the empty label value, so normalize NULL to '' - otherwise matchers like {host=""}, {host!="prod"} or
+        /// {host=~".*"} would evaluate to NULL and filter such series out, unlike the `tags` Map path, where
+        /// arrayElement() returns '' for a missing key.
+        return makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(it->second), make_intrusive<ASTLiteral>(""));
+    }
 
     /// arrayElement() can be used to extract a value from a Map too.
     return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
