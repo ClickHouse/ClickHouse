@@ -1208,6 +1208,18 @@ void pushOrderByIntoView(
     if (table_expression_query_info.additional_filter_ast)
         return;
 
+    /// Skip when the parallel-replicas custom-key filter applies on this replica: the filter is
+    /// appended as a planner `where_filter` above the view subquery later in
+    /// `buildQueryPlanForTableExpression` (`buildCustomKeyFilterIfNeeded`), so pushing
+    /// `ORDER BY/LIMIT` into the view would truncate to the globally top rows before the filter
+    /// discards the rows outside this replica's share of the key space, and the replica could
+    /// return too few rows (or none) from its assigned range. The predicate mirrors the
+    /// conditions under which the filter is actually built.
+    if (query_context->canUseParallelReplicasCustomKey()
+        && query_context->getSettingsRef()[Setting::parallel_replicas_count] > 1
+        && !query_context->getSettingsRef()[Setting::parallel_replicas_custom_key].value.empty())
+        return;
+
     /// Outer query must be a transparent SELECT — pushing ORDER BY through
     /// aggregation, DISTINCT or window functions changes semantics and can
     /// disable downstream optimizations (e.g. matching aggregate projections).
