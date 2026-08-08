@@ -43,6 +43,7 @@ hits_of_last_run()
         SELECT ProfileEvents['QueryPlanCacheHits']
         FROM system.query_log
         WHERE type = 'QueryFinish'
+          AND current_database = currentDatabase()
           AND user = '$user'
           AND query LIKE 'SELECT count() FROM%t_zero_col%'
         ORDER BY event_time_microseconds DESC
