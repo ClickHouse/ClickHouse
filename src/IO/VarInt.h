@@ -2,7 +2,6 @@
 
 #include <base/types.h>
 #include <base/defines.h>
-#include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
@@ -12,14 +11,13 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
 /// Variable-Length Quantity (VLQ) Base-128 compression, also known as Variable Byte (VB) or Varint encoding.
 
 [[noreturn]] void throwReadAfterEOF();
+
+[[noreturn]] void throwVarUIntOutOfRange(UInt64 value, UInt64 max_value);
+
+[[noreturn]] void throwVarIntOutOfRange(Int64 value, Int64 min_value, Int64 max_value);
 
 
 inline void writeVarUInt(UInt64 x, WriteBuffer & ostr)
@@ -125,11 +123,7 @@ inline void ALWAYS_INLINE checkVarUIntFits(UInt64 value)
     constexpr UInt64 max_value = static_cast<UInt64>(std::numeric_limits<T>::max());
     if (value > max_value) [[unlikely]]
     {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "VarUInt value {} is out of range for target type with maximum value {}",
-            value,
-            max_value);
+        throwVarUIntOutOfRange(value, max_value);
     }
 }
 
@@ -142,12 +136,7 @@ inline void ALWAYS_INLINE checkVarIntFits(Int64 value)
     constexpr Int64 max_value = static_cast<Int64>(std::numeric_limits<T>::max());
     if (value < min_value || value > max_value) [[unlikely]]
     {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "VarInt value {} is out of range for target type [{}, {}]",
-            value,
-            min_value,
-            max_value);
+        throwVarIntOutOfRange(value, min_value, max_value);
     }
 }
 
