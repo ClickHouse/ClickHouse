@@ -774,8 +774,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// A full-definition `ATTACH TABLE t (...) ENGINE = ...` (with or without `FROM '/path/'`) is CREATE-like
     /// user input that also runs under `LoadingStrictnessLevel::ATTACH`, so it counts as fresh too. Definitions
     /// read back from metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
-    /// are marked with `attach_short_syntax` or use `FORCE_ATTACH`/`FORCE_RESTORE`, and `SECONDARY_CREATE`
-    /// (DDL replay in `Replicated` databases, `RESTORE`) was already validated on the initiator.
+    /// are marked with `attach_short_syntax` or use `FORCE_ATTACH`/`FORCE_RESTORE`. `SECONDARY_CREATE` covers
+    /// DDL replay in `Replicated` databases (already validated on the initiator) and `RESTORE`: a backup may hold
+    /// grandfathered metadata that predates a validation, and rejecting it here would make the backup unrestorable,
+    /// which is worse than the restored table failing later when the definition is compiled (the same grandfathering
+    /// the local metadata-loading paths get; see the other `is_restore_from_backup` relaxations in this file).
     const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
         || (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax);
 
