@@ -14,12 +14,14 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_rename_swap', '1')
 -- over the runner's injection, so pinning them here keeps the mutation on that path.
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 
-INSERT INTO t_rename_swap VALUES (111, 222, 333);
+-- The fixture names parts literally, so the insert must not be able to abandon its block
+-- number and land as all_1_1_0: a keeper fault injection retry allocates a fresh one.
+INSERT INTO t_rename_swap SETTINGS insert_keeper_fault_injection_probability = 0 VALUES (111, 222, 333);
 
 ALTER TABLE t_rename_swap DETACH PART 'all_0_0_0';
 ALTER TABLE t_rename_swap RENAME COLUMN a TO a1, RENAME COLUMN b TO b1 SETTINGS alter_sync = 2;
 ALTER TABLE t_rename_swap RENAME COLUMN a1 TO b, RENAME COLUMN b1 TO a SETTINGS alter_sync = 2;
-ALTER TABLE t_rename_swap ATTACH PART 'all_0_0_0';
+ALTER TABLE t_rename_swap ATTACH PART 'all_0_0_0' SETTINGS insert_keeper_fault_injection_probability = 0;
 
 -- Materializes the swap. `c` is deliberately outside the rename map.
 ALTER TABLE t_rename_swap UPDATE c = c + 1 WHERE 1 SETTINGS mutations_sync = 2;
