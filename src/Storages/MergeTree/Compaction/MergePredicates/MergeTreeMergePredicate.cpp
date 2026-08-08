@@ -56,12 +56,20 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
     }
 
     {
-        uint32_t max_possible_level = storage.getMaxLevelInBetween(left, right);
+        GapPartProperties max_possible = storage.getMaxPropertiesInBetween(left, right);
 
-        if (max_possible_level > std::max(left.info.level, right.info.level))
+        if (max_possible.level > std::max(left.info.level, right.info.level))
             return std::unexpected(PreformattedMessage::create(
                     "There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have",
-                    left.name, right.name, max_possible_level));
+                    left.name, right.name, max_possible.level));
+
+        /// Compared against the pairwise max, not the exact result mutation version, which is only
+        /// known later in `FutureMergedMutatedPart::assign`. The exact version is a max over a
+        /// superset of this pair, so this test may over-refuse but never under-refuse.
+        if (max_possible.mutation > std::max(left.info.mutation, right.info.mutation))
+            return std::unexpected(PreformattedMessage::create(
+                    "There is an outdated part in a gap between two active parts ({}, {}) with mutation version {} higher than these active parts have",
+                    left.name, right.name, max_possible.mutation));
     }
 
     return {};

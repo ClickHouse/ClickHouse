@@ -273,12 +273,14 @@ private:
     UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
     UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
-    /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
-    /// Merges have to be aware of the outdated part's levels inside designated merge range.
+    /// Returns the maximum level and mutation version over all outdated parts in a range (left; right),
+    /// or zeroes in case if empty range.
+    /// Merges have to be aware of the outdated parts inside designated merge range.
     /// When two parts all_1_1_0, all_3_3_0 are merged into all_1_3_1, the gap between those parts have to be verified.
-    /// There should not be an unactive part all_1_1_1. Otherwise it is impossible to load parts after restart, they intersects.
-    /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with high level outdated parts.
-    UInt32 getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const;
+    /// There should be neither an unactive part all_1_1_1 nor all_1_1_0_9: the merge result does not contain
+    /// either of them, so it is impossible to load parts after restart, they intersect.
+    /// Therefore this function is used in merge predicate in order to prevent merges over such gaps.
+    GapPartProperties getMaxPropertiesInBetween(const PartProperties & left, const PartProperties & right) const;
 
     size_t clearOldMutations(bool truncate = false);
 

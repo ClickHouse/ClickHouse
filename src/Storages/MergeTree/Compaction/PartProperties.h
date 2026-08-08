@@ -56,6 +56,16 @@ struct PartProperties
     const std::optional<RecompressTTLInfo> recompression_ttl_info = std::nullopt;
 };
 
+/// Maximum level and mutation version over the outdated parts lying in a block gap between
+/// two active parts. Both terms are required: `MergeTreePartInfo::contains` demands
+/// level >= and mutation >=, so an outdated part exceeding the merge result in either one
+/// is not covered by it.
+struct GapPartProperties
+{
+    UInt32 level = 0;
+    Int64 mutation = 0;
+};
+
 using PartsRange = std::vector<PartProperties>;
 using PartsRanges = std::vector<PartsRange>;
 using PartsRangeView = std::span<const PartProperties>;

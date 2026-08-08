@@ -2017,7 +2017,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     return {};
 }
 
-UInt32 StorageMergeTree::getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const
+GapPartProperties StorageMergeTree::getMaxPropertiesInBetween(const PartProperties & left, const PartProperties & right) const
 {
     auto parts_lock = readLockParts();
 
@@ -2029,17 +2029,18 @@ UInt32 StorageMergeTree::getMaxLevelInBetween(const PartProperties & left, const
     if (end == data_parts_by_info.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "unable to find right part, right part {}. It's a bug", right.name);
 
-    UInt32 level = 0;
+    GapPartProperties result;
 
     for (auto it = begin++; it != end; ++it)
     {
         if (it == data_parts_by_info.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "left and right parts in the wrong order, left part {}, right part {}. It's a bug", left.name, right.name);
 
-        level = std::max(level, (*it)->info.level);
+        result.level = std::max(result.level, (*it)->info.level);
+        result.mutation = std::max(result.mutation, (*it)->info.mutation);
     }
 
-    return level;
+    return result;
 }
 
 bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
