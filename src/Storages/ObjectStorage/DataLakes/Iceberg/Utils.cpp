@@ -1331,8 +1331,37 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
             if (need_all_metadata_files_parsing)
             {
-                auto metadata_file_object = getMetadataJSONObject(
-                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, data_source_description);
+                /// `table_uuid` here is caller-supplied (e.g. `iceberg_metadata_table_uuid`) and not
+                /// yet validated against this specific metadata file's actual content. Probing the
+                /// content cache under it without inserting is safe (a stale/wrong supplied UUID
+                /// just misses); inserting under it before validating would poison the shared cache
+                /// entry for the real table that UUID belongs to. So probe under the supplied UUID,
+                /// validate the parsed `table-uuid` matches, and only insert under the *parsed* UUID.
+                Poco::JSON::Object::Ptr metadata_file_object;
+                if (metadata_cache && table_uuid.has_value())
+                {
+                    String cached = metadata_cache->tryGetTableMetadata(
+                        IcebergMetadataFilesCache::getKey(data_source_description, normalizeUuid(*table_uuid), metadata_file_path));
+                    if (!cached.empty())
+                    {
+                        Poco::JSON::Parser parser;
+                        auto candidate = parser.parse(cached).extract<Poco::JSON::Object::Ptr>();
+                        if (candidate->has(Iceberg::f_table_uuid)
+                            && normalizeUuid(candidate->getValue<String>(Iceberg::f_table_uuid)) == normalizeUuid(*table_uuid))
+                            metadata_file_object = candidate;
+                    }
+                }
+                if (!metadata_file_object)
+                {
+                    String raw_metadata_json;
+                    metadata_file_object = getMetadataJSONObject(
+                        metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, /*table_uuid=*/std::nullopt, data_source_description, raw_metadata_json);
+                    if (metadata_cache && metadata_file_object->has(Iceberg::f_table_uuid))
+                        metadata_cache->setTableMetadata(
+                            IcebergMetadataFilesCache::getKey(
+                                data_source_description, normalizeUuid(metadata_file_object->getValue<String>(Iceberg::f_table_uuid)), metadata_file_path),
+                            std::move(raw_metadata_json));
+                }
                 if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
                     if (metadata_file_object->has(Iceberg::f_table_uuid))
