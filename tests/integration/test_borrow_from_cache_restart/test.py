@@ -234,7 +234,7 @@ def test_borrow_from_cache_log_family_writable_after_restart(started_cluster):
         node.query(f"INSERT INTO {table} VALUES (4), (5)")
         assert node.query(f"SELECT count() FROM {table}").strip() == "2"
 
-    # Drop the tables before the destructive test below removes the disk's configuration file.
+    # Drop the tables before the destructive test below removes the cache's configuration file.
     for table in ["borrowed_cfg_stripelog", "borrowed_cfg_log", "borrowed_cfg_mt"]:
         node.query(f"DROP TABLE {table} SYNC")
 
@@ -272,6 +272,17 @@ def test_borrow_from_cache_restart_with_absent_cache(started_cluster):
         """
     )
 
+    # The configuration-defined `borrowed_cfg` disk (in the persistent base.xml) stays configured
+    # while the cache it references disappears. `DiskSelector` creates configuration disks with
+    # `attach = false` even at startup, so without the startup leniency in the borrow_from_cache
+    # factory the server would abort on the missing cache instead of bringing the disk up with data
+    # writes blocked. Keep a table on it across the restart to cover that path too.
+    node.query(
+        "CREATE TABLE borrowed_cfg_survivor (key UInt64) ENGINE = StripeLog SETTINGS disk = 'borrowed_cfg'"
+    )
+    node.query("INSERT INTO borrowed_cfg_survivor VALUES (1), (2)")
+    assert node.query("SELECT count() FROM borrowed_cfg_survivor").strip() == "2"
+
     # Remove the cache-defining disk so the cache is not registered after the restart.
     node.exec_in_container(
         ["bash", "-c", "rm /etc/clickhouse-server/config.d/cache_disk.xml"]
@@ -281,6 +292,21 @@ def test_borrow_from_cache_restart_with_absent_cache(started_cluster):
     # The server came back up (the regression aborted startup here) and the table is empty.
     assert node.query("SELECT 1").strip() == "1"
     assert node.query("SELECT count() FROM borrowed").strip() == "0"
+
+    # The configuration-defined disk was registered despite the missing cache: the server started,
+    # the disk is up with data writes blocked, and the table on it is attached and readable (empty).
+    assert (
+        node.query(
+            "SELECT is_read_only FROM system.disks WHERE name = 'borrowed_cfg'"
+        ).strip()
+        == "1"
+    )
+    assert node.query("SELECT count() FROM borrowed_cfg_survivor").strip() == "0"
+    # Writing data is rejected while the cache is absent.
+    assert "read-only" in node.query_and_get_error(
+        "INSERT INTO borrowed_cfg_survivor VALUES (3)"
+    )
+    node.query("DROP TABLE borrowed_cfg_survivor SYNC")
 
     # While the cache is absent the disk is read-only, so writes are rejected with a clear error
     # rather than crashing or silently succeeding.

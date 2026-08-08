@@ -286,7 +286,7 @@ static void registerBorrowFromCacheObjectStorage(ObjectStorageFactory & factory)
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const ContextPtr & /* context */,
+        const ContextPtr & context,
         bool /* skip_access_check */,
         bool attach) -> ObjectStoragePtr
     {
@@ -301,7 +301,17 @@ static void registerBorrowFromCacheObjectStorage(ObjectStorageFactory & factory)
         /// not survive a restart -- so the reattached table is necessarily empty. Bringing the disk
         /// up read-only when the cache is absent (instead of throwing) lets the empty table load
         /// without aborting server startup; the disk becomes writable once the cache appears.
-        if (!attach && !FileCacheFactory::instance().tryGet(cache_name))
+        ///
+        /// Disks defined in the server configuration are created by `DiskSelector` with
+        /// `attach = false` even during server startup, but they need the same leniency: the
+        /// cache-defining part of the configuration may have been removed while the disk (and
+        /// tables on it) remained, and aborting `DiskSelector::initialize` would prevent the
+        /// server from starting at all. While the server is starting, treat a missing cache like
+        /// an `ATTACH`; strict validation applies to disks created on a running server (a fresh
+        /// custom DDL disk, or a new disk added by a configuration reload).
+        bool server_is_starting = context->getApplicationType() == Context::ApplicationType::SERVER
+            && !context->isServerCompletelyStarted();
+        if (!attach && !server_is_starting && !FileCacheFactory::instance().tryGet(cache_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Filesystem cache '{}' not found for borrow_from_cache object storage '{}'", cache_name, name);
 
