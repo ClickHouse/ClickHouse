@@ -757,7 +757,13 @@ static void predicateOperandsToCommonType(
         if (allow_conversion_to_subtype)
         {
             if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type))
-                common_type = makeNullable(subtype);
+            {
+                /// The `Join` table engine holds a hash table prebuilt over the original key columns, and its reuse
+                /// path cannot remap a key rewritten to a derived expression (see `chooseJoinAlgorithm`). The fallback
+                /// applies only when the storage key itself is the subtype, so that only the probe side is converted.
+                if (!planning_context.is_storage_join || right_type->equals(*subtype))
+                    common_type = makeNullable(subtype);
+            }
         }
 
         if (!common_type)

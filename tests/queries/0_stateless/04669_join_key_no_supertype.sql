@@ -99,5 +99,24 @@ ASOF JOIN (SELECT CAST(-1, 'Int64') AS k, 2 AS t) AS b USING (k, t);
 SELECT * FROM (SELECT 1 AS k, CAST(3, 'UInt64') AS t) AS a
 ASOF JOIN (SELECT 1 AS k, CAST(2, 'Int64') AS t) AS b USING (k, t); -- { serverError NO_COMMON_TYPE }
 
+SELECT 'The Join table engine holds a hash table prebuilt over the original key, so only the probe side can be converted';
+DROP TABLE IF EXISTS t_join_unsigned;
+DROP TABLE IF EXISTS t_join_signed;
+CREATE TABLE t_join_unsigned (x UInt64, v String) ENGINE = Join(SEMI, LEFT, x);
+CREATE TABLE t_join_signed (x Int64, v String) ENGINE = Join(SEMI, LEFT, x);
+INSERT INTO t_join_unsigned VALUES (1, 'a'), (18446744073709551615, 'b');
+INSERT INTO t_join_signed VALUES (1, 'a'), (-1, 'b');
+
+SELECT 'The stored key is the common subtype: the probe key is converted, and an out-of-range value does not match anything';
+SELECT * FROM (SELECT CAST(1, 'Int64') AS x) AS t SEMI LEFT JOIN t_join_unsigned USING (x);
+SELECT * FROM (SELECT CAST(-1, 'Int64') AS x) AS t SEMI LEFT JOIN t_join_unsigned USING (x);
+
+SELECT 'The stored key is not the common subtype: the prebuilt hash table cannot be converted';
+SELECT * FROM (SELECT CAST(1, 'UInt64') AS x) AS t SEMI LEFT JOIN t_join_signed USING (x); -- { serverError NO_COMMON_TYPE }
+SELECT * FROM (SELECT CAST(1, 'UInt64') AS x) AS t SEMI LEFT JOIN t_join_signed AS j ON t.x = j.x; -- { serverError NO_COMMON_TYPE }
+
+DROP TABLE t_join_unsigned;
+DROP TABLE t_join_signed;
+
 DROP TABLE t_unsigned;
 DROP TABLE t_signed;

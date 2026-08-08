@@ -76,3 +76,7 @@ A null-safe comparison cannot be done this way, because NULL matches NULL there
 The ASOF inequality needs the order of the values, not only the equality
 In ASOF JOIN USING only the last column needs the order of the values, the preceding ones are equality keys
 1	3
+The Join table engine holds a hash table prebuilt over the original key, so only the probe side can be converted
+The stored key is the common subtype: the probe key is converted, and an out-of-range value does not match anything
+1	a
+The stored key is not the common subtype: the prebuilt hash table cannot be converted
