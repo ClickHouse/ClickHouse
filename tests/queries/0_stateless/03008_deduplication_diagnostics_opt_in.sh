@@ -189,14 +189,17 @@ if [ "\$n" = 1 ]; then
   echo "Code: 395. DB::Exception: DEDUP_ASSERT_FAILED phase=$phase table=t: while executing" >&2
   exit 395
 fi
-: > "\$D/rerun_started"
-# Bounded, and released by the driver below the moment the signal has been sent: an
-# unbounded wait would leave one spinning process per row behind on every run.
-i=0
-while [ ! -f "\$D/go" ] && [ \$i -lt 600 ]; do sleep 0.05; i=\$((i+1)); done
+exec 9<> "\$D/go_fifo"
+exec 8<> "\$D/started_fifo"
+echo started >&8
+# Blocking, bounded read instead of a poll loop: the driver writes one line the moment the
+# signal has been sent. A poll loop whose sentinel is removed with the probe directory spins
+# to its cap and is left behind as an orphan on every row.
+read -r -t 60 -u 9 _ || true
 exit 0
 STUB
         chmod +x "$I/client_block"
+        mkfifo "$I/go_fifo" "$I/started_fifo"
         {
           echo "CLICKHOUSE_CLIENT='$I/client_block'"
           # The driver's own capture and cleanup, which is what makes an unforwarded error
@@ -207,13 +210,18 @@ STUB
           echo "CASE_ARGS=(${REPLAY_ARGS[*]})"
           sed 's/^                        //' "$W/block.sh"
         } > "$I/run.sh"
+        # Held open for the whole handshake so neither side sees EOF from a transient
+        # absence of a peer, which would make the reads return immediately.
+        exec 8<> "$I/started_fifo"
+        exec 9<> "$I/go_fifo"
         bash "$I/run.sh" > /dev/null 2> "$I/fwd_int" &
         int_pid=$!
-        i=0
-        while [ ! -f "$I/rerun_started" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i+1)); done
+        # Blocking instead of polling, so the signal still always lands inside the rerun.
+        read -r -t 60 -u 8 _ || true
         kill -TERM "$int_pid" 2>/dev/null
-        : > "$I/go"
+        echo go >&9
         wait "$int_pid" 2>/dev/null
+        exec 8>&- 9>&-
         echo "$name $phase interrupted rerun forwards marker $(grep -c 'DEDUP_ASSERT_FAILED' "$I/fwd_int")"
         rm -rf "$W"
     done
