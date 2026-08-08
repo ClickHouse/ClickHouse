@@ -39,8 +39,6 @@ _DOCKERHUB_SECRET = Secret.Config(
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
-_GEESEFS_VERSION = "v0.43.5"
-
 # binfmt is run as a --privileged container in the release job, so pin it by
 # digest (not the mutable `latest` tag) to avoid executing a moved/tampered
 # image with elevated privileges on the self-hosted release runner.
@@ -250,55 +248,20 @@ def main():
         )
 
     if args.release_type == "patch" and not args.only_docker:
-        arch = "amd64" if Shell.get_output("uname -m") == "x86_64" else "arm64"
-        geesefs_bin_dir = os.path.expanduser("~/.local/bin")
-        os.makedirs(geesefs_bin_dir, exist_ok=True)
-        if geesefs_bin_dir not in os.environ.get("PATH", ""):
-            os.environ["PATH"] = geesefs_bin_dir + os.pathsep + os.environ.get("PATH", "")
-        step(
-            name="Install geesefs",
-            command=[
-                f"command -v geesefs && geesefs --version 2>&1 | grep -qF {_GEESEFS_VERSION.lstrip('v')} ||"
-                f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
-                f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
-                # `apt-get update` before each install: the runner's apt index can
-                # be stale and point at a superseded package version (e.g.
-                # `libarchive-dev 3.6.0-1ubuntu1.7`) that Ubuntu already removed
-                # from the mirror pool, which makes `apt-get install` fail with a
-                # 404. Refreshing the index first resolves to the current version.
-                "command -v createrepo_c || (sudo apt-get update && sudo apt-get install -y createrepo-c) ||:",
-                # reprepro 5.4.4+ is required for the 'Limit' field in distributions config.
-                # Ubuntu Jammy only has 5.3.0, so build from source if needed.
-                "reprepro --version 2>&1 | grep -qE '5\\.[4-9]' || ("
-                "  sudo apt-get update &&"
-                "  sudo apt-get install -y dpkg-dev fakeroot libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper &&"
-                "  git clone https://salsa.debian.org/debian/reprepro.git /tmp/reprepro-src &&"
-                "  cd /tmp/reprepro-src &&"
-                "  dpkg-buildpackage -b --no-sign &&"
-                "  sudo dpkg -i ../reprepro_$(dpkg-parsechangelog --show-field Version)_$(dpkg-architecture -q DEB_HOST_ARCH).deb"
-                ") ||:",
-            ]
-            # The installs above are best-effort (`||:`) so a local dev machine
-            # without sudo/apt is not blocked. For a real release the repo tools
-            # must be present before any mutation (tags, GitHub release, repos),
-            # so verify them here and fail closed. Skipped on dry-run (local
-            # convenience).
-            + (
-                []
-                if args.dry_run
-                else [
-                    # Verify the *version*, not just presence: an older
-                    # distro reprepro (5.3.x) may be installed while the 5.4+
-                    # source build failed under the trailing `||:`. reprepro
-                    # 5.4+ is required (the 'Limit' distributions field).
-                    "command -v createrepo_c >/dev/null"
-                    " && reprepro --version 2>&1 | grep -qE '5\\.[4-9]'"
-                    " || { echo 'ERROR: createrepo_c and reprepro 5.4+ must be"
+        # Skipped on dry-run (local convenience).
+        if not args.dry_run:
+            step(
+                # The tools are baked into the release-maker image; fail closed rather than fetch third-party code on a credentialed host.
+                name="Verify release tools",
+                command=[
+                    "command -v geesefs >/dev/null"
+                    " && command -v createrepo_c >/dev/null"
+                    " && reprepro --version 2>&1 | grep -qE 'reprepro version 5\\.([4-9]|[1-9][0-9])'"
+                    " || { echo 'ERROR: geesefs, createrepo_c and reprepro 5.4+ must be"
                     " installed for a release' >&2; exit 1; }"
-                ]
-            ),
-            workdir=REPO_PATH,
-        )
+                ],
+                workdir=REPO_PATH,
+            )
 
         def _write_secret_file(path: str, content: str) -> None:
             # These hold R2 package-publishing credentials; create them 0600 so
