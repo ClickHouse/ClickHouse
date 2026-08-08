@@ -477,6 +477,39 @@ SELECT 'graphite qbit path rejected', engine, count() FROM t_graphite_path, syst
     WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
 DROP TABLE t_graphite_path;
 
+-- `Variant`, `Dynamic` and `JSON` are separate type indexes that no other term of the guard covers,
+-- so each needs its own case.
+SET enable_variant_type = 1;
+CREATE TABLE t_graphite_path (key UInt32, Path Variant(String, UInt64), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, 'max_a', '2020-01-01 00:00:10', 5, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite variant path rejected', engine, count() FROM t_graphite_path, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
+DROP TABLE t_graphite_path;
+SET enable_variant_type = 0;
+
+SET enable_dynamic_type = 1;
+CREATE TABLE t_graphite_path (key UInt32, Path Dynamic, Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, 'max_a', '2020-01-01 00:00:10', 5, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite dynamic path rejected', engine, count() FROM t_graphite_path, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
+DROP TABLE t_graphite_path;
+SET enable_dynamic_type = 0;
+
+-- The value must be valid JSON: a bare string fails at INSERT, so the case would never reach the guard.
+SET enable_json_type = 1;
+CREATE TABLE t_graphite_path (key UInt32, Path JSON, Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, '{"a":"max_a"}', '2020-01-01 00:00:10', 5, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite json path rejected', engine, count() FROM t_graphite_path, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
+DROP TABLE t_graphite_path;
+SET enable_json_type = 0;
+
 -- The nullability guard uses `isNullableOrLowCardinalityNullable`, so it must also reject a NULL
 -- hidden under a `LowCardinality` wrapper; a top-level-only check would pass every case above.
 SET allow_suspicious_low_cardinality_types = 1;
