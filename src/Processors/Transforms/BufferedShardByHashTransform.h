@@ -170,7 +170,9 @@ private:
     /// runs with `budget->mutex` held: a sibling scatter reclaims this scatter's stale port-resident charges
     /// through `BufferedShardByHashBudget::scatters`. Without a budget the chunks carry no charge, so there is
     /// nothing shared to guard and the mutex is not taken (see `lockBudget`).
-    void enqueue(size_t shard, Chunk chunk, std::vector<const void *> touched_objects);
+    /// `touched_objects` is taken by reference and moved from only once the queue slot is committed, so if
+    /// growing the queue throws, the caller still owns the charge and can roll it back.
+    void enqueue(size_t shard, Chunk chunk, std::vector<const void *> & touched_objects);
     QueuedChunk dequeue(size_t shard);
     void clearQueue(size_t shard);
     /// Account for one shard chunk leaving the pipeline (consumed downstream or discarded on a finished output):

@@ -642,6 +642,65 @@ TEST(BufferedShardByHashTransform, LowCardinalityDictionaryChargedOncePerBlock)
     EXPECT_LT(buffered, 2 * dict_bytes);
 }
 
+/// The pre-split admission charge must count an *owned* dictionary exactly once. A freshly read block owns its
+/// dictionary (sharing only appears once `scatter` splits it), `forEachSubcolumn` visits an owned dictionary
+/// (it skips only a shared one), and `allocatedBytes` contains it exactly once - so also running the explicit
+/// shared-dictionary case for it subtracted the dictionary from the column's own bytes twice, billing the block
+/// a full dictionary short on the admission path: a chunk already over
+/// `aggregation_in_order_shuffle_max_buffered_bytes` was admitted and only failed after the split had
+/// materialized it. This reads the counter between prepare() (which pulls and registers the provisional
+/// pre-split charge, the value the admission decision runs on) and work().
+TEST(BufferedShardByHashTransform, OwnedLowCardinalityDictionaryCountedOnAdmission)
+{
+    const size_t num_rows = 8000;
+    const size_t num_distinct = 2000;
+    const size_t value_len = 500;
+    const size_t num_shards = 8;
+
+    ColumnPtr key = makeDistinctKeyColumn(num_rows);
+    ColumnPtr low_cardinality = makeBigDictLowCardinalityColumn(num_rows, num_distinct, value_len);
+
+    const auto & lc = assert_cast<const ColumnLowCardinality &>(*low_cardinality);
+    ASSERT_FALSE(lc.isSharedDictionary());
+    const Int64 dict_bytes = static_cast<Int64>(lc.getDictionary().allocatedBytes());
+    ASSERT_GT(dict_bytes, 0);
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "s"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    auto budget = std::make_shared<BufferedShardByHashBudget>();
+
+    /// Unbounded budget: this test measures the counter, it must not throw.
+    BufferedShardByHashTransform transform(
+        header, num_shards, ColumnNumbers{0}, /*max_queue_length_=*/ 0, /*max_buffered_bytes_=*/ (1ULL << 40), budget);
+
+    OutputPort source_output(header);
+    connect(source_output, transform.getInputs().front());
+
+    std::vector<std::unique_ptr<InputPort>> sinks;
+    for (auto & output : transform.getOutputs())
+    {
+        auto sink = std::make_unique<InputPort>(header);
+        connect(output, *sink);
+        sinks.push_back(std::move(sink));
+    }
+
+    source_output.push(Chunk(Columns{key, low_cardinality}, num_rows));
+    for (auto & sink : sinks)
+        sink->setNeeded();
+
+    ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+    const Int64 admission_bytes = budget->total_buffered_bytes.load();
+
+    /// At least one dictionary (the double subtraction left only the small index and key bytes, below one),
+    /// and below two (it must still be billed once, not once per reference).
+    EXPECT_GE(admission_bytes, dict_bytes);
+    EXPECT_LT(admission_bytes, 2 * dict_bytes);
+}
+
 /// Same invariant for a dictionary nested inside a composite column: `ColumnTuple::scatter` delegates to the
 /// nested `ColumnLowCardinality::scatter`, which shares one dictionary across the shards the same way. The
 /// budget walks the shard chunk recursively, so a `Tuple(LowCardinality(String))` dictionary must also be

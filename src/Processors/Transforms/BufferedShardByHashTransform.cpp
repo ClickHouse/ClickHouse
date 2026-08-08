@@ -72,9 +72,14 @@ BufferedShardByHashTransform::~BufferedShardByHashTransform()
     std::erase(budget->scatters, this);
 }
 
-void BufferedShardByHashTransform::enqueue(size_t shard, Chunk chunk, std::vector<const void *> touched_objects)
+void BufferedShardByHashTransform::enqueue(size_t shard, Chunk chunk, std::vector<const void *> & touched_objects)
 {
-    output_queues[shard].push_back(QueuedChunk{std::move(chunk), std::move(touched_objects)});
+    auto & queue = output_queues[shard];
+    /// Committed in two steps so a failed allocation cannot strand the charge: growing the deque can throw, but
+    /// at that point `touched_objects` is still owned by the caller, which rolls the charge back
+    /// (`generateOutputChunks`); the moves into the committed slot below cannot fail.
+    queue.emplace_back();
+    queue.back() = QueuedChunk{std::move(chunk), std::move(touched_objects)};
 }
 
 BufferedShardByHashTransform::QueuedChunk BufferedShardByHashTransform::dequeue(size_t shard)
@@ -108,8 +113,23 @@ void BufferedShardByHashTransform::releaseQueuedChunk(const std::vector<const vo
 void BufferedShardByHashTransform::chargeSharedObject(
     const void * object, Int64 bytes, std::vector<const void *> & touched, Int64 & total_bytes)
 {
-    touched.push_back(object);
+    /// Registration is transactional: the reference recorded in `touched` and the table entry it refers to must
+    /// appear together, or not at all. `touched` is the only handle a release path has, so an entry in it with
+    /// no matching refcount would make `releaseTouchedObjectsUnlocked` decrement through a missing element -
+    /// undefined behavior once `chassert` is compiled out. `try_emplace` goes first (it has the strong exception
+    /// guarantee - hashing a pointer does not throw - so a failed insertion changes nothing); if recording the
+    /// reference then fails, a just-created entry is removed again and the charge never happened.
     auto [it, is_new] = budget->shared_object_refcounts.try_emplace(object);
+    try
+    {
+        touched.push_back(object);
+    }
+    catch (...)
+    {
+        if (is_new)
+            budget->shared_object_refcounts.erase(it);
+        throw;
+    }
     ++it->second.refcount;
     if (!is_new)
         return; /// Already billed by whichever charge registered it first, and still held by it.
@@ -121,8 +141,21 @@ void BufferedShardByHashTransform::chargeSharedObject(
 void BufferedShardByHashTransform::chargeColumnAndDescendants(
     const IColumn & column, std::vector<const void *> & touched, Int64 & total_bytes)
 {
-    touched.push_back(&column);
+    /// Same transactional registration as `chargeSharedObject`: the table entry first (strong guarantee), the
+    /// `touched` reference only once that succeeded, rolling a just-created entry back if it does not - so every
+    /// pointer in `touched` always has a refcount to release. A node the descent below abandons mid-walk (a
+    /// descendant's registration threw) is left at its default `bytes == 0`, so releasing it forgets nothing.
     auto [it, is_new] = budget->shared_object_refcounts.try_emplace(&column);
+    try
+    {
+        touched.push_back(&column);
+    }
+    catch (...)
+    {
+        if (is_new)
+            budget->shared_object_refcounts.erase(it);
+        throw;
+    }
     /// The recursion below inserts into the same table, which can rehash it - that invalidates iterators, but
     /// never references to the elements themselves, so this entry is held by reference across the descent.
     auto & accounting = it->second;
@@ -155,10 +188,14 @@ void BufferedShardByHashTransform::chargeColumnAndDescendants(
 
     if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(&column))
     {
-        /// `forEachSubcolumn` skips a shared dictionary (the column does not own it), so it needs an explicit
-        /// case; the index column is owned per shard and contributes nothing beyond what's already in
-        /// `self_bytes`.
-        charge_subobject(lc->getDictionary(), true);
+        /// `forEachSubcolumn` visits an owned dictionary but skips a shared one (the column does not own it),
+        /// so only a shared dictionary needs this explicit case. Running it for an owned dictionary too would
+        /// subtract the dictionary from `self_bytes` a second time - `allocatedBytes` contains it exactly once
+        /// either way - leaving the column billed a full dictionary short, so an over-budget chunk would pass
+        /// the pre-split admission check and only fail after `scatter` had materialized it. The index column is
+        /// owned per shard and contributes nothing beyond what's already in `self_bytes`.
+        if (lc->isSharedDictionary())
+            charge_subobject(lc->getDictionary(), true);
     }
     else if (const auto * aggregate = typeid_cast<const ColumnAggregateFunction *>(&column))
     {
@@ -312,8 +349,21 @@ void BufferedShardByHashTransform::chargePendingInput()
     /// Registering into the shared table requires it to hold nothing for chunks that have already left the
     /// pipeline: this chunk's columns could have been allocated at the freed addresses of a consumed one.
     reclaimAllPortResidentChunks();
-    for (const auto & column : pending_input_chunk.getColumns())
-        chargeColumnAndDescendants(*column, pending_input_touched, measured_bytes);
+    try
+    {
+        for (const auto & column : pending_input_chunk.getColumns())
+            chargeColumnAndDescendants(*column, pending_input_touched, measured_bytes);
+    }
+    catch (...)
+    {
+        /// A failed walk (an allocation threw) rolls its partial charge back by dropping the references alone.
+        /// The bytes it billed live only in `measured_bytes`, never published to the shared counter, so the
+        /// released bytes are discarded here - the ordinary release path (which teardown would take) subtracts
+        /// them from the counter and would corrupt the stage-wide budget with bytes that were never added.
+        releaseTouchedObjectsUnlocked(pending_input_touched);
+        pending_input_touched.clear();
+        throw;
+    }
     budget->total_buffered_bytes.fetch_add(measured_bytes, std::memory_order_relaxed);
 }
 
@@ -659,24 +709,59 @@ void BufferedShardByHashTransform::generateOutputChunks()
         if (budget_enabled)
             reclaimAllPortResidentChunks();
 
-        auto output_it = outputs.begin();
-        for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
+        /// Pre-charging queue sizes, so a failure below can tell the chunks this call committed (whose charges
+        /// live only in the unpublished `block_bytes`) from chunks that were already buffered.
+        std::vector<size_t> queue_sizes_before;
+        if (budget_enabled)
+            for (const auto & queue : output_queues)
+                queue_sizes_before.push_back(queue.size());
+
+        std::vector<const void *> shard_touched;
+        try
         {
-            if (output_it->isFinished())
-                continue;
+            auto output_it = outputs.begin();
+            for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
+            {
+                if (output_it->isFinished())
+                    continue;
 
-            const size_t shard_rows = shard_columns[shard][0]->size();
-            if (shard_rows == 0)
-                continue;
+                const size_t shard_rows = shard_columns[shard][0]->size();
+                if (shard_rows == 0)
+                    continue;
 
-            /// With no cap to enforce, skip the ownership walk of every scattered column: the queued chunk
-            /// carries no charge and there is nothing to release when it leaves.
-            std::vector<const void *> shard_touched;
+                /// With no cap to enforce, skip the ownership walk of every scattered column: the queued chunk
+                /// carries no charge and there is nothing to release when it leaves.
+                shard_touched.clear();
+                if (budget_enabled)
+                    for (const auto & column : shard_columns[shard])
+                        chargeColumnAndDescendants(*column, shard_touched, block_bytes);
+
+                enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows), shard_touched);
+            }
+        }
+        catch (...)
+        {
+            /// An allocation threw mid-block (a charge walk, or growing a queue). The bytes charged for this
+            /// block live only in `block_bytes`, which is never published now, so the partial charge is rolled
+            /// back by dropping the references alone - the returned bytes are discarded, exactly as in
+            /// `chargePendingInput`. That covers both the walk that threw halfway (`shard_touched`) and the
+            /// shard chunks this call had already committed. The provisional pre-split charge stays: it was
+            /// published, and whichever release path runs next (teardown, `dropPendingInput`) subtracts it
+            /// correctly.
             if (budget_enabled)
-                for (const auto & column : shard_columns[shard])
-                    chargeColumnAndDescendants(*column, shard_touched, block_bytes);
-
-            enqueue(shard, Chunk(std::move(shard_columns[shard]), shard_rows), std::move(shard_touched));
+            {
+                releaseTouchedObjectsUnlocked(shard_touched);
+                for (size_t shard = 0; shard < num_shards; ++shard)
+                {
+                    auto & queue = output_queues[shard];
+                    while (queue.size() > queue_sizes_before[shard])
+                    {
+                        releaseTouchedObjectsUnlocked(queue.back().touched_objects);
+                        queue.pop_back();
+                    }
+                }
+            }
+            throw;
         }
 
         /// Release the provisional pre-split charge now that the exact post-split objects are registered above -
