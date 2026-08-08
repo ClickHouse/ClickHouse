@@ -5128,6 +5128,13 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "ALTER TABLE ... MODIFY ENGINE is not supported for Replicated*MergeTree tables yet");
 
+        /// The new semantics apply on the next table load, and a temporary table is never reloaded
+        /// (`DETACH` is refused for it and a restart drops it), so the change could only ever make the
+        /// reported definition disagree with the behavior.
+        if (getStorageID().database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "ALTER TABLE ... MODIFY ENGINE is not supported for temporary tables");
+
         /// Old-syntax tables keep the keys and granularity as positional engine arguments, which replacing
         /// the whole engine function would drop. Rejected, as MODIFY ORDER BY / TTL / SAMPLE BY do below.
         if (!is_custom_partitioned)

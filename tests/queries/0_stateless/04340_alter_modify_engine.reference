@@ -43,6 +43,9 @@ graphite lc nullable path rejected	MergeTree	1
 graphite lc array path rejected	MergeTree	1
 graphite fixed array path rollup	[1,2]	2020-01-01 00:00:00	6	2
 graphite fixedstring path rollup	max_a	2020-01-01 00:00:00	6	2
+graphite lowcardinality path rollup	max_a	2020-01-01 00:00:00	6	2
+graphite enum time rollup	max_a	rounded	6	2
+temporary rejected	ENGINE = MergeTree
 graphite nullable version accepted	max_a	2020-01-01 00:00:00	1	\N
 graphite nullable version engine	GraphiteMergeTree
 nested offsets engine	ReplacingMergeTree

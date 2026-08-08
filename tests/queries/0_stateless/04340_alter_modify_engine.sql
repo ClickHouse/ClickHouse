@@ -512,6 +512,36 @@ OPTIMIZE TABLE t_graphite_path FINAL;
 SELECT 'graphite fixedstring path rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
 DROP TABLE t_graphite_path;
 
+CREATE TABLE t_graphite_path (key UInt32, Path LowCardinality(String), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, 'max_a', '2020-01-01 00:00:00', 5, 1);
+INSERT INTO t_graphite_path VALUES (1, 'max_a', '2020-01-01 00:00:10', 6, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_path;
+ATTACH TABLE t_graphite_path;
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite lowcardinality path rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
+DROP TABLE t_graphite_path;
+
+-- The time column has a separate `isEnum` branch, so an `Enum` time needs its own case. The rollup
+-- rounds the numeric value down to the retention precision, so the enum must be able to name the
+-- rounded result.
+CREATE TABLE t_graphite_path (key UInt32, Path String, Time Enum16('rounded' = 0, 'a' = 600), Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, 'max_a', 'a', 5, 1);
+INSERT INTO t_graphite_path VALUES (1, 'max_a', 'a', 6, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_path;
+ATTACH TABLE t_graphite_path;
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite enum time rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
+DROP TABLE t_graphite_path;
+
+-- A temporary table is never reloaded, so the new semantics could never take effect.
+CREATE TEMPORARY TABLE t_graphite_temp (key UInt32, v UInt32) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite_temp MODIFY ENGINE = ReplacingMergeTree(v); -- { serverError SUPPORT_IS_DISABLED }
+SELECT 'temporary rejected', extract(create_table_query, 'ENGINE = [A-Za-z]+') FROM system.tables
+    WHERE name = 't_graphite_temp';
+DROP TEMPORARY TABLE t_graphite_temp;
+
 -- A nullable version column stays allowed: the rollup compares it with `compareAt` and copies it with
 -- `insertFrom`, both of which handle NULL. The two rows must share the same path and the same unrounded
 -- time, because the version comparison is only reached for rows the algorithm considers the same key; two
