@@ -2187,7 +2187,8 @@ public:
         if constexpr (is_plus)
         {
             if (isExponentialTimeDecayingFloat64(arguments[0]) && isExponentialTimeDecayingFloat64(arguments[1]))
-                return arguments[0];
+                return createDataTypeExponentialTimeDecayingFloat64(
+                    *tryGetExponentialTimeDecayingFloat64DecayLength(arguments[0]));
         }
 
         /// Special case when multiply aggregate function state
