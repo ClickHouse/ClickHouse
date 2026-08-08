@@ -1518,14 +1518,19 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         /// if another dropFailedFiles holds the lock, treat it as idempotent success.
         /// If the generic background cleanup holds the lock, it may not be cleaning failed files,
         /// so we must fail and let the user retry.
-        Coordination::Stat stat;
-        std::string lock_value;
-        Coordination::Error code = zk_client->getKeeper()->tryGet(zookeeper_cleanup_lock_path, lock_value, &stat);
-
-        if (code == Coordination::Error::ZOK && lock_value == LOCK_OPERATION_DROP_FAILED)
+        try
         {
-            LOG_INFO(log, "Another replica is already executing SYSTEM DROP S3QUEUE FAILED FILES, skipping");
-            return;
+            std::string lock_value = zk_client->get(zookeeper_cleanup_lock_path);
+            if (lock_value == LOCK_OPERATION_DROP_FAILED)
+            {
+                LOG_INFO(log, "Another replica is already executing SYSTEM DROP S3QUEUE FAILED FILES, skipping");
+                return;
+            }
+        }
+        catch (...)
+        {
+            /// If we can't read the lock (node disappeared, connection issues, etc.),
+            /// treat it as a transient error and ask the user to retry.
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR,
