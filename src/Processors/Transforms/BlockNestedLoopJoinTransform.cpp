@@ -5,10 +5,16 @@
 #include <Core/Block.h>
 #include <Core/Defines.h>
 #include <Processors/Transforms/BlockNestedLoopJoinTransform.h>
+#include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 
 #include <limits>
 #include <numeric>
+
+namespace ProfileEvents
+{
+    extern const Event JoinProbeTableRowCount;
+}
 
 namespace DB
 {
@@ -199,6 +205,7 @@ IProcessor::Status BlockNestedLoopProbeTransform::prepare()
 void BlockNestedLoopProbeTransform::startProbeChunk(Chunk chunk)
 {
     probe_num_rows = chunk.getNumRows();
+    ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, probe_num_rows);
     probe_columns = chunk.detachColumns();
     /// The tile indexes into these columns and the output gathers from them; neither is possible
     /// on a Const or Sparse representation.
