@@ -52,8 +52,9 @@ std::pair<DataTypePtr, DataTypeCustomDescPtr> create(Float64 decay_length)
     auto storage_type = std::make_shared<DataTypeTuple>(
         DataTypes{
             std::make_shared<DataTypeFloat64>(),
+            std::make_shared<DataTypeFloat64>(),
             std::make_shared<DataTypeFloat64>()},
-        Names{"value", "time"});
+        Names{"value", "time", "decay_length"});
 
     return {
         storage_type,
@@ -76,7 +77,7 @@ String DataTypeCustomExponentialTimeDecayingFloat64::getName() const
 DataTypePtr createDataTypeExponentialTimeDecayingFloat64(Float64 decay_length)
 {
     return DataTypeFactory::instance().getCustom(
-        "Tuple(value Float64, time Float64)",
+        "Tuple(value Float64, time Float64, decay_length Float64)",
         std::make_unique<DataTypeCustomDesc>(
             std::make_unique<DataTypeCustomExponentialTimeDecayingFloat64>(decay_length)));
 }
@@ -117,9 +118,10 @@ void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
 Represents one or more finite exponentially time-decaying values at a shared anchor time.
 
 The decay length is part of the type: `ExponentialTimeDecayingFloat64(decay_length)`.
-The stored fields are `value Float64` and `time Float64`; DateTime and DateTime64 inputs are
-represented as seconds. Encoding the decay length in the type prevents values with incompatible
-decay lengths from being combined in one aggregating column.
+The stored fields are `value Float64`, `time Float64`, and a redundant `decay_length Float64`
+marker. DateTime and DateTime64 inputs are represented as seconds. The marker is validated against
+the type parameter when a value is combined or evaluated, so incompatible decay lengths are not
+silently mixed even in paths where ClickHouse treats custom tuple storage as layout-compatible.
 
 Use `tupleElement(decaying_value, 'time')` to read the greatest observed or current anchor time.
 The type can be used with `SimpleAggregateFunction(exponentialTimeDecayedSum, ...)` in an
