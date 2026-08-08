@@ -27,6 +27,11 @@ public:
     /// Get the provider name
     std::string getProviderName() const;
 
+    /// Extract the SQL query from the model response: take the last `<sql>` tagged block
+    /// and trim the surrounding whitespace. Returns an empty string when there are no
+    /// tags, which means no query was generated.
+    static std::string cleanSQL(const std::string & sql);
+
 private:
     AIConfiguration config;
     ai::Client client;
@@ -38,9 +43,6 @@ private:
 
     /// Build the complete prompt with context
     std::string buildCompletePrompt(const std::string & user_prompt) const;
-
-    /// Clean SQL from markdown formatting and whitespace
-    static std::string cleanSQL(const std::string & sql);
 
     /// Get the appropriate model string for the provider
     std::string getModelString() const;

@@ -237,6 +237,36 @@ TEST(AISQLGenerator, ConfigurationValidation)
     }, Exception);
 }
 
+/// `cleanSQL` is a pure function, so these tests need no AI credentials.
+
+TEST(AISQLGenerator, CleanSQLExtractsLastTaggedBlock)
+{
+    EXPECT_EQ(AISQLGenerator::cleanSQL("<sql>SELECT 1</sql>"), "SELECT 1");
+
+    /// In a multi-step generation the SDK concatenates the text of all steps, so the
+    /// text can contain several tagged blocks; the final step's query is the last one.
+    EXPECT_EQ(
+        AISQLGenerator::cleanSQL("Let me explore. <sql>SELECT 1</sql> Refined: <sql>SELECT 2</sql>"),
+        "SELECT 2");
+}
+
+TEST(AISQLGenerator, CleanSQLTrimsWhitespace)
+{
+    EXPECT_EQ(AISQLGenerator::cleanSQL("<sql>  SELECT 1  </sql>"), "SELECT 1");
+}
+
+TEST(AISQLGenerator, CleanSQLReturnsEmptyWithoutTags)
+{
+    /// Without the tags no query was generated (e.g. the model replied with prose
+    /// explaining why it cannot answer); the prose must not be mistaken for SQL.
+    EXPECT_EQ(AISQLGenerator::cleanSQL("I'll help you generate a ClickHouse SQL query."), "");
+    EXPECT_EQ(AISQLGenerator::cleanSQL(""), "");
+
+    /// Incomplete tags do not count either.
+    EXPECT_EQ(AISQLGenerator::cleanSQL("<sql>SELECT 1"), "");
+    EXPECT_EQ(AISQLGenerator::cleanSQL("SELECT 1</sql>"), "");
+}
+
 /// Test SQL injection attempts in natural language queries
 TEST_F(AITestFixture, SQLInjectionProtection)
 {
