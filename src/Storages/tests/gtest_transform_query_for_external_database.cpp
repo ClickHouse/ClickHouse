@@ -565,6 +565,35 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
             "(SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple('foo', 'bar')))",
             IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
         R"(SELECT field, value FROM test."table" WHERE (field, value) IN (('foo', 'bar')))");
+    /// A row value is also valid as an operand of a comparison.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field FROM test.table WHERE (field, value) = ('foo', 'bar'))",
+            IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular),
+        "SELECT field FROM test.`table` WHERE (field, value) = ('foo', 'bar')");
+    /// The internal `_CAST(literal, 'Type')` wrapper that `ConstantNode::toAST` puts around
+    /// literals whose type does not survive the text round trip (the analyzer re-serializes the
+    /// subquery argument from its query tree) is unwrapped back to the literal instead of being
+    /// sent to the external database, which does not know the function.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field FROM test.table WHERE (field, value) = _CAST(('foo', 'bar'), 'Tuple(String, String)'))",
+            IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular),
+        "SELECT field FROM test.`table` WHERE (field, value) = ('foo', 'bar')");
+
+    /// Outside a comparison / IN, external databases do not accept the row value `(a, b)` (SQLite
+    /// reports "row value misused" for `SELECT (1, 2)`), so a tuple in such a position is rejected
+    /// instead of being sent as broken SQL - whether it is an explicit `tuple` call, the
+    /// parenthesized form, or the literal the parser folds into a `Tuple` field.
+    EXPECT_ANY_THROW(formatQueryTableArgument(state,
+        "(SELECT tuple(field, value) FROM test.table)",
+        IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular));
+    EXPECT_ANY_THROW(formatQueryTableArgument(state,
+        "(SELECT (field, value) FROM test.table)",
+        IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL));
+    EXPECT_ANY_THROW(formatQueryTableArgument(state,
+        "(SELECT ('foo', 'bar') FROM test.table)",
+        IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL));
 
     /// Expressions with no MySQL text form are rejected instead of being sent as broken SQL:
     /// `array` / `map` calls and `tuple` with fewer than two arguments ...

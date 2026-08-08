@@ -54,9 +54,14 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo
   * normalization done by `transformQueryForExternalDatabase`:
   * - single-row multi-column `IN`/`NOT IN` sets (e.g. `(a, b) IN ((1, 'x'))`) keep their outer parentheses
   *   instead of collapsing to a flat scalar list (`IN (1, 'x')`);
+  * - the internal `_CAST(literal, 'Type')` wrapper that the analyzer's `ConstantNode::toAST` puts around
+  *   literals whose type does not survive the text round trip is unwrapped back to the plain literal;
   * - the `tuple` function with at least two arguments is marked to be formatted in the parenthesized
   *   operator form `(a, b)` (a row value in MySQL / PostgreSQL / SQLite) instead of the ClickHouse-only
-  *   call form `tuple(a, b)`;
+  *   call form `tuple(a, b)` - but only in positions where those databases accept a row value, i.e. as
+  *   an operand of a comparison or `IN`; in any other position (e.g. the SELECT list) both the `tuple`
+  *   call and the equivalent tuple literal throw `BAD_ARGUMENTS`, because the row value would be a
+  *   syntax error for the external database there (SQLite reports "row value misused");
   * - expressions that only have a ClickHouse-specific text form (`tuple` with fewer than two arguments,
   *   `array`, `map`, and - for the `Regular` escaping style, where no dialect field visitor rejects them
   *   at format time - literals containing an `Array` / `Map` or a tuple with fewer than two elements)

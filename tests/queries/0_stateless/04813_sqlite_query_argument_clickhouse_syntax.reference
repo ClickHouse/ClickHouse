@@ -2,6 +2,12 @@
 1	x
 --- explicit tuple call as a single-row IN set keeps its outer parentheses
 1	x
+--- row value is valid as a comparison operand
+2	y
+--- tuple in the SELECT list is rejected by ClickHouse (SQLite: row value misused)
+rejected
+--- tuple literal in the SELECT list is rejected by ClickHouse
+rejected
 --- single-element tuple call is rejected by ClickHouse
 rejected
 --- Array literal is rejected by ClickHouse

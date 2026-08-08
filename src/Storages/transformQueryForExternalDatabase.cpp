@@ -695,7 +695,24 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo
             "the passed query, or disable external_table_strict_query.");
 }
 
-void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle literal_escaping_style)
+/// Where a tuple may legally appear as the row value `(a, b)` in the SQL of the external
+/// database. External databases accept row values only next to a comparison or `IN`
+/// (`(a, b) = (1, 'x')`, `(a, b) IN ((1, 'x'), (2, 'y'))`); anywhere else - e.g. in the SELECT
+/// list - the parenthesized form is a syntax error there (SQLite reports "row value misused"),
+/// so such tuples must be rejected in ClickHouse instead of being sent as broken SQL.
+enum class RowValueContext
+{
+    /// A tuple here has no valid text form for the external database.
+    Disallowed,
+    /// A tuple here is a row value: an operand of a comparison, the left-hand side of `IN`,
+    /// or an element of an `IN` set.
+    RowValue,
+    /// The node is the right-hand side of `IN`: a tuple here is the `IN` set itself, and its
+    /// elements may in turn be row values (the multi-row case).
+    INSet,
+};
+
+static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, RowValueContext row_value_context)
 {
     if (!node)
         return;
@@ -704,34 +721,103 @@ void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle li
     checkStackSize();
     if (auto * function = node->as<ASTFunction>())
     {
+        /// When the analyzer re-serializes the subquery argument from its query tree,
+        /// `ConstantNode::toAST` wraps a literal whose inferred type does not survive the text
+        /// round trip in an internal `_CAST` call: `(2, 'y')` comes back as
+        /// `_CAST((2, 'y'), 'Tuple(UInt8, String)')`. `_CAST` is ClickHouse-internal and must not
+        /// reach the external database - unwrap it back to the literal, which is exactly what the
+        /// user wrote (the type annotation is meaningless for the external database anyway).
+        if (function->name == "_CAST" && function->arguments && function->arguments->children.size() == 2
+            && function->arguments->children[0]->as<ASTLiteral>())
+        {
+            const auto * type_literal = function->arguments->children[1]->as<ASTLiteral>();
+            if (type_literal && type_literal->value.getType() == Field::Types::String)
+            {
+                node = function->arguments->children[0];
+                normalizeSubqueryForExternalDatabaseImpl(node, literal_escaping_style, row_value_context);
+                return;
+            }
+        }
+
         wrapSingleRowTupleSetForINNode(*function);
 
         /// `tuple` with at least two arguments has the plain parenthesized form `(a, b)` that
         /// MySQL / PostgreSQL / SQLite understand as a row value, but only when formatted as an
-        /// operator; the function-call form `tuple(a, b)` is ClickHouse syntax. With fewer
-        /// than two arguments (and for `array` / `map`) there is no such form at all, so the
-        /// re-serialized subquery would not be parseable by the external database - reject it
-        /// instead of sending broken SQL.
+        /// operator and only in a row-value position; the function-call form `tuple(a, b)` is
+        /// ClickHouse syntax everywhere. With fewer than two arguments (and for `array` / `map`)
+        /// there is no such form at all, so the re-serialized subquery would not be parseable by
+        /// the external database - reject it instead of sending broken SQL.
         if (function->name == "tuple")
         {
-            if (function->arguments && function->arguments->children.size() >= 2)
-                function->setIsOperator(true);
-            else
+            if (!function->arguments || function->arguments->children.size() < 2)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot format a tuple with fewer than two elements for the external database: "
                     "it can only be written in ClickHouse-specific syntax. Rewrite the query passed "
                     "to the external database without it");
+            if (row_value_context == RowValueContext::Disallowed)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot format a tuple for the external database: the row value ('x', 'y') is "
+                    "only valid as an operand of a comparison or IN there. Rewrite the query passed "
+                    "to the external database without it");
+            function->setIsOperator(true);
+            /// The elements of an `IN` set are rows; the elements of a row are plain values.
+            auto element_context = row_value_context == RowValueContext::INSet
+                ? RowValueContext::RowValue
+                : RowValueContext::Disallowed;
+            for (auto & child : function->arguments->children)
+                normalizeSubqueryForExternalDatabaseImpl(child, literal_escaping_style, element_context);
+            return;
         }
-        else if (function->name == "array" || function->name == "map")
+
+        if (function->name == "array" || function->name == "map")
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Cannot format {} for the external database: it has no syntax for such values. "
                 "Rewrite the query passed to the external database without it",
                 function->name == "array" ? "an array" : "a map");
         }
+
+        if ((function->name == "in" || function->name == "notIn")
+            && function->arguments && function->arguments->children.size() == 2)
+        {
+            normalizeSubqueryForExternalDatabaseImpl(function->arguments->children[0], literal_escaping_style, RowValueContext::RowValue);
+            normalizeSubqueryForExternalDatabaseImpl(function->arguments->children[1], literal_escaping_style, RowValueContext::INSet);
+            return;
+        }
+
+        if ((function->name == "equals" || function->name == "notEquals"
+             || function->name == "less" || function->name == "greater"
+             || function->name == "lessOrEquals" || function->name == "greaterOrEquals")
+            && function->arguments)
+        {
+            for (auto & child : function->arguments->children)
+                normalizeSubqueryForExternalDatabaseImpl(child, literal_escaping_style, RowValueContext::RowValue);
+            return;
+        }
+
+        if (function->name.empty())
+        {
+            /// The parentheses-only wrapper added by `wrapSingleRowTupleSetForINNode` is
+            /// transparent: the wrapped node keeps the position of the wrapper itself.
+            if (function->arguments)
+                for (auto & child : function->arguments->children)
+                    normalizeSubqueryForExternalDatabaseImpl(child, literal_escaping_style, row_value_context);
+            return;
+        }
     }
     else if (const auto * literal = node->as<ASTLiteral>())
     {
+        /// The literal carrier of a row value (the parser folds `(1, 'x')` into a single
+        /// `ASTLiteral` holding a `Tuple` field) is subject to the same restriction as the
+        /// `tuple` function above: outside a row-value position its parenthesized text form
+        /// is a syntax error for the external database.
+        if (row_value_context == RowValueContext::Disallowed
+            && literal->value.getType() == Field::Types::Tuple
+            && literal->value.safeGet<Tuple>().size() >= 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot format a tuple for the external database: the row value ('x', 'y') is "
+                "only valid as an operand of a comparison or IN there. Rewrite the query passed "
+                "to the external database without it");
         /// For PostgreSQL / SQLite the dialect field visitors reject such literals at format time
         /// (see `FieldVisitorToStringForDialect`); the `Regular` style - used for MySQL, whose
         /// string literals interpret backslash escapes the same way as ClickHouse - formats them
@@ -745,7 +831,12 @@ void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle li
                 literal->value.getTypeName());
     }
     for (auto & child : node->children)
-        normalizeSubqueryForExternalDatabase(child, literal_escaping_style);
+        normalizeSubqueryForExternalDatabaseImpl(child, literal_escaping_style, RowValueContext::Disallowed);
+}
+
+void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle literal_escaping_style)
+{
+    normalizeSubqueryForExternalDatabaseImpl(node, literal_escaping_style, RowValueContext::Disallowed);
 }
 
 }

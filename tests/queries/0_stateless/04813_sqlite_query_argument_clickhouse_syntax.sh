@@ -40,6 +40,15 @@ ${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT i
 echo "--- explicit tuple call as a single-row IN set keeps its outer parentheses"
 ${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t WHERE tuple(id, val) IN (tuple(1, 'x')))) ORDER BY id"
 
+echo "--- row value is valid as a comparison operand"
+${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t WHERE (id, val) = (2, 'y'))) ORDER BY id"
+
+echo "--- tuple in the SELECT list is rejected by ClickHouse (SQLite: row value misused)"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', (SELECT tuple(id, val) FROM t))" 2>&1 | grep -q "BAD_ARGUMENTS" && echo "rejected"
+
+echo "--- tuple literal in the SELECT list is rejected by ClickHouse"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', (SELECT (1, 'x') FROM t))" 2>&1 | grep -q "BAD_ARGUMENTS" && echo "rejected"
+
 echo "--- single-element tuple call is rejected by ClickHouse"
 ${CLICKHOUSE_CLIENT} --query="SELECT id FROM sqlite('${DB_PATH}', (SELECT id FROM t WHERE tuple(val) = tuple('x')))" 2>&1 | grep -q "BAD_ARGUMENTS" && echo "rejected"
 
