@@ -69,6 +69,11 @@ add_library(_pulsar ${SRCS})
 
 target_compile_definitions(_pulsar PRIVATE PULSAR_USE_BOOST_REGEX)
 
+# Upstream defines these alongside the zstd/snappy dependencies; without them
+# CompressionCodecZstd.cc and CompressionCodecSnappy.cc compile throw-only stubs
+# and messages produced with these codecs cannot be read.
+target_compile_definitions(_pulsar PRIVATE HAS_ZSTD HAS_SNAPPY)
+
 # ClickHouse does not have curl (the submodule was removed), so a minimal stub is
 # provided instead. The Pulsar binary protocol (pulsar:// URLs) works normally;
 # HTTP lookup (http:// URLs) and OAuth2 authentication fail at runtime.
