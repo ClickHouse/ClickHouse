@@ -5208,9 +5208,32 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             MergingParams new_merging_params = MergingParams::parseFromEngineAST(engine_ast->name, engine_ast->arguments, local_context);
             /// parseFromEngineAST takes no settings, so derive the flag from the post-ALTER ones.
             new_merging_params.setAllowTupleElementAggregationFromSettings(*settings_for_check);
+            /// The next load rebuilds the sorting key from the declared ORDER BY plus only the TARGET's
+            /// own additional column, so validating against the live key would credit the source engine's
+            /// implicit one (only VersionedCollapsing has one) and miss a dimension it stops covering.
+            StorageInMemoryMetadata metadata_for_engine = metadata_for_check;
+            if (metadata_for_check.sorting_key.definition_ast)
+            {
+                NamesAndTypesList additional_columns;
+                if (new_merging_params.mode == MergingParams::VersionedCollapsing
+                    && metadata_for_check.columns.hasPhysical(new_merging_params.version_column))
+                    additional_columns.emplace_back(
+                        new_merging_params.version_column,
+                        metadata_for_check.columns.getPhysical(new_merging_params.version_column).type);
+                /// `KeyDescription::operator=` refuses to assign a key without additional_columns over one
+                /// that has them, which is exactly this case when the source engine contributed one.
+                metadata_for_engine.sorting_key.additional_columns.clear();
+                metadata_for_engine.sorting_key = KeyDescription::getKeyFromAST(
+                    metadata_for_check.sorting_key.definition_ast,
+                    metadata_for_check.columns,
+                    metadata_for_check.virtuals,
+                    local_context,
+                    additional_columns);
+            }
+
             /// sanity_checks=true: MODIFY ENGINE picks an engine now, so this is create-time metadata rather
             /// than the grandfathering of legacy on-disk metadata that ATTACH does.
-            new_merging_params.check(*settings_for_check, metadata_for_check, /*sanity_checks=*/true);
+            new_merging_params.check(*settings_for_check, metadata_for_engine, /*sanity_checks=*/true);
 
             /// MergingParams::check has no Graphite branch; validate the Graphite schema up front here too,
             /// so a MODIFY ENGINE = GraphiteMergeTree with a missing or non-Float64 value column is rejected

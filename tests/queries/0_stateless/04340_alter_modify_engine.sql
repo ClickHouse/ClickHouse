@@ -535,6 +535,23 @@ OPTIMIZE TABLE t_graphite_path FINAL;
 SELECT 'graphite enum time rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
 DROP TABLE t_graphite_path;
 
+-- The candidate sorting key must be rebuilt for the TARGET engine. VersionedCollapsingMergeTree is the
+-- only engine that appends its version column to the key, so validating against the live key would
+-- credit that column to a target which does not append it, and `ver` would become an off-key dimension
+-- after the reload. CREATE TABLE rejects the same shape.
+CREATE TABLE t_source_versioned (k UInt32, sign Int8, ver UInt32, m AggregateFunction(sum, UInt64))
+    ENGINE = VersionedCollapsingMergeTree(sign, ver) ORDER BY (k, sign);
+ALTER TABLE t_source_versioned MODIFY ENGINE = AggregatingMergeTree; -- { serverError BAD_ARGUMENTS }
+SELECT 'source versioned dimension rejected', engine FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_source_versioned';
+-- The same source engine still converts to a target that needs the version column in the key.
+ALTER TABLE t_source_versioned MODIFY ENGINE = ReplacingMergeTree(ver);
+DETACH TABLE t_source_versioned;
+ATTACH TABLE t_source_versioned;
+SELECT 'source versioned to replacing', engine, sorting_key FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_source_versioned';
+DROP TABLE t_source_versioned;
+
 -- A temporary table is never reloaded, so the new semantics could never take effect.
 CREATE TEMPORARY TABLE t_graphite_temp (key UInt32, v UInt32) ENGINE = MergeTree ORDER BY key;
 ALTER TABLE t_graphite_temp MODIFY ENGINE = ReplacingMergeTree(v); -- { serverError SUPPORT_IS_DISABLED }
