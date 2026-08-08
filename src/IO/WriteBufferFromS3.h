@@ -79,6 +79,10 @@ private:
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
 
+    /// True only if the object stored under `key` carries this buffer's `write_token`, i.e. this
+    /// buffer wrote it. Absent object, absent or foreign token, or a failed HEAD all give false.
+    bool isObjectWrittenByThisBuffer() const;
+
     /// Returns true if not a single byte was written to the buffer
     bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
 
@@ -88,6 +92,9 @@ private:
     const WriteSettings write_settings;
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<ObjectAttributes> object_metadata;
+    /// Identifies this buffer's conditional create-if-absent write; empty when the write is not
+    /// conditional. Sent as custom object metadata so a replayed PUT can recognise its own object.
+    const String write_token;
     LoggerPtr log = getLogger("WriteBufferFromS3");
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
