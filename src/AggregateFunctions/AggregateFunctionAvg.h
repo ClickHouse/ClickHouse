@@ -140,6 +140,25 @@ public:
             writeBinary(this->data(place).denominator, buf);
     }
 
+    /// final: AggregateFunctionAvg is not final (AggregateFunctionSumCount derives from it), so the
+    /// batch loop can only devirtualize these if the methods themselves are.
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const final
+    {
+        return sizeof(Numerator) + (std::is_unsigned_v<Denominator> ? VAR_UINT_MAX_SIZE : sizeof(Denominator));
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> /* version */) const final
+    {
+        writeBinaryLittleEndian(this->data(place).numerator, dst);
+
+        if constexpr (std::is_unsigned_v<Denominator>)
+            dst = writeVarUInt(this->data(place).denominator, dst);
+        else
+            writeBinary(this->data(place).denominator, dst);
+
+        return dst;
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readBinaryLittleEndian(this->data(place).numerator, buf);

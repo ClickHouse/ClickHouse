@@ -1,0 +1,69 @@
+sumState(toUInt8(number)) bytes identical
+sumState(toInt64(number)) bytes identical
+sumState(number) bytes identical
+sumState(toInt128(number)) bytes identical
+sumState(toUInt256(number)) bytes identical
+sumState(toNullable(toInt64(number))) bytes identical
+sumState(toFloat32(number)) bytes identical
+sumState(toFloat64(number)) bytes identical
+sumState(toBFloat16(number)) bytes identical
+sumState(toDecimal32(number, 2)) bytes identical
+sumState(toDecimal64(number, 3)) bytes identical
+sumState(toDecimal128(number, 4)) bytes identical
+sumState(toDecimal256(number, 5)) bytes identical
+sumKahanState(toFloat32(number)) bytes identical
+sumKahanState(toFloat64(number)) bytes identical
+sumWithOverflowState(toInt64(number)) bytes identical
+sumWithOverflowState(toInt8(number)) bytes identical
+minState(toInt64(number)) bytes identical
+maxState(toInt32(number)) bytes identical
+anyState(toNullable(toInt8(number))) bytes identical
+anyLastState(number) bytes identical
+minState(toDecimal64(number, 3)) bytes identical
+minState(toDate(number)) bytes identical
+minState(toDateTime(number)) bytes identical
+maxState(toUInt8(number)) bytes identical
+maxState(toFloat64(number)) bytes identical
+maxState(toDecimal128(number, 4)) bytes identical
+anyState(toInt256(number)) bytes identical
+anyLastState(toBFloat16(number)) bytes identical
+minIfState(toInt64(number), number < 0) bytes identical
+maxIfState(toFloat64(number), number < 0) bytes identical
+countState() bytes identical
+avgState(number) bytes identical
+avgWeightedState(number, number + 1) bytes identical
+argMinState(number, toInt64(-number)) bytes identical
+argMaxState(number, toInt64(-number)) bytes identical
+varSampState(toFloat64(number)) bytes identical
+corrState(toFloat64(number), toFloat64(number * 2)) bytes identical
+sumIfState(toInt64(number), number % 3 = 0) bytes identical
+countIfState(number % 3 = 0) bytes identical
+avgIfState(number, number % 3 = 0) bytes identical
+avgState(toNullable(number)) bytes identical
+countState(toNullable(number)) bytes identical
+sumArrayState([toInt64(number), toInt64(number + 1)]) bytes identical
+sumMergeState(initializeAggregation('sumState', toInt64(number))) bytes identical
+sumOrNullState(toInt64(number)) bytes identical
+sumOrDefaultState(toInt64(number)) bytes identical
+sumIfState(toNullable(toInt64(number)), number % 3 = 0) bytes identical
+sumForEachState([toInt64(number), toInt64(number + 1)]) bytes identical
+sumResampleState(0, 10, 1)(toInt64(number), number % 10) bytes identical
+sumDistinctState(toInt64(number)) bytes identical
+sumMapState([number % 7], [number]) bytes identical
+minState(toString(number)) bytes identical
+anyState([number, number + 1]) bytes identical
+uniqState(number) bytes identical
+uniqExactState(number) bytes identical
+uniqCombinedState(number) bytes identical
+groupArrayState(number) bytes identical
+quantileState(toFloat64(number)) bytes identical
+quantilesTDigestState(0.5)(toFloat64(number)) bytes identical
+topKState(number) bytes identical
+groupBitmapState(toUInt32(number)) bytes identical
+maxMapState([number % 7], [number]) bytes identical
+sumMap version 0	([0,1,2,3,4,5,6],[71071,71214,71357,71500,71643,71786,70929])
+sumMap version 1	([0,1,2,3,4,5,6],[71071,71214,71357,71500,71643,71786,70929])
+90	0	20
+90	0	20
+499500	0	1000
+499500	0	1000

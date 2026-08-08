@@ -265,6 +265,20 @@ public:
         writeChar(place[size_of_data], buf);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        if (auto nested_bound = nested_function->getSerializedSizeBound(version))
+            return *nested_bound + sizeof(char);
+        return std::nullopt;
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        dst = nested_function->serializeToMemory(place, dst, version);
+        writeBinary(place[size_of_data], dst);
+        return dst;
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         nested_function->deserialize(place, buf, version, arena);
