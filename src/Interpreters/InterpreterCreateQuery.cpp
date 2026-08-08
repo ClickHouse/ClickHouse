@@ -99,6 +99,7 @@
 
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -2007,6 +2008,26 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         if (auto populate_source_name = tryGetAtomicPopulateSourceName(create))
         {
+            /// Validating the view's SELECT above took a storage snapshot of the source table and, under
+            /// `enable_shared_storage_snapshot_in_query`, cached it in the query-scoped snapshot cache,
+            /// where it would hold a reference to the source storage until this query ends. Blocking on
+            /// the source-name DDL guard below while holding that reference deadlocks with a concurrent
+            /// synchronous `DROP` of the source (`DROP TABLE ... SYNC`, or any `DROP` when
+            /// `database_atomic_wait_for_drop_and_detach_synchronously` is set, as in the test harness):
+            /// the `DROP` holds the guard this thread wants, and after detaching the table it waits for
+            /// every reference to the storage to be released before returning. The validation snapshot is
+            /// of no further use - the population pins its own snapshot under the source's exclusive lock
+            /// (see fillMaterializedViewAtomically) - so drop it before taking the guard.
+            if (auto metadata_cache = getContext()->getQueryMetadataCache())
+            {
+                if (auto source = DatabaseCatalog::instance().tryGetTable(
+                        StorageID{populate_source_name->database, populate_source_name->table}, getContext()))
+                {
+                    auto [snapshot_cache, snapshot_cache_lock] = metadata_cache->getStorageSnapshotCache();
+                    snapshot_cache->erase(source.get());
+                }
+            }
+
             /// Covers the window between validating the view's SELECT (which resolved the source) and
             /// acquiring the source-name guard below: a DROP of the source landing here must fail the
             /// CREATE and roll the view back, not leave a half-created view behind

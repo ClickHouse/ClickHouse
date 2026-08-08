@@ -31,7 +31,10 @@ CREATE_PID=$!
 
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT atomic_populate_pause_before_source_guard PAUSE"
 
-# The paused CREATE holds no DDL guards yet, so the DROP runs to completion inside the window.
+# The paused CREATE holds no DDL guards and no reference to the source (the validation-time storage
+# snapshot is released from the query's shared-snapshot cache before the pause point), so the DROP -
+# synchronous in the test harness (`database_atomic_wait_for_drop_and_detach_synchronously`), meaning it
+# waits for every reference to the storage to be released - runs to completion inside the window.
 $CLICKHOUSE_CLIENT -q "DROP TABLE src_04824"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT atomic_populate_pause_before_source_guard"
