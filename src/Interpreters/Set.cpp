@@ -1,8 +1,10 @@
 #include <optional>
 #include <shared_mutex>
 
+#include <Core/AccurateComparison.h>
 #include <Core/Field.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
@@ -1024,12 +1026,73 @@ bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
     return false;
 }
 
+namespace
+{
+
+/// Classify `x` against the domain of the integer column type `T`: -1 below, +1 above, 0 inside.
+/// Only Int64/UInt64 Fields are checked: those are the only ones Range::shrinkToIncludedIfPossible
+/// adjusts, so no other Field type can be pushed outside the column's domain.
+template <typename T>
+int compareToDomain(const Field & x)
+{
+    if (x.getType() == Field::Types::UInt64)
+    {
+        const UInt64 v = x.safeGet<UInt64>();
+        if (accurate::greaterOp(v, std::numeric_limits<T>::max()))
+            return 1;
+        if (accurate::lessOp(v, std::numeric_limits<T>::min()))
+            return -1;
+    }
+    else if (x.getType() == Field::Types::Int64)
+    {
+        const Int64 v = x.safeGet<Int64>();
+        if (accurate::greaterOp(v, std::numeric_limits<T>::max()))
+            return 1;
+        if (accurate::lessOp(v, std::numeric_limits<T>::min()))
+            return -1;
+    }
+    return 0;
+}
+
+/// Same, dispatched on the column's runtime type. Returns 0 for any type we do not check.
+int compareToColumnDomain(const IColumn & column, const Field & x)
+{
+    /// A Nullable key column stores its values in the nested column, whose type bounds the domain.
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&column))
+        return compareToColumnDomain(nullable->getNestedColumn(), x);
+
+    switch (column.getDataType())
+    {
+        case TypeIndex::UInt8: return compareToDomain<UInt8>(x);
+        case TypeIndex::UInt16: return compareToDomain<UInt16>(x);
+        case TypeIndex::UInt32: return compareToDomain<UInt32>(x);
+        case TypeIndex::UInt64: return compareToDomain<UInt64>(x);
+        case TypeIndex::Int8: return compareToDomain<Int8>(x);
+        case TypeIndex::Int16: return compareToDomain<Int16>(x);
+        case TypeIndex::Int32: return compareToDomain<Int32>(x);
+        case TypeIndex::Int64: return compareToDomain<Int64>(x);
+        default: return 0;
+    }
+}
+
+}
+
 void MergeTreeSetIndex::FieldValue::update(const Field & x)
 {
     if (x.isNegativeInfinity() || x.isPositiveInfinity())
         value = x;
     else
     {
+        /// A bound outside the column's domain compares as the corresponding infinity: inserting it
+        /// would truncate it (ColumnVector::insert static_casts), and a truncated bound can land on a
+        /// set element and report a match for a range that holds none.
+        const int position = compareToColumnDomain(*column, x);
+        if (position != 0)
+        {
+            value = position > 0 ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
+            return;
+        }
+
         /// Keep at most one element in column.
         if (!column->empty())
             column->popBack(1);
