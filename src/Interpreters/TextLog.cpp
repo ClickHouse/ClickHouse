@@ -17,6 +17,12 @@
 namespace DB
 {
 
+std::shared_ptr<TextLog::Queue> TextLog::getLogQueue(const SystemLogQueueSettings & settings)
+{
+    static std::shared_ptr<Queue> queue = std::make_shared<Queue>(settings);
+    return queue;
+}
+
 ColumnsDescription TextLogElement::getColumnsDescription()
 {
     auto priority_datatype = std::make_shared<DataTypeEnum8>(
@@ -43,7 +49,7 @@ ColumnsDescription TextLogElement::getColumnsDescription()
         {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the thread from which the logging was done."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "OS thread ID."},
 
-        {"level", std::move(priority_datatype), "Entry level. Possible values: 1 or 'Fatal', 2 or 'Critical', 3 or 'Error', 4 or 'Warning', 5 or 'Notice', 6 or 'Information', 7 or 'Debug', 8 or 'Trace'."},
+        {"level", std::move(priority_datatype), "Entry level. Possible values: 1 or 'Fatal', 2 or 'Critical', 3 or 'Error', 4 or 'Warning', 5 or 'Notice', 6 or 'Information', 7 or 'Debug', 8 or 'Trace', 9 or 'Test'."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the logger (e.g., DDLWorker)."},
         {"message", std::make_shared<DataTypeString>(), "The message itself."},
