@@ -185,6 +185,9 @@ public:
     virtual Int32 getBiasBackoffSeconds() const { return 0; }
     virtual bool isBackgroundExecutable() const { return false; }
 
+    virtual std::optional<String> partitionKey(ContextPtr) const { return {}; }
+    virtual std::optional<String> sortingKey(ContextPtr) const { return {}; }
+
 protected:
     virtual ObjectIterator
     createKeysIterator(Strings && data_files_, ObjectStoragePtr object_storage_, IDataLakeMetadata::FileProgressCallback callback_) const;

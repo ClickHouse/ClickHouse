@@ -10,7 +10,6 @@ import json
 from datetime import datetime
 from datetime import timezone
 from functools import lru_cache
-from glob import glob
 import urllib.parse
 import re
 import subprocess
@@ -31,6 +30,10 @@ DATABASE_PASSWORD_VAR = "CLICKHOUSE_TEST_STAT_PASSWORD"
 S3_BUCKET = "altinity-build-artifacts"
 GITHUB_REPO = "Altinity/ClickHouse"
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+# Resolve from this file so discovery works from repo root or the action folder.
+KNOWN_FAILS_FILE = (
+    Path(__file__).resolve().parents[3] / "tests" / "broken_tests.yaml"
+)
 
 CVE_SEVERITY_ORDER = {"critical": 1, "high": 2, "medium": 3, "low": 4, "negligible": 5}
 
@@ -275,9 +278,11 @@ def _git_log_merge_prs(
 
 def _find_release_baseline(
     branch_ref: str, repo: str, cwd: str | None
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, str | None, str | None]:
+    """Return (tag_name, tag_sha, published_date YYYY-MM-DD) for the latest
+    non-draft release tag that is an ancestor of branch_ref."""
     if not GITHUB_TOKEN:
-        return None, None
+        return None, None, None
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json",
@@ -301,8 +306,10 @@ def _find_release_baseline(
             continue
         if not _git_is_ancestor(tag_sha, branch_ref, cwd):
             continue
-        return tag_name, tag_sha
-    return None, None
+        published_at = rel.get("published_at") or rel.get("created_at") or ""
+        published_date = published_at[:10] if published_at else None
+        return tag_name, tag_sha, published_date
+    return None, None, None
 
 
 def _find_rebase_baseline(branch_ref: str, cwd: str | None) -> str | None:
@@ -311,9 +318,7 @@ def _find_rebase_baseline(branch_ref: str, cwd: str | None) -> str | None:
             "git",
             "log",
             branch_ref,
-            "--first-parent",
-            "-n",
-            "1",
+            "--reverse",
             "-i",
             "-E",
             "--grep=^Rebase CICD",
@@ -334,23 +339,46 @@ def _find_rebase_baseline(branch_ref: str, cwd: str | None) -> str | None:
     return lines[0]
 
 
+def _git_commit_date(sha: str, cwd: str | None) -> str | None:
+    p = subprocess.run(
+        ["git", "show", "-s", "--format=%cs", sha],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if p.returncode != 0:
+        return None
+    date = p.stdout.strip()
+    return date or None
+
+
 def get_prs_in_release_dataframe(
     branch_ref: str = "HEAD",
     *,
     repo: str = GITHUB_REPO,
     cwd: str,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, str | None]:
     f"""
     PRs merged into branch_ref that belong in the next release notes: after the latest GitHub
-    Release tag on this history, or after the latest bootstrap merge if no such tag exists.
+    Release tag on this history, or after the oldest rebase bootstrap if no such tag exists.
     Only merge commits whose subject has from <repo_owner>/ (e.g. from Altinity/) are included.
     Columns: pr_number, pr_name, labels. Omits PRs labeled cicd.
+
+    Returns (dataframe, baseline_date YYYY-MM-DD or None).
     """
     branch_sha = _git_rev_parse(branch_ref, cwd)
     if not branch_sha:
         raise Exception(f"Cannot resolve branch ref: {branch_ref!r}")
 
-    # CI often checks out with --depth=1 and --no-tags; fetch enough history and tags once.
+    # CI often checks out with --depth=1 and --no-tags; fetch tags once, then deepen
+    # in steps until a baseline is reachable.
+    # Observed baseline distances are ~1k commits and grow slowly, so DEEPEN_CAP sits
+    # well above that; the cap exists so a failed lookup fails fast instead of fetching
+    # the branch's entire (100k+ commit) history.
+    DEEPEN_STEP = 250
+    DEEPEN_CAP = 10000
+
     subprocess.run(
         ["git", "fetch", "--tags", "origin"],
         cwd=cwd,
@@ -359,41 +387,78 @@ def get_prs_in_release_dataframe(
         check=False,
     )
 
-    _, baseline_sha = _find_release_baseline(branch_ref, repo, cwd)
-    if not baseline_sha:
-        # If no release tag, search recent history for the latest branch bootstrap merge.
+    baseline_sha = None
+    baseline_date = None
+    for _ in range(DEEPEN_CAP // DEEPEN_STEP):
         subprocess.run(
-            ["git", "fetch", "--deepen=500", "origin", branch_ref],
+            ["git", "fetch", f"--deepen={DEEPEN_STEP}", "origin", branch_ref],
             cwd=cwd,
             capture_output=True,
             text=True,
             check=False,
         )
-        rebase_sha = _find_rebase_baseline(branch_ref, cwd)
-        if not rebase_sha:
-            raise Exception(
-                "No release tag on this branch and no rebase bootstrap merge found"
-            )
-        baseline_sha = rebase_sha
+        _, baseline_sha, baseline_date = _find_release_baseline(
+            branch_ref, repo, cwd
+        )
+        if not baseline_sha:
+            baseline_sha = _find_rebase_baseline(branch_ref, cwd)
+            if baseline_sha:
+                baseline_date = _git_commit_date(baseline_sha, cwd)
+        if baseline_sha:
+            break
+
+    if not baseline_sha:
+        raise Exception(
+            "No release tag on this branch and no rebase bootstrap merge found "
+            f"within {DEEPEN_CAP} commits"
+        )
 
     df = _git_log_merge_prs(baseline_sha, branch_ref, cwd, repo)
-    return _enrich_prs_in_release_merge_prs(df, repo)
+    return _enrich_prs_in_release_merge_prs(df, repo), baseline_date
+
+
+def _parse_release_ref(ref_name: str) -> tuple[str, str, str | None] | None:
+    """Parse a release ref into (flavour, minor_version, full_version).
+
+    Handles version tags (``v25.8.28.10001.altinitystable``) and release
+    branches (``stable-25.8``). ``full_version`` is None for branches, which
+    carry no patch or tweak. Returns None for refs without a version.
+    """
+    # Match tag
+    match = re.match(
+        r"^v((\d+\.\d+)\.\d+\.\d+)\.altinity(stable|antalya|test)$", ref_name
+    )
+    if match:
+        flavour = "antalya" if match.group(3) == "antalya" else "stable"
+        return flavour, match.group(2), match.group(1)
+    # Match branch
+    match = re.match(r"^(stable|antalya)-(\d+\.\d+)$", ref_name)
+    if match:
+        return match.group(1), match.group(2), None
+    return None
+
+
+def _prs_in_release_search_url(branch_name: str, baseline_date: str | None) -> str | None:
+    if not baseline_date:
+        return None
+    # Tag-triggered runs expose the tag as head_branch; search needs the PR base
+    # branch (e.g. v25.8.28.10001.altinitystable → stable-25.8).
+    parsed = _parse_release_ref(branch_name)
+    if parsed:
+        flavour, minor_version, _ = parsed
+        branch_name = f"{flavour}-{minor_version}"
+    query = f"is:pr base:{branch_name} merged:>{baseline_date}"
+    return (
+        f"https://github.com/{GITHUB_REPO}/pulls?"
+        + urllib.parse.urlencode({"q": query})
+    )
 
 
 def _checks_latest_test_status_cte(commit_sha: str, branch_name: str) -> str:
     """
-    Shared filtering for gh-data.checks: anchor time selects the latest result batch
-    per check_name.
-
-    Rows that must not set the anchor (but are still kept if their time is >= anchor):
-    - Stateless teardown: check_name LIKE 'Stateless%' AND test_name not matching ^[0-9]{5}
-    - Empty test_name: CIDB job-level parent rows
-    - Pre/Post Hooks: praktika phases with their own stopwatches; Post Hooks always runs
-      after tests and would otherwise become the sole surviving batch, hiding all FAILs
-
-    Keep rows with check_start_time >= anchor so the latest main batch and any later
-    teardown/hook rows are included. Earlier batches (failed attempts before a rerun
-    uploaded a newer uniform timestamp) are dropped.
+    Shared filtering for gh-data.checks: anchor time excludes stateless teardown checks
+    (Stateless% + test_name not matching ^[0-9]{5}); keep rows with check_start_time
+    >= anchor so main + teardown phases are included.
     """
     return f"""WITH checks_with_anchor AS (
             SELECT
@@ -695,33 +760,68 @@ def get_new_fails_this_pr(
     return new_fails_df
 
 
+def _workflow_config_s3_url(pr_number: int, commit_sha: str, ref_name: str) -> str:
+    if pr_number == 0:
+        return (
+            f"https://{S3_BUCKET}.s3.amazonaws.com/REFs/{ref_name}/{commit_sha}/"
+            "config_workflow/workflow_config_masterci.json"
+        )
+    return (
+        f"https://{S3_BUCKET}.s3.amazonaws.com/PRs/{pr_number}/{commit_sha}/"
+        "config_workflow/workflow_config_pr.json"
+    )
+
+
 @lru_cache
-def get_workflow_config() -> dict:
+def get_workflow_config(pr_number: int, commit_sha: str, ref_name: str) -> dict:
+    """Fetch workflow config published by Config Workflow from S3.
 
-    # 25.12+
-    if os.path.exists("./ci/tmp/workflow_status.json"):
-        with open("./ci/tmp/workflow_status.json", "r") as f:
-            data = json.load(f)["config_workflow"]["outputs"]["data"]
-            assert data is not None, "data is None"
-            if isinstance(data, str):
-                data = json.loads(data)
-            assert (
-                "WORKFLOW_CONFIG" in data.keys()
-            ), f"WORKFLOW_CONFIG not found in data: {data.keys()}"
-            return data["WORKFLOW_CONFIG"]
-
-    workflow_config_files = glob("./ci/tmp/workflow_config*.json")
-    if len(workflow_config_files) == 0:
-        raise Exception("No workflow config file found")
-    if len(workflow_config_files) > 1:
-        raise Exception("Multiple workflow config files found")
-    with open(workflow_config_files[0], "r") as f:
-        return json.load(f)
+    On failure, warn and return a minimal empty config (same shape recreation uses).
+    """
+    url = _workflow_config_s3_url(pr_number, commit_sha, ref_name)
+    try:
+        response = requests.get(url, timeout=30)
+        if response.status_code != 200:
+            print(
+                f"WARNING:Failed to fetch workflow config from {url}: "
+                f"{response.status_code}"
+            )
+            return {"cache_jobs": {}}
+        return response.json()
+    except Exception as e:
+        print(f"WARNING:Failed to fetch workflow config from {url}: {e}")
+        return {"cache_jobs": {}}
 
 
-def get_cached_job(job_name: str) -> dict:
-    workflow_config = get_workflow_config()
-    return workflow_config["cache_jobs"].get(job_name, {})
+def get_cached_job(
+    job_name: str, pr_number: int, commit_sha: str, ref_name: str
+) -> dict:
+    workflow_config = get_workflow_config(pr_number, commit_sha, ref_name)
+    return workflow_config.get("cache_jobs", {}).get(job_name, {})
+
+@lru_cache
+def get_expected_version_labels(ref_name: str) -> tuple[str, ...]:
+    """Return required version labels for the release ref being reported.
+
+    Stable releases use the minor version label. Antalya releases use
+    ``antalya`` and ``antalya-{minor_version}``. The full version label is only
+    required on tag-triggered runs, where the tag pins patch and tweak.
+    Returns an empty tuple when the ref carries no version.
+    """
+    parsed = _parse_release_ref(ref_name)
+    if not parsed:
+        print(f"WARNING:No version in ref [{ref_name}], not checking version labels.")
+        return ()
+    flavour, minor_version, full_version = parsed
+    if flavour == "antalya":
+        labels = ("antalya", f"antalya-{minor_version}")
+        if full_version:
+            labels += (f"antalya-{full_version}",)
+        return labels
+    labels = (minor_version,)
+    if full_version:
+        labels += (full_version,)
+    return labels
 
 
 def get_cves(pr_number, commit_sha, branch):
@@ -739,7 +839,9 @@ def get_cves(pr_number, commit_sha, branch):
         else:
             return f"PRs/{pr_number}/{commit_sha}/grype/"
 
-    cached_server_job = get_cached_job("Docker server image")
+    cached_server_job = get_cached_job(
+        "Docker server image", pr_number, commit_sha, branch
+    )
     if cached_server_job:
         prefixes_to_check.add(
             format_prefix(
@@ -748,7 +850,9 @@ def get_cves(pr_number, commit_sha, branch):
                 cached_server_job["branch"],
             )
         )
-    cached_keeper_job = get_cached_job("Docker keeper image")
+    cached_keeper_job = get_cached_job(
+        "Docker keeper image", pr_number, commit_sha, branch
+    )
     if cached_keeper_job:
         prefixes_to_check.add(
             format_prefix(
@@ -832,17 +936,25 @@ def url_to_html_link(url: str) -> str:
     return f'<a href="{url}">{text}</a>'
 
 
-def format_pr_labels_with_verification(labels: str) -> str:
+def format_pr_labels_with_verification(labels: str, branch_name: str = "") -> str:
     """Format the PR labels with verification.
 
     Expects ``labels`` to be already HTML-escaped at collection time
     (see _enrich_prs_in_release_merge_prs).
+
+    Requires ``verified`` plus the version labels expected for ``branch_name``.
     """
-    labels_list = labels.split(", ")
-    if "verified" in labels_list:
+    required_labels = get_expected_version_labels(branch_name) if branch_name else ()
+    labels_list = labels.split(", ") if labels else []
+    required = ["verified", *required_labels]
+    missing = [label for label in required if label not in labels_list]
+    if not missing:
         return labels
-    else:
-        return f'<span style="font-weight: bold; color: red;">{labels} (missing verification)</span>'
+    missing_text = html.escape(", ".join(missing), quote=True)
+    return (
+        f'<span style="font-weight: bold; color: red;">'
+        f"{labels} (missing: {missing_text})</span>"
+    )
 
 
 def format_test_name_for_linewrap(text: str) -> str:
@@ -864,7 +976,7 @@ def format_test_status(text: str) -> str:
     return f'<span style="font-weight: bold; color: {color}">{text}</span>'
 
 
-def format_results_as_html_table(results) -> str:
+def format_results_as_html_table(results, *, branch_name: str = "") -> str:
     if not isinstance(results, pd.DataFrame):
         return results
 
@@ -897,7 +1009,9 @@ def format_results_as_html_table(results) -> str:
         "PR Number": lambda n: url_to_html_link(
             f"https://github.com/{GITHUB_REPO}/pull/{n}"
         ),
-        "PR Labels": format_pr_labels_with_verification,
+        "PR Labels": lambda labels: format_pr_labels_with_verification(
+            labels, branch_name=branch_name
+        ),
     }
 
     html = results.to_html(
@@ -1020,7 +1134,7 @@ def parse_args() -> argparse.Namespace:
         "--no-upload", action="store_true", help="Do not upload the report"
     )
     parser.add_argument(
-        "--known-fails", type=str, help="Path to the file with known fails"
+        "--known-fails", action="store_true", help="Check known fails"
     )
     parser.add_argument(
         "--cves", action="store_true", help="Get CVEs from Grype results"
@@ -1036,7 +1150,7 @@ def create_workflow_report(
     pr_number: int = None,
     commit_sha: str = None,
     no_upload: bool = False,
-    known_fails_file_path: str = None,
+    check_known_fails: bool = False,
     check_cves: bool = False,
     mark_preview: bool = False,
 ) -> str:
@@ -1089,11 +1203,17 @@ def create_workflow_report(
         "docker_images_cves": [],
     }
     known_fails = {}
+    prs_in_release_search_url = None
 
     if pr_number == 0 and not mark_preview:
         try:
-            prs_df = get_prs_in_release_dataframe(branch_name, cwd=os.getcwd())
+            prs_df, baseline_date = get_prs_in_release_dataframe(
+                branch_name, cwd=os.getcwd()
+            )
             results_dfs["prs_in_release"] = prs_df
+            prs_in_release_search_url = _prs_in_release_search_url(
+                branch_name, baseline_date
+            )
         except Exception as e:
             print(f"Error in get_prs_in_release_dataframe: {e}")
 
@@ -1108,11 +1228,11 @@ def create_workflow_report(
     # This might occur when run in preview mode.
     cves_not_checked = not check_cves or results_dfs["docker_images_cves"] is ...
 
-    if known_fails_file_path:
-        if not os.path.exists(known_fails_file_path):
-            print(f"WARNING:Known fails file {known_fails_file_path} not found.")
+    if check_known_fails:
+        if not KNOWN_FAILS_FILE.exists():
+            print(f"WARNING:Known fails file {KNOWN_FAILS_FILE} not found.")
         else:
-            known_fails = get_broken_tests_rules(known_fails_file_path)
+            known_fails = get_broken_tests_rules(str(KNOWN_FAILS_FILE))
 
             results_dfs["checks_known_fails"] = get_checks_known_fails(
                 db_client, commit_sha, branch_name, known_fails
@@ -1185,10 +1305,14 @@ def create_workflow_report(
         "build_report_links": get_build_report_links(
             results_dfs["job_statuses"], pr_number, branch_name, commit_sha
         ),
+        "prs_in_release_search_url": prs_in_release_search_url,
         "prs_in_release_html": (
             "<p>PR details are not loaded during preview.</p>"
             if mark_preview or pr_number != 0
-            else format_results_as_html_table(results_dfs["prs_in_release"])
+            else format_results_as_html_table(
+                results_dfs["prs_in_release"],
+                branch_name=branch_name,
+            )
         ),
         "ci_jobs_status_html": format_results_as_html_table(
             results_dfs["job_statuses"]

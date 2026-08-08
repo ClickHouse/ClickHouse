@@ -166,7 +166,6 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "amd_tsan": " --timeout 1200",  # NOTE (strtgbb): tsan is slow, increase the timeout to avoid timeout errors
-    "amd_debug": " --timeout 900",  # NOTE (strtgbb): debug + parallel contention: TPC-DS and other heavy tests hit the default 600s budget
     "flaky check": "--flaky-check",
     "targeted": "--flaky-check --no-self-parallel",
 }
@@ -333,6 +332,9 @@ def main():
             nproc = int(Utils.cpu_count() * 0.4)
         elif "msan" in args.options:
             # MSan is slow
+            nproc = int(Utils.cpu_count() * 0.4)
+        elif "debug" in args.options and nproc < 32:
+            # leave more room for clickhouse-server on medium runners.
             nproc = int(Utils.cpu_count() * 0.4)
         elif is_azure_storage:
             # azure FT runs only under ASan; concurrent heavy queries overrun the
