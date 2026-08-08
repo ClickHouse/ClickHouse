@@ -723,6 +723,41 @@ struct CompleteMPUPreconditionFailedInjection : InjectionModel
     std::vector<BucketMemStore::Metadata> seen_create_metadata;
 };
 
+/// Reports `NO_SUCH_UPLOAD` on every CompleteMultipartUpload, optionally completing the upload
+/// server-side first -- the shape of an upload id the server has already consumed. Records the
+/// `If-None-Match` of every attempt because this injection serves conditional and unconditional arms.
+struct CompleteMPUNoSuchUploadInjection : InjectionModel
+{
+    CompleteMPUNoSuchUploadInjection(std::shared_ptr<S3MemStrore> store_, bool complete_first_attempt_)
+        : store(std::move(store_)), complete_first_attempt(complete_first_attempt_) {}
+
+    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(
+        const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
+    {
+        seen_if_none_match.push_back(request.GetIfNoneMatch());
+
+        if (complete_first_attempt && calls == 0)
+        {
+            std::vector<std::string> etags;
+            for (const auto & part : request.GetMultipartUpload().GetParts())
+                etags.push_back(part.GetETag());
+            store->GetBucketStore(request.GetBucket()).CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
+        }
+        ++calls;
+
+        return Aws::Client::AWSError<Aws::S3::S3Errors>(
+            Aws::S3::S3Errors::NO_SUCH_UPLOAD,
+            "NoSuchUpload",
+            "The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.",
+            false);
+    }
+
+    std::shared_ptr<S3MemStrore> store;
+    bool complete_first_attempt;
+    size_t calls = 0;
+    std::vector<std::string> seen_if_none_match;
+};
+
 struct BaseSyncPolicy
 {
     virtual ~BaseSyncPolicy() = default;
@@ -847,6 +882,14 @@ public:
     {
         WriteSettings write_settings;
         write_settings.object_storage_write_if_none_match = "*";
+        return write_settings;
+    }
+
+    /// The Iceberg conditional replace-this-version write: `If-Match: <etag>`, no token minted.
+    static WriteSettings conditionalReplaceWriteSettings()
+    {
+        WriteSettings write_settings;
+        write_settings.object_storage_write_if_match = "some-etag";
         return write_settings;
     }
 
@@ -1362,6 +1405,117 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObject) {
     /// CreateMultipartUpload carried a token, so the guard had something to compare and rejected it.
     ASSERT_FALSE(injection->seen_create_metadata.empty());
     EXPECT_FALSE(injection->seen_create_metadata[0].at("clickhouse-write-token").empty());
+}
+
+/// The other door into the same replay: a completion that already landed can come back as
+/// `NO_SUCH_UPLOAD` (consumed upload id) instead of 412. On our own object that is still success.
+TEST_P(SyncAsync, MultipartConditionalCompleteRecoversNoSuchUploadOnOwnObject) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
+        client->store, /* complete_first_attempt= */ true));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    auto buffer = getWriteBuffer("conditional_mpu_no_such_upload", conditionalCreateWriteSettings());
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    /// The token was consulted rather than existence assumed, and the completed upload is not aborted.
+    EXPECT_GE(client->counters.headObject, 1u);
+    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["conditional_mpu_no_such_upload"], "A");
+    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_no_such_upload"].at("clickhouse-write-token").empty());
+}
+
+/// The same `NO_SUCH_UPLOAD` over an object somebody else wrote must still fail: existence at the key
+/// is not authorship, and reporting success would let a conditional create silently lose its payload.
+TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObjectOnNoSuchUpload) {
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("conditional_mpu_no_such_upload_foreign", "A", {{"clickhouse-write-token", "written-by-somebody-else"}});
+
+    auto injection = std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
+        client->store, /* complete_first_attempt= */ false);
+    setInjectionModel(injection);
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("conditional_mpu_no_such_upload_foreign", conditionalCreateWriteSettings());
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist"));
+            throw;
+        }
+      }, DB::S3Exception);
+
+    EXPECT_EQ(bStore.objects["conditional_mpu_no_such_upload_foreign"], "A");
+    EXPECT_EQ(
+        bStore.object_metadata["conditional_mpu_no_such_upload_foreign"].at("clickhouse-write-token"),
+        "written-by-somebody-else");
+    ASSERT_FALSE(injection->seen_if_none_match.empty());
+    EXPECT_EQ(injection->seen_if_none_match[0], "*");
+}
+
+/// `If-Match` is conditional too, and it mints no write token, so nothing can prove authorship: the
+/// existence-only recovery must not fire there either.
+TEST_P(SyncAsync, MultipartIfMatchCompleteDoesNotRecoverNoSuchUpload) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
+        client->store, /* complete_first_attempt= */ true));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("conditional_mpu_if_match", conditionalReplaceWriteSettings());
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist"));
+            throw;
+        }
+      }, DB::S3Exception);
+}
+
+/// An unconditional completion keeps the existing recover-if-the-object-exists behaviour, which backs
+/// copyS3File and the disk write paths: the conditional gate must not change them.
+TEST_P(SyncAsync, MultipartUnconditionalCompleteStillRecoversNoSuchUpload) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
+        client->store, /* complete_first_attempt= */ true));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    auto buffer = getWriteBuffer("unconditional_mpu_no_such_upload");
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    /// Recovered by the wrapper's own HEAD, with no token to look up.
+    EXPECT_GE(client->counters.headObject, 1u);
+    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["unconditional_mpu_no_such_upload"], "A");
+    EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload"].contains("clickhouse-write-token"));
 }
 
 /// A transient MinIO `InvalidPart` on CompleteMultipartUpload must be retried, not surfaced as a

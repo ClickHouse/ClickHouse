@@ -694,12 +694,15 @@ bool WriteBufferFromS3::completeMultipartUpload()
 
         const auto & error = outcome.GetError();
 
-        /// A 412 on our own object means this completion was replayed after it had succeeded.
-        /// Anything we cannot prove we wrote is a pre-existing object and must still throw.
-        if (error.GetExceptionName() == "PreconditionFailed" && isObjectWrittenByThisBuffer())
+        /// A 412, or a NO_SUCH_UPLOAD reporting an upload id the server already consumed, on our own
+        /// object means this completion was replayed after it had succeeded. Anything we cannot prove
+        /// we wrote is a pre-existing object and must still throw.
+        const bool replayed_after_success = error.GetExceptionName() == "PreconditionFailed"
+            || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
+        if (replayed_after_success && isObjectWrittenByThisBuffer())
         {
-            LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this write. {}, Parts: {}",
-                     getShortLogDetails(), multipart_tags.size());
+            LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this write ({}). {}, Parts: {}",
+                     error.GetExceptionName(), getShortLogDetails(), multipart_tags.size());
             return true;
         }
 
