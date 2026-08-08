@@ -302,13 +302,15 @@ done
 # failing instead of materializing a half-usable tree.
 mkdir -p /etc/clickhouse-client
 ln -s /missing/config.xml /etc/clickhouse-client/config.xml
+# Not /tmp: the test image boots systemd, which runs `systemd-tmpfiles` with `D /tmp`
+# concurrently with this script and can wipe the log between writing and reading it.
 for pkg in /packages/clickhouse-client*tgz; do
     package=${pkg%-*}
     package=${package##*/}
     tar xf "$pkg"
-    ! "/$package/install/doinst.sh" > /tmp/install.log 2>&1
+    ! "/$package/install/doinst.sh" > /root/install.log 2>&1
 done
-grep -q "the directory /missing does not exist" /tmp/install.log
+grep -q "the directory /missing does not exist" /root/install.log
 [ ! -e /missing ]
 [ -L /etc/clickhouse-client/config.xml ]""",
     }
