@@ -1,0 +1,6 @@
+--- a failure while delivering the framed exception aborts a buffered, not yet started response
+the client observes an aborted connection: OK
+nothing was delivered: OK
+--- a fully buffered response is discarded and replaced by a plain HTTP error
+the client receives a complete HTTP response: OK
+the discarded stream was replaced by a plain error: OK
