@@ -5171,6 +5171,12 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
         settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0, "allow_experimental_analyzer" : allow_experimental_analyzer},
     )
 
+    # The cluster INSERT path runs the SELECT on a remote replica, which writes
+    # the part there and replicates via ZooKeeper. Wait for the local replica
+    # to fetch the part before reading; otherwise the count below races against
+    # background fetch and returns 0.
+    node.query(f"SYSTEM SYNC REPLICA {table_name}_dst")
+
     node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
 
     result = int(
@@ -5229,6 +5235,11 @@ def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allo
             "allow_experimental_analyzer": allow_experimental_analyzer,
         },
     )
+
+    # Same race as above: the matching file is processed by a remote replica,
+    # and the local replica fetches the resulting part asynchronously. Without
+    # SYSTEM SYNC REPLICA, the SELECT below can run before the part is active.
+    node.query(f"SYSTEM SYNC REPLICA {table_name2}_dst")
 
     result = int(
         node.query(
