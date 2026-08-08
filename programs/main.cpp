@@ -49,6 +49,21 @@ int mainEntryClickHouseDockerInit(int argc, char ** argv);
 #endif
 int mainEntryClickHouseServer(int argc, char ** argv);
 int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+
+#if defined(OS_WINDOWS)
+/// The server cannot run on Windows: its startup goes through BaseDaemon, which needs POSIX
+/// signals, fork and friends. Without this stub the mode would be dispatched anyway and fail
+/// deep inside daemon startup with NOT_IMPLEMENTED from an internal primitive
+/// (BaseDaemon::closeFDs). Reject it up front with a clear message instead.
+int mainEntryClickHouseServerUnsupportedOnWindows(int argc, char ** argv);
+int mainEntryClickHouseServerUnsupportedOnWindows(int, char **)
+{
+    std::cerr << "ClickHouse server is not supported on Windows.\n"
+                 "Use 'clickhouse local' to query data without a server,\n"
+                 "or 'clickhouse client' to connect to a server running on another machine." << std::endl;
+    return -1;
+}
+#endif
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 
@@ -150,7 +165,13 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"dig", mainEntryClickHouseChdig},
 #endif
     {"benchmark", mainEntryClickHouseBenchmark},
+#if defined(OS_WINDOWS)
+    /// Registered so that `clickhouse server` and the `clickhouse-server` alias reject the mode
+    /// with a clear message instead of failing inside daemon startup; hidden from the help.
+    {"server", mainEntryClickHouseServerUnsupportedOnWindows},
+#else
     {"server", mainEntryClickHouseServer},
+#endif
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
     {"compressor", mainEntryClickHouseCompressor},
     {"format", mainEntryClickHouseFormat},
@@ -216,7 +237,14 @@ void printHelp(std::ostream & out)
 {
     out << "Use one of the following commands:" << std::endl;
     for (const auto & application : clickhouse_applications)
+    {
+#if defined(OS_WINDOWS)
+        /// The entry only exists to print that the mode is unsupported - do not advertise it.
+        if (application.second == mainEntryClickHouseServerUnsupportedOnWindows)
+            continue;
+#endif
         out << "clickhouse " << application.first << " [args] " << std::endl;
+    }
 }
 
 /// Add an item here to register a new short name

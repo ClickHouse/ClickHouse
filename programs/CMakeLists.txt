@@ -25,7 +25,9 @@ option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories" ${ENAB
 # covers `clickhouse-client` and `clickhouse-local`, which are not installed by `clickhouse install`.
 #
 # The server is *not* in this list: `clickhouse-local` links `clickhouse-server-lib`, so it has to
-# build regardless.
+# build regardless. The `server` mode itself cannot run on Windows (its startup goes through
+# `BaseDaemon`, which needs POSIX signals and `fork`), so `main.cpp` rejects it with a clear
+# message and the `clickhouse-server` alias is not installed there.
 option (ENABLE_CLICKHOUSE_INSTALL "Install ClickHouse without .deb/.rpm/.tgz packages" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_SU "A tool similar to 'su'" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_DOCKER_INIT "Entrypoint for the official Docker image" ${ENABLE_CLICKHOUSE_ALL})
@@ -215,7 +217,13 @@ clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-obfuscator obfuscator)
 clickhouse_program_install(clickhouse-oom-canary oom-canary)
 clickhouse_program_install(clickhouse-packed-io packed-io)
-clickhouse_program_install(clickhouse-server server)
+if (OS_WINDOWS)
+    # The server does not run on Windows (see the comment at the top of this file), so only link
+    # `clickhouse-server-lib` (`clickhouse-local` needs it) without installing the alias.
+    clickhouse_target_link_split_lib(clickhouse server)
+else ()
+    clickhouse_program_install(clickhouse-server server)
+endif ()
 clickhouse_program_install(clickhouse-static-files-disk-uploader static-files-disk-uploader)
 if (ENABLE_CLICKHOUSE_SU)
     clickhouse_program_install(clickhouse-su su)

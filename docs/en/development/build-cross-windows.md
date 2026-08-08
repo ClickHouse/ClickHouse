@@ -148,6 +148,11 @@ syslog, archive reading (`libarchive` needs a hand-written Windows `config.h`), 
 writes to the local object storage (they need `flock` on a directory and sub-second
 modification times), and the web terminal.
 
+**The `server` mode is rejected up front.** `clickhouse server` prints that the server is not
+supported on Windows and exits: its startup goes through `BaseDaemon`, which needs POSIX
+signals and `fork`. The `clickhouse-server` alias is not installed. `clickhouse-server-lib`
+itself is still built and linked, because `clickhouse-local` needs it.
+
 **Compiled out, all server-side or POSIX-only:** the sampling query profiler and the signal
 handlers (Windows reports faults through SEH instead), `ThreadFuzzer`, the `fork`-based
 watchdog, `ShellCommand` and everything built on it, the pseudo-terminal features, and the
