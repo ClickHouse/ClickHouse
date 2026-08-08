@@ -430,8 +430,10 @@ void NamedCollectionFactory::addDependency(const String & collection_name, const
     LOG_TRACE(log, "Adding dependency: collection={}, table={}", collection_name, table_id.getNameForLogs());
     dependencies.emplace(collection_name, table_id);
 
-    /// A table with this name is (re)attached: it is not detached anymore.
-    detached_dependencies.erase({collection_name, table_id.database_name, table_id.table_name});
+    /// The detached entry of the table, if any, is deliberately not removed here: the dependencies are
+    /// registered while the engine arguments are resolved, and the `ATTACH` can still fail after that,
+    /// leaving the table detached. The entry is removed when the table is dropped, detached permanently,
+    /// or renamed, and by the `DROP NAMED COLLECTION` check once the table demonstrably exists again.
 }
 
 void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
@@ -468,6 +470,13 @@ void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
 void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
 {
     std::lock_guard lock(mutex);
+
+    /// Only an attached table can be renamed, so a detached entry recorded under its name is a leftover
+    /// of an earlier detach: erase it, the metadata file under the old name is gone after the rename.
+    std::erase_if(
+        detached_dependencies,
+        [&](const auto & entry)
+        { return std::get<1>(entry) == from_table_id.database_name && std::get<2>(entry) == from_table_id.table_name; });
 
     /// The rename interpreter passes StorageIDs without UUIDs.
     /// If either ID has a UUID, it's not a standard rename operation, so nothing to do.
@@ -563,25 +572,53 @@ void NamedCollectionFactory::markDependenciesDetached(const StorageID & table_id
         detached_dependencies.insert({collection_name, table_id.database_name, table_id.table_name});
 }
 
-std::vector<String> NamedCollectionFactory::getDetachedDependents(const String & collection_name) const
+std::vector<StorageID> NamedCollectionFactory::getDetachedDependents(const String & collection_name) const
 {
     std::lock_guard lock(mutex);
-    std::vector<String> result;
+    std::vector<StorageID> result;
 
     for (auto it = detached_dependencies.lower_bound(std::make_tuple(collection_name, String{}, String{}));
          it != detached_dependencies.end() && std::get<0>(*it) == collection_name;
          ++it)
     {
-        result.push_back(StorageID{std::get<1>(*it), std::get<2>(*it)}.getFullTableName());
+        result.push_back(StorageID{std::get<1>(*it), std::get<2>(*it)});
     }
 
     return result;
+}
+
+void NamedCollectionFactory::removeDetachedDependencies(const StorageID & table_id)
+{
+    std::lock_guard lock(mutex);
+    std::erase_if(
+        detached_dependencies,
+        [&](const auto & entry)
+        { return std::get<1>(entry) == table_id.database_name && std::get<2>(entry) == table_id.table_name; });
 }
 
 void NamedCollectionFactory::removeDetachedDependencies(const String & database_name)
 {
     std::lock_guard lock(mutex);
     std::erase_if(detached_dependencies, [&](const auto & entry) { return std::get<1>(entry) == database_name; });
+}
+
+void NamedCollectionFactory::renameDetachedDependencies(const String & from_database_name, const String & to_database_name)
+{
+    std::lock_guard lock(mutex);
+
+    std::vector<std::tuple<String, String, String>> renamed;
+    for (auto it = detached_dependencies.begin(); it != detached_dependencies.end();)
+    {
+        if (std::get<1>(*it) == from_database_name)
+        {
+            renamed.emplace_back(std::get<0>(*it), to_database_name, std::get<2>(*it));
+            it = detached_dependencies.erase(it);
+        }
+        else
+            ++it;
+    }
+
+    detached_dependencies.insert(renamed.begin(), renamed.end());
 }
 
 }

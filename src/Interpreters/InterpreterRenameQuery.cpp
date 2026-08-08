@@ -250,6 +250,9 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     {
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
+        /// The metadata of the detached tables of the database moves along with it: their named
+        /// collection dependencies stay valid under the new database name.
+        NamedCollectionFactory::instance().renameDetachedDependencies(old_name, new_name);
     }
 
     return {};

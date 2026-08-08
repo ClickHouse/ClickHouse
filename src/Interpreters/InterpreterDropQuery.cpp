@@ -308,8 +308,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 /// A permanently detached table is not loaded at startup, so dropping a collection it
                 /// references cannot break the server start; its dependencies are simply removed. This
                 /// also keeps the behavior consistent across a restart, which empties the in-memory
-                /// list of detached dependencies.
+                /// list of detached dependencies. A detached entry left over from an earlier plain
+                /// detach of this table is removed for the same reason.
                 NamedCollectionFactory::instance().removeDependencies(table_id);
+                NamedCollectionFactory::instance().removeDetachedDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
             }
@@ -371,6 +373,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             NamedCollectionFactory::instance().removeDependencies(table_id);
+            /// A detached entry left over from an earlier detach of this table: its metadata is gone
+            /// with the drop, so it must not keep blocking `DROP NAMED COLLECTION`.
+            NamedCollectionFactory::instance().removeDetachedDependencies(table_id);
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database

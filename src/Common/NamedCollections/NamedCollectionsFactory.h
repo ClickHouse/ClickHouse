@@ -100,17 +100,28 @@ public:
 
     /// `DETACH TABLE` moves the dependencies of the table here: a detached table is not in
     /// `DatabaseCatalog`, but the metadata it is attached from still references the collections, so they
-    /// must not be dropped. `ATTACH` registers the dependencies again and removes the entries. The list
-    /// is kept in memory only, which is consistent across a restart: a plainly detached table is
-    /// attached again at the next start (its dependencies are registered normally), and a permanently
+    /// must not be dropped. An entry is removed when the table is dropped, detached permanently, or
+    /// renamed (all of which require the table to have been attached back first), when its database is
+    /// dropped, and by the `DROP NAMED COLLECTION` check once the table demonstrably exists again.
+    /// `ATTACH` itself does not remove the entry: the dependencies are registered again while the engine
+    /// arguments are resolved, but the attach can still fail after that, leaving the table detached.
+    /// The list is kept in memory only, which is consistent across a restart: a plainly detached table
+    /// is attached again at the next start (its dependencies are registered normally), and a permanently
     /// detached table does not record entries at all - it is not loaded at startup, so a dropped
     /// collection cannot break the start. The list is deliberately imprecise: dropping the collection
     /// may still be refused for a while after the detached table itself is gone.
     void markDependenciesDetached(const StorageID & table_id);
-    /// The names of the detached tables that referenced the collection when they were detached.
-    std::vector<String> getDetachedDependents(const String & collection_name) const;
+    /// The detached tables that referenced the collection when they were detached. The caller is
+    /// expected to prune the entries of tables that exist in `DatabaseCatalog` again with
+    /// `removeDetachedDependencies`: the attach went through (an attached table is tracked by the
+    /// regular dependencies), the entry only lingered here.
+    std::vector<StorageID> getDetachedDependents(const String & collection_name) const;
+    /// `DROP TABLE` and `DETACH TABLE ... PERMANENTLY` remove the metadata the entry stands for.
+    void removeDetachedDependencies(const StorageID & table_id);
     /// `DROP DATABASE` drops the detached tables of the database too: forget about them.
     void removeDetachedDependencies(const String & database_name);
+    /// `RENAME DATABASE` moves the metadata of its detached tables along: re-key their entries.
+    void renameDetachedDependencies(const String & from_database_name, const String & to_database_name);
 
 protected:
     mutable NamedCollectionsMap loaded_named_collections;

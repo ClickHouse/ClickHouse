@@ -72,11 +72,29 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
         auto detached_dependents = NamedCollectionFactory::instance().getDetachedDependents(query.collection_name);
         if (!detached_dependents.empty())
         {
-            throw Exception(
-                ErrorCodes::NAMED_COLLECTION_IS_USED,
-                "Named collection `{}` may still be used by detached tables: {}",
-                query.collection_name,
-                fmt::join(detached_dependents, ", "));
+            std::vector<String> detached_names;
+            detached_names.reserve(detached_dependents.size());
+            for (const auto & dep : detached_dependents)
+            {
+                /// The entry is not removed when the dependencies of the table are registered again:
+                /// that happens while the engine arguments are resolved, and the `ATTACH` can still
+                /// fail after that, leaving the table detached with the entry as its only protection.
+                /// A table that exists in the catalog proves the attach went through - such an entry
+                /// only lingered here, and the dependency of the attached table was checked above.
+                if (DatabaseCatalog::instance().isTableExist(dep, current_context))
+                    NamedCollectionFactory::instance().removeDetachedDependencies(dep);
+                else
+                    detached_names.push_back(dep.getFullTableName());
+            }
+
+            if (!detached_names.empty())
+            {
+                throw Exception(
+                    ErrorCodes::NAMED_COLLECTION_IS_USED,
+                    "Named collection `{}` may still be used by detached tables: {}",
+                    query.collection_name,
+                    fmt::join(detached_names, ", "));
+            }
         }
     }
 
