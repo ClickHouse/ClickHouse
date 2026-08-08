@@ -1459,6 +1459,10 @@ void compactIcebergTable(
             write_format,
             persistent_table_components.metadata_compression_method);
         writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
+        /// Invalidate before removing old files: a reader that races in between must miss the
+        /// cache and re-read the new metadata rather than hit a stale entry pointing at files
+        /// `clearOldFiles` is about to delete.
+        persistent_table_components.invalidateMetadataCache();
         clearOldFiles(object_storage_, old_files);
     }
 }
