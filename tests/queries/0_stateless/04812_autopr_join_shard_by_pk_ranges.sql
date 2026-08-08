@@ -25,8 +25,9 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 SET max_threads=4, max_block_size=128;
 SET use_query_condition_cache=0;
 
--- The sharding under test.
-SET join_algorithm='full_sorting_merge', query_plan_join_shard_by_pk_ranges=1;
+-- The sharding under test. It only applies to reads in order, so pin `optimize_read_in_order`
+-- against the settings randomizer.
+SET join_algorithm='full_sorting_merge', query_plan_join_shard_by_pk_ranges=1, optimize_read_in_order=1;
 
 -- With materialized statistics the planner estimates the join from them instead of running index
 -- analysis on the replicas-plan read, leaving that read un-analyzed — the precondition for the
