@@ -121,6 +121,7 @@ public:
 
     static size_t getTemporaryFilesBufferSize(
         size_t configured_buffer_size,
+        size_t num_buckets,
         size_t max_num_buckets,
         size_t max_bytes_before_external_join);
 
@@ -168,6 +169,7 @@ private:
     const size_t initial_num_buckets;
     const size_t max_num_buckets;
     const size_t external_join_threshold;
+    const bool automatic_num_buckets;
 
     Names left_key_names;
     Names right_key_names;

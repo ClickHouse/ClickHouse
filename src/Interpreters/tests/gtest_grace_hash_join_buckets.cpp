@@ -222,6 +222,7 @@ TEST(GraceHashJoinBuckets, UsesSizeEstimateInAutoMode)
     using Params = GraceHashJoin::InitialBucketsParams;
 
     EXPECT_EQ(GraceHashJoin::getInitialNumBuckets(0, 1024, Params{}, 0, 0), 1);
+    EXPECT_EQ(GraceHashJoin::getInitialNumBuckets(0, 1024, Params{.total_rows_estimation = 4000}, 0, 0), 1);
     EXPECT_EQ(GraceHashJoin::getInitialNumBuckets(0, 1024, Params{.total_rows_estimation = 999}, 1000, 0), 1);
     EXPECT_EQ(GraceHashJoin::getInitialNumBuckets(0, 1024, Params{.total_rows_estimation = 1000}, 1000, 0), 2);
     EXPECT_EQ(GraceHashJoin::getInitialNumBuckets(0, 1024, Params{.total_rows_estimation = 4000}, 1000, 0), 8);
@@ -275,14 +276,14 @@ TEST(GraceHashJoinBuckets, LimitsAutomaticTemporaryFileBufferMemory)
 {
     constexpr size_t configured_buffer_size = 1uz << 20;
 
-    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1, 0), configured_buffer_size);
-    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 128, 0), 1uz << 13);
-    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1024, 0), 1uz << 10);
-    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 128, 1uz << 30), configured_buffer_size);
-    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 256, 1uz << 30), 1uz << 19);
-    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1024, 1uz << 30), 1uz << 17);
-    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 256, 100uz << 10), 50);
-    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1024, 1), 1);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1, 1024, 0), configured_buffer_size);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 8, 1024, 0), 1uz << 17);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1024, 1024, 0), 1uz << 10);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1, 1, 1uz << 30), configured_buffer_size);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1, 1024, 1uz << 30), 1uz << 17);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 256, 256, 1uz << 30), 1uz << 19);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 256, 256, 100uz << 10), 50);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1024, 1024, 1), 1);
 }
 
 TEST(SpillingHashJoin, RejectsZeroExternalJoinThreshold)

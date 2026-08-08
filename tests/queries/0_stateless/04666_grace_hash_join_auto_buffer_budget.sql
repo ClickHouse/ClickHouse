@@ -14,6 +14,7 @@ SETTINGS
     max_memory_usage = 268435456,
     max_threads = 1,
     query_plan_optimize_join_order_limit = 10,
+    query_plan_optimize_join_order_randomize = 0,
     query_plan_join_swap_table = 0,
     collect_hash_table_stats_during_joins = 0,
     enable_parallel_replicas = 0,
@@ -21,7 +22,10 @@ SETTINGS
 
 SELECT count()
 FROM numbers(32768) AS lhs
-INNER JOIN numbers(32768) AS rhs USING number
+INNER JOIN
+(
+    SELECT toUInt64(arrayJoin(range(32768))) AS number
+) AS rhs USING number
 SETTINGS
     join_algorithm = 'grace_hash',
     grace_hash_join_initial_buckets = 0,
@@ -31,6 +35,7 @@ SETTINGS
     max_memory_usage = 268435456,
     max_threads = 1,
     query_plan_optimize_join_order_limit = 10,
+    query_plan_optimize_join_order_randomize = 0,
     query_plan_join_swap_table = 0,
     collect_hash_table_stats_during_joins = 0,
     enable_parallel_replicas = 0,

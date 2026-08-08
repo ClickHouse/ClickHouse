@@ -276,18 +276,10 @@ GraceHashJoin::GraceHashJoin(
           external_join_threshold_))
     , max_num_buckets(max_num_buckets_)
     , external_join_threshold(external_join_threshold_)
+    , automatic_num_buckets(initial_num_buckets_ == 0)
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
-    , tmp_data(tmp_data_->childScope({
-            .current_metric = CurrentMetrics::TemporaryFilesForJoin,
-            .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
-            .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
-            .num_files = ProfileEvents::ExternalJoinWritePart,
-        },
-        initial_num_buckets_ == 0
-            ? getTemporaryFilesBufferSize(table_join->temporaryFilesBufferSize(), max_num_buckets, external_join_threshold_)
-            : table_join->temporaryFilesBufferSize(),
-        table_join->temporaryFilesCodec()))
+    , tmp_data(std::move(tmp_data_))
     , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
 {
@@ -372,20 +364,22 @@ size_t GraceHashJoin::getInitialNumBuckets(
 
 size_t GraceHashJoin::getTemporaryFilesBufferSize(
     size_t configured_buffer_size,
+    size_t num_buckets,
     size_t max_num_buckets,
     size_t max_bytes_before_external_join)
 {
     chassert(configured_buffer_size > 0);
+    chassert(num_buckets > 0);
     chassert(max_num_buckets > 0);
+    chassert(num_buckets <= max_num_buckets);
 
     /// Every bucket owns two temporary streams. Each stream has an uncompressed buffer and
     /// a compressed buffer. Standalone automatic `GraceHashJoin` has no external JOIN threshold,
-    /// so divide the configured buffer size by the maximum bucket count to target an aggregate
-    /// allocation of four configured buffers even after rehashing. For spilling joins, target half
-    /// of the external JOIN threshold for all four buffers. The result is clamped to at least one
-    /// byte, and factors are divided one at a time to avoid overflow.
+    /// so divide the configured buffer size by the current bucket count. For spilling joins, target
+    /// half of the external JOIN threshold for all four buffers at the maximum bucket count. The
+    /// result is clamped to at least one byte, and factors are divided one at a time to avoid overflow.
     size_t buffer_size = max_bytes_before_external_join == 0
-        ? configured_buffer_size / max_num_buckets
+        ? configured_buffer_size / num_buckets
         : max_bytes_before_external_join / max_num_buckets / 4 / 2;
     return std::clamp(buffer_size, 1uz, configured_buffer_size);
 }
@@ -497,13 +491,31 @@ void GraceHashJoin::addBuckets(const size_t bucket_count)
     // otherwise we can end up having unexpected number of buckets
 
     const size_t current_size = buckets.size();
+    chassert(bucket_count > 0);
+    chassert(bucket_count <= max_num_buckets);
+    chassert(current_size <= max_num_buckets - bucket_count);
+
+    const size_t num_buckets = current_size + bucket_count;
+    const size_t buffer_size = automatic_num_buckets
+        ? getTemporaryFilesBufferSize(
+            table_join->temporaryFilesBufferSize(), num_buckets, max_num_buckets, external_join_threshold)
+        : table_join->temporaryFilesBufferSize();
+    auto batch_tmp_data = tmp_data->childScope({
+            .current_metric = CurrentMetrics::TemporaryFilesForJoin,
+            .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
+            .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
+            .num_files = ProfileEvents::ExternalJoinWritePart,
+        },
+        buffer_size,
+        table_join->temporaryFilesCodec());
+
     Buckets tmp_buckets;
     tmp_buckets.reserve(bucket_count);
     for (size_t i = 0; i < bucket_count; ++i)
         try
         {
-            TemporaryBlockStreamHolder left_file(left_sample_block, tmp_data);
-            TemporaryBlockStreamHolder right_file(std::make_shared<const Block>(prepareRightBlock(*right_sample_block)), tmp_data);
+            TemporaryBlockStreamHolder left_file(left_sample_block, batch_tmp_data);
+            TemporaryBlockStreamHolder right_file(std::make_shared<const Block>(prepareRightBlock(*right_sample_block)), batch_tmp_data);
 
             BucketPtr new_bucket = std::make_shared<FileBucket>(current_size + i, std::move(left_file), std::move(right_file), log);
             tmp_buckets.emplace_back(std::move(new_bucket));

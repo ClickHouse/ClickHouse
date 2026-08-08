@@ -8321,7 +8321,7 @@ Wait for committed changes to become actually visible in the latest snapshot
 If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
 )", EXPERIMENTAL) \
     DECLARE(UInt64, grace_hash_join_initial_buckets, 0, R"(
-Initial number of grace hash join buckets. If set to `0`, ClickHouse chooses the number automatically based on the estimated or actual size of the right table. The effective value is always a power of two. ClickHouse rounds a positive value up when possible; otherwise it uses the largest power of two that does not exceed `grace_hash_join_max_buckets`.
+Initial number of grace hash join buckets. If set to `0`, a standalone `grace_hash` join chooses the number based on the planner's right-table row estimate and `max_rows_in_join`. `SpillingHashJoin` also combines the observed row width with the external JOIN threshold. A standalone join configured only with `max_bytes_in_join` relies on runtime bucket expansion. The effective value is always a power of two. ClickHouse rounds a positive value up when possible; otherwise it uses the largest power of two that does not exceed `grace_hash_join_max_buckets`.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
 Limit on the number of grace hash join buckets
