@@ -58,6 +58,44 @@ ValueType avgResultToValue(Float64 v, UInt32 scale = 0)
     }
 }
 
+/// Convert an exact integer numerator and denominator of avg to an integer-backed result type
+/// (Date/DateTime/Time and their 64-bit variants), rounding the quotient in integer space.
+/// The Float64 division loses precision for values above 2^53 (e.g. nanosecond DateTime64 ticks),
+/// so rounding its result cannot restore the exact average. Rounds half to even, matching
+/// `nearbyint` used by the Float64 path. Returns 0 (the epoch) for the empty set.
+template <typename ValueType, typename Numerator, typename Denominator>
+ValueType avgResultToValueExact(const Numerator & numerator, Denominator denominator)
+{
+    using ResultNativeType = NativeType<ValueType>;
+
+    if (denominator == 0)
+        return ValueType(0);
+
+    Int256 num;
+    if constexpr (is_decimal<Numerator>)
+        num = numerator.value;
+    else
+        num = numerator;
+
+    const Int256 den = denominator;
+    Int256 quotient = num / den;
+    const Int256 remainder = num % den;
+    const Int256 twice_abs_remainder = remainder < 0 ? -2 * remainder : 2 * remainder;
+
+    if (twice_abs_remainder > den || (twice_abs_remainder == den && (quotient & 1) != 0))
+        quotient += (num < 0 ? -1 : 1);
+
+    /// The exact average always lies within the range of the inputs, so the quotient is out of
+    /// the result's range only if the accumulated sum has overflowed (and the result is garbage
+    /// anyway); clamp to keep the value representable.
+    if (quotient > Int256(std::numeric_limits<ResultNativeType>::max()))
+        return ValueType(std::numeric_limits<ResultNativeType>::max());
+    if (quotient < Int256(std::numeric_limits<ResultNativeType>::lowest()))
+        return ValueType(std::numeric_limits<ResultNativeType>::lowest());
+
+    return ValueType(static_cast<ResultNativeType>(quotient));
+}
+
 struct Settings;
 
 template <typename T> constexpr bool DecimalOrExtendedInt =
@@ -183,10 +221,30 @@ public:
         {
             using ValueType = typename decltype(types)::RightType;
             auto & col = assert_cast<ColumnVectorOrDecimal<ValueType> &>(to);
+            /// Integer-backed result types need the division done exactly in integer space
+            /// whenever the accumulated numerator is exact: Float64 loses precision above 2^53
+            /// and its rounding artifacts are visible in wide types (nanosecond DateTime64).
             if constexpr (is_decimal<ValueType>)
+            {
+                if constexpr (is_decimal<Numerator> && std::is_integral_v<Denominator>)
+                {
+                    /// For avg over DateTime64/Time64 the numerator scale matches the result scale,
+                    /// so the quotient of the raw values is directly the result's native value.
+                    if (num_scale == col.getScale())
+                    {
+                        col.getData().push_back(avgResultToValueExact<ValueType>(this->data(place).numerator, this->data(place).denominator));
+                        return true;
+                    }
+                }
                 col.getData().push_back(avgResultToValue<ValueType>(v, col.getScale()));
+            }
             else
-                col.getData().push_back(avgResultToValue<ValueType>(v));
+            {
+                if constexpr (std::is_integral_v<Numerator> && std::is_integral_v<Denominator>)
+                    col.getData().push_back(avgResultToValueExact<ValueType>(this->data(place).numerator, this->data(place).denominator));
+                else
+                    col.getData().push_back(avgResultToValue<ValueType>(v));
+            }
             return true;
         }))
             return;
