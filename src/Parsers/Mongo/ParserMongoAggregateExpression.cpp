@@ -10,7 +10,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Mongo/MongoConstants.h>
+#include <Parsers/Mongo/Utils.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 
 namespace DB
 {
@@ -93,7 +95,6 @@ const std::unordered_map<std::string_view, std::string> direct_functions = {
     {"$exp", "exp"},
     {"$ln", "log"},
     {"$log10", "log10"},
-    {"$size", "length"},
     {"$reverseArray", "reverse"},
     {"$concatArrays", "arrayConcat"},
     {"$setIntersection", "arrayIntersect"},
@@ -198,6 +199,63 @@ std::string parseRegularExpressionField(const rapidjson::Value & value, std::str
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'regex' of '{}' must be a string or a regular expression", operator_name);
 }
 
+/** The lowering of `$toDecimal`, which is supposed to preserve the full value: Mongo's
+  * `Decimal128` carries an exponent of its own, so no single fixed scale can hold every value,
+  * and the scale has to be derived from the argument the way `$numberDecimal` derives it.
+  * A constant carries its digits, so its exact scale is computed here; a value that fits no
+  * scale of `Decimal128` is rejected rather than silently rounded. A non-constant argument
+  * only converts exactly when it is an integer or a boolean - their scale is zero whatever
+  * the value - so anything else is rejected when the query is analyzed, by a `throwIf` on the
+  * type name, which is a constant.
+  */
+ASTPtr makeToDecimal(ASTPtr argument)
+{
+    if (const auto * literal = argument->as<ASTLiteral>())
+    {
+        std::optional<UInt32> scale;
+        switch (literal->value.getType())
+        {
+            case Field::Types::Null:
+            case Field::Types::Bool:
+            case Field::Types::Int64:
+            case Field::Types::UInt64:
+                scale = 0;
+                break;
+            case Field::Types::String:
+                scale = decimalScaleOfNumberDecimal(literal->value.safeGet<String>());
+                break;
+            case Field::Types::Float64:
+                /// The shortest decimal text that reads back as the same double, which is what
+                /// Mongo preserves when it converts a double to a decimal.
+                scale = decimalScaleOfNumberDecimal(applyVisitor(FieldVisitorToString(), literal->value));
+                break;
+            default:
+                break;
+        }
+        if (!scale)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The argument of '$toDecimal' cannot be represented exactly by a Decimal128");
+        return makeASTFunction("toDecimal128", std::move(argument), makeLiteral(Field(UInt64(*scale))));
+    }
+
+    /// The `CAST` a `$numberDecimal` wrapper lowers into already carries the exact scale of its
+    /// value (see `tryParseMongoConstant`), so it is a decimal already.
+    if (const auto * function = argument->as<ASTFunction>(); function && function->name == "CAST")
+        return argument;
+
+    auto is_exact = makeASTFunction(
+        "match",
+        makeASTFunction("toTypeName", argument),
+        makeLiteral(Field(String("^(U?Int(8|16|32|64|128|256)|Bool)$"))));
+    auto guard = makeASTFunction(
+        "throwIf",
+        makeASTFunction("not", std::move(is_exact)),
+        makeLiteral(Field(String(
+            "'$toDecimal' of a non-constant value is only exact for an integer or a boolean; "
+            "spell any other value as a '$numberDecimal' or a string literal, which carry their scale"))));
+    return makeASTFunction("plus", makeASTFunction("toDecimal128", argument->clone(), makeLiteral(Field(UInt64(0)))), std::move(guard));
+}
+
 ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 {
     if (auto it = direct_functions.find(name); it != direct_functions.end())
@@ -222,11 +280,31 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         return constant;
     }
 
+    if (name == "$size")
+    {
+        auto arguments = parseArguments(argument);
+        requireArgumentCount(name, arguments, 1);
+        /** `$size` is defined on arrays only. A string also has a `length`, so mapping `$size`
+          * onto it directly would count the bytes of a string instead of rejecting it the way
+          * Mongo does. Unlike the `$size` of a filter, which is a predicate and can simply not
+          * match, this one has to produce a value, so the rejection is a `throwIf` on the type
+          * of the argument: the type name is a constant, and a non-array argument fails when
+          * the query is analyzed.
+          */
+        auto is_array = makeASTFunction(
+            "startsWith", makeASTFunction("toTypeName", arguments[0]), makeLiteral(Field(String("Array"))));
+        auto guard = makeASTFunction(
+            "throwIf",
+            makeASTFunction("not", std::move(is_array)),
+            makeLiteral(Field(String("The argument of '$size' must be an array"))));
+        return makeASTFunction("plus", makeASTFunction("length", arguments[0]->clone()), std::move(guard));
+    }
+
     if (name == "$toDecimal")
     {
         auto arguments = parseArguments(argument);
         requireArgumentCount(name, arguments, 1);
-        return makeASTFunction("toDecimal128", arguments[0], makeLiteral(Field(UInt64(10))));
+        return makeToDecimal(arguments[0]);
     }
 
     if (name == "$toDate")
