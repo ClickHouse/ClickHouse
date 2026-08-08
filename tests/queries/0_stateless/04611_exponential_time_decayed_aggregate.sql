@@ -310,9 +310,10 @@ SELECT exponentialTimeDecayedAvg(-1)(1, 1); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedCount(10)('not a time'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT exponentialTimeDecayedSum(10)('not a value', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT exponentialTimeDecayingFloat64(1, toFloat64(0), 0); -- { serverError BAD_ARGUMENTS }
-SELECT exponentialTimeDecayingValueAt(
+-- Evaluation before the anchor extrapolates the same exponential curve backward.
+SELECT round(exponentialTimeDecayingValueAt(
     exponentialTimeDecayingFloat64(1, toFloat64(10), 10),
-    toFloat64(0)); -- { serverError BAD_ARGUMENTS }
+    toFloat64(0)), 6);
 
 -- Generate reproducible pseudo-random values, timestamps, row orders, and batch
 -- assignments. Both randomized input orders and all batch distributions must
