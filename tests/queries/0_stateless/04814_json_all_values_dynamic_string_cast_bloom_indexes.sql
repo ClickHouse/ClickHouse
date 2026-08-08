@@ -21,6 +21,9 @@ SELECT count() FROM json_dynamic_string_bloom
 WHERE data.value::String = '2026'
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_bloom
+WHERE data.value::String = '2026'
+SETTINGS cast_keep_nullable = 1, force_data_skipping_indices = 'idx';
+SELECT count() FROM json_dynamic_string_bloom
 WHERE data.value::String IN ('2026')
 SETTINGS force_data_skipping_indices = 'idx';
 
@@ -49,6 +52,9 @@ SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_token
 WHERE data.value::String LIKE '%2026%'
 SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM json_dynamic_string_token
+WHERE data.value::String LIKE '%2026%'
+SETTINGS cast_keep_nullable = 1, force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_token
 WHERE startsWith(data.value::String, '2026')
 SETTINGS force_data_skipping_indices = 'idx';

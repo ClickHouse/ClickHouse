@@ -63,8 +63,8 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const String & json_function_name);
 
 /// Match a JSON subcolumn against a `JSONAllValues` index without accepting casts that can change
-/// the indexed representation. A cast to `String` is safe because `JSONAllValues` uses the same
-/// text representation for JSON values.
+/// the indexed representation. A cast to `String` or `Nullable(String)` is safe because
+/// `JSONAllValues` uses the same text representation for non-null JSON values.
 std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
     const RPNBuilderTreeNode & node,
     const Block & header);

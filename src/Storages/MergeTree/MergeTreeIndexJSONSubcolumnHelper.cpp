@@ -153,7 +153,7 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
                 return std::nullopt;
 
             const bool is_string_cast = !node_dag->result_type->equals(*argument_dag->result_type);
-            if (is_string_cast && node_dag->result_type->getTypeId() != TypeIndex::String)
+            if (is_string_cast && removeNullable(node_dag->result_type)->getTypeId() != TypeIndex::String)
                 return std::nullopt;
 
             if (!isJSONAllValuesMatchSafe(node, is_string_cast))
