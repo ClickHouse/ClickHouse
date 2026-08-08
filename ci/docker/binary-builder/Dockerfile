@@ -148,16 +148,24 @@ RUN case "${TARGETARCH}" in \
 # library variants too: an unoptimized link picks the `-debug` builds of libc, libc++
 # and the stubs (`libstubs-debug.a`), while the `-O3 ... -g0` CI link needs the release
 # ones (`libstubs.a`, `libc-mt.a`, ...). `emcc` compiles whatever the link needs
-# lazily at first use into its cache, which is not writable for the CI build user,
-# so the link flags here have to mirror the `clickhouse` link exactly - keep them in
-# sync with the `add_link_options` in the `OS_WASM` branch of cmake/target.cmake
-# plus the RelWithDebInfo optimization flags.
+# lazily at first use into its cache, and building libc, libc++ and friends would
+# cost the CI link several minutes - so the link flags here mirror the `clickhouse`
+# link. Keep them in sync with the `add_link_options` in the `OS_WASM` branch of
+# cmake/target.cmake plus the RelWithDebInfo optimization flags.
 RUN echo 'int main() { return 0; }' > /tmp/em_prewarm.cpp \
   && em++ -O3 -sMEMORY64=1 -fwasm-exceptions -pthread \
       -sSTACK_SIZE=8388608 -sINITIAL_MEMORY=268435456 -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=17179869184 \
       -g0 -sPROXY_TO_PTHREAD=1 -sEXIT_RUNTIME=1 \
       /tmp/em_prewarm.cpp -o /tmp/em_prewarm.js \
   && rm -f /tmp/em_prewarm.*
+
+# Pre-warming cannot cover everything: the link also writes `symbol_lists/<hash>.json`
+# cache entries whose hash covers the resolved settings, and some settings are derived
+# from the program being linked (e.g. `MAIN_READS_PARAMS`, from the signature of `main`),
+# so the real `clickhouse` link misses the entry the trivial program above cached and
+# generates its own. The build in CI runs as an unprivileged user, hence the cache has
+# to be writable for it.
+RUN chmod -R a+rwX /opt/emsdk/upstream/emscripten/cache
 
 ARG CLANG_TIDY_SHA1=3880541496c7ce0d2e2830d2f525375078fe0b1f
 RUN curl -Lo /usr/bin/clang-tidy-cache.py \
