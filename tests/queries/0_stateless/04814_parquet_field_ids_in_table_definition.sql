@@ -30,18 +30,9 @@ CREATE TABLE t_parquet_field_ids_def (x Int64) ENGINE = S3('http://localhost:111
 -- Without a declared column list the header-independent checks still run.
 CREATE TABLE t_parquet_field_ids_def ENGINE = S3('http://localhost:11111/test/{database}/none.parquet', NOSIGN, Parquet) SETTINGS output_format_parquet_column_field_ids = {'x': 'oops'}; -- { serverError BAD_ARGUMENTS }
 
--- A definition without a column list resolves its schema from the existing data during CREATE,
--- and the header-dependent checks rerun against that inferred schema: an unknown column or a
--- non-covering map is rejected at CREATE time, not on the first INSERT.
-INSERT INTO FUNCTION file('04814_field_ids/data.parquet', Parquet) SELECT 1::Int64 AS x, 2::Int64 AS y SETTINGS engine_file_truncate_on_insert = 1;
-CREATE TABLE t_parquet_field_ids_def ENGINE = File(Parquet, '04814_field_ids/data.parquet') SETTINGS output_format_parquet_column_field_ids = {'missing': '1'}; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE t_parquet_field_ids_def ENGINE = File(Parquet, '04814_field_ids/data.parquet') SETTINGS output_format_parquet_column_field_ids = {'x': '1'}; -- { serverError BAD_ARGUMENTS }
--- Same when the format is inferred too.
-CREATE TABLE t_parquet_field_ids_def ENGINE = File(auto, '04814_field_ids/data.parquet') SETTINGS output_format_parquet_column_field_ids = {'missing': '1'}; -- { serverError BAD_ARGUMENTS }
--- A valid map over the inferred schema is accepted.
-CREATE TABLE t_parquet_field_ids_def ENGINE = File(Parquet, '04814_field_ids/data.parquet') SETTINGS output_format_parquet_column_field_ids = {'x': '5', 'y': '7'};
-SELECT * FROM t_parquet_field_ids_def;
-DROP TABLE t_parquet_field_ids_def;
+-- Schema-inference cases that need a pre-existing data file live in
+-- 04823_parquet_field_ids_schema_inference.sh, which builds a per-run-unique file path
+-- (a fixed path here would race with concurrent runs of the same test).
 
 -- A valid definition works, and replaying it (DETACH/ATTACH) is not re-validated.
 CREATE TABLE t_parquet_field_ids_def (x Int64, t Tuple(a Int64, b Int64)) ENGINE = File(Parquet) SETTINGS output_format_parquet_column_field_ids = {'x': '1', 't': '2', 't.a': '3', 't.b': '4'};
