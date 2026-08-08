@@ -387,7 +387,7 @@ void checkCreationIsAllowed(
 /// Splits the archive syntax (e.g. "archive.zip::file*.parquet") into
 /// the first ("archive.zip") and second ("file*.parquet") parts.
 /// If the source string doesn't follow the archive syntax, the function just returns it in the second part.
-std::pair<String, String> splitToArchivePathAndPathInArchive(const String & source)
+std::pair<String, String> splitToArchivePathAndPathInArchive(const String & source, bool use_glob_ast)
 {
     size_t pos = source.find("::");
     if (pos == String::npos)
@@ -406,8 +406,12 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 
     /// possible situations when the first part can be archive is only if one of the following is true:
     /// - it contains supported archive extension
-    /// - it contains characters that could mean glob expression
-    if (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos)
+    /// - it contains a glob expression under the selected glob parser (e.g. `data_{x}` is a glob
+    ///   for the legacy parser but literal text for the AST parser)
+    const bool archive_path_has_globs = use_glob_ast
+        ? GlobAST::GlobString(String{path_to_archive_view}).hasGlobs()
+        : path_to_archive_view.find_first_of("*?{") != std::string_view::npos;
+    if (!hasSupportedArchiveExtension(path_to_archive_view) && !archive_path_has_globs)
         return {{}, source};
 
     return {String{path_to_archive_view}, String{filename_view}};
@@ -1121,7 +1125,7 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
         use_glob_ast_parser = context->getSettingsRef()[Setting::use_glob_ast_parser];
 
     if (*allow_archive_path_syntax)
-        std::tie(path_to_archive, filename) = splitToArchivePathAndPathInArchive(source);
+        std::tie(path_to_archive, filename) = splitToArchivePathAndPathInArchive(source, *use_glob_ast_parser);
     else
         filename = source;
 
