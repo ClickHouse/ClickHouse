@@ -1,3 +1,8 @@
 ---
 max_server_memory_usage: 4Gi
-memory_worker_purge_dirty_pages_threshold_ratio: 0.2
+# The threshold must be reliably crossed by the dirty pages of a single test query
+# (~400 MB). jemalloc reuses freed extents within an arena, so repeating the same
+# query does not accumulate dirty pages beyond one query's footprint per arena, and
+# a higher threshold is only crossed when queries happen to land on different pool
+# threads (= different arenas), which made the test flaky.
+memory_worker_purge_dirty_pages_threshold_ratio: 0.04
