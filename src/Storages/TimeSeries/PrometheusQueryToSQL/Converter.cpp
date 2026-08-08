@@ -13,7 +13,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/materializeSharedSubqueries.h>
 
 
 namespace DB::PrometheusQueryToSQL
@@ -125,14 +124,7 @@ ASTPtr Converter::getSQL() const
     ConverterContext context{promql_tree, settings};
     auto query_piece = visitNode(promql_tree->getRoot(), context);
     query_piece.type = result_type;
-    auto res = finalizeSQL(std::move(query_piece), context);
-
-    /// ClickHouse inlines WITH subqueries per use, so subqueries referenced more than once
-    /// (the topk/bottomk/limitk operand, the left side of `or`) would be evaluated more than once,
-    /// repeating whole selector scans. Mark them as MATERIALIZED to be evaluated once.
-    materializeSharedSubqueries(res);
-
-    return res;
+    return finalizeSQL(std::move(query_piece), context);
 }
 
 }

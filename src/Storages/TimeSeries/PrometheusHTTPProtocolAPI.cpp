@@ -122,7 +122,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
     /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
-    /// repeatedly (see materializeSharedSubqueries()), and that mark has effect only with the setting
+    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
     /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
         getContext()->setSetting("enable_materialized_cte", true);

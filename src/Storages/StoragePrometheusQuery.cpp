@@ -193,7 +193,7 @@ void StoragePrometheusQuery::readImpl(
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
     /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
-    /// repeatedly (see materializeSharedSubqueries()), and that mark has effect only with the setting
+    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
     /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
     auto query_context = context;
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)

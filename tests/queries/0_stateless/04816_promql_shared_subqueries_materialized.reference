@@ -28,7 +28,7 @@
 1	0
 -- subqueries referenced once stay inlined: a binary operator reads each of its two operands once, nothing is materialized
 2	0
--- topk: the operand subquery is referenced once today, so it stays inlined
-1	0
+-- topk: the operand grid is read by two steps, so it is materialized; one samples read
+1	1
 -- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again
 3	0
