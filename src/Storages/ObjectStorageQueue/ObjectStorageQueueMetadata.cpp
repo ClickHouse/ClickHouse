@@ -1527,10 +1527,11 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                 return;
             }
         }
-        catch (const Exception &)
+        catch (const Exception & e)
         {
             /// If we can't read the lock (node disappeared, connection issues, etc.),
             /// treat it as a transient error and ask the user to retry.
+            LOG_WARNING(log, "Failed to read cleanup lock: {}. Will ask user to retry.", e.displayText());
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR,
