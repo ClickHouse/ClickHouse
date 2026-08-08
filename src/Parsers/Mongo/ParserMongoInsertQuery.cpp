@@ -1,29 +1,204 @@
 #include <Parsers/Mongo/ParserMongoInsertQuery.h>
 
-#include <memory>
+#include <algorithm>
+#include <string>
+#include <vector>
 
-#include <Parsers/ParserQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
+#include <Parsers/Mongo/MongoConstants.h>
 #include <Parsers/Mongo/Utils.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
+}
+
 namespace Mongo
 {
 
-/// TODO (scanhex12): add insert queries in mongo
-bool ParserMongoInsertManyQuery::parseImpl(ASTPtr & node)
+namespace
 {
-    node = nullptr;
-    return false;
+
+/// One column of an inserted document: the (dotted) name and the literal that carries the value.
+struct InsertedField
+{
+    std::string name;
+    ASTPtr value;
+};
+
+std::string_view stringView(const rapidjson::Value & value)
+{
+    return {value.GetString(), value.GetStringLength()};
 }
 
-/// TODO (scanhex12): add insert queries in mongo
+/** The value of one field of an inserted document: a constant - which covers every scalar and
+  * the Extended JSON wrappers a driver sends for the types JSON cannot represent - or an array
+  * of such values. A document inside an array cannot become a column of its own the way a
+  * subdocument does, so it is rejected rather than silently reshaped.
+  */
+ASTPtr parseInsertedValue(const rapidjson::Value & value)
+{
+    if (value.IsArray())
+    {
+        auto array = makeASTFunction("array");
+        for (const auto & element : value.GetArray())
+            array->arguments->children.push_back(parseInsertedValue(element));
+        return array;
+    }
+    if (auto constant = tryParseMongoConstant(value))
+        return constant;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot translate a value of the inserted document into a constant");
+}
+
+/** One inserted document as the columns it writes. A subdocument becomes one column per leaf
+  * with the dotted path as the name, which is how the dialect and the wire protocol both map
+  * nested documents onto columns.
+  */
+void flattenDocument(const std::string & prefix, const rapidjson::Value & document, std::vector<InsertedField> & fields)
+{
+    for (auto it = document.MemberBegin(); it != document.MemberEnd(); ++it)
+    {
+        std::string name(stringView(it->name));
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of an inserted document must not be empty");
+        if (name.starts_with("$"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of an inserted document must not start with '$', got '{}'", name);
+
+        std::string path = prefix.empty() ? name : prefix + "." + name;
+        /// A document that is not an Extended JSON wrapper holds fields of its own. The check
+        /// is made on a wrapper-shaped document by `tryParseMongoConstant` itself, so a wrapper
+        /// with an invalid value is an error rather than a strangely named column.
+        if (it->value.IsObject() && !tryParseMongoConstant(it->value))
+            flattenDocument(path, it->value, fields);
+        else
+            fields.push_back({std::move(path), parseInsertedValue(it->value)});
+    }
+}
+
+/** `INSERT INTO <collection> (<the fields of the documents>) SELECT <the values of one document>
+  * UNION ALL <...of the next one> ...`. The insert goes into an existing table, so there is no
+  * schema to infer: the columns are named by the fields of the documents, and every document of
+  * one insert must consist of the same fields - the rows of one `INSERT` share a column list.
+  */
+bool buildInsertQuery(const std::vector<const rapidjson::Value *> & documents, const std::shared_ptr<QueryMetadata> & metadata, ASTPtr & node)
+{
+    std::vector<std::vector<InsertedField>> rows;
+    for (const auto * document : documents)
+    {
+        if (!document->IsObject())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "An inserted document must be a document");
+        std::vector<InsertedField> fields;
+        flattenDocument("", *document, fields);
+        if (fields.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "An inserted document must not be empty");
+        rows.push_back(std::move(fields));
+    }
+
+    const auto & first = rows.front();
+    for (size_t row = 1; row < rows.size(); ++row)
+    {
+        if (rows[row].size() != first.size())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Every document of one insert must consist of the same fields: the rows of one 'INSERT' share a column list");
+
+        /// The fields may come in any order; they are matched to the columns of the first
+        /// document by name.
+        std::vector<InsertedField> reordered;
+        reordered.reserve(first.size());
+        for (const auto & column : first)
+        {
+            auto it = std::find_if(rows[row].begin(), rows[row].end(), [&](const auto & field) { return field.name == column.name; });
+            if (it == rows[row].end())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Every document of one insert must consist of the same fields, but '{}' is missing from the document {}",
+                    column.name,
+                    row);
+            reordered.push_back(std::move(*it));
+        }
+        rows[row] = std::move(reordered);
+    }
+
+    auto insert = make_intrusive<ASTInsertQuery>();
+
+    insert->table = make_intrusive<ASTIdentifier>(metadata->getCollectionName());
+    insert->children.push_back(insert->table);
+    if (!metadata->getDatabaseName().empty())
+    {
+        insert->database = make_intrusive<ASTIdentifier>(metadata->getDatabaseName());
+        insert->children.push_back(insert->database);
+    }
+
+    auto columns = make_intrusive<ASTExpressionList>();
+    for (const auto & column : first)
+        columns->children.push_back(make_intrusive<ASTIdentifier>(column.name));
+    insert->columns = columns;
+    insert->children.push_back(columns);
+
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    for (auto & row : rows)
+    {
+        auto expressions = make_intrusive<ASTExpressionList>();
+        for (auto & field : row)
+            expressions->children.push_back(std::move(field.value));
+
+        auto select = make_intrusive<ASTSelectQuery>();
+        select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(expressions));
+        list_of_selects->children.push_back(std::move(select));
+    }
+
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    union_query->list_of_selects = list_of_selects;
+    union_query->children.push_back(list_of_selects);
+    if (rows.size() > 1)
+    {
+        /// The mode has to be spelled out for every select but the first: the interpreter reads
+        /// `list_of_modes`, and only the formatter falls back to `union_mode`.
+        union_query->union_mode = SelectUnionMode::UNION_ALL;
+        union_query->list_of_modes.assign(rows.size() - 1, SelectUnionMode::UNION_ALL);
+        union_query->set_of_modes.insert(SelectUnionMode::UNION_ALL);
+    }
+
+    insert->select = union_query;
+    insert->children.push_back(union_query);
+
+    node = insert;
+    return true;
+}
+
+}
+
+bool ParserMongoInsertManyQuery::parseImpl(ASTPtr & node)
+{
+    if (!data.IsArray())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of 'insertMany' must be an array of documents");
+    if (data.Empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of 'insertMany' must hold at least one document");
+
+    std::vector<const rapidjson::Value *> documents;
+    documents.reserve(data.Size());
+    for (const auto & document : data.GetArray())
+        documents.push_back(&document);
+    return buildInsertQuery(documents, metadata, node);
+}
+
 bool ParserMongoInsertOneQuery::parseImpl(ASTPtr & node)
 {
-    node = nullptr;
-    return false;
+    if (!data.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of 'insertOne' must be a document");
+    return buildInsertQuery({&data}, metadata, node);
 }
 
 }
