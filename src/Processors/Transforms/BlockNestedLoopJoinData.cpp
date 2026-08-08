@@ -331,12 +331,15 @@ BuildBlockPtr BuildSideBlockReader::read(size_t index)
     if (current && current_index == index)
         return current;
 
+    /// A read that throws must not leave `current_index` naming a block that `current` does not hold,
+    /// or the fast path above would hand out the previous block under the new index.
+    current.reset();
     const auto & entry = data->getBlockEntry(index);
-    current_index = index;
     if (entry.block)
         current = entry.compressed ? decompressBuildBlock(*entry.block) : entry.block;
     else
         current = readSpilledBlock(index, entry.spill_ordinal);
+    current_index = index;
     return current;
 }
 

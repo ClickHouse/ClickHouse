@@ -137,6 +137,11 @@ private:
     /// Whether the walk records which probe rows have matched.
     const bool track_probe_row_match;
 
+    /// The chunk pulled by `prepare` and not started yet: setting up a probe chunk is work over all
+    /// of its rows, and `prepare` runs under the executor's node lock and is not timed as this
+    /// processor's own time, so it happens in `work`.
+    std::optional<Chunk> pending_probe_chunk;
+
     /// The probe chunk being walked.
     Columns probe_columns;
     size_t probe_num_rows = 0;

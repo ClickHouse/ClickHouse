@@ -185,7 +185,7 @@ IProcessor::Status BlockNestedLoopProbeTransform::prepare()
         return Status::PortFull;
     }
 
-    if (has_probe_chunk)
+    if (has_probe_chunk || pending_probe_chunk)
         return Status::Ready;
 
     if (input.isFinished())
@@ -198,7 +198,7 @@ IProcessor::Status BlockNestedLoopProbeTransform::prepare()
     if (!input.hasData())
         return Status::NeedData;
 
-    startProbeChunk(input.pull(true));
+    pending_probe_chunk = input.pull(true);
     return Status::Ready;
 }
 
@@ -244,6 +244,13 @@ void BlockNestedLoopProbeTransform::startProbeChunk(Chunk chunk)
 
 void BlockNestedLoopProbeTransform::work()
 {
+    if (pending_probe_chunk)
+    {
+        auto chunk = std::move(*pending_probe_chunk);
+        pending_probe_chunk.reset();
+        startProbeChunk(std::move(chunk));
+    }
+
     /// A walk that matches nothing produces no output for a long time, so it is cut into pieces
     /// that give the executor a chance to notice cancellation.
     const size_t work_budget = 8 * std::max<size_t>(DEFAULT_BLOCK_SIZE, max_block_size);
