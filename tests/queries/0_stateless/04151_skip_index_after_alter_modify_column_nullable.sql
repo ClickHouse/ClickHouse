@@ -25,8 +25,8 @@ ALTER TABLE t_skip_index_alter_nullable MODIFY COLUMN value Nullable(UInt64);
 
 -- With apply_mutations_on_fly = 0 AND apply_patch_parts = 0 the read snapshot used to omit the
 -- pending READ_COLUMN alter mutation, so index analysis did not skip idx_value and read the old
--- (String-serialized) granule using the new Nullable(UInt64) type, aborting the server with a
--- LOGICAL_ERROR ("Sizes of nested column and null map ... are not equal after deserialization").
+-- (String-serialized) granule using the new Nullable(UInt64) type, raising a LOGICAL_ERROR
+-- exception ("Sizes of nested column and null map ... are not equal after deserialization").
 -- The query goes through the implicit count() projection (optimizeUseAggregateProjections) which
 -- requests exact ranges and triggers the index read during planning.
 SELECT count()
@@ -41,7 +41,7 @@ WHERE value = 300
 SETTINGS optimize_use_implicit_projections = 1, use_statistics_for_part_pruning = 0, enable_analyzer = 1;
 
 -- The same `need_alter_mutations` gate also feeds `supportsSkipIndexesOnDataRead`, so pin the
--- direct skip-index read as well: without the fix this aborts in MergeTreeSkipIndexReader::read
+-- direct skip-index read as well: without the fix this throws in MergeTreeSkipIndexReader::read
 -- (via MergeTreeIndexBulkGranulesSet::deserializeBinary), not during planning. `max_rows_to_read = 0`
 -- is required because the data-read phase disables itself when clickhouse-test injects
 -- `read_overflow_mode = throw` with a row limit. `use_skip_indexes = 1` is pinned explicitly:
