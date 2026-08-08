@@ -1416,12 +1416,7 @@ void compactIcebergManifests(
                 table_id))
         {
             // Invalidate metadata cache so the next reader picks up the new state
-            if (persistent_table_components.metadata_cache)
-            {
-                persistent_table_components.metadata_cache->remove(persistent_table_components.table_path);
-                if (persistent_table_components.table_uuid)
-                    persistent_table_components.metadata_cache->remove(*persistent_table_components.table_uuid);
-            }
+            persistent_table_components.invalidateMetadataCache();
             LOG_INFO(log, "Successfully compacted manifest list");
             return;
         }

@@ -807,6 +807,10 @@ ExpireSnapshotsResult expireSnapshots(
             }
         }
 
+        // Invalidate metadata cache so the next reader within `iceberg_metadata_staleness_ms`
+        // does not reuse the pre-expiration metadata after the manifests/data files below are deleted.
+        persistent_table_components.invalidateMetadataCache();
+
         LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.all_paths.size(), partition.expired_snapshot_ids.size());
         deleteExpiredFiles(expired_files.all_paths, persistent_table_components.path_resolver, object_storage, log);
         LOG_INFO(log, "Expired {} snapshots, deleted {} files", partition.expired_snapshot_ids.size(), expired_files.all_paths.size());
