@@ -1580,6 +1580,8 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
 
     /// Track failed deletions to report at the end
     std::vector<std::pair<size_t, Coordination::Error>> failed_batches;
+    /// Track successful deletions for partial success reporting
+    size_t total_deleted = 0;
 
     for (size_t i = 0; i < failed_nodes.size(); i += batch_size)
     {
@@ -1605,9 +1607,11 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
             response = getZooKeeper()->tryGet(batch_paths);
         });
 
-        /// Delete nodes from this batch and collect file paths for cache cleanup
+        /// Delete nodes from this batch and collect file paths for immediate cache cleanup
         Coordination::Requests remove_requests;
+        std::vector<std::string> batch_file_paths;
         remove_requests.reserve(std::min(batch_paths.size(), keeper_multi_batch_size));
+        batch_file_paths.reserve(batch_paths.size());
 
         for (size_t j = 0; j < response.size(); ++j)
         {
@@ -1626,7 +1630,7 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
             }
 
             auto metadata = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[j].data);
-            file_paths.push_back(metadata.file_path);
+            batch_file_paths.push_back(metadata.file_path);
             LOG_TEST(log, "Read metadata for failed file: {}", metadata.file_path);
 
             remove_requests.push_back(zkutil::makeRemoveRequest(zk_path, -1));
@@ -1641,7 +1645,18 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                     code = getZooKeeper()->tryMulti(remove_requests, remove_responses);
                 });
 
-                if (code != Coordination::Error::ZOK)
+                if (code == Coordination::Error::ZOK)
+                {
+                    /// Clear cache immediately for successfully deleted znodes
+                    for (size_t k = batch_file_paths.size() - remove_requests.size(); k < batch_file_paths.size(); ++k)
+                    {
+                        auto cache_key = getMetadataCacheKey(batch_file_paths[k]);
+                        local_file_statuses.remove(cache_key);
+                        file_paths.push_back(batch_file_paths[k]);
+                    }
+                    total_deleted += remove_requests.size();
+                }
+                else
                 {
                     LOG_WARNING(log, "Batch remove of failed nodes returned: {}", magic_enum::enum_name(code));
                     failed_batches.emplace_back(i, code);
@@ -1661,7 +1676,18 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                 code = getZooKeeper()->tryMulti(remove_requests, remove_responses);
             });
 
-            if (code != Coordination::Error::ZOK)
+            if (code == Coordination::Error::ZOK)
+            {
+                /// Clear cache immediately for successfully deleted znodes
+                for (size_t k = batch_file_paths.size() - remove_requests.size(); k < batch_file_paths.size(); ++k)
+                {
+                    auto cache_key = getMetadataCacheKey(batch_file_paths[k]);
+                    local_file_statuses.remove(cache_key);
+                    file_paths.push_back(batch_file_paths[k]);
+                }
+                total_deleted += remove_requests.size();
+            }
+            else
             {
                 LOG_WARNING(log, "Final batch remove of failed nodes returned: {}", magic_enum::enum_name(code));
                 failed_batches.emplace_back(i, code);
@@ -1669,25 +1695,17 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         }
     }
 
-    LOG_TRACE(log, "Deleted {} failed file nodes from Keeper", file_paths.size());
-
-    /// Report failures after attempting all batches
+    /// Report failures after attempting all batches, but note partial success
     if (!failed_batches.empty())
     {
-        String error_msg = fmt::format("Failed to remove {} batch(es) of failed file nodes:", failed_batches.size());
+        String error_msg = fmt::format(
+            "Failed to remove {} batch(es) of failed file nodes ({} nodes successfully deleted before failure):",
+            failed_batches.size(), total_deleted);
         for (const auto & [batch_idx, err] : failed_batches)
         {
             error_msg += fmt::format(" [batch starting at index {} failed with {}]", batch_idx, magic_enum::enum_name(err));
         }
         throw Exception(ErrorCodes::KEEPER_EXCEPTION, "{}", error_msg);
-    }
-
-    /// Clear cache entries for each failed file
-    for (const auto & file_path : file_paths)
-    {
-        auto cache_key = getMetadataCacheKey(file_path);
-        local_file_statuses.remove(cache_key);
-        LOG_TEST(log, "Removed cache entry for {}", file_path);
     }
 
     LOG_INFO(log, "Successfully dropped {} failed files", file_paths.size());
