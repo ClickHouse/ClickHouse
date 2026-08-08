@@ -411,28 +411,26 @@ def test_consume_compressed_messages(pulsar_cluster):
         """
     )
 
-    def produce(compression, messages):
+    def produce(compression, message):
+        # `pulsar-client produce` cannot compress, so use `pulsar-perf` with a
+        # single-line payload file, which sends exactly that payload.
         subprocess.check_call(
             [
                 "docker",
                 "exec",
                 pulsar_cluster.pulsar_docker_id,
-                "bin/pulsar-client",
-                "produce",
-                "persistent://public/default/compression_topic",
+                "bash",
                 "-c",
-                compression,
-                "-s",
-                "|",
-                "-m",
-                "|".join(messages),
+                f"echo '{message}' > /tmp/payload_{compression}"
+                f" && bin/pulsar-perf produce -m 1 -r 1 -f /tmp/payload_{compression}"
+                f" -z {compression} compression_topic",
             ]
         )
 
-    produce("ZSTD", [f'{{"key":{i},"value":{i}}}' for i in range(3)])
-    produce("SNAPPY", [f'{{"key":{i},"value":{i}}}' for i in range(3, 6)])
+    produce("ZSTD", '{"key":0,"value":0}')
+    produce("SNAPPY", '{"key":1,"value":1}')
 
-    expected = "\n".join(f"{i}\t{i}" for i in range(6))
+    expected = "\n".join(f"{i}\t{i}" for i in range(2))
     wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
 
 
