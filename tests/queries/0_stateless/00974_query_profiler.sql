@@ -25,7 +25,12 @@ SYSTEM FLUSH LOGS trace_log, query_log;
 -- profiler signal - including those whose samples are dropped later - so they prove the real time
 -- profiler fires for an off-CPU (sleeping) query without depending on trace delivery. End-to-end
 -- delivery to `system.trace_log` and symbolization are checked by the CPU-bound sub-tests below.
-SELECT ProfileEvents['QueryProfilerRuns'] + ProfileEvents['QueryProfilerSignalOverruns'] + ProfileEvents['QueryProfilerConcurrencyOverruns'] > 0
+-- These counters are shared with the serverwide profiler, which the stateless test harness enables
+-- with a 1 second period (`serverwide_trace_collector.xml`), so require a count the serverwide
+-- profiler cannot reach: it contributes at most ~1 real time tick per thread over the 0.5 second
+-- query (and no CPU ticks, as the threads sleep), i.e. about 20 with service threads, while the
+-- 10ms per-query profiler is expected to deliver ~50 signals in each of the 16 threads (~800).
+SELECT ProfileEvents['QueryProfilerRuns'] + ProfileEvents['QueryProfilerSignalOverruns'] + ProfileEvents['QueryProfilerConcurrencyOverruns'] > 64
 FROM system.query_log
 WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler%' AND query NOT LIKE '%system%' AND type = 'QueryFinish'
 ORDER BY event_time DESC LIMIT 1;
