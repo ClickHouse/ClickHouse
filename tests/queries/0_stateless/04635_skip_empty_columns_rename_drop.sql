@@ -27,11 +27,13 @@ INSERT INTO t_skip_empty_rename_drop (key, a, b) VALUES (1, 100, 0);
 
 -- Keep the mutations pending so the read goes through on-the-fly alter
 -- conversions: the rename map contains c <- b and the drop set contains c.
+-- The three commands must be issued as a single ALTER: since #112783 a
+-- separate metadata ALTER on plain MergeTree waits for a pending barrier
+-- (rename) mutation to finish, so sequential ALTERs would block under
+-- SYSTEM STOP MERGES and the pending state could never be observed.
 SYSTEM STOP MERGES t_skip_empty_rename_drop;
 
-ALTER TABLE t_skip_empty_rename_drop RENAME COLUMN b TO c;
-ALTER TABLE t_skip_empty_rename_drop DROP COLUMN c;
-ALTER TABLE t_skip_empty_rename_drop ADD COLUMN c UInt64 DEFAULT 999;
+ALTER TABLE t_skip_empty_rename_drop RENAME COLUMN b TO c, DROP COLUMN c, ADD COLUMN c UInt64 DEFAULT 999;
 
 -- The re-added c must read its DEFAULT (999), not the frozen type-default (0)
 -- of the dropped, formerly skipped b.
