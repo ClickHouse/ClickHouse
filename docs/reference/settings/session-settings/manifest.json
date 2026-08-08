@@ -1276,6 +1276,7 @@
     "variant_throw_on_type_mismatch": "/reference/settings/session-settings/other",
     "vector_search_filter_strategy": "/reference/settings/session-settings/vector-search",
     "vector_search_index_fetch_multiplier": "/reference/settings/session-settings/vector-search",
+    "vector_search_min_surviving_pk_fraction": "/reference/settings/session-settings/vector-search",
     "vector_search_use_quantized_codes": "/reference/settings/session-settings/vector-search",
     "vector_search_with_rescoring": "/reference/settings/session-settings/vector-search",
     "wait_changes_become_visible_after_commit_mode": "/reference/settings/session-settings/other",
