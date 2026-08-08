@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <Compression/ICompressionCodec.h>
+#include <Core/Defines.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
@@ -69,6 +70,10 @@ struct MergeTreeReaderSettings
     bool use_prefixes_deserialization_thread_pool = false;
     bool secondary_indices_enable_bulk_filtering = true;
     bool use_minmax_index_bulk_filtering = false;
+    /// Chunk size (in skip-index granules) for the bulk skip-index evaluation path.
+    /// Fed from the query's `max_block_size` so the per-query working set stays under
+    /// the user's control; the default only covers contexts created without a query.
+    UInt64 minmax_index_bulk_filtering_chunk_size = DEFAULT_BLOCK_SIZE;
     UInt64 merge_tree_min_bytes_for_seek = 0;
     UInt64 merge_tree_min_rows_for_seek = 0;
     UInt64 merge_tree_coarse_index_granularity = 8;

@@ -2083,7 +2083,7 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
 )", 0) \
     DECLARE(Bool, use_minmax_index_bulk_filtering, false, R"(
-Evaluate minmax skip indexes across every granule of a part in a single vectorized pass, instead of one granule at a time. Benefits queries with wide parts and fine-grained (e.g. `GRANULARITY 1`) minmax indexes, where per-granule evaluation cost dominates.
+Evaluate minmax skip indexes across every granule of a part in a single vectorized pass, instead of one granule at a time. Benefits queries with wide parts and fine-grained (e.g. `GRANULARITY 1`) minmax indexes, where per-granule evaluation cost dominates. Index entries are read and evaluated in chunks of [max_block_size](#max_block_size) granules, so the working memory stays bounded regardless of the part size.
 
 The vectorized pass runs during query analysis, so for ordinary query-condition skip-index analysis it only takes effect when [use_skip_indexes_on_data_read](#use_skip_indexes_on_data_read) is disabled. When `use_skip_indexes_on_data_read` is enabled (the default), the query condition is evaluated against minmax indexes during data reading and this setting does not affect that path. An exception is the join runtime-filter path (`enable_join_runtime_filters_index_analysis`): it filters granules during query execution regardless of `use_skip_indexes_on_data_read`, and a runtime-filter range predicate on a minmax-indexed column can use the vectorized pass.
 

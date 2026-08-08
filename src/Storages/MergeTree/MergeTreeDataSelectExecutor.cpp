@@ -2724,11 +2724,12 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// that pass most granules (a target workload of this feature), accumulating
         /// survivors first would reintroduce the per-part term we are trying to avoid.
         ///
-        /// The constant matches ClickHouse's default `max_block_size` so the skip-index
-        /// evaluation has the same working-set shape as ordinary column reads. The
-        /// underlying `CompressedReadBuffer` streams decompressed blocks on demand
-        /// regardless of the chunk boundary chosen here.
-        constexpr size_t chunk_size_index_granules = DEFAULT_BLOCK_SIZE;
+        /// The chunk size follows the query's `max_block_size` so the skip-index
+        /// evaluation has the same working-set shape as ordinary column reads and
+        /// respects the user's per-query memory expectations. The underlying
+        /// `CompressedReadBuffer` streams decompressed blocks on demand regardless
+        /// of the chunk boundary chosen here.
+        const size_t chunk_size_index_granules = reader_settings.minmax_index_bulk_filtering_chunk_size;
 
         /// One skip-index granule can cover several PK-pruned `ranges` (the scalar path below
         /// keeps `last_index_mark` for exactly this case), so consecutive `index_ranges` may

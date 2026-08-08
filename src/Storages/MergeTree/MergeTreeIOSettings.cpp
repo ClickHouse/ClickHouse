@@ -34,6 +34,7 @@ namespace Setting
     extern const SettingsUInt64 filesystem_prefetches_limit;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool use_minmax_index_bulk_filtering;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
@@ -138,6 +139,8 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
     result.secondary_indices_enable_bulk_filtering = settings[Setting::secondary_indices_enable_bulk_filtering];
     result.use_minmax_index_bulk_filtering = settings[Setting::use_minmax_index_bulk_filtering];
+    /// `max_block_size = 0` would make the chunked bulk loop below never advance; treat it as 1.
+    result.minmax_index_bulk_filtering_chunk_size = std::max<UInt64>(1, settings[Setting::max_block_size]);
     result.merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek];
     result.merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek];
     result.merge_tree_coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity];
