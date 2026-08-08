@@ -24,12 +24,18 @@ namespace ErrorCodes
 namespace
 {
 
+/// The path and the replica name are separate engine arguments, so the remedy names the one that failed.
+std::string_view howToOverride(std::string_view what)
+{
+    return what == "replica name" ? "specify the replica name explicitly" : "specify the ZooKeeper path explicitly";
+}
+
 /// A substituted {database}/{table} is spliced in verbatim, so the value itself must stay a single path
 /// component: '/' adds components, and a brace is expanded again by the next macro pass (which can mint
 /// components out of the value, or complete a brace opened by a configured macro).
-void checkSubstitutedValues(const Macros::MacroExpansionInfo & info)
+void checkSubstitutedValues(std::string_view what, const Macros::MacroExpansionInfo & info)
 {
-    auto check = [](std::string_view macro_name, const String & value)
+    auto check = [what](std::string_view macro_name, const String & value)
     {
         std::string_view bad;
         if (value.contains('/'))
@@ -40,10 +46,10 @@ void checkSubstitutedValues(const Macros::MacroExpansionInfo & info)
             return;
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Macro '{{{}}}' in the ZooKeeper path or the replica name of a replicated table expands to {}, "
+            "Macro '{{{}}}' in the {} of a replicated table expands to {}, "
             "which contains {} and so is not a single ZooKeeper path component. "
-            "Rename the {} or specify the ZooKeeper path explicitly",
-            macro_name, quoteString(value), bad, macro_name);
+            "Rename the {} or {}",
+            macro_name, what, quoteString(value), bad, macro_name, howToOverride(what));
     };
 
     if (info.expanded_database)
@@ -52,9 +58,9 @@ void checkSubstitutedValues(const Macros::MacroExpansionInfo & info)
         check("table", info.table_id.table_name);
 }
 
-/// '.', '..' and control bytes are not valid znode names. Unlike the check above, this one runs on the
-/// fully expanded string, because a legal component can be assembled from a substituted value plus the
-/// surrounding template, possibly only in a later macro pass.
+/// '.', '..' and control characters are not valid znode names. Unlike the check above, this one runs on
+/// the fully expanded string, because a legal component can be assembled from a substituted value plus
+/// the surrounding template, possibly only in a later macro pass.
 void checkPathComponents(std::string_view what, const String & str)
 {
     for (size_t pos = 0, next = 0; next != String::npos; pos = next + 1)
@@ -66,17 +72,29 @@ void checkPathComponents(std::string_view what, const String & str)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The {} of a replicated table expands to {}, which has '{}' as a ZooKeeper path component. "
-                "Rename the table or the database, or specify the ZooKeeper path explicitly",
-                what, quoteString(str), component);
+                "Rename the table or the database, or {}",
+                what, quoteString(str), component, howToOverride(what));
 
-        for (char c : component)
-            if (static_cast<unsigned char>(c) < 0x20 || static_cast<unsigned char>(c) == 0x7F)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The {} of a replicated table expands to a string containing the control character 0x{}, "
-                    "which is not valid in a ZooKeeper path. Rename the table or the database, "
-                    "or specify the ZooKeeper path explicitly",
-                    what, getHexUIntUppercase(static_cast<UInt8>(c)));
+        for (size_t i = 0; i < component.size(); ++i)
+        {
+            const auto byte = static_cast<unsigned char>(component[i]);
+            const auto next_byte = i + 1 < component.size() ? static_cast<unsigned char>(component[i + 1]) : 0;
+            Int32 code_point = -1;
+            if (byte < 0x20 || byte == 0x7F)
+                code_point = byte;
+            /// UTF-8 encodes U+0080-U+009F only as C2 80..C2 9F, so the pair test cannot match a
+            /// continuation byte of some other character.
+            else if (byte == 0xC2 && next_byte >= 0x80 && next_byte <= 0x9F)
+                code_point = next_byte;
+            if (code_point < 0)
+                continue;
+
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The {} of a replicated table expands to a string containing the control character U+{}, "
+                "which is not valid in a ZooKeeper path. Rename the table or the database, or {}",
+                what, getHexUIntUppercase(static_cast<UInt16>(code_point)), howToOverride(what));
+        }
     }
 }
 
@@ -133,8 +151,8 @@ TableZnodeInfo TableZnodeInfo::resolve(const String & requested_path, const Stri
 
         if (validate_substitutions)
         {
-            checkSubstitutedValues(path_info);
-            checkSubstitutedValues(replica_info);
+            checkSubstitutedValues("ZooKeeper path", path_info);
+            checkSubstitutedValues("replica name", replica_info);
         }
     }
 
@@ -164,8 +182,8 @@ TableZnodeInfo TableZnodeInfo::resolve(const String & requested_path, const Stri
 
     if (validate_substitutions)
     {
-        checkSubstitutedValues(info);
-        checkSubstitutedValues(replica_info);
+        checkSubstitutedValues("ZooKeeper path", info);
+        checkSubstitutedValues("replica name", replica_info);
         if (path_substituted)
             checkPathComponents("ZooKeeper path", res.full_path);
         if (replica_substituted)

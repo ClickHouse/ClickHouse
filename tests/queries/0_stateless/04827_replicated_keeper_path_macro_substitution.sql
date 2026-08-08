@@ -25,6 +25,16 @@ CREATE TABLE `{default_path_test}n2/replicas/p` (c0 Int) ENGINE = ReplicatedMerg
 -- two appear in different expansion passes.
 CREATE TABLE `.` (c0 Int) ENGINE = ReplicatedMergeTree('{default_path_test}{table}', 'r6') ORDER BY c0; -- { serverError BAD_ARGUMENTS }
 
+-- A closing brace on its own is enough, because it can complete a brace opened by the template.
+CREATE TABLE `e}f` (c0 Int) ENGINE = ReplicatedMergeTree('/clickhouse/04827/{database}/{table}', 'r6b') ORDER BY c0; -- { serverError BAD_ARGUMENTS }
+
+-- Control characters are not valid znode names either. U+0085 is a C1 control, encoded as C2 85.
+CREATE TABLE `g\x01h` (c0 Int) ENGINE = ReplicatedMergeTree('/clickhouse/04827/{database}/{table}', 'r6c') ORDER BY c0; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE `g\xC2\x85h` (c0 Int) ENGINE = ReplicatedMergeTree('/clickhouse/04827/{database}/{table}', 'r6d') ORDER BY c0; -- { serverError BAD_ARGUMENTS }
+-- A name whose bytes merely look like the above is unaffected: U+00BF is C2 BF, outside the C1 range.
+CREATE TABLE `g\xC2\xBFh` (c0 Int) ENGINE = ReplicatedMergeTree('/clickhouse/04827/{database}/{table}', 'r6e') ORDER BY c0;
+CREATE TABLE `таблица_🚀_表` (c0 Int) ENGINE = ReplicatedMergeTree('/clickhouse/04827/{database}/{table}', 'r6f') ORDER BY c0;
+
 -- Ordinary and dotted names keep working: the rule is not a character-level ban on '.'.
 CREATE TABLE t_plain (c0 Int) ENGINE = ReplicatedMergeTree('/clickhouse/04827/{database}/{table}', 'r7') ORDER BY c0;
 CREATE TABLE `my.table` (c0 Int) ENGINE = ReplicatedMergeTree('/clickhouse/04827/{database}/{table}', 'r8') ORDER BY c0;
@@ -41,8 +51,14 @@ SELECT replica_name FROM system.replicas WHERE database = currentDatabase() AND 
 CREATE TABLE t_nested_path (c0 Int) ENGINE = ReplicatedMergeTree('/clickhouse/04827/{database}/a/b/c', 'r9') ORDER BY c0;
 SELECT replaceOne(zookeeper_path, currentDatabase(), '{db}') FROM system.replicas WHERE database = currentDatabase() AND table = 't_nested_path';
 
+-- A definition read back from metadata is never re-judged, so an existing table keeps loading.
+DETACH TABLE t_plain;
+ATTACH TABLE t_plain;
+
 DROP TABLE t_plain;
 DROP TABLE `my.table`;
 DROP TABLE `.`;
+DROP TABLE `g\xC2\xBFh`;
+DROP TABLE `таблица_🚀_表`;
 DROP TABLE t_explicit_replica;
 DROP TABLE t_nested_path;
