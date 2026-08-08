@@ -165,7 +165,10 @@ SETTINGS enable_analyzer = 0, enable_optimize_predicate_expression = 0;
 -- `and((x in [5, 5]), (x in [5, 5]))`, because the plan-level filter pushdown supplies the same
 -- condition anyway.
 DROP TABLE IF EXISTS t_04812;
-CREATE TABLE t_04812 (x UInt64) ENGINE = MergeTree ORDER BY x;
+-- add_minmax_index_for_numeric_columns = 0: an implicit minmax index on `x` would add its own
+-- `Condition:` lines to `EXPLAIN indexes = 1`, and the checks below extract every such line.
+CREATE TABLE t_04812 (x UInt64) ENGINE = MergeTree ORDER BY x
+SETTINGS add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_04812 SELECT number FROM numbers(1000);
 
 SELECT '-- 13 positive oracle: a subquery without untuple still receives the pushed predicate';

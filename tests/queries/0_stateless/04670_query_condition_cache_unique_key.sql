@@ -30,9 +30,12 @@ SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_qcc_uk;
 
+-- add_minmax_index_for_numeric_columns = 0: an implicit minmax index on `v` would prune everything
+-- for the never-matching predicate below, making the `SelectedMarks` assertions vacuous (both runs
+-- would read no marks regardless of the query condition cache).
 CREATE TABLE t_qcc_uk (id UInt64, v UInt64)
 ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)
-SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, auto_statistics_types = '';
+SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, auto_statistics_types = '', add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_qcc_uk SELECT number, number FROM numbers(100000);
 

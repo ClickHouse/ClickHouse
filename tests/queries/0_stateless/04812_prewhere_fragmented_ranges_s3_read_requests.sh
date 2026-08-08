@@ -26,7 +26,8 @@ CREATE TABLE t_prewhere_s3_requests
 )
 ENGINE = MergeTree ORDER BY id
 SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0, index_granularity = 16,
-    min_compress_block_size = 512, max_compress_block_size = 512;
+    min_compress_block_size = 512, max_compress_block_size = 512,
+    add_minmax_index_for_numeric_columns = 0; -- an implicit minmax index on v would prune before ix_v, changing its pinned granule counts
 
 -- v is constant within each 16-row granule; only every 10th granule matches v = 3.
 INSERT INTO t_prewhere_s3_requests SELECT number, intDiv(number, 16) % 10, number FROM numbers(60000);
