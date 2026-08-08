@@ -418,3 +418,183 @@ def test_failed_file_ttl_ordered_mode_no_cleanup(started_cluster):
     # Cleanup
     node.query(f"DROP TABLE {table_name}")
     node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_failed_file_ttl_does_not_reset_retry_counter(started_cluster):
+    """Test that failed_file_ttl_sec cleanup does NOT reset the retry counter.
+
+    This test verifies the fix for the bug where TTL cleanup was deleting .retriable
+    nodes (which store the retry count), causing the retry counter to reset to 0
+    and allowing files to retry forever instead of reaching the terminal failed state.
+
+    The test creates a race condition where:
+    1. A file fails and creates a .retriable node with retries=0
+    2. TTL cleanup runs and (with the bug) would delete the .retriable node
+    3. The file retries and (with the bug) would restart from retries=0
+
+    With the fix, .retriable nodes are skipped by cleanup, so retries increment
+    correctly and the file reaches terminal failed state after s3queue_loading_retries.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_ttl_retry_counter_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    # Set up timing to create the race condition:
+    # - polling_min_timeout_ms=5000: 5 seconds between retry attempts
+    # - failed_file_ttl_sec=2: TTL cleanup tries to delete nodes after 2 seconds
+    # - cleanup_interval=2000ms: cleanup sweep runs every 2 seconds
+    # This means cleanup runs 2-3 times between retry attempts, exercising the race.
+    #
+    # With the bug: .retriable node gets deleted before next retry, counter resets to 0
+    # With the fix: .retriable node is preserved, retries increment to 3 → terminal failed
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 3,  # Allow 3 retries before terminal failure
+            "failed_file_ttl_sec": 2,  # TTL shorter than retry interval
+            "cleanup_interval_min_ms": 2000,
+            "cleanup_interval_max_ms": 2000,
+            "polling_min_timeout_ms": 5000,  # 5 seconds between retries
+            "polling_max_timeout_ms": 5000,
+        },
+    )
+
+    # Create one invalid CSV file that will fail every time
+    invalid_csv = b"not,valid,data\n"
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad_retry.csv", invalid_csv
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_file_status():
+        """Get the file's status from metadata cache."""
+        result = node.query(
+            f"SELECT status FROM system.s3queue_metadata_cache "
+            f"WHERE zookeeper_path = '{keeper_path}' AND file_name = 'bad_retry.csv'"
+        ).strip()
+        return result if result else None
+
+    def get_retry_count_from_keeper():
+        """Parse retry count from zookeeper node data.
+
+        Queries both terminal failed nodes and .retriable nodes.
+        Returns (retries, is_terminal) tuple.
+        """
+        failed_path = f"{keeper_path}/failed"
+
+        # Get all failed nodes (both terminal and .retriable)
+        result = node.query(
+            f"SELECT name, value FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+
+        if not result:
+            return None, False
+
+        for line in result.split("\n"):
+            parts = line.split("\t")
+            if len(parts) != 2:
+                continue
+
+            node_name, node_value = parts
+
+            # Parse the NodeMetadata JSON-like structure
+            # Format is roughly: {"file_path":"...","retries":N,...}
+            import re
+
+            # Node names are hashes, not filenames - check file_path in the JSON instead
+            file_path_match = re.search(r'"file_path"\s*:\s*"([^"]*)"', node_value)
+            if not file_path_match or "bad_retry.csv" not in file_path_match.group(1):
+                continue
+
+            is_terminal = not node_name.endswith(".retriable")
+
+            # Extract retries count - the data format is a simple struct with retries field
+            match = re.search(r'"retries"\s*:\s*(\d+)', node_value)
+            if match:
+                retries = int(match.group(1))
+                return retries, is_terminal
+
+        return None, False
+
+    logging.info("Waiting for file to go through retry cycles...")
+
+    # Track retry progression to detect if counter is resetting
+    max_retries_seen = -1
+    timeout = 90  # 90 seconds should be enough for 4 attempts at 5s intervals + overhead
+
+    for elapsed in range(timeout):
+        time.sleep(1)
+
+        status = get_file_status()
+        retries, is_terminal = get_retry_count_from_keeper()
+
+        if retries is not None:
+            if retries > max_retries_seen:
+                max_retries_seen = retries
+                logging.info(
+                    f"[{elapsed}s] Retry count: {retries}, "
+                    f"terminal: {is_terminal}, status: {status}"
+                )
+
+            # Success case: reached terminal failed state with exactly 3 retries
+            if is_terminal and retries == 3:
+                logging.info(
+                    f"SUCCESS: File reached terminal failed state with retries={retries} after {elapsed}s"
+                )
+                assert status == "Failed", \
+                    f"Status should be 'Failed' in terminal state, got: {status}"
+                break
+
+            # Bug detection: retry counter went backwards (got reset)
+            if retries < max_retries_seen:
+                pytest.fail(
+                    f"BUG DETECTED: Retry counter reset from {max_retries_seen} to {retries}. "
+                    f"The .retriable node was likely deleted by TTL cleanup, breaking the retry limit invariant."
+                )
+        else:
+            # File not in failed state yet, still processing
+            if elapsed % 10 == 0:
+                logging.info(f"[{elapsed}s] File not in failed state yet, status: {status}")
+
+    else:
+        # Timeout - distinguish between "stuck retrying" vs "never started"
+        final_retries, final_is_terminal = get_retry_count_from_keeper()
+        final_status = get_file_status()
+
+        if final_retries is not None and not final_is_terminal:
+            pytest.fail(
+                f"TIMEOUT: File stuck retrying after {timeout}s. "
+                f"Last retry count: {final_retries}, max seen: {max_retries_seen}. "
+                f"The retry counter may be resetting (bug present), preventing terminal failure."
+            )
+        else:
+            pytest.fail(
+                f"TIMEOUT: File did not reach terminal failed state after {timeout}s. "
+                f"Status: {final_status}, retries: {final_retries}, terminal: {final_is_terminal}"
+            )
+
+    # Final verification: file is in terminal failed state with exactly 3 retries
+    final_retries, final_is_terminal = get_retry_count_from_keeper()
+    final_status = get_file_status()
+
+    assert final_is_terminal, "File should be in terminal failed state (no .retriable suffix)"
+    assert final_retries == 3, \
+        f"Terminal failed node should have retries=3, got: {final_retries}"
+    assert final_status == "Failed", \
+        f"Cache status should be 'Failed', got: {final_status}"
+
+    logging.info("Test passed: retry counter was NOT reset by TTL cleanup")
+
+    # Cleanup
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
