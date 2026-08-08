@@ -1,0 +1,152 @@
+---
+sidebarTitle: 'Generic MySQL'
+description: 'إعداد أي مثيل MySQL كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/mysql/source/generic
+title: 'دليل إعداد Generic MySQL كمصدر'
+doc_type: 'guide'
+keywords: ['generic mysql', 'clickpipes', 'binary logging', 'ssl tls', 'mysql 8.x']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+  إذا كنت تستخدم أحد المزوّدين المدعومين (في الشريط الجانبي)، فيُرجى الرجوع إلى الدليل المخصّص لذلك المزوّد.
+</Info>
+
+<div id="enable-binlog-retention">
+  ## تفعيل الاحتفاظ بسجل binary log
+</div>
+
+تحتوي سجلات binary log على معلومات عن التغييرات التي تُجرى على البيانات في مثيل خادم MySQL، وهي مطلوبة لعملية النسخ المتماثل.
+
+<div id="binlog-v8-x">
+  ### ‏MySQL 8.x والإصدارات الأحدث
+</div>
+
+لتمكين التسجيل الثنائي على مثيل MySQL لديك، تأكد من ضبط الإعدادات التالية:
+
+```sql
+log_bin = ON                        -- default value
+binlog_format = ROW                 -- default value
+binlog_row_image = FULL             -- default value
+binlog_row_metadata = FULL
+binlog_expire_logs_seconds = 86400  -- 1 day or higher; default is 30 days
+```
+
+للتحقق من هذه الإعدادات، نفِّذ أوامر SQL التالية:
+
+```sql
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'binlog_row_metadata';
+SHOW VARIABLES LIKE 'binlog_expire_logs_seconds';
+```
+
+إذا لم تتطابق القيم، يمكنك تنفيذ أوامر SQL التالية لضبطها:
+
+```sql
+SET PERSIST log_bin = ON;
+SET PERSIST binlog_format = ROW;
+SET PERSIST binlog_row_image = FULL;
+SET PERSIST binlog_row_metadata = FULL;
+SET PERSIST binlog_expire_logs_seconds = 86400;
+```
+
+إذا غيّرت إعداد `log_bin`، فيجب عليك إعادة تشغيل مثيل MySQL حتى تصبح التغييرات نافذة.
+
+بعد تغيير الإعدادات، تابع إلى [تهيئة مستخدم لقاعدة البيانات](#configure-database-user).
+
+<div id="binlog-v5-x">
+  ### MySQL 5.7
+</div>
+
+لتمكين التسجيل الثنائي على مثيل MySQL 5.7 لديك، تأكد من ضبط الإعدادات التالية:
+
+```sql
+server_id = 1            -- or greater; anything but 0
+log_bin = ON
+binlog_format = ROW      -- default value
+binlog_row_image = FULL  -- default value
+expire_logs_days = 1     -- or higher; 0 would mean logs are preserved forever
+```
+
+للتحقق من هذه الإعدادات، نفّذ أوامر SQL التالية:
+
+```sql
+SHOW VARIABLES LIKE 'server_id';
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'expire_logs_days';
+```
+
+إذا لم تتطابق القيم، يمكنك ضبطها في ملف الإعدادات (عادةً في `/etc/my.cnf` أو `/etc/mysql/my.cnf`):
+
+```ini
+[mysqld]
+server_id = 1
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+expire_logs_days = 1
+```
+
+يجب إعادة تشغيل مثيل MySQL لكي تسري التغييرات.
+
+<Note>
+  لا يُدعَم استبعاد الأعمدة وتغييرات المخطط في MySQL 5.7 والإصدارات الأقدم. تعتمد هذه الميزات على البيانات الوصفية للجدول، وهي غير متوفرة في binlog قبل [MySQL 8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/).
+</Note>
+
+<div id="configure-database-user">
+  ## إعداد مستخدم قاعدة بيانات
+</div>
+
+اتصل بمثيل MySQL الخاص بك بصفته المستخدم root، ثم نفّذ الأوامر التالية:
+
+1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some_secure_password';
+   ```
+
+2. امنح أذونات المخطط. يوضّح المثال التالي الأذونات الخاصة بقاعدة البيانات `clickpipes`. كرّر هذه الأوامر لكل قاعدة بيانات ومضيف تريد إجراء النسخ المتماثل لهما:
+
+   ```sql
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. امنح المستخدم أذونات النسخ المتماثل:
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<Note>
+  تأكّد من استبدال `clickpipes_user` و`some_secure_password` باسم المستخدم وكلمة المرور اللذين تريد استخدامهما.
+</Note>
+
+<div id="ssl-tls-configuration">
+  ## إعداد SSL/TLS (موصى به)
+</div>
+
+تضمن شهادات SSL اتصالات آمنة بقاعدة بيانات MySQL الخاصة بك. ويعتمد الإعداد على نوع الشهادة:
+
+**جهة إصدار شهادات موثوقة (DigiCert, Let&#39;s Encrypt, إلخ.)** - لا حاجة إلى أي إعداد إضافي.
+
+**جهة إصدار شهادات داخلية** - احصل على ملف شهادة CA الجذرية من فريق تقنية المعلومات لديك. في واجهة مستخدم ClickPipes، حمّله عند إنشاء MySQL ClickPipe جديد.
+
+**MySQL ذاتي الاستضافة** - انسخ شهادة CA من خادم MySQL لديك (توجد عادةً في `/var/lib/mysql/ca.pem`) وحمّلها في الواجهة عند إنشاء MySQL ClickPipe جديد. استخدم عنوان IP الخاص بالخادم بوصفه `host`.
+
+**MySQL ذاتي الاستضافة من دون الوصول إلى الخادم** - تواصل مع فريق تقنية المعلومات لديك للحصول على الشهادة. وكحل أخير، استخدم مفتاح التبديل &quot;Skip Certificate Verification&quot; في واجهة مستخدم ClickPipes (غير موصى به لأسباب أمنية).
+
+لمزيد من المعلومات حول خيارات SSL/TLS، راجع [الأسئلة الشائعة](/ar/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/mysql/index) والبدء في إدخال البيانات من مثيل MySQL الخاص بك إلى ClickHouse Cloud.
+احرص على تدوين بيانات الاتصال التي استخدمتها أثناء إعداد مثيل MySQL الخاص بك، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

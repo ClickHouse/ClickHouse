@@ -107,6 +107,12 @@ public:
         /// It is a constant calculated from deterministic functions (See IFunction::isDeterministic).
         /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
         bool is_deterministic_constant = true;
+        /// Marks the const column that carries a join runtime-filter id (added by `tryAddJoinRuntimeFilter`).
+        bool is_runtime_filter_id = false;
+        /// Display-only: this constant holds a secret (e.g. an `encrypt` key). The value stays in
+        /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
+        /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
+        bool is_masked_secret = false;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
 
@@ -158,13 +164,22 @@ public:
     std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
 
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
+    /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
+    /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
+    /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
+    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(ColumnConstPtr column, DataTypePtr type, std::string name, bool is_deterministic_constant = true);
+    const Node & addColumn(
+        ColumnConstPtr column,
+        DataTypePtr type,
+        std::string name,
+        bool is_deterministic_constant = true,
+        bool is_masked_secret = false,
+        bool is_runtime_filter_id = false);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
@@ -220,15 +235,19 @@ public:
     /// Do not remove any inputs.
     void removeFromOutputs(const std::string & node_name);
 
+    /// Remove all outputs whose result name is in `node_names`. Unlike the single-name overload above,
+    /// names not present among the outputs are ignored (no throw), and unused actions are not pruned.
+    void removeFromOutputs(const NameSet & node_names);
+
     /// Remove actions that are not needed to compute output nodes.
     /// Returns true if any of the actions were removed.
     /// Outputs remain unchanged.
-    bool removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
+    bool removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true, bool evaluate_constants = false);
 
     /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
     /// Returns true if any of the actions were removed.
     /// Outputs remain unchanged.
-    bool removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
+    bool removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true, bool evaluate_constants = false);
 
     /// Remove actions that are not needed to compute output nodes with required names.
     /// Returns true if any of the actions were removed or if the outputs are changed.
@@ -293,6 +312,9 @@ public:
 
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases);
+
+    /// Replace each node listed in `substitutions` (a node of this DAG) with a constant COLUMN node.
+    void substitute(const std::unordered_map<const Node *, ColumnWithTypeAndName> & substitutions);
 
     /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
     /// Special handling for logical AND: non-computable children are replaced with constant true.

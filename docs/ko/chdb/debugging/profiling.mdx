@@ -1,0 +1,433 @@
+---
+title: 'DataStore 프로파일링'
+sidebarTitle: '프로파일링'
+slug: /chdb/debugging/profiling
+description: '내장 프로파일러로 DataStore 성능을 측정합니다'
+keywords: ['chdb', 'datastore', '프로파일링', '성능', '타이밍', '벤치마크']
+doc_type: 'guide'
+---
+
+DataStore 프로파일러는 실행 시간을 측정하고 성능 병목을 파악하는 데 도움이 됩니다.
+
+<div id="quick-start">
+  ## 빠른 시작
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config, get_profiler
+
+# 프로파일링 활성화
+config.enable_profiling()
+
+# 작업 실행
+ds = pd.read_csv("large_data.csv")
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('category')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# 보고서 확인
+profiler = get_profiler()
+print(profiler.report())
+```
+
+<div id="enabling">
+  ## 프로파일링 활성화
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# 프로파일링 활성화
+config.enable_profiling()
+
+# 프로파일링 비활성화
+config.disable_profiling()
+
+# 프로파일링 활성화 여부 확인
+print(config.profiling_enabled)  # True or False
+```
+
+***
+
+<div id="api">
+  ## 프로파일러 API
+</div>
+
+<div id="get-profiler">
+  ### 프로파일러 가져오는 방법
+</div>
+
+```python
+from chdb.datastore.config import get_profiler
+
+profiler = get_profiler()
+```
+
+<div id="report">
+  ### report()
+</div>
+
+성능 보고서를 출력합니다.
+
+```python
+profiler.report(min_duration_ms=0.1)
+```
+
+**매개변수:**
+
+| 매개변수              | 유형    | 기본값   | 설명                          |
+| ----------------- | ----- | ----- | --------------------------- |
+| `min_duration_ms` | float | `0.1` | 이 값 이상의 소요 시간을 가진 단계만 표시합니다 |
+
+**예시 출력:**
+
+```text
+======================================================================
+EXECUTION PROFILE
+======================================================================
+   45.79ms (100.0%) Total Execution
+     23.25ms ( 50.8%) Query Planning [ops_count=2]
+     22.29ms ( 48.7%) SQL Segment 1 [ops=2]
+       20.48ms ( 91.9%) SQL Execution
+        1.74ms (  7.8%) Result to DataFrame
+----------------------------------------------------------------------
+      TOTAL:    45.79ms
+======================================================================
+```
+
+보고서에는 다음이 표시됩니다:
+
+* 각 단계의 소요 시간(밀리초)
+* 상위 단계 시간/전체 시간 대비 비율
+* 작업의 계층적 중첩 구조
+* 각 단계의 메타데이터(예: `ops_count`, `ops`)
+
+<div id="step">
+  ### step()
+</div>
+
+코드 블록의 실행 시간을 수동으로 측정합니다.
+
+```python
+with profiler.step("custom_operation"):
+    # 여기에 코드를 작성하세요
+    expensive_operation()
+```
+
+<div id="clear">
+  ### clear()
+</div>
+
+모든 프로파일링 데이터를 삭제합니다.
+
+```python
+profiler.clear()
+```
+
+<div id="summary">
+  ### summary()
+</div>
+
+단계 이름과 소요 시간(ms)의 매핑이 담긴 딕셔너리를 가져옵니다.
+
+```python
+summary = profiler.summary()
+for name, duration in summary.items():
+    print(f"{name}: {duration:.2f}ms")
+```
+
+출력 예시:
+
+```text
+Total Execution: 45.79ms
+Total Execution.Cache Check: 0.00ms
+Total Execution.Query Planning: 23.25ms
+Total Execution.SQL Segment 1: 22.29ms
+Total Execution.SQL Segment 1.SQL Execution: 20.48ms
+Total Execution.SQL Segment 1.Result to DataFrame: 1.74ms
+```
+
+***
+
+<div id="understanding">
+  ## 보고서 살펴보기
+</div>
+
+<div id="step-names">
+  ### 단계 이름
+</div>
+
+| 단계 이름                 | 설명               |
+| --------------------- | ---------------- |
+| `Total Execution`     | 전체 실행 시간         |
+| `Query Planning`      | 쿼리 계획 수립에 소요된 시간 |
+| `SQL Segment N`       | SQL 세그먼트 N 실행    |
+| `SQL Execution`       | 실제 SQL 쿼리 실행     |
+| `Result to DataFrame` | 결과를 pandas로 변환   |
+| `Cache Check`         | 쿼리 캐시 확인         |
+| `Cache Write`         | 결과를 캐시에 쓰기       |
+
+<div id="duration">
+  ### 소요 시간
+</div>
+
+* **계획 단계** (쿼리 계획): 일반적으로 빠릅니다
+* **실행 단계** (SQL 실행): 실제 작업이 수행되는 단계입니다
+* **전송 단계** (결과를 DataFrame으로): 데이터를 pandas로 변환하는 단계입니다
+
+<div id="bottlenecks">
+  ### 병목 지점 파악
+</div>
+
+```text
+======================================================================
+EXECUTION PROFILE
+======================================================================
+  200.50ms (100.0%) Total Execution
+    10.25ms (  5.1%) Query Planning [ops_count=4]
+   190.00ms ( 94.8%) SQL Segment 1 [ops=4]
+     185.00ms ( 97.4%) SQL Execution    <- 주요 병목 지점
+       5.00ms (  2.6%) Result to DataFrame
+----------------------------------------------------------------------
+      TOTAL:   200.50ms
+======================================================================
+```
+
+***
+
+<div id="patterns">
+  ## 프로파일링 패턴
+</div>
+
+<div id="single-query">
+  ### 단일 쿼리 프로파일링
+</div>
+
+```python
+config.enable_profiling()
+profiler = get_profiler()
+profiler.clear()  # 이전 데이터 초기화
+
+# 쿼리 실행
+result = ds.filter(...).groupby(...).agg(...).to_df()
+
+# 이 쿼리의 프로파일 확인
+print(profiler.report())
+```
+
+<div id="multiple-queries">
+  ### 여러 쿼리 프로파일링하기
+</div>
+
+```python
+config.enable_profiling()
+profiler = get_profiler()
+profiler.clear()
+
+# 쿼리 1
+with profiler.step("Query 1"):
+    result1 = query1.to_df()
+
+# 쿼리 2
+with profiler.step("Query 2"):
+    result2 = query2.to_df()
+
+print(profiler.report())
+```
+
+<div id="compare">
+  ### 접근 방식 비교
+</div>
+
+```python
+profiler = get_profiler()
+
+# 방법 1: 필터 후 groupby
+profiler.clear()
+with profiler.step("filter_then_groupby"):
+    result1 = ds.filter(ds['x'] > 10).groupby('y').sum().to_df()
+summary1 = profiler.summary()
+time1 = summary1.get('filter_then_groupby', 0)
+
+# 방법 2: Groupby 후 필터
+profiler.clear()
+with profiler.step("groupby_then_filter"):
+    result2 = ds.groupby('y').sum().filter(ds['x'] > 10).to_df()
+summary2 = profiler.summary()
+time2 = summary2.get('groupby_then_filter', 0)
+
+print(f"Approach 1: {time1:.2f}ms")
+print(f"Approach 2: {time2:.2f}ms")
+print(f"Winner: {'Approach 1' if time1 < time2 else 'Approach 2'}")
+```
+
+***
+
+<div id="optimization">
+  ## 최적화 팁
+</div>
+
+<div id="check-sql">
+  ### 1. SQL 실행 시간 확인
+</div>
+
+`SQL execution`이 병목이라면:
+
+* 데이터 양을 줄일 수 있도록 필터를 더 추가합니다
+* CSV 대신 Parquet를 사용합니다
+* 적절한 인덱스가 설정되어 있는지 확인합니다(데이터베이스 소스의 경우)
+
+<div id="check-io">
+  ### 2. I/O 시간 확인
+</div>
+
+`read_csv` 또는 `read_parquet`가 병목이라면:
+
+* Parquet 사용(열 지향, 압축 형식)
+* 필요한 컬럼만 읽기
+* 가능하면 원본 데이터에서 필터링
+
+<div id="check-transfer">
+  ### 3. 데이터 전송 확인
+</div>
+
+`to_df`가 느리다면:
+
+* 결과 집합(result set)이 너무 클 수 있습니다
+* 필터를 더 추가하거나 limit를 설정하세요
+* 미리 보려면 `head()`를 사용하세요
+
+<div id="compare-engines">
+  ### 4. 엔진 비교
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# chdb로 프로파일링
+config.use_chdb()
+profiler.clear()
+result_chdb = query.to_df()
+time_chdb = profiler.total_duration_ms
+
+# pandas로 프로파일링
+config.use_pandas()
+profiler.clear()
+result_pandas = query.to_df()
+time_pandas = profiler.total_duration_ms
+
+print(f"chdb: {time_chdb:.2f}ms")
+print(f"pandas: {time_pandas:.2f}ms")
+```
+
+***
+
+<div id="best-practices">
+  ## 모범 사례
+</div>
+
+<div id="best-practice-1">
+  ### 1. 최적화하기 전에 먼저 프로파일링
+</div>
+
+```python
+# 추측하지 말고 측정하세요!
+config.enable_profiling()
+result = your_query.to_df()
+print(get_profiler().report())
+```
+
+<div id="best-practice-2">
+  ### 2. 테스트 사이에는 초기화하세요
+</div>
+
+```python
+profiler.clear()  # 이전 데이터 초기화
+# 테스트 실행
+print(profiler.report())
+```
+
+<div id="best-practice-3">
+  ### 3. 초점을 맞추려면 min_duration_ms를 사용하세요
+</div>
+
+```python
+# 100ms 이상 걸리는 작업만 표시
+profiler.report(min_duration_ms=100)
+```
+
+<div id="best-practice-4">
+  ### 4. 대표성 있는 데이터를 프로파일링하세요
+</div>
+
+```python
+# 실제 데이터 크기로 프로파일링하세요
+# 소규모 테스트 데이터로는 실제 병목 현상이 드러나지 않을 수 있습니다
+```
+
+<div id="best-practice-5">
+  ### 5. 운영 환경에서는 비활성화
+</div>
+
+```python
+# 개발
+config.enable_profiling()
+
+# 운영
+config.set_profiling_enabled(False)  # 오버헤드 방지
+```
+
+***
+
+<div id="example">
+  ## 예시: 전체 프로파일링 세션
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config, get_profiler
+
+# Setup
+config.enable_profiling()
+config.enable_debug()  # 현재 진행 상황도 확인
+profiler = get_profiler()
+
+# 데이터 로드
+profiler.clear()
+print("=== Loading Data ===")
+ds = pd.read_csv("sales_2024.csv")  # 1000만 행
+print(profiler.report())
+
+# 쿼리 1: 단순 필터
+profiler.clear()
+print("\n=== Query 1: Simple Filter ===")
+result1 = ds.filter(ds['amount'] > 1000).to_df()
+print(profiler.report())
+
+# 쿼리 2: 복합 집계
+profiler.clear()
+print("\n=== Query 2: Complex Aggregation ===")
+result2 = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region', 'category')
+    .agg({
+        'amount': ['sum', 'mean', 'count'],
+        'quantity': 'sum'
+    })
+    .sort('sum', ascending=False)
+    .head(20)
+    .to_df()
+)
+print(profiler.report())
+
+# 요약
+print("\n=== Summary ===")
+print(f"Query 1: {len(result1)} rows")
+print(f"Query 2: {len(result2)} rows")
+```

@@ -1,0 +1,39 @@
+---
+title: 'スキーマ変更の伝播サポート'
+slug: /integrations/clickpipes/mysql/schema-changes
+description: 'ClickPipes がソーステーブルで検出できるスキーマ変更の種類を説明するページ'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mysql', 'CDC', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+MySQL 向け ClickPipes では、ソーステーブルのスキーマ変更を検出でき、場合によってはその変更を宛先テーブルに自動で伝播できます。各 DDL 操作の扱いは以下のとおりです。
+
+[//]: # "TODO このページに、rename、データ型の変更、truncate の挙動と、互換性のないスキーマ変更への対処方法に関するガイダンスを追加する。"
+
+| スキーマ変更の種類                                                      | 挙動                                                                                       |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 新しいカラムの追加 (`ALTER TABLE ADD COLUMN ...`)                       | 自動的に伝播されます。新しいカラムは、スキーマ変更後にレプリケートされたすべての行に追加されます                                         |
+| デフォルト値付きの新しいカラムの追加 (`ALTER TABLE ADD COLUMN ... DEFAULT ...`)  | 自動的に伝播されます。新しいカラムは、スキーマ変更後にレプリケートされたすべての行に追加されますが、既存の行には、テーブル全体を再読み込みしない限りデフォルト値は反映されません |
+| 既存カラムの削除 (`ALTER TABLE DROP COLUMN ...`)                       | 検出はされますが、**伝播はされません**。削除されたカラムには、スキーマ変更後にレプリケートされたすべての行で `NULL` が入ります                    |
+
+<Note>
+  現在、スナップショット中のカラム追加はサポートされていません。推奨される回避策は、予定しているスキーマ変更の前後でスナップショットを実行することです。また、ClickPipe がすでに失敗している場合は、適切な型のカラムを宛先テーブルに手動で追加してください。
+</Note>
+
+<div id="mysql-5-limitations">
+  ### MySQL 5.x の制限事項
+</div>
+
+[8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/) より前の MySQL バージョンでは、binlog に完全なカラムメタデータ (`binlog_row_metadata=FULL`) が含まれないため、ClickPipes はカラムを順序位置で追跡します。つまり、次のようになります。
+
+* **末尾へのカラム追加** (`ALTER TABLE ADD COLUMN ...`) はサポートされます。
+* **カラム位置がずれる DDL** は、順序位置に基づく確実な対応付けができなくなるため、パイプでエラーになります。これには以下が含まれます。
+  * `ALTER TABLE DROP COLUMN ...`
+  * `ALTER TABLE ADD COLUMN ... AFTER ...` / `FIRST`
+  * `ALTER TABLE MODIFY COLUMN ... AFTER ...` / `FIRST`
+  * `ALTER TABLE CHANGE COLUMN ... AFTER ...` / `FIRST`
+
+このエラーが発生した場合は、パイプを再同期する必要があります。

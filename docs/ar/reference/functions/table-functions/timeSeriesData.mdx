@@ -1,0 +1,28 @@
+---
+description: 'تعيد `timeSeriesData` جدول [data](/reference/engines/table-engines/integrations/time-series#samples-table) الذي يستخدمه الجدول `db_name.time_series_table`، والذي يكون محرك جدوله TimeSeries.'
+sidebarTitle: 'timeSeriesData'
+slug: /sql-reference/table-functions/timeSeriesData
+title: 'timeSeriesData'
+doc_type: 'reference'
+---
+
+`timeSeriesData(db_name.time_series_table)` - يعيد جدول [data](/ar/reference/engines/table-engines/integrations/time-series#samples-table)
+الذي يستخدمه الجدول `db_name.time_series_table`، والذي يكون محرك جدوله [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series):
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA data_table
+```
+
+تعمل الدالة أيضًا إذا كان جدول *data* داخليًا:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+الاستعلامات التالية مكافئة:
+
+```sql
+SELECT * FROM timeSeriesData(db_name.time_series_table);
+SELECT * FROM timeSeriesData('db_name.time_series_table');
+SELECT * FROM timeSeriesData('db_name', 'time_series_table');
+```

@@ -1,0 +1,102 @@
+---
+sidebarTitle: 'Opções adicionais'
+keywords: ['clickhouse', 'python', 'opções', 'configurações']
+description: 'Opções adicionais para o ClickHouse Connect'
+slug: /integrations/language-clients/python/additional-options
+title: 'Opções adicionais'
+doc_type: 'reference'
+---
+
+O ClickHouse Connect oferece diversas opções adicionais para casos de uso avançados.
+
+<div id="global-settings">
+  ## Configurações globais
+</div>
+
+Há algumas configurações que controlam globalmente o comportamento do ClickHouse Connect. Elas são acessadas no pacote `common` de nível superior:
+
+```python
+from clickhouse_connect import common
+
+common.set_setting('autogenerate_session_id', False)
+common.get_setting('invalid_setting_action')
+'drop'
+```
+
+<Note>
+  Essas configurações comuns `autogenerate_session_id`, `product_name` e `readonly` devem *sempre* ser modificadas antes de criar um cliente com o método `clickhouse_connect.get_client`. Alterar essas configurações após a criação do cliente não afeta o comportamento dos clientes existentes.
+</Note>
+
+No momento, as seguintes configurações globais estão definidas:
+
+| Setting Name                                    | Default         | Options                                         | Description                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------- | --------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| autogenerate&#95;session&#95;id                 | True            | True, False                                     | Gera automaticamente um novo ID de sessão UUID(1) (se não for fornecido) para cada sessão do cliente. Se nenhum ID de sessão for fornecido (seja no nível do cliente ou da consulta), o ClickHouse gerará um ID interno aleatório para cada consulta.                                                     |
+| dict&#95;parameter&#95;format                   | &#39;json&#39;  | &#39;json&#39;, &#39;map&#39;                   | Controla se consultas parametrizadas convertem um dicionário Python em sintaxe JSON ou map do ClickHouse. `json` deve ser usado para inserts em colunas JSON; `map`, para colunas map do ClickHouse.                                                                                                      |
+| invalid&#95;setting&#95;action                  | &#39;error&#39; | &#39;drop&#39;, &#39;send&#39;, &#39;error&#39; | Ação a ser tomada quando uma configuração inválida ou readonly é fornecida (seja para a sessão do cliente ou para a consulta). Se for `drop`, a configuração será ignorada; se for `send`, a configuração será enviada ao ClickHouse; se for `error`, um ProgrammingError será gerado no lado do cliente. |
+| max&#95;connection&#95;age                      | 600             |                                                 | Número máximo de segundos em que uma connection HTTP Keep alive será mantida aberta/reutilizada. Isso evita concentrar connections em um único nó do ClickHouse atrás de um load balancer/proxy. O padrão é 10 minutos.                                                                                   |
+| product&#95;name                                |                 |                                                 | Uma String passada com a consulta ao ClickHouse para rastrear o aplicativo que usa o ClickHouse Connect. Deve estar no formato &lt;nome do produto;&amp;gl/&lt;versão do produto&gt;.                                                                                                                     |
+| readonly                                        | 0               | 0, 1                                            | Configuração implícita de ClickHouse &quot;read&#95;only&quot; para versões anteriores à 19.17. Pode ser definida para corresponder ao valor &quot;read&#95;only&quot; de configurações do ClickHouse, permitindo a operação com versões muito antigas do ClickHouse.                                     |
+| send&#95;os&#95;user                            | True            | True, False                                     | Inclui o usuário do sistema operacional detectado nas informações do cliente enviadas ao ClickHouse (string HTTP user-agent).                                                                                                                                                                             |
+| send&#95;integration&#95;tags                   | True            | True, False                                     | Inclui as bibliotecas/versões de integração usadas (por exemplo, Pandas/SQLAlchemy/etc.) nas informações do cliente enviadas ao ClickHouse (string HTTP user-agent).                                                                                                                                      |
+| use&#95;protocol&#95;version                    | True            | True, False                                     | Usa a versão do protocol do cliente. Isso é necessário para colunas `DateTime` com timezone, mas não funciona com a versão atual do chproxy.                                                                                                                                                              |
+| max&#95;error&#95;size                          | 1024            |                                                 | Número máximo de caracteres retornados em mensagens de error do cliente. Use 0 nessa configuração para obter a mensagem de error completa do ClickHouse. O padrão é 1024 caracteres.                                                                                                                      |
+| http&#95;buffer&#95;size                        | 10MB            |                                                 | Tamanho (em bytes) do buffer &quot;em memória&quot; usado para consultas HTTP streaming.                                                                                                                                                                                                                  |
+| preserve&#95;pandas&#95;datetime&#95;resolution | False           | True, False                                     | Quando True e com pandas 2.x, preserva a resolution do dtype datetime64/timedelta64 (por exemplo, &#39;s&#39;, &#39;ms&#39;, &#39;us&#39;, &#39;ns&#39;). Se False (ou no pandas &lt;2.x), faz a coerção para resolução de nanossegundos (&#39;ns&#39;) por compatibilidade.                              |
+
+<div id="compression">
+  ## Compressão
+</div>
+
+O ClickHouse Connect oferece suporte a compressão lz4, zstd, brotli e gzip tanto para resultados de consultas quanto para inserção. Tenha sempre em mente que o uso de compressão normalmente envolve um equilíbrio entre largura de banda/velocidade de transferência da rede e uso de CPU (tanto no cliente quanto no servidor).
+
+Para receber dados comprimidos, a configuração `enable_http_compression` do servidor ClickHouse deve estar definida como 1, ou o usuário deve ter permissão para alterar essa configuração por consulta.
+
+A compressão é controlada pelo parâmetro `compress` ao chamar o método factory `clickhouse_connect.get_client`. Por padrão, `compress` é definido como `True`, o que acionará as configurações padrão de compressão. Para consultas executadas com os métodos de cliente `query`, `query_np` e `query_df`, o ClickHouse Connect adicionará o header `Accept-Encoding` com
+as codificações `lz4`, `zstd`, `br` (brotli, se a biblioteca brotli estiver instalada), `gzip` e `deflate` às consultas executadas com o método de cliente `query` (e, indiretamente, `query_np` e `query_df`). (Na maioria das requisições, o servidor ClickHouse
+retornará um payload comprimido com `zstd`.) Para inserção, por padrão, o ClickHouse Connect comprimirá blocos de inserção com compressão `lz4` e enviará o header HTTP `Content-Encoding: lz4`.
+
+O parâmetro `compress` de `get_client` também pode ser definido como um método de compressão específico, entre `lz4`, `zstd`, `br` ou `gzip`. Esse método será então usado tanto para inserção quanto para resultados de consultas (se tiver suporte no servidor ClickHouse). As bibliotecas de compressão `zstd` e `lz4` necessárias agora são instaladas por padrão com o ClickHouse Connect. Se `br`/brotli for especificado, a biblioteca brotli deverá ser instalada separadamente.
+
+Observe que os métodos de cliente `raw*` não usam a compressão especificada na configuração do cliente.
+
+Também recomendamos não usar compressão `gzip`, pois ela é significativamente mais lenta do que as alternativas, tanto para comprimir quanto para descomprimir dados.
+
+<div id="http-proxy-support">
+  ## Suporte a proxy HTTP
+</div>
+
+O ClickHouse Connect oferece suporte básico a proxy HTTP usando a biblioteca `urllib3`. Ele reconhece as variáveis de ambiente padrão `HTTP_PROXY` e `HTTPS_PROXY`. Observe que o uso dessas variáveis de ambiente se aplicará a qualquer cliente criado com o método `clickhouse_connect.get_client`. Como alternativa, para configurar cada cliente individualmente, você pode usar os argumentos `http_proxy` ou `https_proxy` no método `get_client`. Para mais detalhes sobre a implementação do suporte a proxy HTTP, consulte a documentação do [urllib3](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#http-and-https-proxies).
+
+Para usar um proxy SOCKS, você pode passar um `urllib3` `SOCKSProxyManager` como argumento `pool_mgr` para `get_client`. Observe que isso exigirá a instalação da biblioteca PySocks, diretamente ou usando a opção `[socks]` da dependência `urllib3`.
+
+<div id="old-json-data-type">
+  ## tipo de dado JSON &quot;antigo&quot;
+</div>
+
+O tipo de dado experimental `Object` (ou `Object('json')`) está descontinuado e deve ser evitado em um ambiente de produção. O ClickHouse Connect continua oferecendo suporte limitado a esse tipo de dado por compatibilidade com versões anteriores. Observe que esse suporte não inclui consultas que devem retornar valores JSON de &quot;nível superior&quot; ou &quot;pai&quot; como dicionários, ou equivalente, e essas consultas resultarão em uma exceção.
+
+<div id="new-variantdynamicjson-datatypes-experimental-feature">
+  ## Tipos de dados Variant/Dynamic/JSON &quot;novos&quot; (recurso experimental)
+</div>
+
+A partir do lançamento 0.8.0, `clickhouse-connect` oferece suporte experimental aos novos tipos do ClickHouse — também experimentais — Variant, Dynamic e JSON.
+
+<div id="usage-notes">
+  ### Notas de uso
+</div>
+
+* Os dados JSON podem ser inseridos na forma de um dicionário Python ou de uma string JSON contendo um objeto JSON `{}`. Outras formas de dados JSON não são aceitas.
+* As consultas que usam subcolunas/caminhos para esses tipos retornarão o tipo da subcoluna.
+* Consulte a [documentação](/pt-BR/) principal do ClickHouse para ver outras notas de uso.
+
+<div id="known-limitations">
+  ### Limitações conhecidas
+</div>
+
+* Cada um desses tipos deve ser habilitado nas configurações do ClickHouse antes do uso.
+* O &quot;novo&quot; tipo JSON está disponível a partir do lançamento 24.8 do ClickHouse
+* Devido a alterações no formato interno, `clickhouse-connect` só é compatível com tipos Variant a partir do lançamento 24.7 do ClickHouse
+* Os objetos JSON retornados incluirão apenas a quantidade de elementos definida por `max_dynamic_paths` (cujo valor padrão é 1024). Isso será corrigido em um lançamento futuro.
+* Inserções em colunas `Dynamic` sempre usarão a representação em String do valor em Python. Isso será corrigido em um lançamento futuro, assim que https://github.com/ClickHouse/ClickHouse/issues/70395 for corrigido.
+* A implementação dos novos tipos não foi otimizada em código C, portanto o desempenho pode ser um pouco mais lento do que com tipos de dados mais simples e já consolidados.

@@ -51,7 +51,7 @@ static CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     return storage_configuration;
 }
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
 static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
@@ -219,7 +219,7 @@ DictionaryPtr createCacheDictionaryLayout(
         auto storage_configuration = parseCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
         storage = std::make_shared<CacheDictionaryStorage<dictionary_key_type>>(dict_struct, storage_configuration);
     }
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
     else
     {
         auto storage_configuration = parseSSDCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
@@ -287,7 +287,7 @@ void registerDictionaryCache(DictionaryFactory & factory)
         .syntax = "LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS n))",
         .related = {"cache"}});
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
     auto create_simple_ssd_cache_layout = [=](const std::string & full_name,
                                               const DictionaryStructure & dict_struct,

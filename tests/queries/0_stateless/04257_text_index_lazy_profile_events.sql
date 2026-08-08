@@ -138,6 +138,21 @@ SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['adense', 'dwide'])
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'all events fired across tagged queries:';
+-- The counters are incremented on whichever replica reads the granule, so under
+-- parallel replicas they land on secondary rows whose `current_database` is `default`.
+-- Resolve the initiator rows by `current_database` (the style check also requires that
+-- filter in any test reading `system.query_log`), then aggregate over every row of
+-- those queries via `initial_query_id`.
+WITH initial_query_ids AS
+(
+    SELECT query_id
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND current_database = currentDatabase()
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+      AND log_comment LIKE '04257_pe_%'
+)
 SELECT
     sum(ProfileEvents['TextIndexLazyPackedBlocksDecoded'])      > 0 AS blocks_decoded,
     sum(ProfileEvents['TextIndexLazySegmentsPrepared'])         > 0 AS segs_prepared,
@@ -150,8 +165,7 @@ SELECT
     sum(ProfileEvents['TextIndexLazyAdvanceCount'])             > 0 AS advance_called
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
-  AND current_database = currentDatabase()
   AND type = 'QueryFinish'
-  AND log_comment LIKE '04257_pe_%';
+  AND initial_query_id IN (SELECT query_id FROM initial_query_ids);
 
 DROP TABLE tab_lazy_pe;

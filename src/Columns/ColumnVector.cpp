@@ -1,5 +1,6 @@
 #include <Columns/ColumnVector.h>
 
+#include <base/defines.h>
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
 #include <base/sort.h>
@@ -20,6 +21,7 @@
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
+#include <Common/transformEndianness.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
@@ -27,6 +29,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <bit>
+#include <cmath>
 #include <cstring>
 
 #include "config.h"
@@ -473,7 +476,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_index_implementation<T>)
     {
         /// For floating point, findExtremeMinIndex/MaxIndex skip NaN (NaN is always last).
         /// This matches the standard nan_direction_hint convention: ASC with hint >= 0, DESC with hint <= 0.
@@ -1415,6 +1418,89 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
     return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
 }
 
+template <typename T>
+void ColumnVector<T>::serializeAsComparable(size_t n, String & out) const
+{
+    if constexpr (std::is_integral_v<T>)
+    {
+        auto value = data[n];
+        transformEndianness<std::endian::big>(value);
+        if constexpr (std::is_signed_v<T>)
+        {
+            char * bytes = reinterpret_cast<char *>(&value);
+            bytes[0] ^= 0x80;
+        }
+        out.append(reinterpret_cast<const char *>(&value), sizeof(T));
+    }
+    else if constexpr (is_big_int_v<T>)
+    {
+        auto value = data[n];
+        transformEndianness<std::endian::big>(value);
+        if constexpr (is_signed_v<T>)
+        {
+            char * bytes = reinterpret_cast<char *>(&value);
+            bytes[0] ^= 0x80;
+        }
+        out.append(reinterpret_cast<const char *>(&value), sizeof(T));
+    }
+    else if constexpr (std::is_same_v<T, Float32>)
+    {
+        UInt32 bits = std::bit_cast<UInt32>(data[n]);
+        if (std::isnan(data[n]))
+            bits = 0xFFFFFFFFU;
+        else
+        {
+            if (bits == 0x80000000U)
+                bits = 0;
+            if (bits & 0x80000000U)
+                bits = ~bits;
+            else
+                bits ^= 0x80000000U;
+        }
+        transformEndianness<std::endian::big>(bits);
+        out.append(reinterpret_cast<const char *>(&bits), sizeof(UInt32));
+    }
+    else if constexpr (std::is_same_v<T, Float64>)
+    {
+        UInt64 bits = std::bit_cast<UInt64>(data[n]);
+        if (std::isnan(data[n]))
+            bits = 0xFFFFFFFFFFFFFFFFULL;
+        else
+        {
+            if (bits == 0x8000000000000000ULL)
+                bits = 0;
+            if (bits & 0x8000000000000000ULL)
+                bits = ~bits;
+            else
+                bits ^= 0x8000000000000000ULL;
+        }
+        transformEndianness<std::endian::big>(bits);
+        out.append(reinterpret_cast<const char *>(&bits), sizeof(UInt64));
+    }
+    else if constexpr (std::is_same_v<T, UUID>)
+    {
+        auto value = data[n].toUnderType();
+        transformEndianness<std::endian::big>(value);
+        out.append(reinterpret_cast<const char *>(&value), sizeof(UInt128));
+    }
+    else
+    {
+        IColumn::serializeAsComparable(n, out);
+    }
+}
+
+template <typename T>
+void ColumnVector<T>::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const IColumn::Permutation * permutation,
+    const UInt8 * null_map) const
+{
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, null_map,
+        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
+}
+
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;
@@ -1444,7 +1530,8 @@ template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt8>(const PaddedPODArray<U
 template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const;
 template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const;
 
-#if defined(OS_DARWIN)
+/// `size_t` is not covered by the instantiations above where it is a type of its own.
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE)
 template ColumnPtr ColumnVector<UInt8>::indexImpl<size_t>(const PaddedPODArray<size_t> & indexes, size_t limit) const;
 template ColumnPtr ColumnVector<UInt64>::indexImpl<size_t>(const PaddedPODArray<size_t> & indexes, size_t limit) const;
 #endif

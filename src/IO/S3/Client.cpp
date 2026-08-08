@@ -415,6 +415,16 @@ template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request
 
 Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 {
+    /// One exit for all attempts (initial, wrong-region, redirected), so a killed query is reported
+    /// as a cancellation instead of the stale S3/network outcome.
+    auto outcome = headObjectInternal(request);
+    if (!outcome.IsSuccess())
+        CurrentThread::checkIfNotCancelled();
+    return outcome;
+}
+
+Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request) const
+{
     const auto & bucket = request.GetBucket();
 
     request.setApiMode(api_mode);
@@ -697,6 +707,8 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         auto result = request_fn(request);
         if (result.IsSuccess())
             return result;
+
+        CurrentThread::checkIfNotCancelled();
 
         const auto & error = result.GetError();
 
@@ -1119,6 +1131,12 @@ void ClientCache::clearCache()
     }
 }
 
+ClientCacheRegistry & ClientCacheRegistry::instance()
+{
+    static ClientCacheRegistry registry;
+    return registry;
+}
+
 void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)
 {
     std::lock_guard lock(clients_mutex);
@@ -1276,9 +1294,12 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
 
     // we need to force environment credentials if explicit credentials are empty and we have role_arn
-    // this is a crutch because we know that we have environment credentials on our Cloud
-    credentials_configuration.use_environment_credentials =
-        credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
+    // this is a crutch because we know that we have environment credentials on our Cloud.
+    // For user-facing requests (forbid_implicit_credentials) the same is done by getCredentialsProvider
+    // itself, which allows the role_arn STS base while refusing the other server-managed sources.
+    if (!credentials_configuration.forbid_implicit_credentials)
+        credentials_configuration.use_environment_credentials =
+            credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
 

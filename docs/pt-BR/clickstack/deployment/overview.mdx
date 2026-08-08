@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/deployment
+title: 'Opções de implantação'
+description: 'Implantação do ClickStack - a stack de observabilidade do ClickHouse'
+doc_type: 'referência'
+keywords: ['ClickStack', 'observabilidade']
+---
+
+O ClickStack oferece várias opções de implantação para atender a diferentes casos de uso.
+
+As opções de implantação estão resumidas abaixo. O [Guia de primeiros passos](/pt-BR/clickstack/getting-started/index) demonstra especificamente as opções 1 e 2. Elas foram incluídas aqui para fins de completude.
+
+| Name               | Description                                                                                                                   | Suitable For                                                                  | Limitations                                                                    | Example Link                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| Managed ClickStack | ClickHouse e a UI do ClickStack (HyperDX) hospedados no ClickHouse Cloud.                                                     | Implantações em produção, demonstrações, provas de conceito                   | Nenhuma                                                                        | [Managed](/pt-BR/clickstack/deployment/managed)                 |
+| All-in-One         | Um único contêiner Docker com todos os componentes do ClickStack incluídos.                                                   | Implantações fora de produção, demonstrações, provas de conceito              | Não recomendado para produção                                                  | [All-in-One](/pt-BR/clickstack/deployment/all-in-one)           |
+| Helm               | Chart do Helm oficial para implantações baseadas em Kubernetes. Compatível com ClickHouse Cloud e escalabilidade em produção. | Implantações em produção no Kubernetes                                        | É necessário ter conhecimento de Kubernetes; a personalização é feita via Helm | [Helm](/pt-BR/clickstack/deployment/helm)                       |
+| Docker Compose     | Implanta cada componente do ClickStack individualmente via Docker Compose.                                                    | Testes locais, provas de conceito, produção em servidor único, BYO ClickHouse | Sem tolerância a falhas; exige gerenciar vários contêineres                    | [Docker Compose](/pt-BR/clickstack/deployment/docker-compose)   |
+| HyperDX Only       | Usa o HyperDX de forma independente com seu próprio ClickHouse e esquema.                                                     | Usuários atuais do ClickHouse, pipelines de eventos personalizados            | Não inclui ClickHouse; o usuário deve gerenciar a ingestão e o esquema         | [HyperDX Only](/pt-BR/clickstack/deployment/hyperdx-only)       |
+| Local Mode Only    | Executa inteiramente no navegador com armazenamento local. Sem backend nem persistência.                                      | Demonstrações, depuração, desenvolvimento com HyperDX                         | Sem autenticação, sem persistência, sem alertas, apenas um usuário             | [Local Mode Only](/pt-BR/clickstack/deployment/local-mode-only) |

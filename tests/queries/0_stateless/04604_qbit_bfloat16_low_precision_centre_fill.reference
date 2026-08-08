@@ -1,0 +1,46 @@
+-- 1-bit cosine distance ranks by sign (used to be constant 1 for every row)
+0	2	2
+1	1.75	1.75
+2	1.75	1.75
+3	1.5	1.5
+4	1.75	1.75
+0	2	2
+1	1.75	1.75
+2	1.75	1.75
+3	1.5	1.5
+4	1.75	1.75
+-- 1-bit L2 distance distinguishes sign patterns too
+0	7.0711
+1	6.7823
+2	6.7823
+3	6.4807
+4	6.7823
+-- BFloat16 reconstruction of +-1.0 at precisions 1, 8, 9, 16
+2	-2	0.5	-0.5	1.5	-1.5	1	-1
+-- Float32 and Float64 reconstruction of +-1.0 at precision 1
+2	-2
+2	-2
+-- Int8 reconstruction of 100 and -100 at precision 1 (cell centre +-64, not 0/-128)
+64	-64
+-- Zero cell: reduced-precision cosine of identical zero BFloat16 vectors is 0, not 1
+0
+-- Zero coordinate reconstructs to 0 at precision >= 2 (to +centre at precision 1) for BFloat16, Float32, Float64
+2	0	0
+2	0	0
+2	0	0
+-- Int8 keeps the unconditional centre for its all-zero cell
+32
+-- Exponent-truncation reconstruction stays bounded (no magnitude explosion)
+1.4	3.5
+-- Signed zero (-0.0) reconstructs to a zero, not a subnormal (mantissa-truncation regime)
+0	0	0	0
+-- Infinity stays infinite (not NaN) in the mantissa-truncation regime
+inf	-inf	inf	inf	-inf
+-- Odd (non-multiple-of-8) dimensions: padded lanes never contribute
+2	0	0
+2	0
+64	-64	64
+-- NaN policy in the mantissa-truncation regime: NaN with kept payload bit stays NaN, NaN with dropped payload -> inf
+nan	inf	nan	inf	nan	inf
+-- Float32 precision 16 (downcast boundary): midpoint applied, not the lower edge
+1.00390625	1.0078125	1	1.03125

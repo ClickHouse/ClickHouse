@@ -1,0 +1,353 @@
+---
+description: '로컬 디스크로 또는 로컬 디스크에서 수행하는 백업/복원에 대한 자세한 정보'
+sidebarTitle: '로컬 디스크 / S3 디스크'
+slug: /operations/backup/disk
+title: '디스크로 BACKUP / RESTORE'
+doc_type: 'guide'
+---
+
+import ExampleSetup from '/snippets/ko/_example_setup.mdx';
+import Syntax from '/snippets/ko/_syntax.mdx';
+
+<div id="syntax">
+  ## 구문
+</div>
+
+<Syntax />
+
+<div id="configure-backup-destinations-for-disk">
+  ## 디스크용 백업 대상 구성
+</div>
+
+<div id="configure-a-backup-destination">
+  ### 로컬 디스크용 백업 대상 구성
+</div>
+
+아래 예시에서는 백업 대상이 `Disk('backups', '1.zip')`로 지정되어 있습니다.
+`Disk` 백업 엔진을 사용하려면 먼저 아래 경로에
+백업 대상을 지정하는 파일을 추가해야 합니다:
+
+```text
+/etc/clickhouse-server/config.d/backup_disk.xml
+```
+
+예를 들어, 아래 구성은 `backups`라는 디스크를 정의한 다음 이 디스크를
+**backups**의 **allowed&#95;disk** 목록에 추가합니다:
+
+```xml highlight={4,10-13}
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backups</allowed_disk>
+        <allowed_path>/backups/</allowed_path>
+    </backups>
+</clickhouse>
+```
+
+<div id="backuprestore-using-an-s3-disk">
+  ### S3 디스크용 백업 대상 구성
+</div>
+
+ClickHouse 스토리지 구성에서 S3 디스크를 설정하면 S3로 `BACKUP`/`RESTORE`를 수행할 수도 있습니다. 위의 로컬 디스크와 동일한 방식으로 `/etc/clickhouse-server/config.d`에 파일을 추가하여 디스크를 구성하십시오.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_plain>
+                <type>s3_plain</type>
+                <endpoint></endpoint>
+                <access_key_id></access_key_id>
+                <secret_access_key></secret_access_key>
+            </s3_plain>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3_plain</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <backups>
+        <allowed_disk>s3_plain</allowed_disk>
+    </backups>
+</clickhouse>
+```
+
+S3 디스크의 `BACKUP`/`RESTORE`도 로컬 디스크와 같은 방식으로 수행됩니다:
+
+```sql
+BACKUP TABLE data TO Disk('s3_plain', 'cloud_backup');
+RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
+```
+
+<Note>
+  * 이 디스크는 `MergeTree` 자체에는 사용하지 말고, `BACKUP`/`RESTORE`에만 사용하십시오.
+  * 테이블이 S3 storage를 사용하고 디스크 유형이 서로 다르면,
+    파트를 대상 버킷으로 복사할 때 `CopyObject` 호출을 사용하지 않고
+    대신 다운로드한 뒤 다시 업로드하므로 매우 비효율적입니다. 이런 경우에는
+    이 용도에는 `BACKUP ... TO S3(<endpoint>)` 구문을 사용하는 것이 좋습니다.
+</Note>
+
+<div id="usage-examples">
+  ## 로컬 디스크로 백업/복원하는 사용 예시
+</div>
+
+<div id="backup-and-restore-a-table">
+  ### 테이블 백업 및 복원
+</div>
+
+<ExampleSetup />
+
+테이블을 백업하려면 다음 명령을 실행하세요:
+
+```sql title="Query"
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.zip')
+```
+
+```response title="Response"
+   ┌─id───────────────────────────────────┬─status─────────┐
+1. │ 065a8baf-9db7-4393-9c3f-ba04d1e76bcd │ BACKUP_CREATED │
+   └──────────────────────────────────────┴────────────────┘
+```
+
+테이블이 비어 있으면 다음 명령으로 백업에서 테이블을 복원할 수 있습니다:
+
+```sql title="Query"
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.zip')
+```
+
+```response title="Response"
+   ┌─id───────────────────────────────────┬─status───┐
+1. │ f29c753f-a7f2-4118-898e-0e4600cd2797 │ RESTORED │
+   └──────────────────────────────────────┴──────────┘
+```
+
+<Note>
+  위 `RESTORE`는 테이블 `test.table`에 데이터가 있으면 실패합니다.
+  설정 `allow_non_empty_tables=true`를 사용하면 `RESTORE TABLE`이 비어 있지 않은 테이블에도 데이터를 삽입할 수 있습니다.
+  이 경우 테이블에 있던 기존 데이터와 백업에서 추출한 데이터가 섞이게 됩니다.
+  따라서 이 설정은 테이블에 데이터 중복을 일으킬 수 있으므로 주의해서 사용해야 합니다.
+</Note>
+
+이미 데이터가 있는 테이블을 복원하려면 다음을 실행하세요:
+
+```sql
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.zip')
+SETTINGS allow_non_empty_tables=true
+```
+
+새 이름으로 테이블을 복원하거나 백업할 수 있습니다:
+
+```sql
+RESTORE TABLE test_db.test_table AS test_db.test_table_renamed FROM Disk('backups', '1.zip')
+```
+
+이 백업의 아카이브는 다음과 같은 구조입니다:
+
+```text
+├── .backup
+└── metadata
+    └── test_db
+        └── test_table.sql
+```
+
+{/* TO DO: 
+  여기에 백업 포맷에 대한 설명을 추가하십시오. 자세한 내용은 Issue 24a를 참조하십시오.
+  https://github.com/ClickHouse/clickhouse-docs/issues/3968
+  */}
+
+zip 외의 포맷도 사용할 수 있습니다. 자세한 내용은 아래의 [&quot;tar 아카이브 형식의 백업&quot;](#backups-as-tar-archives)을 참조하십시오.
+
+<div id="incremental-backups">
+  ### 디스크로의 증분 백업
+</div>
+
+ClickHouse에서 기준 백업은 이후의
+증분 백업을 생성하는 기준이 되는 최초의 전체 백업입니다. 증분 백업은
+기준 백업 이후의 변경 사항만 저장하므로, 어떤 증분 백업에서든
+복원할 수 있도록 기준 백업을 계속 사용할 수 있는 상태로 유지해야 합니다.
+기준 백업 대상은 setting
+`base_backup`으로 설정할 수 있습니다.
+
+<Note>
+  증분 백업은 기준 백업에 의존합니다. 증분 백업에서 복원할 수 있으려면
+  기준 백업을 계속 사용할 수 있는 상태로 유지해야 합니다.
+</Note>
+
+테이블의 증분 백업을 만들려면 먼저 기준 백업을 만드십시오:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', 'd.zip')
+```
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', 'incremental-a.zip')
+SETTINGS base_backup = Disk('backups', 'd.zip')
+```
+
+증분 백업과 기준 백업의 모든 데이터는 다음 명령을 사용해 새 테이블 `test_db.test_table2`로 복원할 수 있습니다:
+
+```sql
+RESTORE TABLE test_db.test_table AS test_db.test_table2
+FROM Disk('backups', 'incremental-a.zip');
+```
+
+<div id="assign-a-password-to-the-backup">
+  ### Backup 보안 설정
+</div>
+
+디스크에 기록되는 Backup 파일에는 비밀번호를 설정할 수 있습니다.
+비밀번호는 `password` 설정을 사용하여 지정할 수 있습니다.
+
+<Note>
+  비밀번호 보호는 ZIP 아카이브(`.zip`, `.zipx`)에서만 지원됩니다.
+  비밀번호가 적용되려면 Backup 경로가 `.zip` 또는 `.zipx`로 끝나야 합니다.
+  tar 아카이브 및 아카이브가 아닌 경로를 포함한 다른 포맷에서 비밀번호를 사용하면
+  `BAD_ARGUMENTS` 오류가 발생합니다: `Password is not applicable, backup cannot be encrypted`.
+</Note>
+
+```sql
+BACKUP TABLE test_db.test_table
+TO Disk('backups', 'password-protected.zip')
+SETTINGS password='qwerty'
+```
+
+비밀번호로 보호된 백업을 복원하려면 비밀번호를 다시
+`password` 설정으로 지정해야 합니다:
+
+```sql
+RESTORE TABLE test_db.test_table
+FROM Disk('backups', 'password-protected.zip')
+SETTINGS password='qwerty'
+```
+
+<div id="backups-as-tar-archives">
+  ### tar 아카이브 형식의 백업
+</div>
+
+백업은 zip 아카이브뿐만 아니라 tar 아카이브로도 저장할 수 있습니다.
+기능은 zip과 동일하지만, tar 아카이브에서는 비밀번호 보호가
+지원되지 않습니다. 또한 tar 아카이브는 다양한
+압축 방식을 지원합니다.
+
+테이블을 tar 형식으로 백업하려면:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar')
+```
+
+tar 아카이브에서 복원하려면:
+
+```sql
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.tar')
+```
+
+압축 방법을 변경하려면 올바른 파일 접미사를
+백업 이름 뒤에 추가해야 합니다. 예를 들어 tar 아카이브를 gzip으로 압축하려면 다음을 실행하세요:
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar.gz')
+```
+
+지원되는 압축 파일 확장자는 다음과 같습니다:
+
+* `tar.gz`
+* `.tgz`
+* `tar.bz2`
+* `tar.lzma`
+* `.tar.zst`
+* `.tzst`
+* `.tar.xz`
+
+<div id="compression-settings">
+  ### 압축 설정
+</div>
+
+압축 메서드와 압축 수준은 각각
+`compression_method` 및 `compression_level` 설정을 사용해 지정할 수 있습니다.
+
+{/* TO DO:
+  이 설정에 대한 추가 정보와 이를 사용하는 이유에 대한 설명이 필요합니다 
+  */}
+
+```sql
+BACKUP TABLE test_db.test_table
+TO Disk('backups', 'filename.zip')
+SETTINGS compression_method='lzma', compression_level=3
+```
+
+<div id="restore-specific-partitions">
+  ### 특정 파티션 복원
+</div>
+
+테이블에 속한 특정 파티션만 복원해야 하는 경우 해당 파티션을 지정할 수 있습니다.
+
+4개의 파티션으로 이루어진 간단한 테이블을 만들고 데이터를 삽입한 다음,
+첫 번째와 네 번째 파티션만 백업해 보겠습니다:
+
+<Accordion title="설정">
+  ```sql
+  CREATE IF NOT EXISTS test_db;
+         
+  -- 파티션된 테이블 생성
+  CREATE TABLE test_db.partitioned (
+      id UInt32,
+      data String,
+      partition_key UInt8
+  ) ENGINE = MergeTree()
+  PARTITION BY partition_key
+  ORDER BY id;
+
+  INSERT INTO test_db.partitioned VALUES
+  (1, 'data1', 1),
+  (2, 'data2', 2),
+  (3, 'data3', 3),
+  (4, 'data4', 4);
+
+  SELECT count() FROM test_db.partitioned;
+
+  SELECT partition_key, count() 
+  FROM test_db.partitioned
+  GROUP BY partition_key
+  ORDER BY partition_key;
+  ```
+
+  ```response
+     ┌─count()─┐
+  1. │       4 │
+     └─────────┘
+     ┌─partition_key─┬─count()─┐
+  1. │             1 │       1 │
+  2. │             2 │       1 │
+  3. │             3 │       1 │
+  4. │             4 │       1 │
+     └───────────────┴─────────┘
+  ```
+</Accordion>
+
+다음 명령을 실행하여 파티션 1과 4를 백업합니다:
+
+```sql
+BACKUP TABLE test_db.partitioned PARTITIONS '1', '4'
+TO Disk('backups', 'partitioned.zip')
+```
+
+다음 명령을 실행하여 1번과 4번 파티션을 복원하세요:
+
+```sql
+RESTORE TABLE test_db.partitioned PARTITIONS '1', '4'
+FROM Disk('backups', 'partitioned.zip')
+SETTINGS allow_non_empty_tables=true
+```

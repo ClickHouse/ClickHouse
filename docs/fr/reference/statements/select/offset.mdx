@@ -1,0 +1,103 @@
+---
+description: 'Documentation sur OFFSET'
+sidebarTitle: 'OFFSET'
+slug: /sql-reference/statements/select/offset
+title: 'Clause OFFSET FETCH'
+doc_type: 'reference'
+---
+
+`OFFSET` et `FETCH` vous permettent de récupérer des données par blocs. Ils définissent un bloc de lignes à renvoyer dans une seule requête.
+
+```sql
+-- SQL Standard style:
+[OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
+
+-- MySQL/PostgreSQL style:
+[LIMIT [n, ]m] [OFFSET offset_row_count]
+```
+
+La valeur `offset_row_count` ou `fetch_row_count` peut être un nombre ou une constante littérale. Vous pouvez omettre `fetch_row_count` ; par défaut, elle est égale à 1.
+
+`OFFSET` spécifie le nombre de lignes à ignorer avant de commencer à renvoyer des lignes du jeu de résultats de la requête. `OFFSET n` ignore les `n` premières lignes du résultat.
+
+Les valeurs négatives de `OFFSET` sont prises en charge : `OFFSET -n` ignore les `n` dernières lignes du résultat.
+
+Les valeurs fractionnaires de `OFFSET` sont également prises en charge : `OFFSET n` - si 0 &lt; n &lt; 1, alors les n * 100 % premières lignes du résultat sont ignorées.
+
+Exemple :
+• `OFFSET 0.1` - ignore les 10 % premières lignes du résultat.
+
+> **Note**
+> • La fraction doit être un nombre [Float64](/fr/reference/data-types/float) inférieur à 1 et supérieur à zéro.
+> • Si le calcul produit un nombre fractionnaire de lignes, il est arrondi à l&#39;entier supérieur.
+
+`FETCH` spécifie le nombre maximal de lignes pouvant figurer dans le résultat d&#39;une requête.
+
+L&#39;option `ONLY` est utilisée pour renvoyer les lignes qui suivent immédiatement celles omises par `OFFSET`. Dans ce cas, `FETCH` est une alternative à la clause [LIMIT](/fr/reference/statements/select/limit). Par exemple, la requête suivante
+
+```sql
+SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;
+```
+
+est identique à la requête
+
+```sql
+SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
+```
+
+L’option `WITH TIES` permet de renvoyer toutes les lignes supplémentaires à égalité pour la dernière position dans l’ensemble de résultats selon la clause `ORDER BY`. Par exemple, si `fetch_row_count` est défini sur 5, mais que deux lignes supplémentaires ont les mêmes valeurs que la cinquième ligne dans les colonnes `ORDER BY`, l’ensemble de résultats contiendra sept lignes.
+
+<Note>
+  Selon la norme, la clause `OFFSET` doit précéder la clause `FETCH` si les deux sont présentes.
+</Note>
+
+<Note>
+  Le décalage effectif peut aussi dépendre du paramètre [offset](/fr/reference/settings/session-settings#offset).
+</Note>
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Table d’entrée :
+
+```text
+┌─a─┬─b─┐
+│ 1 │ 1 │
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 1 │ 3 │
+│ 5 │ 4 │
+│ 0 │ 6 │
+│ 5 │ 7 │
+└───┴───┘
+```
+
+Utilisation de l’option `ONLY` :
+
+```sql title="Query"
+SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY;
+```
+
+```text title="Response"
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 5 │ 4 │
+└───┴───┘
+```
+
+Utilisation de l’option `WITH TIES` :
+
+```sql title="Query"
+SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
+```
+
+```text title="Response"
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 5 │ 4 │
+│ 5 │ 7 │
+└───┴───┘
+```

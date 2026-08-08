@@ -60,7 +60,7 @@ bool RemoteQueryExecutorReadContext::checkBeforeTaskResume()
     return !is_in_progress.load(std::memory_order_relaxed) || checkTimeout();
 }
 
-void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback)
+void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, SuspendCallback suspend_callback) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     read_context.executor.sendQueryUnlocked(ClientInfo::QueryKind::SECONDARY_QUERY, async_callback);
     read_context.is_query_sent = true;

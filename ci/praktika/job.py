@@ -1,9 +1,8 @@
 import copy
-import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import Any, List, Optional
 
 from . import Artifact
@@ -68,6 +67,14 @@ class Job:
         run_in_docker: str = ""
 
         run_unless_cancelled: bool = False
+
+        # Run even when an upstream job failed, but still honour the cache and
+        # the job filter. `run_unless_cancelled` above drops the whole run
+        # condition down to `!cancelled()`, which also means "ignore a cache
+        # hit and ignore `should_skip_job`" - wrong for a job that is merely
+        # expected to report on a red head (see the "Build profile diff" job in
+        # ci/defs/job_configs.py).
+        run_on_upstream_failure: bool = False
 
         # If True, the job failure does not block PR merge, but the job
         # is still shown as failed in the CI report.
@@ -312,15 +319,3 @@ class Job:
                     print(f"Warning: failed to check git submodules: {e}")
 
             return False
-
-        def __post_init__(self):
-            if self.timeout_shell_cleanup:
-                return
-            if self.run_in_docker:
-                container_name = (
-                    "praktika_"
-                    + hashlib.sha1(
-                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
-                    ).hexdigest()[:12]
-                )
-                self.timeout_shell_cleanup = f"docker rm -f {container_name}"

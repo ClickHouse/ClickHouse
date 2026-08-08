@@ -1,0 +1,50 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/executable-file
+title: 'Executable File 字典源'
+sidebarTitle: 'Executable File'
+description: '将可执行文件配置为 ClickHouse 中的字典源。'
+doc_type: 'reference'
+---
+
+使用可执行文件的方式取决于[字典在内存中的存储方式](/zh/reference/statements/create/dictionary/layouts/overview)。如果字典使用 `cache` 和 `complex_key_cache` 存储，ClickHouse 会通过向可执行文件的 STDIN 发送请求来获取所需的键。否则，ClickHouse 会启动该可执行文件，并将其输出视为字典数据。
+
+设置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(EXECUTABLE(
+        command 'cat /opt/dictionaries/os.tsv'
+        format 'TabSeparated'
+        implicit_key false
+    ))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <source>
+        <executable>
+            <command>cat /opt/dictionaries/os.tsv</command>
+            <format>TabSeparated</format>
+            <implicit_key>false</implicit_key>
+        </executable>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+设置字段：
+
+| 设置                            | 描述                                                                                                                                                                                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `command`                     | 可执行文件的绝对路径，或文件名 (如果命令所在目录在 `PATH` 中) 。                                                                                                                                                                                                                                               |
+| `format`                      | 文件格式。支持[格式](/zh/reference/formats/index)中描述的所有格式。                                                                                                                                                                                                                                       |
+| `command_termination_timeout` | 可执行脚本应包含一个主读写循环。字典销毁后，管道会被关闭；在 ClickHouse 向子进程发送 SIGTERM 信号之前，可执行文件有 `command_termination_timeout` 秒的时间退出。以秒为单位指定。默认值为 `10`。可选。                                                                                                                                                      |
+| `command_read_timeout`        | 从命令 stdout 读取数据的超时时间，单位为毫秒。默认值为 `10000`。可选。                                                                                                                                                                                                                                          |
+| `command_write_timeout`       | 向命令 stdin 写入数据的超时时间，单位为毫秒。默认值为 `10000`。可选。                                                                                                                                                                                                                                           |
+| `implicit_key`                | 可执行源文件可以只返回值，而与请求键之间的对应关系由结果中各行的顺序隐式确定。默认值为 `false`。                                                                                                                                                                                                                                 |
+| `execute_direct`              | 如果 `execute_direct` = `1`，则会在 [user&#95;scripts&#95;path](/zh/reference/settings/server-settings/settings#user_scripts_path) 指定的 user&#95;scripts 文件夹中查找 `command`。可使用空白分隔符指定额外的脚本参数。例如：`script_name arg1 arg2`。如果 `execute_direct` = `0`，则 `command` 会作为参数传递给 `bin/sh -c`。默认值为 `0`。可选。 |
+| `send_chunk_header`           | 控制在向进程发送一个数据块之前，是否先发送行数。默认值为 `false`。可选。                                                                                                                                                                                                                                             |
+
+该字典源只能通过 XML 配置。已禁用通过 DDL 创建使用可执行源的字典；否则，DB 用户将能够在 ClickHouse 节点上执行任意二进制文件。

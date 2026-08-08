@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -47,8 +47,10 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE READ ON URL('foo.*') FROM $user1";
 (( $(${CLICKHOUSE_CLIENT} --user $user1 --query "SELECT * FROM url('http://localhost:8123/', LineAsString) FORMAT Null;" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 echo '--invalid regexp--'
-(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "GRANT READ ON URL('(\w+) \1') TO $user1;" 2>&1 | grep -c "Syntax error") >= 1 )) && echo "OK" || echo "UNEXPECTED"
-(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "GRANT READ ON URL('(?Pempty_name)') TO $user1;" 2>&1 | grep -c "Syntax error") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+# The pattern is no longer compiled by the parser: an invalid one is rejected by the
+# interpreter with CANNOT_COMPILE_REGEXP instead of a syntax error.
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "GRANT READ ON URL('(\w+) \1') TO $user1;" 2>&1 | grep -c "CANNOT_COMPILE_REGEXP") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+(( $(${CLICKHOUSE_CLIENT} --user $user1 --query "GRANT READ ON URL('(?Pempty_name)') TO $user1;" 2>&1 | grep -c "CANNOT_COMPILE_REGEXP") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 
 
 ${CLICKHOUSE_CLIENT} <<EOF

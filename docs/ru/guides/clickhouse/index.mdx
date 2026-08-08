@@ -1,0 +1,41 @@
+---
+slug: /guides/developer/overview
+sidebarTitle: 'Обзор'
+description: 'Обзор руководств по ClickHouse'
+title: 'Руководства по ClickHouse'
+keywords: ['руководства по ClickHouse', 'форматы данных', 'моделирование данных', 'комбинаторы агрегатных функций', 'обновления', 'лучшие практики', 'развертывание', 'масштабирование']
+doc_type: 'landing-page'
+mode: wide
+---
+
+В этом разделе собраны следующие руководства:
+
+<CardGroup cols={2}>
+  <Card title="Форматы данных" icon="file-lines" href="/ru/guides/clickhouse/data-formats/intro">
+    Примеры импорта из различных форматов данных и экспорта в них, включая CSV и TSV, Parquet, JSON, двоичные форматы, SQL-дампы и шаблоны с регулярными выражениями.
+  </Card>
+
+  <Card title="Моделирование данных" icon="diagram-project" href="/ru/guides/clickhouse/data-modelling/index">
+    Руководства по моделированию данных в ClickHouse, включая проектирование схемы, разреженные первичные индексы, денормализацию, дозагрузку данных и сжатие данных.
+  </Card>
+
+  <Card title="Производительность и мониторинг" icon="gauge-high" href="/ru/guides/clickhouse/performance-and-monitoring/query-optimization">
+    Руководства по оптимизации производительности запросов, пониманию анализатора запросов и выбору столбцов типа Dynamic.
+  </Card>
+
+  <Card title="Примеры комбинаторов агрегатных функций" icon="calculator" href="/ru/guides/clickhouse/examples/aggregate-function-combinators/anyIf">
+    Примеры использования комбинаторов агрегатных функций, таких как `-If`, `-Map`, `-SimpleState`, `-State`, `-Merge`, `-Resample`, `-Array` и `-ForEach`.
+  </Card>
+
+  <Card title="Обновление самоуправляемой установки" icon="circle-arrow-up" href="/ru/guides/oss/update">
+    Руководство по обновлению самоуправляемой установки ClickHouse, включая варианты перехода между версиями и вопросы совместимости версий.
+  </Card>
+
+  <Card title="Лучшие практики OSS" icon="list-check" href="/ru/guides/oss/best-practices/sizing-and-hardware-recommendations">
+    Рекомендации по сайзингу, оборудованию и использованию ClickHouse с открытым исходным кодом.
+  </Card>
+
+  <Card title="Развертывание и масштабирование" icon="server" href="/ru/guides/oss/deployment-and-scaling/index">
+    Руководства с примерами развертывания ClickHouse для масштабирования и/или отказоустойчивости, включая конфигурацию и мониторинг ClickHouse Keeper.
+  </Card>
+</CardGroup>

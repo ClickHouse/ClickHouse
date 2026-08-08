@@ -21,6 +21,8 @@
 
 #include <aws/core/auth/AWSCredentials.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 #include <filesystem>
 
 
@@ -61,10 +63,14 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
+    extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
+    extern const S3AuthSettingsString google_adc_client_id;
+    extern const S3AuthSettingsString google_adc_client_secret;
+    extern const S3AuthSettingsString google_adc_refresh_token;
 }
 
 namespace S3RequestSetting
@@ -120,15 +126,40 @@ private:
         String role_arn,
         String role_session_name,
         String external_id,
+        bool gcp_oauth_supplied_by_query,
+        bool from_named_collection,
         const S3Settings & settings,
         const ContextPtr & context)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
         HTTPHeaderEntries headers;
+        String session_token = settings.auth_settings[S3AuthSetting::session_token];
+        String sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
+        S3::ServerSideEncryptionKMSConfig sse_kms_config = settings.auth_settings.server_side_encryption_kms_config;
+        /// Whether the base key pair came from the request rather than the server `<s3>` config fallback below.
+        const bool base_keys_supplied_by_query = !access_key_id.empty();
         if (access_key_id.empty())
         {
             credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id], settings.auth_settings[S3AuthSetting::secret_access_key]);
             headers = settings.auth_settings.headers;
+        }
+
+        /// The explicit `BACKUP ... TO S3(url, ak, sk)` form supplies its own keys but has no way to supply a
+        /// session_token, so any token here was inherited from the server `<s3>`/endpoint config. Clear it so
+        /// the server's temporary token is not sent with the query's keys (a named collection carries its own).
+        if (base_keys_supplied_by_query && !from_named_collection)
+            session_token.clear();
+
+        /// Neither the explicit `url, ak, sk` form nor the bare `url` form can supply request-auth material, so
+        /// under the restriction any headers / SSE-C / SSE-KMS here came from the server `<s3>`/endpoint config.
+        /// Drop them: the explicit-key form must not send the server's material alongside the query's keys, and
+        /// the bare-URL form that resolves to an anonymous/NOSIGN client must stay genuinely anonymous rather
+        /// than still sending operator headers or encryption keys. A named collection is handled by its caller.
+        if (!from_named_collection && context->shouldRestrictUserQueryS3Credentials())
+        {
+            sse_customer_key.clear();
+            sse_kms_config = {};
+            headers.clear();
         }
 
         const auto & request_settings = settings.request_settings;
@@ -136,11 +167,36 @@ private:
         const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
+        /// The passed-in role_arn comes from the query/named collection; if empty, fall back to server config.
+        const bool role_arn_supplied_by_query = !role_arn.empty();
         if (role_arn.empty())
         {
             role_arn = settings.auth_settings[S3AuthSetting::role_arn];
             role_session_name = settings.auth_settings[S3AuthSetting::role_session_name];
             external_id = settings.auth_settings[S3AuthSetting::external_id];
+        }
+
+        /// Under the restriction a query-supplied role_arn is honored (STS assume-role is the documented way
+        /// to grant ClickHouse Cloud access to a private bucket), but it may be assumed only with the request's
+        /// own base keys or the server's ambient identity, never the server `<s3>` static keys as the STS base;
+        /// and a server-configured role is not applied to user requests at all. So drop a server-inherited
+        /// role, and (positional/`extra_credentials` form only) drop server-config base keys that a query role
+        /// would otherwise pick up, letting the assume-role call fall through to the ambient provider chain.
+        /// A named-collection role keeps its keys from the collection (a query-overridden role is handled in
+        /// registerBackupEngineS3).
+        if (context->shouldRestrictUserQueryS3Credentials())
+        {
+            if (!role_arn.empty() && !role_arn_supplied_by_query)
+            {
+                role_arn.clear();
+                role_session_name.clear();
+                external_id.clear();
+            }
+            else if (!from_named_collection && role_arn_supplied_by_query && !base_keys_supplied_by_query)
+            {
+                credentials = Aws::Auth::AWSCredentials();
+                session_token.clear();
+            }
         }
 
 
@@ -178,6 +234,28 @@ private:
         client_configuration.service_account = settings.auth_settings[S3AuthSetting::service_account];
         client_configuration.metadata_service = settings.auth_settings[S3AuthSetting::metadata_service];
         client_configuration.request_token_path = settings.auth_settings[S3AuthSetting::request_token_path];
+        /// Propagate the explicit Google ADC triple so a user-supplied `gcp_oauth` is accepted by the restriction.
+        client_configuration.google_adc_client_id = settings.auth_settings[S3AuthSetting::google_adc_client_id];
+        client_configuration.google_adc_client_secret = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
+        client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
+
+        /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple is only
+        /// ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so when the
+        /// `gcp_oauth` is not query-supplied, the triple here is server config too and must be dropped with it.
+        /// Otherwise a server `<s3>` `gcp_oauth` plus a full ADC triple would be treated as explicit and mint a
+        /// server bearer token to the user-chosen endpoint. A query-supplied `gcp_oauth` is left in place (and
+        /// reaches the central `getCredentialsProvider` rejection when it has no ADC triple).
+        if (boost::iequals(client_configuration.http_client, "gcp_oauth")
+            && !gcp_oauth_supplied_by_query && context->shouldRestrictUserQueryS3Credentials())
+        {
+            client_configuration.http_client.clear();
+            client_configuration.service_account.clear();
+            client_configuration.metadata_service.clear();
+            client_configuration.request_token_path.clear();
+            client_configuration.google_adc_client_id.clear();
+            client_configuration.google_adc_client_secret.clear();
+            client_configuration.google_adc_refresh_token.clear();
+        }
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
@@ -186,6 +264,22 @@ private:
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
 
+        S3::CredentialsConfiguration credentials_configuration
+        {
+            settings.auth_settings[S3AuthSetting::use_environment_credentials],
+            settings.auth_settings[S3AuthSetting::use_insecure_imds_request],
+            settings.auth_settings[S3AuthSetting::expiration_window_seconds],
+            settings.auth_settings[S3AuthSetting::no_sign_request],
+            std::move(role_arn),
+            std::move(role_session_name),
+            std::move(external_id),
+            /*sts_endpoint_override=*/""
+        };
+
+        /// BACKUP/RESTORE TO S3 is driven by user SQL, so it must not be able to reuse the server's own
+        /// S3 credentials.
+        credentials_configuration.forbid_implicit_credentials = context->shouldRestrictUserQueryS3Credentials();
+
         auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(s3_uri.endpoint, s3_uri.bucket);
 
         return S3::ClientFactory::instance().create(
@@ -193,21 +287,11 @@ private:
             client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
-            settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
-            settings.auth_settings.server_side_encryption_kms_config,
+            sse_customer_key,
+            sse_kms_config,
             std::move(headers),
-            S3::CredentialsConfiguration
-            {
-                settings.auth_settings[S3AuthSetting::use_environment_credentials],
-                settings.auth_settings[S3AuthSetting::use_insecure_imds_request],
-                settings.auth_settings[S3AuthSetting::expiration_window_seconds],
-                settings.auth_settings[S3AuthSetting::no_sign_request],
-                std::move(role_arn),
-                std::move(role_session_name),
-                std::move(external_id),
-                /*sts_endpoint_override=*/""
-            },
-            /*session_token=*/"",
+            std::move(credentials_configuration),
+            session_token,
             shared_cache);
     }
 
@@ -290,6 +374,7 @@ BackupReaderS3::BackupReaderS3(
     const String & role_arn,
     const String & role_session_name,
     const String & external_id,
+    const std::optional<S3::S3AuthSettings> & named_collection_auth,
     bool allow_s3_native_copy,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -307,10 +392,25 @@ BackupReaderS3::BackupReaderS3(
         s3_settings.updateIfChanged(*endpoint_settings);
     }
 
+    /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
+    /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
+    if (named_collection_auth)
+    {
+        /// `updateIfChanged` cannot clear non-scalar fields, so under the restriction first drop the server
+        /// `<s3>`/endpoint request-auth material (headers/access headers and SSE-C/SSE-KMS keys); a URL-only
+        /// collection then stays anonymous and an explicit-key collection does not inherit the server SSE keys.
+        if (context_->shouldRestrictUserQueryS3Credentials())
+            s3_settings.auth_settings.clearServerManagedRequestAuth();
+        s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
+    }
+
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
 
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, s3_settings, context_);
+    /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
+    const bool gcp_oauth_supplied_by_query = named_collection_auth
+        && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
         blob_storage_log = std::make_shared<BlobStorageLogWriter>(blob_storage_system_log);
@@ -342,6 +442,22 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
+    copyToDiskImpl(path_in_backup, /* offset= */ 0, file_size, file_size, /* is_range= */ false, encrypted_in_backup,
+                   destination_disk, destination_path, write_mode);
+}
+
+void BackupReaderS3::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
+                                         bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                         WriteMode write_mode)
+{
+    copyToDiskImpl(path_in_backup, offset, size, file_size, /* is_range= */ true, encrypted_in_backup,
+                   destination_disk, destination_path, write_mode);
+}
+
+void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset, size_t size, size_t file_size, bool is_range,
+                                    bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
+                                    WriteMode write_mode)
+{
     /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
     /// We don't check for `has_throttling` here because the native copy almost doesn't use network.
     auto destination_data_source_description = destination_disk->getDataSourceDescription();
@@ -357,23 +473,23 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                                 "Blob writing function called with unexpected blob_path.size={} or mode={}",
                                 blob_path.size(), mode);
 
-            copyS3File(
-                client,
-                s3_uri.bucket,
-                fs::path(s3_uri.key) / path_in_backup,
-                0,
-                file_size,
-                /* dest_s3_client= */ destination_disk->getS3StorageClient(),
-                /* dest_bucket= */ blob_path[1],
-                /* dest_key= */ blob_path[0],
-                s3_settings.request_settings,
-                read_settings,
-                blob_storage_log,
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER),
-                [&, this] { return readFile(path_in_backup); },
-                object_attributes);
+            const auto src_key = fs::path(s3_uri.key) / path_in_backup;
+            auto dest_client = destination_disk->getS3StorageClient();
+            auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
+            auto create_read_buffer = [&, this] { return readFile(path_in_backup); };
 
-            return file_size;
+            if (is_range)
+                copyS3FileRange(
+                    client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size,
+                    dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
+            else
+                copyS3File(
+                    client, s3_uri.bucket, src_key, size,
+                    dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
+
+            return size;
         };
 
         destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
@@ -381,7 +497,10 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
     }
 
     /// Fallback to copy through buffers.
-    BackupReaderDefault::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+    if (is_range)
+        BackupReaderDefault::copyFileRangeToDisk(path_in_backup, offset, size, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+    else
+        BackupReaderDefault::copyFileToDisk(path_in_backup, size, encrypted_in_backup, destination_disk, destination_path, write_mode);
 }
 
 BackupWriterS3::BackupWriterS3(
@@ -391,6 +510,7 @@ BackupWriterS3::BackupWriterS3(
     const String & role_arn,
     const String & role_session_name,
     const String & external_id,
+    const std::optional<S3::S3AuthSettings> & named_collection_auth,
     bool allow_s3_native_copy,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
@@ -411,11 +531,26 @@ BackupWriterS3::BackupWriterS3(
         s3_settings.updateIfChanged(*endpoint_settings);
     }
 
+    /// A backup named collection fully overrides the credential fields (so a URL-only collection stays
+    /// anonymous); the explicit url/key form passes no override and keeps the server `<s3>` config values.
+    if (named_collection_auth)
+    {
+        /// `updateIfChanged` cannot clear non-scalar fields, so under the restriction first drop the server
+        /// `<s3>`/endpoint request-auth material (headers/access headers and SSE-C/SSE-KMS keys); a URL-only
+        /// collection then stays anonymous and an explicit-key collection does not inherit the server SSE keys.
+        if (context_->shouldRestrictUserQueryS3Credentials())
+            s3_settings.auth_settings.clearServerManagedRequestAuth();
+        s3_settings.auth_settings.updateIfChanged(*named_collection_auth);
+    }
+
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
     s3_settings.request_settings[S3RequestSetting::storage_class_name] = storage_class_name;
 
-    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, s3_settings, context_);
+    /// A `gcp_oauth` is server-managed unless the named collection supplied it itself (see makeS3Client).
+    const bool gcp_oauth_supplied_by_query = named_collection_auth
+        && boost::iequals(String((*named_collection_auth)[S3AuthSetting::http_client]), "gcp_oauth");
+    client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, role_arn, role_session_name, external_id, gcp_oauth_supplied_by_query, /* from_named_collection */ named_collection_auth.has_value(), s3_settings, context_);
 
     if (auto blob_storage_system_log = context_->getBlobStorageLog())
     {
@@ -438,28 +573,39 @@ void BackupWriterS3::copyFileFromDisk(
         if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 2)
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
-            copyS3File(
-                /* src_s3_client */ disk_client_factory.getOrCreate(src_disk),
-                /* src_bucket */ blob_path[1],
-                /* src_key */ blob_path[0],
-                start_pos,
-                length,
-                /* dest_s3_client */ client,
-                /* dest_bucket */ s3_uri.bucket,
-                /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
-                s3_settings.request_settings,
-                read_settings,
-                blob_storage_log,
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
-                [&, this]
-                {
-                    LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
 
-                    if (copy_encrypted)
-                        return src_disk->readEncryptedFile(src_path, read_settings);
+            auto src_client = disk_client_factory.getOrCreate(src_disk);
+            auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER);
+            auto create_read_buffer = [&, this]
+            {
+                LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
 
-                    return src_disk->readFile(src_path, read_settings);
-                });
+                if (copy_encrypted)
+                    return src_disk->readEncryptedFile(src_path, read_settings);
+
+                return src_disk->readFile(src_path, read_settings);
+            };
+
+            /// A copy is whole-object only if it covers the entire source; `start_pos != 0` is not a sound
+            /// test, because a prefix [0, length) of a bigger file is a range too. `length` counts the bytes
+            /// actually copied, so an encrypted source must be measured with its encrypted size.
+            const size_t source_size
+                = copy_encrypted ? src_disk->getEncryptedFileSize(src_path) : src_disk->getFileSize(src_path);
+            const bool whole_object = (start_pos == 0) && (length == source_size);
+
+            if (whole_object)
+                copyS3File(
+                    src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], length,
+                    /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
+                    /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
+            else
+                copyS3FileRange(
+                    src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], start_pos, length,
+                    /* src_object_size= */ source_size,
+                    /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
+                    /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
+                    s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
             return; /// copied!
         }
     }
@@ -477,7 +623,6 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         client,
         /* src_bucket */ s3_uri.bucket,
         /* src_key= */ source_key,
-        0,
         size,
         /* dest_s3_client= */ client,
         /* dest_bucket= */ s3_uri.bucket,

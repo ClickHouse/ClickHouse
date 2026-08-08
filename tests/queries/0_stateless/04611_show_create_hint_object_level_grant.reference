@@ -1,0 +1,10 @@
+CREATE DICTIONARY {db}.dict_target
+1
+0
+1
+CREATE TABLE {db}.tbl_target
+1
+0
+1
+0
+Maybe you meant {db}.dict_target?

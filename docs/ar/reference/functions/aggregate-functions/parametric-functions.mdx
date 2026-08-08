@@ -1,0 +1,960 @@
+---
+description: 'توثيق الدوال التجميعية البارامترية'
+sidebarTitle: 'بارامترية'
+slug: /sql-reference/aggregate-functions/parametric-functions
+title: 'الدوال التجميعية البارامترية'
+doc_type: 'مرجع'
+---
+
+يمكن لبعض الدوال التجميعية أن تقبل ليس فقط الأعمدة المستخدمة كوسيطات (للضغط)، بل أيضًا مجموعة من المعلمات، وهي ثوابت للتهيئة. ويُكتب تركيبها بزوجين من الأقواس بدلًا من زوج واحد. الأول للمعلمات، والثاني للوسيطات.
+
+<div id="histogram">
+  ## المُدرَّج التكراري
+</div>
+
+يحسب مُدرَّجًا تكراريًا تكيفيًا. ولا يضمن نتائج دقيقة.
+
+```sql
+histogram(number_of_bins)(values)
+```
+
+تستخدم الدالة [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). وتُعدَّل حدود فئات المُدرَّج التكراري مع ورود بيانات جديدة إلى الدالة. وفي الحالة الشائعة، لا تكون عروض الفئات متساوية.
+
+**الوسيطات**
+
+`values` — [Expression](/ar/reference/syntax#expressions) يُنتج قيم الإدخال.
+
+**المعلمات**
+
+`number_of_bins` — الحد الأقصى لعدد الفئات في المُدرَّج التكراري. تحسب الدالة عدد الفئات تلقائيًا. وتحاول الوصول إلى العدد المحدد من الفئات، ولكن إذا تعذر ذلك، تستخدم عددًا أقل من الفئات.
+
+**القيم المُعادة**
+
+* [Array](/ar/reference/data-types/array) من [Tuples](/ar/reference/data-types/tuple) بالتنسيق التالي:
+
+  ```
+  [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
+  ```
+
+  * `lower` — الحد الأدنى للفئة.
+  * `upper` — الحد الأعلى للفئة.
+  * `height` — الارتفاع المحسوب للفئة.
+
+**مثال**
+
+```sql
+SELECT histogram(5)(number + 1)
+FROM (
+    SELECT *
+    FROM system.numbers
+    LIMIT 20
+)
+```
+
+```text
+┌─histogram(5)(plus(number, 1))───────────────────────────────────────────┐
+│ [(1,4.5,4),(4.5,8.5,4),(8.5,12.75,4.125),(12.75,17,4.625),(17,20,3.25)] │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+يمكنك عرض مُدرَّج تكراري باستخدام الدالة [bar](/ar/reference/functions/regular-functions/other-functions#bar)، على سبيل المثال:
+
+```sql
+WITH histogram(5)(rand() % 100) AS hist
+SELECT
+    arrayJoin(hist).3 AS height,
+    bar(height, 0, 6, 5) AS bar
+FROM
+(
+    SELECT *
+    FROM system.numbers
+    LIMIT 20
+)
+```
+
+```text
+┌─height─┬─bar───┐
+│  2.125 │ █▋    │
+│   3.25 │ ██▌   │
+│  5.625 │ ████▏ │
+│  5.625 │ ████▏ │
+│  3.375 │ ██▌   │
+└────────┴───────┘
+```
+
+في هذه الحالة، تذكَّر أنك لا تعرف حدود فئات المُدرَّج التكراري.
+
+<div id="sequencematch">
+  ## sequenceMatch
+</div>
+
+يتحقق مما إذا كان التسلسل يتضمن سلسلة أحداث تطابق النمط.
+
+**البنية**
+
+```sql
+sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
+```
+
+<Note>
+  قد تَرِد الأحداث التي تقع في الثانية نفسها ضمن التسلسل بترتيب غير محدد، مما يؤثر في النتيجة.
+</Note>
+
+**الوسائط**
+
+* `timestamp` — العمود الذي يُعتبر أنه يحتوي على بيانات الوقت. أنواع البيانات المعتادة هي `Date` و`DateTime`. ويمكنك أيضًا استخدام أيٍّ من أنواع بيانات [UInt](/ar/reference/data-types/int-uint) المدعومة.
+
+* `cond1`، `cond2` — الشروط التي تصف تسلسل الأحداث. نوع البيانات: `UInt8`. يمكنك تمرير ما يصل إلى 32 وسيط شرط. لا تأخذ الدالة في الحسبان إلا الأحداث الموصوفة في هذه الشروط. وإذا كان التسلسل يحتوي على بيانات غير موصوفة في أي شرط، فتتخطاها الدالة.
+
+**المعلمات**
+
+* `pattern` — سلسلة النمط. راجع [بنية النمط](#pattern-syntax).
+
+**القيم المُعادة**
+
+* 1، إذا تمت مطابقة النمط.
+* 0، إذا لم تتم مطابقة النمط.
+
+النوع: `UInt8`.
+
+<div id="pattern-syntax">
+  #### بنية النمط
+</div>
+
+* `(?N)` — يطابق وسيطة الشرط في الموضع `N`. تُرقَّم الشروط ضمن النطاق `[1, 32]`. على سبيل المثال، يطابق `(?1)` الوسيطة المُمرَّرة إلى المعلَمة `cond1`.
+
+* `.*` — يطابق أي عدد من الأحداث. لا تحتاج إلى وسيطات شرطية لمطابقة هذا العنصر من النمط.
+
+* `(?t operator value)` — يحدّد الزمن بالثواني الذي يجب أن يفصل بين حدثين. على سبيل المثال، يطابق النمط `(?1)(?t>1800)(?2)` الأحداث التي يفصل بين وقوعها أكثر من 1800 ثانية. ويمكن أن يقع بين هذين الحدثين أي عدد من الأحداث. يمكنك استخدام المعاملات `>=`, `>`, `<`, `<=`, `==`.
+
+**أمثلة**
+
+لننظر إلى البيانات في الجدول `t`:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      3 │
+│    3 │      2 │
+└──────┴────────┘
+```
+
+نفّذ الاستعلام:
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2) FROM t
+```
+
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│                                                                     1 │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+عثرت الدالة على سلسلة الأحداث التي يتبع فيها الرقم 2 الرقم 1. وقد تخطّت الرقم 3 الواقع بينهما، لأن هذا الرقم غير معرّف كحدث. وإذا أردنا أخذ هذا الرقم في الحسبان عند البحث عن سلسلة الأحداث الواردة في المثال، فيجب أن نضع له شرطًا.
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM t
+```
+
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 3))─┐
+│                                                                                        0 │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+في هذه الحالة، لم تتمكن الدالة من العثور على سلسلة الأحداث المطابقة للنمط، لأن الحدث الخاص بالرقم 3 وقع بين 1 و2. ولو تحققنا في الحالة نفسها من الشرط الخاص بالرقم 4، لطابق التسلسل النمط.
+
+```sql
+SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM t
+```
+
+```text
+┌─sequenceMatch('(?1)(?2)')(time, equals(number, 1), equals(number, 2), equals(number, 4))─┐
+│                                                                                        1 │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**راجع أيضًا**
+
+* [sequenceCount](#sequencecount)
+
+<div id="sequencecount">
+  ## sequenceCount
+</div>
+
+تحسب عدد سلاسل الأحداث المطابقة للنمط. تبحث الدالة في سلاسل أحداث غير متداخلة. ويبدأ البحث عن السلسلة التالية بعد مطابقة السلسلة الحالية.
+
+<Note>
+  قد تَرِد الأحداث التي تقع في الثانية نفسها ضمن التسلسل بترتيب غير معرّف، مما يؤثر في النتيجة.
+</Note>
+
+**بناء الجملة**
+
+```sql
+sequenceCount(pattern)(timestamp, cond1, cond2, ...)
+```
+
+**الوسيطات**
+
+* `timestamp` — العمود الذي يُعتبر أنه يحتوي على بيانات زمنية. تشمل أنواع البيانات المعتادة `Date` و`DateTime`. كما يمكنك استخدام أيًّا من أنواع بيانات [UInt](/ar/reference/data-types/int-uint) المدعومة.
+
+* `cond1`, `cond2` — شروط تصف سلسلة الأحداث. نوع البيانات: `UInt8`. يمكنك تمرير ما يصل إلى 32 وسيط شرط. لا تأخذ الدالة في الحسبان إلا الأحداث الموصوفة في هذه الشروط. وإذا احتوى التسلسل على بيانات غير موصوفة في أي شرط، فتتخطّاها الدالة.
+
+**المعلمات**
+
+* `pattern` — سلسلة النمط. راجع [بنية النمط](#pattern-syntax).
+
+**القيم المعادة**
+
+* عدد سلاسل الأحداث غير المتداخلة التي تمت مطابقتها.
+
+النوع: `UInt64`.
+
+**مثال**
+
+لننظر في البيانات الموجودة في الجدول `t`:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      3 │
+│    3 │      2 │
+│    4 │      1 │
+│    5 │      3 │
+│    6 │      2 │
+└──────┴────────┘
+```
+
+احسب عدد مرات ظهور الرقم 2 بعد الرقم 1، مع وجود أي عدد من الأرقام الأخرى بينهما:
+
+```sql
+SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
+```
+
+```text
+┌─sequenceCount('(?1).*(?2)')(time, equals(number, 1), equals(number, 2))─┐
+│                                                                       2 │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="sequencematchevents">
+  ## sequenceMatchEvents
+</div>
+
+أعِد الطوابع الزمنية للأحداث لأطول سلاسل الأحداث التي طابقت النمط.
+
+<Note>
+  قد تَرِد الأحداث التي تقع في الثانية نفسها ضمن التسلسل بترتيب غير محدد، مما يؤثر في النتيجة.
+</Note>
+
+**الصيغة**
+
+```sql
+sequenceMatchEvents(pattern)(timestamp, cond1, cond2, ...)
+```
+
+**الوسيطات**
+
+* `timestamp` — العمود الذي يُعدّ محتويًا على بيانات الوقت. أنواع البيانات الشائعة هي `Date` و `DateTime`. يمكنك أيضًا استخدام أيٍّ من أنواع بيانات [UInt](/ar/reference/data-types/int-uint) المدعومة.
+
+* `cond1`, `cond2` — شروط تصف سلسلة الأحداث. نوع البيانات: `UInt8`. يمكنك تمرير ما يصل إلى 32 وسيطة شرط. لا تأخذ الدالة في الاعتبار إلا الأحداث الموصوفة في هذه الشروط. إذا كان التسلسل يحتوي على بيانات غير موصوفة في أي شرط، فإن الدالة تتخطّاها.
+
+**المعلمات**
+
+* `pattern` — سلسلة النمط. راجع [بنية النمط](#pattern-syntax).
+
+**القيم المعادة**
+
+* مصفوفة من الطوابع الزمنية لوسيطات الشروط المطابِقة (?N) من سلسلة الأحداث. يطابق كل موضع في المصفوفة موضع وسيطة الشرط في النمط
+
+النوع: Array.
+
+**مثال**
+
+لننظر إلى البيانات في الجدول `t`:
+
+```text
+┌─time─┬─number─┐
+│    1 │      1 │
+│    2 │      3 │
+│    3 │      2 │
+│    4 │      1 │
+│    5 │      3 │
+│    6 │      2 │
+└──────┴────────┘
+```
+
+إرجاع الطوابع الزمنية لأحداث أطول سلسلة
+
+```sql
+SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2, number = 4) FROM t
+```
+
+```text
+┌─sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, equals(number, 1), equals(number, 2), equals(number, 4))─┐
+│ [1,3,4]                                                                                                    │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**راجع أيضًا**
+
+* [sequenceMatch](#sequencematch)
+
+<div id="windowfunnel">
+  ## windowFunnel
+</div>
+
+يبحث عن سلاسل الأحداث ضمن نافذة زمنية منزلقة، ويحسب الحد الأقصى لعدد الأحداث التي تحققت في السلسلة.
+
+تعمل الدالة وفقًا للخوارزمية التالية:
+
+* تبحث الدالة عن البيانات التي تستوفي الشرط الأول في السلسلة، وتضبط عدّاد الأحداث على 1. وهذه هي اللحظة التي تبدأ فيها النافذة المنزلقة.
+
+* إذا حدثت أحداث من السلسلة بشكل متسلسل داخل النافذة، فسيزداد العدّاد. وإذا انقطع تسلسل الأحداث، فلن يزداد العدّاد.
+
+* إذا كانت البيانات تحتوي على عدة سلاسل أحداث بمراحل اكتمال مختلفة، فلن تُخرج الدالة إلا طول أطول سلسلة.
+
+**الصيغة**
+
+```sql
+windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
+```
+
+**الوسائط**
+
+* `timestamp` — اسم العمود الذي يحتوي على الطابع الزمني. أنواع البيانات المدعومة: [Date](/ar/reference/data-types/date)، و[DateTime](/ar/reference/data-types/datetime)، وأنواع الأعداد الصحيحة غير الموقعة الأخرى (لاحظ أنه رغم أن `timestamp` يدعم النوع `UInt64`، فإن قيمته لا يمكن أن تتجاوز الحد الأقصى لـ Int64، وهو 2^63 - 1).
+* `cond` — الشروط أو البيانات التي تصف سلسلة الأحداث. [UInt8](/ar/reference/data-types/int-uint).
+
+**المعلمات**
+
+* `window` — طول النافذة المنزلقة، وهو الفاصل الزمني بين الشرط الأول والشرط الأخير. تعتمد وحدة `window` على `timestamp` نفسه وتختلف وفقًا له. ويُحدَّد ذلك باستخدام التعبير `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
+* `mode` — وسيط اختياري. يمكن تعيين وضع واحد أو أكثر.
+  * `'strict_deduplication'` — إذا تحقق الشرط نفسه ضمن تسلسل الأحداث، فإن هذا الحدث المكرر يوقف المعالجة اللاحقة. ملاحظة: قد يعمل هذا بشكل غير متوقع إذا تحققت عدة شروط للحدث نفسه.
+  * `'strict_order'` — لا يسمح بتدخل أحداث أخرى. على سبيل المثال، في الحالة `A->B->D->C`، يتوقف عن العثور على `A->B->C` عند `D` ويكون الحد الأقصى لمستوى الحدث هو 2.
+  * `'strict_increase'` — يطبّق الشروط فقط على الأحداث ذات الطوابع الزمنية المتزايدة تصاعديًا بشكل صارم.
+  * `'strict_once'` — يحتسب كل حدث مرة واحدة فقط في السلسلة حتى إذا استوفى الشرط عدة مرات.
+  * `'allow_reentry'` — يتجاهل الأحداث التي تنتهك الترتيب الصارم. على سبيل المثال، في الحالة A-&gt;A-&gt;B-&gt;C، يعثر على A-&gt;B-&gt;C بتجاهل A الزائد ويكون الحد الأقصى لمستوى الحدث هو 3.
+
+**القيمة المعادة**
+
+العدد الأقصى للشروط المتتالية المتحققة من السلسلة ضمن النافذة الزمنية المنزلقة.
+تُحلَّل جميع السلاسل ضمن التحديد.
+
+النوع: `Integer`.
+
+**مثال**
+
+حدّد ما إذا كانت فترة زمنية معينة كافية لكي يختار المستخدم هاتفًا ويشتريه مرتين من المتجر الإلكتروني.
+
+عيّن سلسلة الأحداث التالية:
+
+1. سجّل المستخدم الدخول إلى حسابه في المتجر (`eventID = 1003`).
+2. بحث المستخدم عن هاتف (`eventID = 1007, product = 'phone'`).
+3. قدّم المستخدم طلبًا (`eventID = 1009`).
+4. أعاد المستخدم الطلب مرة أخرى (`eventID = 1010`).
+
+جدول الإدخال:
+
+```text
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-01-28 │       1 │ 2019-01-29 10:00:00 │    1003 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-01-31 │       1 │ 2019-01-31 09:00:00 │    1007 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-01-30 │       1 │ 2019-01-30 08:00:00 │    1009 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
+│ 2019-02-01 │       1 │ 2019-02-01 08:00:00 │    1010 │ phone   │
+└────────────┴─────────┴─────────────────────┴─────────┴─────────┘
+```
+
+اكتشف إلى أي مرحلة استطاع المستخدم `user_id` الوصول ضمن التسلسل خلال الفترة بين يناير وفبراير من عام 2019.
+
+```sql title="Query"
+SELECT
+    level,
+    count() AS c
+FROM
+(
+    SELECT
+        user_id,
+        windowFunnel(6048000000000000)(timestamp, eventID = 1003, eventID = 1009, eventID = 1007, eventID = 1010) AS level
+    FROM trend
+    WHERE (event_date >= '2019-01-01') AND (event_date <= '2019-02-02')
+    GROUP BY user_id
+)
+GROUP BY level
+ORDER BY level ASC;
+```
+
+```text title="Response"
+┌─level─┬─c─┐
+│     4 │ 1 │
+└───────┴───┘
+```
+
+**مثال على وضع allow&#95;reentry**
+
+يوضح هذا المثال كيفية عمل وضع `allow_reentry` مع أنماط إعادة الدخول للمستخدم:
+
+```sql
+-- Sample data: user visits checkout -> product detail -> checkout again -> payment
+-- Without allow_reentry: stops at level 2 (product detail page)
+-- With allow_reentry: reaches level 4 (payment completion)
+
+SELECT
+    level,
+    count() AS users
+FROM
+(
+    SELECT
+        user_id,
+        windowFunnel(3600, 'strict_order', 'allow_reentry')(
+            timestamp,
+            action = 'begin_checkout',      -- Step 1: Begin checkout
+            action = 'view_product_detail', -- Step 2: View product detail  
+            action = 'begin_checkout',      -- Step 3: Begin checkout again (reentry)
+            action = 'complete_payment'     -- Step 4: Complete payment
+        ) AS level
+    FROM user_events
+    WHERE event_date = today()
+    GROUP BY user_id
+)
+GROUP BY level
+ORDER BY level ASC;
+```
+
+<div id="retention">
+  ## retention
+</div>
+
+تأخذ الدالة كوسائط مجموعةً من الشروط، من 1 إلى 32 وسيطة من النوع `UInt8`، تشير إلى ما إذا كان شرط معيّن قد تحقق للحدث.
+يمكن تحديد أي شرط كوسيطة (كما في [WHERE](/ar/reference/statements/select/where)).
+
+تُطبَّق الشروط، باستثناء الشرط الأول، على شكل أزواج: تكون نتيجة الشرط الثاني true إذا كان الشرطان الأول والثاني true، وتكون نتيجة الشرط الثالث إذا كان الشرطان الأول والثالث true، وهكذا.
+
+**الصيغة**
+
+```sql
+retention(cond1, cond2, ..., cond32);
+```
+
+**الوسائط**
+
+* `cond` — تعبير يُرجِع نتيجة من نوع `UInt8` (1 أو 0).
+
+**القيمة المُعادة**
+
+مصفوفة من 1 أو 0.
+
+* 1 — تم استيفاء الشرط لهذا الحدث.
+* 0 — لم يتم استيفاء الشرط لهذا الحدث.
+
+النوع: `UInt8`.
+
+**مثال**
+
+لنأخذ مثالًا على حساب الدالة `retention` لتحديد زيارات الموقع.
+
+**1.** أنشئ جدولًا لتوضيح المثال.
+
+```sql title="Query"
+CREATE TABLE retention_test(date Date, uid Int32) ENGINE = Memory;
+
+INSERT INTO retention_test SELECT '2020-01-01', number FROM numbers(5);
+INSERT INTO retention_test SELECT '2020-01-02', number FROM numbers(10);
+INSERT INTO retention_test SELECT '2020-01-03', number FROM numbers(15);
+```
+
+جدول الإدخال:
+
+```sql title="Query"
+SELECT * FROM retention_test
+```
+
+```text title="Response"
+┌───────date─┬─uid─┐
+│ 2020-01-01 │   0 │
+│ 2020-01-01 │   1 │
+│ 2020-01-01 │   2 │
+│ 2020-01-01 │   3 │
+│ 2020-01-01 │   4 │
+└────────────┴─────┘
+┌───────date─┬─uid─┐
+│ 2020-01-02 │   0 │
+│ 2020-01-02 │   1 │
+│ 2020-01-02 │   2 │
+│ 2020-01-02 │   3 │
+│ 2020-01-02 │   4 │
+│ 2020-01-02 │   5 │
+│ 2020-01-02 │   6 │
+│ 2020-01-02 │   7 │
+│ 2020-01-02 │   8 │
+│ 2020-01-02 │   9 │
+└────────────┴─────┘
+┌───────date─┬─uid─┐
+│ 2020-01-03 │   0 │
+│ 2020-01-03 │   1 │
+│ 2020-01-03 │   2 │
+│ 2020-01-03 │   3 │
+│ 2020-01-03 │   4 │
+│ 2020-01-03 │   5 │
+│ 2020-01-03 │   6 │
+│ 2020-01-03 │   7 │
+│ 2020-01-03 │   8 │
+│ 2020-01-03 │   9 │
+│ 2020-01-03 │  10 │
+│ 2020-01-03 │  11 │
+│ 2020-01-03 │  12 │
+│ 2020-01-03 │  13 │
+│ 2020-01-03 │  14 │
+└────────────┴─────┘
+```
+
+**2.** جمِّع المستخدمين حسب المعرّف الفريد `uid` باستخدام الدالة `retention`.
+
+```sql title="Query"
+SELECT
+    uid,
+    retention(date = '2020-01-01', date = '2020-01-02', date = '2020-01-03') AS r
+FROM retention_test
+WHERE date IN ('2020-01-01', '2020-01-02', '2020-01-03')
+GROUP BY uid
+ORDER BY uid ASC
+```
+
+```text title="Response"
+┌─uid─┬─r───────┐
+│   0 │ [1,1,1] │
+│   1 │ [1,1,1] │
+│   2 │ [1,1,1] │
+│   3 │ [1,1,1] │
+│   4 │ [1,1,1] │
+│   5 │ [0,0,0] │
+│   6 │ [0,0,0] │
+│   7 │ [0,0,0] │
+│   8 │ [0,0,0] │
+│   9 │ [0,0,0] │
+│  10 │ [0,0,0] │
+│  11 │ [0,0,0] │
+│  12 │ [0,0,0] │
+│  13 │ [0,0,0] │
+│  14 │ [0,0,0] │
+└─────┴─────────┘
+```
+
+**3.** احسب إجمالي عدد زيارات الموقع يوميًا.
+
+```sql title="Query"
+SELECT
+    sum(r[1]) AS r1,
+    sum(r[2]) AS r2,
+    sum(r[3]) AS r3
+FROM
+(
+    SELECT
+        uid,
+        retention(date = '2020-01-01', date = '2020-01-02', date = '2020-01-03') AS r
+    FROM retention_test
+    WHERE date IN ('2020-01-01', '2020-01-02', '2020-01-03')
+    GROUP BY uid
+)
+```
+
+```text title="Response"
+┌─r1─┬─r2─┬─r3─┐
+│  5 │  5 │  5 │
+└────┴────┴────┘
+```
+
+حيث:
+
+* `r1`- عدد الزوار المميزين الذين زاروا الموقع في 2020-01-01 (الشرط `cond1`).
+* `r2`- عدد الزوار المميزين الذين زاروا الموقع خلال فترة زمنية محددة بين 2020-01-01 و2020-01-02 (الشرطان `cond1` و`cond2`).
+* `r3`- عدد الزوار المميزين الذين زاروا الموقع خلال فترة زمنية محددة في 2020-01-01 و2020-01-03 (الشرطان `cond1` و`cond3`).
+
+<div id="uniquptonx">
+  ## uniqUpTo(N)(x)
+</div>
+
+تحسب عدد القيم المختلفة للوسيطة حتى حدٍّ معيّن، `N`. إذا كان عدد قيم الوسيطة المختلفة أكبر من `N`، فستُرجع هذه الدالة `N` + 1، وإلا فإنها تحسب القيمة الدقيقة.
+
+يُنصح باستخدامها مع القيم الصغيرة لـ `N`، حتى 10. الحد الأقصى لقيمة `N` هو 100.
+
+بالنسبة إلى حالة الدالة التجميعية، تستخدم هذه الدالة مقدارًا من الذاكرة يساوي 1 + `N` * حجم قيمة واحدة بالبايت.
+وعند التعامل مع السلاسل النصية، تخزّن هذه الدالة قيمة `hash` غير تشفيرية بحجم 8 بايتات؛ ويكون الحساب تقريبيًا للسلاسل النصية.
+
+على سبيل المثال، إذا كان لديك جدول يسجّل كل عبارة بحث يُدخلها المستخدمون على موقعك الإلكتروني. يمثّل كل صف في الجدول عبارةَ بحث واحدة، مع أعمدة لمعرّف المستخدم، وعبارة البحث، والطابع الزمني للاستعلام. يمكنك استخدام `uniqUpTo` لإنشاء تقرير يعرض فقط الكلمات المفتاحية التي أدت إلى 5 مستخدمين فريدين على الأقل.
+
+```sql
+SELECT SearchPhrase
+FROM SearchLog
+GROUP BY SearchPhrase
+HAVING uniqUpTo(4)(UserID) >= 5
+```
+
+يحسب `uniqUpTo(4)(UserID)` عدد قيم `UserID` الفريدة لكل `SearchPhrase`، لكنه لا يحسب أكثر من 4 قيم فريدة. إذا كان هناك أكثر من 4 قيم `UserID` فريدة لعبارة `SearchPhrase`، فستُرجع الدالة 5 (4 + 1). بعد ذلك، تُصفّي عبارة `HAVING` قيم `SearchPhrase` التي يكون فيها عدد قيم `UserID` الفريدة أقل من 5. ويمنحك هذا قائمة بالكلمات المفتاحية للبحث التي استخدمها 5 مستخدمين مختلفين على الأقل.
+
+<div id="summapfiltered">
+  ## sumMapFiltered
+</div>
+
+تعمل هذه الدالة بالطريقة نفسها التي تعمل بها [sumMap](/ar/reference/functions/aggregate-functions/sumMap)، إلا أنها تقبل أيضًا [Array](/ar/reference/data-types/array) من المفاتيح لاستخدامه في التصفية كمعامل. ويكون هذا مفيدًا بشكل خاص عند العمل مع مفاتيح عالي الكاردينالية.
+
+**البنية**
+
+`sumMapFiltered(keys_to_keep)(keys, values)`
+
+**المعلمات**
+
+* `keys_to_keep`: [Array](/ar/reference/data-types/array) من المفاتيح المستخدمة في التصفية.
+* `keys`: [Array](/ar/reference/data-types/array) من المفاتيح.
+* `values`: [Array](/ar/reference/data-types/array) من القيم.
+
+**القيمة المُعادة**
+
+* يعيد Tuple مكوّنًا من مصفوفتين: المفاتيح بترتيب مرتب، والقيم المجمّعة للمفاتيح المقابلة.
+
+**مثال**
+
+```sql title="Query"
+CREATE TABLE sum_map
+(
+    `date` Date,
+    `timeslot` DateTime,
+    `statusMap` Nested(status UInt16, requests UInt64)
+)
+ENGINE = Log
+
+INSERT INTO sum_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+```
+
+```sql title="Query"
+SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM sum_map;
+```
+
+```response title="Response"
+   ┌─sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests)─┐
+1. │ ([1,4,8],[10,20,10])                                            │
+   └─────────────────────────────────────────────────────────────────┘
+```
+
+<div id="summapfilteredwithoverflow">
+  ## sumMapFilteredWithOverflow
+</div>
+
+تعمل هذه الدالة بالطريقة نفسها التي تعمل بها [sumMap](/ar/reference/functions/aggregate-functions/sumMap)، باستثناء أنها تقبل أيضًا Array من المفاتيح لاستخدامها في التصفية كمعامل. وقد يكون ذلك مفيدًا بشكل خاص عند العمل مع مفاتيح عالي الكاردينالية. وهي تختلف عن الدالة [sumMapFiltered](#summapfiltered) في أنها تُجري الجمع مع حدوث overflow، أي إنها تُرجع لعملية الجمع نوع البيانات نفسه الخاص بنوع بيانات المعامل.
+
+**البنية**
+
+`sumMapFilteredWithOverflow(keys_to_keep)(keys, values)`
+
+**المعاملات**
+
+* `keys_to_keep`: ‏[Array](/ar/reference/data-types/array) من المفاتيح لاستخدامها في التصفية.
+* `keys`: ‏[Array](/ar/reference/data-types/array) من المفاتيح.
+* `values`: ‏[Array](/ar/reference/data-types/array) من القيم.
+
+**القيمة المعادة**
+
+* تُرجع Tuple من مصفوفتين: المفاتيح بترتيب فرز، والقيم المجمّعة للمفاتيح المقابلة.
+
+**مثال**
+
+في هذا المثال، ننشئ جدولًا باسم `sum_map`، وندرِج فيه بعض البيانات، ثم نستخدم كلًا من `sumMapFilteredWithOverflow` و`sumMapFiltered` والدالة `toTypeName` لمقارنة النتيجة. ونظرًا لأن `requests` كان من النوع `UInt8` في الجدول المُنشأ، فقد رقّت `sumMapFiltered` نوع القيم المجمّعة إلى `UInt64` لتجنّب overflow، في حين أبقت `sumMapFilteredWithOverflow` النوع `UInt8`، وهو غير كبير بما يكفي لتخزين النتيجة، أي إن overflow قد حدث.
+
+```sql title="Query"
+CREATE TABLE sum_map
+(
+    `date` Date,
+    `timeslot` DateTime,
+    `statusMap` Nested(status UInt8, requests UInt8)
+)
+ENGINE = Log
+
+INSERT INTO sum_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
+```
+
+```sql title="Query"
+SELECT sumMapFilteredWithOverflow([1, 4, 8])(statusMap.status, statusMap.requests) as summap_overflow, toTypeName(summap_overflow) FROM sum_map;
+```
+
+```sql title="Query"
+SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) as summap, toTypeName(summap) FROM sum_map;
+```
+
+```response title="Response"
+   ┌─sum──────────────────┬─toTypeName(sum)───────────────────┐
+1. │ ([1,4,8],[10,20,10]) │ Tuple(Array(UInt8), Array(UInt8)) │
+   └──────────────────────┴───────────────────────────────────┘
+```
+
+```response title="Response"
+   ┌─summap───────────────┬─toTypeName(summap)─────────────────┐
+1. │ ([1,4,8],[10,20,10]) │ Tuple(Array(UInt8), Array(UInt64)) │
+   └──────────────────────┴────────────────────────────────────┘
+```
+
+<div id="sequencenextnode">
+  ## sequenceNextNode
+</div>
+
+يعيد قيمة الحدث التالي الذي طابق سلسلة الأحداث.
+
+*دالة تجريبية، فعِّلها باستخدام `SET allow_experimental_funnel_functions = 1`.*
+
+**الصياغة**
+
+```sql
+sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event1, event2, event3, ...)
+```
+
+**المعلمات**
+
+* `direction` — يُستخدم لتحديد الاتجاه.
+  * forward — التحرك إلى الأمام.
+  * backward — التحرك إلى الخلف.
+
+* `base` — يُستخدم لتعيين النقطة المرجعية.
+  * head — تعيين النقطة المرجعية إلى الحدث الأول.
+  * tail — تعيين النقطة المرجعية إلى الحدث الأخير.
+  * first&#95;match — تعيين النقطة المرجعية إلى أول `event1` مطابق.
+  * last&#95;match — تعيين النقطة المرجعية إلى آخر `event1` مطابق.
+
+**الوسيطات**
+
+* `timestamp` — اسم العمود الذي يحتوي على الطابع الزمني. أنواع البيانات المدعومة: [Date](/ar/reference/data-types/date)، و[DateTime](/ar/reference/data-types/datetime)، وأنواع الأعداد الصحيحة الأخرى غير الموقعة.
+* `event_column` — اسم العمود الذي يحتوي على قيمة الحدث التالي المراد إرجاعها. أنواع البيانات المدعومة: [String](/ar/reference/data-types/string) و[Nullable(String)](/ar/reference/data-types/nullable).
+* `base_condition` — الشرط الذي يجب أن تستوفيه النقطة المرجعية.
+* `event1`, `event2`, ... — شروط تصف سلسلة الأحداث. [UInt8](/ar/reference/data-types/int-uint).
+
+**القيم المُعادة**
+
+* `event_column[next_index]` — إذا تمت مطابقة النمط وكانت القيمة التالية موجودة.
+* `NULL` - إذا لم تتم مطابقة النمط أو لم تكن القيمة التالية موجودة.
+
+النوع: [Nullable(String)](/ar/reference/data-types/nullable).
+
+**مثال**
+
+يمكن استخدامه عندما تكون الأحداث A-&gt;B-&gt;C-&gt;D-&gt;E وتريد معرفة الحدث الذي يلي B-&gt;C، وهو D.
+
+عبارة الاستعلام التي تبحث عن الحدث الذي يلي A-&gt;B:
+
+```sql title="Query"
+CREATE TABLE test_flow (
+    dt DateTime,
+    id int,
+    page String)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMMDD(dt)
+ORDER BY id;
+
+INSERT INTO test_flow VALUES (1, 1, 'A') (2, 1, 'B') (3, 1, 'C') (4, 1, 'D') (5, 1, 'E');
+
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'A', page = 'A', page = 'B') as next_flow FROM test_flow GROUP BY id;
+```
+
+```text title="Response"
+┌─id─┬─next_flow─┐
+│  1 │ C         │
+└────┴───────────┘
+```
+
+**سلوك `forward` و`head`**
+
+```sql
+ALTER TABLE test_flow DELETE WHERE 1 = 1 settings mutations_sync = 1;
+
+INSERT INTO test_flow VALUES (1, 1, 'Home') (2, 1, 'Gift') (3, 1, 'Exit');
+INSERT INTO test_flow VALUES (1, 2, 'Home') (2, 2, 'Home') (3, 2, 'Gift') (4, 2, 'Basket');
+INSERT INTO test_flow VALUES (1, 3, 'Gift') (2, 3, 'Home') (3, 3, 'Gift') (4, 3, 'Basket');
+```
+
+```sql
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, page = 'Home', page = 'Home', page = 'Gift') FROM test_flow GROUP BY id;
+
+                  dt   id   page
+ 1970-01-01 09:00:01    1   Home // Base point, Matched with Home
+ 1970-01-01 09:00:02    1   Gift // Matched with Gift
+ 1970-01-01 09:00:03    1   Exit // The result
+
+ 1970-01-01 09:00:01    2   Home // Base point, Matched with Home
+ 1970-01-01 09:00:02    2   Home // Unmatched with Gift
+ 1970-01-01 09:00:03    2   Gift
+ 1970-01-01 09:00:04    2   Basket
+
+ 1970-01-01 09:00:01    3   Gift // Base point, Unmatched with Home
+ 1970-01-01 09:00:02    3   Home
+ 1970-01-01 09:00:03    3   Gift
+ 1970-01-01 09:00:04    3   Basket
+```
+
+**سلوك `backward` و`tail`**
+
+```sql
+SELECT id, sequenceNextNode('backward', 'tail')(dt, page, page = 'Basket', page = 'Basket', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift
+1970-01-01 09:00:03    1   Exit // Base point, Unmatched with Basket
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home // The result
+1970-01-01 09:00:03    2   Gift // Matched with Gift
+1970-01-01 09:00:04    2   Basket // Base point, Matched with Basket
+
+1970-01-01 09:00:01    3   Gift
+1970-01-01 09:00:02    3   Home // The result
+1970-01-01 09:00:03    3   Gift // Base point, Matched with Gift
+1970-01-01 09:00:04    3   Basket // Base point, Matched with Basket
+```
+
+**سلوك `forward` و`first_match`**
+
+```sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift // Base point
+1970-01-01 09:00:03    1   Exit // The result
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home
+1970-01-01 09:00:03    2   Gift // Base point
+1970-01-01 09:00:04    2   Basket  The result
+
+1970-01-01 09:00:01    3   Gift // Base point
+1970-01-01 09:00:02    3   Home // The result
+1970-01-01 09:00:03    3   Gift
+1970-01-01 09:00:04    3   Basket
+```
+
+```sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home
+1970-01-01 09:00:02    1   Gift // Base point
+1970-01-01 09:00:03    1   Exit // Unmatched with Home
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home
+1970-01-01 09:00:03    2   Gift // Base point
+1970-01-01 09:00:04    2   Basket // Unmatched with Home
+
+1970-01-01 09:00:01    3   Gift // Base point
+1970-01-01 09:00:02    3   Home // Matched with Home
+1970-01-01 09:00:03    3   Gift // The result
+1970-01-01 09:00:04    3   Basket
+```
+
+**سلوك `backward` و`last_match`**
+
+```sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home // The result
+1970-01-01 09:00:02    1   Gift // Base point
+1970-01-01 09:00:03    1   Exit
+
+1970-01-01 09:00:01    2   Home
+1970-01-01 09:00:02    2   Home // The result
+1970-01-01 09:00:03    2   Gift // Base point
+1970-01-01 09:00:04    2   Basket
+
+1970-01-01 09:00:01    3   Gift
+1970-01-01 09:00:02    3   Home // The result
+1970-01-01 09:00:03    3   Gift // Base point
+1970-01-01 09:00:04    3   Basket
+```
+
+```sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, page = 'Gift', page = 'Gift', page = 'Home') FROM test_flow GROUP BY id;
+
+                 dt   id   page
+1970-01-01 09:00:01    1   Home // Matched with Home, the result is null
+1970-01-01 09:00:02    1   Gift // Base point
+1970-01-01 09:00:03    1   Exit
+
+1970-01-01 09:00:01    2   Home // The result
+1970-01-01 09:00:02    2   Home // Matched with Home
+1970-01-01 09:00:03    2   Gift // Base point
+1970-01-01 09:00:04    2   Basket
+
+1970-01-01 09:00:01    3   Gift // The result
+1970-01-01 09:00:02    3   Home // Matched with Home
+1970-01-01 09:00:03    3   Gift // Base point
+1970-01-01 09:00:04    3   Basket
+```
+
+**سلوك `base_condition`**
+
+```sql
+CREATE TABLE test_flow_basecond
+(
+    `dt` DateTime,
+    `id` int,
+    `page` String,
+    `ref` String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(dt)
+ORDER BY id;
+
+INSERT INTO test_flow_basecond VALUES (1, 1, 'A', 'ref4') (2, 1, 'A', 'ref3') (3, 1, 'B', 'ref2') (4, 1, 'B', 'ref1');
+```
+
+```sql
+SELECT id, sequenceNextNode('forward', 'head')(dt, page, ref = 'ref1', page = 'A') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4 // The head can not be base point because the ref column of the head unmatched with 'ref1'.
+ 1970-01-01 09:00:02    1   A      ref3
+ 1970-01-01 09:00:03    1   B      ref2
+ 1970-01-01 09:00:04    1   B      ref1
+```
+
+```sql
+SELECT id, sequenceNextNode('backward', 'tail')(dt, page, ref = 'ref4', page = 'B') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4
+ 1970-01-01 09:00:02    1   A      ref3
+ 1970-01-01 09:00:03    1   B      ref2
+ 1970-01-01 09:00:04    1   B      ref1 // The tail can not be base point because the ref column of the tail unmatched with 'ref4'.
+```
+
+```sql
+SELECT id, sequenceNextNode('forward', 'first_match')(dt, page, ref = 'ref3', page = 'A') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4 // This row can not be base point because the ref column unmatched with 'ref3'.
+ 1970-01-01 09:00:02    1   A      ref3 // Base point
+ 1970-01-01 09:00:03    1   B      ref2 // The result
+ 1970-01-01 09:00:04    1   B      ref1
+```
+
+```sql
+SELECT id, sequenceNextNode('backward', 'last_match')(dt, page, ref = 'ref2', page = 'B') FROM test_flow_basecond GROUP BY id;
+
+                  dt   id   page   ref
+ 1970-01-01 09:00:01    1   A      ref4
+ 1970-01-01 09:00:02    1   A      ref3 // The result
+ 1970-01-01 09:00:03    1   B      ref2 // Base point
+ 1970-01-01 09:00:04    1   B      ref1 // This row can not be base point because the ref column unmatched with 'ref2'.
+```
