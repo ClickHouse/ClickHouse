@@ -50,6 +50,32 @@ _CAUSE_TB = _traceback(
     2,
     "TimeoutError",
 )
+
+
+def _traceback_no_fileloc(lines):
+    """As pytest serializes a frame with no source location: the key is present and null.
+
+    Produced by `pytest.fail(..., pytrace=False)` (style "value") and whenever
+    every frame was hidden by `__tracebackhide__` (style "long", no entry).
+    """
+    return {
+        "reprentries": [
+            {
+                "type": "ReprEntry",
+                "data": {
+                    "lines": lines,
+                    "reprfuncargs": None,
+                    "reprlocals": None,
+                    "reprfileloc": None,
+                    "style": "value",
+                },
+            }
+        ],
+        "extraline": None,
+        "style": "value",
+    }
+
+
 _CAUSE_CRASH = {"path": "/abs/t.py", "lineno": 2, "message": CAUSE}
 _FINAL_TB = _traceback(
     [">       assert False, 'postcondition'", f"E       {FINAL}"],
@@ -104,6 +130,37 @@ def _render(longrepr):
         os.unlink(f.name)
 
 
+def _render_collect(longrepr):
+    """Same, for a collection-time failure, which has its own renderer."""
+    entries = (
+        [{"pytest_version": "8.0.0", "$report_type": "SessionStart"}]
+        + [
+            {
+                "$report_type": "CollectReport",
+                "nodeid": "t.py",
+                "outcome": "failed",
+                "sections": [],
+                "longrepr": longrepr,
+            }
+        ]
+        + [{"exitstatus": 2, "$report_type": "SessionFinish"}]
+    )
+    f = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".jsonl", delete=False, encoding="utf-8"
+    )
+    for entry in entries:
+        f.write(json.dumps(entry) + "\n")
+    f.close()
+    try:
+        r = ResultTranslator.from_pytest_jsonl(f.name)
+        assert len(r.results) == 1
+        item = r.results[0]
+        assert item.status == Result.Status.ERROR
+        return item.info or ""
+    finally:
+        os.unlink(f.name)
+
+
 CHAINED = _longrepr(
     [
         [_CAUSE_TB, _CAUSE_CRASH, SEPARATOR],
@@ -111,6 +168,22 @@ CHAINED = _longrepr(
     ]
 )
 UNCHAINED = _longrepr([[_FINAL_TB, _FINAL_CRASH, None]])
+
+_CAUSE_TB_NO_LOC = _traceback_no_fileloc([CAUSE])
+_FINAL_TB_NO_LOC = _traceback_no_fileloc([FINAL])
+CHAINED_NO_LOC = _longrepr(
+    [
+        [_CAUSE_TB_NO_LOC, _CAUSE_CRASH, SEPARATOR],
+        [_FINAL_TB_NO_LOC, _FINAL_CRASH, None],
+    ]
+)
+CHAINED_MIXED_LOC = _longrepr(
+    [
+        [_CAUSE_TB_NO_LOC, _CAUSE_CRASH, SEPARATOR],
+        [_FINAL_TB, _FINAL_CRASH, None],
+    ]
+)
+UNCHAINED_NO_LOC = _longrepr([[_FINAL_TB_NO_LOC, _FINAL_CRASH, None]])
 
 
 def test_chained_failure_keeps_the_original_cause():
@@ -144,6 +217,34 @@ def test_unchained_failure_render_is_unchanged():
         f"E       {FINAL}"
     ), f"unchained rendering changed:\n{info}"
     assert SEPARATOR not in info
+
+
+def test_chained_failure_with_null_file_location_still_renders():
+    """A frame with no source location must not silence the whole chain."""
+    info = _render(CHAINED_NO_LOC)
+    assert info, "info empty for a chain of location-less frames"
+    assert CAUSE in info, f"original cause erased from:\n{info}"
+    assert FINAL in info, f"final exception missing from:\n{info}"
+
+
+def test_chained_failure_with_mixed_file_locations_renders_all():
+    """A location-less cause must not cost the later entries their rendering."""
+    info = _render(CHAINED_MIXED_LOC)
+    assert CAUSE in info, f"original cause erased from:\n{info}"
+    assert FINAL in info, f"final exception missing from:\n{info}"
+    assert info.index(CAUSE) < info.index(FINAL), f"reverse causal order:\n{info}"
+
+
+def test_unchained_failure_with_null_file_location_still_renders():
+    """The single-exception path reads the same location field."""
+    info = _render(UNCHAINED_NO_LOC)
+    assert FINAL in info, f"exception missing from:\n{info}"
+
+
+def test_collection_failure_with_null_file_location_still_renders():
+    """`pytest.fail(pytrace=False)` at import time reaches the collect renderer."""
+    info = _render_collect(UNCHAINED_NO_LOC)
+    assert FINAL in info, f"exception missing from:\n{info}"
 
 
 if __name__ == "__main__":

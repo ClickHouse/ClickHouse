@@ -1653,7 +1653,11 @@ class ResultTranslator:
                                             composed = []
                                             for re_entry in rt.get("reprentries", []):
                                                 dd = re_entry.get("data", {})
-                                                fileloc = dd.get("reprfileloc", {}) if isinstance(dd, dict) else {}
+                                                # a frame with no source location serializes the key
+                                                # as present-and-null, so a get() default never fires
+                                                fileloc = dd.get("reprfileloc") if isinstance(dd, dict) else None
+                                                if not isinstance(fileloc, dict):
+                                                    fileloc = {}
                                                 fpath = fileloc.get("path")
                                                 flineno = fileloc.get("lineno")
                                                 fmsg = fileloc.get("message")
@@ -1738,7 +1742,9 @@ class ResultTranslator:
                                         for re_entry in rt.get("reprentries", []):
                                             dd = re_entry.get("data", {})
                                             # include per-frame file location for full stack context
-                                            fileloc = dd.get("reprfileloc", {}) if isinstance(dd, dict) else {}
+                                            fileloc = dd.get("reprfileloc") if isinstance(dd, dict) else None
+                                            if not isinstance(fileloc, dict):
+                                                fileloc = {}
                                             fpath = fileloc.get("path")
                                             flineno = fileloc.get("lineno")
                                             fmsg = fileloc.get("message")
@@ -1776,7 +1782,9 @@ class ResultTranslator:
                                                 if "reprentries" in rt:
                                                     for re_entry in rt.get("reprentries", []):
                                                         dd = re_entry.get("data", {})
-                                                        fileloc = dd.get("reprfileloc", {}) if isinstance(dd, dict) else {}
+                                                        fileloc = dd.get("reprfileloc") if isinstance(dd, dict) else None
+                                                        if not isinstance(fileloc, dict):
+                                                            fileloc = {}
                                                         fpath = fileloc.get("path")
                                                         flineno = fileloc.get("lineno")
                                                         fmsg = fileloc.get("message")
