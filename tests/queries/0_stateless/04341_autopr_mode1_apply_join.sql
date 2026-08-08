@@ -42,6 +42,10 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_rep
 SET parallel_replicas_prefer_local_join=1;
 -- Keep the parallelized side oriented as written (the randomizer may flip this).
 SET query_plan_join_swap_table='false';
+-- Keep the plan identical between the collect and apply runs: a randomized join order
+-- (query_plan_optimize_join_order_randomize) combined with a randomized runtime filter
+-- threshold makes AutoPR decline to apply for the RIGHT join (apply=0 instead of 1).
+SET query_plan_optimize_join_order_randomize=0, enable_join_runtime_filters=0;
 -- For runs with the old analyzer
 SET enable_analyzer=1;
 -- Small blocks so enough are fed to the statistics collector.
