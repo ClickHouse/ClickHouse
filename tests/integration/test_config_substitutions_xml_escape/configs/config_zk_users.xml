@@ -1,0 +1,96 @@
+<clickhouse>
+  <profiles>
+    <profile_zk_yaml>
+        <!-- The ZooKeeper node holds a YAML subtree (it does not start with '<'),
+             so it must be autodetected and parsed as YAML. -->
+        <include from_zk="/profile_settings_yaml" />
+        <!-- The ZooKeeper node holds a plain scalar that contains YAML syntax ('#'):
+             it must be kept as literal text, not reinterpreted by the YAML parser. -->
+        <log_comment from_zk="/scalar_with_yaml_syntax" />
+    </profile_zk_yaml>
+    <!-- The ZooKeeper node holds a YAML document whose root is a *sequence* of two mappings.
+         Every item must be spliced under the single synthetic root, so both settings survive
+         (a top-level sequence used to clone the root and keep only the first item). -->
+    <profile_zk_yaml_sequence>
+        <include from_zk="/profile_settings_yaml_sequence" />
+    </profile_zk_yaml_sequence>
+    <!-- The ZooKeeper node holds a value that is a valid YAML mapping ("abc: def"), but it is
+         used as a leaf substitution (not a structural <include>), so it must be kept as literal
+         text and not expanded into an <abc>def</abc> sub-element. This is how existing scalar
+         settings and secrets that happen to look like YAML keep working unchanged. -->
+    <profile_zk_leaf_mapping>
+        <log_comment from_zk="/leaf_yaml_mapping" />
+    </profile_zk_leaf_mapping>
+    <!-- The ZooKeeper node holds a leaf value that contains the `]]>` sequence, which the XML
+         grammar forbids in character data. It uses the same escaping helper as from_env, so it
+         must be kept as literal text and must not break config parsing. -->
+    <profile_zk_leaf_cdata>
+        <log_comment from_zk="/leaf_with_cdata_end" />
+    </profile_zk_leaf_cdata>
+    <!-- The ZooKeeper node holds a leaf value that contains a CR/LF (`a\r\nb`). The value must
+         survive byte-for-byte: XML end-of-line normalization would otherwise rewrite `\r\n` to
+         `\n` when the synthetic <from_zk> document is reparsed. -->
+    <profile_zk_leaf_crlf>
+        <log_comment from_zk="/leaf_with_crlf" />
+    </profile_zk_leaf_crlf>
+    <!-- The ZooKeeper node holds a leaf value that was XML-entity-encoded (`a&amp;b`) to smuggle
+         the special character `&` past the old parser, which reparsed every from_zk value as XML.
+         A non-`<` leaf value is now kept as literal text using its exact original bytes, so this
+         value resolves to the literal `a&amp;b` rather than the decoded `a&b`. This is a
+         deliberate, documented behaviour change on upgrade: a value that needs a literal `&`, `<`
+         or `>` must be stored raw (which the old path rejected as not well-formed), not encoded. -->
+    <profile_zk_entity_encoded>
+        <log_comment from_zk="/leaf_entity_encoded" />
+    </profile_zk_entity_encoded>
+    <!-- The ZooKeeper node holds a plain scalar carrying YAML syntax ("abc # rotated"),
+         referenced via a structural <include>: <include from_zk=...> is not only the
+         subtree-splicing form, it is also the generic "replace this element with the node
+         contents" form, so it can carry a leaf value. A plain scalar must be kept as literal
+         text (not reinterpreted by the YAML parser, which would drop the "# rotated" suffix
+         as a YAML comment); only a YAML mapping or sequence is expanded as a subtree.
+         The <include> is written inline (no surrounding whitespace inside <log_comment>):
+         whitespace-only text nodes around a child element are preserved by the config parser,
+         so a pretty-printed <include> would leave the substituted value wrapped in
+         newlines/indentation (the value of an element is its concatenated inner text). -->
+    <profile_zk_include_scalar>
+        <log_comment><include from_zk="/scalar_with_yaml_syntax" /></log_comment>
+    </profile_zk_include_scalar>
+  </profiles>
+  <users>
+      <zk_yaml>
+          <password></password>
+          <profile>profile_zk_yaml</profile>
+          <quota>default</quota>
+      </zk_yaml>
+      <zk_yaml_sequence>
+          <password></password>
+          <profile>profile_zk_yaml_sequence</profile>
+          <quota>default</quota>
+      </zk_yaml_sequence>
+      <zk_leaf_mapping>
+          <password></password>
+          <profile>profile_zk_leaf_mapping</profile>
+          <quota>default</quota>
+      </zk_leaf_mapping>
+      <zk_leaf_cdata>
+          <password></password>
+          <profile>profile_zk_leaf_cdata</profile>
+          <quota>default</quota>
+      </zk_leaf_cdata>
+      <zk_leaf_crlf>
+          <password></password>
+          <profile>profile_zk_leaf_crlf</profile>
+          <quota>default</quota>
+      </zk_leaf_crlf>
+      <zk_entity_encoded>
+          <password></password>
+          <profile>profile_zk_entity_encoded</profile>
+          <quota>default</quota>
+      </zk_entity_encoded>
+      <zk_include_scalar>
+          <password></password>
+          <profile>profile_zk_include_scalar</profile>
+          <quota>default</quota>
+      </zk_include_scalar>
+  </users>
+</clickhouse>

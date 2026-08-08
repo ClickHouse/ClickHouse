@@ -1,0 +1,39 @@
+<clickhouse>
+  <profiles>
+    <!-- env var with XML special characters (&, <, >): it must be auto-escaped before being
+         embedded into the synthetic <from_env> XML document, so the setting resolves to the
+         exact original bytes. -->
+    <profile_env_special>
+        <log_comment from_env="ENV_XML_SPECIAL" />
+    </profile_env_special>
+    <!-- env var that looks like an XML fragment: an env var value is always plain text, so it
+         must be taken as literal text, not parsed as XML. -->
+    <profile_env_fragment>
+        <log_comment from_env="ENV_XML_FRAGMENT" />
+    </profile_env_fragment>
+    <!-- env var whose value contains the `]]>` sequence: the XML grammar forbids `]]>` in
+         character data, so it must be escaped (as `]]&gt;`) rather than embedded verbatim,
+         otherwise the synthetic document `<from_env>]]></from_env>` would be rejected as not
+         well-formed before substitution. -->
+    <profile_env_cdata>
+        <log_comment from_env="ENV_CDATA_END" />
+    </profile_env_cdata>
+  </profiles>
+  <users>
+      <env_special>
+          <password></password>
+          <profile>profile_env_special</profile>
+          <quota>default</quota>
+      </env_special>
+      <env_fragment>
+          <password></password>
+          <profile>profile_env_fragment</profile>
+          <quota>default</quota>
+      </env_fragment>
+      <env_cdata>
+          <password></password>
+          <profile>profile_env_cdata</profile>
+          <quota>default</quota>
+      </env_cdata>
+  </users>
+</clickhouse>
