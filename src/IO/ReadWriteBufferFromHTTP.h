@@ -68,8 +68,13 @@ public:
         {
             {
                 std::lock_guard lock(mutex);
+                /// A hard cancellation is final even after a soft one: ExecutingGraph::cancel
+                /// upgrades PartialResult to the reason of a later hard cancellation and delivers
+                /// the upgrade here, after which the query fails and nothing may report the
+                /// interruption as a cancellation anymore. The opposite downgrade does not exist,
+                /// so the read stays soft only while every reason so far has been soft.
+                cancelled_softly = cancelled ? (cancelled_softly && softly) : softly;
                 cancelled = true;
-                cancelled_softly |= softly;
             }
             changed.notify_all();
         }

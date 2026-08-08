@@ -532,7 +532,10 @@ Chunk StorageURLSource::generate()
             /// enough data - see cancel. A failure of the interrupted read - for example, the last
             /// HTTP error rethrown by ReadWriteBufferFromHTTP::doWithRetries when the cancellation
             /// wakes up its retry backoff - must not fail the query, so end the stream instead.
-            if (!discard_read_errors)
+            /// The check is against the effective cancellation: a soft cancellation which a later
+            /// hard one has overridden - ExecutingGraph::cancel upgrades PartialResult to the later
+            /// reason and cancel here runs once more - does not allow discarding the error.
+            if (!cancellation->isCancelledSoftly())
                 throw;
 
             tryLogCurrentException(
@@ -643,10 +646,13 @@ void StorageURLSource::cancel(CancelReason reason) noexcept
     ///   CancelReason::PartialResult, and CancelReason::CancelledByTimeout, which despite its name only
     ///   ever comes from PipelineExecutor::checkTimeLimitSoft, that is from `max_execution_time` with
     ///   the `break` overflow mode - a query which is not killed and returns what it has read so far.
+    ///
+    /// The reasons of the repeated calls may differ: ExecutingGraph::cancel upgrades PartialResult
+    /// to the reason of a later hard cancellation and cancels the processors once more, after which
+    /// the query fails and the error of the interrupted read must not be discarded anymore. The flag
+    /// keeps the effective kind - hard overrides soft, see Cancellation::cancel - and generate reads
+    /// it from there, so the discarding follows the upgrade.
     const bool soft = reason == CancelReason::CancelledByTimeout || reason == CancelReason::PartialResult;
-    if (soft)
-        discard_read_errors = true;
-
     cancellation->cancel(soft);
 
     ISource::cancel(reason);
