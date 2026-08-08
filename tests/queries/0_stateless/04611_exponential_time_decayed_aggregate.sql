@@ -266,6 +266,13 @@ SELECT 1, exponentialTimeDecayingFloat64(10)(8, toFloat64(0));
 INSERT INTO exponential_time_decaying_simple_aggregate
 SELECT 1, exponentialTimeDecayingFloat64(10)(4, toFloat64(10));
 
+-- The aggregate also accepts finalized decaying values directly, with decay length inferred from the type.
+SELECT
+    round(tupleElement(exponentialTimeDecayedSum(decaying_value), 'value'), 6),
+    tupleElement(exponentialTimeDecayedSum(decaying_value), 'time'),
+    exponentialTimeDecayingDecayLength(exponentialTimeDecayedSum(decaying_value))
+FROM exponential_time_decaying_simple_aggregate;
+
 OPTIMIZE TABLE exponential_time_decaying_simple_aggregate FINAL;
 
 SELECT
