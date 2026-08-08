@@ -132,9 +132,9 @@ private:
             state.array_of_aggregate_datas = new_state;
             state.dynamic_array_size = new_size;
 
-            /// The old states are unreachable after the swap (destroyImpl walks only
-            /// array_of_aggregate_datas), so free what they own here. destroy() is noexcept,
-            /// and for a zero-sized nested state new_state aliases them - see above.
+            /// The old states are unreachable after the swap (`destroyImpl` walks only
+            /// `array_of_aggregate_datas`), so free what they own here. `destroy` is noexcept,
+            /// and for a zero-sized nested state `new_state` aliases them - see above.
             if (nested_size_of_data != 0)
             {
                 for (i = 0; i < old_size; ++i)
