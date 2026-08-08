@@ -11,7 +11,7 @@ namespace DB
 static_assert(IPostingListEncoder::append_granularity % BLOCK_SIZE == 0,
     "append_granularity must be a multiple of the physical block size of the segmented posting list codec");
 
-SegmentedPostingListCodecImpl::SegmentedPostingListCodecImpl(IPostingListCodec::Type block_codec_type_)
+SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_)
     : block_codec(createPostingListBlockCodec(block_codec_type_))
 {
     compressed_data.reserve(BLOCK_SIZE);
@@ -20,7 +20,7 @@ SegmentedPostingListCodecImpl::SegmentedPostingListCodecImpl(IPostingListCodec::
 
 /// Previous appends must not have left a partial block in the open segment
 /// (see the contract in IPostingListEncoder::append_granularity).
-void SegmentedPostingListCodecImpl::append(std::span<const UInt32> row_ids, size_t segment_size)
+void SegmentedPostingListCodec::append(std::span<const UInt32> row_ids, size_t segment_size)
 {
     chassert(!row_ids.empty());
     chassert(row_ids_in_current_segment % BLOCK_SIZE == 0);
@@ -68,7 +68,7 @@ void SegmentedPostingListCodecImpl::append(std::span<const UInt32> row_ids, size
     current_segment.clear();
 }
 
-void SegmentedPostingListCodecImpl::decode(ReadBuffer & in, PostingList & postings)
+void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings)
 {
     Header header;
     header.read(in);
@@ -101,7 +101,7 @@ void SegmentedPostingListCodecImpl::decode(ReadBuffer & in, PostingList & postin
     }
 }
 
-void SegmentedPostingListCodecImpl::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const
+void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const
 {
     info.offsets.reserve(segment_descriptors.size());
     info.ranges.reserve(segment_descriptors.size());
@@ -131,7 +131,7 @@ void SegmentedPostingListCodecImpl::serializeTo(WriteBuffer & out, TokenPostings
     }
 }
 
-void SegmentedPostingListCodecImpl::encodeBlock(std::span<uint32_t> segment)
+void SegmentedPostingListCodec::encodeBlock(std::span<uint32_t> segment)
 {
     chassert(block_codec);
     auto & segment_descriptor = segment_descriptors.back();
@@ -152,7 +152,7 @@ void SegmentedPostingListCodecImpl::encodeBlock(std::span<uint32_t> segment)
     segment_descriptor.compressed_data_size = compressed_data.size() - segment_descriptor.compressed_data_offset;
 }
 
-void SegmentedPostingListCodecImpl::decodeBlock(std::span<const std::byte> & in, size_t count)
+void SegmentedPostingListCodec::decodeBlock(std::span<const std::byte> & in, size_t count)
 {
     chassert(count <= BLOCK_SIZE);
     chassert(block_codec);
@@ -183,7 +183,7 @@ void SegmentedPostingListEncoder::finalize(WriteBuffer & out, TokenPostingsInfo 
 
 void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings) const
 {
-    SegmentedPostingListCodecImpl impl;
+    SegmentedPostingListCodec impl;
     impl.decode(in, postings);
 }
 
@@ -280,5 +280,6 @@ void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings) const
     in.readStrict(buffer.data(), num_bytes);
     postings = PostingList::read(buffer.data());
 }
+
 }
 

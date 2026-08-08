@@ -28,7 +28,7 @@ struct PostingListSegment
     size_t block_count = 0;
     /// Element count of the tail block (< BLOCK_SIZE), 0 if the segment is block-aligned.
     size_t tail_size = 0;
-    /// Block codec used to compress this segment's packed blocks (Bitpacking or FastPFOR).
+    /// Block codec used to compress this segment's packed blocks.
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::Bitpacking;
 
     size_t bytesAllocated() const

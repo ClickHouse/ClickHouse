@@ -357,11 +357,10 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     if (!block_codec || block_codec->type() != segment.codec_type)
         block_codec = createPostingListBlockCodec(segment.codec_type);
 
-    /// The block span comes from the Index Section offsets and must be consumed in full: a bitpacking block is
-    /// [1 byte bits][bitpacked payload]; a FastPFOR block is a self-delimited payload. Comparing consumed bytes
-    /// against the exact span guards corrupted metadata from driving a decode past the block boundary.
+    /// The block span comes from the Index Section offsets and must be consumed in full.
     const size_t expected_bytes = block_data.size();
     const size_t consumed_bytes = block_codec->decodeBlock(block_data, count, out_span);
+
     if (consumed_bytes != expected_bytes)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupted data in lazy posting list cursor: block {} consumed {} bytes but its "

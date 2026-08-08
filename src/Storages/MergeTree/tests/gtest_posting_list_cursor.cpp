@@ -202,7 +202,7 @@ struct MultiBlockTestData
 /// Build a multi-segment TokenPostingsInfo and data buffer for testing.
 ///
 /// @param blocks  Vector of sorted doc ID vectors, one per segment.
-///                Each segment is encoded independently using SegmentedPostingListCodecImpl.
+///                Each segment is encoded independently using SegmentedPostingListCodec.
 ///
 /// Returns a MultiBlockTestData with the binary buffer, TokenPostingsInfo, and flattened doc list.
 MultiBlockTestData makeMultiBlockData(
@@ -229,7 +229,7 @@ MultiBlockTestData makeMultiBlockData(
     for (const auto & block_docs : blocks)
     {
         /// A segment size large enough to hold all docs in one segment.
-        SegmentedPostingListCodecImpl codec(block_codec_type);
+        SegmentedPostingListCodec codec(block_codec_type);
         codec.append(block_docs, 1 << 20);
         codec.encode(out, info);
     }

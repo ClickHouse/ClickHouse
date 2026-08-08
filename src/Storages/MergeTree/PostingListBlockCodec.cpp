@@ -35,15 +35,9 @@ namespace
         size_t encodeBlock(std::span<uint32_t> deltas, std::string & out) override
         {
             auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(deltas);
-            size_t remaining_memory = out.capacity() - out.size();
             size_t needed_bytes_with_header = needed_bytes_without_header + 1;
-            if (remaining_memory < needed_bytes_with_header)
-            {
-                /// Grow geometrically: reserving only the shortfall would reallocate (and copy)
-                /// the whole buffer every couple of blocks, making the encoding quadratic
-                /// in the posting list size.
-                out.reserve(std::max(out.capacity() * 2, out.size() + needed_bytes_with_header));
-            }
+
+            /// `resize` grows the buffer geometrically, so no manual reservation is needed here.
             /// Block Layout: [1byte(max_bits)][payload]
             size_t offset = out.size();
             out.resize(out.size() + needed_bytes_with_header);
@@ -54,13 +48,13 @@ namespace
             if (used_memory != needed_bytes_without_header || !out_span.empty())
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Bitpacking encode size mismatch: expected {} bytes payload with {} bits encoding for {} integers, "
-                "but actually used {} bytes with {} bytes remaining in buffer",
-                needed_bytes_without_header,
-                max_bits,
-                deltas.size(),
-                used_memory,
-                out_span.size());
+                    "Bitpacking encode size mismatch: expected {} bytes payload with {} bits encoding for {} integers, "
+                    "but actually used {} bytes with {} bytes remaining in buffer",
+                    needed_bytes_without_header,
+                    max_bits,
+                    deltas.size(),
+                    used_memory,
+                    out_span.size());
             }
 
             return needed_bytes_with_header;

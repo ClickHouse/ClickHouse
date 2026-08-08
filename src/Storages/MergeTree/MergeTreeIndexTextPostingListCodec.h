@@ -31,7 +31,7 @@ namespace ErrorCodes
 /// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
 ///
 /// Assumes that input row ids are strictly increasing.
-class SegmentedPostingListCodecImpl
+class SegmentedPostingListCodec
 {
     /// Header written at the beginning of each segment before the payload.
     struct Header
@@ -109,8 +109,8 @@ class SegmentedPostingListCodecImpl
     };
 
 public:
-    SegmentedPostingListCodecImpl() = default;
-    explicit SegmentedPostingListCodecImpl(IPostingListCodec::Type block_codec_type_);
+    SegmentedPostingListCodec() = default;
+    explicit SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_);
 
     /// Encode a batch of sorted unique row ids (increasing across calls), appending
     /// to the open segment and starting a new one every `segment_size` row ids.
@@ -197,8 +197,8 @@ private:
     std::unique_ptr<IPostingListBlockCodec> block_codec;
 };
 
-/// Accumulator for block-compressed codecs (see SegmentedPostingListCodecImpl).
-/// Wraps SegmentedPostingListCodecImpl, which encodes each added segment into
+/// Accumulator for block-compressed codecs (see SegmentedPostingListCodec).
+/// Wraps SegmentedPostingListCodec, which encodes each added segment into
 /// blocks held in memory; the compressed bytes are flushed on `finalize`.
 class SegmentedPostingListEncoder final : public IPostingListEncoder
 {
@@ -212,7 +212,7 @@ public:
     size_t memoryUsageBytes() const override { return impl.memoryUsageBytes(); }
 
 private:
-    SegmentedPostingListCodecImpl impl;
+    SegmentedPostingListCodec impl;
 };
 
 /// Codec for serializing/deserializing a postings list to/from a binary stream.
