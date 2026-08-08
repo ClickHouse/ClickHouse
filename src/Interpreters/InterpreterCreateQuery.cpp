@@ -1012,7 +1012,18 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 is_refreshable_mv /* is_create_parameterized_view */);
         }
 
-        properties.columns = ColumnsDescription(as_select_sample->getNamesAndTypesList());
+        auto columns_from_select = as_select_sample->getNamesAndTypesList();
+        if (mode < LoadingStrictnessLevel::ATTACH)
+        {
+            /// The inferred types come out of `IAggregateFunction::getStateType` unversioned, so a
+            /// `CREATE TABLE ... AS SELECT ...State(...)` has to spell the state version out the same
+            /// way an explicitly declared column does (see `getColumnType`) for it to reach the stored
+            /// metadata. On ATTACH the types are re-inferred rather than read from legacy metadata, so
+            /// they keep denoting the default version, as before.
+            for (auto & column : columns_from_select)
+                pinCurrentStateVersionToAggregateFunctions(column.type);
+        }
+        properties.columns = ColumnsDescription(std::move(columns_from_select));
         properties.columns_inferred_from_select_query = true;
     }
     else if (create.as_table_function)
