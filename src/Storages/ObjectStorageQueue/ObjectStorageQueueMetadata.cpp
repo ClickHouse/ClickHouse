@@ -1357,6 +1357,13 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     std::filesystem::path nodes_fs_path(nodes_path);
     for (const auto & node : nodes)
     {
+        /// Skip retry-state nodes - only clean up terminal failed nodes.
+        /// Retry-state nodes (.retriable suffix) are ephemeral and self-clean
+        /// when files succeed or reach max retries. Deleting them mid-retry
+        /// resets the retry counter, breaking the retry limit invariant.
+        if (node.ends_with(".retriable"))
+            continue;
+
         paths.push_back(nodes_fs_path / node);
         if (paths.size() == keeper_multiread_batch_size)
             get_paths();
@@ -1556,6 +1563,11 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
 
         for (size_t j = i; j < batch_end; ++j)
         {
+            /// Skip retry-state nodes - only drop terminal failed nodes.
+            /// See comment in cleanupTrackedNodes for rationale.
+            if (failed_nodes[j].ends_with(".retriable"))
+                continue;
+
             batch_paths.push_back(failed_fs_path / failed_nodes[j]);
         }
 
