@@ -1047,6 +1047,26 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 
 DROP TABLE edges_merge_dist;
 
+-- A `Merge` table mixing local and remote children prunes the child set per query
+-- (`_table` / `_database` filters), so a recursive step narrowed to the local child never
+-- reaches the remote one — the forcing mode must keep running instead of rejecting the
+-- query for a remote child it would not read.
+DROP TABLE IF EXISTS edges_merge_mixed;
+CREATE TABLE edges_merge_mixed AS edges ENGINE = Merge(currentDatabase(), '^edges(_dist_replicas)?$');
+
+WITH RECURSIVE merge_mixed_local_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM merge_mixed_local_pr AS t INNER JOIN edges_merge_mixed AS e ON e.from_id = t.n
+    WHERE n < 10 AND e._table = 'edges'
+)
+SELECT sum(n) FROM merge_mixed_local_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+DROP TABLE edges_merge_mixed;
+
 -- An ordinary `VIEW` over a local table cannot engage parallel replicas (with the default
 -- `parallel_replicas_for_non_replicated_merge_tree = 0` at the CREATE below, the inner
 -- `MergeTree` is not eligible either way), so it must keep running under the forcing mode.

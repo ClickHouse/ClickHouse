@@ -135,11 +135,21 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 /// forwards both `getQueryProcessingStage` and `read` to its destination, and a `Merge`
 /// table plans each child with the same query context (`ReadFromMerge` calls the child's
 /// `read` directly, so a remote child's read still goes through `ClusterProxy` and
-/// consults the parallel-replica settings) — it counts as eligible when any of its
-/// children does. A `Merge` whose children are all local cannot engage parallel replicas
-/// under the analyzer — the storage-level `MergeTree` parallel-replica paths are
-/// old-analyzer-only, and the planner's rule rejects `Merge` itself — so it counts as
-/// not eligible here.
+/// consults the parallel-replica settings) — it counts as eligible only when every one
+/// of its children does. "Any child eligible" would be too broad: `Merge` prunes the
+/// child set per query (`ReadFromMerge::getSelectedTables` evaluates `_table` /
+/// `_database` filters), so a query over a mixed local/remote `Merge` narrowed to local
+/// children never reaches the remote child, and the forcing mode must not reject it.
+/// Which children survive pruning depends on the query and is not known before planning,
+/// so a mixed `Merge` counts as not eligible — for a query that does read a remote child
+/// this under-throws, the same documented trade-off as above: the read stays correct,
+/// parallel replicas are just silently kept off for the recursive step. When every child
+/// is eligible, any non-empty pruned subset still is, so failing closed remains correct
+/// (a filter matching no child at all makes the step an empty plain read; over-throwing
+/// on that degenerate case is accepted). A `Merge` whose children are all local cannot
+/// engage parallel replicas under the analyzer — the storage-level `MergeTree`
+/// parallel-replica paths are old-analyzer-only, and the planner's rule rejects `Merge`
+/// itself — so it counts as not eligible here.
 /// A wrapper target that is an ordinary `VIEW` is not remote either, but its read
 /// re-interprets the inner query with the reading context's settings and can engage
 /// parallel replicas all the same, so unwrapped storages are judged with
@@ -164,10 +174,16 @@ bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const C
 
     if (const auto * merge = dynamic_cast<const StorageMerge *>(&storage))
     {
-        return merge->hasChildTable([&context](const StoragePtr & child)
+        /// Eligible only when every child is: the query may prune the child set with
+        /// `_table` / `_database` filters before planning, and any subset of an
+        /// all-eligible child set is still eligible, while a mixed set is not.
+        bool has_children = false;
+        bool has_ineligible_child = merge->hasChildTable([&](const StoragePtr & child)
         {
-            return mayEngageParallelReplicasForWrappedStorage(child, context);
+            has_children = true;
+            return !mayEngageParallelReplicasForWrappedStorage(child, context);
         });
+        return has_children && !has_ineligible_child;
     }
 
     const auto * distributed = dynamic_cast<const StorageDistributed *>(&storage);
@@ -286,8 +302,9 @@ bool mayEngageParallelReplicasForView(const StorageView & view, const StorageSna
 /// `false`, so an `isRemote` gate would silently miss a wrapper whose target is a view
 /// over a remote table. Everything else goes through the remote-storage rule directly:
 /// it returns `false` for local non-wrapper storages on its own, and gating it on
-/// `isRemote` would wrongly stop at wrappers that do not forward `isRemote`
-/// (`StorageMerge::isRemote` is `false` even with a remote child).
+/// `isRemote` would wrongly stop at wrappers whose `isRemote` does not see the remote
+/// source (`StorageMerge::isRemote` is `false` when the remote table hides behind a
+/// view child, because `StorageView::isRemote` is `false`).
 bool mayEngageParallelReplicasForWrappedStorage(const StoragePtr & storage, const ContextPtr & context)
 {
     if (!storage)
