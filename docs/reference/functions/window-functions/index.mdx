@@ -756,7 +756,7 @@ function OVER ([PARTITION BY ...] ORDER BY key [ASC|DESC] SESSION threshold)
 ```
 
 - Exactly one `ORDER BY` column is required (the session key). More than one raises an error.
-- The session key and the threshold accept exactly the types `RANGE OFFSET` accepts: keys up to 128-bit signed integers, `Float32`/`Float64`, `Date`, `Date32` and `DateTime`, and a native-numeric threshold. Wider integers, `BFloat16`, `Decimal` and `DateTime64` raise an error, as they do for `RANGE OFFSET`.
+- The session key accepts the same types as `RANGE OFFSET`, which include integers up to 128-bit signed, `Float32`/`Float64`, `Date`, `Date32`, `DateTime` and types represented by those (such as `Enum`). Wider integers, `BFloat16`, `Decimal` and `DateTime64` raise an error, as they do for `RANGE OFFSET`. The threshold must be a native numeric type.
 - `threshold` is expressed in the natural units of the `ORDER BY` column, the same as `RANGE OFFSET`. For a numeric key it is the numeric gap; for a `DateTime` key it is a number of seconds (`INTERVAL` on the threshold is not supported, specify seconds directly). So a "60 second" session over a `DateTime` column is written `SESSION 60`.
 - `threshold` must be a positive constant. Zero, negative, non-constant, or non-numeric thresholds raise an error.
 - `DESC` ordering is supported; sessions are then formed on decreasing keys.

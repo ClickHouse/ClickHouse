@@ -1069,10 +1069,10 @@ void WindowTransform::advanceFrameEndSession()
         const auto * reference_column = inputAt(previous)[order_by_indices[0]].get();
         const auto * compared_column = inputAt(frame_end)[order_by_indices[0]].get();
 
-        // The condition to continue the frame is:
-        // previous value + session window threshold <= current value.
-        // When the direction is DESC, the comparison result changes sign,
-        // and the window threshold changes sign (governed by "offset_is_preceding").
+        // The frame continues while the current value is within the threshold of the
+        // previous one, so a gap larger than the threshold ends it. When the direction is
+        // DESC, the comparison result changes sign, and the window threshold changes sign
+        // (governed by "offset_is_preceding").
         if (compare_values_with_offset(compared_column, frame_end.row,
             reference_column, previous.row,
             window_description.frame.session_window_threshold,
