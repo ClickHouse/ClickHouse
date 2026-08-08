@@ -467,6 +467,10 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       message, AND the `TABLE_ALREADY_EXISTS` code together. So a real `LOGICAL_ERROR` UUID-mapping crash, the same
 #       collision on a non-test database, a different init failure on an `rdb_test_` DB, and unrelated
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
+# `StorageFileLog (...filelog_bad_path_attach)` + `The absolute data path should be inside` is the expected
+#       relaxed-reattach branch (`StorageFileLog.cpp:195-198`) of `04202_filelog_attach_path_outside_user_files`: the
+#       test ATTACHes a path outside `user_files_path` and its DROP is ignored under `--fake-drop`, so the table is
+#       re-attached on the upgrade restart and logs instead of throwing. Scoped to the fixture table AND the message.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -560,6 +564,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
     | grep -av -e "Application: Connection to mysql failed" \
     | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \
+    | grep -av -e "StorageFileLog (.*filelog_bad_path_attach).*The absolute data path should be inside" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
