@@ -87,12 +87,13 @@ public:
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
+      * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
       */
     MergeTreeTemporaryPartPtr writeTempPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         ContextPtr context,
-        bool may_exist = true);
+        bool may_have_leftover = true);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
@@ -100,7 +101,7 @@ public:
         String partition_id,
         SourcePartsSetForPatch source_parts_set,
         ContextPtr context,
-        bool may_exist = true);
+        bool may_have_leftover = true);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
@@ -110,7 +111,6 @@ public:
     /// For insertion. `sync` fsyncs the produced projection part (from `fsync_after_insert`).
     static MergeTreeTemporaryPartPtr writeProjectionPart(
         const MergeTreeData & data,
-        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
@@ -122,7 +122,6 @@ public:
     /// (from the mutation/merge `need_sync` decision).
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
-        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
@@ -145,14 +144,13 @@ private:
         SourcePartsSetForPatch source_parts_set,
         ContextPtr context,
         UInt64 block_number,
-        bool may_exist = true);
+        bool may_have_leftover);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
         bool is_temp,
         IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
-        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         MergeTreeIndices indices,
