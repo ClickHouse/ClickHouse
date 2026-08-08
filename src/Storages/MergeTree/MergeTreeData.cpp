@@ -1835,7 +1835,7 @@ static void checkGraphiteSchema(const Graphite::Params & params, const StorageIn
     /// implement: they throw, and the table can then neither merge nor answer a `FINAL` read.
     WhichDataType which_path(recursiveRemoveLowCardinality(path_type));
     if (which_path.isArray() || which_path.isTuple() || which_path.isMap() || which_path.isVariant()
-        || which_path.isDynamic() || which_path.isObject())
+        || which_path.isDynamic() || which_path.isObject() || which_path.isQBit())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The path column '{}' of GraphiteMergeTree must be a string, integer or `Enum` column, got {}.",

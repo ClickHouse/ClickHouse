@@ -25,8 +25,17 @@ ${CLICKHOUSE_CLIENT} -q "GRANT ALTER ORDER BY ON ${CLICKHOUSE_DATABASE}.t_engine
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "ALTER TABLE ${CLICKHOUSE_DATABASE}.t_engine_access MODIFY ENGINE = ReplacingMergeTree" 2>&1 \
     | grep -om1 "necessary to have the grant TABLE ENGINE ON ReplacingMergeTree"
 
-# Granting it lets the same alter through.
+# The reciprocal arm: the two privileges are required independently, so TABLE ENGINE alone is denied
+# for the missing structural privilege. Without this arm, dropping the ALTER ORDER BY requirement
+# would leave the test green.
+${CLICKHOUSE_CLIENT} -q "REVOKE ALTER ORDER BY ON ${CLICKHOUSE_DATABASE}.t_engine_access FROM ${user}"
 ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON ReplacingMergeTree TO ${user}"
+${CLICKHOUSE_CLIENT} --user "${user}" -q "ALTER TABLE ${CLICKHOUSE_DATABASE}.t_engine_access MODIFY ENGINE = ReplacingMergeTree" 2>&1 \
+    | grep -om1 "necessary to have the grant ALTER ORDER BY ON ${CLICKHOUSE_DATABASE}.t_engine_access" \
+    | sed "s/${CLICKHOUSE_DATABASE}/db/"
+
+# Holding both lets the same alter through.
+${CLICKHOUSE_CLIENT} -q "GRANT ALTER ORDER BY ON ${CLICKHOUSE_DATABASE}.t_engine_access TO ${user}"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "ALTER TABLE ${CLICKHOUSE_DATABASE}.t_engine_access MODIFY ENGINE = ReplacingMergeTree"
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE t_engine_access"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE t_engine_access"

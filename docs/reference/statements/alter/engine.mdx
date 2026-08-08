@@ -40,7 +40,7 @@ The new engine must use the same arguments that engine accepts in `CREATE TABLE`
 
 Because existing data is not rewritten, some targets that `CREATE TABLE` accepts are refused here, so that existing parts cannot be left unmergeable:
 
-- `GraphiteMergeTree` when the path or time column is nullable, or when the time column is not an integer, `Enum`, `Date`, `Date32` or `DateTime`. The rollup reads those columns with `getDataAt` and `getUInt`, which throw on a `NULL` or on an unsupported type.
+- `GraphiteMergeTree` when the path or time column is nullable, when the path column is an `Array`, `Tuple`, `Map`, `Variant`, `Dynamic`, `JSON` or `QBit`, or when the time column is not an integer, `Enum`, `Date`, `Date32` or `DateTime`. The rollup reads those columns with `getDataAt` and `getUInt`, which throw on a `NULL` or on an unsupported type.
 - `VersionedCollapsingMergeTree` when the version column is not already part of the sorting key, because the reload would append it to the key and existing parts are sorted by the narrower one.
 - Tables created with the old positional `MergeTree(date, [sample], key, granularity)` syntax, whose keys are engine arguments rather than separate clauses.
 

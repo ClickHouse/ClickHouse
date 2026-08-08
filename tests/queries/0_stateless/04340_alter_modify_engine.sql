@@ -454,6 +454,28 @@ SELECT 'graphite map path rejected', engine, count() FROM t_graphite_path, syste
     WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
 DROP TABLE t_graphite_path;
 
+-- `QBit` is a separate type index, but its column forwards `getDataAt` to a `Tuple`, so it fails the
+-- same way and must be listed separately from the composite types above.
+CREATE TABLE t_graphite_path (key UInt32, Path QBit(BFloat16, 8), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, [1,2,3,4,5,6,7,8], '2020-01-01 00:00:10', 5, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite qbit path rejected', engine, count() FROM t_graphite_path, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
+DROP TABLE t_graphite_path;
+
+-- The nullability guard uses `isNullableOrLowCardinalityNullable`, so it must also reject a NULL
+-- hidden under a `LowCardinality` wrapper; a top-level-only check would pass every case above.
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_graphite_path (key UInt32, Path LowCardinality(Nullable(String)), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, NULL, '2020-01-01 00:00:10', 5, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite lc nullable path rejected', engine, count() FROM t_graphite_path, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
+DROP TABLE t_graphite_path;
+SET allow_suspicious_low_cardinality_types = 0;
+
 -- A `FixedString`, `LowCardinality(String)` or `Enum` path stays allowed: all three implement
 -- `getDataAt`, so the rollup reads them and the merge collapses the two versions.
 CREATE TABLE t_graphite_path (key UInt32, Path FixedString(5), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
