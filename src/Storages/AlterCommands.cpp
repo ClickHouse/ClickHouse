@@ -26,6 +26,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -44,6 +45,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ProjectionNameLength.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
@@ -974,8 +976,25 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
     }
     else if (type == ADD_PROJECTION)
     {
+        /// On a Replicated database every replica replays the query text, so a command an older
+        /// initiator already accepted must not be rejected here or the replicas would diverge. Only the
+        /// initial query is fresh user input; the shape of the check is from `InterpreterCreateQuery`.
+        const auto metadata_transaction = context->getZooKeeperMetadataTransaction();
+        bool is_fresh_definition = !metadata_transaction || metadata_transaction->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        /// Shared Catalog secondaries also replay a definition the initiator already accepted, and they
+        /// are marked separately from the ZooKeeper transaction (see the `MODIFY_QUERY` branch below).
+        if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
+            is_fresh_definition = false;
+#endif
         auto projection = ProjectionDescription::getProjectionFromAST(
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
+
+        /// A name already present is `add`'s business: it is either a no-op under `IF NOT EXISTS` or an
+        /// "already exists" error, and neither may be pre-empted by a length error on a legacy name.
+        if (is_fresh_definition && !metadata.projections.has(projection.name))
+            checkProjectionNameLength(projection.name);
+
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
     else if (type == DROP_PROJECTION)

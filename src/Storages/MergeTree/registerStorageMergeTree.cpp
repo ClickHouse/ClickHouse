@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ProjectionNameLength.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
@@ -41,6 +42,9 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 
 namespace DB
@@ -999,11 +1003,30 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.query.columns_list && args.query.columns_list->projections)
         {
+            /// A definition read back from stored metadata (or replayed onto a secondary) was already
+            /// accepted by its initiator, so validating it here would make an existing table unloadable
+            /// and would diverge replicas. `args.mode` alone does not exclude a replay: for a
+            /// full-definition ATTACH on a `Replicated` secondary `getLoadingStrictnessLevel` tests
+            /// `attach` first and so returns ATTACH, not SECONDARY_CREATE. Test the transaction instead,
+            /// as `AlterCommand::apply` does for ADD_PROJECTION.
+            bool projection_definition_is_fresh = is_fresh_definition;
+            const auto metadata_transaction = args.getLocalContext()->getZooKeeperMetadataTransaction();
+            if (metadata_transaction && !metadata_transaction->isInitialQuery())
+                projection_definition_is_fresh = false;
+#if CLICKHOUSE_CLOUD
+            if (args.getLocalContext()->getClientInfo().is_shared_catalog_internal
+                && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext()))
+                projection_definition_is_fresh = false;
+#endif
+
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
+                    auto projection = ProjectionDescription::getProjectionFromAST(
+                        projection_ast, columns, &metadata.partition_key, context, args.mode);
+                    if (projection_definition_is_fresh)
+                        checkProjectionNameLength(projection.name);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)

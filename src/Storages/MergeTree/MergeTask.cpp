@@ -4,6 +4,7 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
+#include <Storages/MergeTree/ProjectionNameLength.h>
 #include <Storages/ColumnsDescription.h>
 
 #include <memory>
@@ -1103,21 +1104,34 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
 
-    global_ctx->to = std::make_shared<MergedBlockOutputStream>(
-        global_ctx->new_data_part,
-        merge_tree_settings,
-        global_ctx->metadata_snapshot,
-        global_ctx->merging_columns,
-        MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot, global_ctx->merging_skip_indexes, *global_ctx->data_settings),
-        global_ctx->compression_codec,
-        std::move(index_granularity_ptr),
-        global_ctx->txn ? global_ctx->txn->tid : Tx::NonTransactionalTID,
-        global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-        /*reset_columns=*/true,
-        ctx->blocks_are_granules_size,
-        global_ctx->context->getWriteSettings(),
-        &global_ctx->written_offset_substreams,
-        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression);
+    try
+    {
+        global_ctx->to = std::make_shared<MergedBlockOutputStream>(
+            global_ctx->new_data_part,
+            merge_tree_settings,
+            global_ctx->metadata_snapshot,
+            global_ctx->merging_columns,
+            MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot, global_ctx->merging_skip_indexes, *global_ctx->data_settings),
+            global_ctx->compression_codec,
+            std::move(index_granularity_ptr),
+            global_ctx->txn ? global_ctx->txn->tid : Tx::NonTransactionalTID,
+            global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
+            /*reset_columns=*/true,
+            ctx->blocks_are_granules_size,
+            global_ctx->context->getWriteSettings(),
+            &global_ctx->written_offset_substreams,
+            /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression);
+    }
+    catch (...)
+    {
+        /// This constructor creates the directory, named `<projection>_<block_num>.tmp_proj`, which
+        /// can overflow where `<projection>.proj` fits. The catch spans the whole constructor, so a
+        /// deeper ENAMETOOLONG lands here too; the callee only claims it when this name is over.
+        if (global_ctx->parent_part && global_ctx->projection)
+            rethrowIfProjectionDirectoryNameTooLong(
+                global_ctx->projection->name, local_tmp_part_basename, maxProjectionNameLength());
+        throw;
+    }
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;

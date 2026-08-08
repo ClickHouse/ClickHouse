@@ -1,0 +1,22 @@
+-- a name at the limit is accepted and works end to end
+10
+10
+-- one character over the limit is rejected at CREATE
+-- a name in the gap the reporter measured (245, plain INSERT works, mutations do not) is rejected too
+-- a name in the delete_tmp_ gap (240) is rejected as well
+-- ALTER ADD PROJECTION is a separate DDL entry point
+1
+-- an already present name is add-time business: IF NOT EXISTS stays a no-op, a duplicate still reports ILLEGAL_PROJECTION
+1
+-- the limit is on the raw name, not the escaped one: 214 raw with 40 dashes must be accepted
+10
+10
+-- CREATE TABLE AS keeps working for a source within the limit
+1
+-- a table with fixed granularity is unaffected
+3	['Wide']
+435	3
+-- an ordinary projection is unaffected
+0	270
+1	290
+2	310

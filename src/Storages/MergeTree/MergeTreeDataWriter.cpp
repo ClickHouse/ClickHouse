@@ -25,6 +25,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
+#include <Storages/MergeTree/ProjectionNameLength.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Common/ColumnsHashing.h>
@@ -1133,7 +1134,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
-    projection_part_storage->createDirectories();
+    try
+    {
+        projection_part_storage->createDirectories();
+    }
+    catch (...)
+    {
+        /// Only translates the backend's own refusal; it imposes no length policy of its own.
+        rethrowIfProjectionDirectoryNameTooLong(
+            projection.name, part_name + (is_temp ? ".tmp_proj" : ".proj"), maxProjectionNameLength());
+        throw;
+    }
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
