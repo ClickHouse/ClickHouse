@@ -360,3 +360,122 @@ def test_direct_select(pulsar_cluster):
         time.sleep(0.2)
     expected = {f"{i}\t{i}" for i in range(num_rows)}
     assert seen == expected
+
+
+def test_experimental_gate_allows_attach(pulsar_cluster):
+    # The gate is two-sided: CREATE is blocked when the setting is disabled,
+    # but an existing table must still ATTACH / load without it, otherwise
+    # disabling the setting would strand already created tables.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "gate_attach_topic", "gate_attach_group"))
+
+    instance.query("DETACH TABLE test.pulsar_reader")
+    instance.query(
+        "ATTACH TABLE test.pulsar_reader",
+        settings={"allow_experimental_pulsar_storage_engine": 0},
+    )
+    assert instance.query("EXISTS TABLE test.pulsar_reader") == "1\n"
+    instance.query("SELECT * FROM test.pulsar_reader")
+
+
+def test_topic_list_required(pulsar_cluster):
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    error = instance.query_and_get_error(
+        """
+        CREATE TABLE test.pulsar_reader (key UInt64, value UInt64)
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://pulsar1:6650',
+                 pulsar_group_name = 'no_topic_group',
+                 pulsar_format = 'JSONEachRow'
+        """
+    )
+    assert "NUMBER_OF_ARGUMENTS_DOESNT_MATCH" in error
+
+
+def test_consume_compressed_messages(pulsar_cluster):
+    # Messages produced by external Pulsar clients with Zstd or Snappy
+    # compression must be readable: the client library decompresses them in
+    # `uncompressMessageIfNeeded` only when it is built with these codecs.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "compression_topic", "compression_group"))
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    def produce(compression, messages):
+        subprocess.check_call(
+            [
+                "docker",
+                "exec",
+                pulsar_cluster.pulsar_docker_id,
+                "bin/pulsar-client",
+                "produce",
+                "persistent://public/default/compression_topic",
+                "-c",
+                compression,
+                "-s",
+                "|",
+                "-m",
+                "|".join(messages),
+            ]
+        )
+
+    produce("ZSTD", [f'{{"key":{i},"value":{i}}}' for i in range(3)])
+    produce("SNAPPY", [f'{{"key":{i},"value":{i}}}' for i in range(3, 6)])
+
+    expected = "\n".join(f"{i}\t{i}" for i in range(6))
+    wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+
+
+def test_aborted_select_redelivers_prefetched_messages(pulsar_cluster):
+    # A direct SELECT that stops early (LIMIT) leaves both uncommitted returned
+    # messages and a prefetched unread tail of the current batch on the consumer.
+    # `rollback` must put all of them onto the redelivery path instead of keeping
+    # them attached to the pooled consumer, so nothing is lost or stuck.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(
+        pulsar_table(
+            "test.pulsar_reader",
+            "abort_select_topic",
+            "abort_select_group",
+            extra_settings=", pulsar_commit_on_select = 1",
+        )
+    )
+    instance.query(pulsar_table("test.pulsar_writer", "abort_select_topic", "abort_select_writer_group"))
+
+    num_rows = 20
+    instance.query(
+        f"INSERT INTO test.pulsar_writer SELECT number, number FROM numbers({num_rows})"
+    )
+
+    # Wait until the batch is actually polled, then abort after one row: the
+    # rest of the batch is negatively acknowledged and must be redelivered.
+    deadline = time.monotonic() + 120
+    aborted = False
+    while time.monotonic() < deadline and not aborted:
+        result = instance.query("SELECT key, value FROM test.pulsar_reader LIMIT 1")
+        aborted = bool(result.strip())
+        time.sleep(0.2)
+    assert aborted, "The aborted SELECT never received a message"
+
+    # Negative acknowledgement redelivery uses the client default delay (60s),
+    # so allow a deadline well above it. Every published row must eventually be
+    # returned despite the aborted query.
+    seen = set()
+    deadline = time.monotonic() + 240
+    while time.monotonic() < deadline and len(seen) < num_rows:
+        result = instance.query("SELECT key, value FROM test.pulsar_reader")
+        for line in result.strip().splitlines():
+            seen.add(line)
+        time.sleep(1)
+    expected = {f"{i}\t{i}" for i in range(num_rows)}
+    assert seen == expected
