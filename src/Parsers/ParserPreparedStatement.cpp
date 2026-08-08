@@ -89,9 +89,16 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!exp_args.parse(pos, ast_args, expected))
             return false;
 
-        for (size_t i = 0; i < ast_args->children.size(); ++i)
+        /// A parameter does not have to be a literal: PostgreSQL accepts an arbitrary expression here
+        /// (`EXECUTE s(1 + 1)`, `EXECUTE s(current_date)`). The parameters are substituted into the
+        /// statement body textually, so an expression is passed along as its SQL text, parenthesized to
+        /// stay a single operand regardless of the precedence context of the `$n` it replaces.
+        for (const auto & child : ast_args->children)
         {
-            result->arguments.push_back(fieldToString(ast_args->children[i]->as<ASTLiteral>()->value));
+            if (const auto * literal = child->as<ASTLiteral>())
+                result->arguments.push_back(fieldToString(literal->value));
+            else
+                result->arguments.push_back("(" + child->formatWithSecretsOneLine() + ")");
         }
         if (!close_bracket.ignore(pos, expected))
             return false;
