@@ -1234,3 +1234,54 @@ def test_in_on_array_field_tests_the_elements(started_cluster):
     assert [doc["id"] for doc in collection.find({"name": {"$in": ["alpha"]}})] == [1]
     assert [doc["id"] for doc in collection.find({"tags": {"$size": 2}})] == [1]
     assert [doc["id"] for doc in collection.find({"name": {"$size": 5}})] == []
+
+
+def test_scalar_equality_matches_array_elements(started_cluster):
+    """Mongo's scalar equality is also its canonical array membership form: `{tags: "red"}`
+    and `{tags: {"$eq": "red"}}` must match a document whose `tags` array holds the value,
+    and `$ne` is the negation."""
+    client = make_client()
+    collection = client["db"]["equality_on_arrays"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "name": "alpha", "tags": ["red", "blue"]},
+            {"id": 2, "name": "beta", "tags": ["green"]},
+        ]
+    )
+
+    assert [doc["id"] for doc in collection.find({"tags": "red"})] == [1]
+    assert [doc["id"] for doc in collection.find({"tags": {"$eq": "green"}})] == [2]
+    assert [doc["id"] for doc in collection.find({"tags": {"$ne": "red"}})] == [2]
+    # A scalar field keeps plain equality semantics through the same lowering.
+    assert [doc["id"] for doc in collection.find({"name": "beta"})] == [2]
+    assert [doc["id"] for doc in collection.find({"name": {"$ne": "beta"}})] == [1]
+
+
+def test_connection_status_reports_the_authenticated_user(started_cluster):
+    """`connectionStatus` must report the principal `saslStart` authenticated and its roles,
+    not an anonymous connection: shells and tools use it to verify the login state."""
+    node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS mongo_status_user", password="123")
+    node.query("DROP ROLE IF EXISTS mongo_status_role", password="123")
+    node.query("CREATE ROLE mongo_status_role", password="123")
+    node.query(
+        "CREATE USER mongo_status_user IDENTIFIED WITH plaintext_password BY 'mongo_pass'",
+        password="123",
+    )
+    node.query("GRANT CURRENT GRANTS ON *.* TO mongo_status_user", password="123")
+    node.query("GRANT mongo_status_role TO mongo_status_user", password="123")
+
+    client = make_client(user="mongo_status_user", password="mongo_pass", database="admin")
+    status = client["admin"].command("connectionStatus")
+    assert status["ok"] == 1.0
+    assert status["authInfo"]["authenticatedUsers"] == [
+        {"user": "mongo_status_user", "db": "admin"}
+    ]
+    assert status["authInfo"]["authenticatedUserRoles"] == [
+        {"role": "mongo_status_role", "db": "admin"}
+    ]
+
+    node.query("DROP USER mongo_status_user", password="123")
+    node.query("DROP ROLE mongo_status_role", password="123")

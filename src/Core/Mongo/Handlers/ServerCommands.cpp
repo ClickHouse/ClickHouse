@@ -48,7 +48,7 @@ String databaseName(const Document & command, const String & command_name)
 
 }
 
-std::vector<Document> ServerCommandsHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor>)
+std::vector<Document> ServerCommandsHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     auto command = commandName(documents[0].documents[0]);
 
@@ -96,14 +96,52 @@ std::vector<Document> ServerCommandsHandler::handle(const std::vector<OpMessageS
     }
     else if (command == "connectionStatus")
     {
+        /// The authenticated principal of this connection: what `saslStart` authenticated the
+        /// session as, and the ClickHouse roles of that user. Before a successful `saslStart`
+        /// both arrays are empty, which is how Mongo reports an anonymous connection. ClickHouse
+        /// users and roles are not scoped by a database, so the database of both is `admin` -
+        /// the database Mongo keeps the cluster-wide principals in.
+        String user = executor->getAuthenticatedUserName();
+        std::vector<String> roles;
+        if (!user.empty())
+            roles = splitByNewline(executor->execute("SELECT arrayJoin(currentRoles())"));
+
         bson_t authenticated_users;
         bson_t authenticated_user_roles;
         bson_t authentication_info;
         bson_init(&authentication_info);
+
         bson_append_array_begin(&authentication_info, "authenticatedUsers", -1, &authenticated_users);
+        if (!user.empty())
+        {
+            bson_t user_doc;
+            bson_init(&user_doc);
+            BSON_APPEND_UTF8(&user_doc, "user", user.c_str());
+            BSON_APPEND_UTF8(&user_doc, "db", "admin");
+            bson_append_document(&authenticated_users, "0", 1, &user_doc);
+            bson_destroy(&user_doc);
+        }
         bson_append_array_end(&authentication_info, &authenticated_users);
+
         bson_append_array_begin(&authentication_info, "authenticatedUserRoles", -1, &authenticated_user_roles);
+        size_t index = 0;
+        for (const auto & role : roles)
+        {
+            if (role.empty())
+                continue;
+
+            bson_t role_doc;
+            bson_init(&role_doc);
+            BSON_APPEND_UTF8(&role_doc, "role", role.c_str());
+            BSON_APPEND_UTF8(&role_doc, "db", "admin");
+
+            auto key_str = std::to_string(index);
+            ++index;
+            bson_append_document(&authenticated_user_roles, key_str.c_str(), static_cast<int>(key_str.size()), &role_doc);
+            bson_destroy(&role_doc);
+        }
         bson_append_array_end(&authentication_info, &authenticated_user_roles);
+
         BSON_APPEND_DOCUMENT(bson_doc, "authInfo", &authentication_info);
         bson_destroy(&authentication_info);
     }

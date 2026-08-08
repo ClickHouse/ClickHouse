@@ -125,4 +125,11 @@ void QueryExecutor::authenticate(const String & username, const String & passwor
     session->authenticate(username, password, address);
 }
 
+String QueryExecutor::getAuthenticatedUserName() const
+{
+    /// `Session::authenticate` records the user it authenticated in the client info, and until
+    /// then the name is empty - which is what an unauthenticated connection has to report.
+    return session->getClientInfo().current_user;
+}
+
 }

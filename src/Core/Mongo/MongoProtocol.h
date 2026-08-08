@@ -162,6 +162,10 @@ public:
 
     void authenticate(const String & username, const String & password);
 
+    /// The name of the user this connection has authenticated as, or an empty string before a
+    /// successful `saslStart`.
+    String getAuthenticatedUserName() const;
+
 private:
     std::unique_ptr<Session> & session;
     Poco::Net::SocketAddress address;
