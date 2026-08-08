@@ -32,23 +32,23 @@ namespace ErrorCodes
 
 struct Settings;
 
-/// The kind of selection performed by the `timeSeriesSelect{TopK,BottomK,LimitK}Groups` aggregate functions.
-enum class TimeSeriesSelectGroupsKind : UInt8
+/// The kind of selection performed by the `timeSeries{TopK,BottomK,LimitK}Masks` aggregate functions.
+enum class TimeSeriesTopKMasksKind : UInt8
 {
     TopK,    /// At each time step keep the series with the k greatest values.
     BottomK, /// At each time step keep the series with the k smallest values.
     LimitK,  /// At each time step keep the k series with the smallest sampling keys among those having a value.
 };
 
-/// State of the `timeSeriesSelect{TopK,BottomK,LimitK}Groups` aggregate functions: one bounded heap per time step, O(number_of_time_steps * k) in total.
+/// State of the `timeSeries{TopK,BottomK,LimitK}Masks` aggregate functions: one bounded heap per time step, O(number_of_time_steps * k) in total.
 template <typename RankType>
-struct AggregateFunctionTimeSeriesSelectGroupsData
+struct AggregateFunctionTimeSeriesTopKMasksData
 {
-    /// A candidate series at one time step: `rank` is what candidates are compared by, `group` identifies the series.
+    /// A candidate series at one time step: `rank` is what candidates are compared by, `key` identifies the series.
     struct Entry
     {
         RankType rank;
-        UInt64 group;
+        UInt64 key;
     };
 
     /// A binary heap of at most k entries with the worst kept entry at the front (see `better()` in the aggregate function).
@@ -64,32 +64,35 @@ struct AggregateFunctionTimeSeriesSelectGroupsData
     bool initialized = false;
 };
 
-/// Implements timeSeriesSelect{TopK,BottomK,LimitK}Groups(group, values, k[, sampling_key]): bounded per-step selection of series for PromQL topk/bottomk/limitk (the semantics are documented with the factory registration in the .cpp file).
-template <TimeSeriesSelectGroupsKind kind, typename ValueType>
-class AggregateFunctionTimeSeriesSelectGroups final :
+/// Implements timeSeries{TopK,BottomK,LimitK}Masks(k, key[, sampling_key], values): bounded per-step selection of series for PromQL topk/bottomk/limitk (the semantics are documented with the factory registration in the .cpp file).
+template <TimeSeriesTopKMasksKind kind, typename ValueType>
+class AggregateFunctionTimeSeriesTopKMasks final :
     public IAggregateFunctionDataHelper<
-        AggregateFunctionTimeSeriesSelectGroupsData<std::conditional_t<kind == TimeSeriesSelectGroupsKind::LimitK, UInt64, Float64>>,
-        AggregateFunctionTimeSeriesSelectGroups<kind, ValueType>>
+        AggregateFunctionTimeSeriesTopKMasksData<std::conditional_t<kind == TimeSeriesTopKMasksKind::LimitK, UInt64, Float64>>,
+        AggregateFunctionTimeSeriesTopKMasks<kind, ValueType>>
 {
 public:
     /// For `topk` and `bottomk` candidates are ranked by their Float64 value, for `limitk` by their UInt64 sampling key.
-    using RankType = std::conditional_t<kind == TimeSeriesSelectGroupsKind::LimitK, UInt64, Float64>;
+    using RankType = std::conditional_t<kind == TimeSeriesTopKMasksKind::LimitK, UInt64, Float64>;
 
-    using Data = AggregateFunctionTimeSeriesSelectGroupsData<RankType>;
+    using Data = AggregateFunctionTimeSeriesTopKMasksData<RankType>;
     using Entry = typename Data::Entry;
     using Heap = typename Data::Heap;
-    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionTimeSeriesSelectGroups<kind, ValueType>>;
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionTimeSeriesTopKMasks<kind, ValueType>>;
 
     static constexpr UInt8 FORMAT_VERSION = 1;
 
+    /// The arguments are (k, key, values) for `topk` and `bottomk`, and (k, key, sampling_key, values) for `limitk`.
+    static constexpr size_t values_argument_index = (kind == TimeSeriesTopKMasksKind::LimitK) ? 3 : 2;
+
     static constexpr const char * getNameImpl()
     {
-        if constexpr (kind == TimeSeriesSelectGroupsKind::TopK)
-            return "timeSeriesSelectTopKGroups";
-        else if constexpr (kind == TimeSeriesSelectGroupsKind::BottomK)
-            return "timeSeriesSelectBottomKGroups";
+        if constexpr (kind == TimeSeriesTopKMasksKind::TopK)
+            return "timeSeriesTopKMasks";
+        else if constexpr (kind == TimeSeriesTopKMasksKind::BottomK)
+            return "timeSeriesBottomKMasks";
         else
-            return "timeSeriesSelectLimitKGroups";
+            return "timeSeriesLimitKMasks";
     }
 
     String getName() const override { return getNameImpl(); }
@@ -97,13 +100,13 @@ public:
     static DataTypePtr createResultType()
     {
         DataTypes element_types{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())};
-        Names element_names{"group", "steps_mask"};
+        Names element_names{"key", "steps_mask"};
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(std::move(element_types), std::move(element_names)));
     }
 
-    explicit AggregateFunctionTimeSeriesSelectGroups(const DataTypes & argument_types_)
+    explicit AggregateFunctionTimeSeriesTopKMasks(const DataTypes & argument_types_)
         : Base(argument_types_, {}, createResultType())
-        , k_is_per_step(argument_types_[2]->getTypeId() == TypeIndex::Array)
+        , k_is_per_step(argument_types_[0]->getTypeId() == TypeIndex::Array)
     {
     }
 
@@ -111,9 +114,9 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const UInt64 group = columns[0]->getUInt(row_num);
+        const UInt64 key = columns[1]->getUInt(row_num);
 
-        const auto & values_column = assert_cast<const ColumnArray &>(*columns[1]);
+        const auto & values_column = assert_cast<const ColumnArray &>(*columns[values_argument_index]);
         const auto & values_offsets = values_column.getOffsets();
         const size_t values_begin = values_offsets[row_num - 1];
         const size_t num_steps = values_offsets[row_num] - values_begin;
@@ -134,8 +137,8 @@ public:
             checkStateMatchesRow(state, num_steps, columns, row_num);
 
         [[maybe_unused]] UInt64 sampling_key = 0;
-        if constexpr (kind == TimeSeriesSelectGroupsKind::LimitK)
-            sampling_key = columns[3]->getUInt(row_num);
+        if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
+            sampling_key = columns[2]->getUInt(row_num);
 
         for (size_t t = 0; t != num_steps; ++t)
         {
@@ -144,8 +147,8 @@ public:
                 continue;
 
             Entry entry;
-            entry.group = group;
-            if constexpr (kind == TimeSeriesSelectGroupsKind::LimitK)
+            entry.key = key;
+            if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
                 entry.rank = sampling_key;
             else
                 entry.rank = static_cast<Float64>(values_data[values_begin + t]);
@@ -198,7 +201,7 @@ public:
             for (const Entry & entry : heap)
             {
                 writeBinaryLittleEndian(entry.rank, buf);
-                writeBinaryLittleEndian(entry.group, buf);
+                writeBinaryLittleEndian(entry.key, buf);
             }
         }
     }
@@ -250,7 +253,7 @@ public:
             {
                 Entry entry;
                 readBinaryLittleEndian(entry.rank, buf);
-                readBinaryLittleEndian(entry.group, buf);
+                readBinaryLittleEndian(entry.key, buf);
                 heap.push_back(entry);
             }
         }
@@ -264,14 +267,14 @@ public:
 
         auto & result_column = assert_cast<ColumnArray &>(to);
         auto & result_tuple = assert_cast<ColumnTuple &>(result_column.getData());
-        auto & group_data = assert_cast<ColumnUInt64 &>(result_tuple.getColumn(0)).getData();
+        auto & key_data = assert_cast<ColumnUInt64 &>(result_tuple.getColumn(0)).getData();
         auto & mask_column = assert_cast<ColumnArray &>(result_tuple.getColumn(1));
         auto & mask_offsets = mask_column.getOffsets();
         auto & mask_data = assert_cast<ColumnUInt8 &>(mask_column.getData()).getData();
 
         const size_t num_steps = state.heaps.size();
 
-        /// Invert the per-step heaps into (group, step) pairs sorted by group, i.e. one run of pairs per selected series.
+        /// Invert the per-step heaps into (key, step) pairs sorted by key, i.e. one run of pairs per selected series.
         VectorWithMemoryTracking<std::pair<UInt64, UInt64>> selected;
         size_t num_selected = 0;
         for (const Heap & heap : state.heaps)
@@ -279,29 +282,29 @@ public:
         selected.reserve(num_selected);
         for (size_t t = 0; t != num_steps; ++t)
             for (const Entry & entry : state.heaps[t])
-                selected.emplace_back(entry.group, t);
+                selected.emplace_back(entry.key, t);
         ::sort(selected.begin(), selected.end());
 
         for (size_t i = 0; i != selected.size();)
         {
-            const UInt64 group = selected[i].first;
-            group_data.push_back(group);
+            const UInt64 key = selected[i].first;
+            key_data.push_back(key);
 
             const size_t mask_begin = mask_data.size();
             mask_data.resize_fill(mask_begin + num_steps, 0);
-            for (; i != selected.size() && selected[i].first == group; ++i)
+            for (; i != selected.size() && selected[i].first == key; ++i)
                 mask_data[mask_begin + selected[i].second] = 1;
             mask_offsets.push_back(mask_data.size());
         }
 
-        result_column.getOffsets().push_back(group_data.size());
+        result_column.getOffsets().push_back(key_data.size());
     }
 
 private:
     /// Returns whether candidate `a` should be kept rather than candidate `b`, a strict total order (the ranking rules are documented in the .cpp file).
     static bool better(const Entry & a, const Entry & b)
     {
-        if constexpr (kind == TimeSeriesSelectGroupsKind::LimitK)
+        if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
         {
             if (a.rank != b.rank)
                 return a.rank < b.rank;
@@ -318,11 +321,11 @@ private:
             }
             else if (a.rank != b.rank)
             {
-                return (kind == TimeSeriesSelectGroupsKind::TopK) ? (a.rank > b.rank) : (a.rank < b.rank);
+                return (kind == TimeSeriesTopKMasksKind::TopK) ? (a.rank > b.rank) : (a.rank < b.rank);
             }
         }
-        /// Deterministic tie-breaking: prefer the series with the smaller group.
-        return a.group < b.group;
+        /// Deterministic tie-breaking: prefer the series with the smaller key.
+        return a.key < b.key;
     }
 
     /// Keeps `heap` holding the (at most k) best entries seen so far, with the worst kept entry at the front (`better` is the "less" comparator of the heap).
@@ -341,13 +344,13 @@ private:
         }
     }
 
-    /// Reads the value of `k` for time step `step` from the third argument at row `row_num`.
+    /// Reads the value of `k` for time step `step` from the first argument at row `row_num`.
     UInt64 readK(const IColumn ** columns, size_t row_num, size_t step) const
     {
         if (!k_is_per_step)
-            return columns[2]->getUInt(row_num);
+            return columns[0]->getUInt(row_num);
 
-        const auto & k_column = assert_cast<const ColumnArray &>(*columns[2]);
+        const auto & k_column = assert_cast<const ColumnArray &>(*columns[0]);
         const auto & k_offsets = k_column.getOffsets();
         return k_column.getData().getUInt(k_offsets[row_num - 1] + step);
     }
@@ -357,7 +360,7 @@ private:
     {
         if (!k_is_per_step)
             return fallback;
-        const auto & k_offsets = assert_cast<const ColumnArray &>(*columns[2]).getOffsets();
+        const auto & k_offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
         return k_offsets[row_num] - k_offsets[row_num - 1];
     }
 
@@ -398,7 +401,7 @@ private:
                                 getName(), readK(columns, row_num, t), state.k_per_step[t]);
     }
 
-    /// Whether the third argument (`k`) is an array with one value per time step rather than a single value.
+    /// Whether the first argument (`k`) is an array with one value per time step rather than a single value.
     const bool k_is_per_step;
 };
 

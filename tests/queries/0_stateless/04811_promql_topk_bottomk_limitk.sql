@@ -2,7 +2,7 @@
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
 -- Tests the PromQL aggregation operators topk/bottomk/limitk end to end: the streaming plan built around the
--- timeSeriesSelect{TopK,BottomK,LimitK}Groups aggregate functions (the functions themselves are tested
+-- timeSeries{TopK,BottomK,LimitK}Masks aggregate functions (the functions themselves are tested
 -- in 04811_aggregate_functions_timeseries_topk_bottomk_limitk).
 
 DROP TABLE IF EXISTS prometheus;

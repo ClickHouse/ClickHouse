@@ -2,7 +2,7 @@
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
 -- Regression test: PromQL topk over many series must run in bounded memory, streaming through the
--- timeSeriesSelectTopKGroups aggregate function. With N = 3000 series and T = 200 steps, a plan
+-- timeSeriesTopKMasks aggregate function. With N = 3000 series and T = 200 steps, a plan
 -- materializing per-step N x N matrices would need T * N^2 * 8 bytes = 14.4 GB, far over the 2 GB limit
 -- used here, while the streaming selection state is about T * k * 16 bytes = 32 KB.
 

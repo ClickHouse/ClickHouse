@@ -87,7 +87,7 @@ namespace
         return makeASTFunction("accurateCast", std::move(floored), make_intrusive<ASTLiteral>("UInt64"));
     }
 
-    /// Converts the k parameter to an AST usable as the `k` argument of timeSeriesSelect*Groups: a UInt64 scalar expression or a scalar subquery returning Array(UInt64) aligned to the time grid.
+    /// Converts the k parameter to an AST usable as the `k` argument of timeSeries*Masks: a UInt64 scalar expression or a scalar subquery returning Array(UInt64) aligned to the time grid.
     ASTPtr getK(SQLQueryPiece && k_arg, ConverterContext & context)
     {
         switch (k_arg.store_method)
@@ -140,9 +140,9 @@ namespace
     const ImplInfo * getImplInfo(std::string_view operator_name)
     {
         static const std::unordered_map<std::string_view, ImplInfo> impl_map = {
-            {"topk", {"timeSeriesSelectTopKGroups", /* use_sampling_keys = */ false}},
-            {"bottomk", {"timeSeriesSelectBottomKGroups", /* use_sampling_keys = */ false}},
-            {"limitk", {"timeSeriesSelectLimitKGroups", /* use_sampling_keys = */ true}},
+            {"topk", {"timeSeriesTopKMasks", /* use_sampling_keys = */ false}},
+            {"bottomk", {"timeSeriesBottomKMasks", /* use_sampling_keys = */ false}},
+            {"limitk", {"timeSeriesLimitKMasks", /* use_sampling_keys = */ true}},
         };
 
         auto it = impl_map.find(operator_name);
@@ -189,11 +189,11 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     /// Step 1: choose up to k series to keep at each time step within each aggregation group.
     ///
-    ///   SELECT timeSeriesSelect<TopK|BottomK|LimitK>Groups(group, values, <k>[, timeSeriesGroupToSamplingKey(group)]) AS selected_groups
+    ///   SELECT timeSeries<TopK|BottomK|LimitK>Masks(<k>, group[, timeSeriesGroupToSamplingKey(group)], values) AS selected_groups
     ///   FROM <vector_grid>
     ///   [GROUP BY <by_tags_expr>]
     ///
-    /// `selected_groups` is Array(Tuple(group UInt64, steps_mask Array(UInt8))); the sampling key (added for limitk) ranks series by a hash of their tags regardless of row read order.
+    /// `selected_groups` is Array(Tuple(key UInt64, steps_mask Array(UInt8))); the sampling key (added for limitk) ranks series by a hash of their tags regardless of row read order.
     ASTPtr step1_query;
     {
         SelectQueryBuilder builder;
@@ -202,15 +202,15 @@ SQLQueryPiece applyLimitAggregationOperator(
         ASTPtr aggregate_function;
         if (impl_info->use_sampling_keys)
             aggregate_function = makeASTFunction(impl_info->aggregate_function_name,
-                make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                make_intrusive<ASTIdentifier>(ColumnNames::Values),
                 std::move(k),
-                makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group)));
+                make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group)),
+                make_intrusive<ASTIdentifier>(ColumnNames::Values));
         else
             aggregate_function = makeASTFunction(impl_info->aggregate_function_name,
+                std::move(k),
                 make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                std::move(k));
+                make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         builder.select_list.push_back(std::move(aggregate_function));
         builder.select_list.back()->setAlias(ColumnNames::SelectedGroups);

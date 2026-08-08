@@ -4,7 +4,7 @@
         <max_insert_threads>8</max_insert_threads>
     </settings>
 
-    <!-- Benchmarks PromQL topk/bottomk/limitk over a TimeSeries table: the timeSeriesSelect{TopK,BottomK,LimitK}Groups aggregation plus the join applying the selection back to the per-series grid rows. -->
+    <!-- Benchmarks PromQL topk/bottomk/limitk over a TimeSeries table: the timeSeries{TopK,BottomK,LimitK}Masks aggregation plus the join applying the selection back to the per-series grid rows. -->
 
     <create_query>
         CREATE TABLE promql_topk_ts ENGINE = TimeSeries
