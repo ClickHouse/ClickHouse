@@ -26,7 +26,9 @@ public:
         const SizeLimits & size_limits_,
         BlockNestedLoopStoreSettings store_settings_,
         size_t max_block_size_,
-        size_t max_block_bytes_);
+        size_t max_block_bytes_,
+        size_t min_build_block_size_,
+        size_t min_build_block_bytes_);
 
     /// The two stages of execution, kept apart so that `EXPLAIN ANALYZE` attributes the time
     /// of materializing the right input and the time of matching separately.
@@ -75,6 +77,10 @@ private:
     /// `max_joined_block_size_bytes`.
     size_t max_block_size;
     size_t max_block_bytes;
+    /// What the right input is squashed to before it is stored, from `min_joined_block_size_rows`
+    /// and `min_joined_block_size_bytes`.
+    size_t min_build_block_size;
+    size_t min_build_block_bytes;
 };
 
 }

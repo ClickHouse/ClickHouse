@@ -299,6 +299,10 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
     if (!current_build_block)
     {
         current_build_block = build_reader.read(build_block_cursor);
+        /// The store builds every block over the whole of its columns, which is what makes a build
+        /// row's position in the block the same as its index into the block's columns - the equality
+        /// the match flags and the unmatched-build-rows scan are both indexed by.
+        chassert(current_build_block->selector.isContinuousRange() && current_build_block->selector.getRange().first == 0);
         build_row_bytes = estimateRowBytes(current_build_block->columns, current_build_block->selector.size());
     }
 
@@ -541,13 +545,22 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
 
     /// The pairs of one output chunk can span several stored blocks; each group is gathered from
     /// its own block and the pieces are concatenated. A single group is the common case and needs
-    /// no concatenation.
+    /// no concatenation. The gather indexes of a group are the same for every column of its block,
+    /// so they are built once here rather than per column.
     std::vector<BuildRun> emitted_runs;
-    for (size_t rest = num_rows; rest != 0;)
+    std::vector<ColumnPtr> emitted_run_indexes;
+    for (size_t rest = num_rows, offset = 0; rest != 0;)
     {
         const auto & run = build_runs.at(emitted_runs.size());
         const size_t length = std::min(rest, run.length);
+
+        auto indexes = ColumnUInt64::create();
+        indexes->getData().insert(
+            matched_build_rows.begin() + offset, matched_build_rows.begin() + offset + length);
+        emitted_run_indexes.push_back(std::move(indexes));
+
         emitted_runs.push_back({run.block_index, length, run.block});
+        offset += length;
         rest -= length;
     }
 
@@ -555,15 +568,10 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
     for (size_t i = 0; i < num_build_columns; ++i)
     {
         MutableColumnPtr target;
-        size_t offset = 0;
-        for (const auto & run : emitted_runs)
+        for (size_t run_index = 0; run_index < emitted_runs.size(); ++run_index)
         {
-            auto indexes = ColumnUInt64::create();
-            indexes->getData().insert(
-                matched_build_rows.begin() + offset, matched_build_rows.begin() + offset + run.length);
-            offset += run.length;
-
-            auto part = run.block->columns[i]->index(*indexes, 0);
+            const auto & run = emitted_runs[run_index];
+            auto part = run.block->columns[i]->index(*emitted_run_indexes[run_index], 0);
             if (emitted_runs.size() == 1)
             {
                 result.push_back(std::move(part));

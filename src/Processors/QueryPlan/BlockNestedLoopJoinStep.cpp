@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/BlockNestedLoopJoinData.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -54,13 +55,17 @@ BlockNestedLoopJoinStep::BlockNestedLoopJoinStep(
     const SizeLimits & size_limits_,
     BlockNestedLoopStoreSettings store_settings_,
     size_t max_block_size_,
-    size_t max_block_bytes_)
+    size_t max_block_bytes_,
+    size_t min_build_block_size_,
+    size_t min_build_block_bytes_)
     : kind(kind_)
     , strictness(strictness_)
     , size_limits(size_limits_)
     , store_settings(std::move(store_settings_))
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
+    , min_build_block_size(min_build_block_size_)
+    , min_build_block_bytes(min_build_block_bytes_)
 {
     if (!isSupportedJoinType(kind, strictness))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join does not support {} {} JOIN",
@@ -181,10 +186,26 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
     {
         QueryPipelineProcessorsCollector collector(*build_pipeline, this);
 
+        /// One store, one totals row: a single build stream owns the totals port.
+        build_pipeline->resize(build_has_totals ? 1 : max_streams);
+
+        /// A tile of candidate pairs never spans two stored blocks, so a right input made of small
+        /// blocks costs one evaluation of the condition per block per probe chunk, and a stage that
+        /// walks the store emits one chunk per block. Squashing the build side makes both a matter
+        /// of the settings rather than of how the right input happened to be written.
+        if (min_build_block_size > 0 || min_build_block_bytes > 0)
+        {
+            build_pipeline->addSimpleTransform(
+                [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                {
+                    if (stream_type != QueryPipelineBuilder::StreamType::Main)
+                        return nullptr;
+                    return std::make_shared<SimpleSquashingChunksTransform>(header, min_build_block_size, min_build_block_bytes);
+                });
+        }
+
         if (build_has_totals)
         {
-            /// One store, one totals row: a single build stream owns the totals port.
-            build_pipeline->resize(1);
             auto build_transform = std::make_shared<BlockNestedLoopBuildTransform>(
                 build_pipeline->getSharedHeader(), data, std::make_shared<FinishCounter>(1));
             auto * totals_port = build_transform->addTotalsPort();
@@ -192,7 +213,6 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
         }
         else
         {
-            build_pipeline->resize(max_streams);
             auto finish_counter = std::make_shared<FinishCounter>(build_pipeline->getNumStreams());
             build_pipeline->addSimpleTransform([&](const SharedHeader & header)
             {

@@ -230,7 +230,7 @@ The `ON` section may be an arbitrary boolean expression over the columns of both
 
 Every join type and strictness is supported this way, except `ASOF JOIN` and `PASTE JOIN`, which prescribe the shape of their own condition, and `ANY FULL JOIN`, which is not implemented for any join. The block nested loop join is not one of the [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) values: it is the last resort, used only when no other algorithm can execute the condition. In `EXPLAIN` output it appears as a `BlockNestedLoopJoin` step.
 
-An `ON` section of this shape was rejected with `INVALID_JOIN_ON_EXPRESSION` before this operator existed; such a query now runs instead of failing. There is no setting that turns the operator off, so a condition that determines no join key is executed however expensive it turns out to be, bounded only by the general limits described below.
+An `ON` section of this shape was rejected with `INVALID_JOIN_ON_EXPRESSION` before this operator existed; with the analyzer enabled (`enable_analyzer = 1`, the default) such a query now runs instead of failing. There is no setting that turns the operator off, so a condition that determines no join key is executed however expensive it turns out to be, bounded only by the general limits described below.
 
 **Example**
 
