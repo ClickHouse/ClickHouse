@@ -1,5 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionExponentialTimeDecayed.h>
 
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -13,6 +14,7 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 
 
 namespace DB
@@ -140,49 +142,55 @@ class AggregateFunctionExponentialTimeDecayed final
           AggregateFunctionExponentialTimeDecayed<result_kind>>
 {
 public:
-    static DataTypePtr getResultDataType()
+    static DataTypePtr getResultDataType(Float64 decay_length)
     {
         if constexpr (result_kind == ExponentialTimeDecayedResult::Avg)
             return std::make_shared<DataTypeFloat64>();
 
-        return createDataTypeExponentialTimeDecayingFloat64();
+        return createDataTypeExponentialTimeDecayingFloat64(decay_length);
     }
 
     AggregateFunctionExponentialTimeDecayed(
+        String name_,
         const DataTypes & argument_types_,
         const Array & parameters_,
-        Float64 decay_length_)
+        Float64 decay_length_,
+        bool input_is_decaying_value_ = false)
         : IAggregateFunctionDataHelper<
               ExponentialTimeDecayedState,
               AggregateFunctionExponentialTimeDecayed<result_kind>>(
-              argument_types_, parameters_, getResultDataType())
+              argument_types_, parameters_, getResultDataType(decay_length_))
+        , name(std::move(name_))
         , decay_length(decay_length_)
+        , input_is_decaying_value(input_is_decaying_value_)
     {
     }
 
-    String getName() const override
-    {
-        if constexpr (result_kind == ExponentialTimeDecayedResult::Sum)
-            return "exponentialTimeDecayedSum";
-        if constexpr (result_kind == ExponentialTimeDecayedResult::Avg)
-            return "exponentialTimeDecayedAvg";
-        return "exponentialTimeDecayedCount";
-    }
+    String getName() const override { return name; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const size_t time_argument = result_kind == ExponentialTimeDecayedResult::Count ? 0 : 1;
-        const Float64 time = columns[time_argument]->getFloat64(row_num);
+        Float64 value = 1;
+        Float64 time;
+
+        if (input_is_decaying_value)
+        {
+            const auto & tuple = assert_cast<const ColumnTuple &>(*columns[0]);
+            value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
+            time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
+        }
+        else
+        {
+            const size_t time_argument = result_kind == ExponentialTimeDecayedResult::Count ? 0 : 1;
+            time = columns[time_argument]->getFloat64(row_num);
+            if constexpr (result_kind != ExponentialTimeDecayedResult::Count)
+                value = columns[0]->getFloat64(row_num);
+        }
+
         if (!std::isfinite(time))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of aggregate function {} must be finite", getName());
-
-        Float64 value = 1;
-        if constexpr (result_kind != ExponentialTimeDecayedResult::Count)
-        {
-            value = columns[0]->getFloat64(row_num);
-            if (!std::isfinite(value))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be finite", getName());
-        }
+        if (!std::isfinite(value))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be finite", getName());
 
         this->data(place).add(value, time, decay_length);
     }
@@ -219,8 +227,7 @@ public:
                 : state.weight;
             Tuple decaying_value{
                 Field(result),
-                Field(state.initialized ? state.max_time : 0.0),
-                Field(decay_length)};
+                Field(state.initialized ? state.max_time : 0.0)};
             to.insert(Field(decaying_value));
         }
     }
@@ -228,7 +235,9 @@ public:
     bool allocatesMemoryInArena() const override { return false; }
 
 private:
+    const String name;
     const Float64 decay_length;
+    const bool input_is_decaying_value;
 };
 
 Float64 getDecayLength(const String & name, const Array & parameters)
@@ -298,9 +307,40 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
     const Settings * settings)
 {
     assertExperimentalFeatureEnabled(name, settings);
+
+    if (argument_types.size() == 1)
+    {
+        const auto type_decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(argument_types[0]);
+        if (type_decay_length)
+        {
+            const Float64 decay_length = parameters.empty()
+                ? *type_decay_length
+                : getDecayLength(name, parameters);
+            if (decay_length != *type_decay_length)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Decay length parameter {} of aggregate function {} does not match input type {}",
+                    decay_length,
+                    name,
+                    argument_types[0]->getName());
+
+            return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Sum>>(
+                name, argument_types, parameters, decay_length, true);
+        }
+    }
+
     assertValueAndTimeArguments(name, argument_types);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Sum>>(
-        argument_types, parameters, getDecayLength(name, parameters));
+        name, argument_types, parameters, getDecayLength(name, parameters));
+}
+
+AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayingFloat64(
+    const String & name,
+    const DataTypes & argument_types,
+    const Array & parameters,
+    const Settings * settings)
+{
+    return createAggregateFunctionExponentialTimeDecayedSum(name, argument_types, parameters, settings);
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedAvg(
@@ -312,7 +352,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedAvg(
     assertExperimentalFeatureEnabled(name, settings);
     assertValueAndTimeArguments(name, argument_types);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Avg>>(
-        argument_types, parameters, getDecayLength(name, parameters));
+        name, argument_types, parameters, getDecayLength(name, parameters));
 }
 
 AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedCount(
@@ -324,7 +364,7 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedCount(
     assertExperimentalFeatureEnabled(name, settings);
     assertTimeArgument(name, argument_types);
     return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Count>>(
-        argument_types, parameters, getDecayLength(name, parameters));
+        name, argument_types, parameters, getDecayLength(name, parameters));
 }
 
 }
