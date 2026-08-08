@@ -3913,6 +3913,16 @@ bool MutateTask::prepare()
 
             part->modification_time = time(nullptr);
 
+            /// The clone recorded `ttl.txt` and `checksums.txt` as hardlinked from the source part,
+            /// but they were just rewritten, so this part no longer shares those blobs with the
+            /// source. Leaving them in the set would make zero-copy replication persist the stale
+            /// hardlink list to the parent zero-copy node, keeping the source's old `ttl.txt` blob
+            /// alive forever after the source part is dropped - one leaked blob per fast-cloned part.
+            /// (`checksums.txt` is copied rather than hardlinked on zero-copy disks, so erasing it
+            /// only matters for the other configurations; erasing an absent name is a no-op.)
+            ctx->hardlinked_files.hardlinks_from_source_part.erase("ttl.txt");
+            ctx->hardlinked_files.hardlinks_from_source_part.erase("checksums.txt");
+
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);
             promise.set_value(std::move(part));
