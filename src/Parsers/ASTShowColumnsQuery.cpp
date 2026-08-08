@@ -32,6 +32,7 @@ void ASTShowColumnsQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
     /// a tree hash — see the header comment.
     hash_state.update(extended);
     hash_state.update(full);
+    hash_state.update(has_like);
     hash_state.update(not_like);
     hash_state.update(case_insensitive_like);
     hash_state.update(database);
@@ -59,11 +60,11 @@ void ASTShowColumnsQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettin
         ostr << " FROM " << backQuoteIfNeed(database);
 
 
-    /// Emit the clause whenever a `LIKE` was present, even with an empty pattern: `NOT LIKE ''` /
-    /// `ILIKE ''` set `not_like` / `case_insensitive_like` while leaving `like` empty, and dropping
-    /// the clause would lose those flags on a format -> parse round-trip (which the rewrite-rule
+    /// Emit the clause whenever a `LIKE` was present, even with an empty pattern (see the
+    /// `has_like` comment in the header): dropping it would lose the clause and its `not_like` /
+    /// `case_insensitive_like` modifiers on a format -> parse round-trip (which the rewrite-rule
     /// matcher's tree-hash consistency check relies on).
-    if (!like.empty() || not_like || case_insensitive_like)
+    if (has_like)
     {
         ostr
 
@@ -95,6 +96,8 @@ void ASTShowColumnsQuery::writeJSON(WriteBuffer & out) const
     if (!database.empty())
         w.writeString("database", database);
     w.writeString("table", table);
+    if (has_like)
+        w.writeBool("has_like", true);
     if (!like.empty())
         w.writeString("like", like);
     if (not_like)
@@ -115,6 +118,7 @@ void ASTShowColumnsQuery::readJSON(const Poco::JSON::Object & json)
     table = r.getString("table");
     if (table.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "SHOW COLUMNS requires a non-empty 'table' field during AST JSON deserialization");
+    has_like = r.getBool("has_like");
     like = r.getString("like");
     not_like = r.getBool("not_like");
     case_insensitive_like = r.getBool("case_insensitive_like");
@@ -125,16 +129,17 @@ void ASTShowColumnsQuery::readJSON(const Poco::JSON::Object & json)
     if (limit_length)
         children.push_back(limit_length);
 
-    /// `ParserShowColumnsQuery` consumes `NOT` and `ILIKE` only as part of a LIKE clause, so these
-    /// flags cannot exist without a pattern; `formatQueryImpl` silently drops them when 'like' is empty.
-    if (like.empty() && (not_like || case_insensitive_like))
+    /// `ParserShowColumnsQuery` sets the pattern and the `NOT` / `ILIKE` modifiers only as part
+    /// of a LIKE clause, so they cannot exist without 'has_like'; `formatQueryImpl` silently drops
+    /// them when 'has_like' is not set.
+    if (!has_like && (!like.empty() || not_like || case_insensitive_like))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'not_like' and 'case_insensitive_like' require a non-empty 'like' during AST JSON deserialization");
+            "'like', 'not_like' and 'case_insensitive_like' require 'has_like' during AST JSON deserialization");
 
     /// The parser accepts either a LIKE clause or a WHERE clause, never both, and
     /// `InterpreterShowColumnsQuery` ignores 'where_expression' whenever 'like' is set, so the
     /// formatted SQL and the executed query would diverge.
-    if (where_expression && !like.empty())
+    if (where_expression && has_like)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'like' and 'where_expression' are mutually exclusive in `ShowColumnsQuery` "
             "during AST JSON deserialization");

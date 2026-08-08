@@ -9,6 +9,12 @@ namespace DB
 class ASTShowFunctionsQuery : public ASTQueryWithOutput
 {
 public:
+    /// Whether an `[I]LIKE '<pattern>'` clause was present at all. A separate presence bit is
+    /// required because `LIKE ''` is a valid clause with an empty pattern: without it, `SHOW
+    /// FUNCTIONS LIKE ''` would hash and format exactly like plain `SHOW FUNCTIONS`, so the
+    /// rewrite-rule matcher's "equal tree hash means exact match" invariant would not hold for
+    /// the two queries.
+    bool has_like = false;
     bool case_insensitive_like = false;
     String like;
 

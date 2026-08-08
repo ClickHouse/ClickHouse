@@ -67,6 +67,7 @@ void ASTDropQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     hash_state.update(no_ddl_lock);
     hash_state.update(has_all);
     hash_state.update(has_tables);
+    hash_state.update(has_like);
     hash_state.update(like);
     hash_state.update(not_like);
     hash_state.update(case_insensitive_like);
@@ -101,6 +102,7 @@ void ASTDropQuery::writeJSON(WriteBuffer & out) const
     w.writeBool("has_all", has_all);
     w.writeBool("has_tables", has_tables);
 
+    w.writeBool("has_like", has_like);
     if (!like.empty())
         w.writeString("like", like);
 
@@ -177,6 +179,7 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     has_all = r.getBool("has_all");
     has_tables = r.getBool("has_tables");
 
+    has_like = r.getBool("has_like");
     like = r.getString("like");
     not_like = r.getBool("not_like");
     case_insensitive_like = r.getBool("case_insensitive_like");
@@ -237,10 +240,10 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
     /// `InterpreterDropQuery` consults it only when `kind == Truncate && has_tables`, so on any other
     /// shape the formatted SQL is parser-impossible and the filter is silently ignored. Reject it,
     /// including the orphaned modifier flags without a pattern.
-    if ((!like.empty() || not_like || case_insensitive_like) && !has_tables)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'like', 'not_like' and 'case_insensitive_like' are only valid for TRUNCATE [ALL] TABLES FROM during AST JSON deserialization");
-    if (like.empty() && (not_like || case_insensitive_like))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'not_like'/'case_insensitive_like' require a non-empty 'like' pattern during AST JSON deserialization");
+    if (has_like && !has_tables)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'has_like', 'like', 'not_like' and 'case_insensitive_like' are only valid for TRUNCATE [ALL] TABLES FROM during AST JSON deserialization");
+    if (!has_like && (!like.empty() || not_like || case_insensitive_like))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'like', 'not_like' and 'case_insensitive_like' require 'has_like' during AST JSON deserialization");
 
     /// A database-only target (no `table`, no `database_and_tables`) is formatted and executed
     /// as `DROP DATABASE`, ignoring the `is_view`/`is_dictionary` flags. Such a combination
@@ -324,10 +327,11 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         table->format(ostr, settings, state, frame);
     }
 
-    /// Emit the clause whenever a LIKE was present, even for an empty pattern, so that the
-    /// `not_like` / `case_insensitive_like` flags (now folded into the tree hash) survive the
-    /// format -> parse round-trip that the debug-build AST consistency check requires.
-    if (!like.empty() || not_like || case_insensitive_like)
+    /// Emit the clause whenever a LIKE was present, even for an empty pattern (see the `has_like`
+    /// comment in the header), so that the clause and its `not_like` / `case_insensitive_like`
+    /// flags (all folded into the tree hash) survive the format -> parse round-trip that the
+    /// debug-build AST consistency check requires.
+    if (has_like)
     {
         ostr
             << (not_like ? " NOT" : "")

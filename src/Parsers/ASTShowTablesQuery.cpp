@@ -45,6 +45,7 @@ void ASTShowTablesQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
     hash_state.update(caches);
     hash_state.update(full);
     hash_state.update(cluster_str);
+    hash_state.update(has_like);
     hash_state.update(like);
     hash_state.update(not_like);
     hash_state.update(case_insensitive_like);
@@ -65,10 +66,11 @@ String ASTShowTablesQuery::getFrom() const
 
 void ASTShowTablesQuery::formatLike(WriteBuffer & ostr, const FormatSettings &) const
 {
-    /// Emit the clause whenever a `LIKE` was present, even with an empty pattern: `SHOW TABLES NOT
-    /// LIKE ''` / `SHOW TABLES ILIKE ''` set `not_like` / `case_insensitive_like` while leaving
-    /// `like` empty, and dropping the clause would lose those flags on a format -> parse round-trip.
-    if (!like.empty() || not_like || case_insensitive_like)
+    /// Emit the clause whenever a `LIKE` was present, even with an empty pattern: `SHOW TABLES
+    /// LIKE ''` differs from plain `SHOW TABLES` (see the `has_like` comment in the header), and
+    /// dropping the clause would lose it and the `not_like` / `case_insensitive_like` modifiers
+    /// on a format -> parse round-trip.
+    if (has_like)
     {
         ostr << (not_like ? " NOT" : "")
             << (case_insensitive_like ? " ILIKE " : " LIKE ")
@@ -175,6 +177,8 @@ void ASTShowTablesQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("full", true);
     if (!cluster_str.empty())
         w.writeString("cluster_str", cluster_str);
+    if (has_like)
+        w.writeBool("has_like", true);
     if (!like.empty())
         w.writeString("like", like);
     if (not_like)
@@ -217,6 +221,7 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
     caches = r.getBool("caches");
     full = r.getBool("full");
     cluster_str = r.getString("cluster_str");
+    has_like = r.getBool("has_like");
     like = r.getString("like");
     not_like = r.getBool("not_like");
     case_insensitive_like = r.getBool("case_insensitive_like");
@@ -282,22 +287,23 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
             "'where_expression' is only valid for the `SHOW TABLES`/`SHOW DICTIONARIES` form "
             "during AST JSON deserialization");
 
-    /// In every form, the parser consumes `NOT` and `ILIKE` only as part of a LIKE clause, so these
-    /// flags cannot exist without a pattern; `formatQueryImpl` silently drops them when 'like' is empty.
-    if (like.empty() && (not_like || case_insensitive_like))
+    /// In every form, the parser sets the pattern and the `NOT` / `ILIKE` modifiers only as part
+    /// of a LIKE clause, so they cannot exist without 'has_like'; `formatQueryImpl` silently drops
+    /// them when 'has_like' is not set.
+    if (!has_like && (!like.empty() || not_like || case_insensitive_like))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'not_like' and 'case_insensitive_like' require a non-empty 'like' during AST JSON deserialization");
+            "'like', 'not_like' and 'case_insensitive_like' require 'has_like' during AST JSON deserialization");
 
     /// In the table/dictionary form, the parser accepts either a LIKE clause or a WHERE clause,
     /// never both, and `InterpreterShowTablesQuery` ignores 'where_expression' whenever 'like' is
     /// set, so the formatted SQL and the executed query would diverge.
-    if (where_expression && !like.empty())
+    if (where_expression && has_like)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'like' and 'where_expression' are mutually exclusive in `ShowTablesQuery` "
             "during AST JSON deserialization");
 
     /// `SHOW CLUSTER` and `SHOW FILESYSTEM CACHES` accept neither a LIKE pattern nor a LIMIT.
-    if ((cluster || caches) && (!like.empty() || not_like || case_insensitive_like))
+    if ((cluster || caches) && has_like)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "LIKE is not valid for `SHOW CLUSTER`/`SHOW FILESYSTEM CACHES` during AST JSON deserialization");
 

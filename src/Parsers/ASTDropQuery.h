@@ -40,6 +40,12 @@ public:
     /// For specifying table name patterns for `TRUNCATE ALL TABLES` query
     String like;
 
+    /// Whether a `[NOT] [I]LIKE '<pattern>'` clause was present at all. A separate presence bit is
+    /// required because `LIKE ''` is a valid clause with an empty pattern: without it, `TRUNCATE
+    /// TABLES FROM db LIKE ''` would hash and format exactly like `TRUNCATE TABLES FROM db`, so
+    /// the rewrite-rule matcher's "equal tree hash means exact match" invariant would not hold
+    /// for the two queries.
+    bool has_like = false;
     bool not_like = false;
     bool case_insensitive_like = false;
 
