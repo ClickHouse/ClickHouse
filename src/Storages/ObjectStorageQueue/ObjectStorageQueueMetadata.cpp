@@ -1240,8 +1240,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
     /// Create a lock so that with distributed processing
     /// multiple nodes do not execute cleanup in parallel.
+    /// Store "background_cleanup" in the lock value to distinguish from manual dropFailedFiles.
+    static constexpr std::string_view LOCK_OPERATION_BACKGROUND = "background_cleanup";
     auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
-        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), std::string(LOCK_OPERATION_BACKGROUND));
 
     if (!ephemeral_node)
     {
@@ -1503,16 +1505,32 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
 
     /// Acquire the same distributed lock used by the periodic cleanup sweep
     /// to prevent concurrent modification of failed files.
-    /// When invoked via ON CLUSTER, multiple replicas may attempt this concurrently;
-    /// if the lock is already held, treat it as a benign idempotent success since
-    /// another replica is already performing the cleanup on the shared /failed tree.
+    /// Store "manual_drop_failed" in the lock value so dropFailedFiles invocations
+    /// can distinguish themselves from the generic background cleanup.
+    static constexpr std::string_view LOCK_OPERATION_DROP_FAILED = "manual_drop_failed";
     auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
-        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), std::string(LOCK_OPERATION_DROP_FAILED));
 
     if (!ephemeral_node)
     {
-        LOG_INFO(log, "Failed file cleanup is already in progress by another replica, skipping this execution");
-        return;
+        /// Lock is held by another process. Check if it's another dropFailedFiles invocation.
+        /// When invoked via ON CLUSTER, multiple replicas attempt this concurrently;
+        /// if another dropFailedFiles holds the lock, treat it as idempotent success.
+        /// If the generic background cleanup holds the lock, it may not be cleaning failed files,
+        /// so we must fail and let the user retry.
+        Coordination::Stat stat;
+        std::string lock_value;
+        Coordination::Error code = zk_client->getKeeper()->tryGet(zookeeper_cleanup_lock_path, lock_value, &stat);
+
+        if (code == Coordination::Error::ZOK && lock_value == LOCK_OPERATION_DROP_FAILED)
+        {
+            LOG_INFO(log, "Another replica is already executing SYSTEM DROP S3QUEUE FAILED FILES, skipping");
+            return;
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Failed file cleanup cannot proceed: another operation is holding the cleanup lock. "
+            "Please retry in a moment.");
     }
 
     const std::string failed_path = zookeeper_path / "failed";
