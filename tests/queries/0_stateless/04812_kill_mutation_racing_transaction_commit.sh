@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-replicated-database, no-encrypted-storage, no-parallel
+# Tags: no-ordinary-database, no-replicated-database, no-parallel
 # Tag rationale: transactions are unsupported in Ordinary databases; a Replicated database enqueues
 # the ALTER as a distributed DDL, which is rejected inside a transaction, so no mutation entry is
 # ever registered here and the failpoint can never fire; enables server-wide failpoints.

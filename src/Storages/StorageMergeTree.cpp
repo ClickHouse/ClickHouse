@@ -1446,13 +1446,13 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
         txn = tryGetTransactionForMutation(it->second, log.load());
     }
 
-    /// Test-only park point: lets a regression test interleave the claim below against a
-    /// concurrent commit.
-    FailPointInjection::pauseFailPoint(FailPoints::kill_mutation_pause_after_transaction_resolve);
-
     bool cancelled_transaction = false;
     if (txn && txn->getCSN() != Tx::RolledBackCSN)
     {
+        /// Test-only park point: parks after this branch's CSN read and before the claim, so a
+        /// regression test can make that read stale while the CAS below stays authoritative.
+        FailPointInjection::pauseFailPoint(FailPoints::kill_mutation_pause_after_transaction_resolve);
+
         /// `rollback`'s CAS `UnknownCSN -> RolledBackCSN` contends with the commit's
         /// `UnknownCSN -> CommittingCSN` CAS, so exactly one wins. Merely reading the CSN would be a
         /// TOCTOU: the commit does not take `currently_processing_in_background_mutex`.
