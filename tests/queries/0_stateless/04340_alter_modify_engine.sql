@@ -446,7 +446,7 @@ SELECT 'graphite nullable version engine', engine FROM system.tables
 DROP TABLE t_graphite_null;
 
 -- (s) the engine clause survives a round trip through the `clickhouse_json` AST dialect.
-SET allow_experimental_json_ast_dialect = 1;
+SET enable_json_ast_dialect = 1;
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = ReplacingMergeTree'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = ReplacingMergeTree(v)'));
 SELECT formatQueryFromJSON(parseQueryToJSON('ALTER TABLE t MODIFY ENGINE = SummingMergeTree((x, y))'));
