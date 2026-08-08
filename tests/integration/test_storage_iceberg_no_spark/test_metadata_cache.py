@@ -223,15 +223,21 @@ def test_metadata_cache_fresh_init_schemeless_location(started_cluster_iceberg_n
 
     create_clickhouse_iceberg_database(started_cluster_iceberg_no_spark, instance, CATALOG_NAME)
 
-    # Deliberately do not pass write_full_path_in_iceberg_metadata here: the default (0) is what
-    # makes ClickHouse write a schemeless `location` into metadata.json.
+    # The REST catalog server itself writes the very first metadata.json on CREATE TABLE (it
+    # commits table creation server-side via its own S3 file IO), so that initial location must
+    # be a full URI regardless of write_full_path_in_iceberg_metadata -- a schemeless location at
+    # this step is rejected by the REST server with "Invalid S3 URI, cannot determine scheme".
     instance.query(
         f"""
 CREATE TABLE {table_ref} (string_col String)
 ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
 """,
-        settings={"allow_experimental_database_iceberg": 1},
+        settings={"allow_experimental_database_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
     )
+    # INSERT, unlike CREATE TABLE, is entirely client-driven: ClickHouse writes the new
+    # metadata.json itself and only tells the REST catalog the new pointer via updateMetadata, so
+    # this is where the default (write_full_path_in_iceberg_metadata=0) schemeless `location`
+    # actually gets exercised.
     instance.query(
         f"INSERT INTO {table_ref} VALUES ('hello')",
         settings={"allow_insert_into_iceberg": 1},
