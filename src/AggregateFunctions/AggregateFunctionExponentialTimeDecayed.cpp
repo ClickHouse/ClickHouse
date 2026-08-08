@@ -178,6 +178,15 @@ public:
             const auto & tuple = assert_cast<const ColumnTuple &>(*columns[0]);
             value = assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)).getData()[row_num];
             time = assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)).getData()[row_num];
+            const Float64 stored_decay_length
+                = assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)).getData()[row_num];
+            if (!std::isfinite(stored_decay_length) || stored_decay_length != decay_length)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Stored decay length {} does not match decay length {} of aggregate function {}",
+                    stored_decay_length,
+                    decay_length,
+                    getName());
         }
         else
         {
@@ -227,7 +236,8 @@ public:
                 : state.weight;
             Tuple decaying_value{
                 Field(result),
-                Field(state.initialized ? state.max_time : 0.0)};
+                Field(state.initialized ? state.max_time : 0.0),
+                Field(decay_length)};
             to.insert(Field(decaying_value));
         }
     }
