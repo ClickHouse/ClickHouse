@@ -496,41 +496,26 @@ static std::string_view reverseComparisonOperator(std::string_view op)
 }
 
 
-static void setTypedRangeBounds(
-    KeyCondition::RPNElement & element,
-    std::string_view comparison,
-    const Field & value,
-    const DataTypePtr & type)
+static void setTypedRangeBounds(KeyCondition::RPNElement & element, const DataTypePtr & type)
 {
-    if (!type)
+    if (!type || element.range.left.isPositiveInfinity() || element.range.right.isNegativeInfinity())
         return;
 
-    /// A non-NULL constant does not need Nullable or LowCardinality wrappers. Removing them
-    /// keeps comparison masks non-nullable while preserving the value's SQL type (including
-    /// Decimal/DateTime64 scale and Enum definition).
-    const auto constant_type = value.isNull() ? type : removeLowCardinalityAndNullable(type);
-    auto constant = std::make_shared<ConstantValue>(value, constant_type);
+    auto make_constant = [&](const Field & value)
+    {
+        /// A non-NULL constant does not need Nullable or LowCardinality wrappers. Removing them
+        /// keeps comparison masks non-nullable while preserving Decimal/DateTime64 scale.
+        const auto constant_type = value.isNull() ? type : removeLowCardinalityAndNullable(type);
+        return std::make_shared<ConstantValue>(value, constant_type);
+    };
+
     KeyCondition::RPNElement::TypedRangeBounds bounds;
-
-    if (comparison == "equals" || comparison == "notEquals" || comparison == "isNotDistinctFrom")
-    {
-        bounds.left = constant;
-        bounds.right = std::move(constant);
-        bounds.left_included = true;
-        bounds.right_included = true;
-    }
-    else if (comparison == "less" || comparison == "lessOrEquals")
-    {
-        bounds.right = std::move(constant);
-        bounds.right_included = comparison == "lessOrEquals";
-    }
-    else if (comparison == "greater" || comparison == "greaterOrEquals")
-    {
-        bounds.left = std::move(constant);
-        bounds.left_included = comparison == "greaterOrEquals";
-    }
-    else
-        return;
+    if (!element.range.left.isNegativeInfinity())
+        bounds.left = make_constant(element.range.left);
+    if (!element.range.right.isPositiveInfinity())
+        bounds.right = make_constant(element.range.right);
+    bounds.left_included = element.range.left_included;
+    bounds.right_included = element.range.right_included;
 
     element.typed_range_bounds = std::make_shared<KeyCondition::RPNElement::TypedRangeBounds>(std::move(bounds));
 }
@@ -4123,7 +4108,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
         const bool atom_created = atom_it->second(out, const_value);
         if (atom_created && preserve_typed_range_bounds)
-            setTypedRangeBounds(out, func_name, const_value, const_type);
+            setTypedRangeBounds(out, const_type);
         return atom_created;
     }
     if (node.tryGetConstant(const_value, const_type))
