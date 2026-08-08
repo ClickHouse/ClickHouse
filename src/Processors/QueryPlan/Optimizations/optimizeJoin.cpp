@@ -308,6 +308,13 @@ struct RuntimeHashStatisticsContext
 static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
     const auto & aggregator_params = aggregating_step.getAggregatorParameters();
+
+    /// Global aggregation (no GROUP BY keys) produces exactly one row regardless of the input,
+    /// so the estimate is precise even when the input row count is not backed by column statistics
+    /// (with lazy statistics loading such a relation requests no columns and gets no estimator).
+    if (aggregator_params.keys.empty())
+        return RelationStats{.estimated_rows = 1, .table_name = {}, .source = RowEstimateSource::Statistics};
+
     std::optional<Float64> total_number_of_distinct_values = 1;
     RelationStats aggregation_stats;
     /// Carry imprecision and source from the input, or the annotation is lost for aggregation subqueries.
