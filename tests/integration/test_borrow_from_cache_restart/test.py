@@ -1,13 +1,19 @@
+import os.path
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
+CACHE_DISK_CONFIG = os.path.join(os.path.dirname(__file__), "configs/cache_disk.xml")
+CACHE_DISK_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/cache_disk.xml"
+
 node = cluster.add_instance(
     "node",
     main_configs=[
         "configs/base.xml",
+        "configs/backups.xml",
         "configs/cache_disk.xml",
     ],
     stay_alive=True,
@@ -363,3 +369,131 @@ def test_borrow_from_cache_restart_with_absent_cache(started_cluster):
 
     # The leftover table can still be dropped.
     node.query("DROP TABLE borrowed")
+
+
+def test_borrow_from_cache_restore_into_table_attached_while_cache_was_absent(
+    started_cluster,
+):
+    # Regression: `Log` / `TinyLog` / `StripeLog` recreate their missing table directory before the
+    # first `INSERT` (see `createTableDirectoryIfNeeded`), but `restoreDataImpl` skipped that step,
+    # so `RESTORE` into a table that attached while the cache was absent -- and whose directory
+    # therefore could not be recreated at attach time -- failed with `DIRECTORY_DOESNT_EXIST` until
+    # a regular `INSERT` happened first.
+    #
+    # The previous test leaves the cache configuration removed; bring it back first.
+    node.copy_file_to_container(CACHE_DISK_CONFIG, CACHE_DISK_CONFIG_IN_CONTAINER)
+    node.restart_clickhouse()
+
+    for table in ["borrowed_restore_log", "borrowed_restore_stripelog"]:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        "CREATE TABLE borrowed_restore_log (key UInt64) ENGINE = Log SETTINGS disk = 'borrowed_cfg'"
+    )
+    node.query(
+        "CREATE TABLE borrowed_restore_stripelog (key UInt64) ENGINE = StripeLog SETTINGS disk = 'borrowed_cfg'"
+    )
+    node.query("INSERT INTO borrowed_restore_log VALUES (1), (2), (3)")
+    node.query("INSERT INTO borrowed_restore_stripelog VALUES (1), (2), (3)")
+    node.query(
+        "BACKUP TABLE borrowed_restore_log, TABLE borrowed_restore_stripelog "
+        "TO File('/backups/restore_after_read_only_attach/')"
+    )
+
+    # Remove the cache and restart: the tables reattach (empty) while the disk is read-only, so
+    # their directories cannot be recreated at attach time.
+    node.exec_in_container(["bash", "-c", f"rm {CACHE_DISK_CONFIG_IN_CONTAINER}"])
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            "SELECT is_read_only FROM system.disks WHERE name = 'borrowed_cfg'"
+        ).strip()
+        == "1"
+    )
+
+    # Bring the cache back at runtime: registering the cache makes the borrow disk writable again,
+    # but the table directories are still missing.
+    node.copy_file_to_container(CACHE_DISK_CONFIG, CACHE_DISK_CONFIG_IN_CONTAINER)
+    node.query("SYSTEM RELOAD CONFIG")
+    assert (
+        node.query(
+            "SELECT is_read_only FROM system.disks WHERE name = 'borrowed_cfg'"
+        ).strip()
+        == "0"
+    )
+
+    # RESTORE appends into the existing (empty) tables, so it must recreate the directories too.
+    node.query(
+        "RESTORE TABLE borrowed_restore_log, TABLE borrowed_restore_stripelog "
+        "FROM File('/backups/restore_after_read_only_attach/')"
+    )
+    assert node.query("SELECT count() FROM borrowed_restore_log").strip() == "3"
+    assert node.query("SELECT count() FROM borrowed_restore_stripelog").strip() == "3"
+
+    for table in ["borrowed_restore_log", "borrowed_restore_stripelog"]:
+        node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_borrow_from_cache_set_join_failed_insert_leaves_no_rows_in_memory(
+    started_cluster,
+):
+    # Regression: the sink shared by persistent `Set` / `Join` tables inserted the block into the
+    # in-memory state before opening the persistent backup file. When the disk rejects the write
+    # (here: a `borrow_from_cache` disk whose cache is not registered), the `INSERT` failed but the
+    # rows stayed visible in memory until restart. A failed `INSERT` must leave no trace.
+    #
+    # Make sure the cache configuration is in place regardless of what ran before.
+    node.copy_file_to_container(CACHE_DISK_CONFIG, CACHE_DISK_CONFIG_IN_CONTAINER)
+    node.restart_clickhouse()
+
+    for table in ["borrowed_set", "borrowed_join"]:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        "CREATE TABLE borrowed_set (key UInt64) ENGINE = Set "
+        "SETTINGS disk = 'borrowed_cfg', persistent = 1"
+    )
+    node.query(
+        "CREATE TABLE borrowed_join (key UInt64, value String) ENGINE = Join(ANY, LEFT, key) "
+        "SETTINGS disk = 'borrowed_cfg', persistent = 1"
+    )
+    node.query("INSERT INTO borrowed_set VALUES (1)")
+    node.query("INSERT INTO borrowed_join VALUES (1, 'a')")
+    assert (
+        node.query(
+            "SELECT count() FROM numbers(10) WHERE number IN borrowed_set"
+        ).strip()
+        == "1"
+    )
+    assert node.query("SELECT count() FROM borrowed_join").strip() == "1"
+
+    # Remove the cache and restart: the tables reattach empty and the disk is read-only.
+    node.exec_in_container(["bash", "-c", f"rm {CACHE_DISK_CONFIG_IN_CONTAINER}"])
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            "SELECT count() FROM numbers(10) WHERE number IN borrowed_set"
+        ).strip()
+        == "0"
+    )
+    assert node.query("SELECT count() FROM borrowed_join").strip() == "0"
+
+    # The INSERT fails because the backup file cannot be written, and the rows must not remain
+    # visible in the in-memory state of the table.
+    assert "read-only" in node.query_and_get_error(
+        "INSERT INTO borrowed_set VALUES (7)"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM numbers(10) WHERE number IN borrowed_set"
+        ).strip()
+        == "0"
+    )
+    assert "read-only" in node.query_and_get_error(
+        "INSERT INTO borrowed_join VALUES (7, 'x')"
+    )
+    assert node.query("SELECT count() FROM borrowed_join").strip() == "0"
+
+    for table in ["borrowed_set", "borrowed_join"]:
+        node.query(f"DROP TABLE {table} SYNC")
+
+    # Restore the cache configuration so the module ends in the same state it started in.
+    node.copy_file_to_container(CACHE_DISK_CONFIG, CACHE_DISK_CONFIG_IN_CONTAINER)
