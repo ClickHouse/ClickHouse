@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <config.h>
+#if USE_PARQUET
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 
@@ -15,19 +17,14 @@ using namespace DB::Parquet;
 /// consume. A primitive whose `idx_in_output_block` is past `sample_block` occupies a slot that
 /// `applyPrewhere` pops off `RowSubgroup::output` after the last PREWHERE step; if no step claimed
 /// that column, the main step still decodes it and `output.at(idx_in_output_block)` throws
-/// `std::out_of_range`, which the server turns into an abort. The invariant is therefore over
-/// `Reader`'s own scheduling state, not over any query result: after `preparePrewhere`, a
-/// tail-slot primitive that no step claimed carries the `SIZE_MAX` sentinel that keeps
-/// `ReadManager` from ever scheduling it.
+/// `std::out_of_range`.
 ///
-/// The state is asserted here rather than through SQL because it is not SQL-constructible: over 979
-/// observations across the parquet corpus and 28 targeted query shapes, no query left a tail-slot
-/// primitive at `first_step_to_calculate == 0`. The specific input that produces it in CI is
-/// unidentified; a query test written today would pass on unfixed code and assert nothing.
+/// `04828_parquet_prewhere_hive_partition_column` covers the query that reaches this. These tests
+/// pin the scheduling state directly, including the unresolved-index boundary a query cannot build.
 ///
-/// The three assertions are one witness and two anti-over-broadness controls: a claimed PREWHERE
-/// input must keep its step index, and a primitive inside `sample_block` must stay at 0. A
-/// single-assertion test would also be satisfied by suppressing every column.
+/// The assertions are one witness plus two anti-over-broadness controls: a claimed PREWHERE input
+/// keeps its step index, and a primitive inside `sample_block` stays at 0. Asserting only the
+/// witness would also pass if every column were suppressed.
 namespace
 {
 
@@ -101,11 +98,10 @@ TEST(ParquetReaderPrewhere, SuppressesUnclaimedTailColumn)
     EXPECT_EQ(f.reader.primitive_columns[1].first_step_to_calculate, 0u);
 }
 
-/// `PrimitiveColumnInfo::idx_in_output_block` defaults to `UINT64_MAX`, and `SchemaConverter`
-/// guarantees it was resolved only with a `chassert`, which is a no-op outside debug and sanitizer
-/// builds. An unresolved index compares greater than `sample_block->columns()`, so without the upper
-/// bound against `extended_sample_block` such a column would be silently dropped from the read
-/// instead of tripping the assert.
+/// An unresolved `idx_in_output_block` (defaults to `UINT64_MAX`; only a `chassert` guarantees
+/// `SchemaConverter` resolved it) also compares greater than `sample_block->columns()`. Without the
+/// upper bound against `extended_sample_block` it would be dropped from the read instead of
+/// tripping the assert.
 TEST(ParquetReaderPrewhere, KeepsUnresolvedOutputIndexScheduled)
 {
     Fixture f;
@@ -121,3 +117,4 @@ TEST(ParquetReaderPrewhere, KeepsUnresolvedOutputIndexScheduled)
 
     EXPECT_EQ(f.reader.primitive_columns[4].first_step_to_calculate, 0u);
 }
+#endif
