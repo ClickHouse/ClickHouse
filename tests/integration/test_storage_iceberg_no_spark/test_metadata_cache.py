@@ -204,3 +204,74 @@ def test_metadata_cache(started_cluster_iceberg_no_spark):
     assert result == "0\t0\t0", (
         f"Cache disabled query should have no hits, misses, or skips, got: {result}"
     )
+
+def test_metadata_cache_fresh_init_schemeless_location(started_cluster_iceberg_no_spark):
+    """
+    The main test_metadata_cache above only exercises the fresh-init cache hit against a
+    full-URI `location` (`s3://...`), because the table there is created by PyIceberg with an
+    explicit `location=`. That is not the format ClickHouse itself writes by default
+    (`write_full_path_in_iceberg_metadata=0` writes a schemeless `location`), and the warm
+    fresh-init hit for that default format depends on more than `cachedLocationMatchesTableRoot`
+    alone: `getDataSourceDescription`, namespace derivation, and the cache-probe acceptance path
+    all have to agree. Exercise the same cold/warm/fresh-init sequence against a table whose
+    metadata.json is entirely ClickHouse-written with the default (schemeless) location format.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = f"{root_namespace}.test_metadata_cache_schemeless"
+    table_ref = f"{CATALOG_NAME}.`{table_name}`"
+
+    create_clickhouse_iceberg_database(started_cluster_iceberg_no_spark, instance, CATALOG_NAME)
+
+    # Deliberately do not pass write_full_path_in_iceberg_metadata here: the default (0) is what
+    # makes ClickHouse write a schemeless `location` into metadata.json.
+    instance.query(
+        f"""
+CREATE TABLE {table_ref} (string_col String)
+ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')
+""",
+        settings={"allow_experimental_database_iceberg": 1},
+    )
+    instance.query(
+        f"INSERT INTO {table_ref} VALUES ('hello')",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    # Phase 1: Cold query.
+    query_id = f"iceberg-cache-schemeless-cold-{uuid.uuid4()}"
+    instance.query(f"SELECT string_col FROM {table_ref}", query_id=query_id)
+    instance.query("SYSTEM FLUSH LOGS")
+
+    cache_misses = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheMisses")
+    assert cache_misses > 0, "First query should have cache misses (cold start)"
+
+    # Phase 2: Second query on the same IcebergMetadata object -> hit.
+    query_id = f"iceberg-cache-schemeless-warm-{uuid.uuid4()}"
+    instance.query(f"SELECT string_col FROM {table_ref}", query_id=query_id)
+    instance.query("SYSTEM FLUSH LOGS")
+
+    cache_hits = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheHits")
+    cache_misses = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheMisses")
+    assert cache_hits > 0, "Second query should have cache hits"
+    assert cache_misses == 0, "Second query should have no cache misses"
+
+    # Phase 3: Drop and recreate the database to force a fresh IcebergMetadata initialisation.
+    # The cache is still warm, and the table's metadata.json has a schemeless `location`, so the
+    # fresh-init probe must still hit: cachedLocationMatchesTableRoot no longer needs to verify
+    # table_namespace for schemeless locations, and the cache key is namespaced by
+    # getDataSourceDescription, so a hit can only come from this exact backend.
+    instance.query(f"DROP DATABASE {CATALOG_NAME}")
+    create_clickhouse_iceberg_database(started_cluster_iceberg_no_spark, instance, CATALOG_NAME)
+
+    query_id = f"iceberg-cache-schemeless-fresh-init-{uuid.uuid4()}"
+    instance.query(f"SELECT string_col FROM {table_ref}", query_id=query_id)
+    instance.query("SYSTEM FLUSH LOGS")
+
+    cache_hits = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheHits")
+    cache_misses = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheMisses")
+    assert cache_hits > 0, (
+        "Fresh IcebergMetadata init should hit the cache for a schemeless-location table"
+    )
+    assert cache_misses == 0, (
+        "Fresh IcebergMetadata init should not miss (cache was warm from phase 1)"
+    )
