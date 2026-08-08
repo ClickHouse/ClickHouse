@@ -1,0 +1,91 @@
+The following tables list features and self-managed procedures that are marked as unsupported in ClickHouse Cloud. Each entry names the specific unsupported capability, even when its source page also covers supported functionality.
+
+### Managed infrastructure and operations {#unsupported-managed-infrastructure-and-operations}
+
+| Unsupported capability | Documentation |
+|---|---|
+| Self-managed `ClickHouse Keeper` deployment and configuration | [Keeper guide](/guides/oss/deployment-and-scaling/keeper), [Secure ZooKeeper connections](/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper) |
+| Manual TLS certificate provisioning and server configuration | [ACME provisioning](/concepts/features/security/tls/configuring-tls-acme-client), [TLS configuration](/concepts/features/security/tls/configuring-tls) |
+| Manual hot/warm/cold storage-tier configuration with `TTL` | [Guide](/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture) |
+| Running self-managed hardware performance tests | [Guide](/concepts/features/performance/troubleshoot/performance-test) |
+| Applying self-managed operational recommendations | [Guide](/guides/oss/best-practices/tips) |
+
+### Authentication and security {#unsupported-authentication-and-security}
+
+| Unsupported capability | Documentation |
+|---|---|
+| HTTP external authentication | [Reference](/concepts/features/security/external-authenticators/http) |
+| Kerberos external authentication | [Reference](/concepts/features/security/external-authenticators/kerberos) |
+| LDAP authentication and role mapping | [Configuration](/concepts/features/security/configuring-ldap), [Authenticator](/concepts/features/security/external-authenticators/ldap) |
+| X.509 certificate authentication | [User authentication](/concepts/features/security/ssl-user-auth), [External authenticator](/concepts/features/security/external-authenticators/ssl-x509) |
+
+### Interfaces and integrations {#unsupported-interfaces-and-integrations}
+
+| Unsupported capability | Documentation |
+|---|---|
+| PostgreSQL wire-protocol interface | [Reference](/concepts/features/interfaces/postgresql) |
+| SSH interface with PTY | [Reference](/concepts/features/interfaces/ssh) |
+| `MaterializedPostgreSQL` replication engine | [ClickPipes guide](/integrations/clickpipes/postgres/connecting-to-postgresql#using-the-materializedpostgresql-database-engine), [Connector guide](/integrations/connectors/data-sources/postgres), [Database engine](/reference/engines/database-engines/materialized-postgresql), [Table engine](/reference/engines/table-engines/integrations/materialized-postgresql) |
+| ODBC integration and the `ODBC` table engine | [Integration guide](/integrations/connectors/data-ingestion/odbc-with-clickhouse), [Table engine](/reference/engines/table-engines/integrations/odbc) |
+| MinIO S3-compatible object-storage integration | [Guide](/integrations/connectors/data-ingestion/s3-minio) |
+| Tigris S3-compatible object-storage integration | [Guide](/integrations/connectors/data-ingestion/s3-tigris) |
+
+### Database and table engines {#unsupported-database-and-table-engines}
+
+| Unsupported capability | Documentation |
+|---|---|
+| `MySQL` database engine | [Reference](/reference/engines/database-engines/mysql) |
+| `EmbeddedRocksDB` table engine | [Reference](/reference/engines/table-engines/integrations/embedded-rocksdb) |
+| `HDFS` table engine | [Reference](/reference/engines/table-engines/integrations/hdfs) |
+| `Hive` table engine | [Reference](/reference/engines/table-engines/integrations/hive) |
+| `JDBC` table engine | [Reference](/reference/engines/table-engines/integrations/jdbc) |
+| `Redis` table engine for federated queries | [Reference](/reference/engines/table-engines/integrations/redis) |
+| `SQLite` table engine | [Reference](/reference/engines/table-engines/integrations/sqlite) |
+| `TimeSeries` table engine | [Reference](/reference/engines/table-engines/integrations/time-series) |
+| `YTsaurus` table engine | [Reference](/reference/engines/table-engines/integrations/ytsaurus) |
+| `Log`-family table engines (`Log`, `StripeLog`, and `TinyLog`) | [Family overview](/reference/engines/table-engines/log-family), [`Log`](/reference/engines/table-engines/log-family/log), [`StripeLog`](/reference/engines/table-engines/log-family/stripelog), [`TinyLog`](/reference/engines/table-engines/log-family/tinylog) |
+
+### Dictionaries and server configuration {#unsupported-dictionaries-and-server-configuration}
+
+| Unsupported capability | Documentation |
+|---|---|
+| Named collections and the `CREATE NAMED COLLECTION` and `ALTER NAMED COLLECTION` statements | [Overview](/concepts/features/configuration/server-config/named-collections), [Create](/reference/statements/create/named-collection), [Alter](/reference/statements/alter/named-collection) |
+| File-based dictionary configuration | [Reference](/reference/statements/create/dictionary#creating-a-dictionary-with-a-configuration-file) |
+| Embedded geobase dictionaries | [Reference](/reference/statements/create/dictionary/embedded) |
+| Local `YAMLRegExpTree` dictionary sources | [Layout guide](/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source), [Source reference](/reference/statements/create/dictionary/sources/yamlregexptree) |
+| `YTsaurus` dictionary source | [Reference](/reference/statements/create/dictionary/sources/ytsaurus) |
+| Japanese tokenizer dictionaries configured on the server | [Reference](/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary) |
+
+### Data formats and codecs {#unsupported-data-formats-and-codecs}
+
+| Unsupported capability | Documentation |
+|---|---|
+| `CapnProto` format with server-side schema files | [Format reference](/reference/formats/CapnProto), [Guide](/guides/clickhouse/data-formats/binary#capn-proto) |
+| `Protobuf`, `ProtobufList`, and `ProtobufSingle` formats with server-side schema files | [Guide](/guides/clickhouse/data-formats/binary#protocol-buffers), [`ProtobufList`](/reference/formats/Protobuf/ProtobufList), [`ProtobufSingle`](/reference/formats/Protobuf/ProtobufSingle) |
+| Obsolete `ZSTD_QAT` and `DEFLATE_QPL` codecs | [`ZSTD_QAT`](/reference/statements/create/table#zstd_qat), [`DEFLATE_QPL`](/reference/statements/create/table#deflate_qpl) |
+
+### Functions and experimental features {#unsupported-functions-and-experimental-features}
+
+| Unsupported capability | Documentation |
+|---|---|
+| Experimental natural-language processing functions | [Reference](/reference/functions/regular-functions/nlp-functions) |
+| Experimental multi-statement transactions with commit and rollback | [Guide](/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) |
+| Experimental transaction introspection functions | [`transactionID`](/reference/functions/regular-functions/other-functions#transactionID), [`transactionLatestSnapshot`](/reference/functions/regular-functions/other-functions#transactionLatestSnapshot), [`transactionOldestSnapshot`](/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
+| Time-window functions for `WindowView` | [Reference](/reference/functions/regular-functions/time-window-functions) |
+| Experimental `WindowView` | [Reference](/reference/statements/create/view#window-view) |
+| WebAssembly user-defined functions | [Overview](/reference/functions/regular-functions/udf#webassembly-user-defined-functions), [Guide](/reference/functions/regular-functions/wasm_udf) |
+| Driver-based executable user-defined functions | [Reference](/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions) |
+| `filesystem` table function over server-local files | [Reference](/reference/functions/table-functions/filesystem) |
+
+### Administration and access control {#unsupported-administration-and-access-control}
+
+| Unsupported capability | Documentation |
+|---|---|
+| Column-statistics operations with `ALTER TABLE` | [Reference](/reference/statements/alter/statistics) |
+| User impersonation with `EXECUTE AS` | [Reference](/reference/statements/execute_as) |
+| Table-engine-specific grants | [Grant](/reference/statements/grant#table-engine), [Server setting](/reference/settings/server-settings/settings/other#table_engines_require_grant) |
+| The `GRANT ALL` privilege shortcut | [Reference](/reference/statements/grant#all) |
+| Server shutdown with `SYSTEM SHUTDOWN` | [Reference](/reference/statements/system#shutdown) |
+| Starting and stopping background fetches with `SYSTEM` statements | [`SYSTEM STOP FETCHES`](/reference/statements/system#stop-fetches), [`SYSTEM START FETCHES`](/reference/statements/system#start-fetches) |
+| Starting and stopping background merges with `SYSTEM` statements | [`SYSTEM STOP MERGES`](/reference/statements/system#stop-merges), [`SYSTEM START MERGES`](/reference/statements/system#start-merges) |
+| Starting and stopping background `TTL` merges with `SYSTEM` statements | [`SYSTEM STOP TTL MERGES`](/reference/statements/system#stop-ttl-merges), [`SYSTEM START TTL MERGES`](/reference/statements/system#start-ttl-merges) |
