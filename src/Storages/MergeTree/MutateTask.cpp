@@ -1504,7 +1504,7 @@ static void processStatisticsChanges(
         /// Remove old statistics files.
         for (const auto & [filename, _] : source_checksums.files)
         {
-            if (filename.starts_with(STATS_FILE_PREFIX) && filename.ends_with(STATS_FILE_SUFFIX))
+            if (IDataPartStatisticsStorage::isStatisticsFile(filename))
                 files_to_rename.emplace_back(filename, "");
         }
     }
@@ -2950,9 +2950,9 @@ private:
         /// the new part has no archive at all.
         if (ctx->packed_skip_index_archive_dirty && !ctx->mutating_pipeline_builder.initialized())
         {
-            if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage()))
+            if (const auto * source_index_storage = ctx->source_part->getDataPartStorage().getIndexStorage())
             {
-                disk_storage->filterPackedSkipIndicesArchiveTo(
+                source_index_storage->filterPackedSkipIndicesArchiveTo(
                     ctx->dropped_skip_index_archive_file_names,
                     ctx->new_data_part->getDataPartStorage(),
                     ctx->context->getWriteSettings(),
@@ -2971,8 +2971,8 @@ private:
             /// before that commit; seed the new storage's reader from the source archive index so it
             /// can resolve packed virtual files. Mirrors filterPackedSkipIndicesArchiveTo and
             /// fillSkipIndicesChecksums.
-            if (auto * new_disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&ctx->new_data_part->getDataPartStorage()))
-                new_disk_storage->seedSkipIndicesPackedReaderFrom(ctx->source_part->getDataPartStorage());
+            if (auto * new_index_storage = ctx->new_data_part->getDataPartStorage().getIndexStorage())
+                new_index_storage->seedSkipIndicesPackedReaderFrom(ctx->source_part->getDataPartStorage());
         }
 
         /// Column-only mutations keep the source part's codec, only the explicitness of a due `RECOMPRESS` is consulted.
@@ -3542,9 +3542,9 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     /// and therefore needs every surviving index that lives inside the archive in indices_to_recalc.
     /// On the other hand, a mutation that only touches per-file indices (or materializes a brand
     /// new index that isn't packed) leaves the archive untouched.
-    const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
+    const auto * source_index_storage = source_part->getDataPartStorage().getIndexStorage();
 
-    if (source_disk_storage)
+    if (source_index_storage)
     {
         /// DROP INDEX removes the index from metadata before the mutation runs, so ctx->indices_to_drop
         /// (set of shared_ptr keyed off current metadata) stays empty here. Probe the source archive
@@ -3596,13 +3596,13 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                     const String candidate = idx_file_name + sub + ext;
                     if (surviving_index_owned_files.contains(candidate))
                         continue;
-                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(candidate))
+                    if (source_index_storage->isFileInPackedSkipIndicesArchive(candidate))
                         ctx->dropped_skip_index_archive_file_names.insert(candidate);
                 }
                 const String mrk_candidate = idx_file_name + sub + ctx->mrk_extension;
                 if (surviving_index_owned_files.contains(mrk_candidate))
                     continue;
-                if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk_candidate))
+                if (source_index_storage->isFileInPackedSkipIndicesArchive(mrk_candidate))
                     ctx->dropped_skip_index_archive_file_names.insert(mrk_candidate);
             }
         }
@@ -3617,7 +3617,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         /// that decides to pack, which can happen even if no source-archive member is in the
         /// recalc set (e.g. the threshold was raised and a per-file source index now fits
         /// inside the archive).
-        const bool source_has_archive = source_disk_storage->hasSkipIndicesPackedArchive();
+        const bool source_has_archive = source_index_storage->hasSkipIndicesPackedArchive();
         const bool writer_can_open_archive =
             (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
             && !ctx->indices_to_recalc.empty();
@@ -3656,10 +3656,10 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                          source_part->checksums, file_name, &source_part->getDataPartStorage()))
                 {
                     const String data = file_name + sub.suffix + sub.extension;
-                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(data))
+                    if (source_index_storage->isFileInPackedSkipIndicesArchive(data))
                         ctx->preserved_skip_index_archive_file_names.insert(data);
                     const String mrk = file_name + sub.suffix + ctx->mrk_extension;
-                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk))
+                    if (source_index_storage->isFileInPackedSkipIndicesArchive(mrk))
                         ctx->preserved_skip_index_archive_file_names.insert(mrk);
                 }
             }

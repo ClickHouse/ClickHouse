@@ -804,11 +804,6 @@ private:
     /// The number of subcolumns can be infinite due to dynamic subcolumns in JSON, so we use LRU cache here.
     mutable Poco::LRUCache<String, ColumnSize> subcolumns_sizes_cache = Poco::LRUCache<String, ColumnSize>(1024);
 
-    /// PackedFilesReader for statistics archive.
-    /// Lazily loaded on first access to loadStatistics when packed format is used.
-    mutable std::mutex statistics_reader_mutex;
-    mutable std::unique_ptr<PackedFilesReader> statistics_reader TSA_GUARDED_BY(statistics_reader_mutex);
-
 protected:
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
@@ -926,7 +921,10 @@ private:
 
     ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
     ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
-    PackedFilesReader * getStatisticsPackedReader() const;
+
+    /// Reader over the packed statistics archive, owned by the storage's statistics component;
+    /// nullptr when this part has no packed statistics (per checksums) or no statistics component.
+    const PackedFilesReader * getStatisticsPackedReader() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 

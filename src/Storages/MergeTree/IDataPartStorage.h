@@ -90,6 +90,95 @@ struct HardlinkedFiles
     NameSet hardlinks_from_source_part;
 };
 
+class PackedFilesReader;
+class PackedFilesWriter;
+
+/// The data-part storage layer is split into a family of abstractions - the part itself, its
+/// projections, and its index / statistics / manifest components - which were historically mixed
+/// into the single IDataPartStorage. Each abstraction is declared here and implemented by its OWN
+/// class at every implementation level (DataPartStorageOnDiskBase / OnDiskFull / OnDiskPacked files),
+/// so each owns its disk operations and file-naming/detection knowledge separately.
+class IDataPartStorage;
+class IDataPartManifestStorage;
+class IDataPartIndexStorage;
+class IDataPartStatisticsStorage;
+class IDataPartProjectionStorage;
+
+using DataPartProjectionStoragePtr = std::shared_ptr<const IDataPartProjectionStorage>;
+using MutableDataPartProjectionStoragePtr = std::shared_ptr<IDataPartProjectionStorage>;
+
+/// Access protocol for a data part's manifest - a future per-part inventory of the part's files and
+/// components. Declared now as the structural home for that protocol; no manifest exists yet.
+class IDataPartManifestStorage
+{
+public:
+    virtual ~IDataPartManifestStorage() = default;
+
+    /// Whether this part currently has a manifest. Always false until manifests are introduced.
+    virtual bool hasManifest() const = 0;
+};
+
+/// Physical-layer access to a data part's skip-index files, including the optional per-part
+/// skp_idx.packed archive that bundles index substreams. Owns where index files live relative to the
+/// part (standalone on disk, or as members of an archive) and the archive read/copy/filter operations.
+class IDataPartIndexStorage
+{
+public:
+    virtual ~IDataPartIndexStorage() = default;
+
+    /// True iff @name resolves to a substream inside this part's skp_idx.packed archive (and not a
+    /// standalone file on disk).
+    virtual bool isFileInPackedSkipIndicesArchive(const std::string & name) const = 0;
+
+    /// True iff this part has a packed skip-index archive (skp_idx.packed).
+    virtual bool hasSkipIndicesPackedArchive() const = 0;
+
+    /// Copy the named virtual files from this storage's skp_idx.packed archive into @target so the
+    /// writer can ship a complete archive after also writing fresh recalc'd entries. Names not present
+    /// in the archive are skipped silently.
+    virtual void copyPackedSkipIndicesFilesInto(
+        const NameSet & file_names,
+        PackedFilesWriter & target,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings) const = 0;
+
+    /// Rewrite this storage's skp_idx.packed into a fresh archive on @new_storage, dropping any member
+    /// whose name is in @dropped_skip_index_archive_file_names; updates @checksums accordingly.
+    virtual void filterPackedSkipIndicesArchiveTo(
+        const NameSet & dropped_skip_index_archive_file_names,
+        IDataPartStorage & new_storage,
+        const WriteSettings & write_settings,
+        const ReadSettings & read_settings,
+        MergeTreeDataPartChecksums & checksums,
+        bool sync) const = 0;
+
+    /// Seed this storage's cached archive reader from @source's archive (used when the unchanged
+    /// skp_idx.packed is hardlinked from @source into this new part).
+    virtual void seedSkipIndicesPackedReaderFrom(const IDataPartStorage & source) const = 0;
+};
+
+/// Physical-layer access to a data part's column-statistics files. Owns the statistics file naming,
+/// detection, and the packed statistics archive ("statistics.packed") access; the per-column wide
+/// layout flows through the part storage's generic read/write primitives.
+class IDataPartStatisticsStorage
+{
+public:
+    virtual ~IDataPartStatisticsStorage() = default;
+
+    /// True iff @file_name is a per-column statistics file ("statistics_<column>.stats").
+    static bool isStatisticsFile(const std::string & file_name);
+
+    /// Lazily-opened, cached reader over the packed statistics archive. The caller decides whether
+    /// the part has the archive (from checksums) before calling; probing the disk here would wrongly
+    /// pick up a leftover archive that the part does not own.
+    virtual const PackedFilesReader * getPackedStatisticsReader(const ReadSettings & read_settings) const = 0;
+
+    /// Read one member of the packed statistics archive, resolving the archive's current location
+    /// (the part may have been renamed or moved since the reader was opened).
+    virtual std::unique_ptr<ReadBufferFromFileBase> readPackedStatisticsFile(
+        const String & file_name, const ReadSettings & read_settings, size_t file_size) const = 0;
+};
+
 /// This is an abstraction of storage for data part files.
 /// Ideally, it is assumed to contain read-only methods from IDisk.
 /// It is not fulfilled now, but let's try our best.
@@ -109,15 +198,27 @@ public:
     /// Can add it if needed                             ///                          'database/table/moving'
     /// virtual std::string getRelativeRootPath() const = 0;
 
-    /// Get a storage for projection.
-    virtual std::shared_ptr<IDataPartStorage> getProjection(const std::string & name, bool use_parent_transaction = true) = 0; // NOLINT
+    /// Get a storage for projection. A projection is stored exactly like a part, so its storage is a
+    /// distinctly-typed IDataPartProjectionStorage that carries the projection naming/identity.
+    virtual MutableDataPartProjectionStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) = 0; // NOLINT
 
-    virtual std::shared_ptr<IDataPartStorage> getProjectionNoInitialize(const std::string & name, bool use_parent_transaction = true) // NOLINT
+    virtual MutableDataPartProjectionStoragePtr getProjectionNoInitialize(const std::string & name, bool use_parent_transaction = true) // NOLINT
     {
         return getProjection(name, use_parent_transaction);
     }
 
-    virtual std::shared_ptr<const IDataPartStorage> getProjection(const std::string & name) const = 0;
+    virtual DataPartProjectionStoragePtr getProjection(const std::string & name) const = 0;
+
+    /// Component storages of this part: separate objects, each owning its component's disk
+    /// operations and file naming/detection over this storage's files. May be null for a storage
+    /// that does not implement the component (callers guard, mirroring the concrete-storage casts
+    /// these accessors replace).
+    virtual IDataPartManifestStorage * getManifestStorage() { return nullptr; }
+    virtual const IDataPartManifestStorage * getManifestStorage() const { return nullptr; }
+    virtual IDataPartIndexStorage * getIndexStorage() { return nullptr; }
+    virtual const IDataPartIndexStorage * getIndexStorage() const { return nullptr; }
+    virtual IDataPartStatisticsStorage * getStatisticsStorage() { return nullptr; }
+    virtual const IDataPartStatisticsStorage * getStatisticsStorage() const { return nullptr; }
 
     /// Part directory exists.
     virtual bool exists() const = 0;
@@ -389,6 +490,30 @@ public:
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
+
+/// Storage for a projection sub-part. A projection is physically stored just like a part, so this
+/// is-a IDataPartStorage; the extra surface is the projection identity (its name and the ".proj" /
+/// ".tmp_proj" directory naming) that used to be reconstructed by callers from the part directory.
+/// IDataPartStorage is a virtual base so the concrete projection storages can join this interface
+/// with the concrete part-storage implementations without duplicating the storage subobject.
+class IDataPartProjectionStorage : public virtual IDataPartStorage
+{
+public:
+    /// Projection name: the part directory without its projection suffix.
+    std::string getProjectionName() const;
+
+    /// True iff this storage's directory is a projection directory ("<name>.proj" / "<name>.tmp_proj").
+    bool isProjection() const;
+
+    /// Directory name of a projection: "<name>.proj", or "<name>.tmp_proj" while it is being built.
+    static std::string getProjectionDirectoryName(const std::string & projection_name, bool is_temp);
+
+    /// True iff @directory_name is a projection directory ("*.proj" or "*.tmp_proj").
+    static bool isProjectionDirectoryName(const std::string & directory_name);
+
+    static constexpr auto PROJECTION_DIRECTORY_SUFFIX = ".proj";
+    static constexpr auto TEMP_PROJECTION_DIRECTORY_SUFFIX = ".tmp_proj";
+};
 
 /// A holder that encapsulates data part storage and
 /// gives access to const storage from const methods

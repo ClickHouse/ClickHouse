@@ -1192,35 +1192,23 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAnd
     return *minimum_size_column;
 }
 
-PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
+const PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
 {
-    std::lock_guard lock(statistics_reader_mutex);
-    if (statistics_reader)
-        return statistics_reader.get();
-
-    const String filename = String(ColumnsStatistics::FILENAME);
-    if (!checksums.has(filename))
+    /// The part decides whether it has the archive (from checksums); the storage's statistics
+    /// component owns the reader over it.
+    if (!checksums.has(String(ColumnsStatistics::FILENAME)))
         return nullptr;
 
-    const auto & storage_path = getDataPartStorage().getRelativePath();
-    const String packed_file = fs::path(storage_path) / filename;
-    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
-
-    if (!disk_storage)
+    const auto * statistics_storage = getDataPartStorage().getStatisticsStorage();
+    if (!statistics_storage)
         return nullptr;
 
-    statistics_reader = std::make_unique<PackedFilesReader>(
-        disk_storage->getDisk(),
-        packed_file,
-        storage.getContext()->getReadSettings());
-
-    return statistics_reader.get();
+    return statistics_storage->getPackedStatisticsReader(storage.getContext()->getReadSettings());
 }
 
 static const ColumnDescription * getColumnForStatisticsFile(const String & filename, const ColumnsDescription & all_columns, const NameSet & required_columns)
 {
-    chassert(filename.starts_with(STATS_FILE_PREFIX));
-    chassert(filename.ends_with(STATS_FILE_SUFFIX));
+    chassert(IDataPartStatisticsStorage::isStatisticsFile(filename));
 
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
     String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
@@ -1242,17 +1230,13 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
     ColumnsStatistics result;
     auto read_settings = storage.getContext()->getReadSettings();
 
-    /// The reader holds only the index; resolve the archive's current location here so a part
-    /// that has since been renamed or moved still reads from the right place.
-    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
-    if (!disk_storage)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics packed reader requires on-disk part storage");
-    const auto disk = disk_storage->getDisk();
-    const String packed_file = fs::path(getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME);
+    const auto * statistics_storage = getDataPartStorage().getStatisticsStorage();
+    if (!statistics_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Packed statistics require a storage with a statistics component");
 
     for (const auto & filename : reader.getFileNames())
     {
-        if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
+        if (!IDataPartStatisticsStorage::isStatisticsFile(filename))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} is not a statistics file", filename);
 
         const auto * column_desc = getColumnForStatisticsFile(filename, getColumnsDescription(), required_columns);
@@ -1260,7 +1244,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
             continue;
 
         size_t file_size = reader.getFileSize(filename);
-        auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
+        auto file_buf = statistics_storage->readPackedStatisticsFile(filename, read_settings, file_size);
         CompressedReadBuffer compressed_buf(*file_buf);
         try
         {
@@ -1295,7 +1279,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
     for (const auto & [filename, checksum] : checksums.files)
     {
-        if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
+        if (!IDataPartStatisticsStorage::isStatisticsFile(filename))
             continue;
 
         const auto * column_desc = getColumnForStatisticsFile(filename, getColumnsDescription(), required_columns);
@@ -1489,16 +1473,16 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     const String & projection_name, ProjectionDescriptionRawPtr projection, PartDirIntent intent, bool is_temp_projection)
 {
-    const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     /// The projection storage is stored on the resulting projection part for its lifetime, so create
     /// it in the dedicated arena (this is the part-lifetime projection-storage creation site).
     /// `CreateFresh` takes the non-initializing variant, so nothing is seeded from a nested leftover.
     MutableDataPartStoragePtr projection_storage;
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        const String projection_dir_name = IDataPartProjectionStorage::getProjectionDirectoryName(projection_name, is_temp_projection);
         projection_storage = intent == PartDirIntent::CreateFresh
-            ? getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection)
-            : getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+            ? getDataPartStorage().getProjectionNoInitialize(projection_dir_name, !is_temp_projection)
+            : getDataPartStorage().getProjection(projection_dir_name, !is_temp_projection);
     }
     if (intent == PartDirIntent::CreateFresh && projection_storage->exists())
     {
@@ -1553,7 +1537,7 @@ void IMergeTreeDataPart::loadProjections(
         if (projection.with_block_offset && isSystemColumnInvalidated(BlockOffsetColumn::name))
             continue;
 
-        auto path = projection.name + ".proj";
+        auto path = IDataPartProjectionStorage::getProjectionDirectoryName(projection.name, /*is_temp=*/false);
         if (getDataPartStorage().existsDirectory(path))
         {
             if (hasProjection(projection.name))
@@ -2831,7 +2815,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             catch (const Exception & ex)
             {
                 /// For projection parts check will mark them broken in loadProjections
-                if (!parent_part && filename.ends_with(".proj"))
+                if (!parent_part && filename.ends_with(IDataPartProjectionStorage::PROJECTION_DIRECTORY_SUFFIX))
                 {
                     std::string projection_name = fs::path(filename).stem();
                     LOG_INFO(storage.log, "Projection {} doesn't exist on start for part {}, marking it as broken", projection_name, name);
@@ -3135,14 +3119,14 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
 
 bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const
 {
-    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
-    if (!disk_storage)
+    const auto * index_storage = getDataPartStorage().getIndexStorage();
+    if (!index_storage)
         return false;
     const String file_name = skip_index.getFileName();
     /// Probe what the part actually holds, not the writer's current `getSubstreams`, so a legacy
     /// member inside `skp_idx.packed` on an upgraded part is found.
     for (const auto & substream : skip_index.getAllSubstreamsInPart(checksums, file_name, &getDataPartStorage()))
-        if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))
+        if (index_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))
             return true;
     return false;
 }

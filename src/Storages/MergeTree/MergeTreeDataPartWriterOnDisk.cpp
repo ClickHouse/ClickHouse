@@ -493,14 +493,14 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
 
         skip_indices_packed_file->preFinalize();
 
-        /// Seed the storage's PackedFilesReader from the in-memory archive index so the per-part
-        /// secondary-indices size accounting (which runs between preFinalize and the actual
+        /// Seed the index storage's PackedFilesReader from the in-memory archive index so the
+        /// per-part secondary-indices size accounting (which runs between preFinalize and the actual
         /// finalize) can answer existsFile / getFileSize without touching disk. On object-storage
         /// disks the archive file isn't visible until the underlying multipart upload completes,
         /// which only happens at finalize time; without this seed the accounting caches 0 for
         /// every packed substream.
-        if (auto * disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&getDataPartStorage()))
-            disk_storage->seedSkipIndicesPackedReader(packed_index);
+        if (auto * index_storage = dynamic_cast<DataPartIndexStorageOnDisk *>(getDataPartStorage().getIndexStorage()))
+            index_storage->seedSkipIndicesPackedReader(packed_index);
     }
 }
 
@@ -518,7 +518,7 @@ void MergeTreeDataPartWriterOnDisk::preloadPackedSkipIndicesArchive(
     if (!skip_indices_packed_writer)
         skip_indices_packed_writer = std::make_unique<PackedFilesWriter>();
 
-    source.copyPackedSkipIndicesFilesInto(
+    source.getIndexStorage()->copyPackedSkipIndicesFilesInto(
         files, *skip_indices_packed_writer, ReadSettings{}, settings.query_write_settings);
 }
 

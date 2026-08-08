@@ -8176,7 +8176,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         };
 
         auto projection_parts = part->getProjectionParts();
-        std::string proj_suffix = ".proj";
+        std::string proj_suffix = IDataPartProjectionStorage::PROJECTION_DIRECTORY_SUFFIX;
         std::unordered_set<String> defined_projections;
 
         for (const auto & [projection_name, projection_part] : projection_parts)
