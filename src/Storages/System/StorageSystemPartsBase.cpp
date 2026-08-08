@@ -44,8 +44,58 @@ namespace Setting
 }
 
 StoragesInfoStreamBase::StoragesInfoStreamBase(ContextPtr context)
-    : query_id(context->getCurrentQueryId()), lock_timeout(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds())), next_row(0), rows(0)
+    : query_id(context->getCurrentQueryId()), lock_timeout(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds())), query_status(context->getProcessListElement()), next_row(0), rows(0)
 {
+}
+
+StoragesInfo StoragesInfoStreamBase::next()
+{
+    while (next_row < rows)
+    {
+        /// The check is needed because if many tables were dropped concurrently,
+        /// this loop can spend a long time skipping them, retaking the locks.
+        /// Note: if the time limit is exceeded in the 'break' mode, we return no more storages,
+        /// and the caller finishes with the rows collected so far.
+        if (query_status && !query_status->checkTimeLimit())
+            return {};
+
+        StoragesInfo info;
+
+        info.database = (*database_column)[next_row].safeGet<String>();
+        info.table = (*table_column)[next_row].safeGet<String>();
+        UUID storage_uuid = (*storage_uuid_column)[next_row].safeGet<UUID>();
+
+        auto is_same_table = [&storage_uuid, this] (size_t row) -> bool
+        {
+            return (*storage_uuid_column)[row].safeGet<UUID>() == storage_uuid;
+        };
+
+        /// We may have two rows per table which differ in 'active' value.
+        /// If rows with 'active = 0' were not filtered out, this means we
+        /// must collect the inactive parts. Remember this fact in StoragesInfo.
+        for (; next_row < rows && is_same_table(next_row); ++next_row)
+        {
+            const auto active = (*active_column)[next_row].safeGet<UInt64>();
+            if (active == 0)
+                info.need_inactive_parts = true;
+        }
+
+        info.storage = storages.at(storage_uuid);
+
+        /// For table not to be dropped and set of columns to remain constant.
+        if (!tryLockTable(info))
+            continue;
+
+        info.engine = info.storage->getName();
+
+        info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
+        if (!info.data)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
+
+        return info;
+    }
+
+    return {};
 }
 
 bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const StorageSnapshotPtr & storage_snapshot)
@@ -151,16 +201,32 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
 
             IColumn::Offsets offsets(rows);
 
+            /// Enumerating all tables of all databases can take a long time on a server with many tables,
+            /// and this is done eagerly before returning the first row, so check for query cancellation
+            /// and time limits here. If the time limit is exceeded in the 'break' mode,
+            /// stop the enumeration and return what was collected so far.
+            bool time_limit_exceeded = false;
+
             for (size_t i = 0; i < rows; ++i)
             {
+                offsets[i] = offsets[i - 1];
+
+                if (time_limit_exceeded)
+                    continue;
+
                 String database_name = (*database_column_for_filter)[i].safeGet<String>();
                 const DatabasePtr & database = databases.at(database_name);
                 const bool check_access_for_tables_in_db
                     = check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-                offsets[i] = offsets[i - 1];
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
+                    if (query_status && !query_status->checkTimeLimit())
+                    {
+                        time_limit_exceeded = true;
+                        break;
+                    }
+
                     String table_name = iterator->name();
                     StoragePtr storage = iterator->table();
                     if (!storage)
@@ -335,12 +401,13 @@ void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline
 
     /// The whole result is built eagerly here, so without this check a cancelled or timed out
     /// query would keep building rows over every storage until the very end.
+    /// If the time limit is exceeded in the 'break' mode, return the rows collected so far.
     QueryStatusPtr query_status = context->getProcessListElement();
 
     while (StoragesInfo info = stream->next())
     {
-        if (query_status)
-            query_status->checkTimeLimit();
+        if (query_status && !query_status->checkTimeLimit())
+            break;
 
         storage->processNextStorage(context, res_columns, columns_mask, info, has_state_column);
     }

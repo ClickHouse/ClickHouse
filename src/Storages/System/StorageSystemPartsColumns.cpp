@@ -127,8 +127,8 @@ void StorageSystemPartsColumns::processNextStorage(
 
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        if (query_status)
-            query_status->checkTimeLimit();
+        if (query_status && !query_status->checkTimeLimit())
+            break;
 
         const auto & part = all_parts[part_number];
         const auto part_metadata_snapshot = part->getMetadataSnapshot();

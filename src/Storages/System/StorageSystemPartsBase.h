@@ -14,6 +14,7 @@ namespace ErrorCodes
 }
 
 class Context;
+class QueryStatus;
 
 struct StoragesInfo
 {
@@ -42,53 +43,16 @@ public:
     StoragesInfoStreamBase(const StoragesInfoStreamBase&) = default;
     virtual ~StoragesInfoStreamBase() = default;
 
-    StoragesInfo next()
-    {
-        while (next_row < rows)
-        {
-            StoragesInfo info;
+    StoragesInfo next();
 
-            info.database = (*database_column)[next_row].safeGet<String>();
-            info.table = (*table_column)[next_row].safeGet<String>();
-            UUID storage_uuid = (*storage_uuid_column)[next_row].safeGet<UUID>();
-
-            auto is_same_table = [&storage_uuid, this] (size_t row) -> bool
-            {
-                return (*storage_uuid_column)[row].safeGet<UUID>() == storage_uuid;
-            };
-
-            /// We may have two rows per table which differ in 'active' value.
-            /// If rows with 'active = 0' were not filtered out, this means we
-            /// must collect the inactive parts. Remember this fact in StoragesInfo.
-            for (; next_row < rows && is_same_table(next_row); ++next_row)
-            {
-                const auto active = (*active_column)[next_row].safeGet<UInt64>();
-                if (active == 0)
-                    info.need_inactive_parts = true;
-            }
-
-            info.storage = storages.at(storage_uuid);
-
-            /// For table not to be dropped and set of columns to remain constant.
-            if (!tryLockTable(info))
-                continue;
-
-            info.engine = info.storage->getName();
-
-            info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
-            if (!info.data)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
-
-            return info;
-        }
-
-        return {};
-    }
 protected:
     virtual bool tryLockTable(StoragesInfo & info);
 
     String query_id;
     std::chrono::milliseconds lock_timeout;
+
+    /// Enumerating the storages can be slow, so we check for query cancellation and time limits.
+    std::shared_ptr<QueryStatus> query_status;
 
     ColumnPtr database_column;
     ColumnPtr table_column;
