@@ -298,6 +298,7 @@ private:
     /// remembers whether the cancellation is one after which the query must still succeed - a soft
     /// `max_execution_time` with the `break` overflow mode, or a consumer that has enough data - so
     /// that generate then discards the failure of the interrupted read instead of failing the query.
+    ReadWriteBufferFromHTTP::CancellationPtr cancellation = std::make_shared<ReadWriteBufferFromHTTP::Cancellation>();
 
     Map http_response_headers;
     bool http_response_headers_initialized = false;

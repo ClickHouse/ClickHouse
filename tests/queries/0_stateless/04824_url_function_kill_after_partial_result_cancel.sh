@@ -23,10 +23,13 @@ PORT_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.port")
 # - /empty_slow serves an empty file after a delay, long enough for both cancellations to arrive
 #   while it is being served.
 # - /data serves the data at once.
+# The server must serve requests in parallel: the test polls /stats while /empty_slow is being
+# served, and a single-threaded server would block the poll until the delay is over - after the
+# query has already finished, too late to cancel it.
 python3 -u -c "
 import json
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 counts = {}
 
@@ -72,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-server = HTTPServer(('127.0.0.1', 0), Handler)
+server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
 with open('$PORT_FILE', 'w') as f:
     f.write(str(server.server_address[1]))
 server.serve_forever()
