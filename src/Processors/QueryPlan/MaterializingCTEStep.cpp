@@ -192,12 +192,13 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedMaterializingCTEsStep::makePlansF
 /// own safety-nets remain available for their own `buildSetInplace` /
 /// `buildOrderedSetInplace` consumers.
 ///
-/// `should_splice_out` is invoked once per `DelayedMaterializingCTEsStep` node
+/// `predicate` is invoked once per `DelayedMaterializingCTEsStep` node
 /// found; the node is spliced out of the tree only when it returns true. It is
 /// allowed to mutate the step (that is how `removeDelayedMaterializingCTEsStepFor`
 /// drops a subset of a step's CTEs and keeps the rest).
 static void removeDelayedMaterializingCTEsStepIf(
-    QueryPlan & plan, const std::function<bool(DelayedMaterializingCTEsStep &)> & should_splice_out)
+    QueryPlan & plan,
+    const std::function<bool(DelayedMaterializingCTEsStep &)> & predicate)
 {
     /// Strip any `DelayedMaterializingCTEsStep` chain at the root via
     /// `replaceRootNode`. We loop because consecutive root-level safety-nets
@@ -210,7 +211,7 @@ static void removeDelayedMaterializingCTEsStepIf(
         if (!root)
             return;
         auto * delayed = typeid_cast<DelayedMaterializingCTEsStep *>(root->step.get());
-        if (!delayed || !should_splice_out(*delayed))
+        if (!delayed || !predicate(*delayed))
             break;
         if (root->children.size() != 1)
             throw Exception(
@@ -240,7 +241,7 @@ static void removeDelayedMaterializingCTEsStepIf(
         {
             while (auto * delayed = typeid_cast<DelayedMaterializingCTEsStep *>(child->step.get()))
             {
-                if (!should_splice_out(*delayed))
+                if (!predicate(*delayed))
                     break;
                 if (child->children.size() != 1)
                     throw Exception(
