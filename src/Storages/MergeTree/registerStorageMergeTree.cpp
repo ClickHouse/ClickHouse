@@ -578,11 +578,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     {
         /// Validate the {database}/{table} substitutions only for a freshly supplied definition, which
         /// includes a full-definition ATTACH and DDL replay in a Replicated database. A definition read
-        /// back from metadata (short ATTACH, server restart) or from a backup must keep loading even if
-        /// the path it already uses would not be accepted today.
+        /// back from metadata (short ATTACH, server restart), replayed by a Replicated database from the
+        /// metadata it stored, or restored from a backup must keep loading even if the path it already
+        /// uses would not be accepted today. Note such a replay arrives below ATTACH, so `mode` alone
+        /// cannot tell it apart from a fresh CREATE.
         const bool validate_substitutions = (args.mode < LoadingStrictnessLevel::ATTACH
                 || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
-            && !args.is_restore_from_backup;
+            && !args.is_restore_from_backup
+            && !args.getLocalContext()->isRecoveryFromStoredMetadata();
         zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
             args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext(),
             validate_substitutions);

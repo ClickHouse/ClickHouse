@@ -25,6 +25,15 @@ ${CLIENT} -q "CREATE TABLE \`${UNSAFE_DB}\`.t (c0 Int) ENGINE = ReplicatedMergeT
 
 ${CLIENT} -q "DROP DATABASE \`${UNSAFE_DB}\` SYNC"
 
+# The same branch, reached by a database name that is illegal as a path COMPONENT instead of by
+# carrying a '/': here the check on the substituted value has nothing to object to.
+CTL_DB=$(printf '%s_g\001h' "${CLICKHOUSE_DATABASE}")
+${CLIENT} -q "DROP DATABASE IF EXISTS \`${CTL_DB}\` SYNC"
+${CLIENT} -q "CREATE DATABASE \`${CTL_DB}\`"
+${CLIENT} -q "CREATE TABLE \`${CTL_DB}\`.t (c0 Int) ENGINE = ReplicatedMergeTree('${ZK}/{database}/fixed', 'r1c') ORDER BY c0" 2>&1 |
+    expect_bad_arguments
+${CLIENT} -q "DROP DATABASE \`${CTL_DB}\` SYNC"
+
 # A full definition supplied by the user is judged like a CREATE, unlike the short form above.
 U1=$(${CLIENT} -q "SELECT generateUUIDv4()")
 ${CLIENT} -q "ATTACH TABLE \`h/replicas/i\` UUID '${U1}' (c0 Int) ENGINE = ReplicatedMergeTree('${ZK}/{database}/{table}', 'r2') ORDER BY c0" 2>&1 |
