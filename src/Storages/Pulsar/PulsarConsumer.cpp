@@ -14,7 +14,7 @@ namespace ErrorCodes
 extern const int CANNOT_CONNECT_PULSAR;
 }
 
-PulsarConsumer::PulsarConsumer(LoggerPtr logger_) : log(logger_)
+PulsarConsumer::PulsarConsumer(LoggerPtr logger_) : log(logger_), next_message(polled_messages.end())
 {
 }
 
@@ -87,6 +87,14 @@ void PulsarConsumer::rollback()
     for (const auto & message_id : pending_acks)
         consumer.negativeAcknowledge(message_id);
     pending_acks.clear();
+
+    /// Also put the prefetched but not yet returned tail of the current batch onto the
+    /// redelivery path and drop it, so the next query reading from this pooled consumer
+    /// does not resume from messages the aborted one already received.
+    for (; next_message != polled_messages.end(); ++next_message)
+        consumer.negativeAcknowledge(next_message->getMessageId());
+    polled_messages.clear();
+    next_message = polled_messages.end();
 }
 
 }
