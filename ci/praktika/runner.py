@@ -5,7 +5,9 @@ import json
 import os
 import re
 import shlex
+import shutil
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 
@@ -233,12 +235,65 @@ class Runner:
                         assert "*" in include_pattern
                     else:
                         s3_path = f"{Settings.S3_ARTIFACT_PATH}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                    S3.copy_file_from_s3(
-                        s3_path=s3_path,
-                        local_path=Settings.INPUT_DIR,
-                        recursive=recursive,
-                        include_pattern=include_pattern,
-                    )
+
+                    # A recursive download returns True on zero matches, so
+                    # presence is measured in a stage holding this download
+                    # alone, not in the shared INPUT_DIR.
+                    check_presence = artifact.type == Artifact.Type.S3
+                    stage = ""
+                    if recursive and check_presence:
+                        # Freshly created, never a fixed name: anything already
+                        # at that path (a crashed run's leftovers, a symlink
+                        # rmtree refuses to recurse) would read as downloaded.
+                        Path(Settings.INPUT_DIR).mkdir(parents=True, exist_ok=True)
+                        stage = tempfile.mkdtemp(
+                            prefix="_artifact_download_", dir=Settings.INPUT_DIR
+                        )
+
+                    try:
+                        try:
+                            res = S3.copy_file_from_s3(
+                                s3_path=s3_path,
+                                local_path=stage or Settings.INPUT_DIR,
+                                recursive=recursive,
+                                include_pattern=include_pattern,
+                            )
+                        except RuntimeError as ex:
+                            # The CLI backend raises on an absent key instead of
+                            # returning False. This key's absence only: a missing
+                            # bucket shares the marker, other failures stay loud.
+                            message = str(ex)
+                            absent = "does not exist" in message and not (
+                                "NoSuchBucket" in message
+                                or "bucket does not exist" in message
+                            )
+                            if not absent:
+                                raise
+                            res = False
+
+                        if stage:
+                            # Staged content only confirms a download that
+                            # reported success, never clears a failure: a partial
+                            # transfer is not a complete artifact.
+                            matched = list(Path(stage).iterdir()) if res else []
+                            for file_path in matched:
+                                file_path.replace(
+                                    Path(Settings.INPUT_DIR) / file_path.name
+                                )
+                            res = bool(matched)
+                    finally:
+                        if stage:
+                            shutil.rmtree(stage, ignore_errors=True)
+
+                    if check_presence and not res:
+                        if self._skip_missing_optional_artifact(
+                            artifact, artifact_path
+                        ):
+                            continue
+                        raise FileNotFoundError(
+                            f"Required artifact [{artifact.name}:{artifact_path}] provided by "
+                            f"[{artifact._provided_by}] is missing in s3 [{s3_path}]"
+                        )
 
                     if artifact.compress_zst:
                         Utils.decompress_file(Path(Settings.INPUT_DIR) / artifact_path)
@@ -585,7 +640,10 @@ class Runner:
 
     @staticmethod
     def _skip_missing_optional_artifact(artifact, artifact_path) -> bool:
-        """Whether a providing artifact that matched no file may be skipped.
+        """Whether an artifact that matched no file may be skipped.
+
+        Used on both sides: a providing artifact absent at upload time, and a
+        required artifact absent at download time.
 
         A missing optional artifact is skipped with a warning on any run (PR,
         master or release). It is optional because it may legitimately be absent
@@ -596,7 +654,7 @@ class Runner:
         if artifact.optional:
             print(
                 f"WARNING: optional artifact [{artifact.name}:{artifact_path}] "
-                f"produced no file - skipping upload"
+                f"is missing - skipping"
             )
             return True
         return False
@@ -730,6 +788,11 @@ class Runner:
                 file=f,
             )
 
+        # Before the CIDB insert: it serializes result.info eagerly, so a
+        # traceback lifted afterwards lands in the report but not in CIDB.
+        if env.TRACEBACKS:
+            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
+
         ci_db = None
         if workflow.enable_cidb:
             print("Insert results to CIDB")
@@ -784,8 +847,6 @@ class Runner:
                 print(f"ERROR: {error}")
                 env.add_workflow_error(error)
 
-        if env.TRACEBACKS:
-            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
         result.dump()
 
         # always in the end
