@@ -19,6 +19,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/Pulsar/PulsarLogger.h>
 #include <Storages/Pulsar/PulsarProducer.h>
 #include <Storages/Pulsar/PulsarSettings.h>
 #include <Storages/Pulsar/PulsarSource.h>
@@ -149,6 +150,20 @@ private:
     StorageSnapshotPtr storage_snapshot;
 };
 
+namespace
+{
+
+pulsar::ClientConfiguration createClientConfiguration()
+{
+    pulsar::ClientConfiguration config;
+    /// Route the client library logs into the server logging (`setLogger` takes ownership).
+    /// The default logger writes to stdout from the client's internal threads without synchronization.
+    config.setLogger(new PulsarLoggerFactory());
+    return config;
+}
+
+}
+
 StoragePulsar::StoragePulsar(
     const StorageID & table_id_,
     ContextPtr context_,
@@ -162,7 +177,7 @@ StoragePulsar::StoragePulsar(
     , num_consumers((*pulsar_settings)[PulsarSetting::pulsar_num_consumers].value)
     , max_rows_per_message((*pulsar_settings)[PulsarSetting::pulsar_max_rows_per_message].value)
     , log(getLogger("Storage Pulsar(" + table_id_.table_name + ")"))
-    , pulsar_client((*pulsar_settings)[PulsarSetting::pulsar_service_url].value)
+    , pulsar_client((*pulsar_settings)[PulsarSetting::pulsar_service_url].value, createClientConfiguration())
     , topics(parseTopics((*pulsar_settings)[PulsarSetting::pulsar_topic_list].value))
     , semaphore(0, static_cast<int>(num_consumers))
 {
