@@ -50,3 +50,24 @@ SELECT position(parseQueryToJSON($$SELECT * FROM viewIfPermitted(SELECT 1 ELSE n
 SELECT formatQueryFromJSON(replace(parseQueryToJSON($$SELECT * FROM viewIfPermitted(SELECT 1 ELSE null('x UInt8'))$$),
     '"type":"Function","name":"viewIfPermitted","arguments"',
     '"type":"Function","name":"viewIfPermitted","parameters":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]},"arguments"')); -- { serverError BAD_ARGUMENTS }
+
+-- Non-canonical spellings of the name. The parser dispatches to the table function parser on the
+-- lowercased name, so any spelling of `viewIfPermitted` obeys the same shape rules: the shape checks
+-- in `readJSON` and in the formatter must match case-insensitively, or a handcrafted payload such as
+-- "VIEWIFPERMITTED" with a bare select could format to text the parser cannot read back.
+
+-- The table function shape keeps the `ELSE` form (the only parseable one) for any spelling, and the
+-- result parses back (the parser canonicalizes the name).
+
+SELECT formatQueryFromJSON(replace(parseQueryToJSON($$SELECT * FROM viewIfPermitted(SELECT 1 ELSE null('x UInt8'))$$),
+    '"type":"Function","name":"viewIfPermitted","arguments"',
+    '"type":"Function","name":"VIEWIFPERMITTED","arguments"'));
+
+SELECT formatQuerySingleLine(formatQueryFromJSON(replace(parseQueryToJSON($$SELECT * FROM viewIfPermitted(SELECT 1 ELSE null('x UInt8'))$$),
+    '"type":"Function","name":"viewIfPermitted","arguments"',
+    '"type":"Function","name":"VIEWIFPERMITTED","arguments"')))
+    = formatQuerySingleLine($$SELECT * FROM viewIfPermitted(SELECT 1 ELSE null('x UInt8'))$$);
+
+-- A parser-impossible bare-select shape is rejected for a non-canonical spelling as well.
+
+SELECT formatQueryFromJSON('{"type":"Function","name":"VIEWIFPERMITTED","arguments":{"type":"ExpressionList","children":[{"type":"SelectWithUnionQuery","union_mode":"UNION_DEFAULT","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Literal","value":{"field_type":"UInt64","value":1}}]}}]}},{"type":"Literal","value":{"field_type":"UInt64","value":2}}]}}'); -- { serverError BAD_ARGUMENTS }

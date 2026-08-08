@@ -266,8 +266,10 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
     /// (select, function) without parameters. In an expression context `viewIfPermitted` is an ordinary
     /// function and a bare select cannot appear among its arguments at all. The formatter prints the
     /// unparseable-elsewhere `ELSE` form for exactly the table function shape, so reject any other
-    /// combination that contains a bare select, which the parser cannot produce.
-    if (name == "viewIfPermitted" && arguments)
+    /// combination that contains a bare select, which the parser cannot produce. The check is
+    /// case-insensitive because the parser dispatches to the table function parser on the lowercased
+    /// name, so any spelling of `viewIfPermitted` hits the same parse-back constraints.
+    if (equalsCaseInsensitive(name, "viewIfPermitted") && arguments)
     {
         bool has_bare_select = std::ranges::any_of(
             arguments->children, [](const ASTPtr & child) { return child->as<ASTSelectWithUnionQuery>() != nullptr; });
@@ -509,7 +511,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     /// In an expression context `viewIfPermitted` parses as an ordinary function (e.g. `viewIfPermitted(1, 2)`),
     /// and formatting it with `ELSE` would produce text that cannot be parsed back
     /// (inconsistent AST formatting, an exception in debug builds), so such shapes take the generic path below.
-    if (arguments && !parameters && arguments->children.size() == 2 && name == "viewIfPermitted"sv
+    /// The name check is case-insensitive: the parser dispatches to the table function parser on the
+    /// lowercased name, so a non-canonical spelling (producible only through AST JSON deserialization)
+    /// with this shape must also be printed in the `ELSE` form to stay parseable.
+    if (arguments && !parameters && arguments->children.size() == 2 && equalsCaseInsensitive(name, "viewIfPermitted")
         && arguments->children[0]->as<ASTSelectWithUnionQuery>() && arguments->children[1]->as<ASTFunction>())
     {
         /// viewIfPermitted() needs special formatting: ELSE instead of comma between arguments, and better indents too.
