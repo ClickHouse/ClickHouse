@@ -1,0 +1,12 @@
+--- arm 1: commit past its commit point, kill must refuse
+kill_status	cant_cancel
+mutation_entry_kept_during_pause	1
+data_after_commit	1	101
+mutation_entry_kept_after_commit	1
+server_alive_after_arm1	1
+--- arm 2: commit not yet at its commit point, kill must win
+kill_status	waiting
+commit_rejected	INVALID_TRANSACTION
+data_after_kill	1	1
+mutation_entry_removed	0
+server_alive_after_arm2	1

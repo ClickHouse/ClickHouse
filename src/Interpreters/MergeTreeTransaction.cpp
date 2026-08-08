@@ -29,6 +29,8 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char transaction_after_commit_pause[];
+    extern const char transaction_commit_pause_before_mutation_csn[];
+    extern const char transaction_commit_pause_before_csn_cas[];
 }
 
 static void checkNotOrdinaryDatabase(const StoragePtr & storage)
@@ -241,6 +243,10 @@ scope_guard MergeTreeTransaction::beforeCommit()
         return mutations == mutations_to_wait;
     }());
 
+    /// Test-only pause point: lets a regression test park the commit after the mutation wait but
+    /// before the CAS below, so a concurrent `KILL MUTATION` deterministically wins the claim.
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_commit_pause_before_csn_cas);
+
     CSN expected = Tx::UnknownCSN;
     bool can_commit = csn.compare_exchange_strong(expected, Tx::CommittingCSN);
     if (!can_commit)
@@ -297,6 +303,11 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     {
         part->version->setAndStoreRemovalCSN(assigned_csn);
     }
+
+    /// Test-only pause point: parks the commit past its commit point but before the mutation CSNs are
+    /// stamped, so a regression test can check that a concurrent `KILL MUTATION` cannot erase an entry
+    /// `setMutationCSN` still needs. Same exception-safety argument as the pause point below.
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_commit_pause_before_mutation_csn);
 
     for (const auto & storage_and_mutation : committed_mutations)
         storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, assigned_csn);

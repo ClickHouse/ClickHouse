@@ -268,6 +268,8 @@ static struct InitFiu
     ONCE(attach_to_group_failure) \
     ONCE(thread_group_switcher_post_attach_failure) \
     PAUSEABLE(transaction_after_commit_pause) \
+    PAUSEABLE(transaction_commit_pause_before_mutation_csn) \
+    PAUSEABLE(transaction_commit_pause_before_csn_cas) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
     PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \

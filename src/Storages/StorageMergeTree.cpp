@@ -1433,6 +1433,37 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     if (!mutation_version)
         return CancellationCode::NotFound;
 
+    /// Resolve the owning transaction before destroying anything: if it is already past its commit
+    /// point, `MergeTreeTransaction::afterCommit` will stamp this mutation's CSN through
+    /// `setMutationCSN`, which requires the entry to still be registered.
+    MergeTreeTransactionPtr txn;
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        auto it = current_mutations_by_version.find(mutation_version);
+        if (it == current_mutations_by_version.end())
+            return CancellationCode::NotFound;
+        txn = tryGetTransactionForMutation(it->second, log.load());
+    }
+
+    bool cancelled_transaction = false;
+    if (txn && txn->getCSN() != Tx::RolledBackCSN)
+    {
+        /// `rollback`'s CAS `UnknownCSN -> RolledBackCSN` contends with the commit's
+        /// `UnknownCSN -> CommittingCSN` CAS, so exactly one wins. Merely reading the CSN would be a
+        /// TOCTOU: the commit does not take `currently_processing_in_background_mutex`.
+        LOG_TRACE(log, "Cancelling transaction {} which had started mutation {}", txn->tid, mutation_id);
+        TransactionLog::instance().rollbackTransaction(txn);
+
+        if (txn->getCSN() != Tx::RolledBackCSN)
+        {
+            /// The commit won. `beforeCommit` waits for all mutations of the transaction before its
+            /// CAS, so there is nothing left to cancel and the entry must survive for `setMutationCSN`.
+            LOG_TRACE(log, "Cannot kill mutation {}: transaction {} is already past its commit point", mutation_id, txn->tid);
+            return CancellationCode::CancelCannotBeSent;
+        }
+        cancelled_transaction = true;
+    }
+
     std::optional<MergeTreeMutationEntry> to_kill;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
@@ -1451,12 +1482,10 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     mutation_backoff_policy.resetMutationFailures();
 
     if (!to_kill)
-        return CancellationCode::NotFound;
-
-    if (auto txn = tryGetTransactionForMutation(*to_kill, log.load()))
     {
-        LOG_TRACE(log, "Cancelling transaction {} which had started mutation {}", to_kill->tid, mutation_id);
-        TransactionLog::instance().rollbackTransaction(txn);
+        /// `rollback`'s own mutation sweep re-enters this function and removes the entry there, so a
+        /// successful claim followed by a missing entry still means the mutation was cancelled.
+        return cancelled_transaction ? CancellationCode::CancelSent : CancellationCode::NotFound;
     }
 
     getContext()->getMergeList().cancelPartMutations(getStorageID(), {}, to_kill->block_number);
