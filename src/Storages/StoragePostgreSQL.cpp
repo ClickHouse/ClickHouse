@@ -633,6 +633,15 @@ postgres::ConnectionSSLParams StoragePostgreSQL::getSSLParams(const NamedCollect
                 key, contents_key);
         }
 
+        /// An empty contents override never replaces the stored credential with another one - it can
+        /// only silently drop whatever form of it the collection carries, a path or the contents
+        /// alike. Checked before the empty fast path below so a credential the collection stores in
+        /// the contents form is protected too.
+        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be overridden with an empty `{}`", key, contents_key);
+
         if (value.empty())
             return value;
 
@@ -652,13 +661,6 @@ postgres::ConnectionSSLParams StoragePostgreSQL::getSSLParams(const NamedCollect
             /// be replaced through the contents form either.
             if (!named_collection.isOverridable(key, /* default_value= */ true))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-
-            /// Empty contents would not replace the configured path with another credential but
-            /// silently drop it, which is the same as overriding the path itself with ''.
-            if (named_collection.getOrDefault<String>(contents_key, "").empty())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "`{}` cannot be overridden with an empty `{}`", key, contents_key);
 
             return String{};
         }

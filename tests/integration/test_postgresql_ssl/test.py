@@ -27,6 +27,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
     with_postgres=True,
     stay_alive=True,
 )
@@ -835,3 +836,38 @@ def test_tls_credentials_survive_restart(started_cluster):
 
     node.query("DROP TABLE pg_restart_tbl SYNC")
     node.query("DROP DATABASE pg_restart_db")
+
+
+def test_tls_credentials_in_sql_named_collection(started_cluster):
+    # Credential contents are accepted in SQL-created named collections too. That is a
+    # separate persistence path from direct query arguments: the multiline PEM has to
+    # survive the collection's own serialization to disk and the deserialization on
+    # use, and still be materialized into the temporary file for libpq. The collection
+    # points at `certdb`, which only accepts a verified client certificate, so a
+    # successful read proves all three credentials made it through intact.
+    node.query("DROP NAMED COLLECTION IF EXISTS pg_ssl_sql")
+    node.query(
+        f"CREATE NAMED COLLECTION pg_ssl_sql AS "
+        f"user = 'postgres', password = '{pg_pass}', host = '{PG_HOST}', port = 5432, "
+        f"database = '{CERT_DB}', `table` = '{CERT_TABLE}', "
+        f"sslmode = 'verify-full', sslrootcert_pem = '{quote_pem(ca_pem)}', "
+        f"sslcert_pem = '{quote_pem(client_cert_pem)}', sslkey_pem = '{quote_pem(client_key_pem)}'"
+    )
+    assert node.query("SELECT count() FROM postgresql(pg_ssl_sql)").strip() == "10"
+
+    # An empty contents override cannot replace the credential with another one, only
+    # silently drop it -- it must be rejected also when the collection stores the
+    # credential in the contents form rather than as a path.
+    error = node.query_and_get_error("SELECT count() FROM postgresql(pg_ssl_sql, sslrootcert_pem='')")
+    assert "cannot be overridden with an empty" in error
+
+    # A path is still not accepted from a SQL-created collection, overridden or not.
+    error = node.query_and_get_error(f"SELECT count() FROM postgresql(pg_ssl_sql, sslrootcert='{CA_CERT_PATH}')")
+    assert "can only be specified in a named collection defined in the server configuration file" in error
+
+    # After a restart the collection is loaded back from its on-disk metadata, so the
+    # PEM contents must survive that round trip as well.
+    node.restart_clickhouse()
+    assert node.query("SELECT count() FROM postgresql(pg_ssl_sql)").strip() == "10"
+
+    node.query("DROP NAMED COLLECTION pg_ssl_sql")
