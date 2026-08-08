@@ -385,6 +385,11 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        return nested_function->getArgumentsThatCanBeOnlyNull();
+    }
+
     /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
     /// which changed the default null adapter for Tuple-returning functions:
     ///   - single-arg: from `<false, false>` to `<true, true>` (flag byte added to serialization).

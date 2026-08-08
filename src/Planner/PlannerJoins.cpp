@@ -1176,6 +1176,11 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     if (!allowed_inner && !allowed_left)
         return {};
 
+    /// `DirectKeyValueJoin` looks rows up by the equality key only and never evaluates a mixed
+    /// (cross-side non-equi) `ON` condition, so accepting one here would silently drop it.
+    if (table_join->getMixedJoinExpression())
+        return {};
+
     const auto & clauses = table_join->getClauses();
     bool only_lookup_keys = clauses.size() == 1 &&
         !clauses[0].key_names_left.empty() &&
@@ -1256,6 +1261,11 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     {
         auto column_mapping_it = right_table_expression.column_mapping.find(right_table_expression_column.name);
         if (column_mapping_it == right_table_expression.column_mapping.end())
+            return {};
+
+        /// `getByKeys` cannot return a column absent from the storage sample block, and its result is
+        /// re-indexed against this header by position, so that column's slot would get another's data.
+        if (!storage_sample_block.has(column_mapping_it->second))
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;
@@ -1373,10 +1383,14 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             /*use_two_level_maps_=*/false, stats_collecting_params);
     }
 
-    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
+    /// `parallel_full_sorting_merge` uses the same `FullSortingMergeJoin`; the optimizer turns it into a
+    /// hash-sharded set of independent per-shard merge joins (see `optimizeJoinByShards`).
+    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
     {
         if (FullSortingMergeJoin::isSupported(table_join))
-            return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
+            return std::make_shared<FullSortingMergeJoin>(
+                table_join, right_table_expression_header, /*null_direction_=*/1,
+                /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
     }
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
