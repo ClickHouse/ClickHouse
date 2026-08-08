@@ -278,6 +278,10 @@ SELECT
     exponentialTimeDecayingDecayLength(exponentialTimeDecayedSum(decaying_value))
 FROM exponential_time_decaying_simple_aggregate;
 
+-- An explicit aggregate parameter must agree with the decay length encoded in the input type.
+SELECT exponentialTimeDecayedSum(20)(decaying_value)
+FROM exponential_time_decaying_simple_aggregate; -- { serverError BAD_ARGUMENTS }
+
 OPTIMIZE TABLE exponential_time_decaying_simple_aggregate FINAL;
 
 SELECT
