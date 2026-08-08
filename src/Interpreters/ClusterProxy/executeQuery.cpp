@@ -581,13 +581,16 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         /// The local replica, however, executes inside the initiator's pipeline and shares the initiator's
         /// 'QueryStatus', whose limits come from the original (outer) query and are not bounded by the leaf
         /// timeout. As a result, with a local plan the leaf reading would not be limited by
-        /// 'max_execution_time_leaf' at all. To make the setting effective, disable the local plan so that
-        /// all leaf reading happens on remote replicas where the leaf timeout is honored.
-        if (settings[Setting::parallel_replicas_local_plan])
+        /// 'max_execution_time_leaf' at all. To make the setting effective when the leaf timeout is stricter
+        /// than the initiator's own 'max_execution_time' (which does bound the local reading), disable the
+        /// local plan so that all leaf reading happens on remote replicas where the leaf timeout is honored
+        /// (see 'leafTimeoutRequiresRemoteOnlyLeafReading').
+        if (settings[Setting::parallel_replicas_local_plan] && leafTimeoutRequiresRemoteOnlyLeafReading(settings))
         {
             LOG_TRACE(
                 logger,
-                "Disabling 'parallel_replicas_local_plan' because 'max_execution_time_leaf' is set: the local "
+                "Disabling 'parallel_replicas_local_plan' because 'max_execution_time_leaf' is stricter than "
+                "'max_execution_time': the local "
                 "replica shares the initiator's query status and cannot be bounded by the leaf timeout separately");
             context_mutable->setSetting("parallel_replicas_local_plan", Field{false});
         }
@@ -1196,6 +1199,20 @@ void executeQueryWithParallelReplicasCustomKey(
     query_info.query = ClusterProxy::rewriteSelectQuery(
         context, query_info.query, storage_id.getDatabaseName(), storage_id.getTableName(), /*table_function_ptr=*/nullptr);
     executeQueryWithParallelReplicasCustomKey(query_plan, storage_id, query_info, columns, snapshot, processed_stage, header, context);
+}
+
+bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings)
+{
+    const auto leaf_timeout = settings[Setting::max_execution_time_leaf].totalMicroseconds();
+    if (leaf_timeout == 0)
+        return false;
+
+    /// The initiator's own 'max_execution_time' bounds the shared 'QueryStatus' and with it the local reading.
+    /// Only a leaf timeout stricter than that needs the local reading to be moved to remote replicas; when the
+    /// initiator's timeout is at most the leaf timeout, it fires no later than the leaf timeout would, so the
+    /// local reading is already bounded at least as tightly.
+    const auto initiator_timeout = settings[Setting::max_execution_time].totalMicroseconds();
+    return initiator_timeout == 0 || leaf_timeout < initiator_timeout;
 }
 
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context)

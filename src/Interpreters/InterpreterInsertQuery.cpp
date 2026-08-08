@@ -91,7 +91,6 @@ namespace Setting
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsSeconds max_execution_time_leaf;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
@@ -744,13 +743,16 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
         /// The local pipeline executes inside the initiator's pipeline and shares the initiator's 'QueryStatus',
         /// so it cannot be bounded by 'max_execution_time_leaf' (the leaf timeout is substituted into
         /// 'max_execution_time' only for remote replicas, which build their own 'QueryStatus' from the shipped
-        /// settings). To make the leaf timeout effective, skip the local pipeline so that all leaf reading
-        /// happens on remote replicas — the same approach as for SELECT in 'updateContextForParallelReplicas'.
-        if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
+        /// settings). To make the leaf timeout effective when it is stricter than the initiator's own
+        /// 'max_execution_time' (which does bound the local pipeline), skip the local pipeline so that all leaf
+        /// reading happens on remote replicas — the same approach as for SELECT in
+        /// 'updateContextForParallelReplicas'.
+        if (ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
         {
             LOG_TRACE(
                 logger,
-                "Not using the local insert select pipeline because 'max_execution_time_leaf' is set: the local "
+                "Not using the local insert select pipeline because 'max_execution_time_leaf' is stricter than "
+                "'max_execution_time': the local "
                 "pipeline shares the initiator's query status and cannot be bounded by the leaf timeout separately");
         }
         else
