@@ -96,6 +96,42 @@ unsafe fn compress_typed<T: Number>(
     }
 }
 
+/// Decodes an entire standalone stream into `dst`, requiring that the stream
+/// carries exactly `dst.len()` values and that nothing follows the termination
+/// marker. `pco::standalone::simple_decompress_into` cannot prove the latter:
+/// it stops at `DecompressorItem::EndOfData(rest)` and discards `rest`, so a
+/// valid stream with trailing garbage appended would still decode. Driving
+/// `FileDecompressor` directly keeps `rest` in hand and lets us fail closed on
+/// trailing bytes, on a short stream, and on excess values alike.
+fn decompress_exact<T: Number>(source: &[u8], mut dst: &mut [T]) -> Result<(), ()> {
+    let (file_decompressor, mut src) = pco::standalone::FileDecompressor::new(source).map_err(|_| ())?;
+    loop {
+        match file_decompressor.chunk_decompressor::<T, _>(src).map_err(|_| ())? {
+            pco::standalone::DecompressorItem::Chunk(mut chunk_decompressor) => {
+                let n = chunk_decompressor.n();
+                // More values than expected: mismatched block, fail closed
+                // without decoding past the destination.
+                if n > dst.len() {
+                    return Err(());
+                }
+                // `dst[..n]` covers the whole chunk, satisfying `read`'s
+                // "at least the numbers remaining in the chunk" contract.
+                let progress = chunk_decompressor.read(&mut dst[..n]).map_err(|_| ())?;
+                if !progress.finished || progress.n_processed != n {
+                    return Err(());
+                }
+                dst = &mut dst[n..];
+                src = chunk_decompressor.into_src();
+            }
+            pco::standalone::DecompressorItem::EndOfData(rest) => {
+                // Fewer values than expected, or bytes after the termination
+                // marker: fail closed.
+                return if dst.is_empty() && rest.is_empty() { Ok(()) } else { Err(()) };
+            }
+        }
+    }
+}
+
 unsafe fn decompress_typed<T: Number>(
     source: &[u8],
     dst: *mut u8,
@@ -108,31 +144,22 @@ unsafe fn decompress_typed<T: Number>(
         _ => return PCO_ERROR,
     };
 
-    let progress = if dst as usize % align_of::<T>() == 0 {
+    if dst as usize % align_of::<T>() == 0 {
         // Aligned: decode straight into the destination.
         let out = slice::from_raw_parts_mut(dst as *mut T, n_values);
-        match pco::standalone::simple_decompress_into(source, out) {
-            Ok(p) => p,
-            Err(_) => return PCO_ERROR,
+        if decompress_exact(source, out).is_err() {
+            return PCO_ERROR;
         }
     } else {
         // Unaligned destination: decode into an aligned scratch, then copy back.
         let mut scratch = vec![T::default(); n_values];
-        let p = match pco::standalone::simple_decompress_into(source, &mut scratch) {
-            Ok(p) => p,
-            Err(_) => return PCO_ERROR,
-        };
+        if decompress_exact(source, &mut scratch).is_err() {
+            return PCO_ERROR;
+        }
         ptr::copy_nonoverlapping(scratch.as_ptr() as *const u8, dst, needed);
-        p
-    };
-
-    // Fail closed unless the stream produced exactly the expected count and no
-    // trailing chunks remain.
-    if progress.finished && progress.n_processed == n_values {
-        PCO_OK
-    } else {
-        PCO_ERROR
     }
+
+    PCO_OK
 }
 
 /// See include/pco.h.
@@ -425,6 +452,51 @@ mod tests {
                 pco_decompress(4, 0, trailing.as_ptr(), trailing.len() as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
                 PCO_ERROR
             );
+        }
+    }
+
+    #[test]
+    fn trailing_bytes_after_nonempty_stream_fail_closed() {
+        // A valid non-empty stream with extra bytes appended after the
+        // termination marker is malformed and must fail closed, not decode the
+        // valid prefix and silently ignore the tail.
+        unsafe {
+            let u32s: Vec<u8> = (0..1000u32).flat_map(|i| i.to_le_bytes()).collect();
+            let mut compressed = vec![0u8; u32s.len() + 64];
+            let mut out_size = 0u64;
+            assert_eq!(
+                pco_compress(1, u32s.as_ptr(), 1000, 8, compressed.as_mut_ptr(), compressed.len() as u64, &mut out_size),
+                PCO_OK
+            );
+            compressed.truncate(out_size as usize);
+
+            let mut restored = vec![0u8; u32s.len()];
+            for garbage in [&[0u8][..], &[0xab, 0xcd, 0xef][..]] {
+                let mut trailing = compressed.clone();
+                trailing.extend_from_slice(garbage);
+                for expected in [1u8, 0u8] {
+                    assert_eq!(
+                        pco_decompress(4, expected, trailing.as_ptr(), trailing.len() as u64, restored.as_mut_ptr(), 1000, restored.len() as u64),
+                        PCO_ERROR,
+                        "{} trailing bytes expecting {expected}",
+                        garbage.len()
+                    );
+                }
+            }
+
+            // A truncated non-empty stream must fail closed too: the exact-EOF
+            // decode path proves completeness, not just a prefix decode.
+            assert_eq!(
+                pco_decompress(4, 0, compressed.as_ptr(), (compressed.len() - 1) as u64, restored.as_mut_ptr(), 1000, restored.len() as u64),
+                PCO_ERROR
+            );
+
+            // The untouched stream still decodes.
+            assert_eq!(
+                pco_decompress(4, 0, compressed.as_ptr(), compressed.len() as u64, restored.as_mut_ptr(), 1000, restored.len() as u64),
+                PCO_OK
+            );
+            assert_eq!(&restored, &u32s);
         }
     }
 
