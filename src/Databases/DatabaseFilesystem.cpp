@@ -33,7 +33,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
@@ -69,15 +68,13 @@ std::string DatabaseFilesystem::getTablePath(const std::string & table_name) con
     return table_path.lexically_normal().string();
 }
 
-void DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
+StoragePtr DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
-    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
-    if (!inserted)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Table with name `{}` already exists in database `{}` (engine {})",
-            table_name, getDatabaseName(), getEngineName());
+    /// `emplace` keeps the existing entry if the key is already there, so `first->second` is the storage
+    /// a concurrent call for the same name inserted first. Nothing that locks `mutex` again may be called
+    /// here: it is the non-recursive base `IDatabase::mutex`, shared with `getDatabaseName`.
+    return loaded_tables.emplace(table_name, table_storage).first->second;
 }
 
 bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const
@@ -162,7 +159,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
     if (table_storage)
-        addTable(name, table_storage);
+        return addTable(name, table_storage);
 
     return table_storage;
 }

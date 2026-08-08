@@ -22,6 +22,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 connections_with_failover_max_tries;
     extern const SettingsDialect dialect;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
@@ -225,6 +226,13 @@ void HedgedConnections::sendQuery(
         /// In other words, the initiator always controls whether the analyzer enabled or not for
         /// all servers involved in the distributed query processing.
         modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
+
+        /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
+        /// servers of a distributed query must agree on it even when it comes only from server/profile
+        /// defaults. Force it into the changed set, so it is always sent to the remote servers.
+        modified_settings.set(
+            "enable_packed_string_keys_in_aggregation",
+            static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
 
         replica.connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
