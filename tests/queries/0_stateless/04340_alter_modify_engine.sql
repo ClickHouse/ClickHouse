@@ -426,6 +426,46 @@ SELECT 'graphite nullable path rejected', engine, count() FROM t_graphite_null, 
     WHERE database = currentDatabase() AND name = 't_graphite_null' GROUP BY engine;
 DROP TABLE t_graphite_null;
 
+-- (z3) a composite path column is rejected: the rollup reads the path with `getDataAt`, which these
+-- columns do not implement. Unlike CREATE TABLE, which cannot reach this state because the same method
+-- rejects the INSERT, MODIFY ENGINE arrives at an already-populated table, so accepting it would leave
+-- the table unable to merge and unable to answer a FINAL read.
+CREATE TABLE t_graphite_path (key UInt32, Path Array(String), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, ['max_a'], '2020-01-01 00:00:10', 5, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite array path rejected', engine, count() FROM t_graphite_path, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
+DROP TABLE t_graphite_path;
+
+CREATE TABLE t_graphite_path (key UInt32, Path Tuple(UInt32, UInt32), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, (1, 2), '2020-01-01 00:00:10', 5, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite tuple path rejected', engine, count() FROM t_graphite_path, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
+DROP TABLE t_graphite_path;
+
+CREATE TABLE t_graphite_path (key UInt32, Path Map(String, String), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, map('a', 'b'), '2020-01-01 00:00:10', 5, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite map path rejected', engine, count() FROM t_graphite_path, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
+DROP TABLE t_graphite_path;
+
+-- A `FixedString`, `LowCardinality(String)` or `Enum` path stays allowed: all three implement
+-- `getDataAt`, so the rollup reads them and the merge collapses the two versions.
+CREATE TABLE t_graphite_path (key UInt32, Path FixedString(5), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, 'max_a', '2020-01-01 00:00:00', 5, 1);
+INSERT INTO t_graphite_path VALUES (1, 'max_a', '2020-01-01 00:00:10', 6, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_path;
+ATTACH TABLE t_graphite_path;
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite fixedstring path rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
+DROP TABLE t_graphite_path;
+
 -- A nullable version column stays allowed: the rollup compares it with `compareAt` and copies it with
 -- `insertFrom`, both of which handle NULL. The two rows must share the same path and the same unrounded
 -- time, because the version comparison is only reached for rows the algorithm considers the same key; two

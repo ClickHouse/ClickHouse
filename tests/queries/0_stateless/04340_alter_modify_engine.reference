@@ -35,6 +35,10 @@ graphite time UInt32	GraphiteMergeTree
 graphite time UInt32 rollup	max_a	0	5	2
 graphite nullable time rejected	MergeTree	1
 graphite nullable path rejected	MergeTree	1
+graphite array path rejected	MergeTree	1
+graphite tuple path rejected	MergeTree	1
+graphite map path rejected	MergeTree	1
+graphite fixedstring path rollup	max_a	2020-01-01 00:00:00	6	2
 graphite nullable version accepted	max_a	2020-01-01 00:00:00	1	\N
 graphite nullable version engine	GraphiteMergeTree
 ALTER TABLE t (MODIFY ENGINE ReplacingMergeTree)
