@@ -144,11 +144,13 @@ StorageObjectStorage::StorageObjectStorage(
     ASTPtr partition_by_,
     ASTPtr order_by_,
     bool is_table_function_,
-    bool lazy_init)
+    bool lazy_init,
+    SettingsChanges definition_settings_changes_)
     : IStorage(table_id_)
     , configuration(configuration_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
+    , definition_settings_changes(std::move(definition_settings_changes_))
     , distributed_processing(distributed_processing_)
     , is_table_function(is_table_function_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
@@ -783,7 +785,12 @@ SinkToStoragePtr StorageObjectStorage::write(
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
 
     if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
+    {
+        Settings insert_settings = local_context->getSettingsCopy();
+        insert_settings.applyChanges(definition_settings_changes);
+        std::optional<FormatSettings> write_format_settings = getFormatSettings(local_context, insert_settings);
+        return configuration->write(sample_block, storage_id, object_storage, write_format_settings, local_context, catalog);
+    }
 
     /// Not a data lake, just raw object storage
 

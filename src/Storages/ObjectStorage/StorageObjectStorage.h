@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/SchemaInferenceMode.h>
+#include <Common/SettingsChanges.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -60,7 +61,8 @@ public:
         ASTPtr partition_by_ = nullptr,
         ASTPtr order_by_ = nullptr,
         bool is_table_function_ = false,
-        bool lazy_init = false);
+        bool lazy_init = false,
+        SettingsChanges definition_settings_changes_ = {});
 
     String getName() const override;
 
@@ -232,6 +234,7 @@ protected:
     /// `object_storage` to allow direct access to data storage.
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
+    const SettingsChanges definition_settings_changes;
     /// Whether this engine is a part of according Cluster engine implementation.
     /// (One of the reading replicas, not the initiator).
     const bool distributed_processing;

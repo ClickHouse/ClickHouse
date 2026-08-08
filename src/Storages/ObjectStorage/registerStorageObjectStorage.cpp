@@ -122,7 +122,10 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,
         partition_by,
-        order_by);
+        order_by,
+        /* is_table_function_ */ false,
+        /* lazy_init */ false,
+        args.storage_def->settings ? args.storage_def->settings->changes : SettingsChanges{});
 }
 
 #endif

@@ -8167,11 +8167,11 @@ Force the s3 endpoint style. Possible values: auto, virtual_hosted, path.
     DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
 When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
 )", BETA) \
-    DECLARE(UInt64, iceberg_insert_max_rows_in_data_file, 1000000, R"(
-Max rows of iceberg parquet data file on insert operation.
+    DECLARE(UInt64, iceberg_insert_max_rows_in_data_file, 5000000, R"(
+Max number of rows in an Iceberg data file on insert operation. A new data file is started once either this or `iceberg_insert_max_bytes_in_data_file` is reached. For narrow, well-compressible rows this row limit also bounds the amount of data buffered in memory per file.
 )", 0) \
     DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
-Max bytes of iceberg parquet data file on insert operation.
+Max number of bytes in an Iceberg data file on insert operation, measured as the uncompressed in-memory size of the rows written so far (not the compressed on-disk size, which is typically smaller). A new data file is started once either this or `iceberg_insert_max_rows_in_data_file` is reached.
 )", 0) \
     DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
 Max allowed partitions count per one insert operation for Iceberg table engine.
