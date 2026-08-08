@@ -330,6 +330,59 @@ bool ReplicatedMergeTreeQueue::isMergeOfPatchPartsBlocked(const LogEntry & entry
     return false;
 }
 
+bool ReplicatedMergeTreeQueue::isMergeOfPatchPartsCrossingMutation(const LogEntry & entry, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const
+{
+    if (entry.type != LogEntry::MERGE_PARTS || !storage.supportsLightweightUpdate())
+        return false;
+
+    auto new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
+
+    if (!new_part_info.isPatch())
+        return false;
+
+    /// A patch applies whole or not at all, so the merged span must not contain a mutation
+    /// version. Pending versions come from the queue: a partition absent from
+    /// mutations_by_partition is indistinguishable from one that has no mutations.
+    Int64 min_source_version = std::numeric_limits<Int64>::max();
+    Int64 max_source_version = std::numeric_limits<Int64>::min();
+
+    for (const auto & source_part : entry.source_parts)
+    {
+        auto source_info = MergeTreePartInfo::fromPartName(source_part, format_version);
+        min_source_version = std::min(min_source_version, source_info.getDataVersion());
+        max_source_version = std::max(max_source_version, source_info.getDataVersion());
+    }
+
+    if (min_source_version >= max_source_version)
+        return false;
+
+    auto original_partition_id = new_part_info.getOriginalPartitionId();
+
+    for (const auto & mutate_entry : queue)
+    {
+        if (mutate_entry->type != LogEntry::MUTATE_PART)
+            continue;
+
+        auto mutated_part_info = MergeTreePartInfo::fromPartName(mutate_entry->new_part_name, format_version);
+
+        if (mutated_part_info.getPartitionId() != original_partition_id)
+            continue;
+
+        Int64 mutation_version = mutated_part_info.getDataVersion();
+
+        if (min_source_version <= mutation_version && mutation_version < max_source_version)
+        {
+            constexpr auto fmt_string = "Not executing log entry {} for patch part {} because its source data versions ({} - {}) "
+                                        "would span the version {} of the not yet executed mutation for part {}.";
+            LOG_DEBUG(LogToStr(out_reason, log), fmt_string, entry.znode_name, entry.new_part_name,
+                      min_source_version, max_source_version, mutation_version, mutate_entry->new_part_name);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool ReplicatedMergeTreeQueue::isDropOfPatchPartBlocked(const LogEntry & entry, String & out_reason, std::unique_lock<SharedMutex> & /*state_mutex_lock*/) const
 {
     if (entry.type != LogEntry::DROP_PART || !storage.supportsLightweightUpdate())
@@ -1858,6 +1911,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             }
 
             if (isMergeOfPatchPartsBlocked(entry, out_postpone_reason, state_lock))
+                return false;
+
+            if (isMergeOfPatchPartsCrossingMutation(entry, out_postpone_reason, state_lock))
                 return false;
         }
 
