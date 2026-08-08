@@ -31,7 +31,7 @@ namespace ErrorCodes
 /// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
 ///
 /// Assumes that input row ids are strictly increasing.
-class SegmentedPostingListCodecImpl
+class SegmentedPostingListCodec
 {
     /// Header written at the beginning of each segment before the payload.
     struct Header
@@ -109,9 +109,8 @@ class SegmentedPostingListCodecImpl
     };
 
 public:
-    SegmentedPostingListCodecImpl() = default;
-    explicit SegmentedPostingListCodecImpl(
-        size_t postings_list_block_size, IPostingListCodec::Type block_codec_type_ = IPostingListCodec::Type::Bitpacking);
+    SegmentedPostingListCodec() = default;
+    explicit SegmentedPostingListCodec(size_t postings_list_block_size, IPostingListCodec::Type block_codec_type_);
 
     /// Add a single increasing row id.
     ///

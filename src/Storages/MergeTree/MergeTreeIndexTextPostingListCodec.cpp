@@ -11,7 +11,7 @@ namespace DB
 /// Normalize the requested block size to a multiple of BLOCK_SIZE.
 /// We encode/decode posting lists in fixed-size blocks, and the SIMD bit-packing
 /// implementation expects block-aligned sizes for efficient processing.
-SegmentedPostingListCodecImpl::SegmentedPostingListCodecImpl(size_t postings_list_block_size, IPostingListCodec::Type block_codec_type_)
+SegmentedPostingListCodec::SegmentedPostingListCodec(size_t postings_list_block_size, IPostingListCodec::Type block_codec_type_)
     : max_rowids_in_segment((postings_list_block_size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1))
     , block_codec(createPostingListBlockCodec(block_codec_type_))
 {
@@ -19,7 +19,7 @@ SegmentedPostingListCodecImpl::SegmentedPostingListCodecImpl(size_t postings_lis
     current_segment.reserve(BLOCK_SIZE);
 }
 
-void SegmentedPostingListCodecImpl::insert(uint32_t row_id)
+void SegmentedPostingListCodec::insert(uint32_t row_id)
 {
     if (row_ids_in_current_segment == 0)
     {
@@ -50,7 +50,7 @@ void SegmentedPostingListCodecImpl::insert(uint32_t row_id)
         flushCurrentSegment();
 }
 
-void SegmentedPostingListCodecImpl::insert(std::span<uint32_t> row_ids)
+void SegmentedPostingListCodec::insert(std::span<uint32_t> row_ids)
 {
     chassert(row_ids.size() == BLOCK_SIZE && row_ids_in_current_segment % BLOCK_SIZE == 0);
 
@@ -77,7 +77,7 @@ void SegmentedPostingListCodecImpl::insert(std::span<uint32_t> row_ids)
         flushCurrentSegment();
 }
 
-void SegmentedPostingListCodecImpl::decode(ReadBuffer & in, PostingList & postings)
+void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings)
 {
     Header header;
     header.read(in);
@@ -110,7 +110,7 @@ void SegmentedPostingListCodecImpl::decode(ReadBuffer & in, PostingList & postin
     }
 }
 
-void SegmentedPostingListCodecImpl::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const
+void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const
 {
     info.offsets.reserve(segment_descriptors.size());
     info.ranges.reserve(segment_descriptors.size());
@@ -140,7 +140,7 @@ void SegmentedPostingListCodecImpl::serializeTo(WriteBuffer & out, TokenPostings
     }
 }
 
-void SegmentedPostingListCodecImpl::encodeBlock(std::span<uint32_t> segment)
+void SegmentedPostingListCodec::encodeBlock(std::span<uint32_t> segment)
 {
     chassert(block_codec);
     auto & segment_descriptor = segment_descriptors.back();
@@ -161,7 +161,7 @@ void SegmentedPostingListCodecImpl::encodeBlock(std::span<uint32_t> segment)
     segment_descriptor.compressed_data_size = compressed_data.size() - segment_descriptor.compressed_data_offset;
 }
 
-void SegmentedPostingListCodecImpl::decodeBlock(std::span<const std::byte> & in, size_t count)
+void SegmentedPostingListCodec::decodeBlock(std::span<const std::byte> & in, size_t count)
 {
     chassert(count <= BLOCK_SIZE);
     chassert(block_codec);
@@ -179,9 +179,10 @@ void SegmentedPostingListCodecImpl::decodeBlock(std::span<const std::byte> & in,
 
 namespace
 {
-/// Shared block-feeding loop for both block codecs: full BLOCK_SIZE chunks via the bulk insert, the
-/// remaining tail one row id at a time, then flush. The on-disk segment/Index Section layout is identical;
-/// only `block_codec_type` selects the per-block payload format.
+
+/// Shared block-feeding loop for all block codecs: full BLOCK_SIZE chunks via the bulk insert,
+/// the remaining tail one row id at a time, then flush.
+/// The on-disk segment/Index Section layout is identical; only `block_codec_type` selects the per-block payload format.
 void encodePostingsInBlocks(
     const PostingList & postings,
     size_t max_rowids_in_segment,
@@ -189,7 +190,7 @@ void encodePostingsInBlocks(
     TokenPostingsInfo & info,
     WriteBuffer & out)
 {
-    SegmentedPostingListCodecImpl impl(max_rowids_in_segment, block_codec_type);
+    SegmentedPostingListCodec impl(max_rowids_in_segment, block_codec_type);
     std::vector<uint32_t> rowids;
     rowids.resize(postings.cardinality());
     postings.toUint32Array(rowids.data());
@@ -209,11 +210,12 @@ void encodePostingsInBlocks(
     }
     impl.encode(out, info);
 }
+
 }
 
 void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings) const
 {
-    SegmentedPostingListCodecImpl impl;
+    SegmentedPostingListCodec impl;
     impl.decode(in, postings);
 }
 
@@ -222,5 +224,6 @@ void PostingListCodecBitpacking::encode(
 {
     encodePostingsInBlocks(postings, max_rowids_in_segment, IPostingListCodec::Type::Bitpacking, info, out);
 }
+
 }
 
