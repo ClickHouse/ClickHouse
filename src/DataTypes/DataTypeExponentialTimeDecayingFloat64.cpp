@@ -62,7 +62,7 @@ std::pair<DataTypePtr, DataTypeCustomDescPtr> create(Float64 decay_length)
             std::make_unique<DataTypeCustomExponentialTimeDecayingFloat64>(decay_length))};
 }
 
-std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & parameters)
+std::pair<DataTypePtr, DataTypeCustomDescPtr> createFromParameters(const ASTPtr & parameters)
 {
     return create(getDecayLength(parameters));
 }
@@ -111,7 +111,7 @@ void registerDataTypeExponentialTimeDecayingFloat64(DataTypeFactory & factory)
 {
     factory.registerDataTypeCustom(
         "ExponentialTimeDecayingFloat64",
-        create,
+        createFromParameters,
         DataTypeFactory::Case::Sensitive,
         Documentation{
             .description = R"(
