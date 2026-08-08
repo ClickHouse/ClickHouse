@@ -258,6 +258,9 @@ private:
     Chunk chunk;
     bool stop_reading = false;
     bool for_totals = false;
+    /// Closing the store is asked for by `prepare` and done by `work`, which is where the work of
+    /// this stream belongs; `build_finished` is what makes `prepare` ask for it exactly once.
+    bool finish_build_requested = false;
     bool build_finished = false;
 };
 

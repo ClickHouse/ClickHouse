@@ -108,6 +108,18 @@ size_t outputChunkRowLimit(size_t max_block_size, size_t max_block_bytes, size_t
     return limit;
 }
 
+/// How many candidate pairs one tile holds. The bound is the operator's own, deliberately not
+/// `max_joined_block_size_rows`: what it limits is not the output chunk but how large the columns the
+/// condition is evaluated on grow, and it has to stay small however large the chunks the query asks
+/// for - a wide intermediate value in the condition costs this many rows of it.
+constexpr size_t TILE_PAIRS = DEFAULT_BLOCK_SIZE;
+
+/// How many candidate pairs one `work` call may evaluate before returning without an output chunk.
+/// A walk that matches nothing produces no output for a long time, and this is what gives the
+/// executor a chance to notice cancellation; how long it may be held is not a property of how large
+/// the chunks the query asks for are, so the budget does not follow `max_block_size`.
+constexpr size_t WORK_BUDGET_PAIRS = 8 * TILE_PAIRS;
+
 /// How many bytes of build blocks a probe stream may keep alive for pairs it has not emitted yet.
 /// The bound is the operator's own, deliberately not `max_joined_block_size_bytes`: what it limits
 /// is not the output chunk but the store's working set, and it has to stay small however large the
@@ -213,6 +225,7 @@ void BlockNestedLoopProbeTransform::startProbeChunk(Chunk chunk)
         column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
 
     has_probe_chunk = true;
+    probe_window_cursor = 0;
     build_block_cursor = 0;
     build_row_cursor = 0;
     current_build_block.reset();
@@ -251,9 +264,6 @@ void BlockNestedLoopProbeTransform::work()
         startProbeChunk(std::move(chunk));
     }
 
-    /// A walk that matches nothing produces no output for a long time, so it is cut into pieces
-    /// that give the executor a chance to notice cancellation.
-    const size_t work_budget = 8 * std::max<size_t>(DEFAULT_BLOCK_SIZE, max_block_size);
     size_t evaluated_pairs = 0;
 
     while (!output_chunk)
@@ -265,7 +275,7 @@ void BlockNestedLoopProbeTransform::work()
                 if (build_block_cursor < data->getNumBlocks() && !hasFullOutputChunk())
                 {
                     evaluated_pairs += matchNextTile();
-                    if (evaluated_pairs >= work_budget)
+                    if (evaluated_pairs >= WORK_BUDGET_PAIRS)
                         return;
                     continue;
                 }
@@ -322,11 +332,16 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
 
     const auto & block = *current_build_block;
     const size_t block_rows = block.selector.size();
-    const size_t tile_probe_rows = active_probe_rows.size();
-    /// The tile is sized in pairs, independently of the output limit: it bounds the intermediate
-    /// columns the condition is evaluated on, while the output chunk is cut to `max_block_size`
-    /// when the accumulated pairs are materialized.
-    const size_t build_rows_per_tile = std::max<size_t>(1, DEFAULT_BLOCK_SIZE / tile_probe_rows);
+    /// The tile is sized in pairs, independently of the output limit: it bounds the columns the
+    /// condition is evaluated on, while the output chunk is cut to `max_block_size` when the
+    /// accumulated pairs are materialized. Both sides are windowed, so a probe chunk larger than the
+    /// budget is swept in several passes over the same build rows.
+    /// The build sub-range is sized from the widest window of the sweep rather than from the one at
+    /// hand: a narrower last window must not reach further into the block than the windows before
+    /// it, or the build rows in between would be left out of the walk.
+    const size_t probe_window_rows = std::min<size_t>(active_probe_rows.size(), TILE_PAIRS);
+    const size_t tile_probe_rows = std::min(active_probe_rows.size() - probe_window_cursor, probe_window_rows);
+    const size_t build_rows_per_tile = std::max<size_t>(1, TILE_PAIRS / probe_window_rows);
     const size_t tile_build_rows = std::min(block_rows - build_row_cursor, build_rows_per_tile);
     const size_t tile_rows = tile_probe_rows * tile_build_rows;
 
@@ -348,7 +363,7 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
             if (i != 0)
                 memcpy(&build_values[offset], build_values.data(), tile_build_rows * sizeof(UInt64));
             for (size_t j = 0; j < tile_build_rows; ++j)
-                probe_values[offset + j] = active_probe_rows[i];
+                probe_values[offset + j] = active_probe_rows[probe_window_cursor + i];
         }
     }
 
@@ -398,6 +413,14 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
 
     if (num_matched != 0)
         appendMatchedPairs(*matched_probe, *matched_build, num_matched);
+
+    /// The build rows are only left behind once every probe row still in the walk has been matched
+    /// against them. That keeps the order a pair is seen in - and with it which pair a strictness
+    /// that takes one per row settles on - the same as it would be for a single-window sweep.
+    probe_window_cursor += tile_probe_rows;
+    if (probe_window_cursor < active_probe_rows.size())
+        return tile_rows;
+    probe_window_cursor = 0;
 
     build_row_cursor += tile_build_rows;
     if (build_row_cursor >= block_rows)

@@ -148,9 +148,13 @@ private:
     bool has_probe_chunk = false;
     Stage stage = Stage::Done;
 
-    /// The walk over the build side: one tile is `active_probe_rows.size() x build rows` pairs.
+    /// The walk over the build side, over tiles of a bounded number of pairs: a window of the probe
+    /// rows still in the walk against a window of the rows of one stored block.
     /// The probe rows still in the walk, in increasing order; every one of them under `ALL`.
     PaddedPODArray<UInt64> active_probe_rows;
+    /// Where the probe window starts in `active_probe_rows`. Back to zero once the sweep over them
+    /// against the current build rows is complete, which is the only point at which those advance.
+    size_t probe_window_cursor = 0;
     size_t build_block_cursor = 0;
     size_t build_row_cursor = 0;
     /// The block at `build_block_cursor`, held for as long as the walk stays inside it.

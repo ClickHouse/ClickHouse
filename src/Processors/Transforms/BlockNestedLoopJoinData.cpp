@@ -152,9 +152,19 @@ void BlockNestedLoopJoinData::storeBlock(
     if (compress)
     {
         for (auto & column : stored_block.columns)
-            column = column->compress(/*force_compression=*/ false);
+        {
+            auto compressed_column = column->compress(/*force_compression=*/ false);
+            /// A column that did not shrink comes back wrapped in a `ColumnCompressed` that
+            /// decompresses to that very column. Keeping the wrapper would make every read
+            /// materialize the block anew - and charge the reader for memory it does not retain,
+            /// cutting its output chunks short - for no saving at all.
+            if (compressed_column->byteSize() >= column->byteSize())
+                continue;
+
+            column = std::move(compressed_column);
+            entry.compressed = true;
+        }
         stored_block.rebuildReplicatedColumns();
-        entry.compressed = true;
     }
 
     const size_t stored_bytes = stored_block.allocatedBytes();
@@ -402,7 +412,11 @@ IProcessor::Status BlockNestedLoopBuildTransform::prepare()
     {
         for (auto & in : inputs)
             in.close();
-        finishBuild();
+        if (!build_finished)
+        {
+            finish_build_requested = true;
+            return Status::Ready;
+        }
         return Status::Finished;
     }
 
@@ -443,13 +457,28 @@ IProcessor::Status BlockNestedLoopBuildTransform::prepare()
         }
     }
 
-    finishBuild();
+    if (!build_finished)
+    {
+        finish_build_requested = true;
+        return Status::Ready;
+    }
+
     output.finish();
     return Status::Finished;
 }
 
 void BlockNestedLoopBuildTransform::work()
 {
+    /// Closing the store allocates the match flags over the whole build side and flushes the
+    /// temporary file, which is this processor's own work rather than something to do in `prepare`:
+    /// that runs under the executor's node lock and is not timed as this processor's time.
+    if (finish_build_requested)
+    {
+        finish_build_requested = false;
+        finishBuild();
+        return;
+    }
+
     auto num_rows = chunk.getNumRows();
     auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
     if (for_totals)

@@ -10,8 +10,9 @@ SET join_algorithm = 'direct,parallel_hash,hash';
 SET cross_to_inner_join_rewrite = 0;
 SET query_plan_join_swap_table = 'false';
 -- Pinned because the plan assertions below name where the filter landed, and the test harness
--- randomizes all three.
+-- randomizes all four.
 SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
 SET query_plan_convert_outer_join_to_inner_join = 1;
 SET query_plan_filter_push_down = 1;
 

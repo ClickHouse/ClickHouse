@@ -82,7 +82,7 @@ Rows are joined if the whole complex condition is met. If the conditions are not
 The `OR` operator inside the `ON` clause works using the hash join algorithm — for each `OR` argument with join keys for `JOIN`, a separate hash table is created, so memory consumption and query execution time grow linearly with an increase in the number of expressions `OR` of the `ON` clause.
 
 <Note>
-A condition that references columns from different tables may use any operator. Only conditions that use the equality operator (`=`) become join keys; the rest are evaluated on the joined rows. An `ON` section that contains no equality between the two tables at all is executed as a [block nested loop join](#join-with-an-arbitrary-on-condition).
+A condition that references columns from different tables may use any operator. Only conditions that use the equality operator (`=`) become join keys; the rest are evaluated on the joined rows. An `ON` section that contains no equality between the two tables at all is executed as a [block nested loop join](#join-with-an-arbitrary-on-condition), unless another algorithm can claim the condition: an `ALL INNER JOIN` becomes a `CROSS JOIN` with the condition as a filter on top of it, and a condition made of two inequalities goes to `ie_join` when that algorithm is enabled.
 </Note>
 
 **Example**
@@ -176,7 +176,7 @@ Clickhouse supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequali
 
 When the `ON` section contains an equality between the two tables next to the inequality, the equality is the join key and the inequality is checked on the rows it matched. Such a mixed condition is executed only by the `hash` and `grace_hash` join algorithms.
 
-When the `ON` section contains no equality between the two tables, there is no join key to match on, and the join is executed as a [block nested loop join](#join-with-an-arbitrary-on-condition) whatever [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is set to.
+When the `ON` section contains no equality between the two tables, there is no join key to match on. Two inequalities over the same pair of tables are executed by [`ie_join`](/reference/settings/session-settings/join#join_algorithm) when that algorithm is enabled; otherwise, and for any other shape of the condition, the join is executed as a [block nested loop join](#join-with-an-arbitrary-on-condition).
 
 **Example**
 
