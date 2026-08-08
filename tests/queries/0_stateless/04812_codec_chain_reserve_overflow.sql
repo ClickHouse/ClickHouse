@@ -29,6 +29,8 @@ DROP TABLE IF EXISTS t_codec_chain_dd_over;
 DROP TABLE IF EXISTS t_codec_chain_short;
 DROP TABLE IF EXISTS t_codec_chain_255;
 DROP TABLE IF EXISTS t_codec_chain_256;
+DROP TABLE IF EXISTS t_codec_chain_256_meta;
+DROP TABLE IF EXISTS t_codec_chain_meta_alter;
 
 -- 150 FPC stages. Two rows are enough, and before the fix this crashed the server with a SIGSEGV.
 -- The block size sets the stage the reserve wraps at, later for smaller blocks: with these 2 rows
