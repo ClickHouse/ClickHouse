@@ -101,6 +101,11 @@ SELECT count(*) OVER () AS `__row_count_marker` FROM t04812_dist FORMAT TSVWithN
 -- exactly as it is on master, rows lost, rather than turned into an error.
 SELECT 'a WITH-aliased window function may carry the internal name';
 WITH count(*) OVER () AS `'__row_count_marker'` SELECT `'__row_count_marker'` FROM t04812_dist FORMAT TSVWithNames;
+-- An expression wrapping a window function is named after its alias too, and is appended to the same
+-- header by the step after the window one, so it needs the same treatment. A wrapping expression with
+-- a second operand keeps the header non-empty, hence one that has none.
+SELECT 'a WITH-aliased expression over a window function may carry the internal name';
+WITH abs(count(*) OVER ()) AS `'__row_count_marker'` SELECT `'__row_count_marker'` FROM t04812_dist FORMAT TSVWithNames;
 -- The row count of a local query is never at risk, so a local plan must not carry the marker at all.
 -- Only the plan shows this: the marker is stripped again before the result either way, so no query
 -- result can tell a local pipeline that carries it from one that does not.

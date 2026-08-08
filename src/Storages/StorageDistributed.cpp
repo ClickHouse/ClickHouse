@@ -920,10 +920,10 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     return rewrite;
 }
 
-/// A window function defined in a WITH clause is named after its alias, which the user may spell as the
-/// marker's name. The window step appends that name to its input header, where Block::insert then
-/// rejects the pair as ambiguous, so such a query must keep its lost rows rather than become an error.
-bool isWindowFunctionNamedLikeMarker(const SelectQueryInfo & query_info)
+/// Both steps that append to the header the marker is in are checked: the window step, which appends
+/// each window function, and the step after it, which appends each expression wrapping one. A name
+/// there equal to the marker's makes Block::insert reject the pair, so no marker may be added.
+bool isMarkerNameTaken(const SelectQueryInfo & query_info)
 {
     /// Without an analyzer result the names are unknown, so assume the worst.
     if (!query_info.syntax_analyzer_result)
@@ -932,6 +932,10 @@ bool isWindowFunctionNamedLikeMarker(const SelectQueryInfo & query_info)
     const String marker_column_name = ASTLiteral(String(ROW_COUNT_MARKER)).getColumnName();
     for (const auto & window_function : query_info.syntax_analyzer_result->window_function_asts)
         if (window_function->getColumnName() == marker_column_name)
+            return true;
+
+    for (const auto & expression : query_info.syntax_analyzer_result->expressions_with_window_function)
+        if (expression->getColumnName() == marker_column_name)
             return true;
 
     return false;
@@ -1088,7 +1092,7 @@ void StorageDistributed::read(
             && processed_stage == QueryProcessingStage::WithMergeableState
             && query_info.has_window
             && header->empty()
-            && !isWindowFunctionNamedLikeMarker(query_info))
+            && !isMarkerNameTaken(query_info))
         {
             /// Still aliases the caller's AST, which the caller keeps using after this returns.
             modified_query_info.query = modified_query_info.query->clone();
