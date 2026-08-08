@@ -7797,7 +7797,13 @@ async function restoreEditor(state, token) {
         Object.assign(restored_params, state.params || {});
     }
     const active_tab_for_params = getActiveTab();
-    if (active_tab_for_params) active_tab_for_params.params = restored_params;
+    /// Both branches commit values that describe `state.query` (the rebuilt inputs, or the state's
+    /// own saved pair), so stamp that text — NOT `tab.query`, which a trusted edit during the
+    /// await above may have moved on (the edit's own rebuild superseded ours, `params_ok` false).
+    if (active_tab_for_params) {
+        active_tab_for_params.params = restored_params;
+        active_tab_for_params.paramsSyncedQuery = state.query;
+    }
     /// Parameters are now committed to both the DOM inputs and the tab; capture is safe again.
     params_restore_pending_token = null;
 }
@@ -8241,6 +8247,16 @@ function makeTab(title, query) {
         title: title || nextDefaultTitle(),
         query: query || '',
         params: {},
+        /// The query text `params` was last COHERENTLY committed for — stamped by every commit
+        /// site that knows which text its values describe (`captureActiveTab`, a restore, a
+        /// popstate, `syncParamsAfterRebuild`). `writeHistoryEntry` publishes the snapshot into
+        /// an entry/URL only while this matches the recorded text; otherwise the snapshot may
+        /// still describe an OLDER text (a history write raced the asynchronous parameter
+        /// rebuild AND the synchronous re-derivation was unavailable — e.g. the first
+        /// `WebAssembly.instantiate` still in flight) and publishing it would pair the new draft
+        /// with a removed placeholder's binding. In-page state only: deliberately not persisted —
+        /// a restore re-stamps it when it commits the saved (query, params) pair.
+        paramsSyncedQuery: null,
         result: null,          /// last result snapshot (history-state shape) or null
         lastSavedQuery: undefined,
         ...tabRuntimeDefaults(),
@@ -8362,6 +8378,7 @@ function captureActiveTab() {
     if (params_restore_pending_token !== null) return;
     if (params_synced_text === tab.query) {
         tab.params = getParamValues();
+        tab.paramsSyncedQuery = tab.query;
         return;
     }
     /// The `param_*` inputs describe an OLDER text: the keystroke-driven rebuild has not landed
@@ -8373,7 +8390,11 @@ function captureActiveTab() {
     /// from the captured text and bind only surviving names, mirroring what the pending rebuild
     /// would eventually commit (`syncParamsAfterRebuild`): live input values first, the tab's own
     /// saved snapshot as the fallback seed. When even that is impossible (no lexer yet), keep the
-    /// tab's last committed snapshot rather than adopt values known to describe different text.
+    /// tab's last committed snapshot rather than adopt values known to describe different text —
+    /// the snapshot stays in memory as the seed the pending rebuild will prune, but it is NOT
+    /// re-stamped for the captured text, so `writeHistoryEntry` will not publish it under this
+    /// draft (`paramsSyncedQuery`): an entry written in this window carries an empty parameter
+    /// map instead of a binding for a placeholder the draft may no longer have.
     const names = extractQueryParamNamesSync(tab.query);
     if (names === null) return;
     const dom = getParamValues();
@@ -8384,6 +8405,7 @@ function captureActiveTab() {
         else if (saved[name] !== undefined) values[name] = saved[name];
     }
     tab.params = values;
+    tab.paramsSyncedQuery = tab.query;
 }
 
 /// Abort a tab's in-flight query (if any) and supersede its run generation so its late responses
@@ -8498,6 +8520,8 @@ function duplicateTab(id, guard_paste = false) {
 
     const tab = makeTab(duplicateTitle(src.title), src.query);
     tab.params = { ...src.params };
+    /// The copy shares the source's query, so its snapshot describes the same text.
+    tab.paramsSyncedQuery = src.paramsSyncedQuery;
     const idx = tabs.findIndex(t => t.id === id);
     tabs.splice(idx + 1, 0, tab);
     activeTabId = tab.id;
@@ -9038,7 +9062,19 @@ function liveDivergedFromRun(run_snapshot) {
 /// (`updateQueryParams`) is asynchronous and may not have landed when the run completes.
 function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     const recorded_query = recorded ? recorded.query : tab.query;
-    const recorded_params = recorded ? recorded.params : tab.params;
+    /// Publish the tab's parameter snapshot only while it provably describes the recorded text
+    /// (`paramsSyncedQuery`, stamped at every coherent commit). Every editor-driven writer runs
+    /// `captureActiveTab` first, which re-derives and re-stamps the snapshot for the captured
+    /// text whenever it can — so a mismatch here means the derivation was impossible (the first
+    /// `WebAssembly.instantiate` of the lexer still in flight, a text too large to tokenize, or
+    /// a tab restore that has not committed yet): the snapshot still describes an OLDER text,
+    /// and pairing it with the new draft would record `param_x=42` under a `SELECT 1` that no
+    /// longer has `{x:Int32}`. Record an empty map instead — coherent by construction; a missing
+    /// binding for a surviving placeholder is an ordinary unset parameter, unlike a binding for
+    /// a nonexistent one. `tab.params` itself is untouched, so the pending rebuild still prunes
+    /// and re-commits the real values for later writes.
+    const recorded_params = recorded ? recorded.params
+                                     : (tab.paramsSyncedQuery === recorded_query ? tab.params : {});
     /// Skip a fresh entry if neither the active tab nor its query changed.
     const cur = history.state;
     const sameTab = cur && cur.tabId === tab.id;
@@ -9463,7 +9499,12 @@ window.onpopstate = function(event) {
     tab.lastSavedQuery = event.state.query;
     /// A preserved draft keeps its own parameter bindings (`captureActiveTab` snapshotted them
     /// alongside it). Taking the older entry's would pair the newer text with the older values.
-    if (event.state.params && !preserve_draft) tab.params = event.state.params;
+    if (event.state.params && !preserve_draft) {
+        /// The entry's pair is coherent by construction (`writeHistoryEntry`), so the restored
+        /// snapshot describes the entry's own query.
+        tab.params = event.state.params;
+        tab.paramsSyncedQuery = event.state.query;
+    }
     /// Restore the connection-scoped selected database from the navigated URL — but ONLY when the
     /// entry still belongs to the live connection. The connection (server address and user) was just
     /// restored from this entry above, so a stamped entry normally passes this gate; the check still
@@ -11991,7 +12032,8 @@ function syncParamsAfterRebuild()
 {
     if (params_restore_pending_token !== null || !bootstrap_settled) return;
     const tab = getActiveTab();
-    if (tab) tab.params = getParamValues();
+    /// `params_synced_text` is the text this rebuild landed for (committed just before every call).
+    if (tab) { tab.params = getParamValues(); tab.paramsSyncedQuery = params_synced_text; }
 }
 
 /// Rebuild the syntax highlighting, run buttons and query-parameter inputs from the current
@@ -12764,7 +12806,8 @@ async function reconcileStartup() {
             }
             setParamValues(urlParamValues);
             const tab = getActiveTab();
-            if (tab) tab.params = getParamValues();
+            /// `params_synced_text` is the URL query the rebuild above landed for.
+            if (tab) { tab.params = getParamValues(); tab.paramsSyncedQuery = params_synced_text; }
         } else {
             /// The URL query could not be tokenized, so `currentQueryParams` may describe a
             /// different query; rebuilding from it would attach the wrong placeholder names to

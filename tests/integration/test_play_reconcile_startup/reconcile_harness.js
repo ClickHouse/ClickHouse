@@ -374,7 +374,7 @@ function makeHistory(initialState, location) {
 
 /// ----- Context assembly -------------------------------------------------------------------
 
-function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs }) {
+function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs }) {
     const document = makeDocument();
     const location = makeLocation(href);
     const history = makeHistory(historyState, location);
@@ -431,7 +431,14 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs }) {
         scrollTo() {}, scroll() {},
         innerHeight: 800, innerWidth: 1280, devicePixelRatio: 1,
         addEventListener() {}, removeEventListener() {},
-        WebAssembly,
+        /// `wasmInstantiateDelayMs` keeps the WASM lexer "still loading" past startup settlement
+        /// (`wasmAvailable()` only checks the shape, so the wrapper still counts as available):
+        /// the window where a history write can race the first `WebAssembly.instantiate`.
+        WebAssembly: wasmInstantiateDelayMs
+            ? { instantiate: (...args) => new Promise((resolve, reject) =>
+                  setTimeout(() => WebAssembly.instantiate(...args).then(resolve, reject),
+                             wasmInstantiateDelayMs)) }
+            : WebAssembly,
     };
     sandbox.window = sandbox;
     sandbox.self = sandbox;
@@ -1130,6 +1137,48 @@ async function main() {
                     && closed_entry.params && closed_entry.params.x === '42',
                 closed_entry);
         }
+    }
+
+    /// Contract (a history write while the lexer is STILL LOADING publishes no stale binding):
+    /// the synchronous re-derivation above is only possible once `WebAssembly.instantiate` has
+    /// resolved. Delay it past startup settlement, so the whole scenario runs inside the "first
+    /// instantiate still in flight" window: the startup restore has not committed (`params_ok`
+    /// pending), no `param_*` input was ever rebuilt, and `captureActiveTab` can neither trust
+    /// the DOM nor re-derive. The entry a `closeTab` folds in that window must still not pair
+    /// the new draft with the previous text's binding — `writeHistoryEntry` publishes an empty
+    /// parameter map when the tab's snapshot is not provably coherent with the recorded text
+    /// (`paramsSyncedQuery`), rather than `{"query":"SELECT 1","params":{"x":"42"}}`.
+    {
+        const param_query = 'SELECT {x:Int32}';
+        const r = await runScenario(js, {
+            href: base,
+            historyState: null,
+            wasmInstantiateDelayMs: 5000,
+            seedTabs: [
+                { id: 't7', title: 'Report', query: param_query, params: { x: '42' }, result: null,
+                  lastSavedQuery: param_query },
+                { id: 't8', title: 'Other', query: 'SELECT 8', params: {}, result: null, lastSavedQuery: 'SELECT 8' },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
+        });
+        /// Sanity: the startup persist has happened (the restore's editor sync schedules it), but
+        /// the delayed instantiate keeps the lexer genuinely unavailable — the racing close below
+        /// is meaningful only inside that window.
+        check('capture-races-lexer-load', 'the lexer module is still loading when the scenario acts',
+            vm.runInContext('typeof lexer_module', r.sandbox) === 'undefined',
+            vm.runInContext('typeof lexer_module', r.sandbox));
+        const closed_entry = JSON.parse(vm.runInContext(
+            "query_area.value = 'SELECT 1';" +
+            "onQueryInput({ type: 'input', isTrusted: true });" +
+            "closeTab(activeTabId);" +
+            "JSON.stringify(history.state)",
+            r.sandbox));
+        check('capture-races-lexer-load', 'the entry folded during the lexer load carries the draft',
+            closed_entry && closed_entry.query === 'SELECT 1',
+            closed_entry);
+        check('capture-races-lexer-load', 'the entry folded during the lexer load carries no stale binding',
+            closed_entry && !(closed_entry.params && 'x' in closed_entry.params),
+            closed_entry);
     }
 
     /// Contract (a run completing after the editor moved on records what it RAN): the entry a
