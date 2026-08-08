@@ -578,12 +578,26 @@ void StorageMergeTree::alter(
         }
 
         {
-            /// Settings, the rename `mutation_*.txt`, and the durable metadata commit are
+            /// Settings, the mutation `mutation_*.txt`, and the durable metadata commit are
             /// done in one try so that any pre-commit throw restores the old settings.
             /// `prepareMutationEntry` writes the file but leaves `is_registered == false`,
-            /// so `~MergeTreeMutationEntry` removes it on unwinding. Writing it before the
-            /// durable commit keeps durable metadata and the mutation file in lockstep. See #80648.
+            /// so `~MergeTreeMutationEntry` removes it on unwinding.
+            ///
+            /// Rename / barrier / mixed mutations still write the mutation file before the
+            /// durable metadata commit so metadata and the mutation stay in lockstep for
+            /// merges. See #80648.
+            ///
+            /// TTL-only `MATERIALIZE_TTL` uses the opposite order (metadata first): an orphan
+            /// `MATERIALIZE_TTL` mutation without matching TTL metadata permanently wedges the
+            /// mutation queue (#113615). Metadata without the mutation is safe.
+            const bool ttl_only_materialize_mutation = !maybe_mutation_commands.empty()
+                && std::ranges::all_of(
+                    maybe_mutation_commands,
+                    [](const MutationCommand & command)
+                    { return command.type == MutationCommand::MATERIALIZE_TTL; });
+
             std::optional<PreparedMutationEntry> prepared;
+            bool durable_metadata_committed = false;
             try
             {
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
@@ -595,19 +609,44 @@ void StorageMergeTree::alter(
                 /// The CREATE-AST pre-validation above does not cover these checks. See #80648.
                 checkMetadataProperties(new_metadata, old_metadata, local_context);
 
-                if (!maybe_mutation_commands.empty())
-                    prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
-
                 /// Not under `currently_processing_in_background_mutex`: `alterTable` takes
                 /// `DatabaseAtomic::mutex`, which would invert lock order with the
                 /// scheduler/`RENAME`/`DROP` paths. Validation already ran above. See #80648.
-                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
+                if (ttl_only_materialize_mutation)
+                {
+                    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
+                    durable_metadata_committed = true;
+
+                    fiu_do_on(FailPoints::mt_alter_throw_after_ttl_metadata_commit,
+                    {
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after TTL metadata commit");
+                    });
+
+                    prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
+                }
+                else
+                {
+                    if (!maybe_mutation_commands.empty())
+                        prepared.emplace(prepareMutationEntry(maybe_mutation_commands, local_context));
+
+                    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
+                    durable_metadata_committed = true;
+                }
             }
             catch (...)
             {
-                LOG_ERROR(log, "Failed to commit metadata changes, reverting settings");
-                changeSettings(old_metadata.settings_changes, table_lock_holder);
-                /// `prepared` destructor removes the orphan `mutation_*.txt` (is_registered == false).
+                if (!durable_metadata_committed)
+                {
+                    LOG_ERROR(log, "Failed to commit metadata changes, reverting settings");
+                    changeSettings(old_metadata.settings_changes, table_lock_holder);
+                }
+                else
+                {
+                    /// TTL-only path: durable metadata already has the new TTL. Do not revert
+                    /// settings against it. `prepared` (if any) still has `is_registered == false`,
+                    /// so its destructor removes an incomplete `mutation_*.txt`.
+                    LOG_ERROR(log, "Failed after durable TTL metadata commit; leaving committed metadata in place");
+                }
                 throw;
             }
 
