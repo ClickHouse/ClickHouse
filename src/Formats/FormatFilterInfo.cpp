@@ -154,9 +154,12 @@ void FormatFilterInfo::initKeyConditionOnce(const Block & keys)
                 for (const auto & col : filter_actions_dag->getRequiredColumns())
                     if (!isColumnCovered(all_inputs, col.name))
                         all_inputs.insert({col.type->createColumn(), col.type, col.name});
+                /// Publish the derived columns separately: `additional_columns` is read by other
+                /// threads without synchronization (e.g. `StorageObjectStorageSource::createReader`),
+                /// so it must stay immutable after construction.
                 for (const auto & col : all_inputs)
                     if (!keys.has(col.name) && !additional_columns.has(col.name))
-                        additional_columns.insert(col);
+                        key_condition_derived_columns.insert(col);
 
                 ColumnsWithTypeAndName columns = all_inputs.getColumnsWithTypeAndName();
                 Names names;

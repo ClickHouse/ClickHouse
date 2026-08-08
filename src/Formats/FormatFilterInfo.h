@@ -95,9 +95,17 @@ struct FormatFilterInfo
 
     /// Optionally created from filter_actions_dag, if the format needs it.
     std::shared_ptr<const KeyCondition> key_condition;
-    /// Columns that are only needed for PREWHERE. In key_condition's "key" tuple, they come after
-    /// all columns of the sample block.
+    /// Columns that are only needed for filtering (PREWHERE / row-level filter), known at plan
+    /// time. Set at construction and never mutated afterwards: this struct is shared across
+    /// source threads that read it without synchronization, so any lazily derived columns go to
+    /// `key_condition_derived_columns` instead.
     Block additional_columns;
+    /// Filter input columns derived lazily by `initKeyConditionOnce` (on top of
+    /// `additional_columns`), e.g. required columns of `filter_actions_dag` that drive
+    /// row-group / spatial pruning. In key_condition's "key" tuple, they come after all columns
+    /// of the sample block and `additional_columns`. Only read after `initKeyConditionOnce`,
+    /// which provides the necessary synchronization via std::call_once.
+    Block key_condition_derived_columns;
 
     ColumnMapperPtr column_mapper;
 
@@ -118,7 +126,7 @@ private:
 public:
     bool hasFilter() const;
 
-    /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
+    /// Creates `key_condition` and `key_condition_derived_columns` with std::call_once semantics.
     /// If a previous init attempt threw an exception, rethrows it instead of retrying.
     void initKeyConditionOnce(const Block & keys);
 

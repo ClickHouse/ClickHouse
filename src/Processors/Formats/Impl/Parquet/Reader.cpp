@@ -401,6 +401,10 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
         extended_sample_block.insert(col);
+    /// Safe to read here: `initKeyConditionOnce` already ran in `initializeIfNeeded`.
+    for (const auto & col : format_filter_info->key_condition_derived_columns)
+        if (!extended_sample_block.has(col.name))
+            extended_sample_block.insert(col);
 
     /// Parse GeoParquet metadata once. Used by both Phase A (covering.bbox column injection)
     /// and SchemaConverter (geo type resolution). Parsing here avoids a redundant second parse
