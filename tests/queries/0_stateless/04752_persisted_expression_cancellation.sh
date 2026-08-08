@@ -58,9 +58,12 @@ deadline_case() {
 
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_$label SYNC"
     ${CLICKHOUSE_CLIENT} -q "$ddl"
-    ${CLICKHOUSE_CLIENT} --query_id "$query_id" --max_execution_time 1 --timeout_overflow_mode throw \
+    # A boolean test, not `grep -o -m1`: `-m1` stops after the first matching LINE and `-o` then
+    # prints EVERY match on it, so one line rendering the code name twice emits two lines.
+    if ${CLICKHOUSE_CLIENT} --query_id "$query_id" --max_execution_time 1 --timeout_overflow_mode throw \
         -q "INSERT INTO t_$label SELECT * FROM $src SETTINGS $BLOCK" 2>&1 \
-        | grep -o -m1 "TIMEOUT_EXCEEDED" || echo "$label: no timeout"
+        | grep -qw "TIMEOUT_EXCEEDED"
+    then echo "TIMEOUT_EXCEEDED"; else echo "$label: no timeout"; fi
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
     ${CLICKHOUSE_CLIENT} -q "
         SELECT if(max(query_duration_ms) < $BOUND, '$label: stopped promptly',
@@ -149,9 +152,10 @@ deadline_case "h3containment_orderby_deadline" \
 for fn in "sum(length(geohashesInBox(a, a, a + toFloat64(1), a + toFloat64(1), 7))) FROM src_f" \
           "sum(arrayFold((acc, x) -> acc + x + a, range(3000), toUInt64(0))) FROM src_i" \
           "sum(length(base58Decode(a))) FROM src_s"; do
-    ${CLICKHOUSE_CLIENT} --max_execution_time 1 --timeout_overflow_mode throw \
+    if ${CLICKHOUSE_CLIENT} --max_execution_time 1 --timeout_overflow_mode throw \
         -q "SELECT $fn SETTINGS max_block_size = 100000, max_threads = 1" 2>&1 \
-        | grep -o -m1 "TIMEOUT_EXCEEDED" || echo "direct baseline: no timeout"
+        | grep -qw "TIMEOUT_EXCEEDED"
+    then echo "TIMEOUT_EXCEEDED"; else echo "direct baseline: no timeout"; fi
 done
 
 # `KILL QUERY` needs its own channel for the h3 pair: it is the one cancellation their loop observes in
