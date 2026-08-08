@@ -1347,7 +1347,7 @@ bool mainTableExistenceRequired(const IAST & ast)
 /// `TABLE_ALREADY_EXISTS` when an active `dst` already exists. A `DETACH`/`ATTACH` of such a target would
 /// give a no-op or failing query a side effect on a table it never touches, breaking the side-effect-free
 /// invariant this hook keeps for failing queries, so those targets are not eligible. Only the
-/// `CREATE OR REPLACE`/`REPLACE` forms replace an existing object, so only they keep the target eligible
+/// `CREATE OR REPLACE`/`REPLACE` forms replace an existing object, so only they can keep the target eligible
 /// (the tables a `CREATE` reads — the `AS src` source, the populating `SELECT` — are eligible or not
 /// independently of its destination: see `createQueryStopsBeforeSources`, which suppresses them exactly
 /// when the statement stops on the destination first). The index-management statements that also travel through
@@ -1355,7 +1355,20 @@ bool mainTableExistenceRequired(const IAST & ast)
 bool mainTableTouchedIfExists(const IAST & ast, const ContextPtr & context)
 {
     if (const auto * create = ast.as<ASTCreateQuery>())
-        return create->replace_table || create->replace_view;
+    {
+        if (!create->replace_table && !create->replace_view)
+            return false;
+        /// A replacing form that carries a source clause validates that source before the replacement path
+        /// ever touches the existing destination: `getTablePropertiesAndNormalizeCreateQuery` analyzes the
+        /// populating `SELECT` (so `CREATE OR REPLACE TABLE dst AS SELECT missing_col FROM src` throws
+        /// with `dst` untouched), and `setEngine` rejects unsupported `AS src` sources such as views,
+        /// dictionaries, and window views. Whether that validation passes cannot be predicted here, so a
+        /// source-carrying replace conservatively keeps its destination out of scope — erring toward
+        /// suppressing randomization for a succeeding statement rather than detaching the destination of
+        /// a failing one. Note `CREATE OR REPLACE VIEW` always carries its defining `SELECT`, so its
+        /// destination is never eligible.
+        return !create->select && create->as_table.empty() && !create->as_table_function && !create->is_clone_as;
+    }
     if (ast.as<ASTUndropQuery>())
         return false;
     /// `CREATE INDEX` reaches the table only through the `ALTER TABLE ... ADD INDEX` statement

@@ -711,3 +711,29 @@ check_if_detached "SELECT * FROM t_reattach_uncovered FORMAT Null" "t_reattach_u
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_reattach_uncovered DETACH PART 'all_1_1_0'"
 check_if_not_detached "SELECT * FROM t_reattach_uncovered FORMAT Null" "t_reattach_uncovered"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_uncovered"
+
+# A replacing form that carries a source clause validates that source before the replacement path touches
+# the existing destination: the populating `SELECT` is analyzed by `getTablePropertiesAndNormalizeCreateQuery`
+# and an `AS src` source is validated by `setEngine`, so `CREATE OR REPLACE TABLE dst AS SELECT missing_col
+# FROM src` (or `... AS view_src`) fails with `dst` untouched. The hook cannot predict whether that
+# validation passes, so such destinations must stay out of scope — even for a statement that goes on to
+# succeed. A bare replacing form with an explicit definition keeps its destination covered.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_repl_dst"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_repl_src"
+${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_repl_view"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_repl_dst (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_repl_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE VIEW t_reattach_repl_view AS SELECT a FROM t_reattach_repl_src"
+
+check_fails_kind_without_detach "CREATE OR REPLACE TABLE t_reattach_repl_dst ENGINE = MergeTree ORDER BY a AS SELECT missing_col FROM t_reattach_repl_src" "t_reattach_repl_dst" "UNKNOWN_IDENTIFIER"
+check_fails_kind_without_detach "CREATE OR REPLACE TABLE t_reattach_repl_dst AS t_reattach_repl_view" "t_reattach_repl_dst" "INCORRECT_QUERY"
+
+# The failing statements above must not have replaced or lost the destination.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_reattach_repl_dst"
+
+check_if_not_detached "CREATE OR REPLACE TABLE t_reattach_repl_dst ENGINE = MergeTree ORDER BY a AS SELECT a FROM t_reattach_repl_src" "t_reattach_repl_dst"
+check_if_detached "CREATE OR REPLACE TABLE t_reattach_repl_dst (a UInt64) ENGINE = MergeTree ORDER BY a" "t_reattach_repl_dst"
+
+${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_repl_view"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_repl_src"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_repl_dst"
