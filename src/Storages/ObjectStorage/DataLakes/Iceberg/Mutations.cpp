@@ -775,6 +775,9 @@ void mutate(
                     chunk_partitioner,
                     sample_block))
                 continue;
+            /// Invalidate so a concurrent reader within the staleness window can't reuse a
+            /// cached "latest metadata" entry pointing at the pre-mutation snapshot.
+            persistent_table_components.invalidateMetadataCache();
         }
         break;
     }
