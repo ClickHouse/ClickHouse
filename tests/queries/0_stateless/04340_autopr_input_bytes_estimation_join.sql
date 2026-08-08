@@ -26,6 +26,9 @@ SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
 SET max_threads=0;
 SET use_uncompressed_cache=0;
 SET use_query_condition_cache=0;
+-- Reads served from the columns cache bypass the compressed reads that
+-- `ReadCompressedBytes` counts, breaking the estimate-vs-actual comparison below.
+SET use_columns_cache=0;
 
 DROP TABLE IF EXISTS ij_big;
 DROP TABLE IF EXISTS ij_small;
