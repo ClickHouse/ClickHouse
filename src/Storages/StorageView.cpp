@@ -332,13 +332,47 @@ void collectIdentifierShortNames(const ASTPtr & ast, NameSet & names, NameSet & 
 /// actually matches the target table, so a compound subcolumn such as a `Nested` `n.x` is preserved.
 /// Independent subquery scopes are left untouched: their identifiers refer to their own tables, and
 /// a name that happens to match the outer table there is not ours to rewrite.
-void stripTargetTableQualifier(ASTPtr & ast, const DatabaseAndTableWithAlias & target_table_ref)
+///
+/// Lambda scopes are masked the same way as in `collectIdentifierShortNames`: a lambda parameter
+/// shadows the table name/alias within the lambda body, so in `SELECT ... FROM t AS x WHERE
+/// arrayExists(x -> x.a > 0, arr)` the compound `x.a` is the tuple element `a` of the lambda
+/// parameter, not the table-qualified column `a`, and must not be rewritten.
+void stripTargetTableQualifier(ASTPtr & ast, const DatabaseAndTableWithAlias & target_table_ref, NameSet & bound_lambda_params)
 {
     if (!ast || ast->as<ASTSubquery>())
         return;
 
+    /// A lambda is represented as `lambda(tuple(params...), body)`. Mask its parameter names while
+    /// visiting the body and skip the parameter-declaration tuple entirely. Anything that does not
+    /// match the canonical lambda layout falls through to the generic traversal.
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+    {
+        if (const auto * params_tuple = function->arguments->children[0]->as<ASTFunction>();
+            params_tuple && params_tuple->name == "tuple" && params_tuple->arguments)
+        {
+            Names newly_bound;
+            for (const auto & param : params_tuple->arguments->children)
+                if (const auto * param_identifier = param->as<ASTIdentifier>())
+                    if (bound_lambda_params.insert(param_identifier->shortName()).second)
+                        newly_bound.push_back(param_identifier->shortName());
+
+            stripTargetTableQualifier(function->arguments->children[1], target_table_ref, bound_lambda_params);
+
+            for (const auto & name : newly_bound)
+                bound_lambda_params.erase(name);
+            return;
+        }
+    }
+
     if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->compound() && !identifier->isParam())
     {
+        /// A leading component bound by an enclosing lambda parameter shadows the table
+        /// name/alias: `x.a` inside `x -> ...` is a member of the parameter, never a
+        /// table-qualified column, even when `x` is also the table alias.
+        if (bound_lambda_params.contains(identifier->name_parts.front()))
+            return;
+
         const String stripped = IdentifierSemantic::extractNestedName(*identifier, target_table_ref);
         if (!stripped.empty() && stripped != identifier->name())
         {
@@ -350,7 +384,7 @@ void stripTargetTableQualifier(ASTPtr & ast, const DatabaseAndTableWithAlias & t
     }
 
     for (auto & child : ast->children)
-        stripTargetTableQualifier(child, target_table_ref);
+        stripTargetTableQualifier(child, target_table_ref, bound_lambda_params);
 }
 
 /// Extracts column mapping from view column names to target table column names.
@@ -1333,7 +1367,10 @@ SinkToStoragePtr StorageView::write(
     /// predicate written with table qualification is evaluated rather than rejected.
     ASTPtr where_condition = select.where() ? select.where()->clone() : nullptr;
     if (where_condition)
-        stripTargetTableQualifier(where_condition, target_table_ref);
+    {
+        NameSet where_bound_lambda_params;
+        stripTargetTableQualifier(where_condition, target_table_ref, where_bound_lambda_params);
+    }
 
     auto view_header = std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized());
 
