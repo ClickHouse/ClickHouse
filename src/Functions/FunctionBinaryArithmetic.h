@@ -72,6 +72,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
@@ -2187,8 +2188,17 @@ public:
         if constexpr (is_plus)
         {
             if (isExponentialTimeDecayingFloat64(arguments[0]) && isExponentialTimeDecayingFloat64(arguments[1]))
-                return createDataTypeExponentialTimeDecayingFloat64(
-                    *tryGetExponentialTimeDecayingFloat64DecayLength(arguments[0]));
+            {
+                const Float64 left_decay_length = *tryGetExponentialTimeDecayingFloat64DecayLength(arguments[0]);
+                const Float64 right_decay_length = *tryGetExponentialTimeDecayingFloat64DecayLength(arguments[1]);
+                if (left_decay_length != right_decay_length)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot add ExponentialTimeDecayingFloat64 values with different decay lengths: {} and {}",
+                        left_decay_length,
+                        right_decay_length);
+                return createDataTypeExponentialTimeDecayingFloat64(left_decay_length);
+            }
         }
 
         /// Special case when multiply aggregate function state
