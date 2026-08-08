@@ -177,7 +177,7 @@ We recommend not changing this if you have just started using ClickHouse.
 - `min_part_size` – The minimum size of a data part.
 - `min_part_size_ratio` – The ratio of the data part size to the table size.
 - `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
-- `level` – Compression level. See [Codecs](/reference/statements/create/table#general-purpose-codecs).
+- `level` – Compression level. See [Codecs](/reference/statements/create/table/codec#general-purpose-codecs).
 
 <Note>
 You can configure multiple `<case>` sections.
@@ -206,7 +206,7 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
 ```
 
 ## encryption {#encryption}
-Configures a command to obtain a key to be used by [encryption codecs](/reference/statements/create/table#encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
+Configures a command to obtain a key to be used by [encryption codecs](/reference/statements/create/table/codec#encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
 
 Keys can be hex or string with a length equal to 16 bytes.
 
