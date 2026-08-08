@@ -5,9 +5,11 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace DB
 {
@@ -280,6 +282,136 @@ std::optional<Float64> tryParseNumber(const String & text)
     return {};
 }
 
+namespace
+{
+
+/// Converts a non-negative exact magnitude and a sign into an integer field.
+/// Returns nullopt when the value does not fit the 64-bit range.
+std::optional<Field> integerFieldFromMagnitude(Int128 magnitude, bool negative)
+{
+    if (!negative)
+    {
+        if (magnitude > Int128(std::numeric_limits<UInt64>::max()))
+            return {};
+        return Field(static_cast<UInt64>(magnitude));
+    }
+    if (-magnitude < Int128(std::numeric_limits<Int64>::min()))
+        return {};
+    return Field(static_cast<Int64>(-magnitude));
+}
+
+/// Computes suffixed terms ("1h30m", "10KiB", "1Ki512") with integer arithmetic.
+/// Returns nullopt when any term is fractional, so the caller falls back to the
+/// Float64 value of tryParseNumber. The sign must already be stripped.
+std::optional<Int128> tryParseExactSuffixedTerms(std::string_view rest, bool durations)
+{
+    const SuffixMultiplier * suffixes = durations ? duration_suffixes : byte_suffixes;
+    size_t suffix_count = durations ? std::size(duration_suffixes) : std::size(byte_suffixes);
+
+    Int128 total = 0;
+    bool has_suffix = false;
+    while (!rest.empty())
+    {
+        size_t digits = 0;
+        while (digits < rest.size() && isDigit(rest[digits]))
+            ++digits;
+        if (digits == 0)
+            return {};
+        std::string_view digits_view = rest.substr(0, digits);
+        UInt64 value = 0;
+        auto [end, ec] = std::from_chars(digits_view.data(), digits_view.data() + digits_view.size(), value);
+        if (ec != std::errc() || end != digits_view.data() + digits_view.size())
+            return {};
+        rest.remove_prefix(digits);
+
+        if (rest.empty())
+        {
+            /// A trailing number without a suffix is allowed only in byte sizes.
+            if (durations || !has_suffix)
+                return {};
+            total += Int128(value);
+            break;
+        }
+
+        bool matched = false;
+        for (size_t i = 0; i < suffix_count; ++i)
+        {
+            if (rest.starts_with(suffixes[i].suffix))
+            {
+                /// All the multipliers (powers of 2 and of 10 up to 1e12, and the nanosecond
+                /// unit factors) are integers exactly representable in Float64.
+                total += Int128(value) * static_cast<Int128>(suffixes[i].multiplier);
+                rest.remove_prefix(suffixes[i].suffix.size());
+                matched = true;
+                has_suffix = true;
+                break;
+            }
+        }
+        if (!matched)
+            return {};
+        if (total > Int128(std::numeric_limits<UInt64>::max()))
+            return {};
+    }
+    if (!has_suffix)
+        return {};
+    return total;
+}
+
+}
+
+std::optional<Field> tryParseNumberField(const String & text)
+{
+    auto approximate = tryParseNumber(text);
+    if (!approximate)
+        return {};
+
+    String stripped = removeUnderscores(text);
+    std::string_view rest = stripped;
+    bool negative = false;
+    if (!rest.empty() && (rest[0] == '-' || rest[0] == '+'))
+    {
+        negative = rest[0] == '-';
+        rest.remove_prefix(1);
+    }
+
+    if (!rest.empty() && isDigit(rest[0]))
+    {
+        /// A plain decimal integer.
+        if (std::all_of(rest.begin(), rest.end(), isDigit))
+        {
+            UInt64 value = 0;
+            auto [end, ec] = std::from_chars(rest.data(), rest.data() + rest.size(), value);
+            if (ec == std::errc() && end == rest.data() + rest.size())
+                if (auto field = integerFieldFromMagnitude(Int128(value), negative))
+                    return field;
+        }
+        /// An integer with a base prefix (0x/0o/0b).
+        else if (rest.size() > 2 && rest[0] == '0'
+            && (rest[1] == 'x' || rest[1] == 'X' || rest[1] == 'o' || rest[1] == 'O' || rest[1] == 'b' || rest[1] == 'B'))
+        {
+            int base = (rest[1] == 'x' || rest[1] == 'X') ? 16 : ((rest[1] == 'o' || rest[1] == 'O') ? 8 : 2);
+            std::string_view sub = rest.substr(2);
+            UInt64 value = 0;
+            auto [end, ec] = std::from_chars(sub.data(), sub.data() + sub.size(), value, base);
+            if (ec == std::errc() && end == sub.data() + sub.size())
+                if (auto field = integerFieldFromMagnitude(Int128(value), negative))
+                    return field;
+        }
+        /// Integral duration or byte-size terms. Durations are tried first,
+        /// in the same order as tryParseNumber, and their suffix sets do not
+        /// overlap on any complete string, so the value matches tryParseNumber.
+        else
+        {
+            for (bool durations : {true, false})
+                if (auto magnitude = tryParseExactSuffixedTerms(rest, durations))
+                    if (auto field = integerFieldFromMagnitude(*magnitude, negative))
+                        return field;
+        }
+    }
+
+    return Field(*approximate);
+}
+
 bool isNumberPrefix(const String & text)
 {
     std::string_view rest = text;
@@ -505,35 +637,25 @@ std::optional<TimeValue> tryParseTimestamp(const String & text)
                 /// overflowing into a wrong epoch.
                 constexpr auto max_ns = std::numeric_limits<Int64>::max();
                 Int64 ns = 0;
+                Int64 unit_ns = 0;
                 if (value < 100'000'000'000ULL)
-                {
-                    if (value > static_cast<UInt64>(max_ns / nsecs_per_second))
-                        return {};
-                    ns = static_cast<Int64>(value) * nsecs_per_second;
-                }
+                    unit_ns = nsecs_per_second;
                 else if (value < 100'000'000'000'000ULL)
-                {
-                    if (value > static_cast<UInt64>(max_ns / nsecs_per_millisecond))
-                        return {};
-                    ns = static_cast<Int64>(value) * nsecs_per_millisecond;
-                }
+                    unit_ns = nsecs_per_millisecond;
                 else if (value < 100'000'000'000'000'000ULL)
-                {
-                    if (value > static_cast<UInt64>(max_ns / nsecs_per_microsecond))
-                        return {};
-                    ns = static_cast<Int64>(value) * nsecs_per_microsecond;
-                }
+                    unit_ns = nsecs_per_microsecond;
                 else
-                {
-                    if (value > static_cast<UInt64>(max_ns))
-                        return {};
-                    ns = static_cast<Int64>(value);
-                }
+                    unit_ns = 1;
+                if (value > static_cast<UInt64>(max_ns / unit_ns))
+                    return {};
+                ns = static_cast<Int64>(value) * unit_ns;
 
+                /// The timestamp denotes the whole period of its implied precision:
+                /// e.g. a millisecond timestamp matches the whole millisecond.
                 TimeValue result;
                 result.has_timezone = true;
                 result.start_ns = ns;
-                result.end_ns = ns + (value < 100'000'000'000ULL ? nsecs_per_second : 1);
+                result.end_ns = ns <= max_ns - unit_ns ? ns + unit_ns : max_ns;
                 return result;
             }
         }

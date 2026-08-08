@@ -654,7 +654,7 @@ ASTPtr LogsQLParser::parseFilterRange(const String & field_name)
     lex.nextToken();
 
     String min_text = lex.nextCompoundToken();
-    auto min_value = tryParseNumber(min_text);
+    auto min_value = tryParseNumberField(min_text);
     if (!min_value)
         throwSyntaxError(fmt::format("cannot parse {} as a number in range()", min_text));
 
@@ -663,7 +663,7 @@ ASTPtr LogsQLParser::parseFilterRange(const String & field_name)
     lex.nextToken();
 
     String max_text = lex.nextCompoundToken();
-    auto max_value = tryParseNumber(max_text);
+    auto max_value = tryParseNumberField(max_text);
     if (!max_value)
         throwSyntaxError(fmt::format("cannot parse {} as a number in range()", max_text));
 
@@ -674,13 +674,18 @@ ASTPtr LogsQLParser::parseFilterRange(const String & field_name)
         throwSyntaxError(fmt::format("unexpected closing token {} in range(); expecting ')' or ']'", lex.getToken()));
     lex.nextToken();
 
+    auto is_infinite = [](const Field & field)
+    {
+        return field.getType() == Field::Types::Float64 && std::isinf(field.safeGet<Float64>());
+    };
+
     ASTs conditions;
-    if (!std::isinf(*min_value))
+    if (!is_infinite(*min_value))
         conditions.push_back(makeNumericComparison(field_name, include_min ? "greaterOrEquals" : "greater",
-            make_intrusive<ASTLiteral>(Field(*min_value))));
-    if (!std::isinf(*max_value))
+            make_intrusive<ASTLiteral>(*min_value)));
+    if (!is_infinite(*max_value))
         conditions.push_back(makeNumericComparison(field_name, include_max ? "lessOrEquals" : "less",
-            make_intrusive<ASTLiteral>(Field(*max_value))));
+            make_intrusive<ASTLiteral>(*max_value)));
 
     return makeAnd(std::move(conditions));
 }
@@ -1480,9 +1485,10 @@ ASTPtr LogsQLParser::makeNumericComparison(const String & field_name, const Stri
     /// fractional values (where the exact cast yields NULL) are compared as `Float64`.
     ASTPtr exact = makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Int128"))));
     ASTPtr lossy = makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Float64"))));
+    ASTPtr exact_comparison = makeASTFunction(function_name, exact, literal->clone());
     return makeASTFunction("if",
         makeASTFunction("isNotNull", exact->clone()),
-        makeASTFunction(function_name, exact, literal->clone()),
+        std::move(exact_comparison),
         makeASTFunction(function_name, lossy, std::move(literal)));
 }
 
@@ -1497,9 +1503,9 @@ ASTPtr LogsQLParser::makeComparisonFilter(const String & field_name, const Strin
     bool is_numeric = literal->as<ASTLiteral>()->value.getType() != Field::Types::String;
     if (!is_numeric && !quoted && isNumberPrefix(value))
     {
-        if (auto number = tryParseNumber(value))
+        if (auto number = tryParseNumberField(value))
         {
-            literal = make_intrusive<ASTLiteral>(Field(*number));
+            literal = make_intrusive<ASTLiteral>(*number);
             is_numeric = true;
         }
     }
@@ -1518,13 +1524,23 @@ ASTPtr LogsQLParser::makeValueLiteral(const String & text, bool quoted)
     {
         if (text.find('.') == String::npos)
         {
-            Int64 int_value = 0;
-            auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), int_value);
-            if (ec == std::errc() && end == text.data() + text.size())
+            std::string_view digits = text;
+            if (digits.starts_with('+'))
+                digits.remove_prefix(1);
+            if (digits.starts_with('-'))
             {
-                if (int_value >= 0)
-                    return make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(int_value)));
-                return make_intrusive<ASTLiteral>(Field(int_value));
+                Int64 int_value = 0;
+                auto [end, ec] = std::from_chars(digits.data(), digits.data() + digits.size(), int_value);
+                if (ec == std::errc() && end == digits.data() + digits.size())
+                    return make_intrusive<ASTLiteral>(Field(int_value));
+            }
+            else
+            {
+                /// Parsed as unsigned to keep integers above Int64::max exact.
+                UInt64 uint_value = 0;
+                auto [end, ec] = std::from_chars(digits.data(), digits.data() + digits.size(), uint_value);
+                if (ec == std::errc() && end == digits.data() + digits.size())
+                    return make_intrusive<ASTLiteral>(Field(uint_value));
             }
         }
         if (auto value = tryParseNumber(text))

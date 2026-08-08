@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Field.h>
 
 #include <optional>
 
@@ -14,6 +15,12 @@ namespace LogsQLUtils
 /// hex/octal/binary prefixes, or "inf"/"nan"), a duration ("1h33m", result in nanoseconds),
 /// or a byte size ("10KiB", "1MB"). Mirrors tryParseNumber from VictoriaLogs.
 std::optional<Float64> tryParseNumber(const String & text);
+
+/// Same as tryParseNumber, but preserves integral values exactly: a value that is a whole
+/// number computed from integer components (a plain integer, an integer with a base prefix,
+/// or integral duration/byte-size terms) is returned as a `UInt64`/`Int64` field, so that
+/// comparisons stay exact across the full 64-bit range instead of rounding through `Float64`.
+std::optional<Field> tryParseNumberField(const String & text);
 
 /// Parses a LogsQL duration ("5m", "1h33m55s", "-1.5d") into nanoseconds.
 std::optional<Int64> tryParseDuration(const String & text);
