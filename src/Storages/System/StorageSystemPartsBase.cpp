@@ -24,6 +24,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/DatabaseCatalog.h>
 
 namespace
@@ -332,8 +333,15 @@ void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline
 
     MutableColumns res_columns = header->cloneEmptyColumns();
 
+    /// The whole result is built eagerly here, so without this check a cancelled or timed out
+    /// query would keep building rows over every storage until the very end.
+    QueryStatusPtr query_status = context->getProcessListElement();
+
     while (StoragesInfo info = stream->next())
     {
+        if (query_status)
+            query_status->checkTimeLimit();
+
         storage->processNextStorage(context, res_columns, columns_mask, info, has_state_column);
     }
 

@@ -1,4 +1,6 @@
 #include <Storages/System/StorageSystemPartsColumns.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
@@ -120,8 +122,14 @@ void StorageSystemPartsColumns::processNextStorage(
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
     all_parts = info.getParts(all_parts_state, has_state_column);
+
+    QueryStatusPtr query_status = context->getProcessListElement();
+
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
+        if (query_status)
+            query_status->checkTimeLimit();
+
         const auto & part = all_parts[part_number];
         const auto part_metadata_snapshot = part->getMetadataSnapshot();
         auto part_state = all_parts_state[part_number];

@@ -1,4 +1,6 @@
 #include <Storages/System/StorageSystemProjectionParts.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
@@ -93,13 +95,19 @@ StorageSystemProjectionParts::StorageSystemProjectionParts(const StorageID & tab
 }
 
 void StorageSystemProjectionParts::processNextStorage(
-    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     using State = MergeTreeDataPartState;
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column);
+
+    QueryStatusPtr query_status = context->getProcessListElement();
+
     for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
+        if (query_status)
+            query_status->checkTimeLimit();
+
         const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
         chassert(parent_part);
