@@ -185,7 +185,7 @@ FROM
         exponentialTimeDecayedAvg(10)(value, time) AS decaying_avg,
         exponentialTimeDecayedCount(10)(time) AS decaying_count
     FROM VALUES(
-        'value Decimal64(2), time DateTime64(3)',
+        'value Decimal64(2), time DateTime64(3, \'UTC\')',
         (10, '2020-01-01 00:00:00'),
         (20, '2020-01-01 00:00:10'),
         (5, '2020-01-01 00:00:05'))
@@ -234,8 +234,8 @@ ENGINE = Memory;
 
 INSERT INTO exponential_time_decaying_values
 WITH
-    exponentialTimeDecayingFloat64(8, toDateTime64('2020-01-01 00:00:00', 3), 10) AS a,
-    exponentialTimeDecayingFloat64(4, toDateTime64('2020-01-01 00:00:10', 3), 10) AS b
+    exponentialTimeDecayingFloat64(8, toDateTime64('2020-01-01 00:00:00', 3, 'UTC'), 10) AS a,
+    exponentialTimeDecayingFloat64(4, toDateTime64('2020-01-01 00:00:10', 3, 'UTC'), 10) AS b
 SELECT a + b;
 
 SELECT
@@ -244,7 +244,7 @@ SELECT
     round(tupleElement(decaying_value, 'decay_length'), 6),
     round(exponentialTimeDecayingValueAt(
         decaying_value,
-        toDateTime64('2020-01-01 00:00:20', 3)), 6)
+        toDateTime64('2020-01-01 00:00:20', 3, 'UTC')), 6)
 FROM exponential_time_decaying_values;
 
 DROP TABLE exponential_time_decaying_values;
@@ -367,7 +367,7 @@ WITH
         CROSS JOIN
         (
             SELECT arrayJoin([1, 5, 31, 257, 2048]) AS batch_count
-        )
+        ) AS batch_counts
         GROUP BY
             batch_count,
             batch_id
