@@ -30,8 +30,10 @@ different format built on top of HDF5, is not supported; convert such a file fir
 A NetCDF file is a set of named multidimensional arrays, called variables, over a set of named
 dimensions. Every variable becomes a column, and the rows enumerate the Cartesian product of all the
 dimensions that the variables use. A variable that does not use some of these dimensions has the
-same value repeated for every index along them. This is the same table that the `to_dataframe`
-method of the `xarray` library produces.
+same value repeated for every index along them. The `to_dataframe` method of the `xarray` library
+produces a table with the same columns and the same set of rows, but the rows can come in a
+different order: `to_dataframe` puts the dimensions in alphabetical order by default, while
+ClickHouse keeps the order of the dimensions of the variables, as described below.
 
 For example, a file with the dimensions `time`, `lat`, `lon` and the variables `time(time)`,
 `lat(lat)`, `lon(lon)` and `temperature(time, lat, lon)` is read as a table with the columns `time`,
