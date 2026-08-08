@@ -4,7 +4,7 @@ FROM VALUES('value Float64, time Float64', (1, 0));
 
 -- The new aggregate-function form is experimental and disabled by default.
 SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
-SELECT exponentialTimeDecayingFloat64(1, toFloat64(0), 10); -- { serverError UNKNOWN_FUNCTION }
+SELECT exponentialTimeDecayingFloat64(10)(1, toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 
 -- Boolean keywords enable and disable the aggregate-function forms.
 SET allow_experimental_time_decay_aggregate_functions = true;
@@ -16,20 +16,20 @@ SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverErr
 -- Numeric Boolean values have the same behavior.
 SET allow_experimental_time_decay_aggregate_functions = 0;
 SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
-SELECT exponentialTimeDecayingFloat64(1, toFloat64(0), 10); -- { serverError UNKNOWN_FUNCTION }
+SELECT exponentialTimeDecayingFloat64(10)(1, toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
--- The value type has one fixed Float64 representation and takes no type arguments.
-SELECT CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(Float64)'); -- { serverError DATA_TYPE_CANNOT_HAVE_ARGUMENTS }
+-- The decay length is encoded in the type; values store only value and anchor time.
+SELECT toTypeName(CAST((toFloat64(1), toFloat64(0)), 'ExponentialTimeDecayingFloat64(10)'));
 
 -- Addition preserves the input category: scalars remain scalar and decaying
 -- values remain ExponentialTimeDecayingFloat64.
 SELECT
     toTypeName(toFloat64(1) + toFloat64(2)),
     toTypeName(
-        exponentialTimeDecayingFloat64(1, toFloat64(0), 10)
-        + exponentialTimeDecayingFloat64(2, toFloat64(0), 10));
+        exponentialTimeDecayingFloat64(10)(1, toFloat64(0))
+        + exponentialTimeDecayingFloat64(10)(2, toFloat64(0)));
 
 -- Preserve the existing decay-length semantics: a value observed one decay
 -- length before the greatest timestamp has weight 1/e.
@@ -174,7 +174,7 @@ SELECT
     round(tupleElement(decaying_count, 'value'), 6),
     toTypeName(decaying_sum),
     tupleElement(decaying_sum, 'time'),
-    round(tupleElement(decaying_sum, 'decay_length'), 6),
+    round(exponentialTimeDecayingDecayLength(decaying_sum), 6),
     round(exponentialTimeDecayingValueAt(
         decaying_sum,
         tupleElement(decaying_sum, 'time') + 10), 6)
@@ -193,20 +193,20 @@ FROM
 
 -- Decaying values with the same decay length can be combined at their latest anchor.
 WITH
-    exponentialTimeDecayingFloat64(8, toFloat64(0), 10) AS a,
-    exponentialTimeDecayingFloat64(4, toFloat64(10), 10) AS b,
+    exponentialTimeDecayingFloat64(10)(8, toFloat64(0)) AS a,
+    exponentialTimeDecayingFloat64(10)(4, toFloat64(10)) AS b,
     exponentialTimeDecayingAdd(a, b) AS c
 SELECT
     toTypeName(c),
     round(tupleElement(c, 'value'), 6),
     tupleElement(c, 'time'),
-    round(tupleElement(c, 'decay_length'), 6),
+    round(exponentialTimeDecayingDecayLength(c), 6),
     round(exponentialTimeDecayingValueAt(c, toFloat64(20)), 6);
 
 -- Equal-anchor values add directly, and evaluation at the anchor returns the stored value.
 WITH
-    exponentialTimeDecayingFloat64(2, toFloat64(10), 10) AS a,
-    exponentialTimeDecayingFloat64(4, toFloat64(10), 10) AS b,
+    exponentialTimeDecayingFloat64(10)(2, toFloat64(10)) AS a,
+    exponentialTimeDecayingFloat64(10)(4, toFloat64(10)) AS b,
     exponentialTimeDecayingAdd(a, b) AS c
 SELECT
     round(tupleElement(c, 'value'), 6),
@@ -214,34 +214,33 @@ SELECT
     round(exponentialTimeDecayingValueAt(c, toFloat64(10)), 6);
 
 -- DateTime anchors are stored as Float64 seconds.
-WITH exponentialTimeDecayingFloat64(
+WITH exponentialTimeDecayingFloat64(10)(
     8,
-    toDateTime('2020-01-01 00:00:00', 'UTC'),
-    10) AS decaying_value
+    toDateTime('2020-01-01 00:00:00', 'UTC')) AS decaying_value
 SELECT
     tupleElement(decaying_value, 'time'),
     round(exponentialTimeDecayingValueAt(
         decaying_value,
         toDateTime('2020-01-01 00:00:10', 'UTC')), 6);
 
--- The non-parameterized type can be stored.
+-- The parameterized type can be stored.
 DROP TABLE IF EXISTS exponential_time_decaying_values;
 CREATE TABLE exponential_time_decaying_values
 (
-    decaying_value ExponentialTimeDecayingFloat64
+    decaying_value ExponentialTimeDecayingFloat64(10)
 )
 ENGINE = Memory;
 
 INSERT INTO exponential_time_decaying_values
 WITH
-    exponentialTimeDecayingFloat64(8, toDateTime64('2020-01-01 00:00:00', 3, 'UTC'), 10) AS a,
-    exponentialTimeDecayingFloat64(4, toDateTime64('2020-01-01 00:00:10', 3, 'UTC'), 10) AS b
+    exponentialTimeDecayingFloat64(10)(8, toDateTime64('2020-01-01 00:00:00', 3, 'UTC')) AS a,
+    exponentialTimeDecayingFloat64(10)(4, toDateTime64('2020-01-01 00:00:10', 3, 'UTC')) AS b
 SELECT a + b;
 
 SELECT
     round(tupleElement(decaying_value, 'value'), 6),
     tupleElement(decaying_value, 'time'),
-    round(tupleElement(decaying_value, 'decay_length'), 6),
+    round(exponentialTimeDecayingDecayLength(decaying_value), 6),
     round(exponentialTimeDecayingValueAt(
         decaying_value,
         toDateTime64('2020-01-01 00:00:20', 3, 'UTC')), 6)
@@ -249,34 +248,65 @@ FROM exponential_time_decaying_values;
 
 DROP TABLE exponential_time_decaying_values;
 
+-- The dedicated type can be merged directly by AggregatingMergeTree through SimpleAggregateFunction.
+DROP TABLE IF EXISTS exponential_time_decaying_simple_aggregate;
+CREATE TABLE exponential_time_decaying_simple_aggregate
+(
+    key UInt8,
+    decaying_value SimpleAggregateFunction(
+        exponentialTimeDecayedSum,
+        ExponentialTimeDecayingFloat64(10))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY key;
+
+INSERT INTO exponential_time_decaying_simple_aggregate
+SELECT 1, exponentialTimeDecayingFloat64(10)(8, toFloat64(0));
+
+INSERT INTO exponential_time_decaying_simple_aggregate
+SELECT 1, exponentialTimeDecayingFloat64(10)(4, toFloat64(10));
+
+OPTIMIZE TABLE exponential_time_decaying_simple_aggregate FINAL;
+
+SELECT
+    round(tupleElement(decaying_value, 'value'), 6),
+    tupleElement(decaying_value, 'time'),
+    exponentialTimeDecayingDecayLength(decaying_value),
+    round(exponentialTimeDecayingValueAt(decaying_value, toFloat64(20)), 6)
+FROM exponential_time_decaying_simple_aggregate;
+
+DROP TABLE exponential_time_decaying_simple_aggregate;
+
 -- Different decay lengths cannot be represented by one decay curve and are rejected.
 SELECT exponentialTimeDecayingAdd(
-    exponentialTimeDecayingFloat64(8, toFloat64(0), 10),
-    exponentialTimeDecayingFloat64(4, toFloat64(10), 20)); -- { serverError BAD_ARGUMENTS }
+    exponentialTimeDecayingFloat64(10)(8, toFloat64(0)),
+    exponentialTimeDecayingFloat64(20)(4, toFloat64(10))); -- { serverError BAD_ARGUMENTS }
 SELECT
-    exponentialTimeDecayingFloat64(8, toFloat64(0), 10)
-    + exponentialTimeDecayingFloat64(4, toFloat64(10), 20); -- { serverError BAD_ARGUMENTS }
+    exponentialTimeDecayingFloat64(10)(8, toFloat64(0))
+    + exponentialTimeDecayingFloat64(20)(4, toFloat64(10)); -- { serverError BAD_ARGUMENTS }
 
 -- Repeated addition with the same decay length remains independent of grouping.
 WITH
-    exponentialTimeDecayingFloat64(1, toFloat64(0), 10) AS a,
-    exponentialTimeDecayingFloat64(1, toFloat64(1), 10) AS b,
-    exponentialTimeDecayingFloat64(1, toFloat64(2), 10) AS c,
+    exponentialTimeDecayingFloat64(10)(1, toFloat64(0)) AS a,
+    exponentialTimeDecayingFloat64(10)(1, toFloat64(1)) AS b,
+    exponentialTimeDecayingFloat64(10)(1, toFloat64(2)) AS c,
     (a + b) + c AS lhs,
     a + (b + c) AS rhs
 SELECT
     abs(tupleElement(lhs, 'value') - tupleElement(rhs, 'value')) < 1e-12,
-    abs(tupleElement(lhs, 'decay_length') - tupleElement(rhs, 'decay_length')) < 1e-12,
+    exponentialTimeDecayingDecayLength(lhs) = exponentialTimeDecayingDecayLength(rhs),
     abs(exponentialTimeDecayingValueAt(lhs, toFloat64(10)) - exponentialTimeDecayingValueAt(rhs, toFloat64(10))) < 1e-12;
 
 -- Reproducibly generated values with different timestamps and the same decay length
 -- must be independent of input order and intermediate batch grouping.
 WITH
     arrayMap(
-        number -> exponentialTimeDecayingFloat64(
-            toFloat64((sipHash64(number, 11) % 100000) + 1) / 1000,
-            toFloat64(sipHash64(number, 22) % 100000) / 100,
-            toFloat64(17)),
+        number -> CAST(
+            (
+                toFloat64((sipHash64(number, 11) % 100000) + 1) / 1000,
+                toFloat64(sipHash64(number, 22) % 100000) / 100
+            ),
+            'ExponentialTimeDecayingFloat64(17)'),
         range(64)) AS values,
     arrayFold(
         (acc, value) -> acc + value,
@@ -300,8 +330,7 @@ WITH
     first_batch + second_batch AS batched
 SELECT
     abs(tupleElement(direct, 'value') - tupleElement(reversed, 'value')) <= 1e-12 * greatest(1., tupleElement(direct, 'value')),
-    abs(tupleElement(direct, 'decay_length') - tupleElement(batched, 'decay_length'))
-        <= 1e-12 * greatest(1., tupleElement(direct, 'decay_length')),
+    exponentialTimeDecayingDecayLength(direct) = exponentialTimeDecayingDecayLength(batched),
     abs(exponentialTimeDecayingValueAt(direct, toFloat64(2000)) - exponentialTimeDecayingValueAt(batched, toFloat64(2000)))
         <= 1e-12 * greatest(1., exponentialTimeDecayingValueAt(direct, toFloat64(2000)));
 
@@ -309,10 +338,10 @@ SELECT exponentialTimeDecayedSum(0)(1, 1); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedAvg(-1)(1, 1); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedCount(10)('not a time'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT exponentialTimeDecayedSum(10)('not a value', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT exponentialTimeDecayingFloat64(1, toFloat64(0), 0); -- { serverError BAD_ARGUMENTS }
+SELECT exponentialTimeDecayingFloat64(0)(1, toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 -- Evaluation before the anchor extrapolates the same exponential curve backward.
 SELECT round(exponentialTimeDecayingValueAt(
-    exponentialTimeDecayingFloat64(1, toFloat64(10), 10),
+    exponentialTimeDecayingFloat64(10)(1, toFloat64(10)),
     toFloat64(0)), 6);
 
 -- Generate reproducible pseudo-random values, timestamps, row orders, and batch
