@@ -18,6 +18,12 @@ SET parallel_replicas_prefer_local_join=1;
 
 -- Keep the parallelized side oriented as written (the randomizer may flip this).
 SET query_plan_join_swap_table='false';
+-- Keep the single-replica plan and the candidate replicas plan identical: randomized join-order
+-- statistics (query_plan_optimize_join_order_randomize) produce different cardinality estimates in
+-- the two plan builds (and can flip the join_runtime_filter_min_probe_rows threshold in only one
+-- of them); the plans then diverge, AutoPR skips the instrumentation (fail-closed), and
+-- input_bytes stays 0.
+SET query_plan_optimize_join_order_randomize=0, enable_join_runtime_filters=0;
 
 -- Reading aggregation states / external sort spills from disk would inflate `ReadCompressedBytes`.
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
