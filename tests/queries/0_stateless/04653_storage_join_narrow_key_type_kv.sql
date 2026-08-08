@@ -10,13 +10,11 @@ SET enable_analyzer = 1; -- the fix lives in the analyzer's plan path; the old a
 
 -- Drop first: the stress job runs some workers with one shared database for every test
 -- (stress.py --database=test_N), where clickhouse-test neither creates nor drops a per-test
--- database, so a second run would hit TABLE_ALREADY_EXISTS. The setting pin is required
--- because that same job injects ignore_drop_queries_probability=0.2, which silently skips a
--- DROP of a table that stores data on disk.
-DROP TABLE IF EXISTS kv     SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS l_kv   SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS o_kv   SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS l_kv32 SETTINGS ignore_drop_queries_probability = 0;
+-- database, so a second run would hit TABLE_ALREADY_EXISTS.
+DROP TABLE IF EXISTS kv;
+DROP TABLE IF EXISTS l_kv;
+DROP TABLE IF EXISTS o_kv;
+DROP TABLE IF EXISTS l_kv32;
 
 -- A key-value entity is not a StorageJoin: its lookup is not built from a frozen hash table, so the
 -- narrowing rewrite added for Join-engine tables must not apply here. This pins the plan shape, not
@@ -42,7 +40,7 @@ SELECT count() > 0 FROM (EXPLAIN PLAN actions = 1
 WHERE explain ILIKE '%DirectKeyValueJoin%';
 
 -- Leave nothing behind for the next run in the shared-database mode described above.
-DROP TABLE IF EXISTS kv     SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS l_kv   SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS o_kv   SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS l_kv32 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS kv;
+DROP TABLE IF EXISTS l_kv;
+DROP TABLE IF EXISTS o_kv;
+DROP TABLE IF EXISTS l_kv32;
