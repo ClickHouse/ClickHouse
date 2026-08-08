@@ -11,7 +11,6 @@
 #include <thread>
 
 #include <Core/ServerUUID.h>
-#include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/iota.h>
@@ -82,7 +81,6 @@ namespace DB::ErrorCodes
 {
     extern const int FILECACHE_ACCESS_DENIED;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int CANNOT_SCHEDULE_TASK;
 }
 namespace DB::FileCacheSetting
 {
@@ -3914,24 +3912,14 @@ TEST_F(FileCacheTest, AsyncInitThreadStartFailureIsSynchronous)
     DB::FileCache cache("async_fail_close", settings);
     cache.initialize();
 
-    /// `initialize` did not throw, so the cache must eventually become usable.
-    /// `assertInitialized` (inside `getFileSegmentInfos`) waits on `init_mutex` for the
-    /// loading thread, but before the loading thread takes the mutex it throws
-    /// "Cache not initialized", so retry until the initialization settles.
-    Stopwatch watch;
-    while (true)
-    {
-        ASSERT_LT(watch.elapsedSeconds(), 300) << "cache initialization did not settle";
-        try
-        {
-            cache.getFileSegmentInfos(FileCache::getCommonOrigin().user_id);
-            break;
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_NE(e.code(), DB::ErrorCodes::CANNOT_SCHEDULE_TASK)
-                << "initialize() succeeded, but the cache came up broken: " << e.message();
-            std::this_thread::sleep_for(1ms);
-        }
-    }
+    /// `initialize` did not throw, so the cache must become usable once the asynchronous
+    /// metadata loading finishes. Join the loading thread deterministically (probing with
+    /// `getFileSegmentInfos` instead would race with the loading thread taking `init_mutex`
+    /// and hit the "Cache not initialized" logical error, which aborts in debug and
+    /// sanitizer builds); `deactivateBackgroundOperations` is idempotent, so the destructor
+    /// calling it again is fine.
+    cache.deactivateBackgroundOperations();
+    EXPECT_TRUE(cache.isInitialized())
+        << "initialize() succeeded, but the cache came up broken: the thread allocation "
+           "failure was deferred into the metadata loading thread";
 }
