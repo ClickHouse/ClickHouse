@@ -245,7 +245,10 @@ INSERT INTO table_gcd_codec_signed_min_roundtrip VALUES
     (-64,   -16384,       -1073741824,  -4611686018427387904,  toInt128(-100),  toInt256(-100)),
     ( 64,    16384,        1073741824,   4611686018427387904,  toInt128( 100),  toInt256( 100));
 
-SELECT min(a), max(a), min(b), max(b), min(c), max(c), min(d), max(d), min(e), max(e), min(f), max(f)
-FROM table_gcd_codec_signed_min_roundtrip;
+/* Compare the full row set (not just extrema) so a corrupted middle row cannot hide behind
+   unchanged min/max values. */
+SELECT a, b, c, d, e, f
+FROM table_gcd_codec_signed_min_roundtrip
+ORDER BY a;
 
 DROP TABLE table_gcd_codec_signed_min_roundtrip;
