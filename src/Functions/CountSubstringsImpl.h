@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Functions/CancellationBudget.h>
 #include <Functions/PositionImpl.h>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -43,6 +45,13 @@ struct CountSubstringsImpl
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant, and it's irrelevant for this function.
         chassert(!res_null);
 
+        /// Checked once on entry so that a deadline already passed is observed even by a call that
+        /// does no charged work, e.g. an empty needle returning all zeros.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        if (check_cancellation)
+            check_cancellation();
+        CancellationBudget budget(check_cancellation);
+
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
         const UInt8 * pos = begin;
@@ -50,7 +59,7 @@ struct CountSubstringsImpl
         memset(res.data(), 0, res.size() * sizeof(res[0]));
 
         if (needle.empty())
-            return; // Return all zeros
+            return; /// Return all zeros; the entry checkpoint above already observed the deadline.
 
         /// Current index in the column of strings.
         size_t i = 0;
@@ -67,9 +76,15 @@ struct CountSubstringsImpl
 
         typename Impl::SearcherInBigHaystack searcher = Impl::createSearcherInBigHaystack(needle.data(), needle.size(), end - pos);
 
+        /// Bytes already accounted for, so each iteration is charged only for what it newly traversed.
+        const UInt8 * charged_up_to = pos;
+
         /// We will search for the next occurrence in all strings at once.
         while (pos < end && end != (pos = searcher.search(pos, end - pos)))
         {
+            budget.charge(pos - charged_up_to);
+            charged_up_to = pos;
+
             /// Determine which index it refers to.
             while (i < input_rows_count && begin + haystack_offsets[i] <= pos)
                 ++i;
@@ -112,6 +127,9 @@ struct CountSubstringsImpl
                 ++i;
             }
         }
+
+        /// A block with no match at all never enters the loop above, so charge its bytes on the way out.
+        budget.charge(end - charged_up_to);
     }
 
     /// Count number of occurrences of substring each time for a different inside each time different string.
@@ -130,6 +148,11 @@ struct CountSubstringsImpl
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
         chassert(!res_null);
 
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        if (check_cancellation)
+            check_cancellation();
+        CancellationBudget budget(check_cancellation);
+
         ColumnString::Offset prev_haystack_offset = 0;
         ColumnString::Offset prev_needle_offset = 0;
 
@@ -137,6 +160,9 @@ struct CountSubstringsImpl
         {
             size_t needle_size = needle_offsets[i] - prev_needle_offset;
             size_t haystack_size = haystack_offsets[i] - prev_haystack_offset;
+
+            /// A row without a match never reaches the inner charge below, yet still scans its bytes.
+            budget.charge(haystack_size);
 
             size_t start = 0;
             if (start_pos)
@@ -172,6 +198,7 @@ struct CountSubstringsImpl
                 /// searcher returns a pointer to the found substring or to the end of `haystack`.
                 while ((pos = searcher.search(beg, end)) < end)
                 {
+                    budget.charge(pos - beg);
                     ++res[i];
                     beg = pos + needle_size;
                 }
@@ -197,11 +224,19 @@ struct CountSubstringsImpl
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
         chassert(!res_null);
 
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        if (check_cancellation)
+            check_cancellation();
+        CancellationBudget budget(check_cancellation);
+
         /// NOTE You could use haystack indexing. But this is a rare case.
         ColumnString::Offset prev_needle_offset = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            /// A row whose needle is never found scans the whole haystack without reaching the charge below.
+            budget.charge(haystack.size());
+
             res[i] = 0;
             size_t start = 0;
             if (start_pos)
@@ -225,6 +260,7 @@ struct CountSubstringsImpl
                     const UInt8 * pos = nullptr;
                     while ((pos = searcher.search(beg, end)) < end)
                     {
+                        budget.charge(pos - beg);
                         ++res[i];
                         beg = pos + needle_size;
                     }
