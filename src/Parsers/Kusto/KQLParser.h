@@ -112,6 +112,13 @@ private:
     /// the names known to stand for a table; the range's own `let`s add theirs while scanning.
     bool bodyLooksTabular(size_t begin, size_t end, std::set<String> tabular_names);
     bool expressionLooksTabular(size_t begin, size_t end, const std::set<String> & tabular_names) const;
+    /// The names the current scope knows to stand for a table: the tabular bindings and the
+    /// tabular-bodied functions. Seeds the classifiers above.
+    std::set<String> scopeTabularNames() const;
+    /// The first ';' outside any brackets at or after `position`, or `end`.
+    size_t statementEnd(size_t position, size_t end) const;
+    /// Where the bracket open just before `position` closes, or `tokens.size()`.
+    size_t closingBracket(size_t position) const;
 
     /// Calls. Which one applies is decided by where the name appears: a scalar expression
     /// position evaluates the body as an expression, a source position as a pipeline.

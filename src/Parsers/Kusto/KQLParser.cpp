@@ -1,11 +1,13 @@
 #include <Parsers/Kusto/KQLParser.h>
 
 #include <Parsers/Kusto/KQLFunctions.h>
+#include <Parsers/Kusto/KQLTranslator.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -452,12 +454,7 @@ void KQLParser::parseFunctionDefinition(const String & name)
         /// The names the body may stand on to be tabular without saying so: the enclosing
         /// tabular bindings and tabular-bodied functions it can see (`let F = () { Base };`).
         /// A parameter shadows anything of the same name outside.
-        std::set<String> tabular_names;
-        for (const auto & [tabular_name, _] : scope.tabulars)
-            tabular_names.insert(tabular_name);
-        for (const auto & [function_name, function] : scope.functions)
-            if (function.body_looks_tabular)
-                tabular_names.insert(function_name);
+        std::set<String> tabular_names = scopeTabularNames();
         for (const auto & parameter : definition.parameters)
             tabular_names.erase(parameter.name);
 
@@ -467,39 +464,79 @@ void KQLParser::parseFunctionDefinition(const String & name)
     scope.functions[name] = std::move(definition);
 }
 
+/// The first ';' outside any brackets ends a `let` statement; an inner function
+/// definition hides its own ';'s inside `{ }`.
+size_t KQLParser::statementEnd(size_t position, size_t end) const
+{
+    int nesting = 0;
+    for (; position < end; ++position)
+    {
+        switch (tokens[position].type)
+        {
+            case KQLTokenType::OpeningRoundBracket:
+            case KQLTokenType::OpeningSquareBracket:
+            case KQLTokenType::OpeningCurlyBrace:
+                ++nesting;
+                break;
+            case KQLTokenType::ClosingRoundBracket:
+            case KQLTokenType::ClosingSquareBracket:
+            case KQLTokenType::ClosingCurlyBrace:
+                --nesting;
+                break;
+            case KQLTokenType::Semicolon:
+                if (nesting <= 0)
+                    return position;
+                break;
+            case KQLTokenType::EndOfStream:
+                return position;
+            default:
+                break;
+        }
+    }
+    return end;
+}
+
+size_t KQLParser::closingBracket(size_t position) const
+{
+    int nesting = 1;
+    for (; position < tokens.size(); ++position)
+    {
+        switch (tokens[position].type)
+        {
+            case KQLTokenType::OpeningRoundBracket:
+            case KQLTokenType::OpeningSquareBracket:
+            case KQLTokenType::OpeningCurlyBrace:
+                ++nesting;
+                break;
+            case KQLTokenType::ClosingRoundBracket:
+            case KQLTokenType::ClosingSquareBracket:
+            case KQLTokenType::ClosingCurlyBrace:
+                if (--nesting == 0)
+                    return position;
+                break;
+            case KQLTokenType::EndOfStream:
+                return tokens.size();
+            default:
+                break;
+        }
+    }
+    return tokens.size();
+}
+
+std::set<String> KQLParser::scopeTabularNames() const
+{
+    std::set<String> names;
+    for (const auto & [tabular_name, _] : scope.tabulars)
+        names.insert(tabular_name);
+    for (const auto & [function_name, function] : scope.functions)
+        if (function.body_looks_tabular)
+            names.insert(function_name);
+    return names;
+}
+
 bool KQLParser::bodyLooksTabular(size_t begin, size_t end, std::set<String> tabular_names)
 {
     DepthGuard guard(*this, "function body");
-
-    /// The first ';' outside any brackets ends a `let` statement; an inner function
-    /// definition hides its own ';'s inside `{ }`.
-    const auto statement_end = [&](size_t position)
-    {
-        int nesting = 0;
-        for (; position < end; ++position)
-        {
-            switch (tokens[position].type)
-            {
-                case KQLTokenType::OpeningRoundBracket:
-                case KQLTokenType::OpeningSquareBracket:
-                case KQLTokenType::OpeningCurlyBrace:
-                    ++nesting;
-                    break;
-                case KQLTokenType::ClosingRoundBracket:
-                case KQLTokenType::ClosingSquareBracket:
-                case KQLTokenType::ClosingCurlyBrace:
-                    --nesting;
-                    break;
-                case KQLTokenType::Semicolon:
-                    if (nesting <= 0)
-                        return position;
-                    break;
-                default:
-                    break;
-            }
-        }
-        return end;
-    };
 
     /// Each leading `let` that binds something tabular adds a name the expression after them
     /// may stand on. Anything not of the `let <name> = <rhs>;` shape is left for the parse
@@ -507,7 +544,7 @@ bool KQLParser::bodyLooksTabular(size_t begin, size_t end, std::set<String> tabu
     size_t probe = begin;
     while (probe < end && tokenIsKeyword(probe, "let"))
     {
-        const size_t let_end = statement_end(probe);
+        const size_t let_end = statementEnd(probe, end);
 
         if (probe + 3 < let_end && tokens[probe + 1].type == KQLTokenType::BareWord && tokens[probe + 2].type == KQLTokenType::Equals)
         {
@@ -790,66 +827,15 @@ void KQLParser::parseLetStatement()
         return;
     }
 
-    /// A `let` may bind either a scalar or a whole tabular expression. A parenthesized form,
-    /// something that starts a pipeline, a rebinding of a tabular name, or a call to a
-    /// function whose body is a pipeline can be tabular; everything else is scalar.
-    const bool rebinds_tabular = at(KQLTokenType::BareWord) && scope.tabulars.contains(String(current().text()));
-    const bool calls_tabular_function = at(KQLTokenType::BareWord)
-        && [&]
-        {
-            const auto function = scope.functions.find(String(current().text()));
-            if (function == scope.functions.end() || !function->second.body_looks_tabular)
-                return false;
-            /// A parameterless function may be called with or without parentheses, so a bare
-            /// name that stands alone (`let T = Numbers;`) is a call too.
-            return lookahead().type == KQLTokenType::OpeningRoundBracket || lookahead().type == KQLTokenType::Semicolon
-                || lookahead().type == KQLTokenType::EndOfStream;
-        }();
-    const bool looks_tabular = at(KQLTokenType::OpeningRoundBracket) || atKeyword("datatable") || atKeyword("range")
-        || atKeyword("print")
-        || (at(KQLTokenType::BareWord) && lookahead().type == KQLTokenType::Pipe)
-        || rebinds_tabular || calls_tabular_function;
-
-    if (looks_tabular)
-    {
-        const size_t saved_index = index;
-        if (at(KQLTokenType::OpeningRoundBracket))
-        {
-            /// `let x = (1 + 2);` is a scalar; `let T = (Events | take 1);` is tabular.
-            /// Only the pipeline form is treated as tabular.
-            size_t probe = index + 1;
-            int nesting = 1;
-            bool has_top_level_pipe = false;
-            while (probe < tokens.size() && nesting > 0)
-            {
-                const KQLTokenType type = tokens[probe].type;
-                if (type == KQLTokenType::OpeningRoundBracket)
-                    ++nesting;
-                else if (type == KQLTokenType::ClosingRoundBracket)
-                    --nesting;
-                else if (type == KQLTokenType::Pipe && nesting == 1)
-                    has_top_level_pipe = true;
-                else if (type == KQLTokenType::EndOfStream || type == KQLTokenType::Error)
-                    break;
-                ++probe;
-            }
-            if (!has_top_level_pipe)
-            {
-                scope.scalars[name] = parseExpression();
-                return;
-            }
-            expect(KQLTokenType::OpeningRoundBracket);
-            scope.tabulars[name] = parseTabularExpression();
-            expect(KQLTokenType::ClosingRoundBracket);
-            return;
-        }
-
-        index = saved_index;
+    /// A `let` may bind either a scalar or a whole tabular expression, and nothing at the `=`
+    /// says which. The classifier that already reads function bodies decides: it knows
+    /// pipelines, the source keywords (`datatable`, `union`, ...) under any parenthesizing,
+    /// and the names bound to something tabular - so `let T = (datatable (n: long) [1]);` and
+    /// `let U = union A, B;` bind tables, while `let x = (1 + 2);` stays a scalar.
+    if (expressionLooksTabular(index, statementEnd(index, tokens.size()), scopeTabularNames()))
         scope.tabulars[name] = parseTabularExpression();
-        return;
-    }
-
-    scope.scalars[name] = parseExpression();
+    else
+        scope.scalars[name] = parseExpression();
 }
 
 KQLTabularExpressionPtr KQLParser::parseTabularExpression()
@@ -2094,8 +2080,25 @@ ASTPtr KQLParser::tryParseWordOperator(const ASTPtr & left)
     if (op == "in" || op == "in~")
     {
         const bool case_insensitive = op == "in~";
+        const KQLToken & op_token = current();
         ++index;
         expect(KQLTokenType::OpeningRoundBracket);
+
+        /// The right-hand side may also be a whole tabular expression whose first column
+        /// supplies the values: `x in (T | project key)`. The classifier that already reads
+        /// `let` right-hand sides decides, over the tokens up to the closing ')'.
+        if (expressionLooksTabular(index, closingBracket(index), scopeTabularNames()))
+        {
+            /// There is no case-insensitive `IN`, and the spelled-out disjunction the list
+            /// form uses needs the values at hand, which a subquery's are not.
+            if (case_insensitive)
+                failAt(op_token, "'in~' does not take a tabular expression; lowercase both sides and use 'in'");
+            KQLTabularExpressionPtr table = parseTabularExpression();
+            expect(KQLTokenType::ClosingRoundBracket);
+            auto subquery = make_intrusive<ASTSubquery>(translateKQLQuery(*table));
+            return finish(makeASTFunction("in", left, subquery));
+        }
+
         ASTs elements;
         if (!at(KQLTokenType::ClosingRoundBracket))
         {

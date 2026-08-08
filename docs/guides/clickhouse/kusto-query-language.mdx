@@ -38,6 +38,8 @@ If a query parses, its result is meant to match Kusto's.
 **Scalar operators**: `==`, `!=`, `<`, `<=`, `>`, `>=`, `=~`, `!~`, `in`, `in~`, `between`,
 `contains`, `startswith`, `endswith`, `has`, `hasprefix`, `hassuffix`, their `_cs`
 (case-sensitive) and `!` (negated) forms, `has_any`, `has_all`, and `matches regex`.
+`in` and `!in` also take a tabular expression whose first column supplies the values
+(`x in (T | project key)`); `in~` takes only a list.
 
 **Statements**: `let`, binding a scalar, a whole tabular expression, or a **function**:
 

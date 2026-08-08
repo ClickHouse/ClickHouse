@@ -1,9 +1,11 @@
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -90,6 +92,42 @@ private:
     DataTypes argument_types;
 };
 
+/// A function over the given arguments that never reads them and returns a constant NULL.
+/// The argument types the analyzer sees stay the real ones.
+class FunctionKQLBinAtNull final : public IFunctionBase
+{
+public:
+    explicit FunctionKQLBinAtNull(DataTypes argument_types_)
+        : argument_types(std::move(argument_types_)), result_type(makeNullable(std::make_shared<DataTypeNothing>()))
+    {
+    }
+
+    String getName() const override { return "kqlBinAt"; }
+    const DataTypes & getArgumentTypes() const override { return argument_types; }
+    const DataTypePtr & getResultType() const override { return result_type; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override { return std::make_unique<Executable>(); }
+
+private:
+    class Executable final : public IExecutableFunction
+    {
+    public:
+        String getName() const override { return "kqlBinAt"; }
+
+    protected:
+        bool useDefaultImplementationForNulls() const override { return false; }
+
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & type, size_t input_rows_count) const override
+        {
+            return type->createColumnConst(input_rows_count, Field());
+        }
+    };
+
+    DataTypes argument_types;
+    DataTypePtr result_type;
+};
+
 /** `kqlBinAt(value, binSize, fixedPoint)` - Kusto's `bin_at()`, rounding a value down to a
   * multiple of `binSize` counted from `fixedPoint` rather than from zero.
   *
@@ -152,6 +190,20 @@ private:
                     "Function {} rounds a datetime from a datetime fixed point, but the third argument has type {}",
                     getName(),
                     arguments[2].type->getName());
+            /// Kusto returns null for a negative bin size; `toStartOfInterval` would throw,
+            /// and it only takes a constant interval, so the sign is known here. `kqlBin`
+            /// makes the same check on its datetime branch.
+            if (arguments[1].column && isColumnConst(*arguments[1].column))
+            {
+                const Field interval = assert_cast<const ColumnConst &>(*arguments[1].column).getField();
+                if (!interval.isNull() && interval.safeGet<Int64>() < 0)
+                {
+                    DataTypes argument_types;
+                    for (const auto & argument : arguments)
+                        argument_types.push_back(argument.type);
+                    return std::make_shared<FunctionKQLBinAtNull>(std::move(argument_types));
+                }
+            }
             return FunctionFactory::instance().get("toStartOfInterval", getContext())->build(arguments);
         }
 
