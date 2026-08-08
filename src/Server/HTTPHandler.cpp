@@ -660,9 +660,14 @@ void HTTPHandler::processQuery(
     {
         releaseOrCloseSession(session_id, close_session);
 
-        /// Flush all the data from one buffer to another, to track
-        /// NetworkSendElapsedMicroseconds/NetworkSendBytes from the query
-        /// context
+        /// Flush all the data from one buffer to another. For a plain response the callback runs
+        /// before the QueryFinish entry is recorded (inside `finishExecutedQuery`), so the
+        /// NetworkSendElapsedMicroseconds/NetworkSendBytes of this flush are attributed to the
+        /// query. For a framed response it runs after the QueryFinish entry instead (the framed
+        /// stream tail must include the packets emitted by the query-finish logging, and closing
+        /// the response must come after that - see `executeQuery.h`), so the send counters of the
+        /// response tail are not part of the query's snapshot, like the trailing sends of the
+        /// native protocol.
         used_output.finalize();
     };
 
