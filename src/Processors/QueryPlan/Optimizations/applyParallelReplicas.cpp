@@ -330,6 +330,13 @@ private:
         /// throw on a branching fragment (e.g. a view expanding to UNION ALL, or a JOIN).
         auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front()));
 
+        /// `cloneSubtree` cannot know the plan the subtree was split from, so carry over the
+        /// plan-level resource contract explicitly: the fragment must keep the thread cap and
+        /// concurrency-control mode of the plan it is a part of, in case a pipeline is ever built
+        /// from the fragment plan itself rather than from the outer plan it is inlined into.
+        plan_fragment->setMaxThreads(query_plan.getMaxThreads());
+        plan_fragment->setConcurrencyControl(query_plan.getConcurrencyControl());
+
         ContextPtr context;
         /// Mark only the coordinated reads (collectReadsToDistribute follows a join's coordinated side) so they
         /// are deserialized in parallel-reading mode; the other side stays unmarked and is broadcast.
