@@ -56,11 +56,45 @@ inline void writeChar(char c, size_t n, WriteBuffer & buf)
     }
 }
 
+/// Write a non-zero number of bytes to buffer. Mirrors readNBytes.
+inline void writeNBytes(const char * input, size_t size, WriteBuffer & buf)
+{
+    /// WriteBuffer::write is defined out of line and copies a run-time size, while __builtin_memcpy
+    /// of a size the caller knows at compile time lowers to a couple of stores.
+    if (size <= buf.available()) [[likely]]
+    {
+        __builtin_memcpy(buf.position(), input, size);
+        buf.position() += size;
+    }
+    else
+    {
+        buf.write(input, size);
+    }
+}
+
+/// Largest value for which __builtin_memcpy still beats a call. Above it clang emits a memcpy call
+/// anyway, so the inline path would only add branches.
+constexpr size_t MAX_INLINE_WRITE_SIZE = 64;
+
 /// Write POD-type in native format. It's recommended to use only with packed (dense) data types.
 template <typename T>
 inline void writePODBinary(const T & x, WriteBuffer & buf)
 {
-    buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+    if constexpr (sizeof(T) <= MAX_INLINE_WRITE_SIZE)
+        writeNBytes(reinterpret_cast<const char *>(&x), sizeof(x), buf); /// NOLINT
+    else
+        buf.write(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+}
+
+/// Same, into raw memory holding at least sizeof(T) bytes, advancing the cursor past it, just as the
+/// WriteBuffer overloads advance theirs. Restricted to trivially serializable types, for which
+/// `writeBinary` is `writePODBinary`, so a caller cannot pick up a different encoding than the
+/// WriteBuffer overloads produce.
+template <is_trivially_serializable T>
+inline void writePODBinary(const T & x, char * & dst)
+{
+    __builtin_memcpy(dst, reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+    dst += sizeof(x);
 }
 
 inline void writeUUIDBinary(const UUID & x, WriteBuffer & buf)
@@ -1155,6 +1189,11 @@ inline void writeTimeTextCutTrailingZerosAlignToGroupOfThousands(Time64 time64, 
 template <is_trivially_serializable T>
 inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
+/// Same, into raw memory holding at least sizeof(T) bytes, advancing the cursor past it. Lets one
+/// body serialize a value to either destination.
+template <is_trivially_serializable T>
+inline void writeBinary(const T & x, char * & dst) { writePODBinary(x, dst); }
+
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(std::string_view x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 
@@ -1501,17 +1540,18 @@ inline void writeNullTerminatedString(const String & s, WriteBuffer & buffer)
     buffer.write(s.c_str(), s.size() + 1);
 }
 
-template <std::endian endian, typename T>
-inline void writeBinaryEndian(T x, WriteBuffer & buf)
+/// `out` is either a WriteBuffer or a raw `char *` cursor holding at least sizeof(T) bytes.
+template <std::endian endian, typename T, typename Out>
+inline void writeBinaryEndian(T x, Out & out)
 {
     transformEndianness<endian>(x);
-    writeBinary(x, buf);
+    writeBinary(x, out);
 }
 
-template <typename T>
-inline void writeBinaryLittleEndian(T x, WriteBuffer & buf)
+template <typename T, typename Out>
+inline void writeBinaryLittleEndian(T x, Out & out)
 {
-    writeBinaryEndian<std::endian::little>(x, buf);
+    writeBinaryEndian<std::endian::little>(x, out);
 }
 
 template <typename T>
