@@ -68,6 +68,7 @@ struct DecayingColumnView
 {
     const ColumnFloat64 & value;
     const ColumnFloat64 & time;
+    const ColumnFloat64 & stored_decay_length;
     Float64 decay_length;
 };
 
@@ -80,6 +81,7 @@ DecayingColumnView getDecayingColumnView(const ColumnPtr & column, const DataTyp
     return {
         assert_cast<const ColumnFloat64 &>(tuple.getColumn(0)),
         assert_cast<const ColumnFloat64 &>(tuple.getColumn(1)),
+        assert_cast<const ColumnFloat64 &>(tuple.getColumn(2)),
         *decay_length,
     };
 }
@@ -92,6 +94,15 @@ void assertValidRow(const DecayingColumnView & input, size_t row, const String &
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of function {} must be finite", function_name);
     if (!std::isfinite(time))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time of function {} must be finite", function_name);
+
+    const Float64 stored_decay_length = input.stored_decay_length.getData()[row];
+    if (!std::isfinite(stored_decay_length) || stored_decay_length != input.decay_length)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Stored decay length {} does not match type decay length {} in function {}",
+            stored_decay_length,
+            input.decay_length,
+            function_name);
 }
 
 Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_time)
@@ -107,19 +118,21 @@ Float64 valueAt(const DecayingColumnView & input, size_t row, Float64 target_tim
 
 struct DecayingColumnBuilder
 {
-    void append(Float64 value_value, Float64 time_value)
+    void append(Float64 value_value, Float64 time_value, Float64 decay_length_value)
     {
         value->insertValue(value_value);
         time->insertValue(time_value);
+        decay_length->insertValue(decay_length_value);
     }
 
     ColumnPtr build()
     {
-        return ColumnTuple::create(Columns{std::move(value), std::move(time)});
+        return ColumnTuple::create(Columns{std::move(value), std::move(time), std::move(decay_length)});
     }
 
     ColumnFloat64::MutablePtr value = ColumnFloat64::create();
     ColumnFloat64::MutablePtr time = ColumnFloat64::create();
+    ColumnFloat64::MutablePtr decay_length = ColumnFloat64::create();
 };
 
 class FunctionExponentialTimeDecayingAdd final : public IFunction
@@ -171,7 +184,8 @@ public:
             const Float64 latest_time = std::max(left.time.getData()[row], right.time.getData()[row]);
             result.append(
                 valueAt(left, row, latest_time) + valueAt(right, row, latest_time),
-                latest_time);
+                latest_time,
+                left.decay_length);
         }
 
         return result.build();
