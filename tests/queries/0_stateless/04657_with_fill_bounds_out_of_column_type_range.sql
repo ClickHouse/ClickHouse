@@ -47,14 +47,19 @@ SELECT count(), min(x), max(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH 
 SELECT count(), min(x), max(x) FROM (SELECT toInt8(-5) AS x ORDER BY x DESC WITH FILL TO -300 STALENESS -20);
 SELECT count(), min(x), max(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL TO 1000 STEP 3 STALENESS 21);
 
-SELECT 'an INTERVAL step can never reach an out of range TO, so such a TO is rejected';
+SELECT 'an INTERVAL step can never reach a TO out of range in the fill direction, so such a TO is rejected';
 
 -- The calendar arithmetic of an INTERVAL step is performed in the column's own native type, so unlike a plain
 -- numeric step it wraps around within the column domain and never reaches a TO outside of it: without the check
 -- these fills generate wrapped-around values forever.
 SELECT * FROM (SELECT toDate(0) AS d ORDER BY d ASC WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toDate('1970-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDate('2020-01-01') AS d ORDER BY d DESC WITH FILL TO -5 STEP INTERVAL -1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toDateTime(0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime(0, 'UTC') TO 4294967297 STEP INTERVAL 50 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- A TO out of range against the fill direction can never make filling take a single step: every possible
+-- anchor is already past it, so the query is a no-op and the bound is accepted.
+SELECT count(), min(d), max(d) FROM (SELECT toDate('2020-01-01') AS d ORDER BY d DESC WITH FILL TO 70000 STEP INTERVAL -1 YEAR);
+SELECT count(), min(d), max(d) FROM (SELECT toDate('2020-01-01') AS d ORDER BY d ASC WITH FILL TO -5 STEP INTERVAL 1 YEAR);
 -- STALENESS terminates the filling in-domain even with an INTERVAL step, so the TO bound is accepted.
 SELECT count(), min(d), max(d) FROM (SELECT toDate('2026-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 1 YEAR STALENESS INTERVAL 3 YEAR);
 

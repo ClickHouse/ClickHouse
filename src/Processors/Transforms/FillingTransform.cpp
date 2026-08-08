@@ -236,13 +236,19 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   * so that anchors close enough to TO to generate nothing (`WITH FILL TO 1000 STEP 5000` over a UInt8 column) keep
   * being accepted.
   *
-  * An INTERVAL step makes an out-of-range TO fatal no matter where the sequence is anchored, so TO itself is the
-  * value required to fit. The step functions (see Add*Impl in FunctionDateOrDateTimeAddInterval.h) perform the
-  * calendar arithmetic in the column's own native integer type - UInt16 for Date, UInt32 for DateTime, Int32 for
-  * Date32 - so unlike a plain numeric step, which advances an Int64 that eventually exceeds any TO, an INTERVAL
-  * step wraps or saturates within the column domain and can never reach a TO outside of it: filling never
+  * An INTERVAL step makes an out-of-range TO in the fill direction fatal no matter where the sequence is anchored,
+  * so TO itself is the value required to fit. The step functions (see Add*Impl in FunctionDateOrDateTimeAddInterval.h)
+  * perform the calendar arithmetic in the column's own native integer type - UInt16 for Date, UInt32 for DateTime,
+  * Int32 for Date32 - so unlike a plain numeric step, which advances an Int64 that eventually exceeds any TO, an
+  * INTERVAL step wraps or saturates within the column domain and can never reach a TO outside of it: filling never
   * terminates. `WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR` generates 1970-01-01 and 2070-01-01,
   * then wraps around 1990 and cycles through the UInt16 domain forever, all of it below TO = 70000.
+  * A TO on the other side - out of range against the fill direction - is harmless: every possible anchor is
+  * already past it, so filling never takes a single step and the query is a no-op
+  * (`ORDER BY d DESC WITH FILL TO 70000 STEP INTERVAL -1 YEAR` over a Date column just returns the data).
+  * The same clamp towards zero as in the numeric no-FROM case below keeps such bounds accepted. (With a FROM,
+  * a TO on the non-filling side cannot reach this check: the FROM would lie even further out of range and is
+  * rejected first.)
   *
   * On top of that, the calendar arithmetic clamps at the boundaries of the representable calendar - the window
   * [0000-01-01, 9999-12-31] of DateLUTImpl, taken in the local civil calendar of the column's time zone - and
@@ -272,9 +278,14 @@ static std::optional<Int64> fillValueRequiredToFitColumnType(const FillColumnDes
     const Int64 to = descr.fill_to.safeGet<Int64>();
 
     /// The calendar arithmetic of an INTERVAL step stays within the column's native type and can never reach a TO
-    /// outside of it, so the filling would generate wrapped-around values forever.
+    /// outside of it, so the filling would generate wrapped-around values forever. A TO out of range against the
+    /// fill direction is a guaranteed no-op instead - clamping towards zero keeps it accepted.
     if (descr.step_kind)
-        return to;
+    {
+        const Int128 fatal_case = direction > 0 ? std::max<Int128>(to, 0) : std::min<Int128>(to, 0);
+        /// The clamp towards zero also brought the value into the Int64 range.
+        return static_cast<Int64>(fatal_case);
+    }
 
     if (descr.fill_step.getType() == Field::Types::Int64)
     {
@@ -380,7 +391,8 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     /// representable: `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, and so does
     /// `WITH FILL FROM 0 TO 257 STEP 3`, which stops at 255 - all of which fit. When the generated values depend
     /// on the data (no FROM), the bound is rejected only if filling provably wraps for every possible anchor.
-    /// An INTERVAL step can never reach an out-of-range TO at all, so there the bound itself is required to fit.
+    /// An INTERVAL step can never reach a TO that is out of range in the fill direction at all, so there the
+    /// bound itself is required to fit (while a TO out of range against the fill direction is a no-op).
     if (!descr.fill_to.isNull() && !is_representable(descr.fill_to))
     {
         const auto required_value = fillValueRequiredToFitColumnType(descr, direction);
