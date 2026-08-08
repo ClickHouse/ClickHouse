@@ -1523,25 +1523,41 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.projections = std::move(new_projections);
 
     /// Changes in columns may lead to changes in TTL expressions.
+    ///
+    /// A TTL the commands did not touch is rebuilt from stored metadata here, not created as fresh DDL,
+    /// so, like the metadata-load path, it is exempt from the experimental-codec gate: otherwise a table
+    /// whose `TTL ... RECOMPRESS` codec was created under `allow_experimental_codecs = 1` and then reloaded
+    /// would reject every unrelated `ALTER` (e.g. `ADD COLUMN`) in sessions without the opt-in. A TTL the
+    /// commands actually change keeps the strict fresh-DDL gate (`MODIFY TTL` is additionally validated
+    /// against the session setting when the command itself is applied above).
+    const auto ttl_ast_to_str = [](const ASTPtr & ast) -> String { return ast ? ast->formatWithSecretsOneLine() : String(); };
+    const bool session_allow_experimental_codecs = context->getSettingsRef()[Setting::allow_experimental_codecs];
+    const auto old_column_ttl_asts = metadata.columns.getColumnTTLs();
     auto column_ttl_asts = metadata_copy.columns.getColumnTTLs();
     metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
+        const auto old_ttl_it = old_column_ttl_asts.find(name);
+        const bool ttl_unchanged = old_ttl_it != old_column_ttl_asts.end() && ttl_ast_to_str(old_ttl_it->second) == ttl_ast_to_str(ast);
         auto new_ttl_entry = TTLDescription::getTTLFromAST(
             ast, metadata_copy.columns, context, metadata_copy.primary_key,
             /* is_metadata_load */ false, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions],
-            /* allow_experimental_codecs */ context->getSettingsRef()[Setting::allow_experimental_codecs]);
+            /* allow_experimental_codecs */ ttl_unchanged || session_allow_experimental_codecs);
         metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
+    {
+        const bool table_ttl_unchanged
+            = ttl_ast_to_str(metadata.table_ttl.definition_ast) == ttl_ast_to_str(metadata_copy.table_ttl.definition_ast);
         metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
             metadata_copy.table_ttl.definition_ast,
             metadata_copy.columns,
             context,
             metadata_copy.primary_key,
             /* is_metadata_load */ false, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions],
-            /* allow_experimental_codecs */ context->getSettingsRef()[Setting::allow_experimental_codecs]);
+            /* allow_experimental_codecs */ table_ttl_unchanged || session_allow_experimental_codecs);
+    }
 
     metadata = std::move(metadata_copy);
 }
