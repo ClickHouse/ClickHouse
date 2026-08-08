@@ -759,7 +759,7 @@ namespace
             }
             catch (...)
             {
-                /// A pattern this parsing rejects cannot be attributed to this server; the function itself
+                /// Ok: a pattern this parsing rejects cannot be attributed to this server; the function itself
                 /// reports such a pattern when it is executed.
                 return false;
             }
