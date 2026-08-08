@@ -38,6 +38,7 @@ SELECT round(direct_raw, 4) AS direct, round(over_merged_raw, 4) AS merged_over;
 -- true theilsU is 1, not 0. The states are pre-aggregated per group and merged in the
 -- window, which keeps the test cheap: the first frame holds only the constant group
 -- (theilsU = 0), the second adds the single-row group (theilsU = 1).
+SET max_rows_to_read = 0; -- the test config limits reads to 20 million rows
 SELECT round(u, 4) AS u
 FROM
 (
