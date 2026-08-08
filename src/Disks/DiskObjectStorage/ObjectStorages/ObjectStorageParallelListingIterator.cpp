@@ -331,6 +331,31 @@ void ObjectStorageParallelListingIterator::worker()
     /// the pending-range frontier bounded instead of breadth-first `O(total_directories)`.
     std::deque<ListRange> local_frontier;
 
+    /// The whole loop shares the shutdown path of `listRange`: any exception outside `listRange` itself
+    /// (e.g. `donateLocked` -> `maybeSpawnWorkers` -> `scheduleOrThrowOnError` when the global thread pool
+    /// is exhausted) must also store the exception and mark the iterator finished. Otherwise the ranges
+    /// still counted by `outstanding_ranges` (in `local_frontier`) would be dropped by stack unwinding and
+    /// the consumer would block forever waiting for batches that no worker will produce.
+    try
+    {
+        workerLoop(local_frontier);
+    }
+    catch (...)
+    {
+        {
+            std::lock_guard lock(mutex);
+            if (!first_exception)
+                first_exception = std::current_exception();
+            finished = true;
+        }
+        work_available.notify_all();
+        result_available.notify_all();
+        space_available.notify_all();
+    }
+}
+
+void ObjectStorageParallelListingIterator::workerLoop(std::deque<ListRange> & local_frontier)
+{
     while (true)
     {
         ListRange range;

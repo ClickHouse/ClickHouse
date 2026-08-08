@@ -219,6 +219,11 @@ private:
     };
 
     void worker();
+    /// The body of `worker`: takes ranges (from the shared queue or the private `local_frontier`) and lists
+    /// them until the walk completes or is stopped. Any exception it lets escape — not only from `listRange`,
+    /// e.g. from `donateLocked` failing to schedule a new worker — is stored by `worker` and finishes the
+    /// iterator, so the consumer rethrows it instead of blocking forever on the dropped ranges.
+    void workerLoop(std::deque<ListRange> & local_frontier);
     /// Lists one range completely (paginating, splitting flat sub-trees). Sub-directories it discovers are
     /// pushed onto this worker's private `local_frontier` (from which they are walked depth-first and, for
     /// the shallowest of them, donated to the shared queue). Returns false if an exception was stored and
