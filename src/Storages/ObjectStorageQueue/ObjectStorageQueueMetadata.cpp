@@ -1503,13 +1503,16 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
 
     /// Acquire the same distributed lock used by the periodic cleanup sweep
     /// to prevent concurrent modification of failed files.
+    /// When invoked via ON CLUSTER, multiple replicas may attempt this concurrently;
+    /// if the lock is already held, treat it as a benign idempotent success since
+    /// another replica is already performing the cleanup on the shared /failed tree.
     auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
         zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
 
     if (!ephemeral_node)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Failed file cleanup is already in progress by another server. Please retry in a moment.");
+        LOG_INFO(log, "Failed file cleanup is already in progress by another replica, skipping this execution");
+        return;
     }
 
     const std::string failed_path = zookeeper_path / "failed";
