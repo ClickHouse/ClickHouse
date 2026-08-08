@@ -354,7 +354,7 @@ public:
         const VolumePtr & volume,
         const String & part_dir,
         const ReadSettings & read_settings,
-        bool part_may_exist_on_disk = true) const;
+        PartDirIntent intent) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -1483,6 +1483,20 @@ public:
 
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
+
+    /// Removes a temporary part directory, keeping shared zero-copy blobs that other replicas may
+    /// still reference (same rule for the background cleaner and for the reclaim below).
+    void removeSharedTemporaryDirectory(const DiskPtr & disk, const String & relative_path) const;
+
+    /// Removes a leftover of an interrupted operation at `relative_data_path / part_dir_name`, if any.
+    /// The name must be claimed, and temporary (starts with "tmp", no '/'), so payload directories such
+    /// as "detached/<dir>" can never be reclaimed by mistake. Runs before the part storage is built.
+    void reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name) const;
+
+    /// Claims the name (exclusive, throws a `LOGICAL_ERROR` exception if already claimed), reclaims a
+    /// leftover, and returns the guard releasing the claim. Callers that know the name is collision-free
+    /// (e.g. from a Keeper-allocated block number) pass `may_have_leftover = false` to skip the probe.
+    scope_guard claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover = true) const;
 
     void waitForOutdatedPartsToBeLoaded() const;
     void waitForUnexpectedPartsToBeLoaded() const;
