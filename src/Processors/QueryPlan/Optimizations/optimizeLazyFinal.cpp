@@ -415,6 +415,13 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         auto * step = stack[i].node->step.get();
         if (const auto * expression_step = typeid_cast<ExpressionStep *>(step))
         {
+            /// A stateful expression (e.g. `neighbor`, `runningAccumulate`, `logTrace`) above the read
+            /// must observe the row/block stream of the regular FINAL read. The rewrite below replaces
+            /// that stream with the InputSelector branches (and possibly a union with the split-off
+            /// non-intersecting parts), which produces the same rows in a different stream. Keep the
+            /// regular FINAL read.
+            if (expression_step->getExpression().hasStatefulFunctions())
+                return;
             /// arrayJoin changes the number of rows, a limit above it is not comparable to selected_rows.
             if (expression_step->getExpression().hasArrayJoin())
                 break;
@@ -422,6 +429,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         }
         if (const auto * filter_step_above = typeid_cast<FilterStep *>(step))
         {
+            /// Same reasoning as for ExpressionStep; additionally, the immediate parent filter is
+            /// cloned into the hidden set-building read (see below), so a stateful predicate would
+            /// execute twice.
+            if (filter_step_above->getExpression().hasStatefulFunctions())
+                return;
             if (filter_step_above->getExpression().hasArrayJoin())
                 break;
             continue;
@@ -463,13 +475,13 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         return;
 
     /// A stateful predicate (e.g. `logTrace`, `neighbor`) must run exactly once, on the row stream of
-    /// the query as written. The rewrite below clones the WHERE filter, the prewhere, and the row-level
-    /// filter into a hidden non-FINAL set-building read (and the non-intersecting split replays them on
-    /// a plain non-FINAL read), and then evaluates them again on the result branch. A stateful predicate
+    /// the query as written. The rewrite below clones the prewhere and the row-level filter into a
+    /// hidden non-FINAL set-building read (and the non-intersecting split replays them on a plain
+    /// non-FINAL read), and then evaluates them again on the result branch. A stateful predicate
     /// would therefore execute twice and observe the pre-FINAL duplicate stream, so the key set could
     /// differ from what the unoptimized query would select. Keep the regular FINAL read.
-    if ((filter_step && filter_step->getExpression().hasStatefulFunctions())
-        || (reading_step->getPrewhereInfo() && reading_step->getPrewhereInfo()->prewhere_actions.hasStatefulFunctions())
+    /// (A stateful visible WHERE filter or projection is already rejected by the walk above.)
+    if ((reading_step->getPrewhereInfo() && reading_step->getPrewhereInfo()->prewhere_actions.hasStatefulFunctions())
         || (reading_step->getRowLevelFilter() && reading_step->getRowLevelFilter()->actions.hasStatefulFunctions()))
         return;
 
