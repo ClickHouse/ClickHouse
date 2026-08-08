@@ -92,8 +92,11 @@ SELECT floatBitTrim(materialize(1.234::Float64), 20::Int64) = floatBitTrim(1.234
 SELECT 'Negative constant n is rejected during analysis.';
 SELECT floatBitTrim(materialize(1.0::Float64), -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT floatBitTrim(materialize(1.0::Float64), -1::Int64); -- { serverError ARGUMENT_OUT_OF_BOUND }
--- Rejected even in a branch that is never taken, unlike the per-row case below.
-SELECT if(0, floatBitTrim(materialize(1.0::Float64), -1), 1.0::Float64); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+SELECT 'A pruned branch of `if` hides a negative constant n.';
+-- A branch of `if` with a constant false condition is pruned before the function is resolved,
+-- so the negative constant `n` is never seen and no exception is thrown.
+SELECT if(0, floatBitTrim(materialize(1.0::Float64), -1), 1.0::Float64);
 
 SELECT 'Short-circuit guards a negative per-row n.';
 SELECT sum(if(n >= 0, floatBitTrim(v, n), v)) FROM (SELECT 1.0::Float64 AS v, arrayJoin([20, -1]) AS n)

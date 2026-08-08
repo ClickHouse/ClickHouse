@@ -64,6 +64,25 @@ Inf stays Inf.
 1
 1
 7F80
+Large UInt64 n is clamped, not treated as negative, on both paths.
+1
+1
+1
+1
+Constant n of every native integer type agrees with the per-row path.
+1
+1
+1
+1
+1
+1
+1
+1
+Negative constant n is rejected during analysis.
+A pruned branch of `if` hides a negative constant n.
+1
+Short-circuit guards a negative per-row n.
+2
 materialize(): per-row path equals const path.
 1
 1

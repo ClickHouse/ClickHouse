@@ -53,7 +53,7 @@ inline Float processOne(Float v, UInt mask)
     return bit_cast<Float>(bits & (mask | is_nan));
 }
 
-MULTITARGET_FUNCTION_X86_V4_V3(
+MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(template <typename Float, typename UInt> void NO_INLINE),
     processRangeImpl,
     MULTITARGET_FUNCTION_BODY((const Float * __restrict src, Float * __restrict dst, UInt mask, size_t n) {
@@ -62,13 +62,11 @@ MULTITARGET_FUNCTION_X86_V4_V3(
     }))
 
 template <typename Float, typename UInt>
-static void processRange(const Float * src, Float * dst, UInt mask, size_t n)
+void processRange(const Float * src, Float * dst, UInt mask, size_t n)
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
         return processRangeImpl_x86_64_v4<Float, UInt>(src, dst, mask, n);
-    if (isArchSupported(TargetArch::x86_64_v3))
-        return processRangeImpl_x86_64_v3<Float, UInt>(src, dst, mask, n);
 #endif
     processRangeImpl<Float, UInt>(src, dst, mask, n);
 }
@@ -138,7 +136,11 @@ private:
         if constexpr (std::is_signed_v<BitsToTrimType>)
         {
             if (n_raw < 0) [[unlikely]]
-                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Number of bits to trim in {} must be non-negative", name);
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Number of bits to trim in {} must be non-negative, got {}",
+                    name,
+                    static_cast<Int64>(n_raw));
         }
         /// Clamp at MantissaBits
         const UInt64 n = std::min<UInt64>(static_cast<UInt64>(n_raw), MantissaBits);
@@ -212,6 +214,7 @@ Zeroes the lowest `n` bits of the IEEE 754 mantissa of a floating-point value.
 This is a lossy precision reduction useful for improving compression of float columns.
 The exponent and sign are preserved; `n` is clamped to the mantissa width
 (7 for `BFloat16`, 23 for `Float32`, 52 for `Float64`).
+The value is truncated, not rounded.
 
 Special values:
 - `NaN` is returned unchanged, including its sign and its full payload. It never collapses into infinity, and a signaling `NaN` stays signaling.
