@@ -98,6 +98,9 @@ private:
     String expectIdentifierName();
     [[noreturn]] void fail(const String & message) const;
     [[noreturn]] void failAt(const KQLToken & token, const String & message) const;
+    /// Maps a KQL scalar type name from a `datatable` schema, a `typeof(...)` or a function
+    /// parameter onto the ClickHouse type name, rejecting names with no faithful mapping.
+    const String & resolveScalarType(const KQLToken & type_token, const String & kql_type) const;
 
     /// Statements.
     void parseLetStatement();

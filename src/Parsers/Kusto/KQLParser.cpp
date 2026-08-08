@@ -131,6 +131,9 @@ const std::map<String, KQLJoinKind> & joinKindNames()
 }
 
 /// KQL scalar type names, as they appear in `datatable` schemas and `typeof(...)`.
+/// `dynamic` is deliberately absent: dynamic array literals lower to ClickHouse `Array`,
+/// but a schema annotation carries no element type, so a declared `dynamic` column has no
+/// faithful representation and is rejected by name in `resolveScalarType`.
 const std::map<String, String> & kqlTypeToClickHouseType()
 {
     static const std::map<String, String> types{
@@ -139,7 +142,6 @@ const std::map<String, String> & kqlTypeToClickHouseType()
         {"datetime", "DateTime64(7, 'UTC')"},
         {"date", "DateTime64(7, 'UTC')"},
         {"decimal", "Decimal128(20)"},
-        {"dynamic", "String"},
         {"guid", "UUID"},
         {"uuid", "UUID"},
         {"int", "Int32"},
@@ -271,6 +273,20 @@ void KQLParser::failAt(const KQLToken & token, const String & message) const
     throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error in KQL query at position {}: {}, found {}", offset + 1, message, found);
 }
 
+const String & KQLParser::resolveScalarType(const KQLToken & type_token, const String & kql_type) const
+{
+    /// Rejected here rather than mapped: `dynamic([...])` literals lower to `Array`, but a
+    /// schema annotation carries no element type, so a declared `dynamic` column has no
+    /// faithful ClickHouse representation.
+    if (kql_type == "dynamic")
+        failAt(type_token, "a 'dynamic' column type is not supported (only 'dynamic([...])' array literals are)");
+
+    auto it = kqlTypeToClickHouseType().find(kql_type);
+    if (it == kqlTypeToClickHouseType().end())
+        failAt(type_token, fmt::format("'{}' is not a KQL scalar type", kql_type));
+    return it->second;
+}
+
 KQLTabularExpressionPtr KQLParser::parseQuery()
 {
     /// `let` bindings accumulate until the tabular expression that uses them. They live in
@@ -370,8 +386,7 @@ void KQLParser::parseFunctionDefinition(const String & name)
             {
                 const KQLToken & type_token = current();
                 const String type = Poco::toLower(String(expectIdentifierName()));
-                if (!kqlTypeToClickHouseType().contains(type))
-                    failAt(type_token, fmt::format("'{}' is not a KQL scalar type", type));
+                resolveScalarType(type_token, type);
                 seen_scalar = true;
 
                 /// A default must be a literal, and defaulted parameters come last.
@@ -961,10 +976,7 @@ KQLSourcePtr KQLParser::parseDataTableSource()
 
         const KQLToken & type_token = current();
         const String kql_type = Poco::toLower(String(expectIdentifierName()));
-        auto it = kqlTypeToClickHouseType().find(kql_type);
-        if (it == kqlTypeToClickHouseType().end())
-            failAt(type_token, fmt::format("'{}' is not a KQL scalar type", kql_type));
-        source->column_types.push_back(it->second);
+        source->column_types.push_back(resolveScalarType(type_token, kql_type));
     } while (consume(KQLTokenType::Comma));
     expect(KQLTokenType::ClosingRoundBracket);
 
@@ -1742,11 +1754,9 @@ ASTPtr KQLParser::parsePrimary()
         index += 2;
         const KQLToken & type_token = current();
         const String kql_type = Poco::toLower(String(expectIdentifierName()));
-        auto type = kqlTypeToClickHouseType().find(kql_type);
-        if (type == kqlTypeToClickHouseType().end())
-            failAt(type_token, fmt::format("'{}' is not a KQL scalar type", kql_type));
+        const String & type = resolveScalarType(type_token, kql_type);
         expect(KQLTokenType::ClosingRoundBracket);
-        return makeLiteral(type->second);
+        return makeLiteral(type);
     }
 
     if (lookahead().type == KQLTokenType::OpeningRoundBracket)

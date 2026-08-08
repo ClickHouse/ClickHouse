@@ -115,7 +115,10 @@ Rejected with a parse error, rather than mistranslated:
   plain longitude/latitude *are* supported. `geo_point_to_s2cell` is not: ClickHouse has no
   S2 token form.
 - `dynamic` **objects** (`dynamic({"a": 1})`), member access (`x.y`) and lookup by key
-  (`x['k']`). Only `dynamic` arrays are mapped, onto ClickHouse `Array`.
+  (`x['k']`). Only `dynamic` arrays are mapped, onto ClickHouse `Array`. `dynamic` as a
+  **declared type** — in a `datatable` schema, a `typeof(...)` or a function parameter — is
+  also rejected: the annotation carries no element type, so there is nothing faithful to map
+  it to.
 - Cross-cluster and cross-database references such as `cluster(...)` and `database(...)`.
 - Query and `join` hints (`hint.strategy`, `hint.shufflekey`, ...).
 - Operator options: `mv-expand ... to typeof(T)` / `limit N` / `bagexpansion`, `summarize`
