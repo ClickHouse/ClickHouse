@@ -5,11 +5,11 @@ SET allow_experimental_time_decay_aggregate_functions = 1;
 SELECT
     tupleElement(decaying_sum, 'value'),
     tupleElement(decaying_sum, 'time'),
-    tupleElement(decaying_sum, 'decay_length'),
+    exponentialTimeDecayingDecayLength(decaying_sum),
     isNaN(decaying_avg),
     tupleElement(decaying_count, 'value'),
     tupleElement(decaying_count, 'time'),
-    tupleElement(decaying_count, 'decay_length')
+    exponentialTimeDecayingDecayLength(decaying_count)
 FROM
 (
     SELECT
@@ -50,8 +50,8 @@ SELECT
 FROM VALUES('value Float64, time Float64', (1000, -10000), (2, 0));
 
 WITH
-    exponentialTimeDecayingFloat64(1000, toFloat64(-10000), 1) AS old_value,
-    exponentialTimeDecayingFloat64(2, toFloat64(0), 1) AS current_value,
+    exponentialTimeDecayingFloat64(1)(1000, toFloat64(-10000)) AS old_value,
+    exponentialTimeDecayingFloat64(1)(2, toFloat64(0)) AS current_value,
     old_value + current_value AS combined
 SELECT
     tupleElement(combined, 'value'),
