@@ -1,0 +1,40 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <optimize_move_to_prewhere>1</optimize_move_to_prewhere>
+        <query_plan_optimize_prewhere>1</query_plan_optimize_prewhere>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_skip_indexes_on_data_read>0</use_skip_indexes_on_data_read>
+    </settings>
+
+    <create_query>
+        CREATE TABLE empty_in_prewhere
+        (
+            id UInt64,
+            uuid UUID,
+            INDEX uuid_bf uuid TYPE bloom_filter(0.01) GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS index_granularity = 1
+    </create_query>
+
+    <fill_query>
+        INSERT INTO empty_in_prewhere
+        SELECT number, reinterpretAsUUID(unhex(leftPad(hex(number), 32, '0')))
+        FROM numbers(2000000)
+    </fill_query>
+
+    <query>
+        SELECT id
+        FROM empty_in_prewhere
+        PREWHERE uuid IN
+        (
+            SELECT toUUID('00000000-0000-0000-0000-000000000000')
+            FROM numbers(0)
+        )
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE empty_in_prewhere</drop_query>
+</test>

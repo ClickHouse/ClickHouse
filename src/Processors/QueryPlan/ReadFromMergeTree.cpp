@@ -2781,6 +2781,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         return std::make_shared<AnalysisResult>(std::move(result));
     }
 
+    if (query_info_.prewhere_info)
+    {
+        auto header = query_info_.prewhere_info->prewhere_actions.updateHeader(
+            StorageSnapshot(data, metadata_snapshot).getSampleBlockForColumns(all_column_names));
+        const auto & filter_column = header.getByName(query_info_.prewhere_info->prewhere_column_name).column;
+        if (filter_column && ConstantFilterDescription(*filter_column).always_false)
+            return std::make_shared<AnalysisResult>(std::move(result));
+    }
+
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const Names & primary_key_column_names = primary_key.column_names;
