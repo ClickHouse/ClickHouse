@@ -333,9 +333,12 @@ class FunctionArrayPosition final : public IFunction
 public:
     static constexpr auto name = "array_position";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayPosition>(context); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionArrayPosition>(FunctionFactory::instance().get("indexOf", context));
+    }
 
-    explicit FunctionArrayPosition(ContextPtr context_) : context(std::move(context_)) {}
+    explicit FunctionArrayPosition(FunctionOverloadResolverPtr index_of_) : index_of(std::move(index_of_)) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -350,8 +353,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto index_of = buildIndexOf(arguments);
-        ColumnPtr positions = index_of->execute(arguments, index_of->getResultType(), input_rows_count, /* dry_run = */ false);
+        auto index_of_base = buildIndexOf(arguments);
+        ColumnPtr positions = index_of_base->execute(arguments, index_of_base->getResultType(), input_rows_count, /* dry_run = */ false);
         positions = positions->convertToFullColumnIfConst();
 
         const auto & positions_data = assert_cast<const ColumnUInt64 &>(*positions).getData();
@@ -366,10 +369,10 @@ public:
 private:
     FunctionBasePtr buildIndexOf(const ColumnsWithTypeAndName & arguments) const
     {
-        return FunctionFactory::instance().get("indexOf", context)->build(arguments);
+        return index_of->build(arguments);
     }
 
-    ContextPtr context;
+    FunctionOverloadResolverPtr index_of;
 };
 
 }
@@ -403,7 +406,7 @@ REGISTER_FUNCTION(PostgresCatalog)
                        "element in the array, or `NULL` when the element does not occur. "
                        "The native ClickHouse counterpart is `indexOf`, which returns 0 instead of `NULL`.",
         .syntax = "array_position(array, element)",
-        .arguments = {{"array", "The array to search.", {"Array(T)"}}, {"element", "The element to search for.", {"T"}}},
+        .arguments = {{"array", "The array to search.", {"Array(T)"}}, {"element", "The element to search for.", {"Any"}}},
         .returned_value = {"The 1-based position of the first occurrence, or `NULL` when the element does not occur.", {"Nullable(UInt64)"}},
         .examples = {{"Example", "SELECT array_position(['a', 'b'], 'b')", "2"}},
         .introduced_in = {26, 8},
