@@ -96,6 +96,11 @@ SELECT 'a window function may be aliased to the internal name';
 SELECT count(*) OVER () AS `__row_count_marker` FROM t04812_dist;
 SELECT 'and the resulting column is that alias, not the internal literal';
 SELECT count(*) OVER () AS `__row_count_marker` FROM t04812_dist FORMAT TSVWithNames;
+-- A window function defined in a WITH clause is named after its alias, so an alias spelled as the
+-- internal element's own name would make the window step reject its header. Such a query is left
+-- exactly as it is on master, rows lost, rather than turned into an error.
+SELECT 'a WITH-aliased window function may carry the internal name';
+WITH count(*) OVER () AS `'__row_count_marker'` SELECT `'__row_count_marker'` FROM t04812_dist FORMAT TSVWithNames;
 -- The row count of a local query is never at risk, so a local plan must not carry the marker at all.
 -- Only the plan shows this: the marker is stripped again before the result either way, so no query
 -- result can tell a local pipeline that carries it from one that does not.

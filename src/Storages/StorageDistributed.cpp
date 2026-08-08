@@ -920,6 +920,23 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     return rewrite;
 }
 
+/// A window function defined in a WITH clause is named after its alias, which the user may spell as the
+/// marker's name. The window step appends that name to its input header, where Block::insert then
+/// rejects the pair as ambiguous, so such a query must keep its lost rows rather than become an error.
+bool isWindowFunctionNamedLikeMarker(const SelectQueryInfo & query_info)
+{
+    /// Without an analyzer result the names are unknown, so assume the worst.
+    if (!query_info.syntax_analyzer_result)
+        return true;
+
+    const String marker_column_name = ASTLiteral(String(ROW_COUNT_MARKER)).getColumnName();
+    for (const auto & window_function : query_info.syntax_analyzer_result->window_function_asts)
+        if (window_function->getColumnName() == marker_column_name)
+            return true;
+
+    return false;
+}
+
 QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     const StorageSnapshotPtr & distributed_storage_snapshot,
     const StorageID & remote_storage_id,
@@ -1070,7 +1087,8 @@ void StorageDistributed::read(
         if (local_context->getClientInfo().distributed_depth == 0
             && processed_stage == QueryProcessingStage::WithMergeableState
             && query_info.has_window
-            && header->empty())
+            && header->empty()
+            && !isWindowFunctionNamedLikeMarker(query_info))
         {
             /// Still aliases the caller's AST, which the caller keeps using after this returns.
             modified_query_info.query = modified_query_info.query->clone();

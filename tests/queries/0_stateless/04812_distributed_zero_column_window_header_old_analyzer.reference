@@ -129,6 +129,8 @@ __row_count_marker
 6
 6
 6
+a WITH-aliased window function may carry the internal name
+\'__row_count_marker\'
 plan steps naming the internal column, local then distributed
 0
 1
