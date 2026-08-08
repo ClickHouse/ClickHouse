@@ -136,6 +136,26 @@ BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextP
 {
     BigQueryConfiguration configuration;
 
+    /// `tryGetNamedCollectionWithOverrides` applies repeated `key = value` overrides with
+    /// last-wins semantics, so without this check `bigquery(collection, table = 'a', table = 'b')`
+    /// would silently target `b`, while the plain-argument branch below (and the documentation)
+    /// rejects a repeated key. Enforce the same contract for the named-collection form.
+    if (!args.empty() && args.front()->as<ASTIdentifier>())
+    {
+        std::unordered_set<String> override_keys;
+        for (auto it = std::next(args.begin()); it != args.end(); ++it)
+        {
+            const auto * equals_function = (*it)->as<ASTFunction>();
+            if (!equals_function || equals_function->name != "equals" || !equals_function->arguments
+                || equals_function->arguments->children.size() != 2)
+                continue;
+            auto literal_key = evaluateConstantExpressionOrIdentifierAsLiteral(equals_function->arguments->children[0], context);
+            auto key = checkAndGetLiteralArgument<String>(literal_key, "key");
+            if (!override_keys.emplace(key).second)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "BigQuery argument '{}' is specified more than once", key);
+        }
+    }
+
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/ true, nullptr, table_id))
     {
         configuration = fromNamedCollection(*named_collection);

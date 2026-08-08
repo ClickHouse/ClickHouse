@@ -1149,6 +1149,27 @@ def test_named_collection():
     )
 
 
+def test_named_collection_duplicate_override():
+    # Repeating a `key = value` override on a named collection is rejected the same way the
+    # plain-argument form rejects a repeated key, instead of silently applying the last value.
+    error = node.query_and_get_error(
+        "SELECT count() FROM bigquery(bq_mock, table = 'test_paging', table = 'test_types')"
+    )
+    assert "more than once" in error
+
+    node.query("DROP TABLE IF EXISTS bq_nc_dup")
+    error = node.query_and_get_error(
+        "CREATE TABLE bq_nc_dup ENGINE = BigQuery(bq_mock, table = 'test_paging', table = 'test_types')"
+    )
+    assert "more than once" in error
+
+    # A single override of the same key is still allowed.
+    assert (
+        node.query("SELECT count() FROM bigquery(bq_mock, table = 'test_paging')")
+        == "10\n"
+    )
+
+
 def test_named_collection_dependency():
     # A permanent BigQuery table created from a named collection registers a dependency, so the
     # named collection cannot be dropped while the table still uses it.
