@@ -341,8 +341,13 @@ IcebergMetadata::IcebergMetadata(
     , write_format(configuration_->format)
 {
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
+    /// Note: `use_iceberg_metadata_files_cache` is intentionally NOT checked here. This `IcebergMetadata`
+    /// instance is cached and reused by `DataLakeConfiguration` across many later queries with
+    /// potentially different settings, so a one-shot check at construction time would freeze the task's
+    /// on/off state to whatever the very first query happened to use. Instead the task is always armed
+    /// (when the cache exists at all) and re-checks the effective setting on every firing, see
+    /// `backgroundMetadataPrefetcherThread`.
     if (persistent_components.metadata_cache
-        && context_->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
         && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
     {
         background_metadata_prefetch_task = context_->getIcebergSchedulePool()->createTask(
@@ -389,6 +394,14 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
         /// as a part of the same method, we download metadata.json of the latest metadata version
         /// and after parsing it, we fetch manifest lists, parse and cache them
         auto ctx = Context::getGlobalContextInstance()->getBackgroundContext();
+        if (!ctx->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
+        {
+            /// Re-checked on every firing (rather than once in the constructor) so that flipping this
+            /// setting actually takes effect for `IcebergMetadata` instances that `DataLakeConfiguration`
+            /// keeps caching and reusing across queries.
+            LOG_TRACE(log, "backgroundMetadataPrefetcherThread: use_iceberg_metadata_files_cache is disabled - skipping");
+            return;
+        }
         auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(ctx, true);
         if (actual_data_snapshot)
         {
