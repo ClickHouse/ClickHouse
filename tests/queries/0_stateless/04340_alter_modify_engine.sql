@@ -31,7 +31,7 @@ SELECT 'replacing final', count() FROM t_engine FINAL;
 DROP TABLE t_engine;
 
 -- MergeTree -> SummingMergeTree. FINAL collapses the per-key rows into one summed row. Selecting v
--- directly (not sum(v)) proves the engine changed: plain MergeTree FINAL would keep both rows for k=1.
+-- directly (not sum(v)) proves the engine changed: plain MergeTree does not support FINAL at all.
 CREATE TABLE t_sum (k UInt32, v UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_sum VALUES (1, 10);
 INSERT INTO t_sum VALUES (1, 20);
@@ -475,6 +475,18 @@ SELECT 'graphite lc nullable path rejected', engine, count() FROM t_graphite_pat
     WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
 DROP TABLE t_graphite_path;
 SET allow_suspicious_low_cardinality_types = 0;
+
+-- A fixed-width `Array` stays allowed: `ColumnArray::getDataAt` reads it, so the rollup works and
+-- rejecting it would make MODIFY ENGINE stricter than CREATE TABLE.
+CREATE TABLE t_graphite_path (key UInt32, Path Array(UInt32), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, [1, 2], '2020-01-01 00:00:00', 5, 1);
+INSERT INTO t_graphite_path VALUES (1, [1, 2], '2020-01-01 00:00:10', 6, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_path;
+ATTACH TABLE t_graphite_path;
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite fixed array path rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
+DROP TABLE t_graphite_path;
 
 -- A `FixedString`, `LowCardinality(String)` or `Enum` path stays allowed: all three implement
 -- `getDataAt`, so the rollup reads them and the merge collapses the two versions.

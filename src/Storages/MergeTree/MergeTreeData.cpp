@@ -1833,9 +1833,13 @@ static void checkGraphiteSchema(const Graphite::Params & params, const StorageIn
 
     /// The rollup reads the path column with `IColumn::getDataAt`, which the composite columns do not
     /// implement: they throw, and the table can then neither merge nor answer a `FINAL` read.
-    WhichDataType which_path(recursiveRemoveLowCardinality(path_type));
-    if (which_path.isArray() || which_path.isTuple() || which_path.isMap() || which_path.isVariant()
-        || which_path.isDynamic() || which_path.isObject() || which_path.isQBit())
+    /// An `Array` is readable exactly when its elements are fixed-width, which is the same condition
+    /// `ColumnArray::getDataAt` checks at merge time.
+    auto plain_path_type = recursiveRemoveLowCardinality(path_type);
+    WhichDataType which_path(plain_path_type);
+    bool readable_array = which_path.isArray() && plain_path_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+    if ((which_path.isArray() && !readable_array) || which_path.isTuple() || which_path.isMap()
+        || which_path.isVariant() || which_path.isDynamic() || which_path.isObject() || which_path.isQBit())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The path column '{}' of GraphiteMergeTree must be a string, integer or `Enum` column, got {}.",
