@@ -410,6 +410,7 @@
             "reference/engines/database-engines/datalake",
             "reference/engines/database-engines/materialized-postgresql",
             "reference/engines/database-engines/mysql",
+            "reference/engines/database-engines/overlay",
             "reference/engines/database-engines/postgresql",
             "reference/engines/database-engines/replicated",
             "reference/engines/database-engines/shared",
