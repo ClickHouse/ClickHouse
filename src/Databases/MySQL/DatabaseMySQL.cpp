@@ -75,32 +75,34 @@ namespace ErrorCodes
     extern const int ALL_CONNECTION_TRIES_FAILED;
 }
 
-namespace
+/// Demote only a connection failure to the (unreachable) remote, so that anything else is not
+/// hidden. Must be called from within a catch block: it rethrows the active exception to classify it.
+/// A failed connect through `mysqlxx::PoolWithFailover::get` arrives rewrapped as
+/// `ALL_CONNECTION_TRIES_FAILED`, a direct `mysqlxx::Pool` probe throws `ConnectionFailed` as is,
+/// and a connection dropped mid-query throws `ConnectionLost`.
+LogsLevel mysqlToleratedConnectionFailureLogLevel()
 {
-    /// Demote only a connection failure to the (unreachable) remote, so that anything else is not
-    /// hidden. Must be called from within a catch block: it rethrows the active exception to classify it.
-    /// A failed connect through `mysqlxx::PoolWithFailover::get` arrives rewrapped as
-    /// `ALL_CONNECTION_TRIES_FAILED`, while a direct `mysqlxx::Pool` probe throws `ConnectionFailed` as is.
-    LogsLevel toleratedConnectionFailureLogLevel()
+    try
     {
-        try
-        {
-            throw;
-        }
-        catch (const mysqlxx::ConnectionFailed &)
-        {
-            return LogsLevel::warning;
-        }
-        catch (const Exception & e)
-        {
-            return e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED ? LogsLevel::warning : LogsLevel::error;
-        }
-        /// Ok to not report anything here: the exception stays active and the caller logs it at the
-        /// level returned from here.
-        catch (...)
-        {
-            return LogsLevel::error;
-        }
+        throw;
+    }
+    catch (const mysqlxx::ConnectionFailed &)
+    {
+        return LogsLevel::warning;
+    }
+    catch (const mysqlxx::ConnectionLost &)
+    {
+        return LogsLevel::warning;
+    }
+    catch (const Exception & e)
+    {
+        return e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED ? LogsLevel::warning : LogsLevel::error;
+    }
+    /// Ok to not report anything here: the exception stays active and the caller logs it at the
+    /// level returned from here.
+    catch (...)
+    {
+        return LogsLevel::error;
     }
 }
 
@@ -136,12 +138,12 @@ DatabaseMySQL::DatabaseMySQL(
     {
         if (attach)
         {
-            tryLogCurrentException("DatabaseMySQL", "", toleratedConnectionFailureLogLevel());
+            tryLogCurrentException("DatabaseMySQL", "", mysqlToleratedConnectionFailureLogLevel());
         }
 #if CLICKHOUSE_CLOUD
         else if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
         {
-            tryLogCurrentException("DatabaseMySQL", "", toleratedConnectionFailureLogLevel());
+            tryLogCurrentException("DatabaseMySQL", "", mysqlToleratedConnectionFailureLogLevel());
         }
 #endif
         else
@@ -224,7 +226,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
                             backQuote(table_name), getCurrentExceptionMessage(true));
         }
 
-        tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", mysqlToleratedConnectionFailureLogLevel());
     }
 
     if (!local_tables_cache.contains(table_name))

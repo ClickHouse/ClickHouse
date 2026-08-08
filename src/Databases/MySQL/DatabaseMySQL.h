@@ -6,6 +6,7 @@
 #include <mysqlxx/Pool.h>
 
 #include <Common/ThreadPool.h>
+#include <Core/LogsLevel.h>
 #include <Storages/ColumnsDescription.h>
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -27,6 +28,11 @@ class Context;
 struct AlterCommand;
 struct MySQLSettings;
 enum class MySQLDataTypesSupport : uint8_t;
+
+/// Log level for an exception that `DatabaseMySQL` tolerates: Warning for a connection failure to
+/// the (unreachable) remote, Error for anything else. Must be called from within a catch block.
+/// Exposed so that `gtest_mysql_tolerated_connection_failure` can pin the classification.
+LogsLevel mysqlToleratedConnectionFailureLogLevel();
 
 /** Real-time access to table list and table structure from remote MySQL
  *  It doesn't make any manipulations with filesystem.
