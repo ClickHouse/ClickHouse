@@ -136,6 +136,7 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return getTargetTable()->supportsColumnsWithDynamicStructure(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return getTargetTable()->supportedPrewhereColumnsIncludeSubcolumns(); }
     bool canMoveConditionsToPrewhere() const override
     {
         auto target = tryGetTargetTable();

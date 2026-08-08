@@ -17,6 +17,12 @@
 namespace DB
 {
 
+std::shared_ptr<TextLog::Queue> TextLog::getLogQueue(const SystemLogQueueSettings & settings)
+{
+    static std::shared_ptr<Queue> queue = std::make_shared<Queue>(settings);
+    return queue;
+}
+
 ColumnsDescription TextLogElement::getColumnsDescription()
 {
     auto priority_datatype = std::make_shared<DataTypeEnum8>(
