@@ -129,3 +129,31 @@ def test_no_leftover_directories_after_removal(started_cluster):
         assert count_hdfs_directories(fs) == 0
     finally:
         node.query("DROP TABLE hdfs_dir_cleanup SYNC")
+
+
+def test_no_leftover_directories_after_canceled_write(started_cluster):
+    # A canceled write (e.g. an INSERT that fails mid-stream, or a zero-row
+    # rewrite of a part) removes the file it created, and must also remove the
+    # emptied prefix directories: the cancel path never reaches `removeObject`,
+    # which does this cleanup for committed blobs.
+    node = started_cluster.instances["node"]
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
+
+    node.query(
+        "CREATE TABLE hdfs_canceled_write (id UInt64) ENGINE=TinyLog SETTINGS disk = 'hdfs'"
+    )
+    try:
+        # Stream small blocks so that the write buffers (and with them the HDFS
+        # files and their prefix directories) are created before the exception
+        # cancels the insert.
+        error = node.query_and_get_error(
+            "INSERT INTO hdfs_canceled_write"
+            " SELECT throwIf(number = 100000, 'canceled write') FROM numbers(200000)"
+            " SETTINGS max_block_size = 4096, min_insert_block_size_rows = 4096"
+        )
+        assert "canceled write" in error
+
+        assert_objects_count(started_cluster, 0)
+        assert count_hdfs_directories(fs) == 0
+    finally:
+        node.query("DROP TABLE hdfs_canceled_write SYNC")

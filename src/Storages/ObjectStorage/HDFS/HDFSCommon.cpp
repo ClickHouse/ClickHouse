@@ -203,6 +203,22 @@ void checkHDFSURL(const String & url)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS URL: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'", url);
 }
 
+void removeEmptiedParentDirectories(hdfsFS fs, const String & path, const String & root_directory) noexcept
+{
+    String root = std::filesystem::path(root_directory).lexically_normal().string();
+    if (!root.ends_with('/'))
+        root += '/';
+    std::filesystem::path dir = std::filesystem::path(path).lexically_normal().parent_path();
+    while (dir.string().size() > root.size() && dir.string().starts_with(root))
+    {
+        /// A non-recursive `hdfsDelete` fails on a non-empty directory, so the walk stops at the
+        /// first directory that still holds other blobs (or was concurrently repopulated).
+        if (hdfsDelete(fs, dir.string().c_str(), 0) == -1)
+            break;
+        dir = dir.parent_path();
+    }
+}
+
 }
 
 #endif
