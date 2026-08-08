@@ -242,6 +242,12 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
     if (reading_step->getPreferMultipleStreams())
         non_final_reading->setPreferMultipleStreams();
 
+    /// Likewise, `read_in_order_requested_by_plan_optimizer` is set by `requestReadingInOrder` on the
+    /// original step, and the freshly constructed replacement starts with it unset. Carry it over so
+    /// that a read the plan optimizer put in order stays eligible for `PrefetchingConcatProcessor`.
+    if (reading_step->isReadInOrderRequestedByPlanOptimizer())
+        non_final_reading->setReadInOrderRequestedByPlanOptimizer();
+
     /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
     /// from the index.
     /// Copy them over, otherwise the filter drops every row.
@@ -663,9 +669,12 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         set_reading->disableQueryConditionCache();
 
         /// Same as for `non_final_reading` above: preserve the `PrefetchingConcatProcessor` opt-out
-        /// that `optimizeReadInOrder` has possibly already applied to the original read.
+        /// that `optimizeReadInOrder` has possibly already applied to the original read, and the
+        /// fact that reading in order was requested by the plan optimizer.
         if (reading_step->getPreferMultipleStreams())
             set_reading->setPreferMultipleStreams();
+        if (reading_step->isReadInOrderRequestedByPlanOptimizer())
+            set_reading->setReadInOrderRequestedByPlanOptimizer();
 
         set_plan.addStep(std::move(set_reading));
     }

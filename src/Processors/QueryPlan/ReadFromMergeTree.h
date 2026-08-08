@@ -378,6 +378,13 @@ public:
     void setPreferMultipleStreams() { prefer_multiple_streams = true; }
     bool getPreferMultipleStreams() const { return prefer_multiple_streams; }
 
+    /// For optimizations that rebuild the reading step (e.g. lazy `FINAL`): carry over the fact that
+    /// reading in order was requested through `requestReadingInOrder`, together with the opt-outs
+    /// already stamped into `prefer_multiple_streams`, so the rebuilt read keeps the same
+    /// `PrefetchingConcatProcessor` eligibility as the original.
+    void setReadInOrderRequestedByPlanOptimizer() { read_in_order_requested_by_plan_optimizer = true; }
+    bool isReadInOrderRequestedByPlanOptimizer() const { return read_in_order_requested_by_plan_optimizer; }
+
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 
