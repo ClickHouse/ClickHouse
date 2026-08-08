@@ -79,7 +79,7 @@ MergeTreeLeaderElection::~MergeTreeLeaderElection()
 
 void MergeTreeLeaderElection::start()
 {
-    task = context->getSchedulePool().createTask(storage_id, "MergeTreeLeaderElection", [this] { run(); });
+    task = context->getSchedulePool()->createTask(storage_id, "MergeTreeLeaderElection", [this] { run(); });
     task->activateAndSchedule();
 }
 
