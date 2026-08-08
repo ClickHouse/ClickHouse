@@ -419,14 +419,15 @@ void updateConfigurationFromConfig(
     }
 
 #if USE_KRB5
+    static const String default_kinit_cmd = cppkafka::Configuration{}.get("sasl.kerberos.kinit.cmd");
+    if (kafka_config.get("sasl.kerberos.kinit.cmd") != default_kinit_cmd)
+        LOG_WARNING(params.log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
+
+    kafka_config.set("sasl.kerberos.kinit.cmd", "");
+    kafka_config.set("sasl.kerberos.min.time.before.relogin", "0");
+
     if (kafka_config.has_property("sasl.kerberos.keytab") && kafka_config.has_property("sasl.kerberos.principal"))
     {
-        if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
-            LOG_WARNING(params.log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
-
-        kafka_config.set("sasl.kerberos.kinit.cmd", "");
-        kafka_config.set("sasl.kerberos.min.time.before.relogin", "0");
-
         String keytab = kafka_config.get("sasl.kerberos.keytab");
         String principal = kafka_config.get("sasl.kerberos.principal");
         LOG_DEBUG(params.log, "Running KerberosInit");
