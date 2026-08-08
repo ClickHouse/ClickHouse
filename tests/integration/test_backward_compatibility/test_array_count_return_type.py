@@ -54,8 +54,13 @@ def test_array_count_mixed_version_remote(start_cluster):
         new_node.query(query, settings={"array_count_legacy_uint32_result": 1})
         == "6\tUInt32\n"
     )
+    # `26.7` is the last version before the `arrayCount` result-type change,
+    # i.e. the settings-changes-history boundary this test guards. It is
+    # intentionally a literal rather than `CLICKHOUSE_CI_MIN_TESTED_VERSION`:
+    # the check must keep exercising the legacy path even after the CI minimum
+    # tested version moves past `26.7`.
     assert (
-        new_node.query(query, settings={"compatibility": CLICKHOUSE_CI_MIN_TESTED_VERSION})
+        new_node.query(query, settings={"compatibility": "26.7"})
         == "6\tUInt32\n"
     )
 
