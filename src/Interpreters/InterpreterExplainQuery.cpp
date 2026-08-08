@@ -1206,6 +1206,45 @@ bool checkAccessForExplainedQuery(const ASTPtr & explained_query, const ContextP
     return checked;
 }
 
+/// Whether the explained query references anything `checkAccessRightsForQueryTree` could possibly
+/// guard: a plain table or view (only a table identifier resolves into a `TableNode`), or a
+/// parameterized view, which is called like a table function but with a name no registered table
+/// function has (`QueryAnalyzer::resolveTableFunction` considers a parameterized view only after
+/// `TableFunctionFactory::tryGet` fails). A query whose table expressions are all genuine table
+/// functions can never be denied by the check - the planner does not `SELECT`-check table functions
+/// either (their own access check happens in `ITableFunction::execute`) - so resolving such a query
+/// for the check alone is pure overhead with observable side effects: resolving a table function may
+/// connect to a remote server (e.g. `mysql(...)` fetches the table structure), turning
+/// `EXPLAIN QUERY TREE run_passes = 0` - which deliberately dumps the unresolved tree so that no
+/// server is contacted - into connection attempts and error-log noise
+/// (04657_mysql_tls_credentials_query_tree). A registered table function is not scanned by name only:
+/// its arguments may still hold a subquery reading from a table (`view(SELECT ... FROM t)`), which the
+/// recursion below keeps visiting through the generic children walk.
+bool referencesCheckableTables(const ASTPtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * table_expression = node->as<ASTTableExpression>())
+    {
+        if (table_expression->database_and_table_name)
+            return true;
+
+        if (table_expression->table_function)
+        {
+            const auto * function = table_expression->table_function->as<ASTFunction>();
+            if (function && !TableFunctionFactory::instance().isTableFunctionName(function->name))
+                return true;
+        }
+    }
+
+    for (const auto & child : node->children)
+        if (referencesCheckableTables(child))
+            return true;
+
+    return false;
+}
+
 bool explainQueryTree(
     ASTPtr explained_query,
     ContextPtr query_context,
@@ -1266,8 +1305,11 @@ bool explainQueryTree(
         {
             /// The dumped tree here is the unresolved `query_tree`, which never carries resolved column
             /// names or types, so the dump itself cannot leak table metadata. We still resolve a throwaway
-            /// copy to reproduce the planner's `SELECT` access check on the referenced tables.
-            resolveThenCheckAccessRights(query_tree->clone(), query_tree_pass_manager, query_context);
+            /// copy to reproduce the planner's `SELECT` access check on the referenced tables - but only
+            /// when the query references something the check could guard (see `referencesCheckableTables`),
+            /// so that a query reading only from genuine table functions is dumped without resolving them.
+            if (referencesCheckableTables(explained_query))
+                resolveThenCheckAccessRights(query_tree->clone(), query_tree_pass_manager, query_context);
         }
     }
 
