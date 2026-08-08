@@ -1004,13 +1004,41 @@ def test_a_revert_already_on_master_stops_a_second_one(monkeypatch):
 def test_a_pushed_revert_branch_stops_a_second_one(monkeypatch):
     """The branch is what `.github/workflows/revert_broken_prs.yml` pushes too,
     so an in-flight revert by either automation is seen with no indexing lag.
-    A pull request has it as its head, so the branch is no orphan and stands."""
+    A pull request against `master` has it as its head, so the branch is no
+    orphan and stands."""
     handled = _handled(
         monkeypatch,
         ls_remote=_ls_remote("revert-112345"),
-        by_head=[{"number": 9876, "state": "OPEN"}],
+        by_head=[{"number": 9876, "state": "OPEN", "baseRefName": "master"}],
     )
     assert "already exists on the remote" in handled
+
+
+def test_a_release_branch_revert_does_not_stop_the_master_revert(monkeypatch):
+    """A revert of the same pull request backported to a release branch leaves
+    a `revert-<pr>-*` branch on the remote, but its pull request targets the
+    release branch and removes nothing from `master`. Obeying the branch alone
+    would stand the `master` revert down with the regression still in place."""
+    handled = _handled(
+        monkeypatch,
+        ls_remote=_ls_remote("revert-112345-fix"),
+        by_head=[{"number": 9876, "state": "MERGED", "baseRefName": "25.8"}],
+    )
+    assert handled == ""
+
+
+def test_a_branch_whose_revert_was_closed_without_merging_does_not_stand(monkeypatch):
+    """A revert pull request somebody closed without merging removed nothing --
+    it is a decision against that revert, not a revert -- so the branch it left
+    behind is no reason to stand down either. When it carries the exact
+    automation name, the push this run would make is refused while the branch
+    stands and the revert fails visibly instead of merging anything wrong."""
+    handled = _handled(
+        monkeypatch,
+        ls_remote=_ls_remote("revert-112345"),
+        by_head=[{"number": 9876, "state": "CLOSED", "baseRefName": "master"}],
+    )
+    assert handled == ""
 
 
 def test_an_orphan_revert_branch_is_deleted_and_does_not_stop_the_revert(monkeypatch):
@@ -1825,6 +1853,16 @@ class FakeInfo:
         return "https://example.invalid/job"
 
 
+def test_the_job_refuses_to_run_off_the_base_branch(monkeypatch):
+    """The job is scheduled, but GitHub also allows dispatching it by hand and
+    replaying old runs, and it merges pull requests with administrator
+    privileges: that must never happen from a feature branch. The refusal is
+    the first gate in `prepare`, before any `git` command runs."""
+    monkeypatch.setattr(job.Shell, "get_output", _unexpected("ran a git command"))
+    monkeypatch.setattr(job.Shell, "check", _unexpected("ran a git command"))
+    assert job.prepare(FakeInfo(branch="feature")) is False
+
+
 def test_a_checkout_that_cannot_be_unshallowed_stops_the_job(monkeypatch):
     """The agent walks the history of `master` and `git revert -m 1` needs the
     merge commit's parents; neither works on the one commit `actions/checkout`
@@ -2004,6 +2042,24 @@ def test_the_workflow_does_not_pre_authenticate_the_job():
     revert_job = next(j for j in workflow.jobs if j.name == "Revert CI regressions")
     assert revert_job.enable_gh_auth is False
     assert revert_job.checkout_persist_credentials is False
+
+
+def test_a_job_that_hides_the_checkout_token_cannot_pre_authenticate_gh():
+    """`checkout_persist_credentials=False` keeps GitHub credentials away from
+    the untrusted code the job runs, and `enable_gh_auth=True` would hand them
+    right back by authenticating `gh` in the runner before the job command
+    starts. A future job following the comment literally must be stopped at
+    definition time, not audited for."""
+    from ci.praktika.job import Job
+
+    with pytest.raises(AssertionError, match="enable_gh_auth"):
+        Job.Config(
+            name="untrusted but pre-authenticated",
+            runs_on=["nowhere"],
+            command="true",
+            enable_gh_auth=True,
+            checkout_persist_credentials=False,
+        )
 
 
 def test_the_agent_investigates_a_disposable_clone_and_not_the_checkout(monkeypatch):
@@ -2236,6 +2292,31 @@ def test_a_dry_run_writes_nothing_anywhere(monkeypatch):
     assert not any("CREATE TABLE" in q for q in cidb.queries)
 
 
+def test_an_actionable_dry_run_takes_the_dry_path_and_writes_nothing(monkeypatch):
+    """The high-risk branch in `run` is the one that chooses between `act` and
+    `dry_run_action` once a verdict is actionable; a dry run that never gets an
+    actionable verdict does not prove the choice. Drive one through: the dry
+    action runs, the real one does not, and nothing is inserted or created."""
+    would_act_on = []
+    monkeypatch.setattr(job, "act", _unexpected("acted for real in a dry run"))
+    monkeypatch.setattr(job, "already_fixed", lambda *a, **k: "")
+    monkeypatch.setattr(
+        job,
+        "dry_run_action",
+        lambda investigation, repo, now: would_act_on.append(
+            investigation.offending_pull_request_number
+        ),
+    )
+    cidb = FakeDryRunCIDB(failures=[_failure_row("dry_test")], table=True)
+    _dry_run(
+        monkeypatch, cidb, investigate=lambda failure, index, repo: _investigation()
+    )
+
+    assert would_act_on == [112345]
+    assert cidb.inserted == []
+    assert not any("CREATE TABLE" in q for q in cidb.queries)
+
+
 # --- a revert step that did not finish stops the run --------------------------
 
 
@@ -2269,7 +2350,7 @@ def _failure_row(test_name):
     }
 
 
-def _live_run(monkeypatch, cidb, act):
+def _live_run(monkeypatch, cidb, act, recorded=None):
     monkeypatch.setattr(job, "Info", FakeInfo)
     monkeypatch.setattr(job, "prepare", lambda *a, **k: True)
     monkeypatch.setattr(job, "connect", lambda: cidb)
@@ -2279,7 +2360,13 @@ def _live_run(monkeypatch, cidb, act):
         job, "investigate", lambda failure, index, repo: _investigation()
     )
     monkeypatch.setattr(job, "act", act)
-    monkeypatch.setattr(job, "record", lambda *a, **k: None)
+    monkeypatch.setattr(
+        job,
+        "record",
+        lambda _cidb, investigations: (
+            recorded.extend(investigations) if recorded is not None else None
+        ),
+    )
     results = []
     job.run(results)
     return results
@@ -2320,3 +2407,79 @@ def test_a_revert_that_finished_lets_the_run_carry_on(monkeypatch):
     _live_run(monkeypatch, cidb, act)
 
     assert len(reverted) == job.MAX_REVERTS_PER_RUN
+
+
+def test_a_third_actionable_failure_is_stopped_by_the_revert_limit(monkeypatch):
+    """"At most two reverts per run" needs one more actionable failure than
+    the limit to be seen doing anything: with exactly two, the assertion above
+    would hold even with the cap removed. The third investigation must not
+    reach `act`, and its row must say why."""
+    reverted = []
+
+    def act(investigation, *_args, **_kwargs):
+        reverted.append(investigation)
+        investigation.action = job.Action.REVERTED
+
+    cidb = FakeDryRunCIDB(
+        failures=[
+            _failure_row("first_test"),
+            _failure_row("second_test"),
+            _failure_row("third_test"),
+        ],
+        table=True,
+    )
+    recorded = []
+    _live_run(monkeypatch, cidb, act, recorded=recorded)
+
+    assert len(reverted) == job.MAX_REVERTS_PER_RUN
+    assert [i.action for i in recorded] == [
+        job.Action.REVERTED,
+        job.Action.REVERTED,
+        job.Action.SKIPPED_LIMIT,
+    ]
+    assert "already made" in recorded[-1].explanation
+
+
+def test_a_row_is_stamped_when_its_outcome_is_decided_not_at_run_start(monkeypatch):
+    """`skip_reason` measures the settle and cooldown windows from
+    `investigation_time`, so a revert merged 40 minutes into the run must not
+    be recorded with the run's start: stale reports still in flight would look
+    like a fresh recurrence 40 minutes early and burn an investigation slot."""
+    decided = {}
+
+    def act(investigation, *_args, **_kwargs):
+        investigation.action = job.Action.REVERTED
+        decided[id(investigation)] = datetime.now(timezone.utc)
+
+    cidb = FakeDryRunCIDB(failures=[_failure_row("first_test")], table=True)
+    recorded = []
+    _live_run(monkeypatch, cidb, act, recorded=recorded)
+
+    assert len(recorded) == 1
+    # Stamped after the revert finished, not with the `now` taken before the
+    # investigation started.
+    assert recorded[0].time >= decided[id(recorded[0])]
+
+
+def test_each_row_is_recorded_with_its_own_time(monkeypatch):
+    """One run writes all its rows at the end, but each carries the moment its
+    own outcome was decided."""
+    monkeypatch.setattr(job, "Info", FakeInfo)
+    early = _investigation()
+    early.time = NOW - timedelta(minutes=40)
+    late = _investigation()
+    late.time = NOW
+
+    class FakeCIDB:
+        rows = []
+
+        def insert_rows(self, rows, table):
+            self.rows.extend(json.loads(row) for row in rows)
+
+    cidb = FakeCIDB()
+    job.record(cidb, [early, late])
+
+    assert [row["investigation_time"] for row in cidb.rows] == [
+        "2026-07-31 21:20:00",
+        "2026-07-31 22:00:00",
+    ]

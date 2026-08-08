@@ -194,7 +194,7 @@ INVESTIGATION_TABLE = "checks_investigated"
 INVESTIGATION_TABLE_DDL = f"""\
 CREATE TABLE IF NOT EXISTS {INVESTIGATION_TABLE}
 (
-    `investigation_time` DateTime COMMENT 'When the investigation ran',
+    `investigation_time` DateTime COMMENT 'When the outcome of the investigation was decided',
     `task_url` String COMMENT 'The CI job that ran the investigation',
     `test_name` LowCardinality(String) COMMENT 'checks.test_name',
     `check_names` Array(LowCardinality(String)) COMMENT 'checks.check_name values the failure was seen in',
@@ -483,6 +483,15 @@ class Investigation:
     action: str = Action.NONE
     revert_pull_request_number: int = 0
     reintroduce_pull_request_number: int = 0
+    # When this row's outcome was decided, not when the run started: the
+    # settle and cooldown windows in `skip_reason` are measured from
+    # `investigation_time`, and a revert merged 40 minutes into the run whose
+    # row said the run started would have its windows expire 40 minutes early.
+    time: Optional[datetime] = None
+
+    def stamp(self) -> None:
+        """Fix the moment the outcome of this row was decided."""
+        self.time = datetime.now(timezone.utc)
 
     def is_actionable(self) -> bool:
         """Whether the verdict is certain enough to revert on.
@@ -1239,13 +1248,15 @@ def search_pull_requests(repo: str, search: str, fields: str) -> List[dict]:
 
 
 def pull_requests_from_branch(repo: str, branch: str) -> List[dict]:
-    """The pull requests whose head is exactly `branch`, in any state.
+    """The pull requests whose head is exactly `branch`, in any state, with
+    the state and the base branch each of them targets.
 
     Read through the list API rather than the search API: this answer decides
-    whether a pushed revert branch is an in-flight revert or an orphan, and the
-    search index lags minutes behind a just-created pull request -- exactly the
-    window an in-flight revert sits in. The list endpoint filters by head
-    directly and has no such lag.
+    whether a pushed revert branch is an in-flight revert of the base branch,
+    an orphan, or a revert of some other branch entirely, and the search index
+    lags minutes behind a just-created pull request -- exactly the window an
+    in-flight revert sits in. The list endpoint filters by head directly and
+    has no such lag.
 
     As in `search_pull_requests`, an empty answer and an unreadable one must
     not be confused: `gh pr list --json` prints `[]` when nothing matched, so
@@ -1254,7 +1265,7 @@ def pull_requests_from_branch(repo: str, branch: str) -> List[dict]:
     pull request exists"."""
     output = GH.get_output_with_retries(
         f"gh pr list --repo {shlex.quote(repo)} --state all "
-        f"--head {shlex.quote(branch)} --json number,state"
+        f"--head {shlex.quote(branch)} --json number,state,baseRefName"
     ).strip()
     if not output:
         raise RuntimeError(f"failed to list pull requests from {branch} in {repo}")
@@ -1296,9 +1307,13 @@ def already_handled(merge_commit: str, number: int, repo: str) -> str:
     is what the "Revert" button writes into the body and what this job writes
     as well: that one is found whatever its branch is called.
 
-    Both searches run over every state, so what they return is filtered by
+    Everything runs over every state, so what comes back is filtered by
     `removes_it_from_base_branch`: only a revert that is open or merged, against
-    the base branch, is a reason to stand down.
+    the base branch, is a reason to stand down. That filter applies to the
+    pushed branches too, once a pull request for a branch is known -- a revert
+    of the same pull request backported to a release branch leaves a
+    `revert-<pr>-*` branch on the remote, and obeying it would stand the
+    `master` revert down even though nothing removed the change from `master`.
     """
     if Shell.get_output(
         f"git log origin/{BASE_BRANCH} --fixed-strings "
@@ -1317,32 +1332,55 @@ def already_handled(merge_commit: str, number: int, repo: str) -> str:
         ).splitlines()
         if "refs/heads/" in line
     ]
-    # The exact `revert-<pr>` name is pushed by automation only -- this job and
-    # the workflow -- and both open the pull request right after the push. A
-    # branch of that name that no pull request in any state has ever had as its
-    # head is therefore an orphan of an attempt that failed between the two,
-    # not an in-flight revert, and left alone it would suppress every retry
-    # until a human deletes it. It is asked about through the list API, which
-    # has no indexing lag, so the in-flight window does not read as orphaned;
-    # and it is deleted rather than skipped over, because the push this run
-    # would make is not forced and would be refused while the branch stands.
-    # When the deletion fails, the branch still stands and standing down is
-    # both the honest and the safe reading. The `revert-<pr>-*` names are
-    # different: the "Revert" button creates the branch when it is clicked and
-    # the pull request only when the human follows through, so a bare one may
-    # be a human mid-revert, and it is not this job's to delete.
+    # A pushed branch stands the revert down only for what its pull requests
+    # say about the base branch. The pull requests are asked for through the
+    # list API, which has no indexing lag, so the in-flight window between a
+    # push and its pull request does not read wrong. Three answers:
+    #
+    # A pull request that is open or merged against the base branch: an
+    # in-flight or finished revert, stand down. Pull requests that all fail
+    # `removes_it_from_base_branch`: a revert of the same pull request on a
+    # release branch, or one closed without merging -- neither removes
+    # anything from the base branch, so neither is a reason to stand down
+    # (when such a branch carries the exact automation name, the push this
+    # run would make is not forced and is refused, and the revert fails
+    # visibly rather than merging anything wrong). No pull request at all:
+    # for the exact `revert-<pr>` name -- pushed by automation only, this job
+    # and the workflow, both of which open the pull request right after the
+    # push -- that is the orphan of an attempt that failed between the two,
+    # and left alone it would suppress every retry until a human deletes it,
+    # so it is deleted instead; when the deletion fails, the branch still
+    # stands and standing down is the honest reading. The `revert-<pr>-*`
+    # names are different: the "Revert" button creates the branch when it is
+    # clicked and the pull request only when the human follows through, so a
+    # bare one may be a human mid-revert, it is not this job's to delete, and
+    # it stands the revert down.
     exact = branches[0]
-    if exact in pushed and not pull_requests_from_branch(repo, exact):
-        print(
-            f"NOTE: {exact} exists on the remote but no pull request has ever "
-            f"had it as its head -- an orphan of a failed revert attempt, "
-            f"deleting it"
-        )
-        if Git.push(repo, f":refs/heads/{exact}"):
-            pushed.remove(exact)
-    if pushed:
+    blocking = []
+    for name in pushed:
+        from_head = pull_requests_from_branch(repo, name)
+        if any(removes_it_from_base_branch(p) for p in from_head):
+            blocking.append(name)
+        elif from_head:
+            print(
+                f"NOTE: {name} exists on the remote but none of its pull "
+                f"requests removes anything from {BASE_BRANCH} -- not a reason "
+                f"to stand down"
+            )
+        elif name == exact:
+            print(
+                f"NOTE: {exact} exists on the remote but no pull request has "
+                f"ever had it as its head -- an orphan of a failed revert "
+                f"attempt, deleting it"
+            )
+            if not Git.push(repo, f":refs/heads/{exact}"):
+                blocking.append(exact)
+        else:
+            blocking.append(name)
+    if blocking:
         return (
-            f"a revert branch already exists on the remote: {' '.join(sorted(pushed))}"
+            f"a revert branch already exists on the remote: "
+            f"{' '.join(sorted(blocking))}"
         )
 
     # `head:` in a GitHub search matches a prefix of the branch name and stops
@@ -2188,15 +2226,22 @@ def select_failures(cidb: CIDB, now: datetime, dry_run=False) -> List[Failure]:
     return selected
 
 
-def record(cidb: CIDB, investigations: List[Investigation], now: datetime) -> None:
-    """Write every investigation, the negative ones included, to the CI database."""
+def record(cidb: CIDB, investigations: List[Investigation]) -> None:
+    """Write every investigation, the negative ones included, to the CI database.
+
+    Each row carries the moment its own outcome was decided, stamped in `run`,
+    not a timestamp shared by the whole run: `skip_reason` measures the settle
+    and cooldown windows from `investigation_time`, and rows all carrying the
+    run's start would end those windows up to the whole run budget early."""
     if not investigations:
         print("Nothing to record")
         return
     task_url = Info().get_job_url()
-    timestamp = _db_time(now)
     cidb.insert_rows(
-        [json.dumps(i.to_record(timestamp, task_url)) for i in investigations],
+        [
+            json.dumps(i.to_record(_db_time(i.time), task_url))
+            for i in investigations
+        ],
         table=INVESTIGATION_TABLE,
     )
 
@@ -2337,78 +2382,98 @@ def run(results: List[Result], dry_run=False) -> None:
                 break
             investigation = investigate(failure, index, info.repo_name)
             investigations.append(investigation)
-            print(
-                f"{failure.title!r}: {investigation.verdict} "
-                f"({investigation.confidence or 'no'} confidence)"
-            )
-            if not investigation.is_actionable():
-                continue
-            fixed = already_fixed(cidb, failure)
-            if fixed:
-                investigation.action = Action.ALREADY_FIXED
-                investigation.note(f"Not reverted: {fixed}.")
+            # Whatever the outcome and however this iteration is left --
+            # a verdict that is not acted on, a guard, a revert, an exception
+            # out of the revert step -- the row is stamped with the moment its
+            # outcome was decided, because the settle and cooldown windows are
+            # measured from `investigation_time` and the run-start `now` would
+            # end them up to the whole run budget early.
+            try:
                 print(
-                    f"Not reverting #{investigation.offending_pull_request_number}: "
-                    f"{fixed}"
+                    f"{failure.title!r}: {investigation.verdict} "
+                    f"({investigation.confidence or 'no'} confidence)"
                 )
-                continue
-            if reverts >= MAX_REVERTS_PER_RUN:
-                investigation.action = Action.SKIPPED_LIMIT
-                investigation.note(
-                    f"Not reverted: this run already made {MAX_REVERTS_PER_RUN} reverts, "
-                    f"which is the limit; the next run picks this up."
+                if not investigation.is_actionable():
+                    continue
+                fixed = already_fixed(cidb, failure)
+                if fixed:
+                    investigation.action = Action.ALREADY_FIXED
+                    investigation.note(f"Not reverted: {fixed}.")
+                    print(
+                        f"Not reverting "
+                        f"#{investigation.offending_pull_request_number}: {fixed}"
+                    )
+                    continue
+                if reverts >= MAX_REVERTS_PER_RUN:
+                    investigation.action = Action.SKIPPED_LIMIT
+                    investigation.note(
+                        f"Not reverted: this run already made "
+                        f"{MAX_REVERTS_PER_RUN} reverts, which is the limit; "
+                        f"the next run picks this up."
+                    )
+                    continue
+                if not budget_left(now, REVERT_RESERVE_SEC):
+                    investigation.action = Action.SKIPPED_LIMIT
+                    investigation.note(
+                        f"Not reverted: the run is {minutes_since(now)} minutes "
+                        f"in and there is not enough of the "
+                        f"{RUN_BUDGET_SEC // 60} minute budget left to finish a "
+                        f"revert; the next run picks this up."
+                    )
+                    break
+                # `step` turns an exception out of `act` into a failed
+                # sub-result and returns False rather than raising, so the
+                # result has to be looked at: a revert that threw after it
+                # merged leaves `action` at `reverted` while the draft that
+                # reintroduces the change was never opened, and going on to
+                # revert another pull request then piles one half-finished
+                # revert on top of the next.
+                done = step(
+                    results,
+                    f"{'Would revert' if dry_run else 'Revert'} "
+                    f"#{investigation.offending_pull_request_number}",
+                    lambda i=investigation: (
+                        dry_run_action(i, info.repo_name, now)
+                        if dry_run
+                        else act(i, info.repo_name, now)
+                    )
+                    or True,
                 )
-                continue
-            if not budget_left(now, REVERT_RESERVE_SEC):
-                investigation.action = Action.SKIPPED_LIMIT
-                investigation.note(
-                    f"Not reverted: the run is {minutes_since(now)} minutes in and "
-                    f"there is not enough of the {RUN_BUDGET_SEC // 60} minute budget "
-                    f"left to finish a revert; the next run picks this up."
-                )
-                break
-            # `step` turns an exception out of `act` into a failed sub-result and
-            # returns False rather than raising, so the result has to be looked
-            # at: a revert that threw after it merged leaves `action` at
-            # `reverted` while the draft that reintroduces the change was never
-            # opened, and going on to revert another pull request then piles one
-            # half-finished revert on top of the next.
-            done = step(
-                results,
-                f"{'Would revert' if dry_run else 'Revert'} "
-                f"#{investigation.offending_pull_request_number}",
-                lambda i=investigation: (
-                    dry_run_action(i, info.repo_name, now)
-                    if dry_run
-                    else act(i, info.repo_name, now)
-                )
-                or True,
-            )
-            if investigation.action == Action.REVERTED:
-                reverts += 1
-            reset_worktree()
-            if not done:
-                print(
-                    "Stopping after a revert step that did not finish; the rest is "
-                    "left to the next run"
-                )
-                break
-            if investigation.action == Action.REVERT_FAILED:
-                # A revert that got as far as failing means something outside
-                # this job's judgement is wrong -- a push that was refused, a
-                # merge that was not permitted. Trying the next failure would
-                # only leave more half-finished reverts behind.
-                print(
-                    "Stopping after a failed revert; the rest is left to the next run"
-                )
-                break
+                if investigation.action == Action.REVERTED:
+                    reverts += 1
+                reset_worktree()
+                if not done:
+                    print(
+                        "Stopping after a revert step that did not finish; the "
+                        "rest is left to the next run"
+                    )
+                    break
+                if investigation.action == Action.REVERT_FAILED:
+                    # A revert that got as far as failing means something
+                    # outside this job's judgement is wrong -- a push that was
+                    # refused, a merge that was not permitted. Trying the next
+                    # failure would only leave more half-finished reverts
+                    # behind.
+                    print(
+                        "Stopping after a failed revert; the rest is left to "
+                        "the next run"
+                    )
+                    break
+            finally:
+                investigation.stamp()
     finally:
         # Record what was investigated even if a revert blew up halfway: these
         # rows are how anybody finds out what this job did.
         if dry_run:
             print(f"Dry run: rows that would go into {INVESTIGATION_TABLE}:")
             for investigation in investigations:
-                print(json.dumps(investigation.to_record(_db_time(now), "dry-run")))
+                print(
+                    json.dumps(
+                        investigation.to_record(
+                            _db_time(investigation.time), "dry-run"
+                        )
+                    )
+                )
             results.append(
                 Result(name="Would record investigations", status=Result.Status.OK)
             )
@@ -2416,7 +2481,7 @@ def run(results: List[Result], dry_run=False) -> None:
             step(
                 results,
                 "Record investigations",
-                lambda: record(cidb, investigations, now) or True,
+                lambda: record(cidb, investigations) or True,
             )
         results[-1].set_info(summary(investigations))
 

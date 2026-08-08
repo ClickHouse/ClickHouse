@@ -287,7 +287,7 @@ If your pull request was reverted:
 - The `Reapply "..."` draft pull request holds your change unchanged. Fix the failure on that branch, mark it ready for review, and let it go through normal CI.
 
 Every investigation is recorded in the `checks_investigated` table of the CI database, including the ones that revert nothing.
-The table joins with `checks` on `test_name`, `check_names`, `commit_shas`, `report_url` and `offending_pull_request_number`, so the history of what the job looked at, what it concluded and what it did is queryable on [play.clickhouse.com](https://play.clickhouse.com/):
+The values are carried over from `checks` as they were recorded there, so the two tables join back together -- on `test_name` directly, with `has(check_names, check_name)` and `has(commit_shas, commit_sha)` for the columns that collect several `checks` rows into an array, and with `offending_pull_request_number = pull_request_number` for the blamed pull request -- and the history of what the job looked at, what it concluded and what it did is queryable on [play.clickhouse.com](https://play.clickhouse.com/):
 
 ```sql
 SELECT investigation_time, test_name, check_names, failure_count, commit_count, verdict, confidence, action, explanation
