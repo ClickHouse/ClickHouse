@@ -1527,10 +1527,18 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                 return;
             }
         }
-        catch (const Exception & e)
+        catch (const Coordination::Exception & e)
         {
-            /// If we can't read the lock (node disappeared, connection issues, etc.),
-            /// treat it as a transient error and ask the user to retry.
+            if (e.code == Coordination::Error::ZNONODE)
+            {
+                /// The ephemeral lock node disappeared between our tryCreate and get,
+                /// meaning another replica already completed the cleanup and released the lock.
+                /// This is the expected outcome for ON CLUSTER execution - treat as idempotent success.
+                LOG_INFO(log, "Cleanup lock was released (cleanup already completed by another replica), treating as success");
+                return;
+            }
+
+            /// For other errors (connection issues, etc.), treat as a transient error.
             LOG_WARNING(log, "Failed to read cleanup lock: {}. Will ask user to retry.", e.displayText());
         }
 
