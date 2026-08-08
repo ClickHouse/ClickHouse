@@ -275,9 +275,15 @@ ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_ac
 
     cache_hits = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheHits")
     cache_misses = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheMisses")
+    cache_skipped = get_profile_event(instance, query_id, "IcebergMetadataFilesCacheSkipped")
     assert cache_hits > 0, (
         "Fresh IcebergMetadata init should hit the cache for a schemeless-location table"
     )
     assert cache_misses == 0, (
         "Fresh IcebergMetadata init should not miss (cache was warm from phase 1)"
+    )
+    assert cache_skipped == 0, (
+        "Fresh IcebergMetadata init must not fall back to an unconditional remote read: an "
+        "unconditional read would record Skipped here and retroactively populate the cache, "
+        "masking a regression where cache_hits > 0 only because of that after-the-fact insert"
     )
