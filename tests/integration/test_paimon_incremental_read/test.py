@@ -1,7 +1,9 @@
 # coding: utf-8
 
+import concurrent.futures
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -399,5 +401,82 @@ def test_paimon_discards_watermark_after_external_recreate(started_cluster):
         "0\n",
         database="default",
     )
+
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC;")
+
+
+def test_paimon_targeted_read_fails_closed_on_external_recreate(started_cluster):
+    """
+    `snapshot-N` lives at a path an external DROP + re-CREATE reuses, and snapshot numbering
+    restarts from 1 in the new table, so a targeted read (`paimon_target_snapshot_id`) that
+    races with a recreate could load the *new* table's snapshot and serve its files under the
+    old ClickHouse table. `iterate` closes that window by re-validating the table identity
+    right after `loadStateForSnapshot(target_snapshot_id)`; this test lands the recreate
+    inside the window (held open by a failpoint between the identity check at the top of
+    `iterate` and the snapshot load) and proves the read fails closed instead of returning
+    the recreated table's rows.
+    """
+    table_name = "paimon_inc_read_target_recreate"
+    failpoint = "paimon_iterate_pause_before_target_snapshot_load"
+
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_target_recreate"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{USER_FILES_PATH}/{warehouse_name}/test.db/test_table"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+
+    # First generation: a single snapshot with 1 row, for schema inference and as the
+    # target of the racing read.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(table_name, table_path)
+
+    # Sanity: a targeted read of snapshot 1 serves the first generation. Targeted reads are
+    # deterministic and do not advance the incremental-read watermark.
+    _wait_until_query_result(
+        f"SELECT count() FROM {table_name} SETTINGS paimon_target_snapshot_id=1",
+        "1\n",
+        database="default",
+    )
+
+    executor = ThreadPoolExecutor(max_workers=2)
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        wait_future = executor.submit(
+            lambda: node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+        )
+        time.sleep(1)
+
+        # The targeted read passes the identity check at the top of iterate() (the table is
+        # still the first generation) and pauses just before loading snapshot-1.
+        query_future = executor.submit(
+            lambda: node.query_and_get_error(
+                f"SELECT count() FROM {table_name} SETTINGS paimon_target_snapshot_id=1",
+                database="default",
+            )
+        )
+
+        concurrent.futures.wait([wait_future], timeout=15)
+        if wait_future.exception() is not None:
+            raise Exception("Test setup failed - failpoint not hit")
+
+        # While the read is paused, externally recreate the Paimon table at the same
+        # location. The new generation restarts at snapshot 1, with 5 rows instead of 1:
+        # without the post-load identity re-validation the resumed read would return the
+        # recreated table's rows.
+        _clean_warehouse(writer_container_id, warehouse_dir)
+        _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=100, rows_per_commit=5, commit_times=1)
+
+        node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+
+        error = query_future.result(timeout=60)
+        assert "was recreated" in error, (
+            f"Expected the targeted read to fail closed on the recreated table, got: {error!r}"
+        )
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        executor.shutdown(wait=False)
 
     node.query(f"DROP TABLE IF EXISTS {table_name} SYNC;")

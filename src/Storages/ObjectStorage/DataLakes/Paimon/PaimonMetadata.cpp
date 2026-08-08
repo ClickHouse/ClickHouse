@@ -32,6 +32,7 @@
 #include <base/defines.h>
 #include <base/MemorySanitizer.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -47,9 +48,15 @@ using namespace Paimon;
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
 extern const int NO_ZOOKEEPER;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
+}
+
+namespace FailPoints
+{
+extern const char paimon_iterate_pause_before_target_snapshot_load[];
 }
 
 namespace Setting
@@ -359,9 +366,12 @@ void PaimonMetadata::validateTableIdentity() const
 
     const Int64 current_schema0_time_millis = readSchemaZeroTimeMillis(*table_client);
 
+    /// Not `LOGICAL_ERROR`: an external recreate is an environment condition, not an internal
+    /// invariant violation, and `LOGICAL_ERROR` aborts the process in debug and sanitizer builds
+    /// (`Exception::handleErrorCode`) — turning the fail-close guard itself into a crash.
     if (current_schema0_time_millis != persistent_components.schema0_time_millis)
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            ErrorCodes::INCORRECT_DATA,
             "Underlying Paimon table was recreated (schema-0 timeMillis changed: {} -> {}). "
             "Please DROP and re-CREATE the ClickHouse external table to pick up the new table identity.",
             persistent_components.schema0_time_millis,
@@ -590,6 +600,10 @@ ObjectIterator PaimonMetadata::iterate(
     const Int64 target_snapshot_id = query_context->getSettingsRef()[Setting::paimon_target_snapshot_id];
     if (persistent_components.incremental_read_enabled && target_snapshot_id > 0)
     {
+        /// Holds the targeted read in the window between the identity check at the top of
+        /// iterate() and the snapshot load below, so a test can land an external recreate
+        /// inside it and prove the re-validation after the load fails the read closed.
+        FailPointInjection::pauseFailPoint(FailPoints::paimon_iterate_pause_before_target_snapshot_load);
         auto target_state = loadStateForSnapshot(target_snapshot_id);
         /// Re-validate table identity after loading the targeted snapshot.  `snapshot-N` is a
         /// mutable path whose numbering restarts after an external DROP + re-CREATE, so a recreate
