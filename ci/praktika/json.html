@@ -1372,6 +1372,89 @@
         statusContainer.appendChild(wrapper);
     }
 
+    // Whole-pipeline utilization KPI, accumulated across qualifying jobs into
+    // the workflow Result (see PipelineUtilization). Only present on the
+    // workflow-level result; values are capacity-time-weighted running sums, so
+    // the percentages are derived here as area / provisioned-resource-seconds.
+    function addPipelineUtilizationWidget(u) {
+        if (!u || !u.cpu_core_s) return;
+        const CPU_COLOR = "#4e79a7";
+        const MEM_COLOR = "#e15759";
+        const DISK_COLOR = "#59a14f";
+        const pct = (area, weight) => (weight ? Math.min(100, area / weight) : 0);
+        const cpuUtil = pct(u.cpu_used_area, u.cpu_core_s);
+        const memUtil = pct(u.mem_used_area, u.mem_gb_s);
+        const diskUtil = pct(u.disk_used_area, u.disk_gb_s);
+        // "some" stalls are wall-clock pressure fractions -> weighted by runtime;
+        // "full" stalls waste every core -> weighted by provisioned core-seconds.
+        const cpuStall = pct(u.cpu_stall_area, u.wall_time_s);
+        const memStall = pct(u.mem_stall_area, u.wall_time_s);
+        const ioStall = pct(u.io_stall_area, u.wall_time_s);
+        const memFull = pct(u.mem_full_area, u.cpu_core_s);
+        const ioFull = pct(u.io_full_area, u.cpu_core_s);
+        // Provisioned capacity-time, in hours (cores/GB * duration).
+        const cpuHours = u.cpu_core_s / 3600;
+        const memHours = u.mem_gb_s / 3600;
+        const diskHours = u.disk_gb_s / 3600;
+
+        const statusContainer = document.getElementById("status-container");
+        const wrapper = document.createElement("div");
+        wrapper.className = "status-widget";
+
+        const title = document.createElement("div");
+        title.style.fontSize = "0.8em";
+        title.textContent = "pipeline utilization";
+        wrapper.appendChild(title);
+
+        // Faded sub-line: job count and provisioned capacity-time.
+        const sub = document.createElement("div");
+        sub.style.fontSize = "0.7em";
+        sub.style.opacity = "0.55";
+        sub.style.marginBottom = "4px";
+        const fmtH = (h) => (h >= 100 ? Math.round(h) : h.toFixed(1));
+        sub.textContent =
+            `${u.jobs} job${u.jobs === 1 ? "" : "s"} · ${fmtH(cpuHours)} cpu-h · ${fmtH(memHours)} GiB-h` +
+            (u.disk_gb_s ? ` · ${fmtH(diskHours)} disk-GiB-h` : "");
+        wrapper.appendChild(sub);
+
+        const cols = document.createElement("div");
+        cols.style.display = "flex";
+        cols.style.justifyContent = "space-between";
+        cols.style.gap = "10px";
+        cols.style.fontSize = "0.75em";
+        const mkCol = (align) => {
+            const c = document.createElement("div");
+            c.style.display = "flex";
+            c.style.flexDirection = "column";
+            c.style.whiteSpace = "nowrap";
+            c.style.textAlign = align;
+            return c;
+        };
+        const addRow = (col, html) => {
+            const d = document.createElement("div");
+            d.innerHTML = html;
+            col.appendChild(d);
+        };
+
+        const utilCol = mkCol("left");
+        addRow(utilCol, `<span style="color:${CPU_COLOR}">■</span> cpu ${cpuUtil.toFixed(0)}%`);
+        addRow(utilCol, `<span style="color:${MEM_COLOR}">■</span> ram ${memUtil.toFixed(0)}%`);
+        if (u.disk_gb_s) {
+            addRow(utilCol, `<span style="color:${DISK_COLOR}">■</span> disk ${diskUtil.toFixed(0)}%`);
+        }
+        cols.appendChild(utilCol);
+
+        const stallCol = mkCol("right");
+        stallCol.style.opacity = "0.7";
+        addRow(stallCol, `cpu stalled ${cpuStall.toFixed(0)}%`);
+        addRow(stallCol, `mem stalled ${memStall.toFixed(0)}%` + (memFull >= 1 ? ` (full ${memFull.toFixed(0)}%)` : ""));
+        addRow(stallCol, `io stalled ${ioStall.toFixed(0)}%` + (ioFull >= 1 ? ` (full ${ioFull.toFixed(0)}%)` : ""));
+        cols.appendChild(stallCol);
+
+        wrapper.appendChild(cols);
+        statusContainer.appendChild(wrapper);
+    }
+
     function addStorageUsageChartToStatus(usage_data) {
         const statusContainer = document.getElementById("status-container");
 
@@ -1749,7 +1832,7 @@
             nameLine.style.whiteSpace = "normal";
             nameLine.style.overflow = "hidden";
             nameLine.style.maxWidth = "100%";
-            nameLine.style.height = "2.6em"; // Reserve space for 2 lines
+            nameLine.style.height = "3.9em"; // Reserve space for 3 lines
             nameLine.style.lineHeight = "1.3em";
             nameLine.style.textAlign = "left";
             widget.appendChild(nameLine);
@@ -2346,6 +2429,7 @@
             addTimeTraceWidget(result.results, statusWidget, originalWorkflowDetails);
         }
         addStorageUsageChartToStatus(result.ext?.storage_usage)
+        addPipelineUtilizationWidget(result.ext?.pipeline_utilization)
         addHostMetricsChart(result.ext?.metrics)
     }
 
