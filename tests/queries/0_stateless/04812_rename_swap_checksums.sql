@@ -23,6 +23,11 @@ ALTER TABLE t_rename_swap ATTACH PART 'all_0_0_0';
 -- Materializes the swap. `c` is deliberately outside the rename map.
 ALTER TABLE t_rename_swap UPDATE c = c + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
+-- The remap under test runs only in the partial-rewrite mutation task, which needs a wide part in
+-- full storage; a Compact or Packed part takes the full-rewrite path and never reaches the remap.
+SELECT part_type, part_storage_type FROM system.parts
+WHERE database = currentDatabase() AND table = 't_rename_swap' AND active;
+
 -- Reading the swapped columns: a missing checksum entry makes this throw LOGICAL_ERROR.
 SELECT a, b, c FROM t_rename_swap ORDER BY c;
 
