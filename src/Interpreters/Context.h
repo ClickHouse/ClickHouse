@@ -688,8 +688,10 @@ protected:
 
     /// Object-storage objects consumed by the current query's reads, used by the query result cache
     /// consistency check (`query_cache_use_only_when_data_was_not_changed`). Owned here and reached via
-    /// `getQueryContext()` so the reading side and the finalization check see the same capture even
-    /// though they hold different (copied) Context instances. See `QueryConsumedObjectSets`.
+    /// the copied member or `getQueryContext()` so the reading side and the finalization check see the
+    /// same capture even though they hold different (copied) Context instances - including contexts
+    /// copied from a temporary SQL-security-overridden view context whose weak `query_context` has
+    /// already expired. See `QueryConsumedObjectSets`.
     QueryConsumedObjectSetsPtr query_consumed_object_sets;
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
@@ -1842,8 +1844,9 @@ public:
     QueryMetadataCachePtr getQueryMetadataCache() const;
     void setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_);
 
-    /// Reached via `getQueryContext()` so all copies of the query's Context share one capture. Returns
-    /// null when there is no query context or the consistency check is not active for this query.
+    /// Reached via the copied member (contexts copied after the capture was installed) or via
+    /// `getQueryContext()`, so all copies of the query's Context share one capture. Returns null when
+    /// the capture is unreachable or the consistency check is not active for this query.
     QueryConsumedObjectSetsPtr getQueryConsumedObjectSets() const;
     void setQueryConsumedObjectSets(const QueryConsumedObjectSetsPtr & query_consumed_object_sets_);
 
