@@ -284,7 +284,7 @@ sensitive inputs when stronger numerical reproducibility is required.
             "SELECT exponentialTimeDecayingAdd("
             "exponentialTimeDecayingFloat64(10)(2.718281828459045, toFloat64(0)), "
             "exponentialTimeDecayingFloat64(10)(4, toFloat64(10)))",
-            "(5,10)"}},
+            "(5,10,10)"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
 
