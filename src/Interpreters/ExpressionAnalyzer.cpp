@@ -688,7 +688,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
                 if (col.name == with_alias->getColumnName())
                 {
                     DB::validateGroupByKeyType(col.type, context_.getSettingsRef()[Setting::allow_suspicious_types_in_group_by]);
-                    DB::validateWindowPartitionByKeyType(col.type);
+                    DB::validateWindowKeyType(col.type, "PARTITION BY");
                 }
             }
 
@@ -713,6 +713,14 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
 
             auto actions_dag = std::make_unique<ActionsDAG>(aggregated_columns);
             getRootActions(column_ast, false, *actions_dag);
+
+            const auto & sort_key_name = order_by_element.children.front()->getColumnName();
+            for (const auto & col : actions_dag->getResultColumns())
+            {
+                if (col.name == sort_key_name)
+                    DB::validateWindowKeyType(col.type, "ORDER BY");
+            }
+
             desc.order_by_actions.push_back(std::move(actions_dag));
         }
     }

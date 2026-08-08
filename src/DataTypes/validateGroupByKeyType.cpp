@@ -31,17 +31,17 @@ void validateGroupByKeyType(const DataTypePtr & key_type, bool allow_suspicious_
     key_type->forEachChild(check);
 }
 
-void validateWindowPartitionByKeyType(const DataTypePtr & key_type)
+void validateWindowKeyType(const DataTypePtr & key_type, std::string_view clause)
 {
-    /// A window partition is formed by sorting, and aggregate function states are not comparable:
-    /// ColumnAggregateFunction::compareAt reports every pair equal, so the sort path collapses all
-    /// states into one partition while the scatter path hashes their bytes into different ones.
+    /// A window is formed by sorting, and aggregate function states are not comparable:
+    /// ColumnAggregateFunction::compareAt reports every pair equal.
     if (hasAggregateFunctionType(key_type))
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "Data type {} is not allowed in window PARTITION BY keys, because it contains an aggregate function state "
+            "Data type {} is not allowed in window {} keys, because it contains an aggregate function state "
             "whose values are not comparable",
-            key_type->getName());
+            key_type->getName(),
+            clause);
 }
 
 }

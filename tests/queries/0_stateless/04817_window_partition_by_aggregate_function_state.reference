@@ -1,11 +1,18 @@
 -- the analyzer: refused
 -- old analyzer: refused
+-- window ORDER BY over a state is refused, the analyzer
+-- window ORDER BY over a state is refused, old analyzer
+-- a named WINDOW clause and a derived window are refused too, both analyzers
 -- comparable types are untouched, the analyzer
 6
 6
 6
 6
+6
+6
 -- comparable types are untouched, old analyzer
+6
+6
 6
 6
 6
@@ -17,6 +24,8 @@
 6
 -- ORDER BY over a state was already refused
 -- QBit is not an aggregate state and keeps working
+6
+6
 6
 6
 6
