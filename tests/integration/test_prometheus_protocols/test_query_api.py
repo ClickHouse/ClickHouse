@@ -70,6 +70,15 @@ def start_cluster():
     try:
         cluster.start()
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+        node.query(
+            "CREATE TABLE prometheus_seconds "
+            "(time_series Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
+        )
+        node.query(
+            "INSERT INTO prometheus_seconds (metric_name, tags, time_series) VALUES"
+            " ('foo_seconds_old', {'shape': 'circle'}, [(toDateTime64(150, 0), 16)]),"
+            " ('foo_seconds_exact', {'shape': 'circle'}, [(toDateTime64(151, 0), 17)])"
+        )
         send_test_data()
         yield cluster
     finally:
@@ -142,6 +151,28 @@ def test_query_lookback_delta():
             )
             == expected
         )
+
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+        params={"lookback_delta": "banana"}, expect_error=True,
+    )
+    assert "Cannot parse duration" in error
+
+
+def test_query_lookback_delta_low_timestamp_precision():
+    old_sample = execute_query_via_http_api(
+        node.ip_address, 9093, "/dynamic_table/api/v1/query",
+        'foo_seconds_old{shape="circle"}', timestamp=151,
+        params={"table": "prometheus_seconds", "lookback_delta": "500ms"},
+    )
+    assert old_sample == '{"resultType": "vector", "result": []}'
+
+    exact_sample = execute_query_via_http_api(
+        node.ip_address, 9093, "/dynamic_table/api/v1/query",
+        'foo_seconds_exact{shape="circle"}', timestamp=151,
+        params={"table": "prometheus_seconds", "lookback_delta": "500ms"},
+    )
+    assert exact_sample == '{"resultType": "vector", "result": [{"metric": {"__name__": "foo_seconds_exact", "shape": "circle"}, "value": [151, "17"]}]}'
 
 
 def test_range_query_lookback_delta():
