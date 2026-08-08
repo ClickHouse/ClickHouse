@@ -648,6 +648,27 @@ def test_config_reload_keeper_metrics_prometheus_no_restart():
     assert scrape_prometheus_status(9108) == 200
 
 
+def test_config_reload_fixed_user_only_http_no_restart():
+    # An `http` endpoint whose handlers section consists only of a fixed-user rule
+    # (no `defaults`) never consults `default_session_user`, so changing the
+    # endpoint's override must not restart the listener on `SYSTEM RELOAD CONFIG`:
+    # a restart would interrupt the endpoint for a setting change that is a no-op
+    # there.
+    config_path = "/etc/clickhouse-server/config.d/config.xml"
+
+    node1.replace_in_config(config_path, "reload_fixed_only_before", "reload_fixed_only_after")
+    node1.query("SYSTEM RELOAD CONFIG")
+
+    # `updateServers` runs within `SYSTEM RELOAD CONFIG`, so by now the decision
+    # not to restart has been made and logged (or not).
+    assert not node1.contains_in_log(
+        "<default_session_user> had been changed, will reload http-fixed-user-only-reload"
+    )
+    url = f"http://{node1.ip_address}:8132/fixed"
+    response = urllib.request.urlopen(url, timeout=10).read()
+    assert response == b"fixed_handler_user\n"
+
+
 def test_config_reload_default_session_user():
     config_path = "/etc/clickhouse-server/config.d/config.xml"
 

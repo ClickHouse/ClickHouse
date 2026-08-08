@@ -42,6 +42,21 @@
         <defaults/>
     </http_handlers_fixed_user>
 
+    <!-- A handlers section consisting only of a fixed-user rule (no `defaults`): no handler
+         behind it ever consults `default_session_user`, so changing the endpoint's override
+         must not restart the listener on `SYSTEM RELOAD CONFIG`. -->
+    <http_handlers_fixed_user_only>
+        <rule>
+            <url>/fixed</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT currentUser()</query>
+                <user>fixed_handler_user</user>
+            </handler>
+        </rule>
+    </http_handlers_fixed_user_only>
+
     <!-- A prometheus `remote_write` handler with a fixed user (`handler.user`): like the
          other authenticating prometheus handlers (`read`/`query`/`api_v1`), it authenticates
          as the configured user regardless of the request, so it must keep working on an
@@ -225,6 +240,14 @@
             <handlers>http_handlers_prometheus_write</handlers>
             <description>http protocol with a fixed-user prometheus remote_write handler and anonymous logins prohibited</description>
         </http_prometheus_write_fixed_no_anonymous>
+        <http_fixed_user_only_reload>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8132</port>
+            <default_session_user>reload_fixed_only_before</default_session_user>
+            <handlers>http_handlers_fixed_user_only</handlers>
+            <description>http-fixed-user-only-reload</description>
+        </http_fixed_user_only_reload>
         <prometheus_no_anonymous>
             <type>prometheus</type>
             <host>0.0.0.0</host>

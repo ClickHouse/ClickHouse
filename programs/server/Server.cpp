@@ -3762,6 +3762,74 @@ std::optional<String> getEffectiveDefaultSessionUser(const Poco::Util::AbstractC
     }
 }
 
+/// Whether a single `rule` of an `http_handlers`-style section consults the default session
+/// user at runtime. Mirrors the dispatch in `createHandlersFactoryFromConfig`: a handler with
+/// a fixed user (`handler.user`) authenticates as that user regardless of the request, and
+/// non-authenticating handlers (`static`, UI pages, redirects, metrics exposition, ...) never
+/// authenticate at all, so neither consults the setting.
+bool httpRuleConsumesDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & rule_prefix)
+{
+    const std::string handler_type = config.getString(rule_prefix + ".handler.type", "");
+    if (handler_type == "dynamic_query_handler" || handler_type == "predefined_query_handler")
+        return !config.has(rule_prefix + ".handler.user");
+    if (handler_type == "webterminal")
+        return true;
+    if (handler_type.starts_with("prometheus"))
+    {
+        /// Only the time-series protocols (`write`/`read`/`query`/`api_v1`) authenticate;
+        /// plain metrics exposition does not (see `parseHandlerType`).
+        if (handler_type == "prometheus" || handler_type == "prometheus_metrics" || handler_type == "prometheus_expose_metrics")
+            return false;
+        return !config.has(rule_prefix + ".handler.user");
+    }
+    return false;
+}
+
+/// Whether any handler of an `http` endpoint's handlers section consults the default session user.
+bool httpHandlersConsumeDefaultSessionUser(const Poco::Util::AbstractConfiguration & config, const std::string & handlers_key)
+{
+    /// Without a handlers section the default handler set is served, which includes
+    /// the default query handler and the web terminal — both consult the setting.
+    if (!config.has(handlers_key))
+        return true;
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(handlers_key, keys);
+    for (const auto & key : keys)
+    {
+        /// `defaults` expands to the default handler set (see above).
+        if (key == "defaults")
+            return true;
+        if (key.starts_with("rule") && httpRuleConsumesDefaultSessionUser(config, handlers_key + "." + key))
+            return true;
+    }
+    return false;
+}
+
+/// Whether a non-keeper `prometheus` endpoint (serving the global `prometheus` section)
+/// consults the default session user. Only the time-series handlers without a fixed `user`
+/// authenticate; the plain metrics exposition served without a `handlers` section does not.
+bool prometheusHandlersConsumeDefaultSessionUser(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.has("prometheus.handlers"))
+        return false;
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys("prometheus.handlers", keys);
+    for (const auto & key : keys)
+    {
+        const std::string handler_prefix = "prometheus.handlers." + key + ".handler";
+        const std::string type = config.getString(handler_prefix + ".type", "");
+        /// The metrics exposition aliases accepted by `parseHandlerType`.
+        if (type == "prometheus" || type == "metrics" || type == "expose_metrics"
+            || type == "prometheus_metrics" || type == "prometheus_expose_metrics")
+            continue;
+        if (!config.has(handler_prefix + ".user"))
+            return true;
+    }
+    return false;
+}
+
 }
 
 std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
@@ -4369,9 +4437,11 @@ void Server::updateServers(
                 has_host = config.has(protocol + ".host");
 
                 /// Whether any handler in the `impl` chain actually consumes the default session
-                /// user. Keeper-metrics-only `prometheus` listeners serve metrics without
+                /// user, so that a `default_session_user` change does not restart listeners that
+                /// ignore it: keeper-metrics-only `prometheus` listeners serve metrics without
                 /// authentication (`KeeperPrometheusHandler-factory` only exposes `MetricsImpl`),
-                /// so a `default_session_user` change must not restart them.
+                /// and `http`/`prometheus` endpoints whose configured handler set consists only
+                /// of fixed-user and non-authenticating handlers never consult the setting either.
                 bool consumes_default_session_user = false;
 
                 std::string conf_name = protocol;
@@ -4385,14 +4455,17 @@ void Server::updateServers(
                         if (type == "http")
                         {
                             is_http = true;
-                            consumes_default_session_user = true;
                             if (config.has(conf_name + ".handlers"))
                                 handlers_key = config.getString(conf_name + ".handlers");
+                            consumes_default_session_user = consumes_default_session_user
+                                || httpHandlersConsumeDefaultSessionUser(config, handlers_key);
                             break;
                         }
-                        if (type == "tcp" || type == "mysql" || type == "postgres"
-                            || (type == "prometheus" && !server_settings[ServerSetting::prometheus_keeper_metrics_only]))
+                        if (type == "tcp" || type == "mysql" || type == "postgres")
                             consumes_default_session_user = true;
+                        if (type == "prometheus" && !server_settings[ServerSetting::prometheus_keeper_metrics_only])
+                            consumes_default_session_user = consumes_default_session_user
+                                || prometheusHandlersConsumeDefaultSessionUser(config);
                     }
 
                     if (!config.has(prefix + "impl"))
