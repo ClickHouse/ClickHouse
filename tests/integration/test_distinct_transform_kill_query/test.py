@@ -25,6 +25,17 @@ LC_FAULT_NAME = "distinct_transform_lc_pause"
 
 
 def run_kill_query_failpoint_test(query, fault_name, query_id=None):
+    """A `KILL QUERY` sent while a single chunk is being processed must stop the transform at the
+    paused row, not after it has hashed the rest of the chunk.
+
+    The transform pauses at the first 4096-row boundary inside the loop (the `PAUSEABLE_ONCE`
+    failpoint auto-disables after that one pause). After the kill the failpoint is re-armed and
+    the loop is resumed. Intra-loop polling (the PR) makes the loop return at the paused row, so
+    the re-armed failpoint at the next 4096-row boundary is never hit and a second
+    `SYSTEM WAIT FAILPOINT ... PAUSE` times out. If the mid-loop cancellation check were removed,
+    the loop would keep hashing rows, hit the re-armed failpoint at the next boundary, and the
+    second WAIT would return -- so this test would fail then instead of false-passing.
+    """
     if query_id is None:
         query_id = str(uuid.uuid4())
 
@@ -46,21 +57,41 @@ def run_kill_query_failpoint_test(query, fault_name, query_id=None):
     query_thread.start()
 
     try:
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        wait_future = pool.submit(
-            node1.query,
-            f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE",
-        )
-        done, _ = concurrent.futures.wait([wait_future], timeout=60)
-        if not done:
-            pool.shutdown(wait=False, cancel_futures=True)
-            assert False, f"Failpoint {fault_name} not triggered within 60 s"
-        ## An exception in SYSTEM WAIT FAILPOINT ... PAUSE would leave the query running
-        ## unsynchronized (done is still non-empty); re-raise it so the test fails loudly.
-        wait_future.result()
-        pool.shutdown(wait=False)
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
-        node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
+        def wait_failpoint(timeout=60):
+            wait_future = pool.submit(
+                node1.query,
+                f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE",
+            )
+            done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+            if not done:
+                assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+            ## An exception in SYSTEM WAIT FAILPOINT ... PAUSE would leave the query running
+            ## unsynchronized (done is still non-empty); re-raise it so the test fails loudly.
+            wait_future.result()
+
+        try:
+            wait_failpoint()
+
+            node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+            ## Re-arm the one-shot failpoint, then resume the loop. With the fix the loop
+            ## returns at the paused row; without it the loop hits the next boundary and pauses
+            ## again, which the second WAIT below observes.
+            node1.query(f"SYSTEM ENABLE FAILPOINT {fault_name}")
+            node1.query(f"SYSTEM NOTIFY FAILPOINT {fault_name}")
+
+            second_pause_future = pool.submit(
+                node1.query,
+                f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE",
+            )
+            done, _ = concurrent.futures.wait([second_pause_future], timeout=10)
+            if done:
+                second_pause_future.result()
+                assert False, "loop reached the re-armed failpoint: intra-loop cancellation is broken"
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {fault_name}")
 
@@ -116,6 +147,13 @@ def run_soft_timeout_failpoint_test(query, fault_name, query_id=None, hold_secon
     `interactive_delay` ms) nor the `CancellationChecker` (a no-op in 'break' mode) can stop the
     query — the transform's own soft-timeout latch becomes the only stopper, which is the behavior
     under test.
+
+    The last two checks prove the latch fired mid-loop rather than the query merely finishing cleanly.
+    After the deadline has passed and the failpoint is re-armed, the latch makes the loop return at
+    the paused row, so the re-armed failpoint at the next 4096-row boundary is never hit and a second
+    `SYSTEM WAIT FAILPOINT ... PAUSE` times out. If the latch were removed, the loop would keep
+    hashing the remaining rows, hit the re-armed failpoint at the next boundary, and the second WAIT
+    would return -- so this test would fail then instead of false-passing.
     """
     if query_id is None:
         query_id = str(uuid.uuid4())
@@ -140,23 +178,41 @@ def run_soft_timeout_failpoint_test(query, fault_name, query_id=None, hold_secon
     query_thread.start()
 
     try:
-        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        wait_future = pool.submit(
-            node1.query,
-            f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE",
-        )
-        done, _ = concurrent.futures.wait([wait_future], timeout=60)
-        if not done:
-            pool.shutdown(wait=False, cancel_futures=True)
-            assert False, f"Failpoint {fault_name} not triggered within 60 s"
-        ## An exception in SYSTEM WAIT FAILPOINT ... PAUSE would leave the query running
-        ## unsynchronized (done is still non-empty); re-raise it so the test fails loudly.
-        wait_future.result()
-        pool.shutdown(wait=False)
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
-        ## Hold the transform paused past the max_execution_time deadline, then release it.
-        time.sleep(hold_seconds)
-        node1.query(f"SYSTEM DISABLE FAILPOINT {fault_name}")
+        def wait_failpoint(timeout=60):
+            wait_future = pool.submit(
+                node1.query,
+                f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE",
+            )
+            done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+            if not done:
+                assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+            ## An exception in SYSTEM WAIT FAILPOINT ... PAUSE would leave the query running
+            ## unsynchronized (done is still non-empty); re-raise it so the test fails loudly.
+            wait_future.result()
+
+        try:
+            wait_failpoint()
+
+            ## Hold the transform paused past the max_execution_time deadline, then re-arm the
+            ## one-shot failpoint and release it. With the latch the loop returns at the paused
+            ## row; without it the loop hits the next boundary and pauses again, which the second
+            ## WAIT below observes.
+            time.sleep(hold_seconds)
+            node1.query(f"SYSTEM ENABLE FAILPOINT {fault_name}")
+            node1.query(f"SYSTEM NOTIFY FAILPOINT {fault_name}")
+
+            second_pause_future = pool.submit(
+                node1.query,
+                f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE",
+            )
+            done, _ = concurrent.futures.wait([second_pause_future], timeout=10)
+            if done:
+                second_pause_future.result()
+                assert False, "loop reached the re-armed failpoint: soft-timeout latch is broken"
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {fault_name}")
 
