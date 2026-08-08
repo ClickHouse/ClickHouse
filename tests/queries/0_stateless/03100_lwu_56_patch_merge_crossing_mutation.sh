@@ -8,6 +8,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+# Always disable the failpoint on exit. Under `set -e` an early exit would otherwise leave
+# rmt_mutate_task_pause_in_prepare enabled, and every later MUTATE_PART on the whole server
+# would then block indefinitely inside prepare().
+trap '$CLICKHOUSE_CLIENT --query "
+    SYSTEM DISABLE FAILPOINT rmt_mutate_task_pause_in_prepare;
+" 2>/dev/null || true' EXIT
+
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_lwu_cross SYNC;
 
@@ -29,12 +36,24 @@ $CLICKHOUSE_CLIENT --query "
     UPDATE t_lwu_cross SET v = 'u1' WHERE k = 1;
 "
 
-# Hold the MUTATE_PART for version 2 inside prepare() so that it is still queued
-# while the patch parts around it are merged.
+# Stopped merges block execution of both MERGE_PARTS and MUTATE_PART, while assignment of
+# both keeps running. So the whole scenario is built up first and only then released.
 $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT rmt_mutate_task_pause_in_prepare;
     ALTER TABLE t_lwu_cross UPDATE v = v || '_H' WHERE 1;
 "
+
+# ALTER returns before the MUTATE_PART entry is assigned (mutations_sync = 0 by default), and
+# that entry carries the version the patch merge must not span, so wait for it.
+for _ in {0..120}; do
+    queued=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.replication_queue
+        WHERE database = currentDatabase() AND table = 't_lwu_cross' AND type = 'MUTATE_PART'")
+    if [[ $queued != "0" ]]; then
+        break
+    fi
+    sleep 1.0
+done
 
 for i in 3 4 5 6; do
     $CLICKHOUSE_CLIENT --query "
@@ -43,17 +62,30 @@ for i in 3 4 5 6; do
     "
 done
 
-# Drop the mutation metadata while its MUTATE_PART entry stays in the queue. The
-# merge predicate then derives version 0 for every patch and sees no boundary,
-# which is the state the finished-mutation cleaner reaches in production.
+# Drop the mutation metadata while its MUTATE_PART entry stays in the queue. The merge
+# predicate then derives version 0 for every patch and sees no boundary, which is the state
+# the finished-mutation cleaner reaches in production.
 $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE database = currentDatabase() AND table = 't_lwu_cross'" > /dev/null
-$CLICKHOUSE_CLIENT --query "SYSTEM START MERGES t_lwu_cross"
 
-# The patch merge must have been decided while the mutation is still queued: either
-# refused by the merge predicate, or already executed. A MERGE_PARTS entry merely
-# present in the queue is not enough, because the entry appears when the log is
-# pulled, before it is ever evaluated.
-observed=""
+surviving=$($CLICKHOUSE_CLIENT --query "
+    SELECT count() FROM system.replication_queue
+    WHERE database = currentDatabase() AND table = 't_lwu_cross' AND type = 'MUTATE_PART'")
+if [[ $surviving == "0" ]]; then
+    echo "No MUTATE_PART entry survived the kill, so the state under test was never reached" >&2
+    exit 1
+fi
+
+# Release execution and hold the mutation inside prepare(), so that it is provably still
+# queued while the patch parts around it are merged.
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM START MERGES t_lwu_cross;
+    SYSTEM WAIT FAILPOINT rmt_mutate_task_pause_in_prepare PAUSE;
+"
+
+# The merge of the patches around the held mutation must be refused by the merge predicate.
+# Only that refusal is accepted: a merge that merely sits in the queue, or one that does not
+# span the mutation, would say nothing about the boundary.
+decided=""
 for _ in {0..120}; do
     postponed=$($CLICKHOUSE_CLIENT --query "
         SELECT count() FROM system.replication_queue
@@ -61,21 +93,13 @@ for _ in {0..120}; do
           AND type = 'MERGE_PARTS' AND startsWith(new_part_name, 'patch')
           AND num_postponed > 0 AND postpone_reason LIKE '%would span the version%'")
     if [[ $postponed != "0" ]]; then
-        observed="postponed"
-        break
-    fi
-    merged=$($CLICKHOUSE_CLIENT --query "
-        SELECT count() FROM system.parts
-        WHERE database = currentDatabase() AND table = 't_lwu_cross'
-          AND active AND startsWith(name, 'patch') AND level > 0")
-    if [[ $merged != "0" ]]; then
-        observed="merged"
+        decided="postponed"
         break
     fi
     sleep 1.0
 done
 
-if [[ -z $observed ]]; then
+if [[ -z $decided ]]; then
     queue=$($CLICKHOUSE_CLIENT --query "
         SELECT type, new_part_name, num_tries, num_postponed, postpone_reason
         FROM system.replication_queue
@@ -84,7 +108,7 @@ if [[ -z $observed ]]; then
         SELECT name, level FROM system.parts
         WHERE database = currentDatabase() AND table = 't_lwu_cross' AND active ORDER BY name" || true)
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT rmt_mutate_task_pause_in_prepare" || true
-    echo "Timed out waiting for the patch merge to be decided" >&2
+    echo "The patch merge was not refused while the mutation was queued" >&2
     echo "$queue" >&2
     echo "$parts" >&2
     exit 1
