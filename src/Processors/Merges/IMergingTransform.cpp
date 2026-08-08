@@ -114,7 +114,18 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         if (limit_hint == 0 && !virtual_row)
             input.setNeeded();
 
-        if (!virtual_row && ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end))
+        if (!virtual_row && limit_hint && chunk.getNumRows() < limit_hint)
+            input.setNeeded();
+
+        /// With `always_read_till_end` every source is read in full regardless of where the
+        /// merge stops, so deferring a source behind its virtual row cannot save any reads.
+        /// It would only serialize them: a source left NotNeeded here does not start reading,
+        /// and once the merge finishes, the drain in `prepare` wakes the leftover sources one
+        /// at a time. Keep them producing concurrently from the start instead. (Currently the
+        /// planner sets this flag only on merges over remote streams, which carry no virtual
+        /// rows — see `addMergeSortingStep` — so this is enforcing the invariant locally
+        /// rather than fixing a reachable case.)
+        if (always_read_till_end)
             input.setNeeded();
 
         if (!virtual_row && !chunk.hasRows())
