@@ -48,7 +48,8 @@ public:
     String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }
 
 private:
-    void prepare();
+    /// Returns false if the task must be skipped because its transaction was rolled back.
+    bool prepare();
     void finish();
 
     enum class State : uint8_t

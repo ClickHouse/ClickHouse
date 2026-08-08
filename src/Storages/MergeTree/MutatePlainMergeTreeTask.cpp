@@ -43,7 +43,7 @@ void MutatePlainMergeTreeTask::onCompleted()
     task_result_callback(delay);
 }
 
-void MutatePlainMergeTreeTask::prepare()
+bool MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;
 
@@ -52,6 +52,24 @@ void MutatePlainMergeTreeTask::prepare()
         storage.getStorageID(),
         future_part,
         task_context);
+
+    /// The task is queued after `StorageMergeTree::scheduleDataProcessingJob` releases
+    /// `currently_processing_in_background_mutex`, so `KILL TRANSACTION` can cancel the
+    /// mutation's transaction between the selection and this point. The rollback's
+    /// `killMutation` sweep only cancels tasks that are already in `MergeList`, so the check
+    /// must happen after the insertion above: `MergeTreeTransaction::rollback` stores
+    /// `Tx::RolledBackCSN` before the sweep, hence a rollback missed by this check finds the
+    /// task in `MergeList` and cancels it there. Otherwise the task would run the whole
+    /// mutate pass only to throw from `MergeTreeTransaction::checkIsNotCancelled` at commit.
+    if (const auto & txn = merge_mutate_entry->txn; txn && txn->getCSN() == Tx::RolledBackCSN)
+    {
+        LOG_DEBUG(
+            getLogger("MutatePlainMergeTreeTask"),
+            "Skipping mutation of part {}: transaction {} was cancelled after the mutation was selected",
+            future_part->name,
+            txn->tid);
+        return false;
+    }
 
     stopwatch = std::make_unique<Stopwatch>();
 
@@ -88,6 +106,7 @@ void MutatePlainMergeTreeTask::prepare()
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
             time(nullptr), task_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
+    return true;
 }
 
 void MutatePlainMergeTreeTask::finish()
@@ -113,25 +132,12 @@ bool MutatePlainMergeTreeTask::executeStep()
         {
             FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_prepare);
 
-            /// The task is queued after `StorageMergeTree::scheduleDataProcessingJob` releases
-            /// `currently_processing_in_background_mutex`, so `KILL TRANSACTION` can cancel the
-            /// mutation's transaction between the selection and this point. The rollback's
-            /// `killMutation` sweep cannot cancel this task, because it only cancels tasks that
-            /// are already in `MergeList`, and this task enters `MergeList` in `prepare`.
-            /// Re-check the transaction here: otherwise the task would run the whole mutate pass
-            /// only to throw from `MergeTreeTransaction::checkIsNotCancelled` at commit time.
-            if (const auto & txn = merge_mutate_entry->txn; txn && txn->getCSN() == Tx::RolledBackCSN)
+            if (!prepare())
             {
-                LOG_DEBUG(
-                    getLogger("MutatePlainMergeTreeTask"),
-                    "Skipping mutation of part {}: transaction {} was cancelled after the mutation was selected",
-                    merge_mutate_entry->future_part->name,
-                    txn->tid);
                 state = State::NEED_FINISH;
                 return true;
             }
 
-            prepare();
             state = State::NEED_EXECUTE;
             return true;
         }
