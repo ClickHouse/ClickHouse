@@ -25,6 +25,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/IntervalKind.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
@@ -899,6 +900,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
     DataTypePtr internal_type;
     bool check_date32_range = false;
     bool check_date_range = false;
+    bool check_datetime_range = false;
 
     if (type_hint && isNumber(type_hint))
     {
@@ -912,6 +914,15 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
         /// the range here, honoring `date_time_overflow_behavior` the same way as the Date32 branch.
         internal_type = std::make_shared<DataTypeInt32>();
         check_date_range = true;
+    }
+    else if (type_hint && isDateTime(*type_hint))
+    {
+        /// The later cast of the intermediate Date32 column to DateTime is context-less, so
+        /// `date_time_overflow_behavior` does not reach it and a day number whose midnight does not
+        /// fit into DateTime wraps to an unrelated timestamp. Validate the range here against the
+        /// same [0, MAX_DATETIME_DAY_NUM] window that `ToDateTimeImpl` uses.
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_datetime_range = true;
     }
     else
     {
@@ -928,10 +939,13 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
     {
         const auto & chunk = checkedCast<arrow::Date32Array>(*(arrow_column->chunk(chunk_i)), column_name);
 
-        if (check_date32_range || check_date_range)
+        if (check_date32_range || check_date_range || check_datetime_range)
         {
-            const Int32 min_day = check_date_range ? 0 : DATE_LUT_MIN_EXTEND_DAY_NUM;
-            const Int32 max_day = check_date_range ? DATE_LUT_MAX_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+            const Int32 min_day = check_date32_range ? DATE_LUT_MIN_EXTEND_DAY_NUM : 0;
+            const Int32 max_day = check_date_range ? DATE_LUT_MAX_DAY_NUM
+                : check_datetime_range ? static_cast<Int32>(MAX_DATETIME_DAY_NUM)
+                : DATE_LUT_MAX_EXTEND_DAY_NUM;
+            const char * target_type_name = check_date_range ? "Date" : check_datetime_range ? "DateTime" : "Date32";
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
                 Int32 days_num = static_cast<Int32>(chunk.Value(value_i));
@@ -948,7 +962,7 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
                         /// (As we want to make this backwards compatible, not break any workflows.)
                             throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                                             "Input value {} of a column \"{}\" is out of allowed {} range, which is [{}, {}]",
-                                            days_num, column_name, check_date_range ? "Date" : "Date32", min_day, max_day};
+                                            days_num, column_name, target_type_name, min_day, max_day};
                     }
                 }
 

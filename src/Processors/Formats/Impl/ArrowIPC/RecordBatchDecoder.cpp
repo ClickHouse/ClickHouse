@@ -26,6 +26,7 @@
 #include <Common/assert_cast.h>
 #include <Common/FloatUtils.h>
 #include <Common/DateLUTImpl.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Core/UUID.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
@@ -431,9 +432,16 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                 /// `Date`, enforce the narrower Date range [0, 65535] instead: `buildChunk` later casts the
                 /// intermediate Date32 column to `Date` without checks, narrowing the day number to UInt16,
                 /// so an unchecked extended Date32 value would wrap into an unrelated in-range `Date`.
+                /// Similarly, when the requested header type is `DateTime`, enforce the
+                /// [0, MAX_DATETIME_DAY_NUM] window that `ToDateTimeImpl` uses: the later context-less cast
+                /// ignores `date_time_overflow_behavior` and wraps day numbers whose midnight does not fit.
                 const bool date32_as_date = effective_hint && isDate(stripHint(effective_hint));
-                const Int32 min_day = date32_as_date ? 0 : DATE_LUT_MIN_EXTEND_DAY_NUM;
-                const Int32 max_day = date32_as_date ? DATE_LUT_MAX_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                const bool date32_as_datetime = effective_hint && isDateTime(stripHint(effective_hint));
+                const Int32 min_day = (date32_as_date || date32_as_datetime) ? 0 : DATE_LUT_MIN_EXTEND_DAY_NUM;
+                const Int32 max_day = date32_as_date ? DATE_LUT_MAX_DAY_NUM
+                    : date32_as_datetime ? static_cast<Int32>(MAX_DATETIME_DAY_NUM)
+                    : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                const char * target_type_name = date32_as_date ? "Date" : date32_as_datetime ? "DateTime" : "Date32";
                 checkBufferSize(values, requiredBytes(rows, sizeof(Int32)), "date32");
                 auto & data = assert_cast<ColumnInt32 &>(*column).getData();
                 data.resize(rows);
@@ -450,7 +458,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                             throw Exception(
                                 ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                                 "Arrow IPC date32 value {} is out of the allowed {} range [{}, {}]",
-                                days, date32_as_date ? "Date" : "Date32", min_day, max_day);
+                                days, target_type_name, min_day, max_day);
                     }
                     data[i] = days;
                 }

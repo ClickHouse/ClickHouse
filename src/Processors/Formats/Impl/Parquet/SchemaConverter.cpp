@@ -1208,8 +1208,10 @@ void SchemaConverter::processPrimitiveColumn(
             /// When the requested type is Date, enforce the narrower Date range [0, 65535]:
             /// `formOutputColumn` later casts the decoded Date32 column to Date without checks,
             /// narrowing the day number to UInt16, so an unchecked extended Date32 value would
-            /// wrap into an unrelated in-range Date.
+            /// wrap into an unrelated in-range Date. Similarly for a DateTime target, whose
+            /// context-less cast wraps day numbers whose midnight does not fit into DateTime.
             converter->date_target_is_date = type_hint && WhichDataType(type_hint->getTypeId()).isDate();
+            converter->date_target_is_datetime = type_hint && WhichDataType(type_hint->getTypeId()).isDateTime();
         }
 
         out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);

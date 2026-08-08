@@ -198,6 +198,10 @@ struct IntConverter : public FixedSizeConverter
     /// cast of the decoded Int32 column to Date narrows to UInt16 without checks, so an unchecked
     /// extended Date32 value would wrap into an unrelated in-range Date.
     bool date_target_is_date = false;
+    /// Same idea for a DateTime output type: the final context-less cast ignores
+    /// `date_time_overflow_behavior` and wraps day numbers whose midnight does not fit into
+    /// DateTime, so range-check against the [0, MAX_DATETIME_DAY_NUM] window of ToDateTimeImpl.
+    bool date_target_is_datetime = false;
 
     bool isTrivial() const override
     {
