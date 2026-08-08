@@ -1129,32 +1129,45 @@ void InsertDependenciesBuilder::computeQuorumStreamRequirements()
     if (!sequential_quorum_insert)
         return;
 
-    /// Every branch of the collected graph - the destination and each dependent view - owns one sink
+    /// Every branch of the executable graph - the destination and each dependent view - owns one sink
     /// writing into its physical target table (`inner_tables` maps the branch to that target). Count
     /// the writers that may produce a quorum part, per target.
+    ///
+    /// Walk only the branches reachable from `root_view` via `dependent_views`: `collectAllDependencies`
+    /// may leave an orphaned `inner_tables` entry for a view it later pruned from the graph - e.g. a view
+    /// whose dropped target is ignored by `ignore_materialized_views_with_dropped_target_table`, or whose
+    /// expansion failed under `materialized_views_ignore_errors`. Such a branch never creates a sink, so
+    /// it must not be counted as a writer.
     std::unordered_map<StorageIDMaybeEmpty, size_t, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>
         replicated_writers_per_target;
     size_t replicated_writers = 0;
     bool any_hidden_writer = false;
     bool converging_replicated_writers = false;
 
-    for (const auto & [branch_id, target_id] : inner_tables)
+    std::function<void(const StorageIDMaybeEmpty &)> visit = [&] (const StorageIDMaybeEmpty & branch_id)
     {
-        if (skip_destination_table && branch_id == root_view)
-            continue;
+        if (!skip_destination_table || branch_id != root_view)
+        {
+            const auto & target_id = inner_tables.at(branch_id);
 
-        auto it = storages.find(target_id);
-        const StoragePtr target_storage = it == storages.end() ? nullptr : it->second;
+            auto it = storages.find(target_id);
+            const StoragePtr target_storage = it == storages.end() ? nullptr : it->second;
 
-        if (target_storage && !storageMayWriteToReplicatedTable(target_storage))
-            continue;
+            if (!target_storage || storageMayWriteToReplicatedTable(target_storage))
+            {
+                ++replicated_writers;
+                if (!target_storage || storageHidesWriteTarget(target_storage))
+                    any_hidden_writer = true;
+                else if (++replicated_writers_per_target[target_id] >= 2)
+                    converging_replicated_writers = true;
+            }
+        }
 
-        ++replicated_writers;
-        if (!target_storage || storageHidesWriteTarget(target_storage))
-            any_hidden_writer = true;
-        else if (++replicated_writers_per_target[target_id] >= 2)
-            converging_replicated_writers = true;
-    }
+        if (auto children = dependent_views.find(branch_id); children != dependent_views.end())
+            for (const auto & child_id : children->second)
+                visit(child_id);
+    };
+    visit(root_view);
 
     /// The `max_insert_threads` fan-out duplicates every branch's sink into one sink per stream, all
     /// writing the same table concurrently - so a single (possibly hidden) replicated writer already
