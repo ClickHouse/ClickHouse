@@ -49,22 +49,46 @@ done
 $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE database = currentDatabase() AND table = 't_lwu_cross'" > /dev/null
 $CLICKHOUSE_CLIENT --query "SYSTEM START MERGES t_lwu_cross"
 
-# The patch merge must be decided while the mutation is still queued. Wait for the
-# merge to be either executed (without the fix) or queued and postponed (with it).
+# The patch merge must have been decided while the mutation is still queued: either
+# refused by the merge predicate, or already executed. A MERGE_PARTS entry merely
+# present in the queue is not enough, because the entry appears when the log is
+# pulled, before it is ever evaluated.
+observed=""
 for _ in {0..120}; do
-    res=$($CLICKHOUSE_CLIENT --query "
-        SELECT
-            (SELECT count() FROM system.parts
-             WHERE database = currentDatabase() AND table = 't_lwu_cross'
-               AND active AND startsWith(name, 'patch') AND level > 0)
-          + (SELECT count() FROM system.replication_queue
-             WHERE database = currentDatabase() AND table = 't_lwu_cross'
-               AND type = 'MERGE_PARTS' AND startsWith(new_part_name, 'patch'))")
-    if [[ $res != "0" ]]; then
+    postponed=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.replication_queue
+        WHERE database = currentDatabase() AND table = 't_lwu_cross'
+          AND type = 'MERGE_PARTS' AND startsWith(new_part_name, 'patch')
+          AND num_postponed > 0 AND postpone_reason LIKE '%would span the version%'")
+    if [[ $postponed != "0" ]]; then
+        observed="postponed"
+        break
+    fi
+    merged=$($CLICKHOUSE_CLIENT --query "
+        SELECT count() FROM system.parts
+        WHERE database = currentDatabase() AND table = 't_lwu_cross'
+          AND active AND startsWith(name, 'patch') AND level > 0")
+    if [[ $merged != "0" ]]; then
+        observed="merged"
         break
     fi
     sleep 1.0
 done
+
+if [[ -z $observed ]]; then
+    queue=$($CLICKHOUSE_CLIENT --query "
+        SELECT type, new_part_name, num_tries, num_postponed, postpone_reason
+        FROM system.replication_queue
+        WHERE database = currentDatabase() AND table = 't_lwu_cross' FORMAT Vertical" || true)
+    parts=$($CLICKHOUSE_CLIENT --query "
+        SELECT name, level FROM system.parts
+        WHERE database = currentDatabase() AND table = 't_lwu_cross' AND active ORDER BY name" || true)
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT rmt_mutate_task_pause_in_prepare" || true
+    echo "Timed out waiting for the patch merge to be decided" >&2
+    echo "$queue" >&2
+    echo "$parts" >&2
+    exit 1
+fi
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT rmt_mutate_task_pause_in_prepare"
 
