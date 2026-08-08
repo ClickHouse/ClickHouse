@@ -202,7 +202,7 @@ You can see which parts of `s` were stored using the sparse serialization:
 └────────┴────────────────────┘
 ```
 )", 0) \
-    DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, false, R"(
+    DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, true, R"(
 Compute the exact count of default values per column during inserts and
 merges, instead of the cheaper sampling estimate used to decide on sparse
 serialization. Required by `optimize_trivial_count_with_sparsity_filter`,
@@ -210,7 +210,7 @@ which consumes the persisted `num_defaults` counter (Nullable columns
 additionally need `nullable_serialization_version = 'allow_sparse'`).
 Leaving it disabled keeps inserts/merges as fast as before; enabling it
 adds an O(rows) pass per sparse-eligible column.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
 If the file name for column is too long (more than 'max_file_name_length'
 bytes) replace it to SipHash128
@@ -540,8 +540,8 @@ Possible values:
 **Usage**
 
 The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting
-should be less than the value of the [background_pool_size](/reference/settings/server-settings/settings/background#background_pool_size)
-* [background_merges_mutations_concurrency_ratio](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
+must not exceed the product of [`background_pool_size`](/reference/settings/server-settings/settings/background#background_pool_size)
+and [`background_merges_mutations_concurrency_ratio`](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 Otherwise, ClickHouse will throw an exception.
 )", 0) \
     DECLARE(UInt64, max_number_of_mutations_for_replica, 0, R"(
@@ -691,6 +691,12 @@ Can be overridden by explicit `dictionary_block_frontcoding_compression` index a
     DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
 Default posting list block size for text indexes (rows).
 Can be overridden by explicit `posting_list_block_size` index argument.
+)", 0) \
+    DECLARE(NonZeroUInt64, text_index_max_processed_tokens_before_flush, 100000000, R"(
+Maximum number of processed tokens accumulated by a text index builder before flushing a temporary segment.
+)", 0) \
+    DECLARE(NonZeroUInt64, text_index_max_memory_usage_before_flush, "1Gi", R"(
+Maximum estimated memory retained by a text index builder before flushing a temporary segment.
 )", 0) \
     DECLARE(TextIndexPostingListCodec, text_index_posting_list_codec, TextIndexPostingListCodec::None, R"(
 Default posting list codec for text indexes.
@@ -1708,9 +1714,26 @@ To provide a safeguard against accidentally creating tables with very low
 `index_granularity_bytes`.
 )", 1024) \
     DECLARE(Bool, use_const_adaptive_granularity, false, R"(
-Always use constant granularity for whole part. It allows to compress in
-memory values of index granularity. It can be useful in extremely large
-workloads with thin tables.
+Non-const adaptive granularity (the default, `index_granularity_bytes` is not `0`) keeps
+granules at a constant size in bytes, so their row count varies: for every
+written block, rows per granule is `index_granularity_bytes` divided by the
+average size of a row in that block, capped at `index_granularity`. Because it differs
+from granule to granule, the row count of every granule in the part has to be kept in
+memory, 8 bytes each, which on large tables adds up to tens of gigabytes.
+
+Enabling constant adaptive granularity (this setting) keeps granules at a constant number of rows instead,
+so their size in bytes varies. The number is computed once from the average size of a
+row in the part being written, and a part stores that single value
+instead of one value per granule. Because all granules contain the same number of rows,
+no additional row count per granule needs to be stored.
+
+The amount of memory currently spent on these values is reported by the
+`TotalIndexGranularityBytesInMemory` metric in `system.asynchronous_metrics`,
+and per part in `system.parts.index_granularity_bytes_in_memory`.
+
+The setting is applied only to parts written after it was changed. Use
+[ALTER TABLE ... REWRITE PARTS](/sql-reference/statements/alter/partition#rewrite-parts)
+to apply it to existing parts. `Compact` parts always use adaptive granularity.
 )", 0) \
     DECLARE(Bool, enable_index_granularity_compression, true, R"(
 Compress in memory values of index granularity if it is possible
@@ -1949,14 +1972,16 @@ Comma-separated list of statistics types to calculate automatically on all suita
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0) \
-    DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
+    DECLARE(UInt64, packed_skip_index_max_bytes, 1024 * 1024, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
 chain) below which a skip-index substream is bundled into a single `skp_idx.packed`
 archive per part instead of being written as a separate `skp_idx_<name>.idx2` / `.mrk2`
 file. Substreams larger than this stay in the legacy per-file layout. The decision is
 made independently per substream at write time, so a single part can have small indices
 (e.g. `minmax`) packed and large ones (e.g. a heavy `bloom_filter`) per-file. Set to 0
-to disable packing entirely (default).
+to disable packing entirely. Defaults to 1 MiB, which bundles the typically small skip
+indices into one archive per part and cuts the object count (and read requests) on object
+storage, while leaving genuinely large substreams in the per-file layout.
 
 Each skip-index substream actually consists of a data file and a marks file; both buffer
 in memory up to the threshold before the spill decision is made. So peak memory while
@@ -1971,7 +1996,7 @@ with `add_minmax_index_for_numeric_columns`).
 The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
 substreams from inside it transparently. Changing this setting affects newly written parts
 only; existing parts retain whatever layout they had at write time.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
 When enabled, allows summing columns in a SummingMergeTree table to be used in
 the partition or sorting key.
@@ -2028,7 +2053,7 @@ Maximum time between runs of merge coordinator thread
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
 Time changing factor for delay of coordinator thread
 )", 0) \
-    DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::WATER_FILLING, R"(
+    DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::SAINTE_LAGUE, R"(
 What algorithm will be used by merge coordinator thread to distribute merges between replicas
 )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
@@ -2108,6 +2133,14 @@ Possible values:
     DECLARE(Bool, allow_commit_order_projection, false, R"(
 Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
 Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_adaptive_codec_selection, false, R"(
+When enabled, merges and mutations choose a codec per block for columns that use the default codec (no `CODEC` clause, or `CODEC(Default)`).
+The candidates are the table's default codec (see the `default_compression_codec` setting), `NONE`, and specialized codecs suited to the column type.
+Only integer-like types are currently adaptive.
+The smallest output wins. Compression is therefore never worse than the default, and incompressible blocks are stored raw.
+A column whose default codec includes encryption (e.g. `AES_128_GCM_SIV`) is never selected adaptively, so encryption is always applied.
+Per-block codecs are reported by the [`mergeTreeCodecBlockCounts`](/sql-reference/table-functions/mergeTreeCodecBlockCounts) table function.
 )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
 Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
@@ -2395,7 +2428,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             auto changes = storage_def.settings->changes;
             MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
 
-            for (const auto & [name, value] : changes)
+            for (const auto & [name, value, _] : changes)
             {
                 if (name == "disk")
                 {
@@ -3038,7 +3071,14 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
 /// Cloud only
 bool MergeTreeSettings::isSMTReadonlySetting(const String & name)
 {
-    return name == "enable_mixed_granularity_parts";
+    /// SharedMergeTree additionally allows altering the index granularity: each part carries its
+    /// own granularity, so parts written under different values coexist fine. Everything else
+    /// that is read-only for the other MergeTree engines is read-only here as well, so that a
+    /// setting added to `isReadonlySetting` does not silently stay alterable on SharedMergeTree.
+    if (name == "index_granularity" || name == "index_granularity_bytes")
+        return false;
+
+    return isReadonlySetting(name);
 }
 
 void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)

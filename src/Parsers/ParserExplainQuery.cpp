@@ -66,7 +66,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
         auto begin = pos;
         if (parser_settings.parse(pos, settings, expected))
-            explain_query->setSettings(std::move(settings));
+            explain_query->setSettings(std::move(settings), String(textBetween(begin, pos)));
         else
             pos = begin;
     }

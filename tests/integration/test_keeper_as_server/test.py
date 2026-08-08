@@ -161,3 +161,45 @@ def test_system_keeper_snapshots(start_cluster):
     assert disk_name
     assert int(size_bytes) > 0
     assert int(last_modified_at) > 0
+
+
+def test_system_keeper_storage(start_cluster):
+    keeper_utils.wait_until_connected(cluster, node)
+
+    zk = keeper_utils.get_fake_zk(cluster, "node")
+    try:
+        zk.create("/test_system_keeper_storage", b"root_data")
+        zk.create("/test_system_keeper_storage/child", b"")
+        zk.set("/test_system_keeper_storage/child", b"child_data")
+        zk.create("/test_system_keeper_storage/eph", b"", ephemeral=True)
+        zk.create("/test_system_keeper_storage/seq-", b"", sequence=True)
+
+        assert node.query(
+            "SELECT data, czxid > 0, mzxid = czxid, pzxid > czxid, "
+            "toUnixTimestamp64Milli(ctime) > 0, mtime = ctime, "
+            "version, cversion, aversion, ephemeral_owner, data_length, "
+            "num_children, seq_num, ttl, acl_id "
+            "FROM system.keeper_storage WHERE path = '/test_system_keeper_storage'"
+        ) == "root_data\t1\t1\t1\t1\t1\t0\t4\t0\t0\t9\t3\t3\t0\t0\n"
+
+        assert node.query(
+            "SELECT version, data, mzxid > czxid FROM system.keeper_storage "
+            "WHERE path = '/test_system_keeper_storage/child'"
+        ) == "1\tchild_data\t1\n"
+
+        assert node.query(
+            "SELECT ephemeral_owner FROM system.keeper_storage "
+            "WHERE path = '/test_system_keeper_storage/eph'"
+        ) == f"{zk.client_id[0]}\n"
+
+        assert node.query(
+            "SELECT count() FROM system.keeper_storage "
+            "WHERE path LIKE '/test_system_keeper_storage/%'"
+        ) == "3\n"
+
+        assert node.query(
+            "SELECT count() FROM system.keeper_storage WHERE path IN ('/', '/keeper')"
+        ) == "2\n"
+    finally:
+        zk.stop()
+        zk.close()

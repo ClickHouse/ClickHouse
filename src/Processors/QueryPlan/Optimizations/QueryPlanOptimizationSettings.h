@@ -60,6 +60,7 @@ struct QueryPlanOptimizationSettings
     bool lift_up_union;
     bool aggregate_partitions_independently;
     bool limit_by_partitions_independently;
+    bool distinct_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
     bool convert_join_to_in;
@@ -95,6 +96,7 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;
+    bool use_query_condition_cache_for_top_k;
     bool read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;

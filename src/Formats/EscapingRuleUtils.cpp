@@ -338,15 +338,15 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
             if (auto date_type = tryInferDateOrDateTimeFromString(field, format_settings))
                 return date_type;
 
-            /// Special case when we have number that starts with 0. In TSV we don't parse such numbers,
-            /// see readIntTextUnsafe in ReadHelpers.h. If we see data started with 0, we can determine it
-            /// as a String, so parsing won't fail.
-            /// When allow_number_leading_zeros is set (for hive partitioning), skip this check
-            /// because hive partitioning handles leading zeros
-            if (field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros)
+            auto type = tryInferDataTypeForSingleField(field, format_settings);
+
+            /// An integer starting with 0 must stay a String, because readIntTextUnsafe (see
+            /// ReadHelpers.h) reads the leading '0' as the whole value.
+            /// allow_number_leading_zeros (hive partitioning) opts out.
+            if (type && field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros
+                && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
                 return std::make_shared<DataTypeString>();
 
-            auto type = tryInferDataTypeForSingleField(field, format_settings);
             if (!type)
                 return std::make_shared<DataTypeString>();
             return type;
