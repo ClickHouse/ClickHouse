@@ -171,9 +171,18 @@ BigQueryField parseField(const Poco::JSON::Object::Ptr & field_object)
     field.name = field_object->getValue<String>("name");
     field.type = parseFieldType(field_object->getValue<String>("type"));
 
+    /// A missing mode means NULLABLE, but a present mode must be one of the documented values.
+    /// Anything else (a malformed response or a mode added to the API later) is rejected instead of
+    /// being silently treated as a nullable scalar with the wrong read/write semantics.
     String mode = "NULLABLE";
     if (field_object->has("mode"))
         mode = field_object->getValue<String>("mode");
+    if (mode != "NULLABLE" && mode != "REQUIRED" && mode != "REPEATED")
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "BigQuery schema field '{}' has an unknown mode '{}', expected one of 'NULLABLE', 'REQUIRED', 'REPEATED'",
+            field.name,
+            mode);
     field.repeated = mode == "REPEATED";
     field.required = mode == "REQUIRED";
     field.has_default = field_object->has("defaultValueExpression");

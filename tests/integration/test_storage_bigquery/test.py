@@ -1569,6 +1569,16 @@ def test_unsupported_table_types():
         assert type_ in error
 
 
+def test_unknown_field_mode_rejected():
+    # Only NULLABLE, REQUIRED and REPEATED are valid BigQuery field modes. A schema carrying any
+    # other mode (a malformed response, or an enum value added to the API later) must be rejected
+    # instead of being silently read as a nullable scalar with the wrong semantics. A missing mode
+    # still defaults to NULLABLE (every other mock table relies on that).
+    error = node.query_and_get_error(f"SELECT * FROM {bq('test_bad_mode')}")
+    assert "unknown mode" in error
+    assert "OPTIONAL" in error
+
+
 def test_errors():
     error = node.query_and_get_error(f"SELECT * FROM {bq('no_such_table')}")
     assert "Not found: Table" in error

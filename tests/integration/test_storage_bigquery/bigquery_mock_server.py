@@ -334,6 +334,13 @@ REQUIRED_DEFAULT_SCHEMA = [
     f("s", "STRING"),
 ]
 
+# A schema with a mode outside the documented NULLABLE/REQUIRED/REPEATED enum ("OPTIONAL" does not
+# exist in BigQuery). The reader must reject it instead of silently treating the field as nullable.
+BAD_MODE_SCHEMA = [
+    f("i", "INTEGER", "REQUIRED"),
+    f("s", "STRING", "OPTIONAL"),
+]
+
 TABLES = {}
 
 
@@ -405,6 +412,11 @@ def reset_tables():
         "test_required_default": {
             "type": "TABLE",
             "schema": REQUIRED_DEFAULT_SCHEMA,
+            "rows": [],
+        },
+        "test_bad_mode": {
+            "type": "TABLE",
+            "schema": BAD_MODE_SCHEMA,
             "rows": [],
         },
     }
