@@ -42,7 +42,6 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
 
 size_t MergeTreeReaderIndex::readRows(
     size_t from_mark,
-    size_t /* current_task_last_mark */,
     size_t /* current_range_last_mark */,
     bool continue_reading,
     size_t max_rows_to_read,
@@ -158,7 +157,7 @@ size_t MergeTreeReaderIndex::readRows(
     return max_rows_to_read;
 }
 
-bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_mark*/)
+bool MergeTreeReaderIndex::canSkipMark(size_t mark)
 {
     if (index_read_result && index_read_result->skip_index_read_result)
     {

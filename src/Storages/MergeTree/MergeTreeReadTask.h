@@ -162,7 +162,7 @@ public:
         MergeTreePatchReaders patches;
         MergeTreeReaderPtr prepared_index;
 
-        void updateAllMarkRanges(const MarkRanges & ranges);
+        void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
     };
 
     struct BlockSizeParams

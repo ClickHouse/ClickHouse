@@ -37,14 +37,12 @@ public:
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
-    /// current_task_last_mark is needed for asynchronous reading (mainly from remote fs);
-    /// it is the maximum end mark across all mark ranges of the current read task.
     /// current_range_last_mark is the end mark of the contiguous mark range being read
-    /// (<= current_task_last_mark; equal to it when the read task is one contiguous range).
-    /// It bounds caching of deserialized columns, which must not span the gaps between
-    /// ranges of a multi-range task. 0 means unknown.
+    /// (<= the last mark of the current read task; equal to it when the task is one
+    /// contiguous range). It bounds caching of deserialized columns, which must not
+    /// span the gaps between ranges of a multi-range task. 0 means unknown.
     /// If rows_offset is not 0, when reading from MergeTree, the first rows_offset rows will be skipped.
-    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark, size_t current_range_last_mark,
+    virtual size_t readRows(size_t from_mark, size_t current_range_last_mark,
                             bool continue_reading, size_t max_rows_to_read,
                             size_t rows_offset, Columns & res_columns) = 0;
 
@@ -96,7 +94,7 @@ public:
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
 
-    virtual bool canSkipMark(size_t, size_t) { return false; }
+    virtual bool canSkipMark(size_t) { return false; }
 
     /// Returns true if this reader can skip whole marks via `canSkipMark` for at least some inputs.
     /// Independent of any particular mark index. Used by callers that need to know upfront whether
@@ -104,7 +102,7 @@ public:
     /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
     virtual bool canSkipAnyMark() const { return false; }
 
-    virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
+    virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
@@ -162,6 +160,9 @@ protected:
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
+    /// Last mark of `all_mark_ranges`, used as the right bound of ranged read requests on remote disks.
+    /// Cached because the ranges can contain thousands of fragments and the bound is needed on every read.
+    size_t last_mark_to_read = 0;
 
     /// Per-reader read hints (see setReadHints/getReadHints above).
     RangesInDataPartReadHints read_hints;
