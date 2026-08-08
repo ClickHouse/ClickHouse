@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- - no-parallel -- SQL UDFs are global server objects; the flaky check runs the same test concurrently and the CREATE FUNCTION statements would collide.
+
 -- Regression test: wildcards and column matchers must be rejected in skip index
 -- expressions. The stored `definition_ast` keeps the matcher text and the index is
 -- rebuilt from it on column-layout changes (`recalculateWithNewColumns`), so
