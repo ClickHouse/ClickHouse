@@ -1564,12 +1564,7 @@ bool readingFromParallelReplicas(const QueryPlan::Node * node)
 
     if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
         return true;
-    /// The plan-based path reaches this leaf as either the shipped fragment or, once it has been inlined, the local
-    /// read in parallel-reading mode. Both mean a coordinator exists, so ordering only this side would leave the two
-    /// sides in different coordination modes.
     if (typeid_cast<const ReadFromParallelReplicasStep *>(step))
-        return true;
-    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(step); read && read->isParallelReadingFromReplicas())
         return true;
     return false;
 }
