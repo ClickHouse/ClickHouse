@@ -599,15 +599,16 @@ bool cachedLocationMatchesTableRoot(
         return false;
 
     /// A schemeless `cached_location` (ClickHouse's default write format, see above) carries no
-    /// authority to validate. That is only safe to accept when `table_namespace` is itself empty
-    /// (nothing to validate against, e.g. Local, or HDFS with no derivable raw-URI authority):
-    /// otherwise two different tables in different buckets/containers/nameservices but the same
-    /// key path would produce the same schemeless location, and a stale `catalog_uuid_hint`
-    /// colliding with another table's UUID would accept that table's cached `metadata.json`. When
-    /// `table_namespace` is non-empty, treat the schemeless location as unverifiable and miss
-    /// (fall back to a cold read) rather than trust it.
+    /// authority to validate against `table_namespace` here. That used to be a problem when the
+    /// cache key was just uuid+path: two different tables in different buckets/containers but the
+    /// same key path could produce the same schemeless location. But the only caller of this
+    /// function probes the cache with a key that already includes the physical backend identity
+    /// (`IObjectStorageConfiguration::getDataSourceDescription`, which itself encodes the
+    /// bucket/container), so a cache hit here can only come from a write made by a table on the
+    /// exact same backend -- the bucket/container is already validated at the cache-key level, and
+    /// the exact `table_root` path match above is sufficient.
     if (scheme.empty())
-        return table_namespace.empty();
+        return true;
 
     /// Namespace-less backends (HDFS/Local, where `getNamespace()` is always empty) have no
     /// namespace to validate: `IcebergPathResolver` already accepts authority-bearing locations
@@ -1409,6 +1410,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     if (metadata_cache)
     {
         return metadata_cache->getOrSetLatestMetadataVersion(
+            data_source_description,
             table_path,
             table_uuid,
             load_fn,
