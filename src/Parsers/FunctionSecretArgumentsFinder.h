@@ -105,6 +105,10 @@ protected:
     static constexpr std::string_view s3_secret_keys[]
         = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id"};
 
+    /// Named arguments carrying TLS credentials as the literal contents of a certificate or a key file,
+    /// rather than as a path to it. They are secret and have to be hidden the same way a password is.
+    static constexpr std::string_view tls_credentials_secret_keys[] = {"ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"};
+
     /// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
     /// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
     /// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
@@ -152,6 +156,7 @@ protected:
 
     void findOrdinaryFunctionSecretArguments();
     void findMySQLFunctionSecretArguments();
+    void findTLSCredentialsSecretArguments(size_t start);
     void findMongoDBSecretArguments();
     void findRedisTableEngineSecretArguments();
     void findArrowFlightSecretArguments();
