@@ -26,12 +26,20 @@ BOX_DEGENERATE="1.0, 1.0, 0.0, 0.0, materialize(toUInt8(12))"
 BOX_NAN="nan, 1.0, 0.0, 0.0, materialize(toUInt8(12))"
 
 # 4x the 1s limit absorbs clock granularity, a busy runner and the work in flight when the check
-# fires; the unfixed path lands far above that.
+# fires; the unfixed path lands far above that. Sanitizer and coverage builds stretch the work in
+# flight when the check fires (overruns of up to ~7.2s against the plain 4s bound were observed on
+# ASan runners) while stretching the unfixed path, tens of seconds, at least as much, so the bound
+# scales on those builds and still separates.
+SCALE=1
+[ -n "$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS' AND value LIKE '%sanitize=%'")" ] && SCALE=3
+case "$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'")" in ON|1) SCALE=3 ;; esac
+BOUND=$((SCALE * 4000))
+
 check_duration() {
     local query_id="$1" label="$2"
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
     ${CLICKHOUSE_CLIENT} -q "
-        SELECT if(max(query_duration_ms) < 4000, '$label stopped promptly', '$label ran ' || toString(max(query_duration_ms)) || 'ms past a 1000ms limit')
+        SELECT if(max(query_duration_ms) < $BOUND, '$label stopped promptly', '$label ran ' || toString(max(query_duration_ms)) || 'ms past a 1000ms limit')
         FROM system.query_log
         WHERE query_id = '$query_id' AND current_database = currentDatabase() AND type != 'QueryStart'"
 }
@@ -111,8 +119,8 @@ run_kill_case() {
 # Readiness waits for the query to have been running rather than merely being visible: `ProcessList`
 # makes it visible before the executor is attached, and `addPipelineExecutor` raises a pending
 # cancellation itself, so a kill winning that race would pass even unfixed. One second of the block's
-# tens leaves the rest of it as the window in which the kill has to land. 4000ms as above.
-run_kill_case "expanding" "$BOX" 60000 "$SETTINGS" "max(elapsed) > 1" 4000
+# tens leaves the rest of it as the window in which the kill has to land. The bound scales as above.
+run_kill_case "expanding" "$BOX" 60000 "$SETTINGS" "max(elapsed) > 1" "$BOUND"
 
 # Liveness control: with no time limit the function must still return the documented result, so a
 # "fix" that simply always threw would fail here rather than pass.
