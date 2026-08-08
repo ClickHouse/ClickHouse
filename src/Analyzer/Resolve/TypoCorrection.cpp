@@ -9,9 +9,39 @@
 #include <DataTypes/IDataType.h>
 
 #include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TIMEOUT_EXCEEDED;
+}
+
+namespace
+{
+
+/// Resolved from the executing thread rather than captured: typo correction is reached from static
+/// helpers that carry no query state.
+QueryStatusPtr tryGetProcessListElement()
+{
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        return query_context->getProcessListElementSafe();
+    return {};
+}
+
+/// `checkTimeLimit` throws for `KILL QUERY` and the 'throw' overflow mode and returns false under
+/// 'break'; a half-collected suggestion list is a wrong hint rather than a shorter one, so the false
+/// return becomes a throw too.
+void checkQueryTimeLimit(const QueryStatusPtr & process_list_element)
+{
+    if (process_list_element && !process_list_element->checkTimeLimit())
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached while collecting typo correction hints");
+}
+
+}
 
 /// Get valid identifiers for typo correction from compound expression
 void TypoCorrection::collectCompoundExpressionValidIdentifiers(
@@ -20,8 +50,11 @@ void TypoCorrection::collectCompoundExpressionValidIdentifiers(
     const Identifier & valid_identifier_prefix,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
-    /// Before the early return: cancellation must not depend on entering the walk.
-    CurrentThread::checkIfNotCancelled();
+    /// Resolved once: a lookup per substream would cost what the early return below saves.
+    auto process_list_element = tryGetProcessListElement();
+
+    /// Before the early return: the time limit must not depend on entering the walk.
+    checkQueryTimeLimit(process_list_element);
 
     /// A subcolumn identifier has at least one part, so the size test in the callback can never
     /// hold once the prefix alone is that long. The walk is exponential in the nesting depth.
@@ -30,7 +63,7 @@ void TypoCorrection::collectCompoundExpressionValidIdentifiers(
 
     IDataType::forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
-        CurrentThread::checkIfNotCancelled();
+        checkQueryTimeLimit(process_list_element);
 
         Identifier subcolumn_indentifier(name);
         size_t new_identifier_size = valid_identifier_prefix.getPartsSize() + subcolumn_indentifier.getPartsSize();
