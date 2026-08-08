@@ -714,6 +714,8 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
+    createTableDirectoryIfNeeded(lock);
+
     /// Load the indices if not loaded yet. We have to do that now because we're going to update these indices.
     loadIndices(lock);
 

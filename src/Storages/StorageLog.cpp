@@ -1303,6 +1303,8 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
+    createTableDirectoryIfNeeded(lock);
+
     /// Load the marks if not loaded yet. We have to do that now because we're going to update these marks.
     loadMarks(lock);
 
