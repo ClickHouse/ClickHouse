@@ -51,7 +51,7 @@ namespace
 struct ColumnContext
 {
     NameAndTypePair column;
-    QueryTreeNodePtr column_source;
+    TableExpressionNodePtr column_source;
     ContextPtr context;
 };
 
@@ -292,10 +292,11 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     else
         return {};
 
-    if (index == 0 || index > data_type_qbit.getElementSize())
+    if (index == 0 || index > data_type_qbit.getElementSize() * data_type_qbit.getNumStrides())
         return {};
 
-    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getDimension() + 7) / 8)};
+    /// Each subcolumn is one stride group's bit plane: a FixedString of ceil(stride / 8) bytes.
+    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getStride() + 7) / 8)};
 }
 
 template <typename DataType>
@@ -540,15 +541,20 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// elsewhere in the query (e.g., in SELECT alongside WHERE m['key'] = val).
 /// Normally the optimizer skips a column if it's used both in a transformable
 /// function and as a plain column reference, because introducing a new
-/// subcolumn identifier complicates analysis. But for Map key lookups the
-/// transformation is beneficial when the occurrence is in WHERE/PREWHERE: only
-/// the relevant bucket is read for the filter, while the full map is still read
-/// for matching rows in SELECT. The reads are independent and semantically correct.
+/// subcolumn identifier complicates analysis. But for Map key lookups, Tuple
+/// element access, Variant element access and QBit element access the transformation is beneficial when the occurrence is in
+/// WHERE/PREWHERE: only the relevant subcolumn is read for the filter (letting a
+/// skip index on that subcolumn prune granules), while the full column is still
+/// read for matching rows in SELECT. The reads are independent and semantically
+/// correct.
 /// Note: this exception does NOT apply to HAVING or other clauses where the
 /// subcolumn would need to appear in GROUP BY.
 std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Tuple, "tupleElement"},
+    {TypeIndex::Variant, "variantElement"},
+    {TypeIndex::QBit, "tupleElement"},
 };
 
 /// Optimizes:
@@ -1232,9 +1238,9 @@ public:
 
             /// If we are in the left (right) subtree of a LEFT (RIGHT) JOIN, skip this subtree
             /// and mark all tables as outer-joined tables.
-            if (isLeftOrFull(current_join_node->getKind()) && current_join_node->getRightTableExpression().get() == node.get())
+            if (isLeftOrFull(current_join_node->getKind()) && current_join_node->getRightTableExpressionNode().get() == node.get())
                 need_skip_subtree = true;
-            if (isRightOrFull(current_join_node->getKind()) && current_join_node->getLeftTableExpression().get() == node.get())
+            if (isRightOrFull(current_join_node->getKind()) && current_join_node->getLeftTableExpressionNode().get() == node.get())
                 need_skip_subtree = true;
         }
 
@@ -1261,8 +1267,8 @@ public:
         const auto * current_join_node = join_nodes_stack.top();
 
         /// Leaving the left (or right) subtree of a LEFT (or RIGHT) JOIN.
-        if (node.get() == current_join_node->getRightTableExpression().get()
-         || node.get() == current_join_node->getLeftTableExpression().get())
+        if (node.get() == current_join_node->getRightTableExpressionNode().get()
+         || node.get() == current_join_node->getLeftTableExpressionNode().get())
             need_skip_subtree = false;
 
         /// Leaving a JOIN node.

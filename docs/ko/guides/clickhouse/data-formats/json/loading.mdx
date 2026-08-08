@@ -1,0 +1,234 @@
+---
+sidebarTitle: 'JSON 로드'
+title: 'JSON 다루기'
+slug: /integrations/data-formats/json/loading
+description: 'JSON 로드'
+keywords: ['json', 'ClickHouse', '삽입', '로드', '삽입']
+score: 15
+doc_type: 'guide'
+---
+
+다음 예시는 구조화된 JSON 데이터와 반정형 JSON 데이터를 로드하는 아주 간단한 방법을 보여줍니다. 중첩 구조를 포함한 더 복잡한 JSON은 [**JSON 스키마 설계**](/ko/guides/clickhouse/data-formats/json/schema) 가이드를 참조하십시오.
+
+<div id="loading-structured-json">
+  ## 구조화된 JSON 로딩
+</div>
+
+이 섹션에서는 JSON 데이터가 [`NDJSON`](https://github.com/ndjson/ndjson-spec) (줄바꿈으로 구분된 JSON) 포맷, 즉 ClickHouse에서 [`JSONEachRow`](/ko/reference/formats/JSON/JSONEachRow)로 알려진 포맷으로 제공되고, 컬럼 이름과 타입이 고정된 구조화된 형태임을 가정합니다. `NDJSON`은 간결하고 공간 효율이 높아 JSON 로딩에 권장되는 포맷이지만, [입력 및 출력](/ko/reference/formats/JSON/JSON) 모두에서 다른 포맷도 지원됩니다.
+
+다음은 [Python PyPI 데이터셋](https://clickpy.clickhouse.com/)의 행을 나타내는 JSON 샘플입니다:
+
+```json
+{
+  "date": "2022-11-15",
+  "country_code": "ES",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "pip",
+  "python_minor": "3.9",
+  "system": "Linux",
+  "version": "0.3.0"
+}
+```
+
+이 JSON 객체를 ClickHouse에 로드하려면 테이블 스키마(schema)를 정의해야 합니다.
+
+이 간단한 예시에서는 구조가 정적이고, 컬럼 이름도 알려져 있으며, 타입도 명확하게 정의되어 있습니다.
+
+ClickHouse는 JSON 타입을 통해 반정형 데이터를 지원하여 키 이름과 타입을 동적으로 변경할 수 있지만, 여기서는 그럴 필요가 없습니다.
+
+<Info>
+  **가능한 경우 정적 스키마를 우선 사용하십시오**
+
+  컬럼의 이름과 타입이 고정되어 있고 새 컬럼이 추가될 가능성이 없다면, 운영 환경에서는 항상 정적으로 정의된 스키마를 우선 사용하십시오.
+
+  JSON 타입은 컬럼의 이름과 타입이 변경될 수 있는 매우 동적인 데이터에 적합합니다. 이 타입은 프로토타이핑과 데이터 탐색에도 유용합니다.
+</Info>
+
+이에 대한 간단한 스키마는 아래와 같으며, **JSON 키가 컬럼 이름에 매핑됩니다**:
+
+```sql
+CREATE TABLE pypi (
+  `date` Date,
+  `country_code` String,
+  `project` String,
+  `type` String,
+  `installer` String,
+  `python_minor` String,
+  `system` String,
+  `version` String
+)
+ENGINE = MergeTree
+ORDER BY (project, date)
+```
+
+<Info>
+  **정렬 키**
+
+  여기서는 `ORDER BY` 절로 정렬 키를 지정했습니다. 정렬 키와 선택 방법에 대한 자세한 내용은 [여기](/ko/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)를 참조하십시오.
+</Info>
+
+ClickHouse는 확장자와 내용을 기반으로 유형을 자동으로 추론하여 여러 포맷의 JSON 데이터를 로드할 수 있습니다. 위 테이블의 JSON 파일은 [s3 함수](/ko/reference/functions/table-functions/s3)를 사용하여 읽을 수 있습니다:
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+LIMIT 1
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type────────┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8 │
+└────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
+
+1 row in set. Elapsed: 1.232 sec.
+```
+
+파일 포맷을 별도로 지정하지 않아도 된다는 점에 주목하십시오. 대신 glob 패턴을 사용하여 버킷 내의 모든 `*.json.gz` 파일을 읽습니다. ClickHouse는 파일 확장자와 내용을 바탕으로 포맷이 `JSONEachRow` (ndjson)임을 자동으로 추론합니다. ClickHouse가 포맷을 감지하지 못하는 경우, 매개변수 함수를 통해 포맷을 수동으로 지정할 수 있습니다.
+
+```sql
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+```
+
+<Info>
+  **압축 파일**
+
+  위 파일도 압축되어 있습니다. ClickHouse가 이를 자동으로 감지하고 처리합니다.
+</Info>
+
+이 파일의 행을 불러오려면 [`INSERT INTO SELECT`](/ko/reference/statements/insert-into#inserting-the-results-of-select)를 사용할 수 있습니다:
+
+```sql
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 10.445 sec. Processed 19.49 million rows, 35.71 MB (1.87 million rows/s., 3.42 MB/s.)
+```
+
+```sql
+SELECT * FROM pypi LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┘
+
+2 rows in set. Elapsed: 0.005 sec. Processed 8.19 thousand rows, 908.03 KB (1.63 million rows/s., 180.38 MB/s.)
+```
+
+행은 [`FORMAT` 절](/ko/reference/statements/select/format)을 사용해 문장 내에서 직접 로드할 수도 있습니다. 예:
+
+```sql
+INSERT INTO pypi
+FORMAT JSONEachRow
+{"date":"2022-11-15","country_code":"CN","project":"clickhouse-connect","type":"bdist_wheel","installer":"bandersnatch","python_minor":"","system":"","version":"0.2.8"}
+```
+
+이 예시에서는 `JSONEachRow` 포맷을 사용한다고 가정합니다. 널리 사용되는 다른 JSON 포맷도 지원하며, 이러한 포맷을 로드하는 예시는 [여기](/ko/guides/clickhouse/data-formats/json/formats)에서 확인할 수 있습니다.
+
+<div id="loading-semi-structured-json">
+  ## 반정형 JSON 로드하기
+</div>
+
+이전 예시에서는 키 이름과 타입이 고정되어 있고 잘 알려진 JSON을 로드했습니다. 하지만 실제로는 그렇지 않은 경우가 많습니다. 키가 추가되거나 타입이 변경될 수 있습니다. 이는 관측성 데이터와 같은 사용 사례에서 흔히 발생합니다.
+
+ClickHouse는 전용 [`JSON`](/ko/reference/data-types/newjson) 타입으로 이를 처리합니다.
+
+다음은 위의 [Python PyPI 데이터셋](https://clickpy.clickhouse.com/)을 확장한 예시입니다. 여기서는 임의의 키-값 쌍으로 이루어진 `tags` 컬럼을 추가했습니다.
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+
+```
+
+여기서 tags 컬럼은 예측이 불가능하므로 모델링할 수 없습니다. 이 데이터를 로드하려면 이전에 사용한 스키마를 그대로 사용하되, [`JSON`](/ko/reference/data-types/newjson) 타입의 `tags` 컬럼을 추가로 제공하면 됩니다:
+
+```sql
+SET enable_json_type = 1;
+
+CREATE TABLE pypi_with_tags
+(
+    `date` Date,
+    `country_code` String,
+    `project` String,
+    `type` String,
+    `installer` String,
+    `python_minor` String,
+    `system` String,
+    `version` String,
+    `tags` JSON
+)
+ENGINE = MergeTree
+ORDER BY (project, date);
+```
+
+원본 데이터셋과 동일한 방식으로 테이블을 채웁니다:
+
+```sql
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```sql
+INSERT INTO pypi_with_tags SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 255.679 sec. Processed 1.00 million rows, 29.00 MB (3.91 thousand rows/s., 113.43 KB/s.)
+Peak memory usage: 2.00 GiB.
+```
+
+```sql
+SELECT *
+FROM pypi_with_tags
+LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┬─tags─────────────────────────────────────────────────────┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"nsBM":"5194603446944555691"}                           │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"4zD5MYQz4JkP1QqsJIS":"0","name":"8881321089124243208"} │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┴──────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.149 sec.
+```
+
+여기서는 데이터를 로드할 때의 성능 차이에 주목하십시오. JSON 컬럼은 삽입 시점에 타입 추론이 필요하며, 두 개 이상의 타입을 갖는 컬럼이 있으면 추가 저장 공간도 필요합니다. JSON 타입은 명시적으로 컬럼을 선언한 것과 동등한 성능을 내도록 구성할 수 있지만([JSON 스키마 설계](/ko/guides/clickhouse/data-formats/json/schema) 참조), 기본적으로는 의도적으로 유연하게 설계되어 있습니다. 하지만 이러한 유연성에는 비용이 따릅니다.
+
+<div id="when-to-use-the-json-type">
+  ### JSON 타입을 사용해야 하는 경우
+</div>
+
+데이터가 다음과 같은 경우 JSON 타입을 사용합니다.
+
+* 시간에 따라 변경될 수 있는 **예측 불가능한 키**가 있습니다.
+* **타입이 다양한 값**을 포함합니다(예: 경로에 문자열이 들어갈 때도 있고 숫자가 들어갈 때도 있습니다).
+* 엄격한 타입 지정이 적합하지 않아 스키마 유연성이 필요합니다.
+
+데이터 구조를 알고 있고 일관적이라면, 데이터가 JSON 포맷이더라도 JSON 타입이 필요한 경우는 거의 없습니다. 구체적으로 데이터에 다음과 같은 특성이 있으면 다음을 사용하십시오.
+
+* **알려진 키를 가진 평면 구조**: `String`과 같은 표준 컬럼 타입을 사용합니다.
+* **예측 가능한 중첩 구조**: 이러한 구조에는 Tuple, 배열, 또는 Nested 타입을 사용합니다.
+* **구조는 예측 가능하지만 타입은 달라질 수 있음**: 이 경우에는 Dynamic 또는 Variant 타입을 고려하십시오.
+
+위 예시처럼 접근 방식을 혼합할 수도 있습니다. 예측 가능한 최상위 키에는 정적 컬럼을 사용하고, payload의 동적 섹션에는 단일 JSON 컬럼을 사용할 수 있습니다.

@@ -1,0 +1,44 @@
+{
+  "groups": [
+    {
+      "group": "الصفحة الرئيسية",
+      "icon": "house",
+      "pages": [],
+      "root": "ar/integrations/language-clients/index"
+    },
+    {
+      "$ref": "js/navigation.json"
+    },
+    {
+      "$ref": "python/navigation.json"
+    },
+    {
+      "$ref": "go/navigation.json"
+    },
+    {
+      "$ref": "java/navigation.json"
+    },
+    {
+      "$ref": "csharp/navigation.json"
+    },
+    {
+      "$ref": "rust/navigation.json"
+    },
+    {
+      "$ref": "cpp/navigation.json"
+    },
+    {
+      "$ref": "c/navigation.json"
+    },
+    {
+      "group": "برامج عميلة تابعة لجهات خارجية",
+      "icon": "users",
+      "pages": [
+        "ar/integrations/language-clients/third-party/moose-olap",
+        "ar/integrations/language-clients/third-party/client-libraries"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-language-clients.svg",
+  "item": "مكتبات العملاء للغات البرمجة"
+}

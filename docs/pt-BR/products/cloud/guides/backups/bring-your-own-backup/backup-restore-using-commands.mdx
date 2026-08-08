@@ -1,0 +1,224 @@
+---
+sidebarTitle: 'Fazer backup ou restaurar usando comandos'
+slug: /cloud/manage/backups/backup-restore-via-commands
+title: Fazer ou restaurar um backup usando comandos
+description: 'Página que descreve como fazer ou restaurar um backup com seu próprio bucket usando comandos'
+doc_type: 'guide'
+keywords: ['backups', 'recuperação de desastres', 'proteção de dados', 'restaurar', 'recursos de nuvem']
+---
+
+Você pode usar os comandos `BACKUP` e `RESTORE` para exportar backups para seus buckets de armazenamento,
+além de fazer backup ou restaurar [pela interface](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
+Este guia apresenta os comandos para os três CSPs.
+
+<div id="requirements">
+  ## Requisitos
+</div>
+
+Você precisará dos seguintes detalhes para exportar/restaurar backups para o seu próprio bucket de armazenamento em um CSP:
+
+<Tabs>
+  <Tab title="AWS">
+    1. endpoint do S3 da AWS, no formato: `s3://<bucket_name>.s3.amazonaws.com/<optional_directory>`
+       Por exemplo: `s3://testchbackups.s3.amazonaws.com/`
+       Onde:
+       * `testchbackups` é o nome do bucket do S3 para o qual os backups serão exportados.
+       * `backups` é um subdiretório opcional.
+    2. Chave de acesso e segredo da AWS. A autenticação baseada em AWS Role também é compatível e pode ser usada no lugar da chave de acesso e do segredo da AWS, conforme descrito na seção acima.
+
+    <br />
+  </Tab>
+
+  <Tab title="GCP">
+    1. endpoint do GCS, no formato: `https://storage.googleapis.com/<bucket_name>/`
+    2. Chave de acesso HMAC e segredo HMAC.
+
+    <br />
+  </Tab>
+
+  <Tab title="Azure">
+    1. String de conexão do armazenamento do Azure.
+    2. Nome do container do Azure na conta de armazenamento.
+    3. Blob do Azure dentro do container.
+
+    <br />
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_db">
+  ## Backup / restauração de um BD específico
+</div>
+
+Aqui mostramos como fazer backup e restaurar um *único* banco de dados.
+Consulte o [resumo dos comandos de backup](/pt-BR/concepts/features/backup-restore/overview#command-summary) para ver os comandos de backup completo e restauração.
+
+<div id="aws-s3-bucket">
+  ### AWS S3
+</div>
+
+<Tabs>
+  <Tab title="BACKUP">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+
+    Em que `uuid` é um identificador único, usado para diferenciar um conjunto de backups.
+
+    <Note>
+      Você precisará usar um uuid diferente para cada novo backup nesse subdiretório; caso contrário, receberá o erro `BACKUP_ALREADY_EXISTS`.
+      Por exemplo, se estiver fazendo backups diários, precisará usar um novo uuid a cada dia.
+    </Note>
+  </Tab>
+
+  <Tab title="RESTORE">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="google-cloud-storage">
+  ### Google Cloud Storage (GCS)
+</div>
+
+<Tabs>
+  <Tab title="BACKUP">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+
+    Onde `uuid` é um identificador único usado para identificar o backup.
+
+    <Note>
+      Você precisará usar um uuid diferente para cada novo backup neste subdiretório; caso contrário, receberá o erro `BACKUP_ALREADY_EXISTS`.
+      Por exemplo, se estiver fazendo backups diários, precisará usar um novo uuid a cada dia.
+    </Note>
+  </Tab>
+
+  <Tab title="RESTORE">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="azure-blob-storage">
+  ### Azure Blob Storage
+</div>
+
+<Tabs>
+  <Tab title="BACKUP">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<>'
+    )
+    ```
+
+    Onde `uuid` é um identificador único usado para identificar o backup.
+
+    <Note>
+      Você precisará usar um `uuid` diferente para cada novo backup neste subdiretório; caso contrário, receberá o erro `BACKUP_ALREADY_EXISTS`.
+      Por exemplo, se estiver fazendo backups diários, será necessário usar um novo `uuid` a cada dia.
+    </Note>
+  </Tab>
+
+  <Tab title="RESTORE">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<uuid>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_entire_service">
+  ## Backup / restore de todo o serviço
+</div>
+
+Para fazer backup de todo o serviço, use os comandos abaixo.
+Este backup conterá todos os dados de usuário e os dados do sistema das entidades criadas, settings profiles, políticas de roles, quotas e funções.
+Listamos aqui os exemplos para AWS S3.
+Você pode usar esses comandos com a sintaxe descrita acima para fazer backups no GCS e no Azure Blob Storage.
+
+<Tabs>
+  <Tab title="BACKUP">
+    ```sql
+    BACKUP 
+        TABLE system.users,
+        TABLE system.roles,
+        TABLE system.settings_profiles,
+        TABLE system.row_policies,
+        TABLE system.quotas,
+        TABLE system.functions,
+        ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+    TO S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+
+    em que `uuid` é um identificador único, usado para identificar o backup.
+  </Tab>
+
+  <Tab title="RESTORE">
+    ```sql
+    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    FROM S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backups-faq">
+  ## FAQ
+</div>
+
+<Accordion title="O que acontece com os backups no meu armazenamento de objetos em nuvem? O ClickHouse os remove em algum momento?">
+  Oferecemos a possibilidade de exportar backups para o seu bucket, mas não fazemos a limpeza nem excluímos nenhum backup depois que ele é gravado. Você é responsável por gerenciar o ciclo de vida dos backups no seu bucket, inclusive excluindo-os, arquivando-os conforme necessário ou movendo-os para um armazenamento mais barato para otimizar o custo total.
+</Accordion>
+
+<Accordion title="O que acontece com o processo de restauração se eu mover alguns dos backups existentes para outro local?">
+  Se algum backup for movido para outro local, o comando de restauração precisará ser atualizado para apontar para o novo local em que os backups estão armazenados.
+</Accordion>
+
+<Accordion title="E se eu alterar as credenciais necessárias para acessar o armazenamento de objetos?">
+  Você precisará atualizar na UI as credenciais alteradas para que os backups voltem a ser realizados com sucesso.
+</Accordion>
+
+<Accordion title="E se eu mudar o local para onde exporto meus backups externos?">
+  Você precisará atualizar o novo local na UI, e os backups passarão a ser realizados no novo local. Os backups antigos permanecerão no local original.
+</Accordion>
+
+<Accordion title="Como posso desativar backups externos em um serviço no qual eu os habilitei?">
+  Para desativar backups externos de um serviço, vá até a tela de configurações do serviço e clique em Change external backup. Na tela seguinte, clique em Remove setup para desativar os backups externos do serviço.
+</Accordion>

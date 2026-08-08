@@ -1,0 +1,54 @@
+---
+date: 2024-02-14
+title: "如何在 ClickHouse 中实现数据读取一致性？"
+description: "了解如何在从 ClickHouse 读取数据时确保一致性，无论您连接的是同一节点还是任意节点。"
+tags: ['性能与优化']
+keywords: ['读取一致性']
+---
+
+<div id="question">
+  ## 问题
+</div>
+
+我正在将数据写入 ClickHouse Cloud，需要确保在读取数据时获取的是最新且完整的信息。
+
+<div id="answer">
+  ## 答案
+</div>
+
+<div id="talking-to-the-same-node">
+  ### 连接到同一节点
+</div>
+
+如果你使用的是 原生协议，或者通过会话进行写入/读取，那么你就应该连接到同一个副本：在这种情况下，你会直接从写入所在的节点读取数据，因此读取结果始终是一致的。
+
+<div id="talking-to-a-random-node">
+  ### 连接到任意节点
+</div>
+
+如果你无法保证自己始终连接的是同一个节点 (例如，通过 HTTPS 发起调用，而这些调用会被负载均衡器分发到不同节点) ，你可以选择：
+
+A)
+
+1. 写入数据
+2. 连接到一个新的副本
+3. 运行 `SYSTEM SYNC REPLICA db.table_name LIGHTWEIGHT`
+4. 读取最新数据
+
+参见 `SYSTEM` 命令的[参考文档](/zh/reference/statements/system#sync-replica)
+
+或者
+
+B) 在任何时候都以顺序一致性读取
+
+```sql
+SELECT 
+...
+SETTINGS select_sequential_consistency = 1
+```
+
+请注意，使用 ClickHouse Cloud 及其默认的 [SharedMergeTree](/zh/products/cloud/features/infrastructure/shared-merge-tree) 表引擎时，无需使用 `insert_quorum_parallel`——对 SharedMergeTree 的所有插入默认都是仲裁插入 (这是其设计使然) 。
+
+使用 [`SYSTEM SYNC REPLICAS`](/zh/reference/statements/system#sync-replica) 或 [`select_sequential_consistency`](/zh/reference/settings/session-settings#select_sequential_consistency) 会增加 ClickHouse Keeper 的负载，并且会因服务负载情况而导致性能变慢。
+
+推荐的做法是使用同一会话或原生协议 (粘性连接) 进行写入/读取。

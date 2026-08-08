@@ -4,6 +4,7 @@
 SET use_statistics_for_part_pruning = 0;
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS normal;
 CREATE TABLE IF NOT EXISTS normal

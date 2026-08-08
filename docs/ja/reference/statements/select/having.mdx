@@ -1,0 +1,50 @@
+---
+description: 'HAVING句のドキュメント'
+sidebarTitle: 'HAVING'
+slug: /sql-reference/statements/select/having
+title: 'HAVING句'
+doc_type: 'reference'
+---
+
+[GROUP BY](/ja/reference/statements/select/group-by) によって生成された集約結果を絞り込むことができます。[WHERE](/ja/reference/statements/select/where) 句に似ていますが、`WHERE` は集約前に実行されるのに対し、`HAVING` は集約後に実行される点が異なります。
+
+`SELECT` 句の集約結果は、そのエイリアスを使って `HAVING` 句から参照できます。さらに、`HAVING` 句では、クエリ結果として返されない追加の集約結果に対して絞り込みを行うこともできます。
+
+<div id="example">
+  ## 例
+</div>
+
+次のような `sales` テーブルがあるとします。
+
+```sql
+CREATE TABLE sales
+(
+    region String,
+    salesperson String,
+    amount Float64
+)
+ORDER BY (region, salesperson);
+```
+
+次のようにクエリを実行できます：
+
+```sql
+SELECT
+    region,
+    salesperson,
+    sum(amount) AS total_sales
+FROM sales
+GROUP BY
+    region,
+    salesperson
+HAVING total_sales > 10000
+ORDER BY total_sales DESC;
+```
+
+これにより、担当地域での総売上が10,000を超える営業担当者の一覧が表示されます。
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+集計を行わない場合、`HAVING` は使用できません。代わりに `WHERE` を使用してください。

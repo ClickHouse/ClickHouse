@@ -1,0 +1,22 @@
+---
+description: '삭제된 행의 마스크 적용에 대한 문서'
+sidebarTitle: 'APPLY DELETED MASK'
+slug: /sql-reference/statements/alter/apply-deleted-mask
+title: '삭제된 행의 마스크 적용'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
+```
+
+이 명령은 [경량한 삭제](/ko/reference/statements/delete)로 생성된 마스크를 적용하여, 삭제된 것으로 표시된 행을 디스크에서 강제로 제거합니다. 이 명령은 부하가 큰 mutation이며, 의미상 쿼리 `ALTER TABLE [db].name DELETE WHERE _row_exists = 0`와 같습니다.
+
+<Note>
+  이 기능은 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열 테이블( [복제된](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블 포함)에서만 작동합니다.
+</Note>
+
+**관련 항목**
+
+* [경량한 삭제](/ko/reference/statements/delete)
+* [헤비웨이트 삭제](/ko/reference/statements/alter/delete)

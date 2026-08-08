@@ -87,6 +87,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_pre
         {
             mapper["s3"] = "https://{bucket}.s3.amazonaws.com";
             mapper["gs"] = "https://storage.googleapis.com/{bucket}";
+            mapper["gcs"] = "https://storage.googleapis.com/{bucket}";
             mapper["oss"] = "https://{bucket}.oss.aliyuncs.com";
         }
 
@@ -185,7 +186,7 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     String name;
     String endpoint_authority_from_uri;
 
-    if (!re2::RE2::FullMatch(uri.getAuthority(), (use_strict_pattern) ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
+    if (!re2::RE2::FullMatch(uri.getAuthority(), use_strict_pattern ? virtual_hosted_style_pattern_strict : virtual_hosted_style_pattern_light, &bucket, &name, &endpoint_authority_from_uri))
         return false;
 
     is_virtual_hosted_style = true;

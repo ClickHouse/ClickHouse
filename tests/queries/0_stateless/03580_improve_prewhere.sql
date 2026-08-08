@@ -1,4 +1,5 @@
 -- Tags: no-fasttest
+SET explain_query_plan_default = 'legacy';
 set optimize_move_to_prewhere = 1;
 set query_plan_optimize_prewhere = 1;
 set move_all_conditions_to_prewhere = 1;

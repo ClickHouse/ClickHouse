@@ -1,0 +1,134 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nestjs
+description: '适用于 ClickStack 的 NestJS SDK - ClickHouse 可观测性栈'
+title: 'NestJS'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', '日志', '集成', '应用监控']
+---
+
+ClickStack 的 NestJS 集成可让您创建日志记录器，或使用默认
+日志记录器 将日志发送到 ClickStack (基于 [nest-winston](https://www.npmjs.com/package/nest-winston?activeTab=readme)) 。
+
+**本指南集成：**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ 日志</td>
+      <td className="pe-2">✖️ 指标</td>
+      <td className="pe-2">✖️ 链路追踪</td>
+    </tr>
+  </tbody>
+</table>
+
+*如需发送指标或 APM/链路追踪，您还需要为应用程序添加相应的语言
+集成。*
+
+<div id="getting-started">
+  ## 快速开始
+</div>
+
+将 `HyperDXNestLoggerModule` 导入根 `AppModule`，并使用 `forRoot()`
+方法进行配置。
+
+```javascript
+import { Module } from '@nestjs/common';
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+@Module({
+  imports: [
+    HyperDXNestLoggerModule.forRoot({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // 托管 ClickStack 无需此项
+      maxLevel: 'info',
+      service: 'my-app',
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+之后，即可在整个
+项目中使用 `HDX_LOGGER_MODULE_PROVIDER` 注入令牌来注入 `winston` 实例：
+
+```javascript
+import { Controller, Inject } from '@nestjs/common';
+import { HyperDXNestLoggerModule, HyperDXNestLogger } from '@hyperdx/node-logger';
+
+@Controller('cats')
+export class CatsController {
+  constructor(
+    @Inject(HyperDXNestLoggerModule.HDX_LOGGER_MODULE_PROVIDER)
+    private readonly logger: HyperDXNestLogger,
+  ) { }
+
+  meow() {
+    this.logger.info({ message: '🐱' });
+  }
+}
+```
+
+<div id="replacing-the-nest-logger">
+  ### 替换 Nest 日志记录器 (也用于引导阶段)
+</div>
+
+<Info>
+  **重要**
+
+  这样做后，你将不再使用依赖注入，这意味着不需要 `forRoot` 和 `forRootAsync`，也不应再使用它们。请将它们从主模块中移除。
+</Info>
+
+使用依赖注入有一个小缺点。Nest 必须先引导应用程序
+ (实例化模块和提供程序、注入依赖项等) ，而在此过程中，
+`HyperDXNestLogger` 的实例尚未可用，
+这意味着 Nest 会回退到内部日志记录器。
+
+一种解决方案是在应用程序生命周期之外创建日志记录器，使用
+`createLogger` 函数，并将其传递给 `NestFactory.create`。随后 Nest 会
+将我们的自定义日志记录器 (即 `createLogger` 方法返回的同一个实例) 
+包装为 Logger 类，并将所有调用转发给它：
+
+在 `main.ts` 文件中创建日志记录器
+
+```javascript
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, {
+    logger: HyperDXNestLoggerModule.createLogger({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // 托管 ClickStack 无需此项
+      maxLevel: 'info',
+      service: 'my-app',
+    })
+  });
+  await app.listen(3000);
+}
+bootstrap();
+```
+
+将主模块修改为提供 Logger 服务：
+
+```javascript
+import { Logger, Module } from '@nestjs/common';
+
+@Module({
+  providers: [Logger],
+})
+export class AppModule {}
+```
+
+然后，只需将其类型标注为来自 `@nestjs/common` 的 Logger，即可注入该日志记录器：
+
+```javascript
+import { Controller, Logger } from '@nestjs/common';
+
+@Controller('cats')
+export class CatsController {
+  constructor(private readonly logger: Logger) {}
+
+  meow() {
+    this.logger.log({ message: '🐱' });
+  }
+}
+```

@@ -1,0 +1,144 @@
+---
+position: 7
+slug: /clickhouse-operator/guides/network-policies
+title: سياسات الشبكة
+keywords: ['kubernetes', 'سياسة الشبكة', 'الأمن', 'المقاييس', 'webhook']
+description: 'كيف يقيّد المشغّل حركة المرور الواردة إلى بود مدير وحدة التحكم باستخدام Kubernetes NetworkPolicies لنقطتَي نهاية المقاييس وwebhook، وكيفية تفعيلها، ومساحات أسماء العملاء التي يجب وضع تسميات عليها.'
+doc_type: 'guide'
+---
+
+يوفّر المشغّل موارد Kubernetes `NetworkPolicy` اختيارية
+تقيّد أنواع حركة المرور المسموح لها بالوصول إلى **بود مدير وحدة التحكم** — أي
+عملية المشغّل نفسها، وليس بودات ClickHouse server أو Keeper. وهي معطّلة
+افتراضيًا، لذا لن تفعّلها إلا عندما تريد عزل حركة المرور الواردة إلى المشغّل.
+
+تغطي السياسات المنفذين اللذين يعرّضهما المشغّل للعملاء الآخرين: نقطة نهاية المقاييس
+وadmission webhook.
+
+<Note>
+  لا يتم تطبيق `NetworkPolicy` إلا إذا كانت إضافة CNI في التجمّع تدعمها
+  (مثل Calico أو Cilium). أمّا إذا كانت إضافة CNI لا تطبّق NetworkPolicy، فسيتم
+  إنشاء الموارد لكنها لن يكون لها أي تأثير بصمت — ولن يعيد Kubernetes أي
+  error. تأكّد من أن إضافة CNI لديك تطبّق السياسات قبل الاعتماد عليها.
+</Note>
+
+<div id="what-the-helm-chart-creates">
+  ## ما الذي ينشئه مخطط Helm
+</div>
+
+عند تفعيله، ينشئ المخطط ما يصل إلى سياستين للدخول فقط، وكلتاهما تستهدفان
+بود مدير وحدة التحكم:
+
+| السياسة                 | المصدر المسموح به                              | المنفذ المسموح به                             |
+| ----------------------- | ---------------------------------------------- | --------------------------------------------- |
+| `allow-metrics-traffic` | مساحات الأسماء المعلَّمة بـ `metrics: enabled` | `metrics.port` (القيمة الافتراضية `8080`/TCP) |
+| `allow-webhook-traffic` | مساحات الأسماء المعلَّمة بـ `webhook: enabled` | `webhook.port` (القيمة الافتراضية `9443`/TCP) |
+
+تُعرّف كلتا السياستين فقط `policyTypes: [Ingress]`. وهما لا تقيّدان حركة الخروج
+من المشغّل، ولا تمسّان بودات خادم ClickHouse أو Keeper.
+
+<div id="default-deny">
+  ## سلوك الرفض الافتراضي
+</div>
+
+يؤدي تحديد بود باستخدام `NetworkPolicy` واردة إلى تحويل هذا البود إلى **رفض
+افتراضي لحركة المرور الواردة**: فبمجرد سريان أي من السياستين، تُسقَط أي حركة مرور
+واردة إلى بود مدير وحدة التحكم ما لم يُسمح بها صراحةً. بعد التمكين،
+تقتصر الاتصالات الواردة التي تصل إلى المشغّل على ما يلي:
+
+* كشط المقاييس من مساحة أسماء موسومة بـ `metrics: enabled`، و
+* استدعاء admission webhook من مساحة أسماء موسومة بـ `webhook: enabled`.
+
+ويُرفض كل ما عدا ذلك من حركة المرور إلى البود. هذا هو التحصين المقصود، لكنه
+يعني أن أي scraper أو مستدعٍ لـ webhook غير موسوم سيتوقف عن العمل فور
+بدء سريان السياسات.
+
+<div id="enabling">
+  ## تمكين السياسات
+</div>
+
+باستخدام Helm، اضبط مفتاح التفعيل في values لديك:
+
+```yaml
+# values.yaml
+networkPolicy:
+  enabled: true
+```
+
+```bash
+helm upgrade --install clickhouse-operator \
+  oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+  -n clickhouse-operator-system --create-namespace \
+  -f values.yaml
+```
+
+يتطلب `allow-webhook-traffic` أيضًا تعيين `webhook.enabled: true` (وهو
+الإعداد الافتراضي)، لذا فإن تعطيل webhook يزيل سياسته أيضًا.
+
+عند استخدام ملفات manifest الخام الخاصة بـ `kubectl`، أزل التعليق عن قسم `[NETWORK POLICY]` كما
+هو موضح في [دليل التثبيت الخاص بـ kubectl](/ar/products/kubernetes-operator/install/kubectl).
+تتضمن ملفات manifest الخام السياستين نفسهما.
+
+<div id="labeling-namespaces">
+  ## وضع تسميات على مساحات أسماء العميل
+</div>
+
+نظرًا لأن كلتا السياستين تطابقان المصدر باستخدام `namespaceSelector`، يجب أن تحمل كل مساحة اسم تحتاج إلى الوصول إلى المشغِّل التسمية المطابقة. وأي عملية كشط أو استدعاء webhook من مساحة اسم غير موسومة يتم إسقاطه.
+
+```bash
+# Allow a Prometheus namespace to scrape the metrics endpoint
+kubectl label namespace <prometheus-namespace> metrics=enabled
+
+# Allow webhook callers from a given namespace
+kubectl label namespace <caller-namespace> webhook=enabled
+```
+
+اقرن هذا مع RBAC الخاص بالمقاييس الموضَّح في
+[المراقبة → تأمين نقطة نهاية المقاييس](/ar/products/kubernetes-operator/guides/monitoring#securing-the-metrics-endpoint):
+تتحكم `NetworkPolicy` في قابلية الوصول، بينما يتحكم ربط `ClusterRole`
+في التفويض. ويجب توفّر كلاهما لكي ينجح `scrape` المؤمَّن.
+
+<Warning>
+  تصدر طلبات admission webhook من خادم API لـ Kubernetes، وليس من
+  `pod` عادي. وما إذا كانت هذه الحركة المرورية تخضع لـ `NetworkPolicy`، ومن
+  أي مصدر تبدو آتية، يعتمد على بنية control plane وCNI لديك —
+  وقد تصل control plane المُدارة، على وجه الخصوص، إلى webhook من عنوان لا
+  يمكن لأي `namespaceSelector` مطابقته. وإذا لم تكن حركة مرور خادم API لـ Kubernetes
+  مشمولة ضمن مساحة أسماء `webhook: enabled`، فقد يؤدي تفعيل `allow-webhook-traffic` إلى حظر
+  admission والتسبب في انتهاء مهلة طلبات إنشاء وتحديث `ClickHouseCluster`/`KeeperCluster`.
+  اختبر admission على cluster غير production بعد التفعيل، وأضف
+  قاعدة سماح صريحة لخادم API لـ Kubernetes إذا لزم الأمر.
+</Warning>
+
+<div id="verifying">
+  ## التحقّق
+</div>
+
+```bash
+NS=clickhouse-operator-system
+
+# The policies exist
+kubectl -n $NS get networkpolicy
+
+# Inspect the selectors and allowed sources
+kubectl -n $NS describe networkpolicy
+```
+
+بعد التمكين، أكِّد ما يلي:
+
+* أن Prometheus لا يزال يكشط نقطة نهاية المقاييس (مساحة الاسم الخاصة به موسومة
+  بـ `metrics: enabled` ومرتبطة بـ ClusterRole ‏metrics-reader).
+* أن إنشاء `ClickHouseCluster` أو تحديثه لا يزال يجتاز مرحلة القبول (يمكن
+  الوصول إلى webhook).
+
+إذا لم تُرجِع عملية الكشط أي بيانات أو علِقت عملية تطبيق CR، فالسبب الأكثر
+احتمالًا هو وجود مساحة اسم مصدر غير موسومة أو التحذير الوارد أعلاه بشأن
+إمكانية وصول خادم API.
+
+<div id="related-guides">
+  ## أدلة ذات صلة
+</div>
+
+* [مراقبة المشغّل](/ar/products/kubernetes-operator/guides/monitoring) — نقطة نهاية المقاييس، وإعدادات RBAC الخاصة بها، وتأمين عمليات الكشط.
+* [التثبيت باستخدام kubectl](/ar/products/kubernetes-operator/install/kubectl) — موضع إزالة التعليق من قسم سياسة الشبكة.
+* [التثبيت باستخدام Helm](/ar/products/kubernetes-operator/install/helm) — قيم Helm ذات الصلة بالمشغّل.

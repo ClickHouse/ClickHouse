@@ -18,7 +18,7 @@ std::unique_ptr<ReadBufferFromFileBase> ObjectStorageSourceReader::open(const St
 {
     LOG_TRACE(log, "open: object={}, size={}", object.remote_path,
         object.bytes_size == StoredObject::UnknownSize ? "unknown" : std::to_string(object.bytes_size));
-    return storage->readObject(object, read_settings, /*read_hint=*/{}, /*use_external_buffer=*/false);
+    return storage->readObject(object, read_settings, /*read_hint=*/{}, /*use_external_buffer=*/true);
 }
 
 }

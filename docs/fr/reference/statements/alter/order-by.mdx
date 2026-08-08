@@ -1,0 +1,19 @@
+---
+description: 'Documentation sur la manipulation des expressions de la clé'
+sidebarTitle: 'ORDER BY'
+slug: /sql-reference/statements/alter/order-by
+title: 'Manipulation des expressions de la clé'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
+```
+
+La commande remplace la [clé de tri](/fr/reference/engines/table-engines/mergetree-family/mergetree) de la table par `new_expression` (une expression ou un tuple d&#39;expressions). La clé primaire reste inchangée.
+
+Cette commande est légère, en ce sens qu&#39;elle ne modifie que les métadonnées. Pour préserver le fait que les lignes des parties de données sont ordonnées selon l&#39;expression de la clé de tri, vous ne pouvez pas ajouter à la clé de tri des expressions contenant des colonnes existantes (seules sont autorisées les colonnes ajoutées par la commande `ADD COLUMN` dans la même requête `ALTER`, sans valeur par défaut pour la colonne).
+
+<Note>
+  Elle fonctionne uniquement pour les tables de la famille [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree) (y compris les tables [répliquées](/fr/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

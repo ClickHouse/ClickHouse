@@ -196,6 +196,17 @@ bool ColumnArray::isDefaultAt(size_t n) const
     return offsets_data[n] == offsets_data[static_cast<ssize_t>(n) - 1];
 }
 
+UInt64 ColumnArray::getNumberOfDefaultRows() const
+{
+    /// Avoid the per-row cross-TU call to `isDefaultAt` of the IColumnHelper default;
+    /// inline the offsets comparison so the loop vectorises.
+    const auto & offsets_data = getOffsets();
+    const size_t num_rows = offsets_data.size();
+    UInt64 result = 0;
+    for (size_t i = 0; i < num_rows; ++i)
+        result += static_cast<UInt64>(offsets_data[i] == offsets_data[static_cast<ssize_t>(i) - 1]);
+    return result;
+}
 
 void ColumnArray::insertData(const char * pos, size_t length)
 {
@@ -402,6 +413,17 @@ void ColumnArray::insertDefault()
     /// NOTE 2: We cannot use reference in push_back, because reference get invalidated if array is reallocated.
     auto last_offset = getOffsets().back();
     getOffsets().push_back(last_offset);
+}
+
+
+void ColumnArray::insertManyDefaults(size_t length)
+{
+    /// Not IColumn::insertManyDefaults: its reserve(size() + length) would size the nested column for elements
+    /// that default arrays never hold, and ColumnArray::reserve passes that count down unchanged. Appending the
+    /// offsets grows them geometrically instead, so repeated calls stay amortized without reserving nested data.
+    auto last_offset = getOffsets().back();
+    for (size_t i = 0; i < length; ++i)
+        getOffsets().push_back(last_offset);
 }
 
 

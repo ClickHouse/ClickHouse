@@ -1,0 +1,72 @@
+Direct query has merge sort:	1
+View query has merge sort:	1
+Sorting (Merge sorted streams after aggregation stage for ORDER BY)
+View ORDER BY+LIMIT result count:	10
+NULLS FIRST has merge sort:	1
+NULLS FIRST result count:	10
+WITH TIES disables pushdown:	1
+WITH TIES result count:	10
+WITH FILL disables pushdown:	1
+No LIMIT disables pushdown:	1
+No LIMIT returns rows:	1
+GROUP BY result count:	5
+OFFSET result count:	5
+LIMIT BY disables pushdown:	1
+LIMIT BY result count:	10
+JOIN disables pushdown:	1
+JOIN result count:	10
+WHERE disables pushdown:	1
+WHERE result count:	10
+additional_table_filters disables pushdown:	1
+additional_table_filters result count:	10
+row policy disables pushdown:	1
+row policy result count:	10
+view named WINDOW disables pushdown:	1
+view inline OVER disables pushdown:	1
+outer named WINDOW disables pushdown:	1
+outer inline OVER disables pushdown:	1
+fractional LIMIT disables pushdown:	1
+fractional LIMIT result count:	20
+extremes disables pushdown:	1
+exact_rows_before_limit disables pushdown:	1
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[0],
+		[1],
+		[1],
+		[2],
+		[2],
+		[3],
+		[3],
+		[4],
+		[4]
+	],
+
+	"rows": 10,
+
+	"rows_before_limit_at_least": 200
+}
+type mismatch disables pushdown:	1
+type mismatch result:	9
+arrayJoin in projection disables pushdown:	1
+arrayJoin in projection result count:	10
+view QUALIFY disables pushdown:	1
+view SETTINGS limit disables pushdown:	1
+prefer_column_name_to_alias disables pushdown:	1
+view SETTINGS prefer_column_name_to_alias disables pushdown:	1
+definer profile limit disables pushdown:	1
+definer profile offset disables pushdown:	1
+definer profile prefer_column_name_to_alias disables pushdown:	1
+FINAL disables pushdown:	1
+FINAL result count:	10
+SAMPLE disables pushdown:	1

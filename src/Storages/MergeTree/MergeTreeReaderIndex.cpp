@@ -41,7 +41,6 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
 
 size_t MergeTreeReaderIndex::readRows(
     size_t from_mark,
-    size_t /* current_task_last_mark */,
     bool continue_reading,
     size_t max_rows_to_read,
     size_t rows_offset,
@@ -156,23 +155,23 @@ size_t MergeTreeReaderIndex::readRows(
     return max_rows_to_read;
 }
 
-bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_mark*/)
+bool MergeTreeReaderIndex::canSkipMark(size_t mark)
 {
     if (index_read_result && index_read_result->skip_index_read_result)
     {
-        auto skip_index_read_result = index_read_result->skip_index_read_result;
-        chassert(mark < skip_index_read_result->granules_selected.size());
+        const auto & skip_index_read_result = *index_read_result->skip_index_read_result;
+        chassert(mark < skip_index_read_result.granules_selected.size());
 
-        if (!skip_index_read_result->granules_selected.at(mark))
+        if (!skip_index_read_result.granules_selected.at(mark))
             return true;
 
-        if (skip_index_read_result->threshold_tracker && skip_index_read_result->threshold_tracker->isSet())
+        if (skip_index_read_result.threshold_tracker && skip_index_read_result.threshold_tracker->isSet())
         {
-            if (skip_index_read_result->min_max_index_for_top_k) /// index may not have been materialized for this part
+            if (skip_index_read_result.min_max_index_for_top_k) /// index may not have been materialized for this part
             {
-                auto granule_num = skip_index_read_result->min_max_index_for_top_k->granules_map[mark];
-                if (!skip_index_read_result->threshold_tracker->isValueInsideThreshold(
-                        skip_index_read_result->min_max_index_for_top_k->granules[granule_num].min_or_max_value))
+                auto granule_num = skip_index_read_result.min_max_index_for_top_k->granules_map[mark];
+                if (!skip_index_read_result.threshold_tracker->isValueInsideThreshold(
+                        skip_index_read_result.min_max_index_for_top_k->granules[granule_num].min_or_max_value))
                     return true;
             }
         }

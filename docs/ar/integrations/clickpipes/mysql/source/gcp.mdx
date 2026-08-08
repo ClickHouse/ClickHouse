@@ -1,0 +1,96 @@
+---
+sidebarTitle: 'Cloud SQL for MySQL'
+description: 'دليل خطوة بخطوة لإعداد Cloud SQL for MySQL كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/mysql/source/gcp
+title: 'دليل إعداد Cloud SQL for MySQL كمصدر'
+keywords: ['google cloud sql', 'mysql', 'clickpipes', 'pitr', 'شهادة الجذر لـ CA']
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+هذا دليل إرشادي خطوة بخطوة لتهيئة مثيل Cloud SQL for MySQL لديك لنسخ بياناته عبر MySQL ClickPipe.
+
+<div id="enable-binlog-retention-gcp">
+  ## تمكين الاحتفاظ بـ binlog
+</div>
+
+إن binlog عبارة عن مجموعة من ملفات السجل التي تحتوي على معلومات عن تعديلات البيانات التي أُجريت على مثيل خادم MySQL، كما أن ملفات binlog مطلوبة لعملية النسخ المتماثل.
+
+<div id="enable-binlog-logging-gcp">
+  ### تمكين binary logging عبر PITR
+</div>
+
+تحدد ميزة PITR ما إذا كان binary logging مفعّلًا أو معطّلًا لـ MySQL في Google Cloud. ويمكن ضبط ذلك من Cloud Console، من خلال تحرير مثيل Cloud SQL والتمرير إلى أسفل حتى القسم الموضّح أدناه.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-pitr.webp" alt="تمكين PITR في Cloud SQL" size="lg" border />
+
+يُنصح بضبط هذه القيمة على مدة طويلة بما يكفي، بحسب حالة استخدام النسخ المتماثل.
+
+إذا لم تكن هذه الإعدادات مُعدّة مسبقًا، فتأكد من ضبط ما يلي في قسم database flags عبر تحرير Cloud SQL:
+
+1. تعيين `binlog_expire_logs_seconds` إلى قيمة &gt;= `86400` (يوم واحد).
+2. تعيين `binlog_row_metadata` إلى `FULL`
+3. تعيين `binlog_row_image` إلى `FULL`
+
+للقيام بذلك، انقر على زر `Edit` في الزاوية العلوية اليمنى من صفحة النظرة العامة على المثيل.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-edit-button.webp" alt="زر Edit في GCP MySQL" size="lg" border />
+
+بعد ذلك، مرّر إلى أسفل حتى قسم `Flags` وأضف العلامات المذكورة أعلاه.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp" alt="ضبط علامات binlog في GCP" size="lg" border />
+
+<div id="configure-database-user-gcp">
+  ## تكوين مستخدم لقاعدة البيانات
+</div>
+
+اتصل بمثيل Cloud SQL MySQL الخاص بك باستخدام المستخدم الجذر، ثم نفّذ الأوامر التالية:
+
+1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'host' IDENTIFIED BY 'some-password';
+   ```
+
+2. امنح أذونات الـ schema. يوضّح المثال التالي الأذونات الخاصة بقاعدة البيانات `clickpipes`. كرّر هذه الأوامر لكل قاعدة بيانات ومضيف تريد تكرار بياناته:
+
+   ```sql
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'host';
+   ```
+
+3. امنح المستخدم أذونات النسخ المتماثل:
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<div id="configure-network-access-gcp-mysql">
+  ## تهيئة الوصول إلى الشبكة
+</div>
+
+إذا كنت تريد تقييد حركة المرور إلى مثيل Cloud SQL الخاص بك، فيُرجى إضافة [عناوين IP الثابتة لـ NAT الموثقة](/ar/integrations/clickpipes/home#list-of-static-ips) إلى قائمة عناوين IP المسموح بها لمثيل Cloud SQL MySQL الخاص بك.
+يمكن إجراء ذلك إما بتعديل المثيل أو بالانتقال إلى علامة التبويب `Connections` في الشريط الجانبي في Cloud Console.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp" alt="إضافة عناوين IP إلى قائمة السماح في GCP MySQL" size="lg" border />
+
+<div id="download-root-ca-certificate-gcp-mysql">
+  ## تنزيل شهادة الجذر لـ CA واستخدامها
+</div>
+
+للاتصال بمثيل Cloud SQL الخاص بك، تحتاج إلى تنزيل شهادة الجذر لـ CA.
+
+1. انتقل إلى مثيل Cloud SQL الخاص بك في Cloud Console.
+2. انقر على `Connections` في الشريط الجانبي.
+3. انقر على علامة التبويب `Security`.
+4. في قسم `Manage server CA certificates`، انقر على الزر `DOWNLOAD CERTIFICATES` في الأسفل.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-cert.webp" alt="تنزيل شهادة GCP MySQL" size="lg" border />
+
+5. في واجهة ClickPipes، حمّل الشهادة التي نزّلتها عند إنشاء MySQL ClickPipe جديد.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/rootca.webp" alt="استخدام شهادة GCP MySQL" size="lg" border />

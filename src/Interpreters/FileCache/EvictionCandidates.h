@@ -61,6 +61,11 @@ public:
     /// More infos can be added via add() method.
     explicit EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info);
 
+    /// Release hold spaces (in the base map) before the `kept_alive_cache_usage`
+    /// pins (members, destroyed first) drop — otherwise `~HoldSpace` could release
+    /// into a per-user priority a concurrent `cache_usage.snapshot` already erased.
+    ~EvictionInfo() { clear(); }
+
     /// Get eviction info by queue id.
     const QueueEvictionInfo & get(const QueueID & queue_id) const;
     /// Add eviction info under the queue_id.
@@ -82,9 +87,17 @@ public:
     std::string toString() const;
 
     /// Keep `usage` alive so a concurrent `cache_usage.snapshot` cannot destroy
-    /// the user's per-client priority while we hold raw pointers into it.
+    /// the user's per-user priority while we hold raw pointers into it.
     /// `shared_ptr` value dedupes: same user across iterations is stored once.
     void addCacheUsage(CacheUsagePtr usage) { kept_alive_cache_usage.insert(std::move(usage)); }
+
+    /// Take over `other`'s pins. `add`/`addOrUpdate` must call this when merging:
+    /// otherwise the source info's pins die with it while the merged entries
+    /// still hold raw pointers into the pinned per-client priorities.
+    void takeKeptAliveCacheUsage(EvictionInfo & other)
+    {
+        kept_alive_cache_usage.merge(other.kept_alive_cache_usage);
+    }
 
 private:
     /// On existing queue: replace target + merge holds if `replace_if_exists`, else throw.
@@ -101,8 +114,8 @@ private:
 class EvictionCandidates : private boost::noncopyable
 {
 public:
-    using AfterEvictWriteFunc = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
-    using AfterEvictStateFunc = std::function<void(const CacheStateGuard::Lock & lk)>;
+    using AfterEvictWriteCallback = std::function<void(const CachePriorityGuard::WriteLock & lk)>;
+    using AfterEvictStateCallback = std::function<void(const CacheStateGuard::Lock & lk)>;
 
     explicit EvictionCandidates(IFileCachePriority::OnEvictCallback on_evict_callback_);
     ~EvictionCandidates();
@@ -121,8 +134,8 @@ public:
     /// priority queue structure; "state" func mutates size/element counters.
     /// Overcommit retries can register multiple callbacks per pass; all run
     /// sequentially under one lock in `afterEvictWrite` / `afterEvictState`.
-    void addAfterEvictWriteFunc(AfterEvictWriteFunc && func) { after_evict_write_funcs.push_back(std::move(func)); }
-    void addAfterEvictStateFunc(AfterEvictStateFunc && func) { after_evict_state_funcs.push_back(std::move(func)); }
+    void addAfterEvictWriteCallback(AfterEvictWriteCallback && func) { after_evict_write_callbacks.push_back(std::move(func)); }
+    void addAfterEvictStateCallback(AfterEvictStateCallback && func) { after_evict_state_callbacks.push_back(std::move(func)); }
 
     /// Evict all candidates, which were added before via add().
     void evict();
@@ -133,10 +146,10 @@ public:
 
     /// Whether calling afterEvictWrite() is required.
     /// (Can be used to avoid taking write lock)
-    bool requiresAfterEvictWrite() const { return !after_evict_write_funcs.empty(); }
+    bool requiresAfterEvictWrite() const { return !after_evict_write_callbacks.empty(); }
     /// Whether calling afterEvictState() is required.
     /// (Can be used to avoid taking state lock)
-    bool requiresAfterEvictState() const { return !after_evict_state_funcs.empty() || !queue_entries_to_invalidate.empty(); }
+    bool requiresAfterEvictState() const { return !after_evict_state_callbacks.empty() || !queue_entries_to_invalidate.empty(); }
 
     /// Used only for dynamic cache resize,
     /// allows to remove queue entries in advance.
@@ -179,8 +192,8 @@ private:
     /// Saved original queue type per candidate, populated in removeQueueEntries.
     std::unordered_map<const FileSegmentMetadata *, IFileCachePriority::QueueEntryType> original_queue_types;
 
-    std::vector<AfterEvictWriteFunc> after_evict_write_funcs;
-    std::vector<AfterEvictStateFunc> after_evict_state_funcs;
+    std::vector<AfterEvictWriteCallback> after_evict_write_callbacks;
+    std::vector<AfterEvictStateCallback> after_evict_state_callbacks;
 
     std::vector<IFileCachePriority::IteratorPtr> queue_entries_to_invalidate;
     bool removed_queue_entries = false;
