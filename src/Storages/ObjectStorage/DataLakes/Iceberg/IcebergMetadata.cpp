@@ -187,7 +187,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     LoggerPtr log)
 {
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, configuration->getDataSourceDescription(), CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
 
     std::optional<String> table_uuid = std::nullopt;
@@ -206,7 +206,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         if (cache_ptr)
         {
             String cached = cache_ptr->tryGetTableMetadata(
-                IcebergMetadataFilesCache::getKey(normalizeUuid(hint), metadata_file_path));
+                IcebergMetadataFilesCache::getKey(configuration->getDataSourceDescription(), normalizeUuid(hint), metadata_file_path));
             if (!cached.empty())
             {
                 Poco::JSON::Parser parser;
@@ -294,7 +294,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     /// was already cached (e.g. from a prior init where `table_uuid` matched).
     if (table_uuid && cache_ptr && !content_cache_hit)
     {
-        auto cache_key = IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path);
+        auto cache_key = IcebergMetadataFilesCache::getKey(configuration->getDataSourceDescription(), *table_uuid, metadata_file_path);
         cache_ptr->setTableMetadata(cache_key, std::move(raw_metadata_json));
     }
     auto table_path = configuration->getPathForRead().path;
@@ -307,6 +307,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .table_path = table_path,
         .table_uuid = table_uuid,
         .path_resolver = IcebergPathResolver(table_location, table_path, configuration->getTypeName(), configuration->getNamespace()),
+        .data_source_description = configuration->getDataSourceDescription(),
     };
 }
 
@@ -322,6 +323,7 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         context,
         log.get(),
         persistent_components.table_uuid,
+        persistent_components.data_source_description,
         persistent_components.metadata_compression_method,
         force_fetch_latest_metadata);
     return getState(context, metadata_file_path, metadata_version);
@@ -697,7 +699,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, effective_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
+        metadata_path, object_storage, effective_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid, persistent_components.data_source_description);
 
     insertRowToLogTable(
         local_context,
@@ -969,7 +971,8 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         local_context,
         log,
         persistent_components.metadata_compression_method,
-        persistent_components.table_uuid);
+        persistent_components.table_uuid,
+        persistent_components.data_source_description);
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
@@ -1018,10 +1021,11 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         local_context,
         log.get(),
         persistent_components.table_uuid,
+        persistent_components.data_source_description,
         persistent_components.metadata_compression_method);
 
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, effective_cache, local_context, log, compression_method, persistent_components.table_uuid);
+        = getMetadataJSONObject(metadata_file_path, object_storage, effective_cache, local_context, log, compression_method, persistent_components.table_uuid, persistent_components.data_source_description);
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History
@@ -1600,7 +1604,8 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         local_context,
         log,
         persistent_components.metadata_compression_method,
-        persistent_components.table_uuid);
+        persistent_components.table_uuid,
+        persistent_components.data_source_description);
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
     auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id), local_context);
@@ -1651,7 +1656,8 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
             table_location,
             standard_persistent_components.table_path,
             configuration_ptr->getTypeName(),
-            configuration_ptr->getNamespace())};
+            configuration_ptr->getNamespace()),
+        .data_source_description = standard_persistent_components.data_source_description};
     auto metadata = std::make_unique<IcebergMetadata>(object_storage, configuration.lock(), std::move(deserialized_persistent_components), local_context);
     return metadata;
 }

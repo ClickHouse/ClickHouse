@@ -519,7 +519,7 @@ String GlueCatalog::getActualTimestampType(const String & column_name, const Tab
         auto [object_storage, bucket_name, metadata_path] = createObjectStorageForEarlyTableAccess(metadata_uri, table_metadata);
         auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(metadata_uri);
         auto metadata_object = DB::Iceberg::getMetadataJSONObject(
-            metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt);
+            metadata_path, object_storage, nullptr, getContext(), log, compression_method, std::nullopt, /* data_source_description */ {});
         metadata_objects.set(metadata_uri, std::make_shared<Poco::JSON::Object::Ptr>(metadata_object));
     }
 
@@ -614,7 +614,7 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     try
     {
         auto [metadata_version, metadata_path, compression_method] = DB::Iceberg::getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, DB::CompressionMethod::None);
+            object_storage, table_path, *storage_settings, nullptr, getContext(), log.get(), std::nullopt, /* data_source_description */ {}, DB::CompressionMethod::None);
 
         LOG_TRACE(log, "Resolved metadata path '{}' (version {}) for table location '{}'", metadata_path, metadata_version, table_location);
 

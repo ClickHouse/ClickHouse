@@ -24,21 +24,21 @@ IcebergMetadataFilesCache makeCache()
 
 TEST(IcebergMetadataCache, GetKeyComposesUuidAndPath)
 {
-    auto key = IcebergMetadataFilesCache::getKey("uuid-123", "path/to/metadata.json");
-    EXPECT_EQ(key, (std::string{"uuid-123\0path/to/metadata.json", 30}));
+    auto key = IcebergMetadataFilesCache::getKey("backend1", "uuid-123", "path/to/metadata.json");
+    EXPECT_EQ(key, (std::string{"backend1\0uuid-123\0path/to/metadata.json", 40}));
 }
 
 TEST(IcebergMetadataCache, GetKeyDifferentUuidsSamePathProduceDifferentKeys)
 {
-    auto key1 = IcebergMetadataFilesCache::getKey("uuid-aaa", "meta/v1.metadata.json");
-    auto key2 = IcebergMetadataFilesCache::getKey("uuid-bbb", "meta/v1.metadata.json");
+    auto key1 = IcebergMetadataFilesCache::getKey("backend1", "uuid-aaa", "meta/v1.metadata.json");
+    auto key2 = IcebergMetadataFilesCache::getKey("backend1", "uuid-bbb", "meta/v1.metadata.json");
     EXPECT_NE(key1, key2);
 }
 
 TEST(IcebergMetadataCache, GetKeySameUuidDifferentPathsProduceDifferentKeys)
 {
-    auto key1 = IcebergMetadataFilesCache::getKey("uuid-123", "meta/v1.metadata.json");
-    auto key2 = IcebergMetadataFilesCache::getKey("uuid-123", "meta/v2.metadata.json");
+    auto key1 = IcebergMetadataFilesCache::getKey("backend1", "uuid-123", "meta/v1.metadata.json");
+    auto key2 = IcebergMetadataFilesCache::getKey("backend1", "uuid-123", "meta/v2.metadata.json");
     EXPECT_NE(key1, key2);
 }
 
@@ -46,8 +46,19 @@ TEST(IcebergMetadataCache, GetKeyIsCollisionFree)
 {
     // Different (uuid, path) pairs must never produce the same key.
     // Without a delimiter, ("a", "bc") and ("ab", "c") would collide.
-    auto key1 = IcebergMetadataFilesCache::getKey("a", "bc");
-    auto key2 = IcebergMetadataFilesCache::getKey("ab", "c");
+    auto key1 = IcebergMetadataFilesCache::getKey("backend1", "a", "bc");
+    auto key2 = IcebergMetadataFilesCache::getKey("backend1", "ab", "c");
+    EXPECT_NE(key1, key2);
+}
+
+TEST(IcebergMetadataCache, GetKeyDifferentBackendsSameUuidSamePathProduceDifferentKeys)
+{
+    // Regression test for the cross-backend cache collision: two different physical backends
+    // (e.g. different `S3` endpoints or `Azure` storage accounts) sharing the same bucket/container
+    // name and table path must never collide on the same cache entry, even under a stale or
+    // attacker-influenced `catalog_uuid_hint`.
+    auto key1 = IcebergMetadataFilesCache::getKey("s3-endpoint-a/bucket", "uuid-123", "meta/v1.metadata.json");
+    auto key2 = IcebergMetadataFilesCache::getKey("s3-endpoint-b/bucket", "uuid-123", "meta/v1.metadata.json");
     EXPECT_NE(key1, key2);
 }
 
@@ -55,7 +66,7 @@ TEST(IcebergMetadataCache, MissCallsLoader)
 {
     auto cache = makeCache();
     int load_count = 0;
-    auto key = IcebergMetadataFilesCache::getKey("uuid-1", "v1.metadata.json");
+    auto key = IcebergMetadataFilesCache::getKey("backend1", "uuid-1", "v1.metadata.json");
 
     auto result = cache.getOrSetTableMetadata(key, [&]() -> String
     {
@@ -71,7 +82,7 @@ TEST(IcebergMetadataCache, HitDoesNotCallLoader)
 {
     auto cache = makeCache();
     int load_count = 0;
-    auto key = IcebergMetadataFilesCache::getKey("uuid-1", "v1.metadata.json");
+    auto key = IcebergMetadataFilesCache::getKey("backend1", "uuid-1", "v1.metadata.json");
     auto loader = [&]() -> String { ++load_count; return R"({"table-uuid":"uuid-1"})"; };
 
     cache.getOrSetTableMetadata(key, loader);
@@ -87,11 +98,11 @@ TEST(IcebergMetadataCache, NewSnapshotNewPathIsCacheMiss)
     int load_count = 0;
 
     // Populate cache for v1
-    auto key_v1 = IcebergMetadataFilesCache::getKey("uuid-1", "meta/v1.metadata.json");
+    auto key_v1 = IcebergMetadataFilesCache::getKey("backend1", "uuid-1", "meta/v1.metadata.json");
     cache.getOrSetTableMetadata(key_v1, [&]() -> String { ++load_count; return "v1-json"; });
 
     // Table updated: v2 is a different path → must be a cache miss
-    auto key_v2 = IcebergMetadataFilesCache::getKey("uuid-1", "meta/v2.metadata.json");
+    auto key_v2 = IcebergMetadataFilesCache::getKey("backend1", "uuid-1", "meta/v2.metadata.json");
     auto result = cache.getOrSetTableMetadata(key_v2, [&]() -> String { ++load_count; return "v2-json"; });
 
     EXPECT_EQ(load_count, 2); // both v1 and v2 triggered a load
@@ -109,7 +120,7 @@ TEST(IcebergMetadataCache, RetroactiveCachePopulationEnablesCacheHit)
     // Simulate what IcebergMetadata::initializePersistentTableComponents does:
     // on first query UUID was unknown so we fetched without caching,
     // then retroactively populate the cache.
-    auto key = IcebergMetadataFilesCache::getKey(uuid, path);
+    auto key = IcebergMetadataFilesCache::getKey("backend1", uuid, path);
     cache.getOrSetTableMetadata(key, [&]() -> String { ++load_count; return json; });
 
     // Second query: UUID is now known → same key → cache hit, no load
@@ -125,8 +136,8 @@ TEST(IcebergMetadataCache, TablesWithSamePathButDifferentUuidsAreIndependent)
     int load_count = 0;
     const String path = "meta/v1.metadata.json";
 
-    auto key_a = IcebergMetadataFilesCache::getKey("uuid-aaa", path);
-    auto key_b = IcebergMetadataFilesCache::getKey("uuid-bbb", path);
+    auto key_a = IcebergMetadataFilesCache::getKey("backend1", "uuid-aaa", path);
+    auto key_b = IcebergMetadataFilesCache::getKey("backend1", "uuid-bbb", path);
 
     cache.getOrSetTableMetadata(key_a, [&]() -> String { ++load_count; return "json-a"; });
     auto result_b = cache.getOrSetTableMetadata(key_b, [&]() -> String { ++load_count; return "json-b"; });

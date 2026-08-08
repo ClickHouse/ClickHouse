@@ -136,9 +136,12 @@ public:
         : Base(cache_policy, CurrentMetrics::IcebergMetadataFilesCacheBytes, CurrentMetrics::IcebergMetadataFilesCacheFiles, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    static String getKey(const String& table_uuid, const String & data_path)
+    /// `data_source_description` is the canonical identity of the physical backend (e.g.
+    /// `IObjectStorageConfiguration::getDataSourceDescription`). It must always be included so
+    /// that two different backends sharing a bucket/container name and table path never collide.
+    static String getKey(const String & data_source_description, const String & table_uuid, const String & data_path)
     {
-        return table_uuid + '\0' + data_path;
+        return data_source_description + '\0' + table_uuid + '\0' + data_path;
     }
 
     /// Probe the cache without insert-on-miss. Returns the cached JSON or empty string on miss.

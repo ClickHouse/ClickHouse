@@ -81,6 +81,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     LoggerPtr log,
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid,
+    const String & data_source_description,
     String & raw_json_out);
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(
@@ -90,7 +91,8 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     const ContextPtr & local_context,
     LoggerPtr log,
     CompressionMethod compression_method,
-    const std::optional<String> & table_uuid);
+    const std::optional<String> & table_uuid,
+    const String & data_source_description);
 
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
@@ -113,6 +115,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ContextPtr & local_context,
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
+    const String & data_source_description,
     CompressionMethod known_compression_method,
     bool force_fetch_latest_metadata = true,
     bool ignore_explicit_metadata_file_path = false);
@@ -127,6 +130,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ContextPtr & local_context,
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
+    const String & data_source_description,
     CompressionMethod known_compression_method,
     bool ignore_explicit_metadata_file_path = true);
 

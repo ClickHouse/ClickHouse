@@ -647,6 +647,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     LoggerPtr log,
     CompressionMethod compression_method,
     const std::optional<String> & table_uuid,
+    const String & data_source_description,
     String & raw_json_out)
 {
     auto create_fn = [&]()
@@ -677,7 +678,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     String metadata_json_str;
     if (metadata_cache && table_uuid.has_value())
         metadata_json_str = metadata_cache->getOrSetTableMetadata(
-            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
+            IcebergMetadataFilesCache::getKey(data_source_description, *table_uuid, metadata_file_path), create_fn);
     else
     {
         if (metadata_cache)
@@ -699,10 +700,11 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     const ContextPtr & local_context,
     LoggerPtr log,
     CompressionMethod compression_method,
-    const std::optional<String> & table_uuid)
+    const std::optional<String> & table_uuid,
+    const String & data_source_description)
 {
     String raw_json;
-    return getMetadataJSONObject(metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, raw_json);
+    return getMetadataJSONObject(metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, data_source_description, raw_json);
 }
 
 /// Returns type and required
@@ -1285,6 +1287,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     std::optional<String> table_uuid,
+    const String & data_source_description,
     bool use_table_uuid_for_metadata_file_selection,
     bool force_fetch_latest_metadata)
 {
@@ -1328,7 +1331,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             if (need_all_metadata_files_parsing)
             {
                 auto metadata_file_object = getMetadataJSONObject(
-                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, data_source_description);
                 if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
                     if (metadata_file_object->has(Iceberg::f_table_uuid))
@@ -1423,6 +1426,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ContextPtr & local_context,
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
+    const String & data_source_description,
     CompressionMethod known_compression_method,
     bool force_fetch_latest_metadata,
     bool ignore_explicit_metadata_file_path)
@@ -1463,7 +1467,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             explicit_table_uuid,
             table_path);
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true, force_fetch_latest_metadata);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), data_source_description, true, force_fetch_latest_metadata);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
@@ -1485,7 +1489,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 
     {
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false, force_fetch_latest_metadata);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, data_source_description, false, force_fetch_latest_metadata);
     }
 }
 
@@ -1499,6 +1503,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ContextPtr & local_context,
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
+    const String & data_source_description,
     CompressionMethod known_compression_method,
     bool ignore_explicit_metadata_file_path)
 {
@@ -1511,6 +1516,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
             local_context,
             log,
             table_uuid,
+            data_source_description,
             known_compression_method,
             /* force_fetch_latest_metadata */ true,
             ignore_explicit_metadata_file_path);
@@ -1539,6 +1545,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
         local_context,
         log,
         table_uuid,
+        data_source_description,
         known_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ false);

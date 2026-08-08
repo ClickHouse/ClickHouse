@@ -25,6 +25,11 @@ struct PersistentTableComponents
     const String table_path;
     const std::optional<String> table_uuid;
     const IcebergPathResolver path_resolver;
+    /// Canonical identity of the physical backend (e.g. `IObjectStorageConfiguration::getDataSourceDescription`),
+    /// mixed into the metadata content cache key so that two different backends (different `S3` endpoints,
+    /// different `Azure` storage accounts) that happen to share a bucket/container name and table path can
+    /// never collide on the same cache entry, even under a stale `catalog_uuid_hint`.
+    const String data_source_description;
 
     /// Invalidate cached metadata for this table under both keys we may have used to cache it
     /// (`table_path` and `table_uuid`).

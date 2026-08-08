@@ -694,6 +694,7 @@ ExpireSnapshotsResult expireSnapshots(
             context,
             log.get(),
             persistent_table_components.table_uuid,
+            persistent_table_components.data_source_description,
             persistent_table_components.metadata_compression_method);
 
         filename_generator.setVersion(last_version + 1);
@@ -706,7 +707,8 @@ ExpireSnapshotsResult expireSnapshots(
             context,
             log,
             compression_method,
-            persistent_table_components.table_uuid);
+            persistent_table_components.table_uuid,
+            persistent_table_components.data_source_description);
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
