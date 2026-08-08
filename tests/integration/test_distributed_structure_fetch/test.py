@@ -11,7 +11,14 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True)
+# Disable `with_remote_database_disk`: `test_structure_less_distributed_loaded_from_legacy_metadata`
+# edits the table's metadata file on the local disk.
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/remote_servers.xml"],
+    with_zookeeper=True,
+    with_remote_database_disk=False,
+)
 node2 = cluster.add_instance("node2")
 
 
