@@ -977,6 +977,42 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             validate_codec_setting("default_compression_codec", (*storage_settings)[MergeTreeSetting::default_compression_codec].value);
         }
 
+        /// On the metadata-load path the stored `SETTINGS` clause is exempt from the checks above and from
+        /// `sanityCheck` (which `MergeTreeData` skips for these modes), so it can carry a codec that cannot
+        /// work on an untyped stream — e.g. a pre-fix or hand-edited definition with
+        /// `marks_compression_codec = 'PCO'`. Left untouched it would only fail later, at the first write,
+        /// when the stored string is re-resolved without a column type. Reset such settings here, restoring
+        /// the pre-override effective value from `initial_storage_settings` (the current config defaults) —
+        /// which is exactly what the setting resolves to on the next load once the entry is dropped from
+        /// the stored metadata below — and drop them from the stored `settings_changes` AST: otherwise
+        /// `SHOW CREATE` / backup metadata would keep advertising the codec, and a later `ALTER` that
+        /// re-parses `settings_changes` (re-running `sanityCheck`) would reject it, making unrelated
+        /// `ALTER`s impossible.
+        if (!is_fresh_definition)
+        {
+            if (auto resets = storage_settings->sanitizeCompressionCodecSettings(initial_storage_settings); !resets.empty())
+            {
+                for (const auto & reset : resets)
+                    LOG_WARNING(getLogger("registerStorageMergeTree"), "Table {}: {}", args.table_id.getNameForLogs(), reset.note);
+
+                if (args.storage_def->settings)
+                {
+                    std::unordered_set<std::string_view> reset_names;
+                    for (const auto & reset : resets)
+                        reset_names.insert(reset.setting_name);
+
+                    auto & changes = args.storage_def->settings->changes;
+                    std::erase_if(changes, [&](const SettingChange & change) { return reset_names.contains(change.name); });
+
+                    /// If the unsafe codec was the only stored setting, drop the AST entirely: a non-null
+                    /// `ASTSetQuery` with an empty `changes` list would format as a bare `SETTINGS` clause,
+                    /// making `SHOW CREATE` / backup metadata unparseable.
+                    if (changes.empty())
+                        metadata.settings_changes = nullptr;
+                }
+            }
+        }
+
         /// UNIQUE KEY tables must reside on local-only storage policies.
         /// CREATE only; ATTACH must still load existing tables.
         if (metadata.hasUniqueKey() && args.mode <= LoadingStrictnessLevel::CREATE)

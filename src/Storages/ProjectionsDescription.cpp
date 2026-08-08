@@ -271,6 +271,10 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// happen before fillProjectionDescription[ByQuery] because the latter reconstructs settings
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+    /// The pre-override settings, kept as the baseline the sanitization below restores from.
+    std::shared_ptr<const MergeTreeSettings> baseline_settings;
+    if (mode > LoadingStrictnessLevel::CREATE)
+        baseline_settings = std::make_shared<MergeTreeSettings>(*merge_tree_settings);
     if (projection_definition->with_settings)
         merge_tree_settings->applyChanges(projection_definition->with_settings->changes, query_context, isLoadingFromExistingMetadata(mode));
 
@@ -282,10 +286,10 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         /// compression-codec settings (e.g. `WITH SETTINGS (marks_compression_codec = 'PCO')`) that
         /// CREATE would reject. Left untouched they would only fail later, when the first projection
         /// materialization or merge re-resolves the stored codec string without a column type. Reset
-        /// them to the default codec here, mirroring the base-table sanitization in the `MergeTreeData`
-        /// constructor, and drop them from the stored `definition_ast` too so the fix is durable
-        /// (the AST is re-parsed on every load and by `ALTER`s that recalculate projections).
-        if (auto resets = merge_tree_settings->sanitizeCompressionCodecSettings(); !resets.empty())
+        /// them here — restoring the pre-override value, mirroring the base-table sanitization in
+        /// `registerStorageMergeTree` — and drop them from the stored `definition_ast` too so the fix is
+        /// durable (the AST is re-parsed on every load and by `ALTER`s that recalculate projections).
+        if (auto resets = merge_tree_settings->sanitizeCompressionCodecSettings(*baseline_settings); !resets.empty())
         {
             for (const auto & reset : resets)
                 LOG_WARNING(getLogger("ProjectionDescription"), "Projection {}: {}", result.name, reset.note);

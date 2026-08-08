@@ -771,42 +771,10 @@ MergeTreeData::MergeTreeData(
             allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
-    else
-    {
-        /// On ATTACH / SECONDARY_CREATE / RESTORE the sanity checks above are skipped, so the table can
-        /// carry compression-codec settings that `checkCompressionCodecSettings` would reject at CREATE
-        /// time (e.g. `SETTINGS marks_compression_codec = 'PCO'`). Left untouched they would only fail
-        /// later at the first write, when the stored string is re-resolved without a column type. Reset
-        /// them to the default codec here so the table stays writable.
-        auto sanitized_settings = std::make_unique<MergeTreeSettings>(*settings);
-        if (auto resets = sanitized_settings->sanitizeCompressionCodecSettings(); !resets.empty())
-        {
-            for (const auto & reset : resets)
-                LOG_WARNING(log, "{}", reset.note);
-            storage_settings.set(std::move(sanitized_settings));
-
-            /// Reset the live `storage_settings` alone is not durable: the stored `settings_changes` AST
-            /// still records the unsafe codec, so `SHOW CREATE` / backup metadata keep advertising it and a
-            /// later `ALTER` that re-parses `settings_changes` (which re-runs `sanityCheck`) would reject it,
-            /// making unrelated `ALTER`s impossible. Drop the reset settings from the AST too, so the stored
-            /// metadata matches the sanitized live settings (the setting falls back to its default).
-            if (metadata_.settings_changes)
-            {
-                std::unordered_set<std::string_view> reset_names;
-                for (const auto & reset : resets)
-                    reset_names.insert(reset.setting_name);
-
-                auto & changes = metadata_.settings_changes->as<ASTSetQuery &>().changes;
-                std::erase_if(changes, [&](const SettingChange & change) { return reset_names.contains(change.name); });
-
-                /// If the unsafe codec was the only stored setting, drop the AST entirely: a non-null
-                /// `ASTSetQuery` with an empty `changes` list would format as a bare `SETTINGS` clause,
-                /// making `SHOW CREATE` / backup metadata unparseable.
-                if (changes.empty())
-                    metadata_.settings_changes = nullptr;
-            }
-        }
-    }
+    /// On ATTACH / SECONDARY_CREATE / RESTORE the sanity checks above are skipped; untyped
+    /// compression-codec settings that `checkCompressionCodecSettings` would reject at CREATE time
+    /// (e.g. `SETTINGS marks_compression_codec = 'PCO'`) are sanitized in `registerStorageMergeTree`,
+    /// where the pre-override config defaults needed to restore the effective value are available.
 
     if (!date_column_name.empty())
     {
