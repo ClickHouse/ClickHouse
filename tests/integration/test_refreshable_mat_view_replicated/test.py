@@ -457,6 +457,16 @@ def fn3_setup_tables():
         "CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = ReplicatedMergeTree ORDER BY tuple()"
     )
 
+    yield
+
+    # A leaked test_rmv keeps retrying every 2 seconds, and each failed attempt creates and drops
+    # a temp table, so later tests cannot enqueue their own DDL (Code 529). Stop the refresher on
+    # both replicas before the DROP, which is itself replicated DDL. SYSTEM STOP VIEW is a local
+    # no-op when the view does not exist, so it needs no guard.
+    for n in nodes:
+        n.query("SYSTEM STOP VIEW test_rmv")
+    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default SYNC")
+
 
 def test_query_fail(fn3_setup_tables):
     if node.is_built_with_sanitizer():
