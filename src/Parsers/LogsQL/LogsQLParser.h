@@ -84,17 +84,13 @@ private:
     Int64 options_time_offset_ns = 0;
     /// Set by options(global_filter=(...)): ANDed into the query and all its subqueries.
     ASTPtr options_global_filter;
-    /// The length of the last parsed top-level `_time` range with a known length.
-    /// Used as the denominator of the `rate()` and `rate_sum()` stats functions.
-    std::optional<Int64> query_time_range_ns;
-    /// The same range length in seconds as a runtime expression, for absolute `_time`
-    /// bounds without an explicit timezone: their epoch values depend on the session
-    /// timezone, so the length is only known at execution time.
-    ASTPtr query_time_range_seconds_expr;
-    /// The effective lower and upper `_time` bounds accumulated from standalone comparison
-    /// filters (`_time:>=...`, `_time:<...`). When both are present and the query has no
-    /// self-contained `_time` range, they define the `rate()` denominator: the intersection
-    /// of several bounds of the same kind is the maximum lower / minimum upper bound.
+    /// The effective lower and upper `_time` bounds accumulated from all top-level `_time`
+    /// filters: standalone comparisons (`_time:>=...`, `_time:<...`) as well as self-contained
+    /// windows (`_time:[a, b)`, `_time:5m`, `_time:2024-01-01Z`). When both are present, they
+    /// define the `rate()` denominator as the intersection of all the filters: the maximum
+    /// lower / minimum upper bound. The `ns` value is set when the epoch is known at parse
+    /// time; absolute bounds without an explicit timezone depend on the session timezone,
+    /// so they are carried as runtime expressions only.
     ASTPtr query_time_lower_bound_expr;
     std::optional<Int64> query_time_lower_bound_ns;
     ASTPtr query_time_upper_bound_expr;
@@ -127,8 +123,6 @@ private:
         LogsQLParser & parser;
         Int64 saved_options_time_offset_ns;
         ASTPtr saved_options_global_filter;
-        std::optional<Int64> saved_query_time_range_ns;
-        ASTPtr saved_query_time_range_seconds_expr;
         ASTPtr saved_query_time_lower_bound_expr;
         std::optional<Int64> saved_query_time_lower_bound_ns;
         ASTPtr saved_query_time_upper_bound_expr;
@@ -146,7 +140,7 @@ private:
 
     /// The identifier for the column backing the given LogsQL field.
     ASTPtr columnExpr(const String & field_name) const;
-    ASTPtr makeNumericComparison(const String & field_name, const String & function_name, ASTPtr literal) const;
+    ASTPtr makeNumericComparison(const String & field_name, const String & function_name, ASTPtr literal, const String & original_text = {}) const;
     String columnName(const String & field_name) const;
 
     String parseFieldName();

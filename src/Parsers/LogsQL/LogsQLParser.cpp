@@ -143,8 +143,6 @@ LogsQLParser::QueryScopeGuard::QueryScopeGuard(LogsQLParser & parser_)
     : parser(parser_)
     , saved_options_time_offset_ns(parser_.options_time_offset_ns)
     , saved_options_global_filter(parser_.options_global_filter)
-    , saved_query_time_range_ns(parser_.query_time_range_ns)
-    , saved_query_time_range_seconds_expr(parser_.query_time_range_seconds_expr)
     , saved_query_time_lower_bound_expr(parser_.query_time_lower_bound_expr)
     , saved_query_time_lower_bound_ns(parser_.query_time_lower_bound_ns)
     , saved_query_time_upper_bound_expr(parser_.query_time_upper_bound_expr)
@@ -159,8 +157,6 @@ LogsQLParser::QueryScopeGuard::~QueryScopeGuard()
 {
     parser.options_time_offset_ns = saved_options_time_offset_ns;
     parser.options_global_filter = saved_options_global_filter;
-    parser.query_time_range_ns = saved_query_time_range_ns;
-    parser.query_time_range_seconds_expr = saved_query_time_range_seconds_expr;
     parser.query_time_lower_bound_expr = saved_query_time_lower_bound_expr;
     parser.query_time_lower_bound_ns = saved_query_time_lower_bound_ns;
     parser.query_time_upper_bound_expr = saved_query_time_upper_bound_expr;
@@ -682,10 +678,10 @@ ASTPtr LogsQLParser::parseFilterRange(const String & field_name)
     ASTs conditions;
     if (!is_infinite(*min_value))
         conditions.push_back(makeNumericComparison(field_name, include_min ? "greaterOrEquals" : "greater",
-            make_intrusive<ASTLiteral>(*min_value)));
+            make_intrusive<ASTLiteral>(*min_value), min_text));
     if (!is_infinite(*max_value))
         conditions.push_back(makeNumericComparison(field_name, include_max ? "lessOrEquals" : "less",
-            make_intrusive<ASTLiteral>(*max_value)));
+            make_intrusive<ASTLiteral>(*max_value), max_text));
 
     return makeAnd(std::move(conditions));
 }
@@ -1474,22 +1470,66 @@ ASTPtr LogsQLParser::makeRegexpFilter(const String & field_name, const String & 
     return makeASTFunction("match", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(regexp)));
 }
 
-ASTPtr LogsQLParser::makeNumericComparison(const String & field_name, const String & function_name, ASTPtr literal) const
+ASTPtr LogsQLParser::makeNumericComparison(const String & field_name, const String & function_name, ASTPtr literal, const String & original_text) const
 {
     /// In VictoriaLogs every field is a string, and a numeric comparison filter compares
     /// the numeric value of the field, skipping rows where the field is not a number.
     /// The casts make such comparisons work for string columns as well as for numeric ones:
     /// a non-numeric value becomes NULL, and the comparison filters it out.
-    /// The integral values are compared exactly through `Int128`, because a `Float64` cast
-    /// rounds `UInt64`/`Int64` values above 2^53 and could compare adjacent values as equal;
-    /// fractional values (where the exact cast yields NULL) are compared as `Float64`.
+    ///
+    /// The value is compared exactly through `Decimal256(38)` first: it is rendered to its
+    /// exact decimal text, because a direct cast to `Decimal` is lossy for `Float64`, while
+    /// `toString` of a numeric column is exact. This branch covers integers up to the full
+    /// 64-bit range, decimals, floats, and numeric text in `String` columns. Values whose
+    /// text does not parse as a decimal (dates, enum names, huge `Int128` values) are
+    /// compared exactly through `Int128` when they are integral; this branch must come
+    /// after the decimal one, because `accurateCastOrNull(x, 'Int128')` silently truncates
+    /// fractional `Decimal` values instead of returning NULL. Everything else falls back
+    /// to the lossy `Float64` comparison, which rounds values above 2^53.
+    const Field & literal_value = literal->as<ASTLiteral>()->value;
+    /// `inf` and `nan` have no decimal representation, and values with more than 38 integer
+    /// digits do not fit `Decimal256(38)`; such literals keep the two-branch form.
+    /// (Integral literals always fit: they are bounded by the 64-bit range.)
+    bool literal_fits_decimal = literal_value.getType() != Field::Types::Float64
+        || (std::isfinite(literal_value.safeGet<Float64>()) && std::abs(literal_value.safeGet<Float64>()) < 1e38);
+
     ASTPtr exact = makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Int128"))));
     ASTPtr lossy = makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Float64"))));
     ASTPtr exact_comparison = makeASTFunction(function_name, exact, literal->clone());
-    return makeASTFunction("if",
+    ASTPtr result = makeASTFunction("if",
         makeASTFunction("isNotNull", exact->clone()),
         std::move(exact_comparison),
-        makeASTFunction(function_name, lossy, std::move(literal)));
+        makeASTFunction(function_name, lossy, literal->clone()));
+
+    if (literal_fits_decimal)
+    {
+        ASTPtr decimal = makeASTFunction("toDecimal256OrNull",
+            makeASTFunction("toString", columnExpr(field_name)),
+            make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(38))));
+        /// A plain decimal literal is compared with its exact original text: high-precision
+        /// values like `10.50000000000000000002` would otherwise be rounded through the
+        /// `Float64` literal field. For rich forms (`10.5KiB`) the shortest round-trip
+        /// formatting of the `Float64` value restores its exact decimal text.
+        String literal_text;
+        if (!original_text.empty() && isPlainNumber(original_text))
+            literal_text = original_text[0] == '+' ? original_text.substr(1) : original_text;
+        else if (literal_value.getType() == Field::Types::Float64)
+            literal_text = fmt::format("{}", literal_value.safeGet<Float64>());
+        else if (literal_value.getType() == Field::Types::Int64)
+            literal_text = fmt::format("{}", literal_value.safeGet<Int64>());
+        else
+            literal_text = fmt::format("{}", literal_value.safeGet<UInt64>());
+        ASTPtr decimal_literal = makeASTFunction("toDecimal256",
+            make_intrusive<ASTLiteral>(Field(literal_text)),
+            make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(38))));
+        ASTPtr decimal_comparison = makeASTFunction(function_name, decimal, std::move(decimal_literal));
+        result = makeASTFunction("if",
+            makeASTFunction("isNotNull", decimal->clone()),
+            std::move(decimal_comparison),
+            std::move(result));
+    }
+
+    return result;
 }
 
 ASTPtr LogsQLParser::makeComparisonFilter(const String & field_name, const String & function_name, const String & value, bool quoted)
@@ -1511,7 +1551,7 @@ ASTPtr LogsQLParser::makeComparisonFilter(const String & field_name, const Strin
     }
 
     if (is_numeric)
-        return makeNumericComparison(field_name, function_name, std::move(literal));
+        return makeNumericComparison(field_name, function_name, std::move(literal), value);
     return makeASTFunction(function_name, columnExpr(field_name), std::move(literal));
 }
 
@@ -1745,6 +1785,7 @@ ASTPtr LogsQLParser::parseFilterTime()
     if (lex.isKeyword("offset"))
     {
         auto offset = parseOptionalTimeOffset();
+        recordTimeUpperBound(makeASTFunction("now"), {}, *offset);
         return makeTimeCondition(nullptr, false, makeASTFunction("now"), true, *offset);
     }
 
@@ -1812,21 +1853,12 @@ ASTPtr LogsQLParser::parseFilterTime()
         ASTPtr lower = include_start ? start_bound.start : start_bound.end;
         ASTPtr upper = include_end ? end_bound.end : end_bound.start;
 
-        /// Remember the range length for the rate() and rate_sum() stats functions.
-        /// Without an explicit timezone the epoch bounds are unknown at parse time,
-        /// so the length is carried as a runtime expression over the civil bounds.
+        /// Remember the window bounds for the rate() and rate_sum() stats functions:
+        /// all top-level `_time` filters intersect into the effective query time range.
         auto lower_ns = include_start ? start_bound.start_ns : start_bound.end_ns;
         auto upper_ns = include_end ? end_bound.end_ns : end_bound.start_ns;
-        if (lower_ns && upper_ns && *upper_ns > *lower_ns)
-        {
-            query_time_range_ns = *upper_ns - *lower_ns;
-            query_time_range_seconds_expr = nullptr;
-        }
-        else if (lower && upper)
-        {
-            query_time_range_ns.reset();
-            query_time_range_seconds_expr = makeTimeRangeSecondsExpr(lower, upper);
-        }
+        recordTimeLowerBound(lower, lower_ns, offset.value_or(0));
+        recordTimeUpperBound(upper, upper_ns, offset.value_or(0));
 
         return makeTimeCondition(lower, true, upper, false, offset.value_or(0));
     }
@@ -1840,27 +1872,22 @@ ASTPtr LogsQLParser::parseFilterTime()
     String text = lex.nextCompoundToken();
     if (auto duration = tryParseDuration(text))
     {
-        query_time_range_ns = duration;
-        query_time_range_seconds_expr = nullptr;
         auto offset = parseOptionalTimeOffset();
         ASTPtr lower = makeASTFunction("minus", makeASTFunction("now"), makeIntervalAST(*duration));
+        recordTimeLowerBound(lower, {}, offset.value_or(0));
+        recordTimeUpperBound(makeASTFunction("now"), {}, offset.value_or(0));
         return makeTimeCondition(lower, true, makeASTFunction("now"), false, offset.value_or(0));
     }
     lex.restoreState(state);
 
     TimeBound bound = parseTimeBound();
     auto offset = parseOptionalTimeOffset();
-    if (bound.start_ns && bound.end_ns && *bound.end_ns > *bound.start_ns)
-    {
-        query_time_range_ns = *bound.end_ns - *bound.start_ns;
-        query_time_range_seconds_expr = nullptr;
-    }
     /// An instant bound (`now`, a duration) has `start` and `end` pointing to the same
-    /// expression: it is not a period, so it does not define a range length.
-    else if (bound.start && bound.end && bound.start != bound.end)
+    /// expression: it is not a period, so it does not define a range for rate().
+    if (bound.start && bound.end && bound.start != bound.end)
     {
-        query_time_range_ns.reset();
-        query_time_range_seconds_expr = makeTimeRangeSecondsExpr(bound.start, bound.end);
+        recordTimeLowerBound(bound.start, bound.start_ns, offset.value_or(0));
+        recordTimeUpperBound(bound.end, bound.end_ns, offset.value_or(0));
     }
     return makeTimeCondition(bound.start, true, bound.end, false, offset.value_or(0));
 }

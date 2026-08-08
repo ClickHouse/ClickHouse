@@ -5,6 +5,8 @@
 
 #include <Common/Exception.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -35,14 +37,16 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// The LogsQL text is scanned from the raw query string, bypassing the ClickHouse
     /// token stream (which is bounded by `max_query_size` on its own), so the limit
-    /// must be applied to the raw slice as well. The end is clipped rather than checked
-    /// against the whole slice, because in a multi-statement input the slice extends
-    /// to the end of all statements, while the limit applies to a single query.
+    /// must be applied to the raw slice as well. The budget is measured from the raw
+    /// query begin (before the leading whitespace and comments skipped by the token
+    /// stream), the same way the SQL path measures it. The end is clipped rather than
+    /// checked against the whole slice, because in a multi-statement input the slice
+    /// extends to the end of all statements, while the limit applies to a single query.
     const char * end = raw_end;
     bool truncated = false;
-    if (max_query_size && static_cast<size_t>(raw_end - begin) > max_query_size)
+    if (max_query_size && static_cast<size_t>(raw_end - raw_begin) > max_query_size)
     {
-        end = begin + max_query_size;
+        end = std::max(begin, raw_begin + max_query_size);
         truncated = true;
     }
 

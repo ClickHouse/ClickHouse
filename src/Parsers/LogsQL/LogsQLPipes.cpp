@@ -541,9 +541,15 @@ void LogsQLParser::parsePipeRename(Layer & layer)
 
     wrapLayerIf(layer, layer.has_projection || layer.has_aggregation);
 
+    /// Both the source and the target are excluded from `*`: the source is renamed away,
+    /// and an already-existing target column is overwritten rather than duplicated.
+    /// The non-strict EXCEPT is a no-op for names that do not exist.
     auto except = make_intrusive<ASTColumnsExceptTransformer>();
+    std::unordered_set<String> excluded;
     for (const auto & [source, target] : renames)
-        except->children.push_back(make_intrusive<ASTIdentifier>(source));
+        for (const auto & name : {source, target})
+            if (excluded.insert(name).second)
+                except->children.push_back(make_intrusive<ASTIdentifier>(name));
 
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
     transformers->children.push_back(except);
@@ -1928,26 +1934,66 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                 }
                 else
                 {
-                    auto step = tryParseNumber(bucket);
-                    if (!step || *step <= 0)
+                    auto step = tryParseNumberField(bucket);
+                    auto to_float = [](const Field & field)
+                    {
+                        if (field.getType() == Field::Types::UInt64)
+                            return static_cast<Float64>(field.safeGet<UInt64>());
+                        if (field.getType() == Field::Types::Int64)
+                            return static_cast<Float64>(field.safeGet<Int64>());
+                        return field.safeGet<Float64>();
+                    };
+                    if (!step || to_float(*step) <= 0)
                         throwSyntaxError(fmt::format("cannot parse the bucket step {} for the field {}", bucket, name));
 
-                    std::optional<Float64> offset_value;
+                    std::optional<Field> offset_value;
                     if (bucket_offset)
                     {
-                        offset_value = tryParseNumber(*bucket_offset);
+                        offset_value = tryParseNumberField(*bucket_offset);
                         if (!offset_value)
                             throwSyntaxError(fmt::format("cannot parse the bucket offset {} for the field {}", *bucket_offset, name));
                     }
 
-                    ASTPtr value = columnExpr(name);
-                    if (offset_value)
-                        value = makeASTFunction("minus", value, make_intrusive<ASTLiteral>(Field(*offset_value)));
-                    key = makeASTFunction("multiply",
-                        makeASTFunction("floor", makeASTFunction("divide", value, make_intrusive<ASTLiteral>(Field(*step)))),
-                        make_intrusive<ASTLiteral>(Field(*step)));
-                    if (offset_value)
-                        key = makeASTFunction("plus", key, make_intrusive<ASTLiteral>(Field(*offset_value)));
+                    auto is_integral = [](const Field & field)
+                    {
+                        return field.getType() == Field::Types::UInt64 || field.getType() == Field::Types::Int64;
+                    };
+
+                    if (is_integral(*step) && (!offset_value || is_integral(*offset_value)))
+                    {
+                        /// An integral step keeps integer values exact across the full 64-bit
+                        /// range: `floor(value / step) * step` would round the value through
+                        /// `Float64` and merge adjacent buckets above 2^53. The step and the
+                        /// offset are widened to `Int128` so that the arithmetic cannot wrap
+                        /// around, and `positiveModulo` keeps the floor semantics for
+                        /// negative values.
+                        auto make_int128 = [](const Field & field)
+                        {
+                            return makeASTFunction("toInt128", make_intrusive<ASTLiteral>(field));
+                        };
+                        ASTPtr value = columnExpr(name);
+                        if (offset_value)
+                            value = makeASTFunction("minus", value, make_int128(*offset_value));
+                        key = makeASTFunction("minus", value,
+                            makeASTFunction("positiveModulo", value->clone(), make_int128(*step)));
+                        if (offset_value)
+                            key = makeASTFunction("plus", key, make_int128(*offset_value));
+                    }
+                    else
+                    {
+                        ASTPtr step_literal = make_intrusive<ASTLiteral>(Field(to_float(*step)));
+                        ASTPtr offset_literal;
+                        if (offset_value)
+                            offset_literal = make_intrusive<ASTLiteral>(Field(to_float(*offset_value)));
+                        ASTPtr value = columnExpr(name);
+                        if (offset_literal)
+                            value = makeASTFunction("minus", value, offset_literal);
+                        key = makeASTFunction("multiply",
+                            makeASTFunction("floor", makeASTFunction("divide", value, step_literal)),
+                            step_literal->clone());
+                        if (offset_literal)
+                            key = makeASTFunction("plus", key, offset_literal->clone());
+                    }
                 }
             }
             else
@@ -2216,13 +2262,9 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
             range_seconds = static_cast<Float64>(*current_stats_time_bucket_ns) / 1e9;
         else if (current_stats_time_bucket_seconds_expr)
             range_seconds_expr = current_stats_time_bucket_seconds_expr;
-        else if (query_time_range_ns && *query_time_range_ns > 0)
-            range_seconds = static_cast<Float64>(*query_time_range_ns) / 1e9;
-        else if (query_time_range_seconds_expr)
-            range_seconds_expr = query_time_range_seconds_expr;
         else if (query_time_lower_bound_ns && query_time_upper_bound_ns)
         {
-            /// A window given as a pair of `_time` comparison filters.
+            /// The intersection of all top-level `_time` filters, known at parse time.
             if (*query_time_upper_bound_ns > *query_time_lower_bound_ns)
                 range_seconds = static_cast<Float64>(*query_time_upper_bound_ns - *query_time_lower_bound_ns) / 1e9;
         }
@@ -2565,8 +2607,8 @@ ASTPtr LogsQLParser::parseMathExprOperand()
             return make_intrusive<ASTLiteral>(Field(timestamp->start_ns));
         if (auto address = tryParseIPv4(text))
             return make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(*address)));
-        if (auto number = tryParseNumber(text))
-            return make_intrusive<ASTLiteral>(Field(*number));
+        if (auto number = tryParseNumberField(text))
+            return make_intrusive<ASTLiteral>(*number);
         throwSyntaxError(fmt::format("cannot parse the math literal {}", text));
     }
 
@@ -2629,12 +2671,10 @@ ASTPtr LogsQLParser::parseMathExprOperand()
     String token = lex.nextCompoundToken(math_stop_tokens);
     if (isNumberPrefix(token) || Poco::toLower(token) == "inf" || Poco::toLower(token) == "nan")
     {
-        if (auto number = tryParseNumber(token))
-        {
-            if (*number == std::floor(*number) && std::abs(*number) < 9.007199254740992e15 && !std::isinf(*number))
-                return make_intrusive<ASTLiteral>(Field(static_cast<Int64>(*number)));
-            return make_intrusive<ASTLiteral>(Field(*number));
-        }
+        /// Integral literals keep their exact 64-bit value; only genuinely
+        /// fractional values (and inf/nan) become Float64.
+        if (auto number = tryParseNumberField(token))
+            return make_intrusive<ASTLiteral>(*number);
     }
     return columnExpr(token);
 }

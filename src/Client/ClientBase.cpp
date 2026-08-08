@@ -668,7 +668,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             parser = std::make_unique<ParserLogsQLQuery>(
                 settings[Setting::logsql_database], settings[Setting::logsql_table],
                 settings[Setting::logsql_time_column], settings[Setting::logsql_message_column],
-                end, settings[Setting::allow_experimental_logsql_dialect], settings[Setting::max_parser_depth],
+                pos, end, settings[Setting::allow_experimental_logsql_dialect], settings[Setting::max_parser_depth],
                 settings[Setting::max_query_size]);
         else
             parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);

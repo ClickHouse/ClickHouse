@@ -18,6 +18,7 @@ public:
         String table_,
         String time_column_,
         String msg_column_,
+        const char * raw_begin_,
         const char * raw_end_,
         bool feature_enabled_,
         size_t max_parser_depth_,
@@ -26,6 +27,7 @@ public:
         , table(std::move(table_))
         , time_column(std::move(time_column_))
         , msg_column(std::move(msg_column_))
+        , raw_begin(raw_begin_)
         , raw_end(raw_end_)
         , feature_enabled(feature_enabled_)
         , max_parser_depth(max_parser_depth_)
@@ -46,6 +48,9 @@ private:
 
     /// The LogsQL text is parsed from the raw query string, because the ClickHouse Lexer
     /// cannot tokenize LogsQL correctly (e.g. `foo:=bar`, `_time:5m`, `range[1, 10)`).
+    /// `raw_begin` is the start of the raw query text, before any leading whitespace
+    /// or comments: the `max_query_size` budget is measured from it, like in the SQL path.
+    const char * raw_begin;
     const char * raw_end;
 
     bool feature_enabled;

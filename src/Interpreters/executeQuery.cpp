@@ -1333,6 +1333,7 @@ static BlockIO executeQueryImpl(
                 settings[Setting::logsql_table],
                 settings[Setting::logsql_time_column],
                 settings[Setting::logsql_message_column],
+                begin,
                 end,
                 settings[Setting::allow_experimental_logsql_dialect],
                 settings[Setting::max_parser_depth],
