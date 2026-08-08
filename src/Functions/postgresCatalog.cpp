@@ -326,8 +326,10 @@ private:
 /// returns 0). Provided so that the schema-discovery query of `fetchPostgreSQLTableStructure` - which
 /// resolves an unqualified table name through the schemas of the `search_path` in order, the way
 /// PostgreSQL itself does - can run unchanged against ClickHouse's PostgreSQL wire protocol emulation.
-/// Unlike PostgreSQL, a `NULL` element yields `NULL` rather than the position of the first `NULL` of
-/// the array (the common default-null behavior of ClickHouse functions).
+/// PostgreSQL's `NULL` semantics are followed: a `NULL` element is a genuine search key that finds the
+/// first `NULL` of the array (`array_position([NULL, 1], NULL)` is `1`), which requires opting out of
+/// the common default-null shortcut of ClickHouse functions; `indexOf` underneath treats `NULL` as a
+/// normal value. A `NULL` in place of the array yields `NULL`, as in PostgreSQL.
 class FunctionArrayPosition final : public IFunction
 {
 public:
@@ -343,17 +345,30 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    /// The default-null wrapper would short-circuit a `NULL` element to `NULL`, but in PostgreSQL a
+    /// `NULL` element searches for the first `NULL` of the array. `indexOf` handles `NULL` arguments
+    /// itself; the only `NULL` this function has to produce is for a `NULL` array.
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// The argument validation is delegated to `indexOf`, which throws for a non-array first
-        /// argument or an element type incomparable with the array elements.
-        return std::make_shared<DataTypeNullable>(buildIndexOf(arguments)->getResultType());
+        /// A literal `NULL` array (`Nullable` cannot wrap `Array`, so `Nullable(Nothing)` is the only
+        /// nullable shape the array argument can take) is handled here; the rest of the argument
+        /// validation is delegated to `indexOf`, which throws for a non-array first argument or an
+        /// element type incomparable with the array elements.
+        if (isNothing(removeNullable(arguments[0].type)))
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
+
+        return std::make_shared<DataTypeNullable>(index_of->build(arguments)->getResultType());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto index_of_base = buildIndexOf(arguments);
+        /// A literal `NULL` array: the result is all-`NULL`.
+        if (isNothing(removeNullable(arguments[0].type)))
+            return result_type->createColumnConst(input_rows_count, Field())->convertToFullColumnIfConst();
+
+        auto index_of_base = index_of->build(arguments);
         ColumnPtr positions = index_of_base->execute(arguments, index_of_base->getResultType(), input_rows_count, /* dry_run = */ false);
         positions = positions->convertToFullColumnIfConst();
 
@@ -367,11 +382,6 @@ public:
     }
 
 private:
-    FunctionBasePtr buildIndexOf(const ColumnsWithTypeAndName & arguments) const
-    {
-        return index_of->build(arguments);
-    }
-
     FunctionOverloadResolverPtr index_of;
 };
 
@@ -404,6 +414,7 @@ REGISTER_FUNCTION(PostgresCatalog)
     factory.registerFunction<FunctionArrayPosition>(FunctionDocumentation{
         .description = "PostgreSQL compatibility function. Returns the 1-based position of the first occurrence of the "
                        "element in the array, or `NULL` when the element does not occur. "
+                       "A `NULL` element searches for the first `NULL` of the array, as in PostgreSQL. "
                        "The native ClickHouse counterpart is `indexOf`, which returns 0 instead of `NULL`.",
         .syntax = "array_position(array, element)",
         .arguments = {{"array", "The array to search.", {"Array(T)"}}, {"element", "The element to search for.", {"Any"}}},
