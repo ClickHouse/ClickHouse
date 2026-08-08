@@ -10,6 +10,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Formats/FormatSettings.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -336,10 +337,22 @@ void ColumnDynamic::get(size_t n, Field & res) const
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & variant_col = getVariantColumn();
-    /// Check if value is not in shared variant.
-    if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
+    const auto discr = variant_col.globalDiscriminatorAt(n);
+    if (discr == ColumnVariant::NULL_DISCRIMINATOR)
     {
-        variant_col.getValueNameImpl(name_buf, n, options);
+        if (options.notFull(name_buf))
+            name_buf << "NULL";
+        return;
+    }
+
+    /// Include the type name in the result so values of different types get different names.
+    if (options.notFull(name_buf))
+        name_buf << getTypeNameAt(n) << '_';
+
+    /// Check if value is not in shared variant.
+    if (discr != getSharedVariantDiscriminator())
+    {
+        variant_col.getVariantByGlobalDiscriminator(discr).getValueNameImpl(name_buf, variant_col.offsetAt(n), options);
         return;
     }
 
