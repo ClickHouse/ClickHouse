@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
@@ -209,6 +210,103 @@ TEST(BorrowedThreadGroupLifetime, AsyncWorkFromBorrowedScopeKeepsCancellationCon
         root.reset();
         EXPECT_FALSE(observed_shared_data.query_is_canceled_predicate());
         EXPECT_NO_THROW(observed_shared_data.throw_if_query_canceled_predicate());
+    });
+    t.join();
+}
+
+TEST(BorrowedThreadGroupLifetime, AsyncWorkFromBorrowedScopeChargesOwningQueryAccounting)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        auto pool = makeSingleThreadPool();
+
+        auto root = std::make_shared<ThreadGroup>(context, 0);
+        std::weak_ptr<ThreadGroup> root_weak = root;
+        auto borrowed = ThreadGroup::createForFlushAsyncInsertQueue(context, root);
+
+        struct Result
+        {
+            ThreadGroupPtr observed;
+            Int64 charged = 0;
+        };
+
+        CurrentThread::attachToGroupIfDetached(borrowed);
+        auto runner = threadPoolCallbackRunnerUnsafe<Result>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner([root]
+        {
+            /// Large enough to exceed any per-thread untracked-memory batching.
+            constexpr Int64 allocation = 64 << 20;
+            const Int64 before = root->memory_tracker.get();
+            std::ignore = CurrentMemoryTracker::alloc(allocation);
+            const Int64 charged = root->memory_tracker.get() - before;
+            std::ignore = CurrentMemoryTracker::free(allocation);
+            return Result{getCurrentThreadGroup(), charged};
+        }, Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        auto result = future.get();
+        pool->wait();
+
+        /// The pool thread must not run under the borrowed group itself (raw pointers into the parent)...
+        EXPECT_NE(result.observed, borrowed) << "async work must not run under a borrowed `ThreadGroup`";
+        ASSERT_NE(result.observed, nullptr) << "async work from a borrowed scope must keep a group";
+
+        /// ...but its allocations must still charge the owning query group: the query and user memory
+        /// limits (`max_memory_usage` and alike) are wired onto the owning group by `ProcessList`, so
+        /// accounting async work anywhere else would let it bypass them - and memory freed inside the
+        /// callback would never be credited back to the query that paid for it.
+        EXPECT_GE(result.charged, 32 << 20) << "async allocations must charge the owning query group";
+
+        /// The async context must keep the owning group - its accounting target - alive: async work may
+        /// outlive the query, and charging a freed group is a use-after-free.
+        borrowed.reset();
+        root.reset();
+        EXPECT_FALSE(root_weak.expired())
+            << "the async-callback group must keep the owning group it charges alive";
+    });
+    t.join();
+}
+
+TEST(BorrowedThreadGroupLifetime, AsyncWorkFromNestedBorrowedScopeChargesUltimateOwner)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        auto pool = makeSingleThreadPool();
+
+        auto root = std::make_shared<ThreadGroup>(context, 0);
+
+        CurrentThread::attachToGroupIfDetached(root);
+        auto borrowed = ThreadGroup::createForMaterializedView(context);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        /// A materialized view reading from another materialized view: the inner borrowed group
+        /// borrows from the outer borrowed group, but the accounting owner is still the query group.
+        CurrentThread::attachToGroupIfDetached(borrowed);
+        auto nested_borrowed = ThreadGroup::createForMaterializedView(context);
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        CurrentThread::attachToGroupIfDetached(nested_borrowed);
+        auto runner = threadPoolCallbackRunnerUnsafe<Int64>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner([root]
+        {
+            constexpr Int64 allocation = 64 << 20;
+            const Int64 before = root->memory_tracker.get();
+            std::ignore = CurrentMemoryTracker::alloc(allocation);
+            const Int64 charged = root->memory_tracker.get() - before;
+            std::ignore = CurrentMemoryTracker::free(allocation);
+            return charged;
+        }, Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        EXPECT_GE(future.get(), 32 << 20)
+            << "async allocations from a nested borrowed scope must charge the owning query group";
+        pool->wait();
     });
     t.join();
 }

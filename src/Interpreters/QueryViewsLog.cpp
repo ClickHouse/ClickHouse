@@ -56,7 +56,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"written_rows", std::make_shared<DataTypeUInt64>(), "Number of written rows."},
         {"written_bytes", std::make_shared<DataTypeUInt64>(), "Number of written bytes."},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>(), "The maximum difference between the amount of allocated and freed memory in context of this view. "
-            "Memory allocated by asynchronous background work scheduled from the view (for example, prefetched reads) is accounted at the thread or global level rather than to the view, so it is not included."},
+            "Memory allocated by asynchronous background work scheduled from the view (for example, prefetched reads) is accounted to the query rather than to the view, so it is not included."},
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "ProfileEvents that measure different metrics. The description of them could be found in the table system.events."},
 
         {"status", std::move(view_status_datatype), "Status of the view. Values: "

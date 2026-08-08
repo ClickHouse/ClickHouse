@@ -80,8 +80,12 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
   * query finished and its group was destroyed, and would then dereference the freed parent counters
   * (use-after-free). `getCurrentThreadGroupForAsyncCallback` therefore never returns a borrowed group;
   * for a borrowed group it returns its async-callback companion (see `getAsyncCallbackGroup`), which
-  * runs async work under normal thread/global accounting while preserving the query's cancellation
-  * predicates and metadata.
+  * holds a `shared_ptr` to the owning ancestor group and parents its accounting there. Async work thus
+  * still charges the query's tracker chain - `max_memory_usage` / `max_memory_usage_for_user` keep
+  * applying and frees are credited back to the query - without dereferencing a freed group, and the
+  * query's cancellation predicates and metadata are preserved. The companion is created lazily on the
+  * first async capture, so a borrowed group whose scope schedules no async work does not prolong the
+  * owner's lifetime at all.
   */
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
@@ -97,10 +101,11 @@ public:
 
     /// For a borrowed group: an owning companion group that async callbacks may safely capture.
     /// It carries the query metadata and cancellation predicates of the borrowed scope (so canceling
-    /// the query still stops async work promptly), but owns its accounting - parented to the global
-    /// tracker and counters - so capturing it neither dereferences nor prolongs the parent query group.
-    /// Returns nullptr for a non-borrowed group.
-    ThreadGroupPtr getAsyncCallbackGroup() const { return async_callback_group; }
+    /// the query still stops async work promptly) and keeps the owning ancestor group alive, parenting
+    /// its `memory_tracker` / `performance_counters` there - so async work still charges the query's
+    /// accounting chain and stays subject to its memory limits, without dereferencing a freed group.
+    /// Created lazily on the first call. Returns nullptr for a non-borrowed group.
+    ThreadGroupPtr getAsyncCallbackGroup();
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -194,9 +199,17 @@ private:
     Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
     UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
-    /// Set only for borrowed groups: the companion returned by `getAsyncCallbackGroup`.
-    /// Created eagerly by the borrowing constructors, immutable afterwards.
-    ThreadGroupPtr async_callback_group;
+    /// Set only for borrowed groups: the owning ancestor group whose accounting the borrowed group
+    /// aliases. Weak on purpose: a borrowed group alone must not prolong the owner's lifetime.
+    std::weak_ptr<ThreadGroup> borrowed_accounting_owner;
+
+    /// Set only for borrowed groups: the companion returned by `getAsyncCallbackGroup`,
+    /// created lazily on the first async capture.
+    ThreadGroupPtr async_callback_group TSA_GUARDED_BY(mutex);
+
+    /// Set only for async-callback companions: keeps the owning ancestor group - the parent of this
+    /// group's `memory_tracker` and `performance_counters` - alive while async work may charge it.
+    ThreadGroupPtr companion_accounting_owner;
 
     /// Borrowing constructors (mark the group `Borrowed`); private so only the factories create them.
     explicit ThreadGroup(ThreadGroupPtr parent);
@@ -204,7 +217,7 @@ private:
 
     /// Constructor for the async-callback companion of a borrowed group (see `getAsyncCallbackGroup`).
     struct AsyncCallbackCompanionTag {};
-    ThreadGroup(ThreadGroup & borrowed, AsyncCallbackCompanionTag);
+    ThreadGroup(const ThreadGroup & borrowed, SharedData borrowed_shared_data, ThreadGroupPtr owner, AsyncCallbackCompanionTag);
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 };
