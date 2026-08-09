@@ -766,8 +766,8 @@ private:
         Columns & key_columns, size_t key_row,
         MutableColumns & final_key_columns) const;
 
-    /// Additionally creates a state in `data_variants.without_key`. The caller must hand it over
-    /// with `addSingleKeyToAggregateColumns`, which is what destroys it.
+    /// Additionally creates a state in `data_variants.without_key`. The caller must transfer its
+    /// ownership with `addSingleKeyToAggregateColumns`, or the state is leaked.
     void createStatesAndFillKeyColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
