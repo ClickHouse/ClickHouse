@@ -767,32 +767,21 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
         time.sleep(random.uniform(0, 1))
         thread.start()
 
-    # With threadsanitizer the speed of execution is about 8-13k rows per second, so consuming
-    # ~1 mln rows takes ~125s and can exceed a fixed deadline on a loaded runner while still
-    # progressing. Fail only on a genuine stall: reset the no-progress deadline whenever the
-    # total row count increases, so a slow-but-steady run is not abandoned.
-    no_progress_timeout = 180
-    deadline = time.monotonic() + no_progress_timeout
+    # with threadsanitizer the speed of execution is about 8-13k rows per second.
+    # so consumption of 1 mln rows will require about 125 seconds
+    deadline = time.monotonic() + 180
     expected = messages_num * threads_num * NUM_MV
-    prev_result = 0
-    result = 0
     while time.monotonic() < deadline:
-        result = 0
-        for mv_id in range(NUM_MV):
-            result += int(
-                instance.query(f"SELECT count() FROM {db}.combo_{mv_id}")
-            )
-        if result == expected:
+        # Every instance.query() spawns a clickhouse-client, so poll all NUM_MV targets at once.
+        # The anchor keeps the combo_N_mv views out: reading a view counts its combo_N target again.
+        result = int(instance.query(f"SELECT count() FROM merge({db!r}, '^combo_[0-9]+$')"))
+        if int(result) == expected:
             break
-        if result > prev_result:
-            deadline = time.monotonic() + no_progress_timeout
-        prev_result = result
         logging.debug(f"Result: {result} / {expected}")
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of {no_progress_timeout} seconds reached without any RabbitMQ "
-            "consumption progress. The result did not match the expected value."
+            "Time limit of 180 seconds reached. The result did not match the expected value."
         )
 
     for thread in threads:

@@ -1,4 +1,4 @@
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <cstring>
 #include <optional>

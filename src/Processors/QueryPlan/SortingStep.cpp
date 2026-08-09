@@ -42,14 +42,15 @@ namespace ProfileEvents
 namespace DB
 {
 
-/// MergingSortedTransform supposed to consume virtual row
-/// When there is no merging (only one stream) and virtual row conversions are enabled, we need to remove virtual row before output,
-/// otherwise it can reach downstream steps and cause issues because of conversions are valid only for current step.
+/// `MergingSortedTransform` is supposed to consume virtual rows.
+/// When there is no merging (only one stream) and virtual row conversions are enabled, we need to remove virtual rows before output,
+/// otherwise they can reach downstream steps and cause issues, both because the attached conversions are valid only for the current step
+/// and because the virtual rows are empty chunks that some downstream transforms (e.g. `LimitTransform` with `WITH TIES`) do not expect.
 class RemoveVirtualRowTransform : public ISimpleTransform
 {
 public:
     explicit RemoveVirtualRowTransform(SharedHeader header)
-        : ISimpleTransform(header, header, false)
+        : ISimpleTransform(header, header, /*skip_empty_chunks=*/ true)
     {
     }
 
@@ -57,6 +58,13 @@ public:
 
     void transform(Chunk & chunk) override
     {
+        if (isVirtualRow(chunk))
+        {
+            /// Drop the virtual row entirely: it was a marker for the merging algorithm,
+            /// and there is no merging in this branch (single stream), so it has no downstream purpose.
+            chunk.clear();
+            return;
+        }
         chunk.getChunkInfos().extract<MergeTreeReadInfo>();
     }
 
@@ -117,14 +125,14 @@ static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before
 
     double ratio = max_bytes_ratio_before_external_sort;
     if (ratio < 0 || ratio >= 1.)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({})", ratio);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_sort should be >= 0 and < 1 ({:.3f})", ratio);
 
     auto available_system_memory = getMostStrictAvailableSystemMemory();
     if (available_system_memory.has_value())
     {
         size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
 
-        LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {}, available system memory: {})",
+        LOG_TRACE(getLogger("SortingStep"), "Adjusting memory limit before external sort with {} (ratio: {:.3f}, available system memory: {})",
             formatReadableSizeWithBinarySuffix(ratio_in_bytes),
             ratio,
             formatReadableSizeWithBinarySuffix(*available_system_memory));
@@ -313,19 +321,30 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bo
     apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
+/// A hash scatter into `threads` shards followed by per-shard merges of the `streams` inputs wires up
+/// (threads * streams) connections in the pipeline. Bound this by a sane value so that a large
+/// `max_threads` cannot explode the port/processor count.
+static void checkScatterConnectionLimit(size_t threads, size_t streams)
+{
+    const size_t connection_count_limit = 1000000;
+    if (threads * streams > connection_count_limit)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
+            threads, streams, connection_count_limit);
+}
+
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
-    size_t threads = pipeline.getNumThreads();
+    /// For a hash-sharded merge join the partition count is fixed (see `convertToScatteredFullSort`), so
+    /// both sides of the join scatter into the same number of shards even if they read a different number
+    /// of streams; otherwise fall back to the pipeline's thread count (window-frame partitioned sort).
+    size_t threads = scatter_partitions > 0 ? scatter_partitions : pipeline.getNumThreads();
     size_t streams = pipeline.getNumStreams();
 
     if (!partition_by_description.empty() && threads > 1)
     {
         /// We are going to shuffle the data from streams to threads. This will create (threads * streams) connections in the pipeline.
         /// Let's limit this by some sane value to avoid explosion.
-        const size_t connection_count_limit = 1000000;
-        if (threads * streams > connection_count_limit)
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
-                threads, streams, connection_count_limit);
+        checkScatterConnectionLimit(threads, streams);
 
         auto stream_header = pipeline.getSharedHeader();
 
@@ -576,6 +595,10 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (type == Type::PartitionedFinishSorting)
     {
+        /// The input is already partitioned upstream: the primary-key-range join sharding path
+        /// (`convertToPartitionedFinishSorting`) feeds one pre-sorted stream per shard, so each stream only
+        /// needs its sort suffix finished. No scatter is inserted here - an order-preserving scatter feeding
+        /// the selective per-shard merge consumers can deadlock (see `optimizeParallelFullSortingMergeJoin`).
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
@@ -674,7 +697,7 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     sort_settings.updatePlanSettings(settings);
 }

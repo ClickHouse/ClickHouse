@@ -13,98 +13,92 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 > 服务。在本快速入门指南中，我们将通过三个简单步骤帮你完成设置。
 
 <Steps>
-  <Step>
-    ## 创建 ClickHouse 服务
-
-    要在 [ClickHouse Cloud](https://console.clickhouse.cloud) 中创建免费的 ClickHouse 服务，只需按以下步骤注册：
+  <Step title="创建 ClickHouse 服务" id="1-create-a-clickhouse-service">
+    要在 [ClickHouse Cloud](https://console.clickhouse.cloud) 中创建免费的 ClickHouse 服务，您只需按以下步骤注册：
 
     * 在[注册页面](https://console.clickhouse.cloud/signUp)创建账户
-    * 你可以选择使用电子邮件注册，或通过 Google SSO、Microsoft SSO、AWS Marketplace、Google Cloud 或 Microsoft Azure 注册
-    * 如果你使用电子邮件和密码注册，请记得在 24 小时内通过邮件中的链接验证电子邮件地址
-    * 使用刚创建的用户名和密码登录
+    * 您可以选择使用电子邮箱注册，或通过 Google SSO、Microsoft SSO、AWS Marketplace、Google Cloud 或 Microsoft Azure 注册
+    * 如果您使用电子邮箱和密码注册，请记得在接下来的 24 小时内通过发送到您邮箱中的链接验证邮箱地址
+    * 使用您刚创建的用户名和密码登录
 
-    <Image img="/images/_snippets/signup_page.webp" size="md" alt="选择方案" border />
+    <Image img="/images/_snippets/signup_page.webp" size="md" alt="选择套餐" border />
 
     <br />
 
-    登录后，ClickHouse Cloud 会启动引导式设置向导，引导你创建新的 ClickHouse 服务。选择部署服务所需的区域，并为新服务命名：
+    登录后，ClickHouse Cloud 会启动引导向导，带您完成新 ClickHouse 服务的创建。选择要部署服务的区域，并为新服务命名：
 
     <Image img="/images/_snippets/createservice1.webp" size="md" alt="新的 ClickHouse 服务" border />
 
     <br />
 
-    默认情况下，新组织会使用 Scale 层级，并创建 3 个副本，每个副本配备 4 个 VCPU 和 16 GiB RAM。Scale 层级默认启用[垂直自动扩缩容](/zh/products/cloud/features/autoscaling/vertical)。你稍后可以在“Plans”页面更改组织层级。
+    默认情况下，新 organization 会使用 Scale tier，并创建 3 个副本，每个副本配备 4 个 vCPUs 和 16 GiB RAM。[垂直自动扩缩容](/zh/products/cloud/features/autoscaling/vertical) 在 Scale tier 中默认启用。您稍后可以在“Plans”页面更改 organization tier。
 
-    如有需要，你可以通过指定副本扩缩容的最小和最大规格来自定义服务资源。准备就绪后，选择 `Create service`。
+    如有需要，您可以通过指定副本扩缩容的最小和最大规格来自定义服务资源。准备就绪后，选择 `Create service`。
 
     <Image img="/images/_snippets/scaling_limits.webp" size="md" alt="扩缩容限制" border />
 
     <br />
 
-    恭喜！你的 ClickHouse Cloud 服务现已成功运行，引导式设置也已完成。继续阅读，了解如何开始摄取和查询数据。
+    恭喜！您的 ClickHouse Cloud 服务现已启动并运行，引导流程也已完成。继续阅读，了解如何开始摄取和查询数据。
   </Step>
 
-  <Step>
-    ## 连接到 ClickHouse
+  <Step title="连接到 ClickHouse" id="2-connect-to-clickhouse">
+    有 2 种方式可连接到 ClickHouse：
 
-    有 2 种方式连接到 ClickHouse：
-
-    * 使用我们的 Web 版 SQL 控制台进行连接
-    * 通过你的应用进行连接
+    * 使用我们的 Web 版 SQL 控制台连接
+    * 通过您的应用连接
 
     <br />
 
     ### 使用 SQL 控制台连接
 
-    为了快速上手，ClickHouse 提供了一个 Web 版 SQL 控制台，完成 onboarding 后，你将被重定向到该控制台。
+    为了快速上手，ClickHouse 提供了一个 Web 版 SQL 控制台；完成引导设置后，您将被重定向到该控制台。
 
     <Image img="/images/_snippets/createservice8.webp" size="md" alt="SQL 控制台" border />
 
-    创建一个查询选项卡，并输入一个简单的查询，以验证连接是否正常工作：
+    创建一个查询选项卡，并输入一个简单查询，以验证连接是否正常工作：
 
     ```sql
     SHOW databases
     ```
 
-    你应该会在列表中看到 4 个数据库，以及你另外添加的所有数据库。
+    你应该会在列表中看到 4 个数据库，以及你另外添加的任何数据库。
 
     <Image img="/images/_snippets/show_databases.webp" size="md" alt="SQL 控制台" border />
 
     <br />
 
-    就是这样 - 你已经可以开始使用新的 ClickHouse 服务了！
+    就是这样——你已经可以开始使用新的 ClickHouse 服务了！
 
     ### 连接你的应用
 
-    点击导航菜单中的 connect 按钮。系统会打开一个弹窗，其中会提供你的服务凭证，以及一组说明，指导你如何通过对应的接口或编程语言客户端进行连接。
+    点击导航菜单中的“连接”按钮。系统会打开一个模态窗口，其中会显示你的服务凭据，并提供一组说明，指导你如何通过相应的接口或语言客户端进行连接。
 
-    <Image img="/images/_snippets/service_connect.webp" size="md" alt="服务连接" border />
+    <Image img="/images/_snippets/service_connect.webp" size="md" alt="连接服务" border />
 
     <br />
 
-    如果你没有看到所需的编程语言客户端，可以查看我们的[集成](/zh/integrations/home)列表。
+    如果你找不到所需的语言客户端，可以查看我们的 [Integrations](/zh/integrations/home) 列表。
   </Step>
 
-  <Step>
-    ## 添加数据
-
-    有了数据，ClickHouse 才能发挥更大的价值！添加数据的方式有多种，大多数方式均可通过导航菜单中的数据源页面完成。
+  <Step title="添加数据" id="3-add-data">
+    有了数据，ClickHouse 才能发挥更大的价值！添加数据的方式有多种，其中大多数可通过导航菜单中的数据源页面进行操作。
 
     <Image img="/images/_snippets/data_sources.webp" size="md" alt="数据源" border />
 
     <br />
 
-    您可以通过以下方式上传数据：
+    您可以使用以下方法上传数据：
 
     * 配置 ClickPipe，开始从 S3、Postgres、Kafka、GCS 等数据源摄取数据
     * 使用 SQL 控制台
     * 使用 ClickHouse 客户端
-    * 上传文件  - 支持的格式包括 JSON、CSV 和 TSV
+    * 上传文件 - 支持的格式包括 JSON、CSV 和 TSV
     * 通过文件 URL 上传数据
 
     ### ClickPipes
 
-    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes) 是一个托管集成平台，让您只需点击几下即可从多种数据源摄取数据。ClickPipes 专为最苛刻的工作负载而设计，其稳健且可扩展的架构可确保稳定的性能与可靠性。ClickPipes 既适用于长期流式摄取场景，也适用于一次性数据加载任务。
+    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes) 是一个托管集成平台，让您只需点击几下按钮，即可轻松从多种数据源摄取数据。ClickPipes 专为最苛刻的工作负载而设计，其强健且可扩展的架构可确保稳定的性能与可靠性。ClickPipes 既适用于长期流式摄取场景，也支持一次性数据加载任务。
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="选择数据源" border />
 
@@ -118,7 +112,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     CREATE DATABASE IF NOT EXISTS helloworld
     ```
 
-    运行以下命令，在 `helloworld` 数据库中创建名为 `my_first_table` 的表：
+    运行以下命令，在 `helloworld` 数据库中创建一个名为 `my_first_table` 的表：
 
     ```sql
     CREATE TABLE helloworld.my_first_table
@@ -134,38 +128,38 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     在上面的示例中，`my_first_table` 是一个包含四列的 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表：
 
-    * `user_id`：一个 32 位无符号整数 ([UInt32](/zh/reference/data-types/int-uint))
-    * `message`：一种 [String](/zh/reference/data-types/string) 数据类型，相当于其他数据库系统中的 `VARCHAR`、`BLOB`、`CLOB` 等类型
-    * `timestamp`：一个 [DateTime](/zh/reference/data-types/datetime) 值，表示某个时间点
-    * `metric`：一个 32 位浮点型数值 ([Float32](/zh/reference/data-types/float))
+    * `user_id`：32 位无符号整数 ([UInt32](/zh/reference/data-types/int-uint))
+    * `message`：[String](/zh/reference/data-types/string) 数据类型，可替代其他数据库系统中的 `VARCHAR`、`BLOB`、`CLOB` 等类型
+    * `timestamp`：[日期时间](/zh/reference/data-types/datetime) 值，表示某一时间点
+    * `metric`：32 位浮点数 ([Float32](/zh/reference/data-types/float))
 
     <Info>
       **表引擎**
 
       表引擎决定：
 
-      * 数据如何存储以及存储位置
+      * 数据如何存储以及存储在何处
       * 支持哪些查询
       * 数据是否会被复制
 
       <br />
 
-      可选的表引擎有很多，但对于运行在单节点 ClickHouse server 上的简单表，[`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 通常是首选。
+      可选的表引擎有很多，但对于单节点 ClickHouse 服务器上的简单表，[`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree) 通常是首选。
     </Info>
 
     #### 主键简介
 
     在继续之前，有必要先了解 ClickHouse 中主键的工作原理 (其实现方式可能会让你感到意外！) ：
 
-    * ClickHouse 中的主键对表中的每一行来说 ***并不唯一***
+    * ClickHouse 中表的主键对表中的每一行而&#x8A00;***都不是唯一的***
 
-    ClickHouse 表的主键决定了数据写入磁盘时的排序方式。每 8,192 行或 10MB 的数据 (称为**索引粒度**) 会在主键索引文件中创建一条记录。这一粒度概念形成了一个**稀疏索引**，可轻松装入内存，而各粒度则代表 `SELECT` 查询处理期间所读取的最小列数据单元的条带。
+    ClickHouse 表的主键决定了数据写入磁盘时的排序方式。每 8,192 行或 10MB 的数据 (称为**索引粒度**) 会在主键索引文件中创建一条记录。这一粒度概念形成了一个**稀疏索引**，可轻松装入内存，而每个粒度则代表执行 `SELECT` 查询时所处理的最小列数据单元。
 
-    主键可以通过 `PRIMARY KEY` 参数来定义。如果在定义表时未指定 `PRIMARY KEY`，则键将成为 `ORDER BY` 子句中指定的 Tuple。如果同时指定了 `PRIMARY KEY` 和 `ORDER BY`，则主键必须是排序顺序的子集。
+    主键可以通过 `PRIMARY KEY` 参数来定义。如果定义表时未指定 `PRIMARY KEY`，则键默认为 `ORDER BY` 子句中指定的 Tuple。如果同时指定了 `PRIMARY KEY` 和 `ORDER BY`，则主键必须是排序键的子集。
 
-    主键同时也是排序键，即 `(user_id, timestamp)` 的 Tuple。因此，每个列文件中存储的数据将先按 `user_id` 排序，再按 `timestamp` 排序。
+    主键同时也是排序键，即由 `(user_id, timestamp)` 构成的 Tuple。因此，每个列文件中存储的数据将先按 `user_id` 排序，再按 `timestamp` 排序。
 
-    如需深入了解 ClickHouse 核心概念，请参阅[&quot;核心概念&quot;](/zh/concepts/core-concepts/index)。
+    如需深入了解 ClickHouse 核心概念，请参阅 [&quot;核心概念&quot;](/zh/concepts/core-concepts/index)。
 
     #### 向表中插入数据
 
@@ -174,13 +168,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Tip>
       **ClickHouse 最佳实践**
 
-      每个批次应插入大量行——一次可插入数万行，甚至数百万
-      行。别担心——ClickHouse 可以轻松处理这种规模的数据——而且由于向你的服务发送的写入请求更少，它还能[帮你节省成本](/zh/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)。
+      每个批次插入大量行——一次可插入数万行甚至数百万
+      行。无需担心——ClickHouse 可以轻松处理这种规模的数据——而且只需向你的服务发送更少的写请求，就能[帮你省钱](/zh/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)。
     </Tip>
 
     <br />
 
-    即便是简单的示例，我们也一次性插入多行数据：
+    即便是简单的示例，我们也一次插入多行数据：
 
     ```sql
     INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
@@ -191,7 +185,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ```
 
     <Note>
-      请注意，`timestamp` 列是通过各种 [**Date**](/zh/reference/data-types/date) 和 [**DateTime**](/zh/reference/data-types/datetime) 函数来填充的。ClickHouse 提供了数百个实用函数，你可以在 [**Functions** 部分](/zh/reference/functions/index) 中查看。
+      请注意，`timestamp` 列是通过各种 [**Date**](/zh/reference/data-types/date) 和 [**日期时间**](/zh/reference/data-types/datetime) 函数填充的。ClickHouse 提供了数百个实用函数，您可以在 [**函数** 部分](/zh/reference/functions/index)中查看。
     </Note>
 
     验证操作是否成功：
@@ -202,15 +196,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     ### 使用 ClickHouse 命令行客户端添加数据
 
-    您也可以使用名为 [**clickhouse client**](/zh/concepts/features/interfaces/cli) 的命令行工具连接到您的 ClickHouse Cloud 服务。点击左侧菜单中的 `Connect` 查看相关详情。在弹出的对话框中，从下拉菜单选择 `Native`：
+    您也可以使用名为 [**clickhouse client**](/zh/concepts/features/interfaces/cli) 的命令行工具连接到您的 ClickHouse Cloud 服务。点击左侧菜单中的 `Connect` 查看相关详情。在弹出的对话框中，从下拉列表中选择 `Native`：
 
-    <Image img="/images/_snippets/client_details.webp" size="md" alt="clickhouse client 连接信息" border />
+    <Image img="/images/_snippets/client_details.webp" size="md" alt="ClickHouse 客户端连接信息" border />
 
     <br />
 
     1. 安装 [ClickHouse](/zh/concepts/features/interfaces/cli)。
 
-    2. 运行以下命令，将其中的 hostname、用户名和密码替换为你自己的值：
+    2. 运行以下命令，并将其中的主机名、用户名和密码替换为你自己的值：
 
     ```bash
     ./clickhouse client --host HOSTNAME.REGION.CSP.clickhouse.cloud \
@@ -219,13 +213,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     --password <password>
     ```
 
-    如果出现笑脸提示，说明您已可以运行查询了！
+    如果出现笑脸提示符，说明您已准备好运行查询了！
 
     ```response
     :)
     ```
 
-    3. 运行以下查询来试试：
+    3. 试着运行以下查询：
 
     <br />
 
@@ -235,7 +229,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ORDER BY timestamp
     ```
 
-    注意，响应以整洁的表格形式返回：
+    注意，返回的响应以整洁的表格格式呈现：
 
     ```response
     ┌─user_id─┬─message────────────────────────────────────────────┬───────────timestamp─┬──metric─┐
@@ -248,7 +242,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     4 rows in set. Elapsed: 0.008 sec.
     ```
 
-    4. 添加 [`FORMAT`](/zh/reference/statements/select/format) 子句，以指定 [ClickHouse 支持的众多输出格式之一](/zh/reference/formats/index)：
+    4. 添加 [`FORMAT`](/zh/reference/statements/select/format) 子句，以指定 ClickHouse [支持的多种输出格式](/zh/reference/formats/index) 之一：
 
     <br />
 
@@ -259,7 +253,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     FORMAT TabSeparated
     ```
 
-    在上述查询中，输出以制表符分隔的格式返回：
+    在上述查询中，输出结果以制表符分隔的格式返回：
 
     ```response
     Query id: 3604df1c-acfd-4117-9c56-f86c69721121
@@ -272,7 +266,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     4 rows in set. Elapsed: 0.005 sec.
     ```
 
-    5. 要退出 `clickhouse client`，请输入 **exit** 命令：
+    5. 要退出 `clickhouse client`，输入 **exit** 命令：
 
     <br />
 
@@ -292,7 +286,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
     ```
 
-    1. 以下命令将数据插入 `my_first_table`：
+    1. 以下命令会将数据插入 `my_first_table`：
 
     <br />
 
@@ -304,11 +298,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
     ```
 
-    2. 注意：如果在 SQL 控制台中查询，现在可以看到表中已出现新的行：
+    2. 请注意，如果从 SQL 控制台进行查询，现在可以看到新行已出现在表中：
 
     <br />
 
-    <Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt="CSV 文件中的新行" />
+    <Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt="来自 CSV 文件的新行" />
 
     <br />
   </Step>
@@ -322,12 +316,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Tip>
 
 <div id="whats-next">
-  ## 接下来做什么？
+  ## 下一步？
 </div>
 
-* [教程](/zh/get-started/quickstarts/tutorial)将引导你向表中插入 200 万行数据，并编写一些分析查询
-* 我们提供了一系列[示例数据集](/zh/get-started/sample-datasets/index)，并附有如何插入这些数据集的说明
-* 查看我们时长 12 分钟的[ClickHouse 快速入门](https://clickhouse.com/company/events/getting-started-with-clickhouse/)视频
-* 如果你的数据来自外部来源，请查看我们的[集成指南](/zh/integrations/home)，了解如何连接消息队列、数据库、管道等
+* [教程](/get-started/quickstarts/tutorial)将指导你向表中插入 200 万行数据，并编写一些分析查询
+* 我们提供了一份[示例数据集](/zh/get-started/sample-datasets/index)列表，并附有如何插入这些数据集的说明
+* 查看我们关于 [ClickHouse 快速入门](https://clickhouse.com/company/events/getting-started-with-clickhouse/)的 12 分钟视频
+* 如果你的数据来自外部数据源，请查看我们的[集成指南合集](/zh/integrations/home)，了解如何连接消息队列、数据库、管道等
 * 如果你正在使用 UI/BI 可视化工具，请查看[将 UI 连接到 ClickHouse 的用户指南](/zh/integrations/connectors/data-visualization/index)
-* [主键](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)用户指南涵盖了有关主键及其定义方式的全部内容
+* 关于[主键](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)的用户指南涵盖了你需要了解的全部内容，包括主键及其定义方式

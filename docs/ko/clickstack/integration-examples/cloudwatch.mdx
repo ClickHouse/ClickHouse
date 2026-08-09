@@ -50,9 +50,7 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
 </Note>
 
 <Steps>
-  <Step>
-    #### ClickStack API Key 가져오기
-
+  <Step title="ClickStack API Key 가져오기" id="get-api-key">
     OpenTelemetry Collector는 데이터를 ClickStack의 OTLP endpoint로 전송하므로 인증이 필요합니다.
 
     1. ClickStack URL(예: http://localhost:8080)에서 HyperDX를 여십시오
@@ -69,21 +67,19 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
     ```
   </Step>
 
-  <Step>
-    #### AWS 자격 증명 구성
-
+  <Step title="AWS 자격 증명 구성" id="configure-aws">
     AWS 자격 증명을 환경 변수로 내보내십시오. 방법은 인증 유형에 따라 다릅니다.
 
     **AWS SSO 사용자용(대부분의 조직에 권장):**
 
     ```bash
-    # SSO 로그인
+    # Login to SSO
     aws sso login --profile YOUR_PROFILE_NAME
 
-    # 자격 증명을 환경 변수로 내보내기
+    # Export credentials to environment variables
     eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
 
-    # 자격 증명 확인
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -96,7 +92,7 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
     export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
     export AWS_REGION="us-east-1"
 
-    # 자격 증명 확인
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -124,9 +120,7 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
     `YOUR_ACCOUNT_ID`를 AWS 계정 ID로 바꾸십시오.
   </Step>
 
-  <Step>
-    #### CloudWatch receiver를 구성합니다
-
+  <Step title="CloudWatch receiver를 구성합니다" id="configure-receiver">
     CloudWatch receiver 구성이 포함된 `otel-collector-config.yaml` 파일을 생성합니다.
 
     <Accordion title="계정에서 사용할 수 있는 로그 그룹을 확인합니다">
@@ -258,9 +252,7 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
     </Note>
   </Step>
 
-  <Step>
-    #### collector 시작하기
-
+  <Step title="collector 시작하기" id="start-collector">
     `docker-compose.yaml` 파일을 생성하세요:
 
     ```yaml
@@ -294,9 +286,7 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
     ```
   </Step>
 
-  <Step>
-    #### HyperDX에서 로그 확인
-
+  <Step title="HyperDX에서 로그 확인" id="verify-logs">
     collector가 실행되면 다음을 수행하세요:
 
     1. http://localhost:8080(또는 ClickStack URL)에서 HyperDX를 엽니다
@@ -324,23 +314,19 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
 프로덕션 AWS 환경을 구성하기 전에 CloudWatch Logs 통합을 테스트하려는 사용자를 위해, 여러 AWS 서비스에서 발생하는 현실적인 패턴을 보여주는 사전 생성 로그가 포함된 샘플 데이터셋을 제공합니다.
 
 <Steps>
-  <Step>
-    #### 샘플 데이터셋 다운로드
-
+  <Step title="샘플 데이터셋 다운로드" id="download-sample">
     ```bash
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
     ```
 
-    이 데이터셋에는 여러 서비스의 CloudWatch Logs 24시간치가 포함되어 있습니다.
+    이 데이터셋에는 여러 서비스의 CloudWatch Logs 24시간치가 포함되어 있습니다:
 
     * **Lambda functions**: 결제 처리, 주문 관리, 인증
     * **ECS services**: rate limiting 및 timeout이 적용된 API gateway
     * **Background jobs**: retry 패턴이 포함된 Batch 처리
   </Step>
 
-  <Step>
-    #### ClickStack 시작
-
+  <Step title="ClickStack 시작" id="start-clickstack">
     아직 ClickStack을 실행 중이 아니라면 다음을 사용하세요.
 
     ```bash
@@ -352,9 +338,7 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
     ClickStack이 완전히 시작될 때까지 잠시 기다리세요.
   </Step>
 
-  <Step>
-    #### 데모 데이터세트 가져오기
-
+  <Step title="데모 데이터세트 가져오기" id="import-demo-data">
     ```bash
     docker exec -i clickstack clickhouse-client --query="
       INSERT INTO default.otel_logs FORMAT JSONEachRow
@@ -364,17 +348,15 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
     이 명령은 로그를 ClickStack의 로그 테이블로 직접 가져옵니다.
   </Step>
 
-  <Step>
-    #### 데모 데이터 확인
-
+  <Step title="데모 데이터 확인" id="verify-demo-logs">
     가져오기가 완료되면 다음을 수행하세요.
 
-    1. http://localhost:8080에서 HyperDX를 열고 로그인합니다(필요한 경우 계정을 생성합니다).
-    2. **Logs** 보기로 이동합니다.
-    3. 시간 범위를 **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**로 설정합니다.
-    4. `cloudwatch-demo`를 검색하거나 `LogAttributes['source'] = 'cloudwatch-demo'`로 필터링합니다.
+    1. http://localhost:8080에서 HyperDX를 열고 로그인합니다(필요한 경우 계정을 생성합니다)
+    2. **Logs** 보기로 이동합니다
+    3. 시간 범위를 **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**로 설정합니다
+    4. `cloudwatch-demo`를 검색하거나 `LogAttributes['source'] = 'cloudwatch-demo'`로 필터링합니다
 
-    여러 CloudWatch log groups의 로그가 표시되어야 합니다.
+    여러 CloudWatch 로그 그룹의 로그가 표시되어야 합니다.
 
     <Image img="/images/clickstack/cloudwatch/demo-search-view.webp" alt="데모 검색 보기" />
 
@@ -393,13 +375,11 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
 ClickStack으로 CloudWatch Logs를 모니터링할 수 있도록, 주요 시각화가 포함된 사전 구축된 대시보드를 제공합니다.
 
 <Steps>
-  <Step>
-    #### 대시보드 구성 파일 <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">다운로드</TrackedLink>
+  <Step title="대시보드 구성 다운로드" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">대시보드 구성 파일 다운로드</TrackedLink>.
   </Step>
 
-  <Step>
-    #### 대시보드 가져오기
-
+  <Step title="대시보드 가져오기" id="import-dashboard">
     1. HyperDX를 열고 Dashboards 섹션으로 이동합니다
     2. 오른쪽 상단의 줄임표 메뉴에서 **Import Dashboard**를 클릭합니다
 
@@ -410,9 +390,7 @@ ClickStack으로 CloudWatch Logs를 모니터링할 수 있도록, 주요 시각
     <Image img="/images/clickstack/cloudwatch/finish-import.webp" alt="가져오기 완료 대화상자" />
   </Step>
 
-  <Step>
-    #### 대시보드 보기
-
+  <Step title="대시보드 보기" id="created-dashboard">
     대시보드는 모든 시각화가 미리 구성된 상태로 생성됩니다:
 
     <Image img="/images/clickstack/cloudwatch/logs-dashboard.webp" alt="CloudWatch Logs 대시보드" />
@@ -558,9 +536,9 @@ groups:
 * 수집량을 줄이려면 노이즈가 많은 로그 그룹을 collector 구성에서 제거하세요
 
 <div id="going-to-production">
-  ## 프로덕션 환경으로 전환
+  ## 프로덕션 환경으로 전환하기
 </div>
 
-이 가이드에서는 테스트 목적으로 Docker Compose를 사용해 로컬에서 OpenTelemetry Collector를 실행하는 방법을 설명합니다. 프로덕션 배포에서는 액세스 키를 직접 관리할 필요가 없도록 AWS에 접근할 수 있는 인프라(예: IAM roles를 사용하는 EC2, IRSA를 사용하는 EKS, 또는 task roles를 사용하는 ECS)에서 collector를 실행하십시오. 지연 시간과 비용을 줄이려면 CloudWatch 로그 그룹과 동일한 AWS 리전에 collector를 배포하십시오.
+이 가이드는 테스트를 위해 Docker Compose로 OpenTelemetry Collector를 로컬에서 실행하는 방법을 보여줍니다. 프로덕션 배포에서는 액세스 키를 관리할 필요가 없도록 AWS에 접근할 수 있는 인프라(EC2의 IAM 역할, IRSA를 사용하는 EKS 또는 task 역할을 사용하는 ECS)에서 collector를 실행하십시오. 지연 시간과 비용을 줄이려면 collector를 CloudWatch 로그 그룹과 동일한 AWS 리전에 배포하십시오.
 
 프로덕션 배포 패턴과 collector 구성 예시는 [OpenTelemetry로 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.

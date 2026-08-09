@@ -195,9 +195,7 @@ Dans cet exemple, vous verrez comment insérer un fichier CSV dans ClickHouse de
 Nous utiliserons le [jeu de données Hacker News](/fr/get-started/sample-datasets/hacker-news) pour cet exemple, qui contient 28 millions de lignes de données Hacker News.
 
 <Steps>
-  <Step>
-    ### Télécharger le CSV
-
+  <Step title="Télécharger le CSV" id="download-csv">
     Exécutez la commande suivante pour télécharger une version CSV du jeu de données depuis notre bucket S3 public :
 
     ```bash
@@ -207,9 +205,7 @@ Nous utiliserons le [jeu de données Hacker News](/fr/get-started/sample-dataset
     Avec ses 4,6 Go et ses 28 millions de lignes, ce fichier compressé devrait prendre 5 à 10 minutes à télécharger.
   </Step>
 
-  <Step>
-    ### Créer la table
-
+  <Step title="Créer la table" id="create-table">
     Avec `clickhouse-server` en cours d’exécution, vous pouvez créer une table vide avec le schéma suivant directement depuis la ligne de commande à l’aide de `clickhouse-client` en mode batch :
 
     ```bash
@@ -239,9 +235,7 @@ Nous utiliserons le [jeu de données Hacker News](/fr/get-started/sample-dataset
     S’il n’y a pas d’erreurs, la table a bien été créée. Dans la commande ci-dessus, des guillemets simples sont utilisés autour du délimiteur Heredoc (`_EOF`) afin d’empêcher toute interpolation. Sans ces guillemets simples, il serait nécessaire d’échapper les backticks autour des noms de colonnes.
   </Step>
 
-  <Step>
-    ### Insérer les données depuis la ligne de commande
-
+  <Step title="Insérer les données depuis la ligne de commande" id="insert-data-via-cmd">
     Exécutez ensuite la commande ci-dessous pour insérer dans votre table les données du fichier que vous avez téléchargé précédemment :
 
     ```bash
@@ -268,9 +262,7 @@ Nous utiliserons le [jeu de données Hacker News](/fr/get-started/sample-dataset
     ```
   </Step>
 
-  <Step>
-    ### Insérer des données via la ligne de commande avec curl
-
+  <Step title="Insérer des données via la ligne de commande avec curl" id="insert-using-curl">
     Dans les étapes précédentes, vous avez d’abord téléchargé le fichier CSV sur votre machine locale avec `wget`. Il est également possible d’insérer directement les données depuis l’URL distante avec une seule commande.
 
     Exécutez la commande suivante pour supprimer les données de la table `hackernews` afin de pouvoir les insérer à nouveau sans l’étape intermédiaire de téléchargement sur votre machine locale :

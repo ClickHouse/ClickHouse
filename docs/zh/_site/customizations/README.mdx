@@ -16,14 +16,17 @@ title: README
 </div>
 
 * `ask-ai-button.js` — 调整 Ask-AI 按钮的样式和行为。
-* `cookie-banner.js` — 注入并管理 Cookie 同意横幅。
 * `custom-footer.js` — 渲染自定义站点页脚 (`#ch-custom-footer`) 。
+* `galaxy.js` — 初始化 ClickHouse Galaxy analytics，在 Mintlify SPA 导航过程中跟踪文档和知识库页面生命周期事件，将规范 `https://clickhouse.com/docs` 流量发送到生产 Galaxy API，并将 `.mintlify.app` 预览流量发送到开发 Galaxy API (在 localhost 和未知来源上禁用) ，且仅在规范生产文档中向 ClickHouse Cloud 链接添加归因信息和 Galaxy 访客 ID。
 * `inkeep-init.js` — 用 Inkeep 搜索模态框替换 Mintlify 的原生搜索 (⌘K / 导航栏搜索框) 。仅替换搜索；AI Chat 仍由 Kapa 提供。
 * `kapa-init.js` — 引导 Kapa.ai RAG 小组件。
 * `navbar-cta.js` — 在导航栏中添加“开始使用”CTA。
+* `nav-icon-preload.js` — 在文档就绪后立即以低优先级预加载桌面端导航栏下拉列表中的小型 SVG 图标，以便在菜单首次打开前图标已可用。
+* `raise-issue-link.js` — 将 Mintlify 默认的“Raise issue”反馈链接改为指向仓库的 Documentation issue 表单 (`.github/ISSUE_TEMPLATE/60_documentation-issue.yaml`)，并预填当前页面 path。
+* `scroll-reset.js` — 恢复前进式 client-side 导航时滚动到顶部的行为；当配置了通知横幅时，Next.js 会跳过这一行为。对后退/前进 (`popstate`) 保持不干预，以便浏览器/路由器恢复先前位置，并在跨页面哈希链接时滚动到锚点。
+* `tab-nav.js` — 将桌面端顶部导航选项卡 (Home / Database / Solutions / Integrations) 关联到各自的目标 URL，同时将导航保持在当前活动 locale 和基础 path 内。
 * `clickhouse-sql-lexer-wasm.js` — 将 ClickHouse 的 SQL 词法分析器 (由 `src/Parsers/Lexer.cpp` 编译为 WebAssembly) 以 base64 全局变量的形式暴露出来。快照来自 ClickHouse 的 `programs/server/play.html`；如果上游词法分析器或关键字列表发生变化，请重新提取。
 * `clickhouse-sql-highlight.js` — 使用 WASM 词法分析器重新高亮 `language="sql"` 代码块 (采用 ClickHouse 原生配色，与 play.html / ClickHouse 客户端保持一致) ，替代 Shiki。必须在 `clickhouse-sql-lexer-wasm.js` 之后加载。其他语言则保持 Shiki 的渲染结果不变。
-* `quickstart-back-link.js` — 在快速入门页面中，将自动生成的“所有快速入门”徽章从正文顶部移到标题上方的页眉中 (面包屑位置) 。
 
 要接入新脚本，请将一个 `{ "src": "/_site/customizations/<name>.js" }`
 条目添加到 `docs.json` 顶层的 `scripts` 数组中。

@@ -7,11 +7,8 @@ doc_type: 'reference'
 keywords: ['NLP', 'Natural Language Processing']
 ---
 
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 {/* 
 The inner content of the tags below are replaced at doc framework build time with 
@@ -178,11 +175,11 @@ Introduced in: v22.2.0
 
 Determines the sentiment of the provided text data.
 
-<Note>
+<Info>
 **Limitation**
 
 This function is limited in its current form in that it makes use of the embedded emotional dictionary and only works for the Russian language.
-</Note>
+</Info>
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
