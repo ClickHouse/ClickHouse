@@ -1460,6 +1460,11 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     table->is_being_restarted = true;
     table->flushAndShutdown();
 
+    /// The definition re-attached below was read back from this server's own metadata, so it must be
+    /// accepted as it is. `system_context` is shared by every branch of `execute`, hence the copy.
+    auto attach_context = Context::createCopy(system_context);
+    attach_context->setRecoveryFromStoredMetadata(true);
+
     /// For DatabaseReplicated, suppress digest checks while the table is temporarily detached.
     /// The table is removed from the in-memory tables map between detach and attach, making it
     /// inconsistent with tables_metadata_digest (which stays correct and is not modified).
@@ -1492,11 +1497,6 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
-
-    /// The definition re-attached below was read back from this server's own metadata, so it must be
-    /// accepted as it is. `system_context` is shared by every branch of `execute`, hence the copy.
-    auto attach_context = Context::createCopy(system_context);
-    attach_context->setRecoveryFromStoredMetadata(true);
 
     /// After the table is detached, we must re-create and re-attach it.
     /// If table creation fails (e.g. due to memory allocation failure from fault injection),
