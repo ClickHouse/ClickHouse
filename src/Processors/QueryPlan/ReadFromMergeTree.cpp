@@ -226,6 +226,7 @@ namespace Setting
     extern const SettingsBool compile_sort_description;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsBool do_not_merge_across_partitions_select_final;
+    extern const SettingsBool enable_early_constant_folding;
     extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
@@ -2786,7 +2787,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         return std::make_shared<AnalysisResult>(std::move(result));
     }
 
-    if (query_info_.prewhere_info)
+    if (query_info_.prewhere_info
+        && settings[Setting::enable_early_constant_folding]
+        && query_info_.prewhere_info->prewhere_actions.isSuitableForConstantFolding())
     {
         auto header = query_info_.prewhere_info->prewhere_actions.updateHeader(
             StorageSnapshot(data, metadata_snapshot).getSampleBlockForColumns(all_column_names));

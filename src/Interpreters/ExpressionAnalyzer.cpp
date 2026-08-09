@@ -126,18 +126,7 @@ namespace
 ///  predicates because some performance tests use ignore function as a non-optimize guard.
 bool allowEarlyConstantFolding(const ActionsDAG & actions, const Settings & settings)
 {
-    if (!settings[Setting::enable_early_constant_folding])
-        return false;
-
-    for (const auto & node : actions.getNodes())
-    {
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
-        {
-            if (!node.function_base->isSuitableForConstantFolding())
-                return false;
-        }
-    }
-    return true;
+    return settings[Setting::enable_early_constant_folding] && actions.isSuitableForConstantFolding();
 }
 
 LoggerPtr getLogger() { return ::getLogger("ExpressionAnalyzer"); }

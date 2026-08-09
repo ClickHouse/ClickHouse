@@ -28,6 +28,22 @@ FROM viewExplain('EXPLAIN', 'indexes = 1',
      WHERE uuid IN (SELECT toUUID('00000000-0000-0000-0000-000000000001') WHERE false)))
 WHERE explain LIKE '%Name: uuid_bf%';
 
+SELECT count()
+FROM viewExplain('EXPLAIN', 'indexes = 1',
+    (SELECT id
+     FROM t_empty_in_prewhere
+     PREWHERE uuid IN (SELECT toUUID('00000000-0000-0000-0000-000000000001') WHERE false)
+     SETTINGS enable_early_constant_folding = 0))
+WHERE explain LIKE '%Name: uuid_bf%';
+
+SELECT count()
+FROM viewExplain('EXPLAIN', 'indexes = 1',
+    (SELECT id
+     FROM t_empty_in_prewhere
+     PREWHERE NOT ignore(uuid)
+         AND uuid IN (SELECT toUUID('00000000-0000-0000-0000-000000000001') WHERE false)))
+WHERE explain LIKE '%Name: uuid_bf%';
+
 SELECT id
 FROM t_empty_in_prewhere
 WHERE uuid IN (SELECT toUUID('00000000-0000-0000-0000-000000000001'));

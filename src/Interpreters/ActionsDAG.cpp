@@ -2113,6 +2113,14 @@ bool ActionsDAG::hasNonDeterministic() const
     return false;
 }
 
+bool ActionsDAG::isSuitableForConstantFolding() const
+{
+    for (const auto & node : nodes)
+        if (node.type == ActionType::FUNCTION && node.function_base && !node.function_base->isSuitableForConstantFolding())
+            return false;
+    return true;
+}
+
 void ActionsDAG::decorrelate()
 {
     for (auto & node : nodes)
