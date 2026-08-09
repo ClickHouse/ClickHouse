@@ -31,8 +31,20 @@ namespace DB::HugePageArena
   * and the range faults back in as huge pages.
   */
 
-/// Below this, 2 MB granularity would waste far more than the TLB misses it saves.
-constexpr size_t min_allocation_size = 2 * 1024 * 1024;
+/** Matches jemalloc's `oversize_threshold` in `contrib/jemalloc-cmake/CMakeLists.txt`, which is the
+  * boundary ClickHouse already uses to separate "rare and transient very large allocation" from
+  * everything else. Three reasons it is the right one here too:
+  *
+  *   - Allocations this large already go to jemalloc's dedicated oversize arena, so routing them to
+  *     this one swaps one dedicated arena for another instead of diverting traffic away from the
+  *     percpu arenas.
+  *   - 2 MB rounding is under 3% of a 64 MiB allocation, and ruinous for a 2 MB one.
+  *   - Below it, the first touch of a huge page zeroes 2 MB where 4 KB would have done. `Allocator`
+  *     only pre-faults above 16 MiB, so a 2-16 MiB table faulted lazily and paid that cost with no
+  *     TLB benefit to show for it. A 2 MiB threshold measurably regressed small hash joins in the
+  *     performance suite - `joins_in_memory` by 36-214% on 37-93 ms queries.
+  */
+constexpr size_t min_allocation_size = 64 * 1024 * 1024;
 
 /// Reads `CH_HASHTABLE_HUGE_PAGES` once. Returns false when jemalloc is not in use, when the
 /// environment variable is unset, or when the arena could not be created.
