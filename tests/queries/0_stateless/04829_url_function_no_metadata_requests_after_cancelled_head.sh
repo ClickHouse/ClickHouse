@@ -2,11 +2,16 @@
 # Tags: no-fasttest
 # Test that a metadata `HEAD` request interrupted by a cancellation is not swallowed by the
 # fallback for servers which do not support `HEAD`. `ReadWriteBufferFromHTTP::getFileInfo` treats a
-# non-retriable 4xx response as "the server cannot answer this" and reports no metadata, and
-# `StorageURLSource::initialize` then goes on requesting the file size and the data - requests no
-# one needs after the read has been cancelled. Here the `HEAD` is answered with 400 only after a
-# soft `max_execution_time` (the `break` overflow mode) has cancelled the read, and the query -
-# which still succeeds with its (empty) partial result - must not make any request after that.
+# non-retriable 4xx response as "the server cannot answer this" and reports no metadata, so
+# `StorageURLSource::initialize` used to complete as if the file simply had none - the request no
+# one needs was interrupted for nothing. The cancellation must come out of every exit of the
+# metadata request the same way: as the error of the interrupted read, which the source then
+# discards or fails with depending on the kind of the cancellation, see
+# `StorageURLSource::generate`. Here the `HEAD` is answered with 400 only after a soft
+# `max_execution_time` (the `break` overflow mode) has cancelled the read: the query still
+# succeeds with its (empty) partial result, makes no request after the cancellation, and the log
+# records that the interrupted read was reported and its error discarded - not swallowed by the
+# no-metadata fallback.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -153,4 +158,14 @@ if (($(stat_count "HEAD /file") == 1 && $(stat_count "GET /file") == 0)); then
     echo "no request was made after the cancelled HEAD"
 else
     echo "FAIL: requests after the cancelled HEAD: $(curl -sS "http://127.0.0.1:$HTTP_PORT/stats")"
+fi
+
+# The cancelled HEAD must come out of the metadata request as the error of the interrupted read,
+# which the source discards for the partial result - not be swallowed by the fallback for servers
+# without HEAD support, completing the initialization as if the file had no metadata.
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND message LIKE '%discarding the error%'") != 0 ]]; then
+    echo "the error of the cancelled HEAD was reported and discarded for the partial result"
+else
+    echo "FAIL: the cancelled HEAD was swallowed as a file without metadata"
 fi

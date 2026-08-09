@@ -1,3 +1,4 @@
 the cancellation was delivered while the source was blocked in the HEAD request
 the timed out query succeeded with its partial result
 no request was made after the cancelled HEAD
+the error of the cancelled HEAD was reported and discarded for the partial result
