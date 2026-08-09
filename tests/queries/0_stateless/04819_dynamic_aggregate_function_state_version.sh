@@ -82,7 +82,7 @@ echo "flattened: $(announced_version "$blob"), round trip $(roundtrip < "$blob")
 rm -f "$blob"
 
 # A distributed query moves the whole Dynamic column over the Native wire before the subcolumn is
-# extracted on the initiator; both sides spell the nested type the same way. Only the new analyzer
+# extracted on the initiator; both sides spell the nested type the same way. Only the analyzer
 # can read a Dynamic subcolumn out of a subquery result, and the subquery is what keeps the
 # extraction on the initiator, so the query pins the analyzer instead of dropping the coverage.
 $CLICKHOUSE_CLIENT -m -q "
