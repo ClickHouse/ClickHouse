@@ -46,9 +46,9 @@ bool FilterSortedStreamByRange::stopIfCancelled(Chunk & chunk)
 
 void FilterSortedStreamByRange::transform(Chunk & chunk)
 {
-    /// A cancelled processor keeps being scheduled until it reports that it is finished, so a chunk
-    /// buffered in the input port can still arrive here after `KILL QUERY`. Do not enter the filter
-    /// expression again: drop the chunk and stop reading.
+    /// A task that was already dispatched by the executor when the cancellation landed still runs,
+    /// so a chunk buffered in the input port can still arrive here after `KILL QUERY`. Do not enter
+    /// the filter expression while cancelled: drop the chunk and stop reading.
     if (stopIfCancelled(chunk))
         return;
 
