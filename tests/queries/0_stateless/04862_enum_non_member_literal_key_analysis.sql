@@ -1,3 +1,4 @@
+-- Tags: no-parallel-replicas
 -- At validate_enum_literals_in_operators = 0 (the default) a non-member string literal must not
 -- throw, and the answer must not depend on whether the Enum column is in a key or carries an index.
 -- Every predicate below sits in a WHERE clause: only there does index analysis run, and it is index
@@ -160,7 +161,35 @@ SELECT count() FROM t_nonkey WHERE isDistinctFrom(e, '4') SETTINGS validate_enum
 SELECT count() FROM t_key WHERE e = '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT count() FROM t_bf  WHERE e = '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 
+-- force_data_skipping_indices raises INDEX_NOT_USED when a skip index ends up
+-- alwaysUnknownOrTrue, so it asserts index usability directly instead of via a result count:
+-- a member literal must still USE each index, a non-member literal must DECLINE it. Without
+-- these, an over-broad decline (every Enum predicate, not just non-member ones) would leave
+-- the result counts above byte-identical.
+SELECT 'a member literal still uses each skip index';
+SELECT count() FROM t_minmax WHERE e = 'a' SETTINGS force_data_skipping_indices = 'i';
+SELECT count() FROM t_set    WHERE e = 'a' SETTINGS force_data_skipping_indices = 'i';
+SELECT count() FROM t_bf     WHERE e = 'a' SETTINGS force_data_skipping_indices = 'i';
+SELECT count() FROM t_bf_arr WHERE has(a, 'a')      SETTINGS force_data_skipping_indices = 'i';
+SELECT count() FROM t_bf_arr WHERE hasAny(a, ['a']) SETTINGS force_data_skipping_indices = 'i';
+SELECT count() FROM t_bf_arr WHERE hasAll(a, ['a']) SETTINGS force_data_skipping_indices = 'i';
+SELECT count() FROM t_bf_map WHERE mapContains(m, 'a') SETTINGS force_data_skipping_indices = 'i';
+
+SELECT 'a non-member literal declines the index instead of throwing';
+SELECT count() FROM t_minmax WHERE e = '4' SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_bf     WHERE e = '4' SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_bf_arr WHERE has(a, '4')      SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_bf_arr WHERE hasAny(a, ['4']) SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_bf_arr WHERE hasAll(a, ['4']) SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_bf_map WHERE mapContains(m, '4') SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
+-- set(N) decides usability structurally (MergeTreeIndexConditionSet::isUseless is
+-- actions == nullptr), not from a KeyCondition atom, so it stays usable for a non-member
+-- literal and evaluates the predicate over the stored set instead. Asserting that it still
+-- USES the index is the stronger claim here.
+SELECT count() FROM t_set WHERE e = '4' SETTINGS force_data_skipping_indices = 'i';
+
 SELECT 'pruning for representable literals is preserved';
+SET explain_query_plan_default = 'legacy';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_key WHERE e = 'b') WHERE explain ILIKE '%e in [2, 2]%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(v) FROM t_part WHERE x = 'Beta') WHERE explain ILIKE '%x in [2, 2]%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(v) FROM t_part WHERE x = 'Beta') WHERE explain ILIKE '%Parts: 1/2%';

@@ -10,3 +10,13 @@ tokenbf_v1
 1
 0
 0
+a representable non-default literal still uses each index
+1
+1
+a non-member literal declines the index instead of throwing
+non-Enum cast targets keep using the index
+1
+1
+1
+1
+0

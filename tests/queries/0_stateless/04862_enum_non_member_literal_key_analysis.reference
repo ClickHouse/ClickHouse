@@ -99,6 +99,16 @@ a	0	1	0	1
 b	0	1	0	1
 \N	\N	\N	0	1
 validate_enum_literals_in_operators = 1 still rejects
+a member literal still uses each skip index
+1
+1
+1
+1
+1
+1
+1
+a non-member literal declines the index instead of throwing
+0
 pruning for representable literals is preserved
 1
 1
