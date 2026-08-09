@@ -423,9 +423,13 @@ size_t StoragePulsar::getPollTimeoutMilliseconds() const
 
 size_t StoragePulsar::getPollMaxBatchSize() const
 {
-    return (*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].changed
+    size_t batch_size = (*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].changed
         ? (*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].value
         : getContext()->getSettingsRef()[Setting::max_block_size].value;
+
+    /// A single `batchReceive` must not prefetch more than one block: a larger prefetch would leave
+    /// an unread tail attached to the consumer, which an aborted SELECT then has to negative-ack.
+    return std::min(batch_size, getMaxBlockSize());
 }
 
 size_t StoragePulsar::getMaxBlockSize() const
