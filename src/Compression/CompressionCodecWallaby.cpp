@@ -452,7 +452,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         const UInt32 discounted_failures = sampled_failures > 2 ? sampled_failures - 2 : 0;
         const UInt32 exceptions_estimate = static_cast<UInt32>(
             static_cast<UInt64>(discounted_failures) * count / std::max<UInt32>(sampled_alpha_count, 1));
-        UInt32 bits_estimate;
+        UInt32 bits_estimate = 0;
         if (candidate < reference_alpha)
         {
             if (!reference_packed_bits)
