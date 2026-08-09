@@ -708,9 +708,6 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                     /// Update statistics data type to match the new column type
                     if (!column.statistics.empty())
                         column.statistics.data_type = data_type;
-                    /// The type changed, so assume that implicit indices may change too
-                    metadata.dropImplicitIndicesForColumn(column_name);
-                    metadata.addImplicitIndicesForColumn(column, context);
                 }
 
                 if (!settings_changes.empty())
@@ -735,6 +732,16 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                 {
                     column.default_desc.kind = default_kind;
                     column.default_desc.expression = default_expression;
+                }
+
+                /// The type or the default kind changed, so implicit indices may change too.
+                /// This must run after the default is replaced above: a column turning
+                /// EPHEMERAL or ALIAS must not keep (or re-create) an implicit index,
+                /// and a column turning physical may gain one.
+                if (data_type || default_expression)
+                {
+                    metadata.dropImplicitIndicesForColumn(column_name);
+                    metadata.addImplicitIndicesForColumn(column, context);
                 }
             }
         });
