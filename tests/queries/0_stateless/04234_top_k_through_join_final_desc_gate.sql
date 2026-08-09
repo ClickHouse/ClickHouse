@@ -8,11 +8,9 @@
 -- in `topKThroughJoin`, the deferral would fire, the second pass would still
 -- reject the read, and both optimizations would be lost. This test pins the
 -- relevant settings on and checks that an inner `Sort + Limit` is injected.
---
--- `optimize_read_in_reverse_order_final = 0` below keeps the second pass rejecting
--- the descending read: with that setting on, a `ReplacingMergeTree` supports reading
--- in reverse order with FINAL and the deferral is sound (see
--- 04657_top_k_through_join_final_reverse_order).
+-- `optimize_read_in_reverse_order_final = 0` below keeps that rejection in place, since a
+-- `ReplacingMergeTree` does support reading in reverse order with FINAL when it is enabled
+-- (see 04657_top_k_through_join_final_reverse_order).
 
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
@@ -26,7 +24,7 @@ CREATE TABLE t_r_final (k Int64, value String) ENGINE = MergeTree() ORDER BY k;
 INSERT INTO t_l_final SELECT number, repeat('a', 8) FROM numbers(1000);
 INSERT INTO t_r_final SELECT number, repeat('b', 8) FROM numbers(1000);
 
--- FINAL + DESC: pass 2's `requestReadingInOrder` rejects the descending direction
+-- FINAL + DESC: pass 2's `requestReadingInOrder` rejects descending direction
 -- with FINAL, so `topKThroughJoin` must NOT defer. Expect two Sort + Limit
 -- pairs in the plan (the outer pair + the injected pair on the preserved input).
 SELECT 'final_desc' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, countIf(explain LIKE '%Limit%') AS limit_count
