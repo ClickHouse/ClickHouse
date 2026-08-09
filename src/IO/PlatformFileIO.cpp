@@ -7,13 +7,16 @@
 #include <limits>
 
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #if defined(OS_WINDOWS)
 #include <io.h>
+#include <sys/utime.h>
 #include <Poco/UnWindows.h>
 #else
 #include <sys/file.h>
 #include <unistd.h>
+#include <utime.h>
 #endif
 
 namespace DB
@@ -183,6 +186,91 @@ int platformOpenReadWrite(const std::string & path)
     return ::_wopen(pathFromString(path).c_str(), _O_RDWR | _O_BINARY);
 }
 
+int platformOpenFile(const std::string & path, int flags, int mode)
+{
+    return ::_wopen(pathFromString(path).c_str(), flags | _O_BINARY, mode);
+}
+
+int platformStat(const std::string & path, struct stat & out)
+{
+    return ::wstat(pathFromString(path).c_str(), &out);
+}
+
+int platformUnlink(const std::string & path)
+{
+    return ::_wunlink(pathFromString(path).c_str());
+}
+
+int platformRmdir(const std::string & path)
+{
+    return ::_wrmdir(pathFromString(path).c_str());
+}
+
+int platformSetFileTimes(const std::string & path, time_t access_time, time_t modification_time)
+{
+    struct _utimbuf times{};
+    times.actime = access_time;
+    times.modtime = modification_time;
+    return ::_wutime(pathFromString(path).c_str(), &times);
+}
+
+namespace
+{
+
+int fileVersionFromHandle(HANDLE handle, PlatformFileVersion & out)
+{
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (!GetFileInformationByHandle(handle, &info))
+    {
+        errno = EIO;
+        return -1;
+    }
+
+    /// `FILETIME` counts 100-nanosecond ticks since 1601-01-01; shift it to the Unix epoch.
+    const auto ticks = (static_cast<UInt64>(info.ftLastWriteTime.dwHighDateTime) << 32) | info.ftLastWriteTime.dwLowDateTime;
+    constexpr UInt64 ticks_per_second = 10'000'000;
+    constexpr Int64 seconds_between_epochs = 11'644'473'600;
+    out.mtime_sec = static_cast<Int64>(ticks / ticks_per_second) - seconds_between_epochs;
+    out.mtime_nsec = static_cast<Int64>(ticks % ticks_per_second) * 100;
+    out.device_id = info.dwVolumeSerialNumber;
+    out.file_id = (static_cast<UInt64>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
+    out.size = (static_cast<UInt64>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
+    return 0;
+}
+
+}
+
+int platformFileVersion(const std::string & path, PlatformFileVersion & out)
+{
+    /// `FILE_FLAG_BACKUP_SEMANTICS` so that a directory opens too, as `stat` allows.
+    auto * handle = CreateFileW(
+        pathFromString(path).c_str(),
+        FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS,
+        nullptr);
+
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        errno = GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND ? ENOENT : EACCES;
+        return -1;
+    }
+
+    const int res = fileVersionFromHandle(handle, out);
+    CloseHandle(handle);
+    return res;
+}
+
+int platformFileVersionOfDescriptor(int fd, PlatformFileVersion & out)
+{
+    auto * handle = toHandle(fd);
+    if (handle == INVALID_HANDLE_VALUE)
+        return -1;
+    return fileVersionFromHandle(handle, out);
+}
+
 int platformOpenDirectory(const std::string & path)
 {
     /// The only consumer of this descriptor is `platformFDataSync`, i.e. `_commit`, i.e.
@@ -273,6 +361,71 @@ int platformOpenDirectory(const std::string & path)
 #else
     return ::open(path.c_str(), O_RDONLY);
 #endif
+}
+
+int platformOpenFile(const std::string & path, int flags, int mode)
+{
+    return ::open(path.c_str(), flags, mode);
+}
+
+int platformStat(const std::string & path, struct stat & out)
+{
+    return ::stat(path.c_str(), &out);
+}
+
+int platformUnlink(const std::string & path)
+{
+    return ::unlink(path.c_str());
+}
+
+int platformRmdir(const std::string & path)
+{
+    return ::rmdir(path.c_str());
+}
+
+int platformSetFileTimes(const std::string & path, time_t access_time, time_t modification_time)
+{
+    struct utimbuf times{};
+    times.actime = access_time;
+    times.modtime = modification_time;
+    return ::utime(path.c_str(), &times);
+}
+
+namespace
+{
+
+void fileVersionFromStat(const struct stat & st, PlatformFileVersion & out)
+{
+#if defined(OS_DARWIN)
+    out.mtime_sec = st.st_mtimespec.tv_sec;
+    out.mtime_nsec = st.st_mtimespec.tv_nsec;
+#else
+    out.mtime_sec = st.st_mtim.tv_sec;
+    out.mtime_nsec = st.st_mtim.tv_nsec;
+#endif
+    out.device_id = st.st_dev;
+    out.file_id = st.st_ino;
+    out.size = st.st_size;
+}
+
+}
+
+int platformFileVersion(const std::string & path, PlatformFileVersion & out)
+{
+    struct stat st{};
+    if (0 != ::stat(path.c_str(), &st))
+        return -1;
+    fileVersionFromStat(st, out);
+    return 0;
+}
+
+int platformFileVersionOfDescriptor(int fd, PlatformFileVersion & out)
+{
+    struct stat st{};
+    if (0 != ::fstat(fd, &st))
+        return -1;
+    fileVersionFromStat(st, out);
+    return 0;
 }
 
 #endif

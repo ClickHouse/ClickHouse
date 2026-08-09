@@ -3,7 +3,10 @@
 #include <base/types.h>
 
 #include <cstddef>
+#include <ctime>
 #include <string>
+
+#include <sys/stat.h>
 
 namespace DB
 {
@@ -64,5 +67,50 @@ int platformOpenReadWrite(const std::string & path);
 /// `FILE_FLAG_BACKUP_SEMANTICS` - the flag that means "a directory handle is fine" - and adopts
 /// the result into a descriptor. Reports failure as `-1` with `errno` set.
 int platformOpenDirectory(const std::string & path);
+
+/// The path-taking counterparts of `open`/`stat`/`unlink`/`rmdir`/`utime`, by a UTF-8 path.
+///
+/// The narrow Windows CRT functions interpret a `char *` path through the process's active code
+/// page, not UTF-8 (see base/base/pathToString.h), so any path with a character outside the ACP
+/// fails or names the wrong file. These wrappers convert the UTF-8 path and call the `_w`-prefixed
+/// wide variants instead; on POSIX they are the plain calls. All report failure the POSIX way:
+/// `-1` (or a non-zero result for `stat`) with `errno` set.
+
+/// `open(2)`. On Windows also adds `_O_BINARY`: the CRT would otherwise open in text mode and
+/// translate line endings on read and write.
+int platformOpenFile(const std::string & path, int flags, int mode = 0);
+
+/// `stat(2)`. mingw-w64's `wstat` shares the `struct stat` layout with the narrow `stat` - both
+/// follow `_FILE_OFFSET_BITS` - so the out-parameter is the ordinary `struct stat`.
+int platformStat(const std::string & path, struct stat & out);
+
+/// `unlink(2)`.
+int platformUnlink(const std::string & path);
+
+/// `rmdir(2)`.
+int platformRmdir(const std::string & path);
+
+/// `utime(2)`: set a file's access and modification times.
+int platformSetFileTimes(const std::string & path, time_t access_time, time_t modification_time);
+
+/// A file's identity, size and modification time at full precision - the parts `stat` cannot
+/// report on Windows, where the CRT's `struct stat` carries whole seconds and a zero `st_ino`
+/// (see src/Common/createHardLink.cpp). NTFS itself keeps 100-nanosecond timestamps and a
+/// per-volume file index; `GetFileInformationByHandle` is the call that reports them.
+struct PlatformFileVersion
+{
+    Int64 mtime_sec = 0;
+    Int64 mtime_nsec = 0;
+    UInt64 device_id = 0; /// `st_dev`; the volume serial number on Windows
+    UInt64 file_id = 0; /// `st_ino`; the NTFS file index on Windows
+    UInt64 size = 0;
+};
+
+/// Fills `out` for the file at a UTF-8 `path` (following symlinks, as `stat` does). Reports
+/// failure as `-1` with `errno` set.
+int platformFileVersion(const std::string & path, PlatformFileVersion & out);
+
+/// The same for an open descriptor, like `fstat`.
+int platformFileVersionOfDescriptor(int fd, PlatformFileVersion & out);
 
 }
