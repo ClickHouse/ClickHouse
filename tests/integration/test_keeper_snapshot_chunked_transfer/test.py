@@ -370,6 +370,16 @@ def test_recover_from_snapshot_sent_by_old_leader(started_cluster, nodes):
     node_lagging = nodes["lagging"]
     prefix = "/test_compat_snapshot_transfer"
 
+    # cleanup_test_tree below is already a read on the old leader, so the setting that makes
+    # its reads terminate has to be asserted before it, not after. wait_complete_readiness is
+    # off because its readiness probe is itself such a read.
+    keeper_utils.wait_until_connected(cluster, node_old_leader, wait_complete_readiness=False)
+    keeper_utils.wait_until_connected(cluster, node_lagging, wait_complete_readiness=False)
+    assert get_coordination_setting(node_old_leader, "quorum_reads") == "true", \
+        f"{node_old_leader.name} runs a pinned image and must serve reads through Raft"
+    assert get_coordination_setting(node_lagging, "quorum_reads") == "false", \
+        f"{node_lagging.name} is the node under test and must keep local reads"
+
     cleanup_test_tree(cluster, node_old_leader, prefix)
 
     kill_time = get_kill_timestamp(node_lagging)
@@ -381,14 +391,6 @@ def test_recover_from_snapshot_sent_by_old_leader(started_cluster, nodes):
     node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     received = get_received_snapshot_info(node_lagging, kill_time)
-
-    # The reads below only terminate because the pinned leader serves them through Raft, so
-    # assert that on the server: losing configs/quorum_reads.xml must fail here rather than
-    # silently reintroduce a 900 s hang.
-    assert get_coordination_setting(node_old_leader, "quorum_reads") == "true", \
-        f"{node_old_leader.name} runs a pinned image and must serve reads through Raft"
-    assert get_coordination_setting(node_lagging, "quorum_reads") == "false", \
-        f"{node_lagging.name} is the node under test and must keep local reads"
 
     leader_zk = keeper_utils.get_fake_zk(cluster, node_old_leader.name)
     lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
