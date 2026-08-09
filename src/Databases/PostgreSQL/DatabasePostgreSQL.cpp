@@ -493,13 +493,29 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     }
     else
     {
-        /// Remove extra engine argument (`schema` and `use_table_cache`)
-        if (storage_engine_arguments->children.size() >= 5)
-            storage_engine_arguments->children.resize(4);
+        auto & arguments = storage_engine_arguments->children;
+
+        /// The trailing `key = value` arguments (the TLS/SSL parameters) are accepted by the table
+        /// engine as well, so keep them in the synthesized definition; otherwise re-running it would
+        /// silently fall back to the libpq TLS defaults.
+        size_t num_positional_arguments = arguments.size();
+        while (num_positional_arguments > 0)
+        {
+            const auto * function = arguments[num_positional_arguments - 1]->as<ASTFunction>();
+            if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2
+                || !function->arguments->children[0]->as<ASTIdentifier>())
+                break;
+            --num_positional_arguments;
+        }
+
+        /// Remove the extra positional engine arguments (`schema` and `use_table_cache`), which the
+        /// table engine does not take in these positions.
+        if (num_positional_arguments > 4)
+            arguments.erase(arguments.begin() + 4, arguments.begin() + num_positional_arguments);
 
         /// Add table_name to engine arguments.
-        if (storage_engine_arguments->children.size() >= 2)
-            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, make_intrusive<ASTLiteral>(table_id.table_name));
+        if (num_positional_arguments >= 2)
+            arguments.insert(arguments.begin() + 2, make_intrusive<ASTLiteral>(table_id.table_name));
     }
 
     return create_table_query;

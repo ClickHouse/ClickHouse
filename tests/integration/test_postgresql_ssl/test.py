@@ -277,6 +277,31 @@ def test_postgresql_database_engine_over_ssl(started_cluster):
     node.query("DROP DATABASE pg_db_ssl")
 
 
+def test_database_engine_show_create_table_preserves_tls_arguments(started_cluster):
+    # `DatabasePostgreSQL::getCreateTableQueryImpl` synthesizes a table-engine
+    # definition from the database-engine one. With positional arguments it used to
+    # truncate everything after the fourth argument, which would also drop the
+    # trailing TLS `key = value` arguments: re-running the emitted DDL would then
+    # silently fall back to the libpq TLS defaults or lose client-certificate
+    # authentication. The database-engine-only positional arguments (`schema`,
+    # `use_table_cache`) still must not leak into the table definition.
+    node.query("DROP DATABASE IF EXISTS pg_db_show_create")
+    node.query(
+        f"CREATE DATABASE pg_db_show_create ENGINE = PostgreSQL('{PG_HOST}:5432', 'postgres', 'postgres', '{pg_pass}', 'public', 1, "
+        f"sslmode='verify-full', sslrootcert_pem='{quote_pem(ca_pem)}')"
+    )
+    assert node.query("SELECT count() FROM pg_db_show_create.test_table").strip() == "10"
+
+    show_create = node.query("SHOW CREATE TABLE pg_db_show_create.test_table")
+    assert "'test_table'" in show_create
+    assert "sslmode = 'verify-full'" in show_create
+    assert "sslrootcert_pem = '[HIDDEN]'" in show_create
+    assert "BEGIN CERTIFICATE" not in show_create
+    assert "'public'" not in show_create
+
+    node.query("DROP DATABASE pg_db_show_create")
+
+
 def test_postgresql_dictionary_over_ssl(started_cluster):
     # The dictionary source used to accept `sslmode` and then silently ignore it;
     # this checks the whole chain (sslmode + sslrootcert_pem) is honored.
