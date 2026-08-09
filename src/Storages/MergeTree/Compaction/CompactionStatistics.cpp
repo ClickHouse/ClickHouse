@@ -1210,23 +1210,16 @@ UInt64 estimateNeededMemoryForMerge(
     /// them via addMergingColumn / addGatheringColumn after the expired-columns filter, so they are never
     /// expired); a projection merge never writes them (enabledBlockNumberColumn is false under a parent
     /// part). A source part that predates the setting does not store them - the reader synthesizes their
-    /// values from the part's own block number - so, like a column filled from its DEFAULT expression,
-    /// their written bytes are not bounded by the bytes the merge reads and their writer streams must be
-    /// priced at the per-stream worst case (synthesized_columns joins default_filled_columns below).
-    NameSet synthesized_columns;
+    /// values from the part's own block number - so, like any column missing from some source part, they
+    /// are picked up by the default-filled detection below and their writer streams are priced at the
+    /// per-stream worst case.
     const bool is_projection_merge = !future_part.parts.empty() && future_part.parts.front()->isProjectionPart();
     if (!is_projection_merge)
     {
         const auto add_persisted_virtual_column = [&](const String & name, const DataTypePtr & type)
         {
-            if (output_columns.contains(name))
-                return;
-            output_columns.emplace_back(name, type);
-            const bool missing_from_some_part = std::any_of(
-                future_part.parts.begin(), future_part.parts.end(),
-                [&](const auto & part) { return !part->getColumns().contains(name); });
-            if (missing_from_some_part)
-                synthesized_columns.insert(name);
+            if (!output_columns.contains(name))
+                output_columns.emplace_back(name, type);
         };
         if (settings[MergeTreeSetting::enable_block_number_column])
             add_persisted_virtual_column(BlockNumberColumn::name, BlockNumberColumn::type);
@@ -1281,12 +1274,16 @@ UInt64 estimateNeededMemoryForMerge(
     /// paths that all appear in the merged part. Patch parts are included: a patched JSON / Dynamic column
     /// can carry a path that exists only in a patch, not in any base part.
     ///
-    /// An output column absent from some base part but with a default expression in the merged metadata is
-    /// materialized from that default during the merge: MergeTask keeps such a column live (a missing
-    /// column is expired only when it has no default), and IMergeTreeReader fills and evaluates the missing
-    /// defaults for the rows of the parts that predate the ALTER ... ADD COLUMN ... DEFAULT. The
-    /// synthesized values were never read from any source part, so nothing about them - neither their
-    /// substreams nor their volume - can be derived from the sources:
+    /// An output column absent from some base part is materialized for that part's rows during the merge:
+    /// IMergeTreeReader::fillMissingColumns first fills the column with the type's default values, then
+    /// evaluateMissingDefaults evaluates an explicit DEFAULT expression when the metadata has one. An
+    /// explicit DEFAULT is NOT required for this to happen - any column still in output_columns here is
+    /// written by the merge (a column absent from every base and patch part with no default was erased as
+    /// expired above), so a column kept alive only because ANOTHER base part or a patch part stores it
+    /// (ALTER ... ADD COLUMN with no DEFAULT followed by new inserts or a lightweight UPDATE) is
+    /// default-filled for the older rows all the same. The synthesized values were never read from any
+    /// source part, so nothing about them - neither their substreams nor their volume - can be derived
+    /// from the sources:
     ///  - a dynamic-structure (JSON / Dynamic) such column can write real dynamic substreams that no source
     ///    part records, invisible to the recorded per-part substream union and to the legacy .bin recovery
     ///    alike - both countOutputStreams and the rebuilt-projection pricing must fall back to the output
@@ -1295,8 +1292,8 @@ UInt64 estimateNeededMemoryForMerge(
     ///  - a such column of ANY type breaks the input-volume cap on the writer's data-dependent buffers
     ///    below (default_filled_columns): its written bytes are not bounded by the bytes the merge reads.
     /// Only base parts decide missing-ness: a patch part physically stores just the columns it patches and
-    /// its rows are applied as patches, never default-filled. A column missing from no part keeps the
-    /// exact pricing, so all of this is a no-op outside the ADD COLUMN ... DEFAULT upgrade window.
+    /// its rows are applied as patches, never default-filled. A column missing from no base part keeps the
+    /// exact pricing, so all of this is a no-op outside the schema-upgrade window.
     /// need_remove_expired_values / merge_may_reduce_rows exactly as the merge itself will compute them
     /// (MergeTask::ExecuteAndFinalizeHorizontalPart::prepare): a deduplicating or cleanup merge, a
     /// merge that removes expired TTL values, one that applies lightweight-delete masks or patch
@@ -1350,7 +1347,7 @@ UInt64 estimateNeededMemoryForMerge(
         const bool missing_from_some_part = std::any_of(
             future_part.parts.begin(), future_part.parts.end(),
             [&](const auto & part) { return !part->getColumns().contains(source_name); });
-        if (missing_from_some_part && (columns_description.getDefault(column.name) || synthesized_columns.contains(column.name)))
+        if (missing_from_some_part)
         {
             default_filled_columns.insert(column.name);
             if (column.type->hasDynamicStructure())
@@ -1485,10 +1482,11 @@ UInt64 estimateNeededMemoryForMerge(
     /// is real data the reactive background_memory_tracker sees as it materializes, so under-pricing it here
     /// degrades to master's purely reactive behavior for that stream instead of blocking all progress.
 
-    /// The input-volume bound holds only for data the merge actually READS. A column filled from its
-    /// DEFAULT expression for the rows of parts that predate its ALTER ... ADD COLUMN
-    /// (default_filled_columns above) is synthesized by IMergeTreeReader::evaluateMissingDefaults, not
-    /// read: a default such as repeat(toString(k), 1000) writes orders of magnitude more bytes than the
+    /// The input-volume bound holds only for data the merge actually READS. A column filled for the rows
+    /// of parts that predate its ALTER ... ADD COLUMN (default_filled_columns above) is synthesized by
+    /// IMergeTreeReader::fillMissingColumns / evaluateMissingDefaults - from the type's default values,
+    /// or from an explicit DEFAULT expression when the metadata has one - not read: a default such as
+    /// repeat(toString(k), 1000) writes orders of magnitude more bytes than the
     /// merge reads, so capping its upload buffers by the input volume would under-reserve the writer's
     /// real footprint on object storage. Price the synthesized volume instead: a fixed-size type writes
     /// exactly rows * value size, so 3x that volume (the same in-flight allowance as the base bound) is
