@@ -3157,24 +3157,38 @@ TEST_F(WallabyTest, ChoosesCheaperAlphaOverSampledOutlier)
 TEST_F(WallabyTest, ChoosesInteriorAlphaOnMixedPrecisionData)
 {
     /// The cheapest legal decimal scale can be an interior sampled alpha, not just the
-    /// smallest, median or largest one: on this vector the ramp needs alpha = 2, the 1e-7
-    /// block pushes some samples to alpha = 7 and the sparse 1e-13 values to alpha = 13.
-    /// alpha <= 2 loses too many values to exceptions, alpha = 13 packs 43-bit deltas
-    /// (~5.5 KiB), while alpha = 7 packs 24-bit deltas with 60 exceptions (~3.7 KiB).
-    /// An earlier encoder revision evaluated only the {min, median, max} sampled alphas
-    /// and settled for alpha = 13.
+    /// smallest, median or largest one. The bulk of this vector are pseudo-random values
+    /// in [100.0000, 100.9999] with four decimal places (ten thousand distinct values
+    /// with random mantissas make both the XOR residues and the XOR ring's EQUAL branch
+    /// expensive), 128 values in the same range need alpha = 7, and 64 sparse values
+    /// around 1e-13 need alpha = 13 and flip the exponent under XOR. alpha <= 4 loses
+    /// 192 values to exceptions (over the budget of 96); alpha = 13 packs 50-bit lanes
+    /// (~6.4 KiB, and XOR costs ~5 KiB); alpha = 7 keeps every quantized value within a
+    /// span of 1e7, packing 24-bit lanes with 64 exceptions (~3.7 KiB). An earlier encoder
+    /// revision evaluated only the {min, median, max} sampled alphas, missing the
+    /// interior alpha = 7.
     std::vector<Float64> values(1024);
+    UInt64 state = 42;
+    const auto next = [&state]
+    {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return state >> 33;
+    };
     for (size_t i = 0; i < values.size(); ++i)
     {
-        if (i < 64)
-            values[i] = 1e-7;
-        else if (i % 16 == 0)
-            values[i] = 1e-13;
+        if (i % 16 == 4)
+            values[i] = static_cast<Float64>(next() % 9 + 1) / 1e13;
+        else if (i % 8 == 3)
+        {
+            UInt64 q = 1000000000 + next() % 10000000;
+            q += q % 10 == 0;
+            values[i] = static_cast<Float64>(q) / 1e7;
+        }
         else
-            values[i] = static_cast<Float64>(i) * 0.25;
+            values[i] = static_cast<Float64>(1000000 + next() % 10000) / 10000.0;
     }
 
-    EXPECT_LT(wallabyCompressedSize(values), 4200u);
+    EXPECT_LT(wallabyCompressedSize(values), 4300u);
 }
 
 }
