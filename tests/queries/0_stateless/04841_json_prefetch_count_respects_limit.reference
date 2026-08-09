@@ -1,4 +1,4 @@
--- prefetches within the limit
+-- exactly the requested number of prefetches is issued
 1
 1
 1
