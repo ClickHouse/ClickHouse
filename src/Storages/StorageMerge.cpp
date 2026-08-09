@@ -605,10 +605,15 @@ ReadFromMerge::ReadFromMerge(
 /// Distributing the child read from here ships a fragment that (a) silently loses the filters
 /// pushed down into it, and (b) may reference such a consumed set, which then fails to
 /// serialize with `Cannot serialize FutureSetFromSubquery with no query plan`.
+///
+/// `make_distributed_plan` is cleared for the same reason: `QueryPlan::buildQueryPipeline` runs
+/// `convertToDistributed` on the child plan whenever it is set (regardless of `optimize_plan`),
+/// which would ship the child to remote nodes with the same consequences.
 static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(const ContextPtr & context)
 {
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.enable_parallel_replicas = false;
+    optimization_settings.make_distributed_plan = false;
     return optimization_settings;
 }
 
@@ -786,10 +791,12 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         {
             auto modified_context = Context::createCopy(context);
             /// See `getChildPlanOptimizationSettings`: a child plan must never be distributed.
-            /// The setting is cleared in the context as well, because the parallel-replicas
+            /// The settings are cleared in the context as well, because the parallel-replicas
             /// conversion re-checks `canUseParallelReplicasOnInitiator` against the context
-            /// captured by the reading step, not only the optimization settings.
+            /// captured by the reading step, not only the optimization settings, and nested
+            /// interpreters (e.g. for a `View` child) derive their own settings from this context.
             modified_context->setSetting("enable_parallel_replicas", Field(0));
+            modified_context->setSetting("make_distributed_plan", Field(0));
 
             size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
             size_t current_streams = std::min(current_need_streams, remaining_streams);
@@ -1331,7 +1338,9 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     if (!child.plan.isInitialized())
         return nullptr;
 
-    QueryPlanOptimizationSettings optimization_settings(context);
+    /// See `getChildPlanOptimizationSettings`: a child plan must never be distributed, and
+    /// `buildQueryPipeline` honors `make_distributed_plan` even with `optimize_plan = false`.
+    auto optimization_settings = getChildPlanOptimizationSettings(context);
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
