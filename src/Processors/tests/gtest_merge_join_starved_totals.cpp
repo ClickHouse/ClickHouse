@@ -100,7 +100,7 @@ std::vector<std::pair<UInt64, UInt64>> runFullJoinWithStarvedTotals(
 
 TEST(MergeJoinStarvedTotals, FullJoinKeepsRightRows)
 {
-    /// Keys 0 and 1 match; 2 is left only; 3 is right only. join_use_nulls defaults to false,
+    /// Keys 0 and 1 match; 2 is left only; 3 is right only. `join_use_nulls` defaults to false,
     /// so an unmatched side reads as 0.
     auto rows = runFullJoinWithStarvedTotals({0, 1, 2}, {0, 1, 3});
 

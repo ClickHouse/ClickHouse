@@ -19,6 +19,7 @@
 -- full, spilled right side: partial_merge vs hash
 10	10	2	45
 10	10	2	45
+1
 -- totals still work
 0	0
 1	1

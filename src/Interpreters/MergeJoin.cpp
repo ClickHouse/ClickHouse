@@ -642,8 +642,8 @@ void MergeJoin::setTotals(const Block & totals_block)
     IJoin::setTotals(totals_block);
 }
 
-/// Finalizes the right side. Unlike setTotals(), the post build phase is always reached, and it
-/// runs in the work context, which mergeRightBlocks() requires because it drives a nested
+/// Finalizes the right side. Unlike `setTotals`, the post build phase is always reached, and it
+/// runs in the work context, which `mergeRightBlocks` requires because it drives a nested
 /// pipeline.
 void MergeJoin::runPostBuildPhase()
 {
