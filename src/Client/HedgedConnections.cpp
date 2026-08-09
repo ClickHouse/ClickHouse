@@ -3,7 +3,6 @@
 
 #include <Client/HedgedConnections.h>
 #include <Client/scaleInteractiveDelayByFanout.h>
-#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
@@ -17,11 +16,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace FailPoints
-{
-    extern const char hedged_connections_cancel_with_pending_replica[];
-}
-
 namespace Setting
 {
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
@@ -270,10 +264,10 @@ void HedgedConnections::disconnect()
         && hedged_connections_factory.numberOfProcessingReplicas() > 0)
         epoll.remove(hedged_connections_factory.getFileDescriptor());
 
-    stopChoosingReplicas();
+    stopChoosingReplicasAndRetractPending();
 }
 
-void HedgedConnections::stopChoosingReplicas()
+void HedgedConnections::stopChoosingReplicasAndRetractPending()
 {
     if (hedged_connections_factory.hasEventsInProcess())
         hedged_connections_factory.stopChoosingReplicas();
@@ -323,11 +317,7 @@ void HedgedConnections::sendCancel()
     /// had been created differs from the thread where the dtor of
     /// QueryPipeline will be called and the initial thread could be already
     /// destroyed (especially when the system is under pressure).
-    stopChoosingReplicas();
-
-    /// Holds the query between the factory stop and `cancelled`, so a test can let a surviving
-    /// replica time out while an offset still expects a replacement.
-    FailPointInjection::pauseFailPoint(FailPoints::hedged_connections_cancel_with_pending_replica);
+    stopChoosingReplicasAndRetractPending();
 
     cancelled = true;
 
@@ -576,7 +566,7 @@ void HedgedConnections::disableChangingReplica(const ReplicaLocation & replica_l
             && hedged_connections_factory.numberOfProcessingReplicas() > 0)
             epoll.remove(hedged_connections_factory.getFileDescriptor());
 
-        stopChoosingReplicas();
+        stopChoosingReplicasAndRetractPending();
     }
 }
 

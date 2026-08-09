@@ -161,7 +161,7 @@ private:
 
     /// Stops the factory and retracts pending replica replacements: after the factory is
     /// stopped no replacement can arrive, so a pending flag would never be cleared.
-    void stopChoosingReplicas();
+    void stopChoosingReplicasAndRetractPending();
 
     void startNewReplica();
 

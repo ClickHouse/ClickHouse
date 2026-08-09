@@ -69,10 +69,11 @@ for hedged in 0 1; do
 done
 
 # Liveness check, so the row assertions above can never silently degrade into a plain distributed
-# query that never puts a replacement in flight. HedgedRequestsChangeReplica is incremented exactly
-# where the pending flag is set (the change-replica timeout branch), so a value >= 1 proves the
-# state this test is about was actually entered. Without it, a future change to the settings or the
-# fixture could make every assertion above pass vacuously.
+# query with no hedged machinery at all. HedgedRequestsChangeReplica counts change-replica timeout
+# expiries, incremented both by the factory's connect-phase timer and by the receive-phase timer
+# here, so >= 1 is a weak guard: it proves the hedged change-replica path ran, NOT that a pending
+# replacement was queued. The stronger claim is not observable from a stateless test, which is why
+# the header calls this a coverage test.
 qid="${CLICKHOUSE_DATABASE}_witness_$RANDOM"
 $CLICKHOUSE_CLIENT --use_hedged_requests 1 \
                    --prefer_localhost_replica 0 \
