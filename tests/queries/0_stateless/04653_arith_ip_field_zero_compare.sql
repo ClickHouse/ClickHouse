@@ -203,7 +203,7 @@ SELECT 'prune_multiply_numconst_left_g2_2of4', count() > 0 FROM (EXPLAIN indexes
 SELECT 'prune_minus_ip4const_left_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE minus(toIPv4('0.0.0.2'), a) > -25) WHERE explain ILIKE '%Granules: 2/4%';
 SELECT 'prune_minus_numconst_left_g1_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM u32g1 WHERE minus(toUInt32(2), a) > -25) WHERE explain ILIKE '%Granules: 2/4%';
 -- Two IP operands at once, granule half: the constant and both endpoints are IP-tagged in the same
--- call, so both normalization statements fire together. `multiply` here is the shape Gate B named.
+-- call, so both normalization statements fire together.
 SELECT 'prune_multiply_ip4key_ip4const_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ip4 WHERE multiply(a, toIPv4('0.0.0.2')) > 6000000000) WHERE explain ILIKE '%Granules: 2/4%';
 SELECT 'prune_plus_ip4key_ip4const_2of4', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ip4 WHERE plus(a, toIPv4('0.0.0.2')) > 3000000000) WHERE explain ILIKE '%Granules: 2/4%';
 -- Wrapper constants over a numeric key: `Nullable` and `LowCardinality` must reach the same
