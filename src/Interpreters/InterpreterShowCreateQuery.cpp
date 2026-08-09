@@ -88,25 +88,6 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         else
             getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
-        /// Through a read-only `Overlay` facade the returned definition is that of the underlying
-        /// source table, so the same privilege is required on the source too: the facade must not
-        /// widen access (see the `Overlay` access-control contract). The source id is resolved
-        /// from metadata only, without loading the source table, and fail-closed: the check must
-        /// run *before* any lookup that could throw the source table's own load error — and a
-        /// failing existence probe on a source backed by a remote catalog is remasked as the same
-        /// `ACCESS_DENIED` a denied healthy source would produce — otherwise a user without the
-        /// source-side grant could observe the source's error and use the facade as an oracle for
-        /// hidden broken sources.
-        auto check_overlay_source_grant = [&]
-        {
-            if (!table_id.hasDatabase())
-                return;
-            if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(table_id.database_name))
-                facade->checkSourceTableAccess(
-                    table_id.table_name, getContext(), is_dictionary ? AccessType::SHOW_DICTIONARIES : AccessType::SHOW_COLUMNS);
-        };
-        check_overlay_source_grant();
-
         /// `SHOW CREATE DICTIONARY` is authorized with `SHOW DICTIONARIES`, which does not imply
         /// `SHOW TABLES`/`SHOW COLUMNS`. A user with only `SHOW DICTIONARIES` must not be able to tell
         /// a hidden regular table apart from a name that does not exist - otherwise `SHOW CREATE
@@ -127,39 +108,80 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         /// diagnostics below. This mirrors `InterpreterExistsQuery`, which likewise answers a
         /// dictionary-only user from a single observation instead of a second visibility-changing lookup.
         bool remask_as_missing_dictionary = false;
+        bool dictionary_only_user = false;
         if (is_dictionary)
         {
             const auto & access = getContext()->getAccess();
-            const bool can_see_as_table
-                = access->isGranted(AccessType::SHOW_TABLES, table_id.database_name, table_id.table_name)
-                || access->isGranted(AccessType::SHOW_COLUMNS, table_id.database_name, table_id.table_name);
-            if (!can_see_as_table)
-            {
-                try
-                {
-                    create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
-                }
-                catch (...)
-                {
-                    /// Ok to swallow: fail closed for a dictionary-only user. Any failure to produce the
-                    /// create query - a name that does not exist, a hidden regular table that fails to
-                    /// load or start up, or metadata that cannot be read - is treated as "not a
-                    /// dictionary", so all of these stay indistinguishable and the hidden table's
-                    /// existence cannot be inferred from the error. The decision cannot key on the error
-                    /// code: `getCreateTableQuery` calls `tryGetTable` first, which rethrows a hidden
-                    /// table's own load/startup failure. The swallowed error is not lost - it resurfaces
-                    /// when a user who is allowed to see the object really accesses it.
-                    create_query = nullptr;
-                }
-                /// Show the object only if the single fetch positively proves it to be a dictionary;
-                /// otherwise (a hidden table, a missing name, or any failure above) remask it.
-                if (!create_query || !create_query->as<ASTCreateQuery &>().is_dictionary)
-                    remask_as_missing_dictionary = true;
-            }
+            dictionary_only_user
+                = !access->isGranted(AccessType::SHOW_TABLES, table_id.database_name, table_id.table_name)
+                && !access->isGranted(AccessType::SHOW_COLUMNS, table_id.database_name, table_id.table_name);
         }
 
-        if (remask_as_missing_dictionary)
+        /// Through a read-only `Overlay` facade the returned definition is that of the underlying
+        /// source table, so the same privilege is required on the source too: the facade must not
+        /// widen access (see the `Overlay` access-control contract). The source id is resolved
+        /// from metadata only, without loading the source table, and fail-closed: the check must
+        /// run *before* any lookup that could throw the source table's own load error — and a
+        /// failing existence probe on a source backed by a remote catalog is remasked as the same
+        /// `ACCESS_DENIED` a denied healthy source would produce — otherwise a user without the
+        /// source-side grant could observe the source's error and use the facade as an oracle for
+        /// hidden broken sources.
+        ///
+        /// For a dictionary-only user the enforcement itself must not break the mask above:
+        /// `checkSourceTableAccess` throws only when a source object with the requested name
+        /// exists, so surfacing its `ACCESS_DENIED` here would distinguish a hidden source object
+        /// (denied) from a missing name (the "no such dictionary" error below) and reopen the
+        /// oracle. For such a user the source-side `SHOW DICTIONARIES` requirement is probed
+        /// fail-closed instead (`isSourceTableVisibleNoLoad`), and a hidden or denied source
+        /// object is remasked as a missing dictionary, exactly like a name that does not exist.
+        auto check_overlay_source_grant = [&]
         {
+            if (!table_id.hasDatabase())
+                return;
+            const auto facade = DatabaseOverlay::tryGetReadonlyFacade(table_id.database_name);
+            if (!facade)
+                return;
+            const AccessType source_access = is_dictionary ? AccessType::SHOW_DICTIONARIES : AccessType::SHOW_COLUMNS;
+            if (dictionary_only_user)
+            {
+                if (!facade->isSourceTableVisibleNoLoad(table_id.table_name, getContext(), source_access))
+                    remask_as_missing_dictionary = true;
+            }
+            else
+            {
+                facade->checkSourceTableAccess(table_id.table_name, getContext(), source_access);
+            }
+        };
+        check_overlay_source_grant();
+
+        if (dictionary_only_user && !remask_as_missing_dictionary)
+        {
+            try
+            {
+                create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
+            }
+            catch (...)
+            {
+                /// Ok to swallow: fail closed for a dictionary-only user. Any failure to produce the
+                /// create query - a name that does not exist, a hidden regular table that fails to
+                /// load or start up, or metadata that cannot be read - is treated as "not a
+                /// dictionary", so all of these stay indistinguishable and the hidden table's
+                /// existence cannot be inferred from the error. The decision cannot key on the error
+                /// code: `getCreateTableQuery` calls `tryGetTable` first, which rethrows a hidden
+                /// table's own load/startup failure. The swallowed error is not lost - it resurfaces
+                /// when a user who is allowed to see the object really accesses it.
+                create_query = nullptr;
+            }
+            /// Show the object only if the single fetch positively proves it to be a dictionary;
+            /// otherwise (a hidden table, a missing name, or any failure above) remask it.
+            if (!create_query || !create_query->as<ASTCreateQuery &>().is_dictionary)
+                remask_as_missing_dictionary = true;
+        }
+
+        auto throw_missing_dictionary_if_remasked = [&]
+        {
+            if (!remask_as_missing_dictionary)
+                return;
             /// Discard any create query fetched for a hidden table so its definition cannot leak.
             create_query = nullptr;
             auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
@@ -171,15 +193,19 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no dictionary {}.{}. Maybe you meant {}.{}?",
                 backQuoteIfNeed(table_id.database_name), backQuoteIfNeed(table_id.table_name),
                 backQuoteIfNeed(hint.first), backQuoteIfNeed(hint.second));
-        }
+        };
+        throw_missing_dictionary_if_remasked();
 
         if (!create_query)
             create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
 
         /// Re-verify the source-side grant now that the definition is fetched: the name could
         /// have started resolving through the facade only between the pre-lookup check above and
-        /// the fetch, and the fetched definition must not be shown without the source-side grant.
+        /// the fetch, and the fetched definition must not be shown without the source-side grant
+        /// (for a dictionary-only user a source-side denial here is likewise remasked as a
+        /// missing dictionary).
         check_overlay_source_grant();
+        throw_missing_dictionary_if_remasked();
 
         auto & ast_create_query = create_query->as<ASTCreateQuery &>();
         if (query_ptr->as<ASTShowCreateViewQuery>())
