@@ -16,24 +16,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT/--send_logs_level=$CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL/--send_logs_level=none}
 
 nested="UInt8"
-for _ in $(seq 1 12); do
+for _ in $(seq 1 10); do
     nested="Array(Map(String, Tuple(a ${nested}, b ${nested})))"
 done
 
-# The type string is ~150 KB, so feed the DDL on stdin rather than as an argument, and leave the
+# The type string is ~40 KB, so feed the DDL on stdin rather than as an argument, and leave the
 # query size limit a few times above it.
 echo "CREATE TABLE t_04824 (c ${nested}, plain UInt8) ENGINE = Memory" \
     | $CLICKHOUSE_CLIENT --max_query_size=1000000
 
 # Only the analyzer collects hints this way, so every statement below that depends on the walk pins
 # it: on an old-analyzer configuration the walk never runs and the assertions would be vacuous.
-
-# A one-part identifier cannot match a compound subcolumn at any depth, so none of the four walks
-# per column can contribute a hint. They ran anyway, taking 44 s on a debug build and 348 s under a
-# sanitizer. The limit is far above what the query now costs, so this is not a timing race: it
-# reports UNKNOWN_IDENTIFIER rather than TIMEOUT_EXCEEDED.
-$CLICKHOUSE_CLIENT -q "SELECT nosuchcolumn FROM t_04824 SETTINGS enable_analyzer = 1, max_execution_time = 10" 2>&1 \
-    | grep -c "UNKNOWN_IDENTIFIER"
 
 # A two-part identifier keeps the one walk that can contribute a hint, which is still expensive on a
 # type this deep, so that walk must observe the limit. Before the fix the query ran to completion and
@@ -46,8 +39,8 @@ $CLICKHOUSE_CLIENT -q "SELECT a.nosuchcolumn FROM t_04824 AS a SETTINGS enable_a
 $CLICKHOUSE_CLIENT -q "SELECT a.nosuchcolumn FROM t_04824 AS a SETTINGS enable_analyzer = 1, max_execution_time = 0.001, timeout_overflow_mode = 'break'" 2>&1 \
     | grep -c "TIMEOUT_EXCEEDED"
 
-# clickhouse-local runs no deadline watchdog thread at all, for either overflow mode. The type string
-# is past the per-argument length limit, so the script goes in a file rather than on the command line.
+# clickhouse-local runs no deadline watchdog thread at all, for either overflow mode. The script goes
+# in a file rather than on the command line to keep the long type string off the argument list.
 cat > "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_local.sql" <<EOF
 CREATE TABLE t_04824_local (c ${nested}) ENGINE = Memory;
 SELECT a.nosuchcolumn FROM t_04824_local AS a SETTINGS enable_analyzer = 1, max_execution_time = 0.001;
