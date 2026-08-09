@@ -46,6 +46,18 @@ void Document::deserialize(ReadBuffer & in)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Invalid BSON document size {}, it must be at least {}", doc_size, MIN_DOCUMENT_SIZE);
 
+    /// A message may be larger than one document - it carries a header and several sections - so
+    /// the limit of a message does not bound a document. `maxBsonObjectSize` of the handshake
+    /// promises the client that a document of more than `MAX_BSON_OBJECT_SIZE` bytes is refused,
+    /// and the same limit bounds the documents this server produces, so it is enforced here
+    /// rather than letting an oversized document through to a handler.
+    if (doc_size > MAX_BSON_OBJECT_SIZE)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid BSON document size {}: it is larger than the maximum of {} bytes",
+            doc_size,
+            MAX_BSON_OBJECT_SIZE);
+
     const size_t rest_of_document = doc_size - sizeof(doc_size);
     if (rest_of_document > in.available())
         throw Exception(
