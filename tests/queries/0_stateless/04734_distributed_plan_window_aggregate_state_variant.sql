@@ -16,6 +16,16 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 SELECT round(finalizeAggregation(theilsUState(a, b) OVER (ORDER BY a, b)), 6) AS s
 FROM t_window_state_variant ORDER BY s;
 
+-- The plan only splits into more than one stage for a multi-stage shape, and a single-stage plan is
+-- executed locally without serializing any fragment, so these queries would pass without ever
+-- reaching the deserialized header check. Assert that they really do distribute: the row is absent
+-- unless an exchange was planted, so dropping `make_distributed_plan` above makes the test fail
+-- instead of silently covering nothing. The oracle must not aggregate - an aggregating query over
+-- EXPLAIN is itself distributed.
+SELECT 'plain state distributes'
+FROM (EXPLAIN PIPELINE SELECT finalizeAggregation(theilsUState(a, b) OVER (ORDER BY a, b)) FROM t_window_state_variant)
+WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
+
 SELECT round(finalizeAggregation(cramersVState(a, b) OVER (ORDER BY a, b)), 6) AS s
 FROM t_window_state_variant ORDER BY s;
 
@@ -28,6 +38,10 @@ FROM t_window_state_variant ORDER BY s;
 
 SELECT round(finalizeAggregation((theilsUStateForEach([a], [b]) OVER (ORDER BY a, b))[1]), 6) AS s
 FROM t_window_state_variant ORDER BY s;
+
+SELECT 'nested state distributes'
+FROM (EXPLAIN PIPELINE SELECT finalizeAggregation((theilsUStateForEach([a], [b]) OVER (ORDER BY a, b))[1]) FROM t_window_state_variant)
+WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
 
 SELECT round(finalizeAggregation(theilsUArgMaxState(a, b, a) OVER (ORDER BY a, b)), 6) AS s
 FROM t_window_state_variant ORDER BY s;
