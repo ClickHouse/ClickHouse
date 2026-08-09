@@ -110,7 +110,11 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
-        min_bytes_for_wide_part = 1;
+        min_bytes_for_wide_part = 1,
+        -- keep the 0-row part produced by the merge: the projections query below
+        -- reads it from system.parts, and the background cleanup of empty parts
+        -- could otherwise drop it first
+        remove_empty_parts = 0;
 
     SYSTEM STOP MERGES t_ttl_drop_proj;
 
