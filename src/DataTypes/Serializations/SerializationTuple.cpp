@@ -62,13 +62,18 @@ static bool tupleMayUseWholeCSVField(
     if (settings.csv.tuple_delimiter_matches_field_delimiter || !interior_settings)
         return false;
 
-    FormatSettings quote_check_settings = *interior_settings;
-    quote_check_settings.csv.quote_date_time_types = false;
-    quote_check_settings.csv.force_quote_date_time_types = false;
+    FormatSettings interior_quote_check_settings = *interior_settings;
+    interior_quote_check_settings.csv.quote_date_time_types = false;
+    interior_quote_check_settings.csv.force_quote_date_time_types = false;
 
-    for (const auto & element : elements)
+    FormatSettings outer_quote_check_settings = settings;
+    outer_quote_check_settings.csv.quote_date_time_types = false;
+    outer_quote_check_settings.csv.force_quote_date_time_types = false;
+
+    for (size_t i = 0; i < elements.size(); ++i)
     {
-        if (element->textCSVMayNeedQuotes(quote_check_settings))
+        const auto & element_settings = i + 1 < elements.size() ? interior_quote_check_settings : outer_quote_check_settings;
+        if (elements[i]->textCSVMayNeedQuotes(element_settings))
             return true;
     }
     return false;
@@ -84,13 +89,18 @@ static bool tupleNeedsWholeCSVField(
     if (settings.csv.tuple_delimiter_matches_field_delimiter || !interior_settings)
         return false;
 
-    FormatSettings quote_check_settings = *interior_settings;
-    quote_check_settings.csv.quote_date_time_types = false;
-    quote_check_settings.csv.force_quote_date_time_types = false;
+    FormatSettings interior_quote_check_settings = *interior_settings;
+    interior_quote_check_settings.csv.quote_date_time_types = false;
+    interior_quote_check_settings.csv.force_quote_date_time_types = false;
+
+    FormatSettings outer_quote_check_settings = settings;
+    outer_quote_check_settings.csv.quote_date_time_types = false;
+    outer_quote_check_settings.csv.force_quote_date_time_types = false;
 
     for (size_t i = 0; i < elements.size(); ++i)
     {
-        if (elements[i]->textCSVNeedsQuotes(extractElementColumn(column, i), row_num, quote_check_settings))
+        const auto & element_settings = i + 1 < elements.size() ? interior_quote_check_settings : outer_quote_check_settings;
+        if (elements[i]->textCSVNeedsQuotes(extractElementColumn(column, i), row_num, element_settings))
             return true;
     }
     return false;
