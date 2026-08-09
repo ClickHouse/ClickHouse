@@ -912,7 +912,11 @@ SELECT * FROM measurements INTO OUTFILE 'measurements.nc' FORMAT NetCDF
 
 On output every column becomes a one-dimensional variable over a single dimension named `row`, and
 a String column additionally gets a dimension that holds the length of the longest string in it, so
-a file written by ClickHouse is read back with the same structure.
+a file written by ClickHouse is read back with the same column names and the same rows. The types
+come back as the table above prescribes, because the file stores only the types of the classic
+format: a FixedString is read back as a String, an Enum or a LowCardinality column as the type it
+wraps, dates and times as plain numbers, and a Nullable column as its base type, unless the file is
+read with `input_format_netcdf_fill_value_as_null`.
 
 A string shorter than its dimension is padded with zero bytes, as the format prescribes, so a
 String or FixedString value that itself ends in a zero byte cannot be stored: it would be read back
