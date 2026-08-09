@@ -3524,8 +3524,8 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         part = get_part();
 
         /// `ALTER TABLE ... DETACH` claims a detached name under `lockParts`, so holding it here
-        /// makes the two mutually exclusive. Covers only the check and the rename: no download and
-        /// no ZooKeeper access under it.
+        /// makes the two mutually exclusive. The scope is the probe, the occupant's checksum read
+        /// and the rename: no part download and no ZooKeeper access.
         auto data_parts_lock = lockParts();
 
         /// `rename` below only probes our own disk, while the detached namespace spans the whole
