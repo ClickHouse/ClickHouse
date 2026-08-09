@@ -323,48 +323,70 @@ static std::optional<Int64> fillValueRequiredToFitColumnType(const FillColumnDes
   * steps relying on that property then return wrong results: DISTINCT in order, for example, reads the stream as a
   * sequence of sorted runs, so it deduplicates within wrong ranges (and hits the
   * `Equal values are not contiguous within the range assumed to be sorted` assertion in a debug build).
-  * Reject such bounds instead of filling with wrapped-around values.
+  * For the calendar-backed Date32 and DateTime64 the values between the calendar boundary and the boundary of
+  * the storage type do not wrap, but they are equally invalid: no conversion produces them (they all clamp at
+  * the calendar boundary), yet a FROM bound in that gap is materialized into the column as is and serialized
+  * as the clamped boundary date, indistinguishable from the genuine boundary value next to it.
+  * Reject such bounds instead of filling with wrapped-around or out-of-calendar values.
   */
 static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, const DataTypePtr & type, int direction)
 {
     WhichDataType which(type);
 
-    /// The calendar arithmetic of an INTERVAL step clamps at the boundaries of the representable calendar
-    /// ([0000-01-01, 9999-12-31] in the local civil calendar of the column's time zone, see DateLUTImpl), and
-    /// for Date32 and DateTime64 those boundaries lie strictly inside the range of the storage type: a TO bound
-    /// beyond the calendar boundary in the fill direction can never be reached even when it fits the storage
-    /// type, and the filling would keep generating the clamped boundary value forever. STALENESS terminates the
-    /// filling in-domain (see below), so it lifts the check.
-    if (descr.step_kind && !descr.fill_to.isNull() && descr.fill_staleness.isNull())
+    /// For Date32 and DateTime64 the boundaries of the representable calendar ([0000-01-01, 9999-12-31] in the
+    /// local civil calendar of the column's time zone, see DateLUTImpl) lie strictly inside the range of the
+    /// storage type, and values between the two are invalid: nothing else produces them (conversions clamp at
+    /// the calendar boundary), the serializers render them as the clamped boundary date, and the calendar
+    /// arithmetic of an INTERVAL step clamps back into the calendar from them. A bound in that gap fits the
+    /// storage type but is out of range of the *column type*, so the representability check below has to test
+    /// the calendar window, not just the storage range. (For Date and DateTime the whole storage range maps
+    /// into the calendar, so the storage check is enough there.)
+    /// Returns whether the value lies within the calendar window, or true when the check does not apply.
+    auto within_calendar = [&](const Field & value)
     {
-        std::optional<bool> is_reachable;
-
-        if (which.isDate32() && descr.fill_to.getType() == Field::Types::Int64)
+        if (which.isDate32() && value.getType() == Field::Types::Int64)
         {
-            const Int64 to = descr.fill_to.safeGet<Int64>();
-            is_reachable = direction > 0
-                ? to <= DateLUTImpl::getMaxRepresentableDayNum()
-                : to >= DateLUTImpl::getMinRepresentableDayNum();
+            const Int64 day_num = value.safeGet<Int64>();
+            return day_num >= DateLUTImpl::getMinRepresentableDayNum() && day_num <= DateLUTImpl::getMaxRepresentableDayNum();
         }
-        else if (which.isDateTime64() && descr.fill_to.getType() == Field::Types::Decimal64)
+
+        if (which.isDateTime64() && value.getType() == Field::Types::Decimal64)
         {
-            /// The calendar arithmetic clamps in the local civil calendar of the column's time zone (the local
-            /// year is clamped to [0000, 9999], see e.g. DateLUTImpl::addYearsOutOfRange), so the boundary
-            /// expressed in raw ticks is shifted by the UTC offset of the time zone: the last reachable second
-            /// is the raw value of local 9999-12-31 23:59:59, not of the same instant in UTC.
+            /// The calendar clamps in the local civil calendar of the column's time zone (the local year is
+            /// clamped to [0000, 9999], see e.g. DateLUTImpl::addYearsOutOfRange), so the boundary expressed
+            /// in raw ticks is shifted by the UTC offset of the time zone: the last representable second is
+            /// the raw value of local 9999-12-31 23:59:59, not of the same instant in UTC.
             const auto & time_zone = static_cast<const DataTypeDateTime64 &>(*type).getTimeZone();
             const Int64 max_seconds = time_zone.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59);
             const Int64 min_seconds = time_zone.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0);
-            const auto & to_decimal = descr.fill_to.safeGet<DecimalField<Decimal64>>();
-            const Int128 scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(to_decimal.getScale());
+            const auto & decimal = value.safeGet<DecimalField<Decimal64>>();
+            const Int128 scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(decimal.getScale());
             /// The last representable time point of the calendar has all its sub-second digits set.
             const Int128 max_ticks = static_cast<Int128>(max_seconds) * scale_multiplier + (scale_multiplier - 1);
             const Int128 min_ticks = static_cast<Int128>(min_seconds) * scale_multiplier;
-            const Int128 to = to_decimal.getValue().value;
-            is_reachable = direction > 0 ? to <= max_ticks : to >= min_ticks;
+            const Int128 ticks = decimal.getValue().value;
+            return ticks >= min_ticks && ticks <= max_ticks;
         }
 
-        if (is_reachable && !*is_reachable)
+        return true;
+    };
+
+    /// A TO bound beyond the calendar boundary in the fill direction can never be reached by an INTERVAL step
+    /// even when it fits the storage type - the calendar arithmetic clamps at the boundary - and the filling
+    /// would keep generating the clamped boundary value forever. STALENESS terminates the filling in-domain
+    /// (see below), so it lifts the check. For Date32 this duplicates the generic check below for the sake of
+    /// the more specific error message; for DateTime64 the generic check cannot derive a required value from
+    /// the Decimal64-carried bounds, so this is the check.
+    if (descr.step_kind && !descr.fill_to.isNull() && descr.fill_staleness.isNull() && !within_calendar(descr.fill_to))
+    {
+        /// The window always contains zero (1970), so the sign of an out-of-window bound tells on which of the
+        /// two sides it lies.
+        const bool is_positive = which.isDate32()
+            ? descr.fill_to.safeGet<Int64>() > 0
+            : descr.fill_to.safeGet<DecimalField<Decimal64>>().getValue().value > 0;
+        const bool beyond_fill_direction = direction > 0 ? is_positive : !is_positive;
+
+        if (beyond_fill_direction)
             throw Exception(
                 ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL TO value {} is out of the calendar range of the ORDER BY column type {} and can never be reached by an INTERVAL step",
@@ -374,11 +396,12 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
 
     /// Only integers wrap around. Float bounds saturate, and they are inexact for a narrower column type anyway,
     /// so an exact-representability check would reject ordinary queries. Decimal conversion throws on overflow.
-    if (!isInteger(type) && !which.isDate() && !which.isDate32() && !which.isDateTime())
+    if (!isInteger(type) && !which.isDate() && !which.isDate32() && !which.isDateTime() && !which.isDateTime64())
         return;
 
-    /// `convertFieldToType` returns Null for a value that is out of range of the target type.
-    auto is_representable = [&type](const Field & value) { return !convertFieldToType(value, *type).isNull(); };
+    /// `convertFieldToType` returns Null for a value that is out of range of the target storage type.
+    auto is_representable
+        = [&](const Field & value) { return !convertFieldToType(value, *type).isNull() && within_calendar(value); };
 
     if (!descr.fill_from.isNull() && !is_representable(descr.fill_from))
         throw Exception(

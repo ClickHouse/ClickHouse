@@ -96,6 +96,38 @@ SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('2020-01-03 00:00:00', 
 -- STALENESS terminates the filling in-domain, so an out-of-calendar TO is accepted.
 SELECT count(), min(d), max(d) FROM (SELECT toDate32('2026-03-05') AS d ORDER BY d ASC WITH FILL TO 3000000 STEP INTERVAL 1 YEAR STALENESS INTERVAL 3 YEAR);
 
+SELECT 'bounds between the calendar boundary and the storage boundary of Date32 and DateTime64 are invalid';
+
+-- For Date32 and DateTime64 the values between the calendar boundary and the storage boundary do not wrap, but
+-- they are equally invalid: no conversion produces them (they all clamp at the calendar boundary), yet a FROM
+-- bound in that gap is materialized into the column as is and serialized as the clamped boundary date - a
+-- spurious duplicate of the genuine boundary value next to it. Date32 stores days in Int32 while the calendar
+-- covers day numbers [-719528, 2932896]; DateTime64 stores ticks in Int64 while the calendar covers seconds
+-- [-62167219200, 253402300799] shifted by the UTC offset of the column's time zone.
+SELECT d FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d ASC WITH FILL FROM -719529 TO -719528 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT d FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d DESC WITH FILL FROM 2932897 TO 2932800 STEP INTERVAL -1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM -62167219201 TO -62167219199 STEP INTERVAL 1 SECOND) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL FROM 253402300800 TO 253402300700 STEP INTERVAL -1 SECOND) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- The window is taken in the local civil calendar of the column's time zone: local 0000-01-01 00:00:00 in
+-- Etc/GMT+12 is -62167176000 in raw ticks, so a FROM below it is rejected even though it fits the UTC window.
+SELECT t FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'Etc/GMT+12') AS t ORDER BY t ASC WITH FILL FROM -62167176001 TO -62167175999 STEP INTERVAL 1 SECOND) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- The same materialization happens under a plain numeric step (and with no TO at all), so an out-of-calendar
+-- FROM is rejected regardless of the step, like a FROM out of the storage range already is.
+SELECT d FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d ASC WITH FILL FROM -719529 TO -719528 STEP 1) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT d FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d ASC WITH FILL FROM -719529) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT d FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d ASC WITH FILL FROM 2932897 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- A numeric step generates out-of-calendar values whenever the sequence crosses the calendar boundary below
+-- TO, under the same rules as the storage range: the last generated value has to fit.
+SELECT d FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d ASC WITH FILL FROM 2932890 TO 2932900 STEP 1) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT d FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d DESC WITH FILL TO -719600 STEP -1) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- With a larger step the last generated value stays within the calendar and the same TO is accepted.
+SELECT count() FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d ASC WITH FILL FROM 2932890 TO 2932900 STEP 10);
+-- A TO out of the calendar against the fill direction is a guaranteed no-op and stays accepted.
+SELECT count() FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d DESC WITH FILL TO 2932900 STEP -1);
+-- FROM bounds at exactly the calendar boundary are generated and terminate.
+SELECT count() FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d ASC WITH FILL FROM -719528 TO -719520 STEP INTERVAL 1 YEAR);
+SELECT count() FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM -62167219200 TO -62167219100 STEP INTERVAL 1 MINUTE);
+
 SELECT 'in-range filling is unchanged';
 
 SELECT groupArray(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL FROM 1 TO 10);
