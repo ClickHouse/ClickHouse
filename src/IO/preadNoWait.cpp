@@ -81,6 +81,16 @@ bool isPreadNoWaitUnavailable(int error)
     return error == ENOSYS || error == EOPNOTSUPP || error == EPERM;
 }
 
+bool isPreadNoWaitProbeRejected(ssize_t res, int error)
+{
+    /// The probe passes an invalid file descriptor, and the kernel looks the descriptor up
+    /// only after the `seccomp` filters and the system call table let the call through,
+    /// so `EBADF` is the only answer that proves the system call actually ran.
+    /// Anything else - a `seccomp` filter substituting an arbitrary `errno` (`SECCOMP_RET_ERRNO`)
+    /// or even a success - means the call was intercepted and cannot be used.
+    return res != -1 || error != EBADF;
+}
+
 namespace
 {
 
@@ -108,15 +118,20 @@ PreadNoWaitSupport probePreadNoWaitSupport()
     /// a `seccomp` profile of a container runtime can reject it.
     /// An invalid file descriptor is passed on purpose - `seccomp` filters and the system call table
     /// are consulted before the descriptor is looked up, so a system call that is allowed
-    /// answers `EBADF` without reading anything.
+    /// answers `EBADF` without reading anything, and any other answer means it was intercepted
+    /// (`isPreadNoWaitProbeRejected`). The per-read classification in `isPreadNoWaitUnavailable`
+    /// stays narrower: a read from a real descriptor fails with `EBADF`, `EAGAIN`, `EINTR` or `EIO`
+    /// even when the system call itself works.
     char buf[1] = {};
-    if (preadNoWait(-1, buf, sizeof(buf), 0) == -1 && isPreadNoWaitUnavailable(errno))
+    ssize_t res = preadNoWait(-1, buf, sizeof(buf), 0);
+    if (isPreadNoWaitProbeRejected(res, errno))
         return {
             .supported = false,
             .unsupported_reason = fmt::format(
-                "the `preadv2` system call is not available ({}); it is typically rejected by a `seccomp` profile "
-                "of a container runtime, and can be allowed in the runtime configuration",
-                errnoToString(errno))};
+                "the `preadv2` system call is not available (the probe with an invalid file descriptor answered {} "
+                "instead of `EBADF`); it is typically rejected by a `seccomp` profile of a container runtime, "
+                "and can be allowed in the runtime configuration",
+                res == -1 ? errnoToString(errno) : std::to_string(res))};
 
     return {.supported = true, .unsupported_reason = {}};
 #endif

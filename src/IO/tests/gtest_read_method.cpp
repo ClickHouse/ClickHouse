@@ -90,6 +90,23 @@ TEST(PreadNoWait, UnavailabilityIsRecognized)
     EXPECT_FALSE(isPreadNoWaitUnavailable(EIO));
 }
 
+TEST(PreadNoWait, ProbeAcceptsOnlyEBADF)
+{
+    /// The probe passes an invalid file descriptor, so failing with `EBADF` is the only answer
+    /// that proves the system call actually ran.
+    EXPECT_FALSE(isPreadNoWaitProbeRejected(-1, EBADF));
+
+    /// A `seccomp` filter can substitute an arbitrary `errno` (`SECCOMP_RET_ERRNO`), not just
+    /// the ones the per-read classification knows, and even a fake success.
+    EXPECT_TRUE(isPreadNoWaitProbeRejected(-1, EPERM));
+    EXPECT_TRUE(isPreadNoWaitProbeRejected(-1, ENOSYS));
+    EXPECT_TRUE(isPreadNoWaitProbeRejected(-1, EOPNOTSUPP));
+    EXPECT_TRUE(isPreadNoWaitProbeRejected(-1, EACCES));
+    EXPECT_TRUE(isPreadNoWaitProbeRejected(-1, EINVAL));
+    EXPECT_TRUE(isPreadNoWaitProbeRejected(0, 0));
+    EXPECT_TRUE(isPreadNoWaitProbeRejected(1, 0));
+}
+
 TEST(PreadNoWait, SupportIsReportedWithAReason)
 {
     /// The probe result depends on the kernel and on the sandbox this test runs in,
@@ -102,10 +119,13 @@ TEST(PreadNoWait, InvalidDescriptorIsRejected)
 {
     /// An invalid file descriptor is the way the support is probed: the system call has to be
     /// dispatched before the descriptor is looked up, so this is what an available one answers.
+    /// On a system where it is unavailable, the answer is whatever intercepted the system call
+    /// (a `seccomp` filter can substitute an arbitrary result), so there is nothing to assert.
     char buf[1] = {};
-    EXPECT_EQ(preadNoWait(-1, buf, sizeof(buf), 0), -1);
+    ssize_t res = preadNoWait(-1, buf, sizeof(buf), 0);
     if (getPreadNoWaitSupport().supported)
+    {
+        EXPECT_EQ(res, -1);
         EXPECT_EQ(errno, EBADF);
-    else
-        EXPECT_TRUE(errno == EBADF || isPreadNoWaitUnavailable(errno));
+    }
 }

@@ -19,6 +19,11 @@ ssize_t preadNoWait(int fd, char * buf, size_t size, size_t offset);
 /// as opposed to a failure to read the data.
 bool isPreadNoWaitUnavailable(int error);
 
+/// Classifies the result of the one-time support probe, which passes an invalid file descriptor:
+/// failing with `EBADF` is the only answer that proves the system call actually ran, so any other
+/// result - e.g. a `seccomp` filter substituting an arbitrary `errno` - means it cannot be used.
+bool isPreadNoWaitProbeRejected(ssize_t res, int error);
+
 /// Whether `preadNoWait` can be used on this system.
 /// The `pread_threadpool` read method needs it to read the data that is already in the page cache
 /// in the calling thread; without it, every read is handed off to a thread pool, which is expensive.
