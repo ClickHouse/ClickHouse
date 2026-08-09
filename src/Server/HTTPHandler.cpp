@@ -745,6 +745,12 @@ try
     /// written into `out_maybe_compressed` / `out_holder` are not discarded by
     /// `cancelWithException` (it keeps non-empty buffers and appends the error message after
     /// them), so the client would receive a partial packet stream followed by a plain error body.
+    /// Note that `count` is cumulative (bytes ever consumed by the buffer, not bytes currently
+    /// pending in its working buffer), and `out_maybe_compressed` is the buffer the framing
+    /// writes into - the topmost of the HTTP compression wrapper, the internal `compress=1`
+    /// layer and the response buffer. So framed bytes that a transport compressor has already
+    /// swallowed into its internal codec state (where nothing can discard them, and where a
+    /// `count` of the buffers below would show nothing) still make this check fire.
     /// Appending anything at that point - whether a fresh framed `exception` stream or the generic
     /// `__exception__` block that `cancelWithException` writes -
     /// would follow a partial packet stream, breaking the "always a stream of packets" contract.
