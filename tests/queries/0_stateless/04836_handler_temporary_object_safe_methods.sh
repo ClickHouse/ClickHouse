@@ -28,16 +28,16 @@ trap cleanup EXIT
 cleanup
 
 echo "=== a CREATE TEMPORARY TABLE handler with the default (GET) methods is rejected ==="
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_table\` URL '${P}/table' AS CREATE TEMPORARY TABLE t04822 (x UInt8)" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_table\` URL '${P}/table' AS CREATE TEMPORARY TABLE t04836 (x UInt8)" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
 
 echo "=== a CREATE TEMPORARY VIEW handler with the default (GET) methods is rejected ==="
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_view\` URL '${P}/view' AS CREATE TEMPORARY VIEW v04822 AS SELECT 1" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_view\` URL '${P}/view' AS CREATE TEMPORARY VIEW v04836 AS SELECT 1" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
 
 echo "=== a CREATE TEMPORARY TABLE handler mixing GET with a mutating method is rejected ==="
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_table\` URL '${P}/table' METHODS (GET, POST) AS CREATE TEMPORARY TABLE t04822 (x UInt8)" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_table\` URL '${P}/table' METHODS (GET, POST) AS CREATE TEMPORARY TABLE t04836 (x UInt8)" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
 
 echo "=== a CREATE TEMPORARY TABLE handler with only mutating methods is accepted ==="
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_table\` URL '${P}/table' METHODS (POST) AS CREATE TEMPORARY TABLE t04822 (x UInt8)"
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_table\` URL '${P}/table' METHODS (POST) AS CREATE TEMPORARY TABLE t04836 (x UInt8)"
 $CLICKHOUSE_CLIENT -q "SELECT methods FROM system.handlers WHERE name = '${H}_table'"
 
 echo "=== the handler is not served over GET or HEAD ==="
@@ -49,8 +49,8 @@ ${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{http_code}\n' --head "${BASE}${P}/tabl
 echo "=== over POST with a session_id, the temporary table persists into the session ==="
 SESSION="${DB}_session"
 ${CLICKHOUSE_CURL} -sS -X POST "${BASE}${P}/table?session_id=${SESSION}"
-${CLICKHOUSE_CURL} -sS "${BASE}/?session_id=${SESSION}" -d "SELECT count() FROM t04822"
+${CLICKHOUSE_CURL} -sS "${BASE}/?session_id=${SESSION}" -d "SELECT count() FROM t04836"
 
 echo "=== ALTER cannot swap a safe-method handler's query to CREATE TEMPORARY TABLE ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`${H}_select\` URL '${P}/select' AS SELECT 1"
-$CLICKHOUSE_CLIENT -q "ALTER HANDLER \`${H}_select\` AS CREATE TEMPORARY TABLE t04822 (x UInt8)" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
+$CLICKHOUSE_CLIENT -q "ALTER HANDLER \`${H}_select\` AS CREATE TEMPORARY TABLE t04836 (x UInt8)" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
