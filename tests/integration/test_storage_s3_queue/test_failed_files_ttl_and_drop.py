@@ -590,8 +590,13 @@ def test_failed_file_ttl_does_not_reset_retry_counter(started_cluster):
     assert final_is_terminal, "File should be in terminal failed state (no .retriable suffix)"
     assert final_retries == 3, \
         f"Terminal failed node should have retries=3, got: {final_retries}"
-    assert final_status == "Failed", \
-        f"Cache status should be 'Failed', got: {final_status}"
+
+    # Cache may be cleared by TTL cleanup (cache-Keeper consistency guarantee from e5fc138),
+    # but if it still exists, it must show "Failed" status
+    if final_status is not None:
+        assert final_status == "Failed", \
+            f"If cache entry exists, status must be 'Failed', got: {final_status}"
+    # else: cache already cleared by TTL — acceptable per cache-Keeper consistency guarantee
 
     logging.info("Test passed: retry counter was NOT reset by TTL cleanup")
 

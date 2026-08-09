@@ -358,6 +358,7 @@ def test_max_set_age(started_cluster, mode):
         additional_settings={
             "keeper_path": keeper_path,
             "tracked_file_ttl_sec": max_age,
+            "failed_file_ttl_sec": max_age,  # Explicit opt-in for failed-file cleanup (no longer implicit via tracked_file_ttl_sec)
             "cleanup_interval_min_ms": 100,
             "cleanup_interval_max_ms": 200,
             "polling_max_timeout_ms": 1000,
