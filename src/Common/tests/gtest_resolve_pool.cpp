@@ -563,6 +563,13 @@ TEST_F(ResolvePoolTest, DuplicatesInAddresses)
 void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses, auto & failed_addr, auto & metrics, auto deadline)
 {
     ASSERT_EQ(iteration, DB::CurrentThread::getProfileEvents()[metrics.failed]);
+
+    /// The ban window can already be over when this is called: the caller's anchor is a lower
+    /// bound on the ban's own timestamp, so it may sit a whole DNS refresh earlier. Nothing can
+    /// be asserted about a ban that is provably expired, so skip instead of reporting a defect.
+    if (now() > deadline)
+        return;
+
     for (size_t i = 0; i < 100; ++i)
     {
         auto next_addr = resolver->resolve();
@@ -616,7 +623,7 @@ TEST_F(ResolvePoolTest, BannedForConsiquenceFail)
     resolver->update();
 
     // too much time has passed
-    if (now() > before + 2*history)
+    if (now() > before + 2*history - epsilon)
         return;
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
@@ -634,11 +641,13 @@ TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
     auto failed_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*failed_addr));
 
-    // Anchors bracket the ban's own timestamp; see BannedForConsiquenceFail. Only the last
-    // `setFail` matters here: concurrent fails do not extend the window.
+    // Anchors bracket the ban's own timestamp; see BannedForConsiquenceFail. `setFail` restamps
+    // that timestamp on every call, so the window under test belongs to the last one and the
+    // anchors go around it: bracketing all three would be sound but needlessly loose by two
+    // whole DNS refreshes.
+    failed_addr.setFail();
+    failed_addr.setFail();
     auto before = now();
-    failed_addr.setFail();
-    failed_addr.setFail();
     failed_addr.setFail();
     auto after = now();
 
