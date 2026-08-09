@@ -435,7 +435,11 @@ def main():
         # tracked-memory limit firing means tracked memory reached `max_server_memory_usage`, so a
         # later kernel kill would prove tracked exhaustion, not the resident > tracked drift - such a
         # run must fail no matter what happens after, and unlike `churn_failures` it is not excused by
-        # `churn_ok` (same atomic-append/first-element-only discipline).
+        # `churn_ok` (same atomic-append/first-element-only discipline). "Before the OOM" is decided
+        # by an `oom_kill_count` observation taken BEFORE the client call that got rejected (see
+        # `kills_before_cycle` in `churn`), not after it returns: a post-hoc read would let a kill
+        # landing in the gap between the rejection and the read excuse a rejection that the server -
+        # necessarily still alive at that point - had already issued pre-kill.
         tracked_limit_failures = []
 
         def churn():
@@ -450,6 +454,15 @@ def main():
                 # misreport "OOM did not fire", so it follows the same fail-closed rule as the
                 # non-timeout failures below (and the same `oom_kill_count` check, re-checked in
                 # `main` via `oom_after`, excuses a timeout that raced with the kill).
+                #
+                # Sampled before the client calls so the tracked-limit branch below can order the
+                # rejection against the kill: if no kill had landed when the cycle started, a
+                # `Memory limit (total) exceeded` that this cycle brings back was issued by a server
+                # that was still alive - i.e. strictly before any kill - and a kill arriving while
+                # the call was in flight (or before the classification below runs) must not excuse
+                # it. The other two branches deliberately keep their post-hoc reads: there the kill
+                # EXCUSES the failure, so one landing mid-call must be seen, not missed.
+                kills_before_cycle = oom_kill_count()
                 try:
                     insert = bounded_client(
                         "-q",
@@ -467,11 +480,17 @@ def main():
                     churn_ok.set()
                     continue
                 failed = insert if insert.returncode != 0 else optimize
-                if "Memory limit (total) exceeded" in failed.stderr and oom_kill_count() == oom_before:
+                if "Memory limit (total) exceeded" in failed.stderr and kills_before_cycle == oom_before:
                     # The tracked-memory limit rejected the query before any cgroup OOM: tracked
                     # memory has reached `max_server_memory_usage`, so the run can no longer prove
                     # the resident > tracked mechanism - stop the churn and let `main` abort, even
-                    # though a first successful cycle has already been seen.
+                    # though a first successful cycle has already been seen. Checked against the
+                    # pre-cycle counter observation, not a fresh read: the rejection came from a
+                    # live server, so it predates any kill that has landed since `kills_before_cycle`
+                    # was taken, and such a kill must not excuse it. (A rejection with
+                    # `kills_before_cycle > oom_before` stays tolerated - the kill was already done
+                    # before this cycle even started, so the rejection is post-kill noise from
+                    # whatever the dying workload left behind.)
                     tracked_limit_failures.append(failed)
                     stop.set()
                     return
