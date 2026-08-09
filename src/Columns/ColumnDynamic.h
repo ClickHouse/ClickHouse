@@ -636,4 +636,11 @@ void extendVariantColumn(
     const DataTypePtr & new_variant_type,
     UnorderedMapWithMemoryTracking<String, UInt8> old_variant_name_to_discriminator);
 
+/// True for types that must stay partitioned by exact storage type inside `Dynamic` variants:
+/// `JSON(...)` at any nesting level (also wrapped in containers, e.g. `Array(JSON)`). Reusing a
+/// merge-compatible variant whose storage type differs breaks `dynamicType`, serialization and
+/// subcolumn reads; such values may only reuse a storage-compatible variant
+/// (`areDynamicStorageTypesCompatible`), else they get their own variant or go to the shared variant.
+bool typeRequiresExactStorageMatch(const IDataType & type);
+
 }

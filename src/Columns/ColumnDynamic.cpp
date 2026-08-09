@@ -95,6 +95,8 @@ bool canStoreTypedValueInExistingDynamicVariant(const DataTypePtr & existing_typ
     return areDynamicStorageTypesCompatible(existing_type, inserted_type);
 }
 
+}
+
 /// `JSON(...)` variants must stay partitioned by exact storage type: reusing a variant whose
 /// storage type differs from the inserted value's type breaks `dynamicType`, serialization
 /// and subcolumn reads. `FieldToDataType` can infer `JSON` not only at the top level but
@@ -122,8 +124,6 @@ bool typeRequiresExactStorageMatch(const IDataType & type)
         return false;
     }
     return false;
-}
-
 }
 
 /// Shared variant will contain String values but we cannot use usual String type
