@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-31
+title: 'Demo days - 2026-07-31'
+sidebarTitle: '2026-07-31'
+description: 'ClickStack demo days for 2026-07-31'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Exponential histogram metrics {#exponential-histogram-metrics}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/w45v3IMcXTY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Initial support for querying OpenTelemetry exponential histogram metrics. You could already register an exponential histogram metric on a source, but there was no way to actually query it. Counts and quantiles now work from the query builder.
+
+For anyone unfamiliar with the data model, exponential histograms look similar to explicit bucket histograms except that the bucket bounds are derived mathematically from powers of two rather than stored per bucket. The scale determines which power of two is used, so a higher scale means smaller buckets, and the offset shifts the bounds to higher or lower multiples. The bucket counts are then the number of observations that fall into each bucket. Max, min, sum and avg are deliberately unsupported, matching the existing explicit histogram implementation, because those fields are optional in the OTel data model.
+
+The generated SQL is, as shown in the demo, long and not especially pretty. It performs acceptably and does not run out of memory, but this is functional support rather than fast support, and performance is the next piece of work. An updated schema is in progress that should make this considerably quicker. Only the time series display type is correct for now, in line with the existing histogram metric type.
+
+**Related PRs:** [#2687](https://github.com/hyperdxio/hyperdx/pull/2687) feat: Show exponential histogram metrics in the metric name drop-down, [#2697](https://github.com/hyperdxio/hyperdx/pull/2697) feat: Implement quantile+sum for exponential histogram metrics, [#2705](https://github.com/hyperdxio/hyperdx/pull/2705) feat: Support exponential histograms in MCP, [#2707](https://github.com/hyperdxio/hyperdx/pull/2707) fix: Support grouping histogram quantile aggregations over non-Attribute columns
+
+## Validation for raw SQL charts {#validation-for-raw-sql-charts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/zfZsehTqeCQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Raw SQL charts now tell you when you have left out a macro they need. This came out of a support case where somebody was building a lot of raw SQL charts and running into confusing results.
+
+On a dashboard it is best practice to include the filters macro and the source table macro, and for time series charts a time range macro and an interval as well. Until now nothing warned you when those were missing, since these validations only ran once an alert had been attached to the tile. They now surface regardless, so removing a macro produces a warning where you are editing rather than a puzzling chart later.
+
+The validation also understands what each macro depends on. The source table and filters macros need a source to be selected, which raw SQL charts do not otherwise require, so using those macros without a selected source is an error rather than a warning. It is a small thing, but it should help people spot problems in their raw SQL themselves.
+
+**Related PRs:** [#2742](https://github.com/hyperdxio/hyperdx/pull/2742) feat: Warn on missing params/macros in SQL Editor
+
+## Link to sources by name, not ID {#link-to-sources-by-name-not-id}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/r2uNmcJXGSM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+A request from the LogHouse team, who run the logging environment for ClickHouse Cloud itself and provision their sources programmatically with infrastructure as code. Source IDs change whenever sources are recreated, and they differ between dev, staging and production, so any link built against an ID is fragile. They also link into ClickStack from outside, from alerting or from Grafana, and did not want to maintain a set of per environment IDs to do it.
+
+The source URL parameter now accepts a source name as well as an ID. The name is something they control at provisioning time, so one stable link works across every environment. This started on the search page and, with the follow up PR, extends anywhere a source parameter exists: chart explorer, service map, sessions, the services dashboard and the Kubernetes dashboard.
+
+The discussion afterwards was mostly about discoverability, since this is effectively a URL API that nobody will stumble across. Ideas raised included defaulting to names rather than IDs in the URL (complicated by name collisions, which cannot be resolved safely), exposing it through a share button, having agents emit these links via the MCP, and simply documenting the URL API properly, since relative time ranges come up in the same way. There was also a suggestion to extend name based references to dashboards, so an infrastructure as code flow could provision sources, import dashboards and have everything wire itself up. Dashboard import through the UI already matches by name, so the gap is mainly in the more programmatic flows.
+
+**Related PRs:** [#2746](https://github.com/hyperdxio/hyperdx/pull/2746) feat: Accept source names in addition to IDs in URL Params, [#2758](https://github.com/hyperdxio/hyperdx/pull/2758) feat: Support source name deeplinks on additional pages
+
+## Chart display settings redesign {#chart-display-settings-redesign}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tO5yFKR-MLQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+A work in progress look at where chart display settings should live. The starting point was moving them inline to the right hand side of the tile editor instead of opening a separate drawer. The tile editor used to be a modal with Display Settings opening as a drawer on top of it, which meant a single Escape press closed both, and a drawer on a drawer never felt right.
+
+That PR grew more complex than expected once series settings needed to stack on top too, which prompted a step back into a broader redesign of the page. The current state is wireframes rather than code: settings in a docked panel, and changes auto applying so you see the result in real time instead of pressing an apply button.
+
+The plan is to finish the redesign first and then apply it in the existing PR, treating what is there today as a prototype, since it also changes a few things about the dashboard page.
+
+**Related PRs:** [#2721](https://github.com/hyperdxio/hyperdx/pull/2721) feat(dashboards): move tile editor to a drawer with docked settings panel
+
+## New explore page {#new-explore-page}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/E1vEjJBw1gs" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+An early exploration of a unified explore page that would eventually replace search, saved searches and chart explorer with a single entry point. The rollout approach is a deliberate lesson from the trace viewer redesign: rather than changing the design for everybody at once, this would ship behind a feature flag as an experimental view for a handful of users, get its bugs found and fixed, and only then roll out more widely. If it turns out not to work, it was an experiment and does not ship, which is a perfectly good outcome.
+
+The page starts from the signal type. Pick traces, logs or metrics and the rest of the experience changes accordingly, so logs give you the list view, event patterns, time series and the other visualisations that live in chart explorer today. The idea is that an investigation flows without page switches: start on the list, move to a number or a grouped table, add it to a dashboard, write your own query if you need to.
+
+Several smaller ideas ride along with it, most of them from user feedback. The query editor would move closer to the SQL editor, since autocomplete currently behaves differently between the two. Errors and warnings would show immediately rather than after running. Columns get a dedicated picker, after feedback that at least one user had no idea the select clause was how you change table columns, so clicking a field updates the SQL and lets you sort by it while the select clause stays available for advanced users. Saved views live on the page, so you can explore unsaved and then save in place. Generated SQL is shown inline. A fair amount is still missing, including some of the chart explorer visualisations, so expect this to keep changing.
+
+**Related PRs:** none yet, this is an exploration rather than a shipped feature
+
+## Dashboard filter linking {#dashboard-filter-linking}
+
+*Demo by [@teeohhem](https://github.com/teeohhem)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/IQ4WtnNYS5s" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+Dashboard filter linking has merged. It was demoed in draft several months ago and then sat while performance concerns were worked through, since linking filters changes the shape of the queries and does not always use materialized views optimally. The compromise is that it ships as an opt in toggle rather than default behaviour.
+
+With the toggle on, a selection in one filter narrows the values the others offer. Picking a service leaves only the severity numbers that occur for that service, and picking a trace ID leaves only the parent trace IDs relevant to it, so you cannot select combinations that return nothing. Linking is also source aware, the part currently in a follow up PR: filters are grouped by source with chain icons between the neighbours that actually narrow each other, so a dashboard with two log filters and two trace filters makes it obvious which interact. The original use case was the Kubernetes dashboard, where selecting a pod should leave only the deployments and nodes that pod belongs to. Narrowed values are fetched lazily when a dropdown is opened, which bounds the cost of the extra lookups.
+
+Two questions came out of the discussion. Persistence is per user in browser storage today, and the view on the call was that dashboard level persistence is what people will actually ask for, so the user level setting may be better off ephemeral than competing with it later. On loading, selecting a value shows a loading state inside the dependent dropdown rather than blocking it, though the behaviour for a second dependent filter needs verifying. The preference expressed was that filters should stay usable while narrowing is in flight, with an indicator that the list is not yet filtered down, since someone who already knows what they want should not be made to wait for metadata.
+
+**Related PRs:** [#2423](https://github.com/hyperdxio/hyperdx/pull/2423) feat(dashboards): cascading (faceted) filter values, [#2760](https://github.com/hyperdxio/hyperdx/pull/2760) feat(dashboards): persist filter link toggle and clarify within-source linking
+
+## Remember the last side panel tab {#remember-the-last-side-panel-tab}
+
+*Demo by [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/FlDWN7sGHMo" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+The smallest PR of the week, and a good example of a small irritation worth fixing. The row side panel always opened on the Overview tab, which is built around OpenTelemetry log fields. If your logs are not OTel shaped, Overview shows you almost nothing useful and you click straight over to Column Values, on every single row.
+
+The side panel now remembers whichever tab you used last and opens there instead. There is no setting and no user preference to configure, it just follows what you were already doing, so non OTel users land on Column Values and everyone else keeps Overview.
+
+**Related PRs:** [#2752](https://github.com/hyperdxio/hyperdx/pull/2752) feat(app): remember last-used side panel tab across opens
