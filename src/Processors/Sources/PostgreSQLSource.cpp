@@ -119,11 +119,17 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
     auto status = ISource::prepare();
     if (status == Status::Finished)
     {
-        if (stream)
-            stream->close();
+        /// After a cancel the server-side `COPY` is aborted (`onCancel` sent a cancel request), so closing
+        /// the stream or committing would throw the pending "canceling statement" error; leave the cleanup
+        /// to the destructor, which swallows it, and the connection is already marked broken.
+        if (!isCancelled())
+        {
+            if (stream)
+                stream->close();
 
-        if (tx && auto_commit)
-            tx->commit();
+            if (tx && auto_commit)
+                tx->commit();
+        }
 
         is_completed.store(true);
     }
@@ -216,8 +222,11 @@ void PostgreSQLSource<T>::onCancel() noexcept
         tx_snapshot = tx;
     }
 
-    /// The code is executed only if onStart() was not finished mainly due to freezing on pqxx::from_query
-    if (!started.load() && tx_snapshot && tx_snapshot->conn().is_open())
+    /// Interrupt the server-side `COPY` regardless of how far the source has progressed: before startup
+    /// finished (the execution thread may be frozen inside the pqxx::stream_from constructor) as well as
+    /// mid-stream (the execution thread may be blocked in `read_row` waiting for the next row, and without
+    /// the cancel the upstream query would keep running until it produces that row or finishes).
+    if (tx_snapshot && tx_snapshot->conn().is_open())
     {
         try
         {

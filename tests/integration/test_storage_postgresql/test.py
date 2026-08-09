@@ -1194,6 +1194,94 @@ def test_postgres_unqualified_pg_catalog_relation(started_cluster):
         started_cluster.postgres_conn.commit()
 
 
+def test_postgres_cancel_propagates_mid_stream(started_cluster):
+    """Cancelling a query over `postgresql(...)` must interrupt the server-side `COPY` mid-stream.
+
+    Once streaming has started, the execution thread blocks inside `read_row` waiting for the next
+    row; the cancel must still send a cancel request to the upstream server (an earlier version only
+    did so while startup was unfinished), otherwise the upstream `COPY` keeps running until it
+    produces the next row or finishes. The view's leading rows are wide enough in total to overflow
+    the server's 8192-byte output buffer several times (the buffer is flushed only when it fills, so
+    a lone wide row could stay partially buffered), guaranteeing complete rows reach ClickHouse and
+    the source demonstrably starts streaming; the last row takes 600 seconds - only a propagated
+    cancel makes the `COPY` disappear from `pg_stat_activity` promptly.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP VIEW IF EXISTS cancel_slow_rows")
+    # `CASE` evaluates only the taken branch and `pg_sleep` is volatile, so the sleep runs when the
+    # last row is produced, not up front (`pg_sleep` returns `void`, whose cast to `text` is '').
+    cursor.execute(
+        "CREATE VIEW cancel_slow_rows AS "
+        "SELECT i, CASE WHEN i < 10 THEN repeat('x', 3000) ELSE pg_sleep(600)::text END AS s "
+        "FROM generate_series(0, 10) AS i"
+    )
+    started_cluster.postgres_conn.commit()
+
+    query_id = "test_postgres_cancel_propagates_mid_stream"
+    table_function = (
+        f"postgresql('postgres1:5432', 'postgres', 'cancel_slow_rows', 'postgres', '{pg_pass}')"
+    )
+
+    def run_query():
+        try:
+            # `max_block_size = 1` makes the source emit a chunk after the first row instead of
+            # waiting to fill a block, so progress (`read_rows`) becomes observable mid-stream.
+            node1.query(
+                f"SELECT * FROM {table_function} FORMAT Null",
+                query_id=query_id,
+                settings={"max_block_size": 1},
+            )
+        except Exception:
+            pass  # The query is killed; both a cancel error and a stream error are fine.
+
+    def upstream_copy_count():
+        cursor.execute(
+            "SELECT count(*) FROM pg_stat_activity "
+            "WHERE state = 'active' AND query LIKE '%cancel_slow_rows%' "
+            "AND query NOT LIKE '%pg_stat_activity%'"
+        )
+        return cursor.fetchone()[0]
+
+    busy_pool = Pool(1)
+    job = busy_pool.apply_async(run_query)
+    try:
+        # Wait until streaming has demonstrably started: the first row reached ClickHouse.
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            if (
+                node1.query(
+                    f"SELECT sum(read_rows) FROM system.processes WHERE query_id = '{query_id}'"
+                ).strip()
+                not in ("", "0")
+            ):
+                break
+            time.sleep(0.2)
+        else:
+            raise AssertionError("the query never started streaming rows")
+        assert upstream_copy_count() > 0
+
+        node1.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+
+        # The upstream `COPY` must go away long before its 600-second sleep finishes.
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            if upstream_copy_count() == 0:
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError("the cancel did not reach the upstream PostgreSQL COPY")
+    finally:
+        # Do not leave a 600-second backend behind on failure.
+        cursor.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE query LIKE '%cancel_slow_rows%' AND query NOT LIKE '%pg_stat_activity%' AND pid <> pg_backend_pid()"
+        )
+        job.wait(timeout=60)
+        busy_pool.close()
+        cursor.execute("DROP VIEW cancel_slow_rows")
+        started_cluster.postgres_conn.commit()
+
+
 def test_postgres_date32_array(started_cluster):
     """Test that PostgreSQL DATE[] arrays with large dates are correctly read as Array(Date32)."""
     cursor = started_cluster.postgres_conn.cursor()
