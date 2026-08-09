@@ -14,6 +14,22 @@ from ci.jobs import revert_ci_regressions as job
 NOW = datetime(2026, 7, 31, 22, 0, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def branch_order_by_fake_sha(monkeypatch):
+    """`already_fixed` orders commits by where they sit on `origin/master`,
+    which the real `branch_positions` reads from the actual repository -- a
+    thing no test may touch. The fake commits `_commits` makes carry their
+    branch position in the sha itself, newest first, so the stand-in orders by
+    that. Returns the real function for the tests that exercise it directly."""
+    real = job.branch_positions
+    monkeypatch.setattr(
+        job,
+        "branch_positions",
+        lambda shas: {sha: int(sha, 16) for sha in shas},
+    )
+    return real
+
+
 def make_failure(**overrides):
     row = {
         "test_name": "04611_join_runtime_filters",
@@ -1433,6 +1449,75 @@ def test_a_check_that_aborted_on_a_commit_did_not_exercise_it():
     assert job.already_fixed(FakeCIDB(rows), make_failure()) == ""
 
 
+def test_commits_are_walked_in_branch_order_not_run_start_order():
+    """CI start times are not branch order: an older commit's check can start
+    after a newer commit's. Walked in run-start order, the older commit's
+    clean run is counted before the newest failure is reached and the failure
+    reads as fixed while the newest relevant commit of the branch still
+    carries it -- so the walk must follow the branch, whatever order the rows
+    arrive in."""
+    check_names = make_failure().check_names
+
+    def row(position, failed, first_run_time):
+        return {
+            "commit_sha": f"{position:040x}",
+            "first_run_time": first_run_time,
+            "exercised_checks": check_names,
+            "failed_checks": check_names[:1] if failed else [],
+        }
+
+    rows = [
+        # In run-start order, newest run first: the commit that ran last is
+        # the *oldest* of the three on the branch.
+        row(2, 0, "2026-07-31 21:59:00"),
+        row(0, 0, "2026-07-31 21:58:00"),
+        row(1, 1, "2026-07-31 21:57:00"),
+    ]
+    assert job.already_fixed(FakeCIDB(rows), make_failure()) == ""
+
+
+def test_a_commit_the_branch_does_not_know_stands_the_revert_down(monkeypatch):
+    """A commit that carried runs of the affected checks but cannot be placed
+    on the branch leaves the walk without an order to read, and a walk over a
+    partial order is a guess. The third outcome: not established, no revert."""
+    monkeypatch.setattr(job, "branch_positions", lambda shas: {})
+    fixed = job.already_fixed(FakeCIDB(_commits(0, 0, 0)), make_failure())
+    assert "cannot be established" in fixed
+    assert "branch order" in fixed
+
+
+def test_branch_positions_reads_the_branch_and_fetches_once_for_the_unknown(
+    branch_order_by_fake_sha, monkeypatch
+):
+    """The position of a commit comes from the branch's own first-parent
+    history, newest first. A sha the local history does not know is looked for
+    once more after a fetch -- the CI database sees a commit the moment its
+    checks start, which can be after the job's checkout fetched -- and a sha
+    that is still unknown is simply absent, for the caller to judge."""
+    branch_positions = branch_order_by_fake_sha
+    reads = []
+    fetches = []
+    histories = ["cccc\nbbbb\naaaa", "dddd\ncccc\nbbbb\naaaa"]
+
+    def fake_get_output(command, **_):
+        reads.append(command)
+        return histories[min(len(fetches), 1)]
+
+    monkeypatch.setattr(job.Shell, "get_output", fake_get_output)
+    monkeypatch.setattr(
+        job.Shell, "check", lambda command, **_: fetches.append(command) or True
+    )
+
+    assert branch_positions({"aaaa", "cccc"}) == {"cccc": 0, "aaaa": 2}
+    assert "--first-parent" in reads[0] and "origin/master" in reads[0]
+    assert fetches == []
+
+    assert branch_positions({"dddd", "aaaa"}) == {"dddd": 0, "aaaa": 3}
+    assert len(fetches) == 1 and "git fetch origin master" in fetches[0]
+
+    assert branch_positions({"eeee"}) == {}
+
+
 def test_an_aborted_rerun_does_not_erase_a_completed_run_of_the_same_check():
     """Aborting is something a run does, and a check is often re-run. A commit
     whose check aborted once and then completed cleanly on a rerun was
@@ -2055,12 +2140,14 @@ def test_the_investigation_mints_no_github_token(monkeypatch):
     assert calls == []
 
 
-def test_the_agent_gets_its_own_empty_gh_config_and_no_token_in_its_environment(
+def test_the_agent_runs_as_its_own_user_with_an_empty_environment(
     monkeypatch, tmp_path
 ):
-    """`gh` reads the App token this job authenticates for itself out of
-    `GH_CONFIG_DIR`, and `GH_TOKEN`/`GITHUB_TOKEN` override that directory --
-    `actions/checkout` exports the latter. All three have to go."""
+    """The agent must inherit nothing: not the `gh` store the job user could
+    hold, not `GH_TOKEN`/`GITHUB_TOKEN` (`actions/checkout` exports the
+    latter), and not the `AWS_*` keys or anything else in the job's
+    environment that could reach the App-token minting flow. So it runs as
+    `AGENT_USER` and its environment is built from nothing with `env -i`."""
     verdict_file = tmp_path / "verdict.json"
     commands = []
 
@@ -2071,23 +2158,31 @@ def test_the_agent_gets_its_own_empty_gh_config_and_no_token_in_its_environment(
         def get_value(self):
             return "openai-key"
 
-    def fake_check(command, **_):
+    def fake_check(command, **kwargs):
         commands.append(command)
         verdict_file.write_text('{"verdict": "inconclusive"}', encoding="utf-8")
         return True
 
     monkeypatch.setattr(job, "TEMP_DIR", str(tmp_path))
     monkeypatch.setattr(job.Secret, "Config", FakeSecret)
+    monkeypatch.setattr(job, "confine_agent_user", lambda: None)
+    monkeypatch.setattr(job.shutil, "which", lambda name: "/usr/local/bin/codex")
     monkeypatch.setattr(job.subprocess, "run", lambda *a, **k: None)
     monkeypatch.setattr(job.Shell, "check", fake_check)
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAAMBIENT")
     # Keep `scrub_gh_credentials` away from the developer's real `gh` store.
     monkeypatch.setenv("GH_CONFIG_DIR", str(tmp_path / "gh-config"))
 
     assert job.run_agent("investigate", str(verdict_file), str(tmp_path))
 
-    assert len(commands) == 1
-    command = commands[0]
-    assert "env -u GH_TOKEN -u GITHUB_TOKEN " in command
+    agent = [command for command in commands if "codex" in command]
+    assert len(agent) == 1
+    command = agent[0]
+    assert f"sudo -n -u {job.AGENT_USER} env -i " in command
+    # Nothing of the job's environment leaks into the agent's: the allowlist
+    # after `env -i` is the whole of it.
+    assert "AWS" not in command
+    assert "GH_TOKEN" not in command
     assert "GH_CONFIG_DIR=" in command
     # The scratch directory is created empty and thrown away, so the `gh` the
     # agent could run is not logged in to anything.
@@ -2095,6 +2190,15 @@ def test_the_agent_gets_its_own_empty_gh_config_and_no_token_in_its_environment(
     # The agent runs in the disposable clone it was given, not wherever the
     # job process happens to be.
     assert command.startswith(f"cd {shlex.quote(str(tmp_path))} && ")
+    # The directories the agent writes are handed to its user first, and taken
+    # back afterwards so the verdict can be read and the clone removed.
+    handed = [command for command in commands if "chown" in command]
+    assert len(handed) == 2
+    assert f"{job.AGENT_USER}:" in handed[0]
+    assert f"{os.getuid()}:{os.getgid()}" in handed[1]
+    assert commands.index(handed[0]) < commands.index(command) < commands.index(
+        handed[1]
+    )
 
 
 def test_the_agent_cannot_recover_a_token_from_the_default_gh_store(
@@ -2132,11 +2236,58 @@ def test_the_agent_cannot_recover_a_token_from_the_default_gh_store(
 
     monkeypatch.setattr(job, "TEMP_DIR", str(tmp_path))
     monkeypatch.setattr(job.Secret, "Config", FakeSecret)
+    monkeypatch.setattr(job, "confine_agent_user", lambda: None)
+    monkeypatch.setattr(job.shutil, "which", lambda name: "/usr/local/bin/codex")
     monkeypatch.setattr(job.subprocess, "run", lambda *a, **k: None)
     monkeypatch.setattr(job.Shell, "check", fake_check)
 
     assert job.run_agent("investigate", str(verdict_file), str(tmp_path))
     assert not store.exists()
+
+
+def test_the_confinement_installs_the_firewall_and_trusts_only_the_probe(monkeypatch):
+    """The GitHub token is not the root of the capability -- the runner's AWS
+    role is, and it is ambient: the instance metadata service hands it to any
+    process that can open a connection to it. So the agent's user gets
+    `owner`-match firewall rules against the credential endpoints, and the
+    boundary is believed only once the metadata service, asked as that user,
+    refuses to answer."""
+    commands = []
+
+    def fake_check(command, **_):
+        commands.append(command)
+        if command.startswith("id -u"):
+            return False  # the user does not exist on this runner yet
+        if " -C OUTPUT " in command:
+            return False  # the rule is not installed yet
+        if job.IMDS_PROBE_URL in command:
+            return False  # the probe is refused: the boundary holds
+        return True
+
+    monkeypatch.setattr(job.Shell, "check", fake_check)
+
+    job.confine_agent_user()
+
+    assert any("useradd" in command for command in commands)
+    for table, network in job.CREDENTIAL_NETWORKS:
+        assert any(
+            f"sudo -n {table} -I OUTPUT -m owner --uid-owner {job.AGENT_USER} "
+            f"-d {network} -j REJECT" in command
+            for command in commands
+        )
+    # The probe runs as the agent's user, and it runs last: it is the check
+    # on everything above it.
+    assert job.IMDS_PROBE_URL in commands[-1]
+    assert f"sudo -n -u {job.AGENT_USER} curl" in commands[-1]
+
+
+def test_an_agent_that_could_reach_the_metadata_service_does_not_run(monkeypatch):
+    """A probe the metadata service answers means the credential boundary does
+    not hold, whatever the firewall claims, and an agent with a route to the
+    App-token minting flow must not run: fail closed, loudly."""
+    monkeypatch.setattr(job.Shell, "check", lambda *a, **k: True)
+    with pytest.raises(ValueError, match="metadata"):
+        job.confine_agent_user()
 
 
 def test_the_workflow_does_not_pre_authenticate_the_job():

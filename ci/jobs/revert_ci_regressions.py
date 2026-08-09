@@ -12,10 +12,12 @@ once, and that spread is a stronger sign of a regression than any single
 occurrence.
 
 Every group is then handed to an AI agent (the `codex` CLI, the same one the
-Code Review job runs). The agent has the repository, `gh`, and read-only access
-to the CI database, and answers one question: did a recently merged pull request
-introduce this failure, and which one. Its answer is a verdict with a confidence
-and an explanation.
+Code Review job runs). The agent has a disposable clone of the repository with
+the full history of `master` and read-only access to the CI database -- and no
+GitHub credential, no way to mint one, and a user of its own with the cloud
+credential endpoints firewalled off (see `run_agent`). It answers one question:
+did a recently merged pull request introduce this failure, and which one. Its
+answer is a verdict with a confidence and an explanation.
 
 Only `regression` with `high` confidence acts. The offending pull request is
 reverted, the revert is merged immediately with administrator privileges -- no
@@ -45,6 +47,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -230,6 +233,19 @@ ROBOT_EMAIL = "robot-clickhouse@users.noreply.github.com"
 OPENAI_KEY_SECRET = "/ci/llm/openai_api_key"
 MAX_AGENT_ATTEMPTS = 2
 AGENT_TIMEOUT_SEC = 12 * 60
+
+# The unprivileged user the agent runs as, created on the runner on first use,
+# and the link-local networks that hand out cloud credentials, which the
+# runner's firewall rejects for that user: the EC2 instance metadata service
+# and the ECS/EKS container credential endpoint live in 169.254.0.0/16, and
+# the metadata service answers on `fd00:ec2::254` over IPv6. See
+# `confine_agent_user` for why this is the boundary and not the environment.
+AGENT_USER = "praktika-agent"
+CREDENTIAL_NETWORKS = (
+    ("iptables", "169.254.0.0/16"),
+    ("ip6tables", "fd00:ec2::254/128"),
+)
+IMDS_PROBE_URL = "http://169.254.169.254/latest/meta-data/"
 
 # What an investigation can cost at worst, plus the revert that may follow it:
 # no new investigation is started unless that much of `RUN_BUDGET_SEC` is left.
@@ -669,9 +685,15 @@ def commits_since_the_failure_query(failure: Failure, limit=COMMITS_QUERY_LIMIT)
     commits that fixed it, and a check re-run several times on one green
     commit fills any row budget with a single piece of evidence. So the runs
     are grouped by commit, a commit that failed in any of its runs counts as
-    failing, and commits are ordered by their *first* run: a rerun moves a
-    commit's newest run but never its first, so this order tracks the order
-    the commits reached the branch in.
+    failing, and the rows come back ordered by each commit's *first* run -- a
+    rerun moves a commit's newest run but never its first. That order is only
+    an approximation of the order the commits reached the branch in, and it is
+    not what `already_fixed` walks: an older commit's check can start after a
+    newer commit's, so the caller re-orders the result by where the commits
+    actually sit on the branch (`branch_positions`) before reading it. The
+    approximation is kept in the query for what a query can do with it: it
+    decides which rows survive `LIMIT`, and `already_fixed` fails closed when
+    that limit is hit.
 
     The window opens `FIRST_RUN_LOOKBACK_HOURS` *before* the failure's first
     occurrence, not at it, and not at its last occurrence. The last occurrence
@@ -733,6 +755,52 @@ ORDER BY min(run_start_time) DESC
 LIMIT {int(limit)}
 FORMAT JSONEachRow
 """
+
+
+# How deep into the base branch's first-parent history `branch_positions` is
+# willing to look. Months of `master` at its usual pace; the commits it is
+# asked about are at most days old, so hitting this bound means something is
+# wrong with the question, and the commit reads as unknown -- which the caller
+# treats as "cannot be established", the fail-closed outcome.
+BRANCH_ORDER_LIMIT = 30000
+
+
+def branch_positions(shas) -> Dict[str, int]:
+    """Where each of `shas` sits on `origin/{BASE_BRANCH}`, 0 the newest, by
+    the branch's own first-parent history. A sha the branch does not know is
+    absent from the result, and the caller decides what that means.
+
+    This is the order `already_fixed` walks commits in, and it deliberately
+    does not come from the CI database: CI start times are not branch order.
+    An older commit's slow check can start after a newer commit's, so a
+    time-ordered walk can meet an older clean commit before the newest failing
+    one and count it as "clean since the failure" -- a false "already fixed"
+    in the exact path that decides whether to admin-merge a revert. The
+    checkout has the full commit history of the base branch (`prepare`
+    unshallows it and fails closed when it cannot), so the branch itself is
+    available to ask.
+
+    First-parent, because that is the line of `master`: every commit CI tested
+    as `master`'s head is on it, and the parents a merge brings in are not
+    commits the branch was ever at. A sha the local history does not have is
+    looked for once more after a fetch -- the CI database sees a commit the
+    moment its checks start, which can be after this job's own checkout
+    fetched."""
+    wanted = set(shas)
+
+    def read() -> Dict[str, int]:
+        history = Shell.get_output(
+            f"git rev-list --first-parent -n {int(BRANCH_ORDER_LIMIT)} "
+            f"origin/{BASE_BRANCH}",
+            strict=True,
+        ).split()
+        return {sha: position for position, sha in enumerate(history) if sha in wanted}
+
+    positions = read()
+    if wanted - positions.keys():
+        Shell.check(f"git fetch origin {BASE_BRANCH}", verbose=True, strict=True)
+        positions = read()
+    return positions
 
 
 def already_fixed(cidb: CIDB, failure: Failure) -> str:
@@ -821,6 +889,31 @@ def already_fixed(cidb: CIDB, failure: Failure) -> str:
         for commit in commits
         if parse_db_time(commit["first_run_time"]) >= first_failure
     ]
+
+    # The walk below reads `since` newest-first, and "newest" must mean the
+    # branch's order, not the CI database's: the rows come back ordered by
+    # first run, and an older commit whose relevant check started late sorts
+    # in front of a newer one there. Walked in that order, its clean run is
+    # counted before the newest failure is reached, and the failure reads as
+    # gone while the newest relevant commit of the branch still carries it. So
+    # the commits are re-ordered by where they sit on the branch itself. A
+    # commit the branch does not know even after a fetch cannot be placed, and
+    # a walk over a partial order is a guess -- the third outcome, stand down.
+    positions = branch_positions(commit["commit_sha"] for commit in since)
+    unknown = sorted(
+        commit["commit_sha"]
+        for commit in since
+        if commit["commit_sha"] not in positions
+    )
+    if unknown:
+        return (
+            f"whether the failure is gone cannot be established: "
+            f"{', '.join(unknown)} carried runs of the affected checks but "
+            f"cannot be found in the first-parent history of "
+            f"origin/{BASE_BRANCH}, so the commits cannot be put in branch "
+            f"order to be read"
+        )
+    since.sort(key=lambda commit: positions[commit["commit_sha"]])
 
     def ran(commit: dict) -> set:
         return set(commit["exercised_checks"])
@@ -1724,6 +1817,58 @@ def scrub_gh_credentials() -> None:
         os.unlink(store)
 
 
+def confine_agent_user() -> None:
+    """Make sure `AGENT_USER` exists and cannot reach a cloud credential, and
+    refuse to run the agent otherwise.
+
+    Scrubbing the GitHub token is not enough on its own, because the token is
+    not the root of the capability -- the runner's AWS role is. The job itself
+    uses that role to read the OpenAI key from SSM, and `GHAuth.auth` uses it
+    to read the GitHub App key and mint a fresh write-capable token; a process
+    that inherits the role inherits the minting flow, scrubbed store or not.
+    The role is ambient: it comes from the instance metadata service, over the
+    network, to any process on the machine that can open a connection to it.
+    So the agent runs as a user of its own, with no group and no sudo, and the
+    runner's firewall rejects that user's packets to the credential endpoints
+    (`CREDENTIAL_NETWORKS`) -- an `owner`-match rule the agent's uid cannot
+    remove. Between them the routes to a credential are closed: the
+    environment the agent starts with is empty (`env -i` in `run_agent`), the
+    job user's files -- an `~/.aws`, the process environment in `/proc` -- are
+    another uid's and unreadable, and the metadata service is unreachable.
+
+    Every step is strict, and the last one is a probe: the rule is only as
+    good as its observable effect, so the metadata service is asked for real,
+    as the agent's user, and the answer must be a refusal. A runner where any
+    of this cannot be established runs no agent."""
+    if not Shell.check(f"id -u {AGENT_USER} > /dev/null 2>&1"):
+        Shell.check(
+            f"sudo -n useradd --system --shell /usr/sbin/nologin "
+            f"--no-create-home {AGENT_USER}",
+            verbose=True,
+            strict=True,
+        )
+    for table, network in CREDENTIAL_NETWORKS:
+        rule = f"OUTPUT -m owner --uid-owner {AGENT_USER} -d {network} -j REJECT"
+        if not Shell.check(f"sudo -n {table} -C {rule} 2>/dev/null"):
+            Shell.check(f"sudo -n {table} -I {rule}", verbose=True, strict=True)
+    Shell.check("command -v curl > /dev/null", strict=True)
+    if Shell.check(
+        f"sudo -n -u {AGENT_USER} curl --silent --max-time 10 "
+        f"--output /dev/null {IMDS_PROBE_URL}"
+    ):
+        raise ValueError(
+            f"{AGENT_USER} can still reach the instance metadata service at "
+            f"{IMDS_PROBE_URL}, so the credential boundary around the agent "
+            f"does not hold; refusing to run it"
+        )
+
+
+def chown(owner: str, *paths: str) -> None:
+    """Hand `paths` over to `owner`, recursively and strictly."""
+    quoted = " ".join(shlex.quote(path) for path in paths)
+    Shell.check(f"sudo -n chown -R {owner} {quoted}", verbose=True, strict=True)
+
+
 def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
     """Run the codex agent once in `workdir` and return what it wrote to
     `verdict_file`.
@@ -1732,8 +1877,10 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
     runners are set up for: a writable workspace so the verdict file can be
     written, and network access for the CI database queries.
 
-    With two differences, and they are the point of this function. The agent
-    runs with **no GitHub credential at all**, and it runs **in a disposable
+    With three differences, and they are the point of this function. The
+    agent runs with **no GitHub credential and no way to mint one**, it runs
+    **as a user of its own** with an empty environment and the cloud
+    credential endpoints firewalled off, and it runs **in a disposable
     clone**, never in the job's own checkout. The prompt tells it to change
     nothing, but a prompt is not a boundary: the agent executes commands, with
     network access, over CI output that a merged pull request can write -- and
@@ -1752,12 +1899,25 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
       (`enable_gh_auth=False` next to `checkout_persist_credentials=False` in
       `ci/workflows/hourly.py`), so nothing put a token there before the job
       started either.
-    - `GH_CONFIG_DIR` still points at an empty scratch directory and
-      `GH_TOKEN`/`GITHUB_TOKEN` are still unset in the child, as the belt to
-      that: whatever `gh` the agent runs starts logged out. (`actions/checkout`
-      also used to leave the workflow token in the checkout's git config; this
-      job's checkout is generated with `persist-credentials: false`, so there
-      is no credential there to inherit either.)
+    - A missing token is only a boundary if one cannot be minted, and the
+      minting flow does not run on a GitHub credential -- it runs on the
+      runner's AWS role, which reads the GitHub App key from SSM the same way
+      this function reads the OpenAI key. That role is ambient (the instance
+      metadata service hands it to any process that can reach it over the
+      network), so the agent runs as `AGENT_USER`: a uid of its own, whose
+      packets to the credential endpoints the runner's firewall rejects, and
+      to whom the job user's files -- and `/proc` environments -- are another
+      user's and unreadable. `confine_agent_user` establishes all of that
+      strictly, probes the metadata service as that user, and refuses to run
+      the agent unless the probe is refused.
+    - The agent's environment is built from nothing (`env -i`): no
+      `GH_TOKEN`/`GITHUB_TOKEN`, no `AWS_*` keys, nothing inherited at all --
+      only `HOME`, `PATH`, `CODEX_HOME` and a `GH_CONFIG_DIR` pointing at an
+      empty scratch directory, so whatever `gh` the agent runs starts logged
+      out. (`actions/checkout` also used to leave the workflow token in the
+      checkout's git config; this job's checkout is generated with
+      `persist-credentials: false`, so there is no credential there to
+      inherit either.)
     - `workdir` is the clone `investigation_clone` makes for this one run, and
       the agent's writable workspace is that clone: the checkout the
       privileged phase later fetches and pushes from is not it. Whatever the
@@ -1773,8 +1933,17 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
     credentials. The write-capable token is minted in `act`, after the guards
     have run and this process -- not the agent -- has decided to revert."""
     scrub_gh_credentials()
+    confine_agent_user()
+    codex = shutil.which("codex")
+    if not codex:
+        raise ValueError("the codex CLI is not installed on this runner")
     if os.path.exists(verdict_file):
         os.unlink(verdict_file)
+    # The last read of the AWS role before the agent runs: the OpenAI key. The
+    # agent needs it (it is what talks to the model), and it opens nothing on
+    # GitHub. The login is run by the job's own user; the directories are then
+    # handed to the agent's user, and taken back in `finally` so the verdict
+    # can be read and the clone removed whatever happened in between.
     openai_key = Secret.Config(
         name=OPENAI_KEY_SECRET, type=Secret.Type.AWS_SSM_PARAMETER
     ).get_value()
@@ -1782,27 +1951,40 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
         tempfile.TemporaryDirectory(dir=TEMP_DIR)
     ) as gh_config_dir:
         subprocess.run(
-            ["codex", "login", "--with-api-key"],
+            [codex, "login", "--with-api-key"],
             input=openai_key,
             text=True,
             check=True,
             env={**os.environ, "CODEX_HOME": codex_home},
         )
-        Shell.check(
-            f"cd {shlex.quote(workdir)} && "
-            f"env -u GH_TOKEN -u GITHUB_TOKEN "
-            f"CODEX_HOME={shlex.quote(codex_home)} "
-            f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
-            f"codex exec "
-            f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
-            f"-s workspace-write "
-            f"-c sandbox_workspace_write.network_access=true "
-            f"-c approval_policy=never "
-            f"--color never "
-            f"{shlex.quote(prompt)}",
-            verbose=True,
-            timeout=AGENT_TIMEOUT_SEC,
-        )
+        try:
+            chown(f"{AGENT_USER}:", workdir, codex_home, gh_config_dir)
+            # The runner's directory layout must actually let the other uid
+            # in -- a home directory without world-execute would stop the
+            # agent at the door, and better loudly here than obscurely there.
+            Shell.check(
+                f"sudo -n -u {AGENT_USER} test -w {shlex.quote(workdir)}",
+                strict=True,
+            )
+            Shell.check(
+                f"cd {shlex.quote(workdir)} && "
+                f"sudo -n -u {AGENT_USER} env -i "
+                f"HOME={shlex.quote(codex_home)} "
+                f"PATH={shlex.quote(os.environ.get('PATH', '/usr/bin:/bin'))} "
+                f"CODEX_HOME={shlex.quote(codex_home)} "
+                f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
+                f"{shlex.quote(codex)} exec "
+                f"-m gpt-5.4 -c 'model_reasoning_effort=xhigh' "
+                f"-s workspace-write "
+                f"-c sandbox_workspace_write.network_access=true "
+                f"-c approval_policy=never "
+                f"--color never "
+                f"{shlex.quote(prompt)}",
+                verbose=True,
+                timeout=AGENT_TIMEOUT_SEC,
+            )
+        finally:
+            chown(f"{os.getuid()}:{os.getgid()}", workdir, codex_home, gh_config_dir)
     if not os.path.exists(verdict_file):
         raise ValueError(f"the agent did not write {verdict_file}")
     with open(verdict_file, "r", encoding="utf-8") as fd:
