@@ -1,25 +1,22 @@
--- memory-efficient branch
-30
-
-30
--- non-memory-efficient branch
-30
-
-30
--- memory-bound merging branch
-30
-
-30
--- extremes stream
-30
-
-30
-
-30
-30
--- WITH TOTALS does not change the aggregate value
+-- memory-efficient branch, several merge threads
 1
--- and the TOTALS row equals the single aggregated row
-30
+-- memory-efficient branch, single merge thread
+1
+-- non-memory-efficient branch
+1	0
+-- ungrouped value then TOTALS row, both 90
+90
 
-30
+90
+-- same query without WITH TOTALS, still 90
+90
+-- grouped: 1/30, 2/60, then a 0/90 TOTALS row
+1	30
+2	60
+
+0	90
+-- ground truth: the same three copies with no Merge and no Distributed
+1	30
+2	60
+
+0	90
