@@ -525,15 +525,25 @@ def _drop_circular_objects():
     # Replicated database's log (create + exchange + drop of the swap table), and under CI
     # load a replica can fall more than max_replication_lag_to_enqueue entries behind, after
     # which any DDL on it fails with "Cannot enqueue query on this replica, because it has
-    # replication lag of N queries" (NOT_A_LEADER). Stop the views on both replicas (they may
-    # not exist yet on the first call, hence the try/except), then let both replicas drain
-    # their DDL queues so the drops below can be enqueued.
-    for n in nodes:
-        for v in ("current_batch_v", "batch_log_v", "stats_v"):
+    # replication lag of N queries" (NOT_A_LEADER).
+    #
+    # The stop must survive a lagging replica catching up. SYSTEM STOP VIEW only installs a
+    # local action lock on a replica where the view is already attached, so a replica that has
+    # not replayed the CREATE yet would attach the view during the SYNC below and start
+    # refreshing unpaused. SYSTEM STOP REPLICATED VIEW instead writes a persistent "paused"
+    # znode into the view's Keeper coordination state, which every replica checks before
+    # scheduling a refresh - including a replica that only attaches the view afterwards. All
+    # three views are coordinated (Replicated database, no all_replicas setting), so issuing
+    # it from any one replica that has the view attached pauses the whole cycle. The views may
+    # not exist yet (the first call precedes creation) or may not be attached on a given
+    # replica yet, hence the try/except and the fallback to the other replica.
+    for v in ("current_batch_v", "batch_log_v", "stats_v"):
+        for n in nodes:
             try:
-                n.query(f"SYSTEM STOP VIEW {v}")
+                n.query(f"SYSTEM STOP REPLICATED VIEW {v}")
+                break
             except helpers.client.QueryRuntimeException:
-                pass
+                continue
     for n in nodes:
         n.query("SYSTEM SYNC DATABASE REPLICA default")
 
