@@ -8,13 +8,19 @@ wide scan	14286
 1
 compact part	Compact
 compact before	1000	1000
+compact none is large	1
 compact after	1000	1000
+compact zstd is small	1
+compact fallback no raw blocks	1	0
 1
 inherited part	Wide
 inherited none is large	1
 inherited after	100000	100000	100000
 inherited zstd is small	1
 1
+lz4 source is compressed	1	1
 lz4 source after	100000	100000	100000
 lz4 source point	1
+lz4 bytes rewritten	1	1
+lz4 raw path used	1	1
 1

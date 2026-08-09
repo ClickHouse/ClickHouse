@@ -20,6 +20,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Common/PODArray.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Defines.h>
 
 #include <city.h>
@@ -28,6 +29,11 @@
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
+
+namespace ProfileEvents
+{
+    extern const Event MutationRecompressedBlocks;
+}
 
 namespace DB
 {
@@ -134,6 +140,7 @@ MergeTreeDataPartChecksum recompressBinFile(
         offset_map[source_offset] = bin_hashing.count();
         source_offset += consumed;
         writeCompressedBlock(bin_hashing, new_codec, decompressed.data(), static_cast<UInt32>(decompressed.size()), scratch);
+        ProfileEvents::increment(ProfileEvents::MutationRecompressedBlocks);
     }
 
     bin_hashing.finalize();
