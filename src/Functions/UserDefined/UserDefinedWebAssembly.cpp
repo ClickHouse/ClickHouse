@@ -987,7 +987,13 @@ public:
                     ColumnsWithTypeAndName batch_cols;
                     batch_cols.reserve(arguments.size());
                     for (const auto & arg : arguments)
-                        batch_cols.emplace_back(arg.column->cut(batch_start, batch_size), arg.type, arg.name);
+                    {
+                        /// cut() materializes a copy of the whole range; when the batch already spans
+                        /// the entire column there is nothing to slice, so pass the column through.
+                        bool whole_column = batch_start == 0 && batch_size == arg.column->size();
+                        batch_cols.emplace_back(
+                            whole_column ? arg.column : arg.column->cut(batch_start, batch_size), arg.type, arg.name);
+                    }
                     auto result = cv1->executeColumnar(compartment_ptr, batch_cols, batch_size, context, stop_token);
                     // A guest that set COL_IS_CONST legitimately returns a ColumnConst; structureEquals
                     // only holds between two ColumnConst instances, so compare the unwrapped nested
@@ -1649,7 +1655,9 @@ private:
             ColumnPtr column = arguments[i].column;
             if (!preserve_const)
                 column = column->convertToFullColumnIfConst();
-            column = column->cut(start_idx, length);
+            /// Skip the copy when the requested range already covers the whole column.
+            if (start_idx != 0 || length != column->size())
+                column = column->cut(start_idx, length);
             String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
             /// Cast to the declared type so serialization uses the correct width.
             /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
