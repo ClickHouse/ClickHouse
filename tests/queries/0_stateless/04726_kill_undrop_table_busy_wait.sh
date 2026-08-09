@@ -36,13 +36,16 @@ ${CLICKHOUSE_CLIENT} --query_id "$select_query_id" --function_sleep_max_microsec
 " >/dev/null 2>&1 &
 select_pid=$!
 
-# Wait until the SELECT is registered and executing.
+# Wait until the SELECT is registered and executing. Without a running holder the UNDROP below
+# would return instantly and the test would prove nothing, so this is an explicit assertion.
+result=0
 for _ in {1..100}
 do
     result=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = '$select_query_id'")
     [[ $result == "1" ]] && break
     sleep 0.3
 done
+[[ $result == "1" ]] || { echo "the SELECT holding the storage is not running"; exit 1; }
 
 # The test config sets database_atomic_wait_for_drop_and_detach_synchronously = 1, which would make
 # this DROP wait for the SELECT to release the storage and finally drop the table, leaving nothing
@@ -63,7 +66,10 @@ do
 done
 
 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$undrop_query_id' SYNC FORMAT Null"
-wait $undrop_pid
+# The pipeline's exit status is the status of the grep, so this asserts that the UNDROP really
+# failed with QUERY_WAS_CANCELLED; without the explicit check a successful ATTACH below could
+# let the test pass even if the busy-wait ignored the kill.
+wait "$undrop_pid" || { echo "UNDROP TABLE was not cancelled with QUERY_WAS_CANCELLED"; exit 1; }
 
 # Release the storage reference.
 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$select_query_id' SYNC FORMAT Null"
