@@ -25,6 +25,7 @@
 
 #include <IO/MMapReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileDescriptor.h>
+#include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/EmptyReadBuffer.h>
@@ -575,40 +576,32 @@ struct stat getFileStat(const String & current_path, bool use_table_fd, int tabl
     return file_stat;
 }
 
-/// Sub-second-precision version token for a file, folding in the inode and size so that an
-/// in-place rewrite which lands in the same timestamp tick as the previous write (see the
+/// Sub-second-precision version token for a file, folding in the file identity and size so that
+/// an in-place rewrite which lands in the same timestamp tick as the previous write (see the
 /// settle-window comment at its call site) is still distinguishable from a rewrite that isn't.
-String computeFileCacheVersionToken(const struct stat & file_stat)
+/// Built from `platformFileVersion` rather than `stat`, because on Windows the CRT's `stat`
+/// carries whole seconds and reports `st_ino` as zero - which would collapse the token for
+/// exactly the same-size in-place rewrite it exists to distinguish.
+String computeFileCacheVersionToken(const PlatformFileVersion & version)
 {
-#if defined(OS_DARWIN)
-    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#elif defined(OS_WINDOWS)
-    /// The Windows CRT's `_stat` carries whole seconds only. NTFS itself keeps 100-nanosecond
-    /// resolution, but reading it needs `GetFileInformationByHandle` rather than `stat`, and this
-    /// value only feeds a cache key.
-    const auto mtim_sec = file_stat.st_mtime;
-    const auto mtim_nsec = 0;
-#else
-    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-    const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
     return fmt::format(
-        "{}.{:09}_{}_{}",
-        static_cast<Int64>(mtim_sec),
-        static_cast<Int64>(mtim_nsec),
-        static_cast<Int64>(file_stat.st_ino),
-        file_stat.st_size);
+        "{}.{:09}_{}_{}_{}",
+        version.mtime_sec,
+        version.mtime_nsec,
+        version.device_id,
+        version.file_id,
+        version.size);
 }
 
-/// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
-/// local-file read (once right after opening, once right before trusting the read for the Query
-/// Condition Cache) so a rewrite by another writer that lands strictly between the initial `stat`
-/// and either checkpoint is caught instead of silently pinning a mismatched generation.
+/// Re-reads the version of `path` and reports whether it still produces `expected_token`. Used to
+/// bracket a local-file read (once right after opening, once right before trusting the read for
+/// the Query Condition Cache) so a rewrite by another writer that lands strictly between the
+/// initial version snapshot and either checkpoint is caught instead of silently pinning a
+/// mismatched generation.
 bool fileCacheVersionTokenStillHolds(const String & path, const String & expected_token)
 {
-    struct stat current_stat{};
-    return 0 == stat(path.c_str(), &current_stat) && computeFileCacheVersionToken(current_stat) == expected_token;
+    PlatformFileVersion version;
+    return 0 == platformFileVersion(path, version) && computeFileCacheVersionToken(version) == expected_token;
 }
 
 std::unique_ptr<ReadBuffer> createReadBuffer(
@@ -1724,29 +1717,29 @@ Chunk StorageFileSource::generate()
                 /// Build a sub-second-precision version token for the format metadata cache key.
                 /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
                 /// second that keeps the file size unchanged would otherwise reuse a stale entry.
-                current_file_cache_version = computeFileCacheVersionToken(file_stat);
+                PlatformFileVersion file_version;
+                const bool file_version_known = 0
+                    == (storage->use_table_fd ? platformFileVersionOfDescriptor(storage->table_fd, file_version)
+                                              : platformFileVersion(current_path, file_version));
+                if (file_version_known)
+                    current_file_cache_version = computeFileCacheVersionToken(file_version);
+                else
+                    current_file_cache_version.reset();
 
                 /// The version token above proves a rewrite only after the file has settled.
                 /// Filesystem timestamps are coarser than the wall clock (one clock tick of
                 /// ~1-10 ms on most Linux filesystems, a full second on ext3, two seconds on
-                /// FAT), so a rewrite that keeps the inode and the byte size and lands in the
-                /// same timestamp tick as the previous write produces an identical token. Once
-                /// the last modification is comfortably in the past, its tick is over and any
-                /// further write is guaranteed to change the token. The query condition cache
-                /// skips whole row groups based on this token, so for files modified more
+                /// FAT), so a rewrite that keeps the file identity and the byte size and lands
+                /// in the same timestamp tick as the previous write produces an identical token.
+                /// Once the last modification is comfortably in the past, its tick is over and
+                /// any further write is guaranteed to change the token. The query condition
+                /// cache skips whole row groups based on this token, so for files modified more
                 /// recently - or with an mtime in the future, e.g. due to clock skew on a
                 /// network mount - it fails close and stays bypassed (see the gates below)
                 /// rather than risking stale results.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#elif defined(OS_WINDOWS)
-                const auto mtim_sec = file_stat.st_mtime;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
                 static constexpr Int64 file_version_settle_seconds = 3;
-                current_file_version_settled
-                    = static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+                current_file_version_settled = file_version_known
+                    && file_version.mtime_sec + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
