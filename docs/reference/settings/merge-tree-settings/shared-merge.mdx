@@ -175,8 +175,8 @@ How long we store insert memoization ids to avoid wrong actions during
 insert retries. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_merge_coordinator_distribution_algorithm {#shared_merge_tree_merge_coordinator_distribution_algorithm}
-<SettingsInfoBlock type="MergeCoordinatorDistributionAlgorithm" default_value="water_filling" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "New setting which controls what algorithm is used by the merge coordinator to distribute merges between replicas"}]}]}/>
+<SettingsInfoBlock type="MergeCoordinatorDistributionAlgorithm" default_value="sainte_lague" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Enable Sainte-Lague distribution by default."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "New setting which controls what algorithm is used by the merge coordinator to distribute merges between replicas"}]}]}/>
 
 What algorithm will be used by merge coordinator thread to distribute merges between replicas
 
