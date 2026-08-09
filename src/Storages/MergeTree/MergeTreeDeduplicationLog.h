@@ -232,8 +232,12 @@ private:
     size_t loadSingleLog(const std::string & path);
 
     /// Throw `TABLE_IS_READ_ONLY` if `may_write_shared_state` is set and reports the lease as
-    /// no longer fresh. Called immediately before every mutation of the shared on-disk state.
-    void assertMayWriteSharedState() const;
+    /// no longer fresh. Called immediately before every mutation of the shared on-disk state —
+    /// per record inside `addPart`/`dropPart`, not only once per batch, because each record can
+    /// rotate whole shared log files on object storage without append support.
+    /// `records_written_in_batch` reports whether the current batch already wrote records; it
+    /// only arms the mid-batch test failpoint.
+    void assertMayWriteSharedState(bool records_written_in_batch = false) const;
 };
 
 }

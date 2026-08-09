@@ -27,6 +27,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char merge_tree_leader_election_stale_lease_dedup_log_write[];
+    extern const char merge_tree_leader_election_stale_lease_dedup_log_mid_batch[];
 }
 
 namespace
@@ -253,7 +254,7 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
     }
 }
 
-void MergeTreeDeduplicationLog::assertMayWriteSharedState() const
+void MergeTreeDeduplicationLog::assertMayWriteSharedState(bool records_written_in_batch) const
 {
     if (!may_write_shared_state)
         return;
@@ -264,6 +265,13 @@ void MergeTreeDeduplicationLog::assertMayWriteSharedState() const
     /// entry-point lease check but before the log mutation. Fires only for shared logs
     /// (`may_write_shared_state` set), i.e. under `leader_election`.
     fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_dedup_log_write, { lease_went_stale = true; });
+
+    /// Test hook: simulate the lease going stale in the middle of a multi-record batch, after
+    /// at least one record of this `addPart`/`dropPart` call has already been written — the
+    /// per-record re-check must stop the batch instead of letting the stale leader keep
+    /// rotating and rewriting shared log files.
+    if (records_written_in_batch)
+        fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_dedup_log_mid_batch, { lease_went_stale = true; });
 
     if (lease_went_stale)
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
@@ -322,14 +330,18 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 
     chassert(current_writer != nullptr);
 
-    /// Under `leader_election`, re-check the lease immediately before mutating the shared log:
-    /// the caller checked it at its entry point, but the heartbeat can stall in between, and on
-    /// object storage without append support the rotation below finalizes and rewrites whole
-    /// log files, which a stale leader must not do — it would clobber the next leader's log.
-    assertMayWriteSharedState();
+    /// Under `leader_election`, re-check the lease immediately before every durable mutation of
+    /// the shared log, not only once per batch: the caller checked it at its entry point, but the
+    /// heartbeat can stall at any time, and on object storage without append support the rotation
+    /// finalizes and rewrites whole log files, so a batch can run past the session timeout. Each
+    /// record written so far matches the in-memory map, so stopping mid-batch keeps them
+    /// consistent, and the next leader reconciles the log against the part set after `load`.
+    size_t records_written_in_batch = 0;
 
     for (const auto & block_id : block_ids)
     {
+        assertMayWriteSharedState(records_written_in_batch > 0);
+
         /// Create new record
         MergeTreeDeduplicationLogRecord record;
         record.operation = MergeTreeDeduplicationOp::ADD;
@@ -337,11 +349,14 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         record.block_id = block_id;
         /// Write it to disk
         writeRecord(record, *current_writer);
+        ++records_written_in_batch;
         /// We have one more record in current log
         existing_logs[current_log_number].entries_count++;
         /// Add to deduplication map
         deduplication_map.insert(record.block_id, part_info);
     }
+    /// The rotation below also finalizes and rewrites shared log files.
+    assertMayWriteSharedState(records_written_in_batch > 0);
     /// Rotate and drop old logs if needed
     rotateAndDropIfNeeded();
 
@@ -366,10 +381,13 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 
     chassert(current_writer != nullptr);
 
-    /// See the matching check in `addPart`. Checked before the loop touches anything, so on a
-    /// stale lease neither the shared log nor the in-memory map is modified and the caller can
-    /// retry the whole drop later (or the next leader reconciles it after `load`).
-    assertMayWriteSharedState();
+    /// See the matching check in `addPart`: the lease is re-checked before every record, not
+    /// only once per call, because on the `S3` path `rotateAndDropIfNeeded` rotates/finalizes a
+    /// whole log file after every record (append is unsupported), so dropping a large covering
+    /// part can realistically run past `leader_election_session_timeout`. Stopping mid-batch is
+    /// safe: the records written so far match the in-memory map, the caller can retry the whole
+    /// drop later, and the next leader reconciles the log against the part set after `load`.
+    size_t records_written_in_batch = 0;
 
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
@@ -378,6 +396,8 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         /// deduplication history
         if (drop_part_info.contains(part_info))
         {
+            assertMayWriteSharedState(records_written_in_batch > 0);
+
             /// Create drop record
             MergeTreeDeduplicationLogRecord record;
             record.operation = MergeTreeDeduplicationOp::DROP;
@@ -385,6 +405,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
             record.block_id = itr->key;
             /// Write it to disk
             writeRecord(record, *current_writer);
+            ++records_written_in_batch;
             /// We have one more record on disk
             existing_logs[current_log_number].entries_count++;
 
