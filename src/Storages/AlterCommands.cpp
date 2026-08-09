@@ -1,5 +1,6 @@
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -162,6 +163,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
+            /// A stored column has to spell its state version out in the metadata the same way
+            /// `CREATE TABLE` does (see `InterpreterCreateQuery::getColumnType`): an unversioned
+            /// name in stored metadata denotes the layout from before the function became versioned.
+            pinCurrentStateVersionToAggregateFunctions(command.data_type);
         }
         if (ast_col_decl.getDefaultExpression())
         {
@@ -220,6 +225,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
+            /// Same as for ADD COLUMN above: the new explicit type of a stored column has to carry
+            /// the current state version into the metadata; existing data is converted by the ALTER.
+            pinCurrentStateVersionToAggregateFunctions(command.data_type);
         }
 
         if (ast_col_decl.getDefaultExpression())
