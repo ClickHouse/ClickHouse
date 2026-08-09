@@ -678,6 +678,109 @@ def test_cancel_request_does_not_cancel_query_reusing_freed_id(started_cluster):
     _assert_cancel_request_does_not_cancel_http_query(node, query_id, int(pid), int(key))
 
 
+def test_kill_query_cancels_paused_copy_from_stdin(started_cluster):
+    """The staging loop of `COPY ... FROM STDIN` blocks on the client socket, so an external
+    `KILL QUERY` (or `CancelRequest`) must be observed by polling: the insert has to leave the
+    process list promptly even though the client is paused mid-copy and sends nothing, and the
+    client gets `57014 query_canceled` once it finishes the copy. Nothing reaches the target
+    table."""
+    node = cluster.instances["node"]
+
+    node.query(
+        "CREATE TABLE copy_cancel_target (n UInt64) ENGINE = MergeTree ORDER BY n",
+        password="123",
+    )
+
+    resume = threading.Event()
+    result = {}
+
+    class PausedPayload:
+        """File-like COPY source: hands psycopg2 a first chunk, then blocks until the test has seen
+        the query get killed, then reports end-of-data (which makes psycopg2 send `CopyDone` and
+        collect the buffered error)."""
+
+        def __init__(self):
+            self.sent = False
+
+        def read(self, size=-1):
+            if not self.sent:
+                self.sent = True
+                return "1\n2\n"
+            resume.wait(timeout=60)
+            return ""
+
+    def run_copy():
+        ch = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        try:
+            cur = ch.cursor()
+            cur.copy_expert("COPY copy_cancel_target FROM STDIN", PausedPayload())
+            result["output"] = "copy completed"
+        except Exception as e:
+            result["error"] = str(e)
+        finally:
+            ch.close()
+
+    def staged_copy_count():
+        # Poll over HTTP: a `clickhouse-client` round trip through `docker exec` can take seconds
+        # under sanitizers, which would blur the promptness this test is about.
+        return node.http_query(
+            "SELECT count() FROM system.processes"
+            " WHERE query_id LIKE 'postgres:%' AND query LIKE '%copy_cancel_target%'",
+            user="default",
+            password="123",
+        ).strip()
+
+    thread = threading.Thread(target=run_copy)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if staged_copy_count() == "1":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError(
+                f"The COPY insert did not show up in the process list: {result}"
+            )
+
+        node.query(
+            "KILL QUERY WHERE query_id LIKE 'postgres:%'"
+            " AND query LIKE '%copy_cancel_target%' ASYNC",
+            password="123",
+        )
+
+        # The kill must take effect while the client stays paused: the query leaves the process
+        # list on the staging loop's own cancellation check, not when the client next speaks.
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if staged_copy_count() == "0":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError(
+                "The killed COPY stayed in the process list while the client was paused"
+            )
+    finally:
+        resume.set()
+        thread.join()
+
+    assert "error" in result, f"the client did not see the cancellation: {result}"
+    assert "cancel" in result["error"].lower(), result["error"]
+    assert (
+        node.query(
+            "SELECT count() FROM copy_cancel_target", password="123"
+        ).strip()
+        == "0"
+    )
+    node.query("DROP TABLE copy_cancel_target SYNC", password="123")
+
+
 def test_array_type_oids_in_row_description(started_cluster):
     """A `SELECT` over the PostgreSQL wire must advertise array columns with the array OID of their
     element type in `RowDescription`, matching the emulated `pg_attribute`/`pg_type` catalog, so that

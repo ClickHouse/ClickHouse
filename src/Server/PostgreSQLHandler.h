@@ -110,6 +110,11 @@ private:
     bool processDeallocate(const String & query);
     bool processCopyQuery(const String & query);
 
+    /// After an error has been reported in the middle of `COPY ... FROM STDIN`, consumes and discards
+    /// the copy-subprotocol frames the client keeps sending until it terminates the copy with
+    /// `CopyDone` or `CopyFail`, as PostgreSQL does, so that the connection stays usable.
+    void discardRemainingCopyInFrames();
+
     void processParseQuery();
     void processDescribeQuery();
     void processBindQuery();

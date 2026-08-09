@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int SYNTAX_ERROR;
     extern const int OPENSSL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
@@ -92,8 +93,14 @@ namespace
 class CopyInDataReadBuffer : public ReadBuffer
 {
 public:
-    explicit CopyInDataReadBuffer(PostgreSQLProtocol::Messaging::MessageTransport & transport_)
-        : ReadBuffer(nullptr, 0), transport(transport_)
+    CopyInDataReadBuffer(
+        PostgreSQLProtocol::Messaging::MessageTransport & transport_,
+        ReadBufferFromPocoSocket & socket_in_,
+        std::function<void()> check_cancelled_)
+        : ReadBuffer(nullptr, 0)
+        , transport(transport_)
+        , socket_in(socket_in_)
+        , check_cancelled(std::move(check_cancelled_))
     {
     }
 
@@ -110,6 +117,13 @@ private:
         {
             /// Push out anything buffered on the write side before blocking on the client.
             transport.flush();
+            /// An external cancellation (a PostgreSQL `CancelRequest` or `KILL QUERY`) only marks the
+            /// query killed in the process list; nothing wakes a socket read blocked on a paused client.
+            /// Poll the socket in short slices and check for the kill in between, so the staging loop
+            /// aborts promptly instead of sitting here until the client sends more data or disconnects.
+            static constexpr size_t cancellation_check_interval_microseconds = 100'000;
+            while (!socket_in.poll(cancellation_check_interval_microseconds))
+                check_cancelled();
             PostgreSQLProtocol::Messaging::FrontMessageType message_type = transport.receiveMessageType();
             if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA)
             {
@@ -162,6 +176,9 @@ public:
 
 private:
     PostgreSQLProtocol::Messaging::MessageTransport & transport;
+    ReadBufferFromPocoSocket & socket_in;
+    /// Throws when the query this copy stages for has been killed externally.
+    std::function<void()> check_cancelled;
     String current_frame;
     bool received_copy_done = false;
     bool client_aborted = false;
@@ -1040,7 +1057,18 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         /// stages in O(1) memory instead of holding the whole payload resident.
         static constexpr size_t max_staged_bytes_in_memory = 1024 * 1024;
 
-        CopyInDataReadBuffer copy_in_stream(*message_transport);
+        /// The insert query this `COPY` stages for is already registered in the process list (under the
+        /// connection's `postgres:<id>:<key>` query id), so an external `CancelRequest` or `KILL QUERY`
+        /// targets it; the staging loop below observes the kill through this check while it waits for
+        /// the client.
+        auto process_list_element = query_context->getProcessListElement();
+        CopyInDataReadBuffer copy_in_stream(
+            *message_transport, *in,
+            [process_list_element]
+            {
+                if (process_list_element && process_list_element->isKilled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "COPY FROM STDIN was cancelled");
+            });
         CascadeWriteBuffer::WriteBufferPtrs staging_buffers;
         staging_buffers.emplace_back(std::make_shared<MemoryWriteBuffer>(max_staged_bytes_in_memory));
         CascadeWriteBuffer::WriteBufferConstructors staging_buffers_lazy;
@@ -1058,6 +1086,27 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         catch (...)
         {
             staged_out.cancel();
+
+            /// An external cancel (`CancelRequest` / `KILL QUERY`) aborts the copy the way PostgreSQL
+            /// does: release the insert query promptly (nothing has been pushed to its pipeline, so the
+            /// target table is untouched), report `57014 query_canceled` to the client, and keep
+            /// consuming the copy-subprotocol frames the client is still entitled to send until it
+            /// terminates the copy, so the connection stays usable afterwards.
+            if (getCurrentExceptionCode() == ErrorCodes::QUERY_WAS_CANCELLED)
+            {
+                io.onException(/*log_as_error=*/ false);
+                /// `onException` stops the pipeline but keeps the process list entry; drop it explicitly
+                /// so the killed query leaves `system.processes` before the drain below blocks on the
+                /// client (a `KILL QUERY ... SYNC` must not wait for the client to end the copy).
+                io.process_list_entries.clear();
+                message_transport->send(
+                    PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                        PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "57014",
+                        "canceling COPY FROM STDIN due to user request"),
+                    true);
+                discardRemainingCopyInFrames();
+                return true;
+            }
 
             /// A client-initiated abort (`CopyFail`) is an ordinary "your copy failed" error, not a fatal
             /// connection error: reply with an `ErrorResponse` and report the query as handled so the run
@@ -1387,6 +1436,36 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     }
 
     return false;
+}
+
+void PostgreSQLHandler::discardRemainingCopyInFrames()
+{
+    /// Mirrors what PostgreSQL does after reporting an error mid `COPY ... FROM STDIN`: the client may
+    /// keep sending `CopyData` frames until it learns of the error, and the backend must consume and
+    /// discard them; the copy sub-protocol ends when the client sends `CopyDone` or `CopyFail`, and only
+    /// then may `ReadyForQuery` follow. Anything else at this point is a protocol violation.
+    while (true)
+    {
+        while (!in->poll(1000000))
+            if (!tcp_server.isOpen())
+                return;
+        PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport->receiveMessageType();
+        switch (message_type)
+        {
+            case PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA:
+                message_transport->dropMessage();
+                break;
+            case PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION:
+            case PostgreSQLProtocol::Messaging::FrontMessageType::COPY_FAILURE:
+                message_transport->dropMessage();
+                return;
+            default:
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                    "Received message of type {} while discarding the payload of an aborted COPY FROM STDIN",
+                    static_cast<Int32>(message_type));
+        }
+    }
 }
 
 void PostgreSQLHandler::processQuery()
