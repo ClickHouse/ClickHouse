@@ -112,7 +112,7 @@ public:
         /// First calculate array sizes for all rows and save them in Offsets. Unlike h3HexRing, this loop
         /// needs a checkpoint of its own: `gridPathCellsSize` walks the grid and is not free even for a
         /// distance of zero, so the sizing pass alone can outlast a deadline many times over.
-        static constexpr UInt64 items_between_cancellation_checks = 100'000;
+        static constexpr UInt64 items_between_cancellation_checks = 10'000;
         UInt64 items_since_check = 0;
         UInt64 current_offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)

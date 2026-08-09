@@ -10,8 +10,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Each of these four functions expands every row of a block inside one `executeImpl` call, and the
 # pipeline only evaluates `max_execution_time` and `KILL QUERY` between blocks, so unfixed the whole
-# block runs to completion however long that takes. Every case below runs at least four times its
-# bound unfixed while peaking under 55% of the 5G `max_memory_usage` the CI profile sets: a shape
+# block runs to completion however long that takes. Every case below runs at least four times the
+# deadline unfixed while peaking under 55% of the 5G `max_memory_usage` the CI profile sets: a shape
 # sized past memory would report `MEMORY_LIMIT_EXCEEDED` from the allocator instead.
 #
 # `max_block_size` and `max_threads` are pinned statement-level because the runner randomizes both.

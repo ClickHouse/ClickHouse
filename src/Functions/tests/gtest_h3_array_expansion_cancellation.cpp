@@ -104,7 +104,7 @@ void assertBlockIsCancelled(
 /// can advance the counter. One throttle unit of rows, so the floor reaches it on the last row.
 void assertDegenerateBlockIsCancelled(const String & function_name, const DataTypePtr & second_type, UInt64 second_value)
 {
-    assertBlockIsCancelled(function_name, /*cell=*/1, second_type, second_value, /*rows=*/100'000);
+    assertBlockIsCancelled(function_name, /*cell=*/1, second_type, second_value, /*rows=*/10'000);
 }
 
 }
@@ -151,20 +151,20 @@ TEST_F(H3ArrayExpansionCancellation, ToChildrenHonorsDeadlineOnZeroOutputRows)
     assertDegenerateBlockIsCancelled("h3ToChildren", std::make_shared<DataTypeUInt8>(), 9);
 }
 
-/// Valid cells, fewer rows than the 100000 threshold but more items than it, so the counter can only
+/// Valid cells, fewer rows than the 10000 threshold but more items than it, so the counter can only
 /// reach the threshold by weighting each row with its output size. Row counts are a third or more
 /// clear of where the weighted counter fires, and every block stays under 2 MB.
 TEST_F(H3ArrayExpansionCancellation, KRingWeightsRowsByItemCount)
 {
     tryRegisterFunctions();
-    /// k = 20 is 3k^2+3k+1 = 1261 cells per row; 100 rows fire at row 80.
+    /// k = 20 is 3k^2+3k+1 = 1261 cells per row; 100 rows fire at row 9.
     assertBlockIsCancelled("h3kRing", 644325529233966508, std::make_shared<DataTypeUInt16>(), 20, /*rows=*/100);
 }
 
 TEST_F(H3ArrayExpansionCancellation, HexRingWeightsRowsByItemCount)
 {
     tryRegisterFunctions();
-    /// k = 20 is 6k = 120 cells per row; 1000 rows fire at row 833.
+    /// k = 20 is 6k = 120 cells per row; 1000 rows fire at row 84.
     assertBlockIsCancelled("h3HexRing", 644325529233966508, std::make_shared<DataTypeUInt16>(), 20, /*rows=*/1000);
 }
 
@@ -172,26 +172,26 @@ TEST_F(H3ArrayExpansionCancellation, LineWeightsRowsByItemCountInTheSizingPass)
 {
     tryRegisterFunctions();
     /// A cell to itself is one item per row, so the weighted sizing counter advances by two a row and
-    /// fires at row 50000 while the fill pass, whose weighting this case does not test, stays at 66667
-    /// of the threshold's 100000. A longer line would reach the threshold in the fill pass instead and
-    /// the case would pass whether or not the sizing pass weights its rows.
-    assertBlockIsCancelled("h3Line", 621807531097128959, std::make_shared<DataTypeUInt64>(), 621807531097128959, /*rows=*/66'667);
+    /// fires at row 5001 while the fill pass, whose weighting this case does not test, stays at 6667 of
+    /// the threshold's 10000. A longer line would reach the threshold in the fill pass instead and the
+    /// case would pass whether or not the sizing pass weights its rows.
+    assertBlockIsCancelled("h3Line", 621807531097128959, std::make_shared<DataTypeUInt64>(), 621807531097128959, /*rows=*/6'667);
 }
 
 TEST_F(H3ArrayExpansionCancellation, LineWeightsRowsByItemCountInTheFillPass)
 {
     tryRegisterFunctions();
-    /// The sizing pass counts one per row plus the line length of every row but the row it is on, so
-    /// with two rows of a measured 66411 items it peaks at 66413 and stops short of the threshold's
-    /// 100000, while the fill pass counts both rows in full and reaches 132822. So only the fill pass
-    /// can fire, and only if it weights its rows. Both margins are a third of the threshold.
-    assertBlockIsCancelled("h3Line", 646078419604526808, std::make_shared<DataTypeUInt64>(), 646078038512502154, /*rows=*/2);
+    /// The sizing pass tests before adding the row's own size, so with two rows of a measured 6641 items
+    /// its checkpoints see 1 and 6643, both short of the threshold's 10000, and the block ends before a
+    /// third one could see the 13284 the counter finishes on. The fill pass tests after adding, so it
+    /// reaches 13282 on row 2. Only the fill pass can fire, and only if it weights its rows.
+    assertBlockIsCancelled("h3Line", 646078419604526808, std::make_shared<DataTypeUInt64>(), 646078420123713713, /*rows=*/2);
 }
 
 TEST_F(H3ArrayExpansionCancellation, ToChildrenWeightsRowsByItemCount)
 {
     tryRegisterFunctions();
-    /// A resolution 9 parent has 7^4 = 2401 children at resolution 13; 100 rows fire at row 42.
+    /// A resolution 9 parent has 7^4 = 2401 children at resolution 13; 100 rows fire at row 6.
     assertBlockIsCancelled("h3ToChildren", 617303931469955071, std::make_shared<DataTypeUInt8>(), 13, /*rows=*/100);
 }
 

@@ -114,7 +114,7 @@ public:
         dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
 
-        static constexpr UInt64 items_between_cancellation_checks = 100'000;
+        static constexpr UInt64 items_between_cancellation_checks = 10'000;
         UInt64 items_since_check = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)

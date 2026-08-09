@@ -122,7 +122,9 @@ public:
         /// A whole block runs inside one `executeImpl` call, so the pipeline's between-blocks cancellation
         /// check cannot interrupt it. Throttle on accumulated output items rather than rows, counting each
         /// row as at least one: one row holds up to 300030001 items, and a row with an invalid cell none.
-        static constexpr UInt64 items_between_cancellation_checks = 100'000;
+        /// Keep the count low: a row costs work of its own beyond its items, here an allocation, so few
+        /// items a row would otherwise buy a long uninterruptible interval.
+        static constexpr UInt64 items_between_cancellation_checks = 10'000;
         UInt64 items_since_check = 0;
 
         for (size_t row = 0; row < input_rows_count; ++row)
