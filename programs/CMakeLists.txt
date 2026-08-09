@@ -162,15 +162,14 @@ endmacro()
 set (CLICKHOUSE_BUNDLE)
 
 # Link a subcommand's library into the multi-call `clickhouse` binary and create a
-# `clickhouse-<name>` symlink next to it in the build directory. The symlink is NOT
-# installed: use this for subcommands that are reachable through the multi-call binary
-# (as `clickhouse <name>`) but are not shipped as standalone programs in any package.
+# `clickhouse-<name>` symlink next to it in the build directory, without installing the
+# symlink. Use this when no packaging manifest references that standalone name.
 function(clickhouse_program_link name lib_name)
     clickhouse_target_link_split_lib(clickhouse ${lib_name})
     add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${name})
 endfunction()
 
-# Same as clickhouse_program_link, but also installs the standalone symlink (and any
+# Same as `clickhouse_program_link`, but also installs the standalone symlink (and any
 # extra aliases) so they are picked up when building packages.
 function(clickhouse_program_install name lib_name)
     clickhouse_program_link(${name} ${lib_name})
@@ -185,7 +184,8 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
-# These subcommands are shipped as standalone clickhouse-<name> programs in packages.
+# Referenced as `root/usr/bin/clickhouse-<name>` by a manifest in packages/, so the
+# installed symlink has to stay.
 clickhouse_program_install(clickhouse-benchmark benchmark)
 clickhouse_program_install(clickhouse-client client chc)
 clickhouse_program_install(clickhouse-compressor compressor)
@@ -195,8 +195,8 @@ clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-obfuscator obfuscator)
 clickhouse_program_install(clickhouse-server server)
 
-# These subcommands are only reachable through the multi-call binary (`clickhouse <name>`),
-# so only link them and create the build-tree symlink without installing it.
+# No packaging manifest references these standalone names, so installing the symlink only
+# populates the staging tree. `clickhouse <name>` and `clickhouse install` are unaffected.
 clickhouse_program_link(clickhouse-check-marks check-marks)
 clickhouse_program_link(clickhouse-checksum-for-compressed-block checksum-for-compressed-block)
 clickhouse_program_link(clickhouse-disks disks)
