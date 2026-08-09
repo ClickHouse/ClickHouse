@@ -3754,10 +3754,9 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         /*all_ranges_callback_=*/std::nullopt,
         /*read_task_callback_=*/std::nullopt,
         number_of_current_replica);
-    /// Copy the parallel-reading state rather than passing it to the ctor, which falls back to the context
-    /// for a callback it was not given: a read marked by `enableParallelReadingFromReplicasForSerialization`
-    /// has none, and on an initiator neither does the context. All three fields move together, otherwise a
-    /// marked read that does carry callbacks loses them and `getParallelReadingExtension` asserts.
+    /// Copy the parallel-reading state instead of passing it to the ctor, which resolves a callback it was
+    /// not given from the context: a read marked by `enableParallelReadingFromReplicasForSerialization` has
+    /// none. All three fields move together, otherwise `getParallelReadingExtension` asserts.
     cloned_step->is_parallel_reading_from_replicas = is_parallel_reading_from_replicas;
     cloned_step->all_ranges_callback = all_ranges_callback;
     cloned_step->read_task_callback = read_task_callback;
