@@ -15,14 +15,21 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # prologue is not interruptible by this fix and scales the other way on an optimized build.
 # A sanitizer or coverage build stretches both sides, so the bound scales; coverage never reaches
 # CXX_FLAGS and has to be read from its own `system.build_options` row.
-DEADLINE=1
+DEADLINE_MS=1000
 SCALE=1
 [ -n "$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS' AND value LIKE '%sanitize=%'")" ] && SCALE=2
 case "$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'")" in ON|1) SCALE=2 ;; esac
 BOUND=$((SCALE * 2000))
+# What a bound allows on top of its deadline. A case that needs a deadline of its own keeps this
+# allowance rather than the bound itself, so shortening a deadline does not loosen the assertion with it.
+SLACK_MS=$((BOUND - DEADLINE_MS))
+# `max_execution_time` is given in seconds; every deadline here is a whole number of milliseconds.
+to_seconds() { printf '%d.%03d' "$(($1 / 1000))" "$(($1 % 1000))"; }
+DEADLINE=$(to_seconds "$DEADLINE_MS")
 
 # $1 = label, $2 = query, $3 = overflow mode (default "throw"), $4 = query id (default none),
-# $5 = "fold" if the call is constant-folded (no pipeline), empty for a pipeline case
+# $5 = "fold" if the call is constant-folded (no pipeline), empty for a pipeline case,
+# $6 = the deadline in milliseconds (default `DEADLINE_MS`)
 #
 # Regexp compilation is pinned off for every case but the one that is about the compiled matcher: the
 # compiled-regexp cache is server-global with a compile threshold of 3, and this test runs up to 5 times,
@@ -37,11 +44,12 @@ BOUND=$((SCALE * 2000))
 # would assert query-level cancellation instead of the in-function checkpoint. That is reported as
 # inconclusive rather than passed.
 run() {
-    local label="$1" query="$2" mode="${3:-throw}" query_id="${4:-}" shape="${5:-}"
+    local label="$1" query="$2" mode="${3:-throw}" query_id="${4:-}" shape="${5:-}" deadline_ms="${6:-$DEADLINE_MS}"
     local output start_ms elapsed_ms wall_ms
+    local bound=$((deadline_ms + SLACK_MS))
     start_ms=$(date +%s%N)
     # shellcheck disable=SC2086
-    output=$(timeout 600 ${CLICKHOUSE_CLIENT} --max_execution_time "$DEADLINE" --timeout_overflow_mode "$mode" \
+    output=$(timeout 600 ${CLICKHOUSE_CLIENT} --max_execution_time "$(to_seconds "$deadline_ms")" --timeout_overflow_mode "$mode" \
         --compile_regular_expressions 0 \
         ${query_id:+--query_id "$query_id"} \
         --query "$query" 2>&1)
@@ -49,7 +57,7 @@ run() {
     elapsed_ms=$(printf '%s' "$output" | grep -oP 'elapsed \K[0-9]+(?=\.)' | head -1)
     # A verdict rather than the number itself keeps the reference stable across machine speeds.
     if [ -n "$elapsed_ms" ]; then
-        if [ "$elapsed_ms" -lt "$BOUND" ]; then
+        if [ "$elapsed_ms" -lt "$bound" ]; then
             echo "$label: stopped within bound"
         else
             echo "$label: OVERSHOT ${elapsed_ms} ms"
@@ -58,7 +66,7 @@ run() {
         echo "$label: no timeout"
     elif [ "$shape" = fold ]; then
         # Wall clock covers the whole client call, not server time alone, hence case 19's allowance.
-        if [ "$wall_ms" -lt "$((BOUND * 2))" ]; then
+        if [ "$wall_ms" -lt "$((bound * 2))" ]; then
             echo "$label: stopped within bound"
         else
             echo "$label: OVERSHOT ${wall_ms} ms"
@@ -166,8 +174,19 @@ run "per-row replacement" \
 # 15. A SINGLE match whose instruction list is itself over budget, so charging the list only after the loop
 #     finished would leave one match uninterruptible. Case 10's list is short enough that the per-match
 #     charge alone fires.
+#     Every instruction writes another copy of the whole match, so what the case can offer is capped by
+#     what the result may occupy, and how much of it a stopped call has already written grows with the
+#     speed of the machine. At the standard deadline the list had to be short enough that a fast build
+#     stayed inside the 5GiB test profile and long enough that a slow one did not finish it, and no
+#     single length satisfied both. So the case takes a deadline of its own, a tenth of the standard
+#     one: that divides what is written by ten whatever the machine, and leaves room for a list two
+#     orders of magnitude longer than one deadline's worth of copying. The prologue - one 1MB value and
+#     a 40KB replacement - is still under a tenth of even this deadline on a sanitizer build.
+#     The one step that stays uninterruptible is not a copy but the result buffer's own doubling, so the
+#     reported time overshoots the deadline by about what has been written so far, not by the whole list.
 run "one match, long instruction list" \
-    "SELECT length(replaceRegexpAll(repeat('a', 1000000), '(.*)', repeat('\\\\1', 2000))) FORMAT Null" throw "" fold
+    "SELECT length(replaceRegexpAll(repeat('a', 1000000), '(.*)', repeat('\\\\1', 20000))) FORMAT Null" \
+    throw "" fold "$((SCALE * 100))"
 
 # 16. The "replace first" specialization, which leaves the per-row loop at the first match - a different
 #     loop exit from "replace all". Empty haystacks with a per-row pattern make the matcher setup the whole
@@ -251,8 +270,8 @@ run "stored expression" \
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_replace_stored SYNC"
 
 #     The leak side: a retained QueryStatus keeps the `CurrentMetrics::QueryNonInternal` increment it owns,
-#     so the count never returns to where it was. The assertion is a zero delta rather than a tolerance,
-#     which a drop in either direction would mask: the metric excludes internal queries, so background work
+#     so the count never returns to where it was. Only a rise is a retention: `~QueryStatus` releases the
+#     increment, so the count can fall. Still no tolerance: the metric excludes internal queries, so background work
 #     cannot move it, and the test is no-parallel, so every non-internal query in the window is one of this
 #     test's own and cancels in the difference.
 sample_queries() {
@@ -276,7 +295,7 @@ for i in 1 2 3 4 5 6; do
         ALTER TABLE t_replace_stored_$i ADD INDEX ix replaceRegexpAll(v, '[0-9]', 'x') TYPE set(10) GRANULARITY 1"
 done
 queries_after=$(sample_queries)
-if [ "$((queries_after - queries_before))" = 0 ]; then
+if [ "$((queries_after - queries_before))" -le 0 ]; then
     echo "stored expression leak: no query state retained"
 else
     echo "stored expression leak: RETAINED $((queries_after - queries_before)) query states"
