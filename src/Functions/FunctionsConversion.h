@@ -4381,6 +4381,14 @@ struct ToDateTimeMonotonicity
             if ((std::is_same_v<T, DataTypeTime> || std::is_same_v<T, DataTypeTime64>) && !which.isTimeOrTime64())
                 return {};
 
+            /// Converting Time/Time64 to DateTime reinterprets seconds-of-day as seconds since
+            /// the epoch, and Time/Time64 values can be negative. With the default
+            /// date_time_overflow_behavior = 'ignore', negative values wrap to the end of the
+            /// DateTime range (e.g. -1 becomes 2106-02-07 06:28:15), so the conversion is not
+            /// monotonic across zero.
+            if (std::is_same_v<T, DataTypeDateTime> && which.isTimeOrTime64())
+                return {};
+
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
         else
