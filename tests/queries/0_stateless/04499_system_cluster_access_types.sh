@@ -47,6 +47,17 @@ cluster="test_shard_localhost"
 # The no-table form is host-global: it walks every database on the host. Route it to unreachable nodes
 # so the entry never executes here; the access check under test runs on the initiator before enqueue.
 unavailable_cluster="test_cluster_multiple_nodes_all_unavailable"
+
+# is_local is computed by the same isLocalAddress(resolved, tcp_port) predicate that
+# DDLTask::findCurrentHostID uses to pick up an entry, so these two guards pin where each
+# group of probes executes. count() > 0 keeps a missing cluster from passing vacuously.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT if(countIf(is_local) = 0 AND count() > 0, 'ok', 'FAIL: expected no local replica in $unavailable_cluster')
+    FROM system.clusters WHERE cluster = '$unavailable_cluster'"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT if(countIf(is_local) > 0, 'ok', 'FAIL: expected a local replica in $cluster')
+    FROM system.clusters WHERE cluster = '$cluster'"
+
 run() { ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none "$@"; }
 # The unavailable nodes never report back, so do not wait for them.
 run_global() { run --distributed_ddl_task_timeout 0 "$@"; }
