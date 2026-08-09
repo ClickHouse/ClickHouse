@@ -283,12 +283,16 @@ String getInsertDataSchemaMismatchDescription(
         /// binary data of the exact size in those formats, so they stay a mismatch). `FixedString` also rejects a bare number, but only in the typed-token
         /// JSON formats (`SerializationFixedString::deserializeTextJSON` requires a quoted string,
         /// regardless of the `input_format_json_read_numbers_as_strings` setting, which covers only the
-        /// plain `String` destination); `TSV` / `CSV` read the raw field verbatim into a `FixedString`
-        /// column, so a number is accepted there and flagging it would be a false positive.
+        /// plain `String` destination) and in the binary formats that store typed values (`MsgPack`
+        /// routes a `FixedString` column only through its string / binary insertion path, and its
+        /// integer path has no `FixedString` arm; `BSONEachRow` reads a `FixedString` column only from
+        /// the string / binary BSON tags and rejects the numeric ones); `TSV` / `CSV` read the raw
+        /// field verbatim into a `FixedString` column, so a number is accepted there and flagging it
+        /// would be a false positive.
         if (inferred_is_numeric
             && (which_expected.isUUID() || which_expected.isIPv6()
                 || (which_expected.isIPv4() && !format_reads_numeric_into_ipv4)
-                || (format_reads_typed_json_value_tokens && which_expected.isFixedString())))
+                || ((format_reads_typed_json_value_tokens || format_stores_typed_numeric_values) && which_expected.isFixedString())))
             return false;
 
         /// The mirror image of the "inferred `String`" rule below: a `String` destination accepts values
