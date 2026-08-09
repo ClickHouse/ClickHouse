@@ -649,6 +649,27 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
         {
             "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'",
             "ALTER USER user1 VALID UNTIL '2025-01-01' ADD IDENTIFIED WITH plaintext_password BY 'abc123'"
+        },
+        {
+            /// `IN` is a normal operator in expression parsing, so a trailing access-storage clause
+            /// after `VALID FOR` would be greedily consumed as part of the interval expression;
+            /// the parser must instead hand it back to the access-storage clause of the query.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN some_storage",
+            "CREATE USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH IN some_storage",
+            "CREATE USER user1 IN some_storage IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR IN some_storage",
+            "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
+            /// A compound identifier cannot be an access storage name, so it stays part of the
+            /// interval expression (and is rejected by the interval type check at execution time).
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN db.tbl",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(db.tbl\\)"
         }
 })));
 

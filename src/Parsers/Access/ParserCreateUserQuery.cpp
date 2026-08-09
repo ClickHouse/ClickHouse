@@ -10,6 +10,8 @@
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/Access/ParserPublicSSHKey.h>
 #include <Parsers/Access/parseUserName.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -67,7 +69,37 @@ namespace
             {
                 is_interval = true;
                 ParserExpression interval_p;
-                return interval_p.parse(pos, valid_until, expected);
+                if (!interval_p.parse(pos, valid_until, expected))
+                    return false;
+
+                /// `IN` is a normal operator in expression parsing, so with the trailing access-storage
+                /// clause (`CREATE USER ... VALID FOR INTERVAL 1 DAY IN <storage>`) the expression parser
+                /// greedily consumes `IN <storage>` as part of the interval expression instead of leaving
+                /// it for `parseAccessStorageName`. (`VALID UNTIL` is not affected: its value parser stops
+                /// at the string literal.) Detect this exact shape - a top-level `in` whose right side is
+                /// a bare one-token identifier - and give the clause back to the caller: keep the left
+                /// side as the interval and rewind the position to the `IN` keyword. Anything else, e.g.
+                /// a genuine membership test, is left as-is and rejected by the interval type check at
+                /// execution time.
+                if (const auto * maybe_in = valid_until->as<ASTFunction>();
+                    maybe_in && maybe_in->name == "in" && maybe_in->arguments && maybe_in->arguments->children.size() == 2)
+                {
+                    if (const auto * storage_identifier = maybe_in->arguments->children[1]->as<ASTIdentifier>();
+                        storage_identifier && storage_identifier->isShort())
+                    {
+                        /// A short identifier and the `IN` keyword are one token each. Verify the rewound
+                        /// position really points at `IN` before acting on it.
+                        IParserBase::Pos in_pos = pos;
+                        --in_pos;
+                        --in_pos;
+                        if (ParserKeyword{Keyword::IN}.checkWithoutMoving(in_pos, expected))
+                        {
+                            valid_until = maybe_in->arguments->children[0];
+                            pos = in_pos;
+                        }
+                    }
+                }
+                return true;
             }
 
             return false;
