@@ -40,6 +40,12 @@ public:
 
     String getName() const override { return "TimeSeriesSink"; }
 
+    /// The real pre-write checks run inside the nested `INSERT`s this sink opens into the inner target
+    /// tables: keep the query's registry to thread it into them, so the sinks created there share the
+    /// query's gates and the `Too many parts` check runs once per query - also across sibling branches
+    /// (e.g. two materialized views) converging on the same `TimeSeries` table.
+    void setInsertStartGateRegistry(InsertStartGatesPtr gates) override { insert_start_gates = std::move(gates); }
+
     void consume(Chunk & chunk) override;
     void onFinish() override;
 
@@ -107,6 +113,8 @@ private:
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> metrics_pipeline;
+
+    InsertStartGatesPtr insert_start_gates;
 };
 
 }

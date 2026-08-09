@@ -412,6 +412,9 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
         /* no_squash= */ false,
         /* no_destination= */ false,
         async_insert);
+    /// Share the outer query's insert start gates with the nested INSERT, so its `Too many parts`
+    /// check is shared with the other branches of the outer query writing into the same inner table.
+    interpreter.setInsertStartGates(insert_start_gates);
 
     pipeline->io = interpreter.execute();
     pipeline->executor = std::make_unique<PushingPipelineExecutor>(pipeline->io.pipeline);

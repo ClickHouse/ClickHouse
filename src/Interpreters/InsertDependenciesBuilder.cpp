@@ -14,6 +14,7 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -1090,9 +1091,10 @@ bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePt
     /// A forwarding storage runs a nested `INSERT` whose destination graph is not visible here: an
     /// `Alias` hides its target's dependent views behind the nested `INSERT` each `AliasSink` runs, a
     /// `Distributed` writes to remote shards whose tables are not cheaply known here, a `Buffer`
-    /// flushes to a destination that can forward further, and a `WindowView` opens fresh sinks of its
-    /// inner table inside `writeIntoWindowView`. Any of them may end on a `ReplicatedMergeTree`, so
-    /// fail closed.
+    /// flushes to a destination that can forward further, a `WindowView` opens fresh sinks of its
+    /// inner table inside `writeIntoWindowView`, and a `TimeSeries` opens nested `INSERT`s into its
+    /// inner target tables inside `TimeSeriesSink`. Any of them may end on a `ReplicatedMergeTree`,
+    /// so fail closed.
     if (storageHidesWriteTarget(storage, depth))
         return true;
 
@@ -1109,7 +1111,8 @@ bool InsertDependenciesBuilder::storageHidesWriteTarget(const StoragePtr & stora
     if (dynamic_cast<const StorageAlias *>(storage.get())
         || dynamic_cast<const StorageDistributed *>(storage.get())
         || dynamic_cast<const StorageBuffer *>(storage.get())
-        || dynamic_cast<const StorageWindowView *>(storage.get()))
+        || dynamic_cast<const StorageWindowView *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
 
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
