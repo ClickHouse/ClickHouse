@@ -164,15 +164,23 @@ def test_many_nodes_with_different_ttls():
         node1_zk = get_fake_zk(cluster, "node1")
         node2_zk = get_fake_zk(cluster, "node2")
 
-        # Heterogeneous TTLs exercise batched collection across many nodes. That a node with a
-        # longer TTL is not collected together with a shorter-TTL sibling is asserted at exact
-        # instants in CoordinationTest.TestTTLSiblingExpiryOrdering; asserting it here would
-        # require observing a transient window and races the real garbage collector.
+        # Sentinel whose TTL is far past this test's upper bound: an engine that collects a node
+        # before its destroy_time removes it too. Created before the others, so wait_nodes_gone
+        # returning for them on the follower implies the follower applied this create as well.
+        node1_zk.create("/sentinel", b"sentinel", ttl=600000)
+
+        # Ten nodes with distinct TTLs; each must be collected. The relative expiry order is
+        # asserted at exact instants in CoordinationTest.TestTTLSiblingExpiryOrdering, since
+        # observing it here would race the collector. Keep ttl_step_ms low: the longest TTL is
+        # ttl_step_ms * 10 and must land well inside wait_nodes_gone's 30s deadline.
         ttl_step_ms = 1000
         for i in range(10):
             node1_zk.create(f"/n{i}", str(i).encode(), ttl=ttl_step_ms * (i + 1))
 
         wait_nodes_gone([node1_zk, node2_zk], [f"/n{i}" for i in range(10)])
+
+        assert node1_zk.exists("/sentinel")
+        assert node2_zk.exists("/sentinel")
     finally:
         cluster.shutdown()
         if node1_zk:
@@ -200,6 +208,10 @@ def test_sibling_ttl_independence():
         node1_zk = get_fake_zk(cluster, "node1")
         node2_zk = get_fake_zk(cluster, "node2")
         node1_zk.create("/root", b"root")
+        # Sentinel whose TTL is far past this test's upper bound; see the same node in
+        # test_many_nodes_with_different_ttls. Kept a sibling of /root because a TTL node cannot
+        # have children.
+        node1_zk.create("/sentinel", b"sentinel", ttl=600000)
         node1_zk.create("/root/a", b"a", ttl=1000)
         node1_zk.create("/root/b", b"b", ttl=3000)
 
@@ -211,6 +223,8 @@ def test_sibling_ttl_independence():
         # A node created without a TTL has no destroy_time, so no delay can make it disappear.
         assert node1_zk.exists("/root")
         assert node2_zk.exists("/root")
+        assert node1_zk.exists("/sentinel")
+        assert node2_zk.exists("/sentinel")
     finally:
         cluster.shutdown()
         if node1_zk:
