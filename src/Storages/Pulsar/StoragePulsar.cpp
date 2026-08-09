@@ -551,6 +551,22 @@ bool StoragePulsar::streamToViews(UInt64 cycle_epoch)
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
+    /// The consumer pool may be incomplete: after ATTACH with the broker unreachable, or after
+    /// a poisoned consumer was dropped, `init_task` is still recreating the missing consumers.
+    /// A source for a missing slot would just spend the whole poll timeout waiting for a consumer
+    /// that cannot appear, throttling the healthy sources, so fan out only over the live consumers
+    /// and report a stall when there are none.
+    size_t stream_count = 0;
+    {
+        std::lock_guard lock{consumers_mutex};
+        stream_count = created_consumers;
+    }
+    if (stream_count == 0)
+    {
+        LOG_TRACE(log, "No consumers created yet (connection to the broker might not be established), skipping the streaming cycle");
+        return true;
+    }
+
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
 
@@ -577,7 +593,6 @@ bool StoragePulsar::streamToViews(UInt64 cycle_epoch)
     std::vector<std::shared_ptr<PulsarSource>> sources;
     Pipes pipes;
 
-    size_t stream_count = num_consumers;
     sources.reserve(stream_count);
     pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
