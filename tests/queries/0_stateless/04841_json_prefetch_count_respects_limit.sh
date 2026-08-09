@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# Random settings limits: index_granularity=(8192, None)
+# Tags: no-fasttest, no-parallel-replicas
+# Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(33554432, None)
 # - no-fasttest: uses an object storage disk
+# - no-parallel-replicas: the asserted prefetch count is per reader; other replicas prefetch too
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,9 +17,14 @@ table="${CLICKHOUSE_DATABASE}.t_json_prefetch"
 # The bound is per reader per prefetch epoch (the counter is reset wherever the reader clears its
 # prefetched streams), so the count equals the limit exactly only while the read is a single
 # granule with no prewhere step: hence the pinned granularity here and the pinned settings below.
+# Both granularity settings have to be pinned: `index_granularity` is only an upper bound on
+# rows per granule, adaptive granularity derives the actual value from `index_granularity_bytes`.
+# The fixture must also expose more than 10 prefetchable substreams, or the equality rows and the
+# unlimited control below become vacuous: keep the 40 distinct JSON paths per column.
 ${CLICKHOUSE_CLIENT} -m --query "
 CREATE TABLE ${table} (jn Nullable(JSON), ja Array(JSON)) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192,
+         index_granularity_bytes = 33554432,
          disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_TEST_UNIQUE_NAME}_blob/');
 
 -- Many distinct JSON path types expand Object -> Dynamic -> Variant into many substreams.
@@ -50,7 +56,7 @@ run_and_count_prefetches() {
         SELECT ProfileEvents['RemoteFSPrefetches'] = $1
         FROM system.query_log
         WHERE current_database = '${CLICKHOUSE_DATABASE}' AND log_comment = '$3'
-          AND type = 'QueryFinish' AND event_date >= yesterday()
+          AND type = 'QueryFinish' AND event_date >= yesterday() AND is_initial_query
         ORDER BY event_time_microseconds DESC LIMIT 1"
 }
 
@@ -74,7 +80,7 @@ ${CLICKHOUSE_CLIENT} --query "
     FROM system.query_log
     WHERE current_database = '${CLICKHOUSE_DATABASE}'
       AND log_comment = '04841_unlimited_${CLICKHOUSE_TEST_UNIQUE_NAME}'
-      AND type = 'QueryFinish' AND event_date >= yesterday()
+      AND type = 'QueryFinish' AND event_date >= yesterday() AND is_initial_query
     ORDER BY event_time_microseconds DESC LIMIT 1"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"
