@@ -62,5 +62,25 @@ FROM (EXPLAIN pretty=0, description=0
     JOIN t_text_index_pr_plan_based AS r ON l.s = r.s
     WHERE hasToken(r.s, 'hello'));
 
+-- The join itself must not be lifted into the shipped fragment when its broadcast side has a direct
+-- text-index read: the fragment is serialized without the index read tasks, so the remote replica
+-- cannot resolve the synthetic `__text_index_*` column and throws `Column ... not found in table`.
+-- Execute (not just EXPLAIN) a query where dropping the broadcast-side filter would change the result:
+-- 'world bbb' matches the join key but not the token filter.
+DROP TABLE IF EXISTS t_sensitive_l_pr_plan_based;
+DROP TABLE IF EXISTS t_sensitive_r_pr_plan_based;
+CREATE TABLE t_sensitive_r_pr_plan_based (s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha'))
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_sensitive_r_pr_plan_based VALUES ('hello aaa'), ('world bbb'), ('hello ccc');
+CREATE TABLE t_sensitive_l_pr_plan_based (s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_sensitive_l_pr_plan_based VALUES ('hello aaa'), ('world bbb'), ('hello ccc'), ('unmatched');
+
+SELECT count() FROM t_sensitive_l_pr_plan_based AS l
+JOIN t_sensitive_r_pr_plan_based AS r ON l.s = r.s
+WHERE hasToken(r.s, 'hello');
+
+DROP TABLE t_sensitive_l_pr_plan_based;
+DROP TABLE t_sensitive_r_pr_plan_based;
+
 DROP TABLE t_plain_pr_plan_based;
 DROP TABLE t_text_index_pr_plan_based;

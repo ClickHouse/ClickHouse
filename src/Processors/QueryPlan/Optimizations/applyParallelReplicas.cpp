@@ -87,12 +87,17 @@ static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
 
 /// The broadcast side of a shipped join is executed in full by every replica, so its MergeTree reads must
 /// pass the same rules as the coordinated ones - otherwise each replica would join against its own data.
+/// A direct read from a text index (see isTextIndexDirectRead below) is unshippable too: only the
+/// coordinated reads are guarded against it in insertParallelReplicasSplit, and shipping a broadcast-side
+/// read whose PREWHERE references the synthetic `__text_index_*` column fails on the remote replica with
+/// `Column __text_index_... not found in table` - the index read tasks that produce the column are not
+/// serialized with the fragment.
 static bool subtreeHasUnshippableRead(const QueryPlan::Node * node)
 {
     if (!node)
         return false;
     if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
-        return !mergeTreeReadCanBeShipped(*read);
+        return !mergeTreeReadCanBeShipped(*read) || !read->getIndexReadTasks().empty();
     for (const auto * child : node->children)
         if (subtreeHasUnshippableRead(child))
             return true;
