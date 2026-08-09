@@ -1,19 +1,7 @@
 <test>
-    <!-- Exercises minmax skip index evaluation in the regimes where its cost shows up in
-         end-to-end query time:
-           - `minmax_bench_partitioned`: a time-partitioned table with a minmax index on the
-             partition-key column and another on a non-partition-key column. Queries cover
-             interior partitions entirely, which is the common observability shape.
-           - `minmax_bench_wide`: a single wide part with two minmax indices on non-partition
-             columns, optimized into one part so the per-granule evaluation cost isn't split
-             across small parts.
-         Both use GRANULARITY 1 so there is one minmax entry per `index_granularity` rows,
-         putting as many granules as possible in front of the evaluator.
-
-         Each query is run twice via the `bulk_settings` substitution: the legacy variant
-         disables secondary-index bulk filtering without naming the new setting, while the new
-         variant enables the vectorized minmax path. This lets the baseline run on a server that
-         predates `use_minmax_index_bulk_filtering`; only the new variants are partial. -->
+    <!-- Compare scalar and bulk minmax evaluation for partition-key, non-partition-key,
+         and multi-index predicates. The scalar variant omits the new setting so it can run
+         on the reference server. -->
 
     <substitutions>
         <substitution>
@@ -39,7 +27,7 @@
     </create_query>
 
     <create_query>
-        CREATE TABLE minmax_bench_wide
+        CREATE TABLE minmax_bench_large_part
         (
             t DateTime,
             c UInt32,
@@ -59,13 +47,13 @@
     </fill_query>
 
     <fill_query>
-        INSERT INTO minmax_bench_wide
+        INSERT INTO minmax_bench_large_part
         SELECT toDateTime('2024-01-01 00:00:00') + number, intHash32(number), intHash64(number + 1)
         FROM numbers(20000000)
         SETTINGS max_insert_threads = 8
     </fill_query>
 
-    <fill_query>OPTIMIZE TABLE minmax_bench_wide FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE minmax_bench_large_part FINAL</fill_query>
 
     <!-- Whole interior partitions: every granule of Feb..Sep is trivially covered. -->
     <query><![CDATA[
@@ -82,20 +70,20 @@
         {bulk_settings}
     ]]></query>
 
-    <!-- Single wide part, predicate that passes every granule: isolates evaluator cost
+    <!-- Single large part, predicate that passes every granule: isolates evaluator cost
          from pruning effects. -->
     <query><![CDATA[
-        SELECT count() FROM minmax_bench_wide WHERE c >= 0
+        SELECT count() FROM minmax_bench_large_part WHERE c >= 0
         {bulk_settings}
     ]]></query>
 
-    <!-- Single wide part, conjunction across two minmax indices. -->
+    <!-- Single large part, conjunction across two minmax indices. -->
     <query><![CDATA[
-        SELECT count() FROM minmax_bench_wide
+        SELECT count() FROM minmax_bench_large_part
         WHERE c BETWEEN 1000000000 AND 3000000000 AND v < 9000000000000000000
         {bulk_settings}
     ]]></query>
 
     <drop_query>DROP TABLE IF EXISTS minmax_bench_partitioned</drop_query>
-    <drop_query>DROP TABLE IF EXISTS minmax_bench_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS minmax_bench_large_part</drop_query>
 </test>

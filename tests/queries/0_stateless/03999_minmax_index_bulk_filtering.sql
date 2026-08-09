@@ -142,13 +142,7 @@ SELECT 'Enum8',
     (SELECT count() FROM t_bulk_enum WHERE e = 'b'
          SETTINGS use_minmax_index_bulk_filtering = 1) AS eq;
 
--- Float NaN granules. A granule that mixes finite values with NaN is stored as
--- [finite_min, NaN] because NaN sorts last. A lower-bounded predicate (>=, BETWEEN)
--- must keep such a granule: the finite values may still match. The bulk DAG path
--- computes `intersects_lower` as `greaterOrEquals(max, left)`, and `greaterOrEquals(NaN, left)`
--- is false, so without mirroring KeyCondition's NaN semantics it would wrongly prune the
--- granule and undercount. Each granule below gets a NaN in its first row, so every
--- granule's stored max is NaN.
+-- Lower-bounded predicates must keep granules that mix finite values with NaN.
 CREATE TABLE t_bulk_nan
 (
     f Float64,
@@ -195,8 +189,7 @@ INSERT INTO t_bulk_disjunction
 SELECT toDateTime('2024-01-01 00:00:00') + number * 60, number
 FROM numbers(20000);
 
--- Observability shape: time AND (OR over v). Each index's projected condition is
--- AND-only, so bulk on idx_t stays eligible under the disjunction setting.
+-- A conjunction with a disjunction owned by another index.
 SELECT 'bulk observability parity',
     length(groupUniqArray(c)) = 1 AS all_equal,
     any(c) AS count
@@ -244,8 +237,37 @@ FROM
     SETTINGS use_minmax_index_bulk_filtering = 1, use_skip_indexes_for_disjunctions = 1
 );
 
--- The executor evaluates skip-index granules in chunks of 65,536. Exercise survivors
--- immediately on both sides of that boundary.
+-- Synthesized pattern ranges must stay on the scalar path: FixedString comparison semantics
+-- differ from the String Fields used for the range bounds.
+CREATE TABLE t_bulk_fixed_string
+(
+    s FixedString(2),
+    INDEX idx_s s TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_bulk_fixed_string VALUES ('a'), ('b');
+
+SELECT 'FixedString negative pattern fallback',
+    length(groupUniqArray(c)) = 1 AS all_equal,
+    any(c) AS count
+FROM
+(
+    SELECT count() AS c FROM t_bulk_fixed_string WHERE s NOT LIKE 'a'
+    SETTINGS use_skip_indexes = 0
+    UNION ALL
+    SELECT count() AS c FROM t_bulk_fixed_string WHERE s NOT LIKE 'a'
+    SETTINGS force_data_skipping_indices = 'idx_s', use_minmax_index_bulk_filtering = 0
+    UNION ALL
+    SELECT count() AS c FROM t_bulk_fixed_string WHERE s NOT LIKE 'a'
+    SETTINGS force_data_skipping_indices = 'idx_s', use_minmax_index_bulk_filtering = 1
+);
+
+DROP TABLE t_bulk_fixed_string;
+
+-- Exercise survivors immediately on both sides of the 65,536-granule chunk boundary.
 CREATE TABLE t_bulk_chunk_boundary
 (
     x UInt32,

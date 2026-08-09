@@ -2,14 +2,8 @@
 -- no-parallel-replicas: per-query SETTINGS toggling skip-index evaluation paths
 -- must take effect on the executing replica.
 
--- The minmax bulk-filtering path (use_minmax_index_bulk_filtering) does not populate the
--- partial-disjunction bitset, so it can only run alongside use_skip_indexes_for_disjunctions
--- when no disjunction crosses a leaf the minmax index owns. This test pins the evaluation
--- path and checks, via the IndexBulkFilteringEvaluatedGranules profile event, that:
---   * a foreign disjunction (OR over a different indexed column) still lets the index whose
---     own leaf stays outside the OR take the bulk path, and
---   * a disjunction that crosses the indexed columns correctly falls back to the scalar path,
--- in addition to verifying answer parity in both cases.
+-- Bulk evaluation may handle a foreign disjunction, but must fall back when the OR spans
+-- this index's leaf. Verify result parity and path selection.
 
 SET secondary_indices_enable_bulk_filtering = 1;
 SET use_skip_indexes_on_data_read = 0;

@@ -80,8 +80,8 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
-        bool skip_analysis_ = false,
-        bool preserve_typed_range_bounds_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+        bool skip_analysis_ = false, /// Toggled by `use_primary_key` and `use_partition_key`; useful for testing.
+        bool preserve_typed_range_bounds_ = false);
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
@@ -479,19 +479,7 @@ public:
     /// Does the filter condition have any ORs?
     bool hasOnlyConjunctions() const;
 
-    /// Weaker than `hasOnlyConjunctions`: returns true when every `FUNCTION_OR` in the RPN
-    /// combines only operands that this condition does not own — subexpressions built solely
-    /// from `FUNCTION_UNKNOWN` / constant leaves, with no owned atom (e.g. `FUNCTION_IN_RANGE`)
-    /// underneath. Equivalently, no disjunction crosses an owned leaf. A pure conjunction
-    /// trivially satisfies this, so the result is a superset of `hasOnlyConjunctions`.
-    ///
-    /// This is what the minmax bulk path needs to coexist with `use_skip_indexes_for_disjunctions`:
-    /// the bulk path does not populate the partial-disjunction bitset, so it relies on the
-    /// bitset's `true` default for the positions it owns. That default only matches what
-    /// per-granule evaluation would have written when none of this condition's owned leaves
-    /// participates in a cross-index OR. A foreign disjunction over columns this index does not
-    /// cover (e.g. `t >= c AND (v < a OR v > b)` for a minmax index on `t`) keeps the index's own
-    /// `t >= c` leaf outside every OR, so bulk stays exactly as precise as the scalar path.
+    /// Whether no RPN disjunction contains an atom owned by this condition.
     bool everyDisjunctionIsOverUnownedLeaves() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,

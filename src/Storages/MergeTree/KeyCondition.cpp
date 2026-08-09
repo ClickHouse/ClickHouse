@@ -496,9 +496,13 @@ static std::string_view reverseComparisonOperator(std::string_view op)
 }
 
 
-static void setTypedRangeBounds(KeyCondition::RPNElement & element, const DataTypePtr & type)
+static void setTypedRangeBounds(
+    KeyCondition::RPNElement & element, std::string_view comparison, const DataTypePtr & type)
 {
-    if (!type || element.range.left.isPositiveInfinity() || element.range.right.isNegativeInfinity())
+    if (reverseComparisonOperator(comparison).empty()
+        || !type
+        || element.range.left.isPositiveInfinity()
+        || element.range.right.isNegativeInfinity())
         return;
 
     auto make_constant = [&](const Field & value)
@@ -4108,7 +4112,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
         const bool atom_created = atom_it->second(out, const_value);
         if (atom_created && preserve_typed_range_bounds)
-            setTypedRangeBounds(out, const_type);
+            setTypedRangeBounds(out, func_name, const_type);
         return atom_created;
     }
     if (node.tryGetConstant(const_value, const_type))

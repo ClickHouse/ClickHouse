@@ -36,7 +36,7 @@ struct MergeTreeIndexConditionMinMaxTestAccess
 
     static std::vector<BoolMask> bulk(
         const MergeTreeIndexConditionMinMax & condition,
-        const MergeTreeIndexBulkGranulesMinMaxFast & granules)
+        const MergeTreeIndexBulkGranulesMinMaxColumnar & granules)
     {
         Block block = condition.executeBulkActions(granules);
         const auto & can_be_true = block.getByName(condition.OUTPUT_CAN_BE_TRUE).column;
@@ -110,11 +110,11 @@ ConditionShape makeComparison(
     return shape;
 }
 
-std::unique_ptr<MergeTreeIndexBulkGranulesMinMaxFast> makeBulkGranules(
+std::unique_ptr<MergeTreeIndexBulkGranulesMinMaxColumnar> makeBulkGranules(
     const IndexDescription & index,
     const std::vector<std::pair<Field, Field>> & intervals)
 {
-    auto bulk = std::make_unique<MergeTreeIndexBulkGranulesMinMaxFast>(index.sample_block, intervals.size());
+    auto bulk = std::make_unique<MergeTreeIndexBulkGranulesMinMaxColumnar>(index.sample_block, intervals.size());
     for (const auto & [min, max] : intervals)
     {
         bulk->cols[0].min_col->insert(min);
@@ -350,6 +350,26 @@ TEST(MergeTreeIndexConditionMinMaxDifferential, AllNaNGranuleMatchesScalar)
     ASSERT_EQ(actual.size(), 1);
     EXPECT_EQ(actual[0], MergeTreeIndexConditionMinMaxTestAccess::scalar(condition, Range(nan, true, nan, true)));
     EXPECT_FALSE(actual[0].can_be_true);
+}
+
+TEST(MergeTreeIndexConditionMinMaxDifferential, MixedFiniteAndNaNGranuleMatchesScalar)
+{
+    auto context = getRegisteredContext();
+    auto float64 = std::make_shared<DataTypeFloat64>();
+    auto index = makeIndex(float64, context);
+    const Field min = Float64(1);
+    const Field max = std::numeric_limits<Float64>::quiet_NaN();
+    auto bulk = makeBulkGranules(index, {{min, max}});
+    auto shape = makeComparison(context, float64, float64, Float64(0), "greater");
+    ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context, true);
+    MergeTreeIndexConditionMinMax condition(index, filter_dag, context);
+    ASSERT_TRUE(condition.hasBulkFastPath());
+
+    const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, *bulk);
+    ASSERT_EQ(actual.size(), 1);
+    EXPECT_EQ(actual[0], MergeTreeIndexConditionMinMaxTestAccess::scalar(condition, Range(min, true, max, true)));
+    EXPECT_TRUE(actual[0].can_be_true);
+    EXPECT_TRUE(actual[0].can_be_false);
 }
 
 }

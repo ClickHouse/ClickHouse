@@ -2541,22 +2541,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     /// Whether we should use a more optimal filtering.
     bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions;
 
-    /// MinMax supportsBulkFiltering() returns true, but the bulk path is gated on a dedicated
-    /// session setting so it can be rolled out incrementally. When the condition's RPN cannot
-    /// be lowered into a column-engine expression (monotonic function chains, space-filling
-    /// curves, polygons, bloom filters, non-collapsed IN_SET, relaxed predicates), the bulk
-    /// path's `getPossibleGranules` would conservatively return "all granules pass" without
-    /// any pruning benefit. In that case skip bulk entirely and let the generic scalar path
-    /// evaluate granules on demand.
-    ///
-    /// The disjunction-merge path is compatible with bulk for this index when no disjunction
-    /// crosses a leaf this index owns: bulk does not populate the partial-disjunction bitset,
-    /// but for such conditions the bitset's `true` default matches what per-granule evaluation
-    /// would have written, so merge precision is preserved. This covers pure conjunctions and
-    /// also the common observability shape `t >= c AND (v < a OR v > b)` for a minmax index on
-    /// `t`, where the OR is over foreign columns and the index's own `t >= c` leaf stays outside
-    /// it. We re-enable bulk for minmax in that case even when the outer blanket disabled it for
-    /// the disjunction setting. See `KeyCondition::everyDisjunctionIsOverUnownedLeaves`.
+    /// Minmax bulk filtering has its own setting and supports only lowerable conditions.
+    /// With partial disjunctions, this index must own no leaf below an OR.
     const auto * minmax_index = typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get());
     const auto * minmax_cond = minmax_index ? typeid_cast<const MergeTreeIndexConditionMinMax *>(condition.get()) : nullptr;
     if (minmax_index)
@@ -2715,19 +2701,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
     else if (bulk_filtering)
     {
-        /// Chunked streaming evaluation. Read skip-index granules (not data rows) in spans
-        /// of up to `chunk_size_index_granules`, run the condition on each chunk, and emit
-        /// `MarkRange`s for the surviving granules right away, freeing the chunk's columns
-        /// before reading the next one. Keeps working memory bounded at
-        /// O(chunk × bytes_per_granule) instead of O(part_size × ...): nothing here scales
-        /// with the part size, not even the list of survivors — for unselective predicates
-        /// that pass most granules (a target workload of this feature), accumulating
-        /// survivors first would reintroduce the per-part term we are trying to avoid.
-        ///
-        /// The constant matches ClickHouse's default `max_block_size` so the skip-index
-        /// evaluation has the same working-set shape as ordinary column reads. The
-        /// underlying `CompressedReadBuffer` streams decompressed blocks on demand
-        /// regardless of the chunk boundary chosen here.
+        /// Process granules in bounded chunks to avoid part-sized intermediate storage.
         constexpr size_t chunk_size_index_granules = DEFAULT_BLOCK_SIZE;
 
         /// Bulk evaluation does not write owned-leaf bits for partial-disjunction merging.
@@ -2736,9 +2710,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// evaluation rejects. Adjacent survivors still merge when the threshold is zero.
         const size_t bulk_min_marks_for_seek = use_skip_indexes_for_disjunctions ? 0 : min_marks_for_seek;
 
-        /// Granules survive in ascending global position order — ranges are processed in
-        /// order, chunks tile each range in order, and `getPossibleGranules` returns
-        /// chunk-local indices ascending — so the `res.back().end` merge below stays valid.
+        /// `getPossibleGranules` returns chunk-local indices in ascending order.
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];

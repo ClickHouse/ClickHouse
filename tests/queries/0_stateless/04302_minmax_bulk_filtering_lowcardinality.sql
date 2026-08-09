@@ -2,12 +2,7 @@
 -- no-parallel-replicas: per-query SETTINGS toggling skip-index evaluation paths
 -- must take effect on the executing replica.
 
--- Regression test: a minmax skip index over a `LowCardinality(Nullable(T))` column used to
--- trip an `assert_cast<ColumnUInt8>` in the bulk-filtering path (`Bad cast from type
--- DB::ColumnNullable`). The fast-path builder only skipped directly-`Nullable` index columns,
--- so a `LowCardinality(Nullable(T))` column slipped through; comparisons over it still produce
--- a `Nullable(UInt8)` mask. Such columns must fall back to the generic per-granule path, and
--- the bulk path must return the same answer as the generic path.
+-- LowCardinality(Nullable(...)) minmax indexes must fall back to scalar evaluation without throwing.
 
 SET secondary_indices_enable_bulk_filtering = 1;
 SET use_skip_indexes_on_data_read = 0;

@@ -14,9 +14,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Storages/MergeTree/BoolMask.h>
-
 #include <numeric>
 
 #include <Common/FieldAccurateComparison.h>
@@ -237,22 +234,6 @@ KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWith
         preserve_typed_range_bounds};
 }
 
-/// ============================================================================
-/// ActionsDAG-backed fast path.
-///
-/// Lowers the KeyCondition RPN into a column-engine expression over paired
-/// (min_c, max_c) columns per index column. At eval time the caller hands a
-/// Block containing those columns and ClickHouse's standard function pipeline
-/// produces two UInt8 output columns: `__minmax_can_be_true` and
-/// `__minmax_can_be_false` per row (per granule).
-///
-/// When an RPN element can't be represented as plain column expressions
-/// (monotonic function chains, space-filling curves, polygons, bloom filters,
-/// relaxed predicates, non-collapsible set membership), the builder returns a
-/// null `ExpressionActions` and the caller falls back to the generic
-/// `Field`-based path.
-/// ============================================================================
-
 using Function = KeyCondition::RPNElement::Function;
 
 String minMaxInputName(bool is_max, size_t column_index)
@@ -345,9 +326,11 @@ buildIntersectsAndContains(
         {
             const auto & max_is_nan = addNamedFunction(dag, "isNaN", {&max_node}, context);
             const auto & min_is_nan = addNamedFunction(dag, "isNaN", {&min_node}, context);
+            const auto & max_is_finite = addNamedFunction(dag, "not", {&max_is_nan}, context);
             const auto & min_is_finite = addNamedFunction(dag, "not", {&min_is_nan}, context);
             const auto & mixed_finite_and_nan = addNamedFunction(dag, "and", {&max_is_nan, &min_is_finite}, context);
             intersects_lower = &addNamedFunction(dag, "or", {intersects_lower, &mixed_finite_and_nan}, context);
+            contains_lower = &addNamedFunction(dag, "and", {contains_lower, &max_is_finite}, context);
         }
     }
 
@@ -517,12 +500,7 @@ ExpressionActionsPtr tryBuildMinMaxActions(
     dag.getOutputs().push_back(&ctr_alias);
     dag.getOutputs().push_back(&cbf_alias);
 
-    /// Request JIT compilation: after `min_count_to_compile_expression` (default 3) invocations
-    /// of the same DAG shape, the CompiledExpressionCache fuses the compare+AND chain into a
-    /// single LLVM-generated function and caches it. The cache is process-wide and keyed by a
-    /// hash of the DAG, so all queries with the same condition shape reuse the compiled kernel.
-    /// Honors the `compile_expressions` session setting; if that's off, the constructor
-    /// silently skips compilation.
+    /// Allow expression compilation when enabled by settings.
     ExpressionActionsSettings expr_settings(context, CompileExpressions::yes);
     return std::make_shared<ExpressionActions>(std::move(dag), expr_settings);
 }
@@ -534,17 +512,7 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
 {
-    /// Lower the RPN into an ActionsDAG over paired (min, max) columns. When this succeeds,
-    /// the bulk path can evaluate all granules at once via the column engine, avoiding all
-    /// Field-variant dispatch. `minmax_actions` stays null for unsupported RPN shapes
-    /// (monotonic chains, space-filling curves, polygons, bloom filters, relaxed predicates,
-    /// non-collapsed IN_SET); in that case the caller falls back to the generic path.
-    ///
-    /// The condition object is constructed during query analysis on every read of every
-    /// minmax-indexed table. When `use_minmax_index_bulk_filtering` is off (the default), the
-    /// bulk path is never taken, so building the DAG would be wasted query-analysis work; skip
-    /// it entirely and leave `minmax_actions` null, making the disabled setting a true no-op.
-    ///
+    /// Build the bulk expression only when bulk minmax filtering is enabled.
     if (context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering] && !alwaysUnknownOrTrue())
     {
         try
@@ -844,8 +812,7 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
 namespace
 {
 
-/// Is a Field `Null` with the positive-infinity flag set? v2 minmax maps all-NULL granules to
-/// POSITIVE_INFINITY (NULL_LAST semantics); we preserve that marker as a per-granule flag.
+/// Detect infinity-tagged Null bounds before inserting them into typed columns.
 bool isPosInfNull(const Field & f)
 {
     return f.getType() == Field::Types::Null && f.isPositiveInfinity();
@@ -866,9 +833,9 @@ namespace
 /// is_null byte, and v2 uses a Null-tagged Field for all-NULL granules. The slow path handles
 /// both correctly; we only take the fast path when the on-disk layout is exactly a raw POD
 /// ColumnVector<T> element per min / per max.
-MergeTreeIndexBulkGranulesMinMaxFast::FastKind classifyFastKind(const IDataType & type)
+MergeTreeIndexBulkGranulesMinMaxColumnar::FastKind classifyFastKind(const IDataType & type)
 {
-    using FastKind = MergeTreeIndexBulkGranulesMinMaxFast::FastKind;
+    using FastKind = MergeTreeIndexBulkGranulesMinMaxColumnar::FastKind;
     if (type.isNullable())
         return FastKind::None;
     WhichDataType which(type);
@@ -911,7 +878,7 @@ ALWAYS_INLINE void fastReadPair(IColumn & min_col, IColumn & max_col, ReadBuffer
 
 }
 
-MergeTreeIndexBulkGranulesMinMaxFast::MergeTreeIndexBulkGranulesMinMaxFast(
+MergeTreeIndexBulkGranulesMinMaxColumnar::MergeTreeIndexBulkGranulesMinMaxColumnar(
     const Block & index_sample_block_, size_t size_hint)
     : index_sample_block(index_sample_block_)
 {
@@ -932,25 +899,14 @@ MergeTreeIndexBulkGranulesMinMaxFast::MergeTreeIndexBulkGranulesMinMaxFast(
         pc.max_col = type->createColumn();
         pc.min_col->reserve(size_hint);
         pc.max_col->reserve(size_hint);
-        /// inf flag arrays are only populated on the slow path; skip the reserve when we know
-        /// we'll never touch them.
         pc.fast_kind = classifyFastKind(*type);
-        if (pc.fast_kind == FastKind::None)
-        {
-            pc.min_is_neg_inf.reserve(size_hint);
-            pc.min_is_pos_inf.reserve(size_hint);
-            pc.max_is_neg_inf.reserve(size_hint);
-            pc.max_is_pos_inf.reserve(size_hint);
-        }
     }
 }
 
-void MergeTreeIndexBulkGranulesMinMaxFast::deserializeBinary(
+void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinary(
     size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version)
 {
-    /// `granule_num` is the caller's running counter. For the current bulk API it matches `size`,
-    /// but we don't rely on that: we just append in order and let `getPossibleGranules` return
-    /// row indices (which are the granule numbers the caller used).
+    /// Rows are chunk-local, so `granule_num` is intentionally ignored.
     (void)granule_num;
 
     const size_t num_columns = index_sample_block.columns();
@@ -1025,11 +981,6 @@ void MergeTreeIndexBulkGranulesMinMaxFast::deserializeBinary(
         const bool min_neg_inf = isNegInfNull(min_val);
         const bool max_pos_inf = isPosInfNull(max_val);
         const bool max_neg_inf = isNegInfNull(max_val);
-        pc.min_is_pos_inf.push_back(static_cast<UInt8>(min_pos_inf));
-        pc.min_is_neg_inf.push_back(static_cast<UInt8>(min_neg_inf));
-        pc.max_is_pos_inf.push_back(static_cast<UInt8>(max_pos_inf));
-        pc.max_is_neg_inf.push_back(static_cast<UInt8>(max_neg_inf));
-
         if (min_pos_inf || min_neg_inf)
             pc.min_col->insertDefault();
         else
@@ -1047,38 +998,23 @@ void MergeTreeIndexBulkGranulesMinMaxFast::deserializeBinary(
 namespace
 {
 
-/// Per-column helper that appends one (min, max) pair read via `readPODBinary` to its columns.
-/// Resolved at deserializeBinaryBulk() entry so the type-dispatch happens once per chunk (not
-/// once per granule or once per (granule, column) pair).
-template <typename T>
-ALWAYS_INLINE void fastReadOnePair(IColumn & min_col, IColumn & max_col, ReadBuffer & istr)
-{
-    auto & min_data = assert_cast<ColumnVector<T> &>(min_col).getData();
-    auto & max_data = assert_cast<ColumnVector<T> &>(max_col).getData();
-    T raw;
-    readPODBinary(raw, istr);
-    min_data.push_back(raw);
-    readPODBinary(raw, istr);
-    max_data.push_back(raw);
-}
+using ReadPairFn = void (*)(IColumn &, IColumn &, ReadBuffer &);
 
-using FastReadOnePairFn = void (*)(IColumn &, IColumn &, ReadBuffer &);
-
-FastReadOnePairFn fastReadOnePairFn(MergeTreeIndexBulkGranulesMinMaxFast::FastKind kind)
+ReadPairFn readPairFunction(MergeTreeIndexBulkGranulesMinMaxColumnar::FastKind kind)
 {
-    using FastKind = MergeTreeIndexBulkGranulesMinMaxFast::FastKind;
+    using FastKind = MergeTreeIndexBulkGranulesMinMaxColumnar::FastKind;
     switch (kind)
     {
-        case FastKind::U8:  return &fastReadOnePair<UInt8>;
-        case FastKind::U16: return &fastReadOnePair<UInt16>;
-        case FastKind::U32: return &fastReadOnePair<UInt32>;
-        case FastKind::U64: return &fastReadOnePair<UInt64>;
-        case FastKind::I8:  return &fastReadOnePair<Int8>;
-        case FastKind::I16: return &fastReadOnePair<Int16>;
-        case FastKind::I32: return &fastReadOnePair<Int32>;
-        case FastKind::I64: return &fastReadOnePair<Int64>;
-        case FastKind::F32: return &fastReadOnePair<Float32>;
-        case FastKind::F64: return &fastReadOnePair<Float64>;
+        case FastKind::U8:  return &fastReadPair<UInt8>;
+        case FastKind::U16: return &fastReadPair<UInt16>;
+        case FastKind::U32: return &fastReadPair<UInt32>;
+        case FastKind::U64: return &fastReadPair<UInt64>;
+        case FastKind::I8:  return &fastReadPair<Int8>;
+        case FastKind::I16: return &fastReadPair<Int16>;
+        case FastKind::I32: return &fastReadPair<Int32>;
+        case FastKind::I64: return &fastReadPair<Int64>;
+        case FastKind::F32: return &fastReadPair<Float32>;
+        case FastKind::F64: return &fastReadPair<Float64>;
         case FastKind::None: return nullptr;
     }
     return nullptr;
@@ -1086,21 +1022,21 @@ FastReadOnePairFn fastReadOnePairFn(MergeTreeIndexBulkGranulesMinMaxFast::FastKi
 
 }
 
-void MergeTreeIndexBulkGranulesMinMaxFast::deserializeBinaryBulk(size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinaryBulk(size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     const size_t num_columns = index_sample_block.columns();
 
     /// Resolve per-column fast-path function pointers once per chunk. For an index whose
     /// every column qualifies we avoid the switch-per-granule; for one that has any
     /// non-fast-path column we drop to the per-granule slow path.
-    std::vector<FastReadOnePairFn> fns(num_columns);
+    std::vector<ReadPairFn> fns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
     {
-        fns[i] = fastReadOnePairFn(cols[i].fast_kind);
+        fns[i] = readPairFunction(cols[i].fast_kind);
         if (!fns[i])
         {
             for (size_t g = 0; g < count; ++g)
-                deserializeBinary(size + g, istr, version);
+                deserializeBinary(g, istr, version);
             return;
         }
     }
@@ -1125,10 +1061,10 @@ void MergeTreeIndexBulkGranulesMinMaxFast::deserializeBinaryBulk(size_t count, R
 
 MergeTreeIndexBulkGranulesPtr MergeTreeIndexMinMax::createIndexBulkGranules() const
 {
-    return std::make_shared<MergeTreeIndexBulkGranulesMinMaxFast>(index.sample_block, /*size_hint=*/1024);
+    return std::make_shared<MergeTreeIndexBulkGranulesMinMaxColumnar>(index.sample_block, /*size_hint=*/1024);
 }
 
-Block MergeTreeIndexConditionMinMax::executeBulkActions(const MergeTreeIndexBulkGranulesMinMaxFast & bulk) const
+Block MergeTreeIndexConditionMinMax::executeBulkActions(const MergeTreeIndexBulkGranulesMinMaxColumnar & bulk) const
 {
     chassert(minmax_actions);
     chassert(minmax_input_names.size() == bulk.cols.size());
@@ -1151,7 +1087,7 @@ Block MergeTreeIndexConditionMinMax::executeBulkActions(const MergeTreeIndexBulk
 IMergeTreeIndexCondition::FilteredGranules MergeTreeIndexConditionMinMax::getPossibleGranules(
     const MergeTreeIndexBulkGranulesPtr & idx_granules) const
 {
-    const auto & bulk = assert_cast<const MergeTreeIndexBulkGranulesMinMaxFast &>(*idx_granules);
+    const auto & bulk = assert_cast<const MergeTreeIndexBulkGranulesMinMaxColumnar &>(*idx_granules);
 
     FilteredGranules all_granules(bulk.size);
     std::iota(all_granules.begin(), all_granules.end(), 0);
