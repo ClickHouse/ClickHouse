@@ -3,5 +3,5 @@
 viewIfPermitted(SELECT 1 ELSE `null`(\'x UInt8\'))
 viewIfPermitted(1, 2)
 1
-SELECT * FROM VIEWIFPERMITTED(SELECT 1 ELSE `null`(\'x UInt8\'))
+SELECT * FROM viewIfPermitted(SELECT 1 ELSE `null`(\'x UInt8\'))
 1

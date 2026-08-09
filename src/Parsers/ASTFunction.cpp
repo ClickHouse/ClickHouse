@@ -279,6 +279,14 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'viewIfPermitted' with a select query argument must have exactly two arguments, a select query "
                 "followed by a function, and no parameters during AST JSON deserialization");
+
+        /// For the table function form the parser emits only the canonical spelling (`ViewLayer`
+        /// dispatches on the lowercased name but always produces `viewIfPermitted`), and execution
+        /// matches the name case-sensitively (e.g. `StorageView::replaceWithSubquery`), so a
+        /// non-canonical spelling that reaches the interpreter through `clickhouse_json` would fail
+        /// with a logical error. Canonicalize it the way the parser does.
+        if (is_table_function_shape)
+            name = "viewIfPermitted";
     }
 
     r.readAlias(*this);

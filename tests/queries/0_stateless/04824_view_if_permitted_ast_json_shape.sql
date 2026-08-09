@@ -57,7 +57,9 @@ SELECT formatQueryFromJSON(replace(parseQueryToJSON($$SELECT * FROM viewIfPermit
 -- "VIEWIFPERMITTED" with a bare select could format to text the parser cannot read back.
 
 -- The table function shape keeps the `ELSE` form (the only parseable one) for any spelling, and the
--- result parses back (the parser canonicalizes the name).
+-- name is canonicalized to `viewIfPermitted` during deserialization, the same way the parser does
+-- (`ViewLayer` dispatches on the lowercased name but always produces the canonical spelling), because
+-- execution matches the name case-sensitively (e.g. `StorageView::replaceWithSubquery`).
 
 SELECT formatQueryFromJSON(replace(parseQueryToJSON($$SELECT * FROM viewIfPermitted(SELECT 1 ELSE null('x UInt8'))$$),
     '"type":"Function","name":"viewIfPermitted","arguments"',
