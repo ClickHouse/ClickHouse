@@ -429,6 +429,28 @@ def test_truncate_table(started_cluster):
     node1.query("drop table test_truncate")
 
 
+def test_truncate_table_keeps_user_directories(started_cluster):
+    # The `HDFS` table engine constructs the object storage with the URL stripped down
+    # to the NameNode, so its storage root is `/` and the files live in user-managed
+    # directories. Removing a file (e.g. on TRUNCATE) must not prune the emptied ancestor
+    # directories - that cleanup is only for the nested prefix directories the `hdfs` disk
+    # generates under its own data directory.
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
+    fs.mkdirs("/user_dirs/a/b")
+    node1.query(
+        "create table test_truncate_user_dirs (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/user_dirs/a/b/tr.tsv', 'TSV')"
+    )
+    node1.query("insert into test_truncate_user_dirs values (1)")
+    assert node1.query("select * from test_truncate_user_dirs") == "1\n"
+    node1.query("truncate table test_truncate_user_dirs")
+    assert not fs.exists("/user_dirs/a/b/tr.tsv")
+    assert fs.exists("/user_dirs/a/b")
+    assert fs.exists("/user_dirs/a")
+    assert fs.exists("/user_dirs")
+    node1.query("drop table test_truncate_user_dirs")
+    fs.delete("/user_dirs", recursive=True)
+
+
 def test_partition_by(started_cluster):
     fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
     id = uuid.uuid4()
