@@ -4157,7 +4157,12 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "Mongo compatibility protocol: " + address.toString(),
-                    std::make_unique<TCPServer>(new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes), server_pool, socket, makeServerParams(server_settings)));
+                    std::make_unique<TCPServer>(
+                        new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes),
+                        server_pool,
+                        socket,
+                        makeServerParams(server_settings),
+                        connection_filter));
             });
         }
 #endif
