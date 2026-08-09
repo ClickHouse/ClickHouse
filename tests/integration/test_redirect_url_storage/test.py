@@ -159,6 +159,11 @@ def test_url_reconnect(started_cluster):
             )
             assert int(result) == 6581218782194912115
 
+        # Snapshot the count before the query starts: an older "connect timed
+        # out" line from a previous query in this module would satisfy a
+        # whole-log scan immediately and heal the network too early.
+        timeouts_before = int(node1.count_in_log("connect timed out"))
+
         thread = threading.Thread(target=select)
         thread.start()
 
@@ -168,7 +173,7 @@ def test_url_reconnect(started_cluster):
         # loaded runner: the query may reach its first connect attempt only
         # after the rule is already deleted, timing out nothing.
         for _ in range(60):
-            if node1.contains_in_log("connect timed out"):
+            if int(node1.count_in_log("connect timed out")) > timeouts_before:
                 break
             time.sleep(0.5)
         else:
