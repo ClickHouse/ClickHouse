@@ -43,7 +43,14 @@ namespace ErrorCodes
 namespace
 {
 
-constexpr size_t max_tries = 100;
+using LockClock = std::chrono::steady_clock;
+
+/// Milliseconds left until the deadline, or zero if it has passed.
+Int64 getRemainingMs(LockClock::time_point deadline)
+{
+    auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - LockClock::now()).count();
+    return std::max<Int64>(remaining, 0);
+}
 
 zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
     const ContextPtr & context,
@@ -53,29 +60,36 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
 
     auto lock_path = fs::path(zookeeper_path) / "lightweight_updates" / "lock";
-    auto lock_event = std::make_shared<Poco::Event>();
     auto lock_acquire_timeout = context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
+    auto deadline = LockClock::now() + std::chrono::milliseconds(lock_acquire_timeout);
 
-    for (size_t i = 0; i < max_tries; ++i)
+    /// The first attempt is unconditional, so an uncontended update still succeeds at zero timeout.
+    for (size_t num_try = 0;; ++num_try)
     {
         ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
-        LOG_TRACE(getLogger("getLockForSyncMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", i, lock_path.string());
+        LOG_TRACE(getLogger("getLockForSyncMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", num_try, lock_path.string());
         auto code = zookeeper->tryCreate(lock_path, "", zkutil::CreateMode::Ephemeral);
 
         if (code == Coordination::Error::ZOK)
         {
-            LOG_TRACE(getLogger("getLockForSyncMode"), "Got lock (try: {}, path: {}) for lightweight update", i, lock_path.string());
+            LOG_TRACE(getLogger("getLockForSyncMode"), "Got lock (try: {}, path: {}) for lightweight update", num_try, lock_path.string());
             return zkutil::EphemeralNodeHolder::existing(lock_path, *zookeeper);
         }
 
         if (code != Coordination::Error::ZNODEEXISTS)
             throw zkutil::KeeperException::fromPath(code, lock_path);
 
-        if (zookeeper->exists(lock_path, nullptr, lock_event))
-            lock_event->tryWait(lock_acquire_timeout);
-    }
+        auto remaining_ms = getRemainingMs(deadline);
+        if (remaining_ms == 0)
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Failed to get lock in {} ms with {} tries for lightweight update in sync mode",
+                lock_acquire_timeout, num_try + 1);
 
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock with {} tries for lightwegiht update in sync mode", max_tries);
+        /// The watch is one-shot, so a fresh event is required for every wait.
+        auto lock_event = std::make_shared<Poco::Event>();
+        if (zookeeper->exists(lock_path, nullptr, lock_event))
+            lock_event->tryWait(remaining_ms);
+    }
 }
 
 zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
@@ -92,14 +106,22 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
     auto affected_columns_str = affected_columns.toString();
 
     Coordination::Stat parent_stat;
-    auto in_progress_event = std::make_shared<Poco::Event>();
+    auto deadline = LockClock::now() + std::chrono::milliseconds(lock_acquire_timeout);
 
-    for (size_t num_try = 0; num_try < max_tries; ++num_try)
+    auto throw_timeout = [&](size_t num_tries)
+    {
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+            "Failed to get lock in {} ms with {} tries for lightweight update in auto mode",
+            lock_acquire_timeout, num_tries);
+    };
+
+    /// The first attempt is unconditional, so an uncontended update still succeeds at zero timeout.
+    for (size_t num_try = 0;; ++num_try)
     {
         ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
         LOG_TRACE(getLogger("getLockForAutoMode"), "Trying to get lock (try: {}, path: {}) for lightweight update", num_try, in_progress_path.string());
 
-        auto in_progress_ids = zookeeper->getChildren(in_progress_path, &parent_stat, in_progress_event);
+        auto in_progress_ids = zookeeper->getChildren(in_progress_path, &parent_stat);
 
         Names multiget_paths;
         multiget_paths.reserve(in_progress_ids.size());
@@ -108,7 +130,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
             multiget_paths.push_back(in_progress_path / id);
 
         auto contents = zookeeper->tryGet(multiget_paths);
-        bool has_dependency_in_progress = false;
+        String conflicting_path;
 
         for (size_t i = 0; i < contents.size(); ++i)
         {
@@ -124,15 +146,29 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
 
             if (in_progress_affected.hasConflict(affected_columns))
             {
-                has_dependency_in_progress = true;
+                conflicting_path = multiget_paths[i];
                 break;
             }
         }
 
-        if (has_dependency_in_progress)
+        if (!conflicting_path.empty())
         {
             LOG_TRACE(getLogger("getLockForAutoMode"), "Columns required for lightweight update are being updated by another query, will try one more time");
-            in_progress_event->tryWait(lock_acquire_timeout);
+
+            auto remaining_ms = getRemainingMs(deadline);
+            if (remaining_ms == 0)
+                throw_timeout(num_try + 1);
+
+            /// Watch the conflicting update's own node: the parent directory changes on every
+            /// concurrent update, so its watch fires without this query being able to progress.
+            /// The watch is one-shot, so a fresh event is required for every wait.
+            auto conflict_event = std::make_shared<Poco::Event>();
+            String conflicting_data;
+
+            /// The node may be gone already, in which case the event would never be set.
+            if (zookeeper->tryGet(conflicting_path, conflicting_data, nullptr, conflict_event))
+                conflict_event->tryWait(remaining_ms);
+
             continue;
         }
 
@@ -146,7 +182,11 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         if (code == Coordination::Error::ZBADVERSION)
         {
             LOG_TRACE(getLogger("getLockForAutoMode"), "Lightweight update has been committed by another replica, will try one more time");
-            in_progress_event->tryWait(lock_acquire_timeout);
+
+            if (getRemainingMs(deadline) == 0)
+                throw_timeout(num_try + 1);
+
+            /// Another update committed, so there is no conflict of this query to wait for.
             continue;
         }
 
@@ -156,8 +196,6 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         LOG_TRACE(getLogger("getLockForAutoMode"), "Got lock (try: {}, path: {}) for lightweight update", num_try, created_path);
         return zkutil::EphemeralNodeHolder::existing(created_path, *zookeeper);
     }
-
-    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock with {} tries for lightwegiht update in auto mode", max_tries);
 }
 
 }

@@ -1,0 +1,6 @@
+sync 1000 failed 1 waited 1
+sync 60000 succeeded
+sync zero-timeout uncontended succeeded
+auto 1000 failed 1 waited 1
+auto 60000 succeeded
+auto zero-timeout uncontended succeeded
