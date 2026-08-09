@@ -74,8 +74,15 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT wasm_guest_pause"
 
 wait
 
-# Assert cancellation was detected, not timeout
-grep -qF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
+# Assert cancellation was detected, not timeout. The interruption of the in-flight guest can
+# surface to the client in two ways, depending on which side wins the race after the kill:
+# QUERY_WAS_CANCELLED when the cancellation check in `ExpressionActions::execute` (or the pulling
+# executor) notices the kill first, or WASM_ERROR when the interrupted guest's own error
+# ("WASM execution was stopped by request" under wasmtime, a cost-limit trap under WasmEdge) is
+# rethrown by `ISimpleTransform::work` first. Both prove the KILL interrupted the running guest:
+# the guest loop is infinite, so without the interruption the query would never terminate and the
+# test would hang in `wait`.
+grep -qE "QUERY_WAS_CANCELLED|WASM_ERROR" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
 
 # Clean up
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "DROP FUNCTION IF EXISTS infinite_loop_04613"
