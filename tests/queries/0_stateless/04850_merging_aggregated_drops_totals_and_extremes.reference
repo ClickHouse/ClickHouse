@@ -1,0 +1,25 @@
+-- memory-efficient branch
+30
+
+30
+-- non-memory-efficient branch
+30
+
+30
+-- memory-bound merging branch
+30
+
+30
+-- extremes stream
+30
+
+30
+
+30
+30
+-- WITH TOTALS does not change the aggregate value
+1
+-- and the TOTALS row equals the single aggregated row
+30
+
+30
