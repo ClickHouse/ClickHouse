@@ -508,10 +508,20 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
             --num_positional_arguments;
         }
 
-        /// Remove the extra positional engine arguments (`schema` and `use_table_cache`), which the
-        /// table engine does not take in these positions.
+        /// Keep the string-valued fifth positional argument (the remote `schema`): once the table
+        /// name is inserted below it lands in the table engine's own `schema` position, and dropping
+        /// it would silently repoint the emitted definition at the default PostgreSQL schema. Remove
+        /// the remaining positional arguments (`use_table_cache`, including the deprecated form where
+        /// it is the numeric fifth argument), which the table engine does not take.
+        size_t num_positional_to_keep = 4;
         if (num_positional_arguments > 4)
-            arguments.erase(arguments.begin() + 4, arguments.begin() + num_positional_arguments);
+        {
+            const auto * fifth_argument = arguments[4]->as<ASTLiteral>();
+            if (fifth_argument && fifth_argument->value.getType() == Field::Types::Which::String)
+                num_positional_to_keep = 5;
+        }
+        if (num_positional_arguments > num_positional_to_keep)
+            arguments.erase(arguments.begin() + num_positional_to_keep, arguments.begin() + num_positional_arguments);
 
         /// Add table_name to engine arguments.
         if (num_positional_arguments >= 2)

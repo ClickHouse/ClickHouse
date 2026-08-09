@@ -280,24 +280,38 @@ def test_postgresql_database_engine_over_ssl(started_cluster):
 def test_database_engine_show_create_table_preserves_tls_arguments(started_cluster):
     # `DatabasePostgreSQL::getCreateTableQueryImpl` synthesizes a table-engine
     # definition from the database-engine one. With positional arguments it used to
-    # truncate everything after the fourth argument, which would also drop the
-    # trailing TLS `key = value` arguments: re-running the emitted DDL would then
-    # silently fall back to the libpq TLS defaults or lose client-certificate
-    # authentication. The database-engine-only positional arguments (`schema`,
-    # `use_table_cache`) still must not leak into the table definition.
+    # truncate everything after the fourth argument, which dropped both the trailing
+    # TLS `key = value` arguments (re-running the emitted DDL would then silently
+    # fall back to the libpq TLS defaults) and the remote `schema` (the emitted DDL
+    # would then point at the default PostgreSQL schema). The `schema` maps to the
+    # table engine's own `schema` position once the table name is inserted, so it
+    # must be kept; only the database-engine-only `use_table_cache` must not leak
+    # into the table definition. A non-`public` schema proves the `schema` argument
+    # is what makes the emitted definition reach the right table.
+    pg_exec(
+        "psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c "
+        '"CREATE SCHEMA IF NOT EXISTS show_create_schema; '
+        "CREATE TABLE IF NOT EXISTS show_create_schema.schema_table (key integer PRIMARY KEY, value integer); "
+        "TRUNCATE show_create_schema.schema_table; "
+        'INSERT INTO show_create_schema.schema_table SELECT i, i * 10 FROM generate_series(0, 9) AS i"'
+    )
     node.query("DROP DATABASE IF EXISTS pg_db_show_create")
     node.query(
-        f"CREATE DATABASE pg_db_show_create ENGINE = PostgreSQL('{PG_HOST}:5432', 'postgres', 'postgres', '{pg_pass}', 'public', 1, "
+        f"CREATE DATABASE pg_db_show_create ENGINE = PostgreSQL('{PG_HOST}:5432', 'postgres', 'postgres', '{pg_pass}', 'show_create_schema', 1, "
         f"sslmode='verify-full', sslrootcert_pem='{quote_pem(ca_pem)}')"
     )
-    assert node.query("SELECT count() FROM pg_db_show_create.test_table").strip() == "10"
+    assert node.query("SELECT count() FROM pg_db_show_create.schema_table").strip() == "10"
 
-    show_create = node.query("SHOW CREATE TABLE pg_db_show_create.test_table")
-    assert "'test_table'" in show_create
-    assert "sslmode = 'verify-full'" in show_create
+    # The statement comes back as a single TSV row, with quotes escaped as `\'`.
+    show_create = node.query("SHOW CREATE TABLE pg_db_show_create.schema_table").replace(
+        "\\'", "'"
+    )
+    assert "'schema_table'" in show_create
+    # The schema is kept and immediately followed by the TLS arguments: the numeric
+    # `use_table_cache` positional argument is gone.
+    assert "'show_create_schema', sslmode = 'verify-full'" in show_create
     assert "sslrootcert_pem = '[HIDDEN]'" in show_create
     assert "BEGIN CERTIFICATE" not in show_create
-    assert "'public'" not in show_create
 
     node.query("DROP DATABASE pg_db_show_create")
 
