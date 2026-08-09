@@ -197,12 +197,16 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
         return buildAnalyzedStepData(context, std::move(report));
 
     /// Only JoinStep can swap its inputs; a filled join always keeps the storage on the right.
-    if (join_step && join_step->swap_streams)
-        swapReportSides(report);
-
+    bool swapped = join_step && join_step->swap_streams;
     const auto & join = join_step ? join_step->getJoin() : filled_join_step->getJoin();
     const auto & table_join = join->getTableJoin();
-    enrichJoinSides(report, context.io.output_rows, table_join.kind(), table_join.strictness());
+
+    const JoinKind logical_kind = swapped ? reverseJoinKind(table_join.kind()) : table_join.kind();
+
+    if (swapped)
+        swapReportSides(report);
+
+    enrichJoinSides(report, context.io.output_rows, logical_kind, table_join.strictness());
 
     appendSortShare(report, context, MetricGroupKey::Build, JoinStep::JoinStage::Build);
     appendSortShare(report, context, MetricGroupKey::Probe, JoinStep::JoinStage::Probe);
