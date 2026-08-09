@@ -60,6 +60,8 @@ private:
 
     void nextImpl() override;
 
+    void cancelImpl() noexcept override;
+
     void finalFlushBefore() override;
 
     void writeHeader();

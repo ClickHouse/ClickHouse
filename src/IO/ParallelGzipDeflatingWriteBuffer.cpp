@@ -33,6 +33,20 @@ void ParallelGzipDeflatingWriteBuffer::nextImpl()
     compressAndWrite(in_buf, offset(), false);
 }
 
+void ParallelGzipDeflatingWriteBuffer::cancelImpl() noexcept
+{
+    /// If no output has been produced yet (the gzip header is always the first byte written) and the
+    /// nested buffer belongs to the caller, cancel only this buffer and leave the nested one usable.
+    /// The HTTP response path relies on this: when the first compression pass fails, the never-started
+    /// response body can still be replaced with a clean, uncompressed exception message instead of
+    /// tearing down the connection. (The decorator's cancel would cancel the nested buffer as well;
+    /// there is nothing to release in this buffer itself, the base `cancelImpl` is a no-op.)
+    if (!header_written && !owning_holder)
+        return;
+
+    WriteBufferWithOwnMemoryDecorator::cancelImpl();
+}
+
 void ParallelGzipDeflatingWriteBuffer::finalFlushBefore()
 {
     next();
