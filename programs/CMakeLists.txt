@@ -193,8 +193,6 @@ clickhouse_program_install(clickhouse-extract-from-config extract-from-config)
 clickhouse_program_install(clickhouse-format format)
 clickhouse_program_install(clickhouse-local local chl ch)
 clickhouse_program_install(clickhouse-obfuscator obfuscator)
-clickhouse_program_install(clickhouse-oom-canary oom-canary)
-clickhouse_program_install(clickhouse-packed-io packed-io)
 clickhouse_program_install(clickhouse-server server)
 
 # These subcommands are only reachable through the multi-call binary (`clickhouse <name>`),
@@ -204,6 +202,8 @@ clickhouse_program_link(clickhouse-checksum-for-compressed-block checksum-for-co
 clickhouse_program_link(clickhouse-disks disks)
 clickhouse_program_link(clickhouse-docker-init docker-init)
 clickhouse_program_link(clickhouse-git-import git-import)
+clickhouse_program_link(clickhouse-oom-canary oom-canary)
+clickhouse_program_link(clickhouse-packed-io packed-io)
 clickhouse_program_link(clickhouse-static-files-disk-uploader static-files-disk-uploader)
 clickhouse_program_link(clickhouse-su su)
 clickhouse_program_link(clickhouse-zookeeper-dump-tree zookeeper-dump-tree)
