@@ -470,9 +470,12 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
             const auto * mat_pg_database = assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get());
+            /// Function-argument evaluation order is unspecified, so the table name must be read
+            /// before `db_and_table.second` is moved into the wrapper's constructor.
+            auto nested_table_name = db_and_table.second->getStorageID().table_name;
             auto wrapper = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext(),
                                         mat_pg_database->getPostgreSQLDatabaseName(),
-                                        db_and_table.second->getStorageID().table_name);
+                                        nested_table_name);
             /// Carry the coordinated flag onto this per-query wrapper so `checkTableCanBeDetached` refuses
             /// DETACH before `InterpreterDropQuery` shuts the table (and its replication) down.
             wrapper->setCoordinated(mat_pg_database->isCoordinated());

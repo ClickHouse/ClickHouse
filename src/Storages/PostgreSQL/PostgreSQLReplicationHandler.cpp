@@ -3009,8 +3009,20 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         try
         {
             auto zookeeper = getContext()->getZooKeeper();
-            zookeeper->tryRemove(coordination_keeper_path + "/teardown");
-            zookeeper->tryRemove(coordination_keeper_path);
+            /// `tryRemove` reports recoverable Keeper failures (connection loss, operation timeout)
+            /// through its return code, so it must be checked explicitly: a silently leftover token
+            /// would keep rejecting recreates on this keeper path.
+            auto code = zookeeper->tryRemove(coordination_keeper_path + "/teardown");
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                throw zkutil::KeeperException::fromPath(code, coordination_keeper_path + "/teardown");
+
+            /// Removing the root is pure tidiness: a leftover empty node does not block a recreate.
+            /// The nested tables remove their own Keeper subtrees asynchronously, so the root may
+            /// legitimately still be non-empty here.
+            code = zookeeper->tryRemove(coordination_keeper_path);
+            if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE && code != Coordination::Error::ZNOTEMPTY)
+                LOG_WARNING(log, "Failed to remove the coordination keeper path {}: {}. It is harmless and can be removed manually.",
+                    coordination_keeper_path, code);
         }
         catch (...)
         {
