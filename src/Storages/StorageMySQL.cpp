@@ -364,8 +364,12 @@ mysqlxx::SSLParams StorageMySQL::getSSLParams(const NamedCollection & named_coll
         /// An empty contents override never replaces the stored credential with another one - it can
         /// only silently drop whatever form of it the collection carries, a path or the contents
         /// alike. Checked before the empty fast path below so a credential the collection stores in
-        /// the contents form is protected too.
-        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty())
+        /// the contents form is protected too. When the collection stores no credential at all
+        /// (neither the path - a query cannot override it, so `value` is the collection's own - nor
+        /// the contents, read in its pre-override form), there is nothing to drop and the empty
+        /// override stays the no-op it is for the direct arguments.
+        if (named_collection.isQueryOverridden(contents_key) && named_collection.getOrDefault<String>(contents_key, "").empty()
+            && (!value.empty() || !named_collection.getValueBeforeQueryOverride(contents_key).value_or("").empty()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "`{}` cannot be overridden with an empty `{}`", key, contents_key);

@@ -1580,6 +1580,19 @@ def test_mysql_ssl_empty_override_is_rejected(started_cluster):
     finally:
         node1.query("DROP NAMED COLLECTION mysql_ssl_contents_nc")
 
+    # The rejection covers exactly the overrides that would drop a credential the collection
+    # carries. On a collection with no TLS keys at all there is nothing to drop, so an empty
+    # override stays the no-op it is for the direct arguments (`mysql1` stores no `ssl_*` keys).
+    conn = get_mysql_conn(started_cluster, cluster.mysql8_ip)
+    drop_mysql_table(conn, "test_table")
+    create_mysql_table(conn, "test_table")
+    try:
+        for key in ["ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"]:
+            assert node1.query(f"SELECT count() FROM mysql(mysql1, {key} = '')") == "0\n"
+    finally:
+        drop_mysql_table(conn, "test_table")
+        conn.close()
+
     # The table and database engines share `getSSLParams` with the table function; the engine form
     # is rejected when the storage is created. (The database engine cannot be exercised with
     # `mysql_with_ssl` because it refuses the collection's `table` key before reading the TLS keys.)
