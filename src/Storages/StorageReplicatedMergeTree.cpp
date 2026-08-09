@@ -6887,6 +6887,22 @@ void StorageReplicatedMergeTree::alter(
         return;
     }
 
+    /// From here on the ALTER is replicated through ZooKeeper. `persist_mutation_author` gates the
+    /// format of the shared `/mutations` entries, but setting changes are applied locally before the
+    /// ZooKeeper transaction and are not rolled back if it fails, so a failed mixed
+    /// `ALTER ... MODIFY SETTING persist_mutation_author = 1, MODIFY COLUMN ...` could still switch
+    /// this replica onto the new format. Require changing this setting in its own (purely local)
+    /// `ALTER ... MODIFY SETTING` query instead.
+    for (const auto & command : commands)
+    {
+        if ((command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("persist_mutation_author"))
+            || (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains("persist_mutation_author")))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Changing the `persist_mutation_author` setting cannot be mixed with other ALTER commands for ReplicatedMergeTree "
+                "tables. Change it in a separate ALTER TABLE ... MODIFY SETTING query");
+    }
+
     /// Only re-verify the sorting key on ALTERs that can actually change it (see StorageMergeTree::alter).
     if (!query_settings[Setting::allow_suspicious_primary_key]
         && MergeTreeData::sortingKeyChanged(old_sorting_key, future_metadata.sorting_key))

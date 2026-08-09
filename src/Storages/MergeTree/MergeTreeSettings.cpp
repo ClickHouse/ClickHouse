@@ -842,6 +842,12 @@ is written with `format version: 2` carrying the `author` field; servers that
 do not support this format cannot read such entries and fail with an explicit
 `UNKNOWN_FORMAT_VERSION` error, so enable it only after the whole cluster has
 been upgraded.
+
+For `ReplicatedMergeTree` tables, changing this setting cannot be mixed with
+other commands in a single `ALTER TABLE` query: setting changes are applied
+locally before the replicated part of the query is committed to ClickHouse
+Keeper, so a failed mixed query could still switch the replica onto the new
+entry format. Change it in a separate `ALTER TABLE ... MODIFY SETTING` query.
 )", 0) \
     DECLARE(Milliseconds, background_task_preferred_step_execution_time_ms, 50, R"(
 Target time to execution of one step of merge or mutation. Can be exceeded if
