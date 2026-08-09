@@ -1393,6 +1393,16 @@ void MergeTreeData::setProperties(
     /// one: the new `a` is appended at the end, so the position previously occupied
     /// by `a` now holds `b`.
     ///
+    /// Leftover columns on either side also count as an identity change. Leftover old
+    /// columns mean columns were dropped or renamed away at the end. Leftover new
+    /// columns cannot be assumed to be pure additions: `RENAME a TO b, ADD COLUMN a
+    /// AFTER <the column preceding a>` puts the reintroduced `a` back into `a`'s old
+    /// slot and leaves only the renamed `b` as the new suffix, producing exactly the
+    /// same positional prefix as a plain `ADD COLUMN b` — the metadata alone cannot
+    /// distinguish the two, so we conservatively invalidate whenever the column list
+    /// changed at all. Schema changes are rare enough that flushing the table's cache
+    /// on every one of them is acceptable.
+    ///
     /// This check runs regardless of `attach`: callers that reload the table's own
     /// current metadata (attach) pass an identical `old_metadata`/`new_metadata`, so
     /// the loop below finds no identity change for them, but callers that apply a
@@ -1414,8 +1424,10 @@ void MergeTreeData::setProperties(
                 break;
             }
         }
-        /// Any leftover old columns means columns were dropped (or renamed away) at the end.
-        if (!columns_identity_changed && old_it != old_columns.end())
+        /// Any leftover columns on either side: dropped/renamed-away old columns, or a
+        /// new suffix that may hide a rename whose reintroduced name landed in its old
+        /// slot via `AFTER` (see the comment above).
+        if (!columns_identity_changed && (old_it != old_columns.end() || new_it != new_columns.end()))
             columns_identity_changed = true;
         if (columns_identity_changed)
         {
