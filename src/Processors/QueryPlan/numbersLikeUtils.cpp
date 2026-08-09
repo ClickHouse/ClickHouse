@@ -8,6 +8,8 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/Pipe.h>
@@ -69,6 +71,16 @@ namespace
 /// also hide behind a SQL UDF wrapper (`CREATE FUNCTION explode AS a -> arrayJoin(a)`), so the
 /// check descends into SQL UDF bodies with cycle protection (mirrors
 /// `expressionContainsArrayJoin` in `RowPolicy.cpp`).
+/// Nested subqueries run in their own scope, so functions inside them must not fence the outer
+/// query. `ASTSelectQuery` is where all of a subquery's expressions hang, so stopping there is
+/// sufficient, but stop at the wrapper nodes (`ASTSubquery`, `ASTSelectWithUnionQuery`) too, to
+/// make the boundary explicit and skip the pointless descent through them.
+/// Mirrors `isIndependentSubqueryScope` in `InterpreterSelectQuery.cpp`.
+bool isIndependentSubqueryScope(const ASTPtr & ast)
+{
+    return ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSubquery>();
+}
+
 bool astContainsArrayJoinFunctionImpl(const ASTPtr & ast, std::unordered_set<String> & visited_udfs)
 {
     if (!ast)
@@ -83,7 +95,7 @@ bool astContainsArrayJoinFunctionImpl(const ASTPtr & ast, std::unordered_set<Str
             return true;
     }
     for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunctionImpl(child, visited_udfs))
+        if (!isIndependentSubqueryScope(child) && astContainsArrayJoinFunctionImpl(child, visited_udfs))
             return true;
     return false;
 }
@@ -114,7 +126,7 @@ bool astContainsStatefulFunctionImpl(const ASTPtr & ast, const ContextPtr & cont
             return true;
     }
     for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsStatefulFunctionImpl(child, context, visited_udfs))
+        if (!isIndependentSubqueryScope(child) && astContainsStatefulFunctionImpl(child, context, visited_udfs))
             return true;
     return false;
 }

@@ -13,6 +13,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -72,7 +73,13 @@ static bool astContainsStatefulFunctionImpl(const ASTPtr & ast, const ContextPtr
             return true;
     }
     for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsStatefulFunctionImpl(child, context, visited_udfs))
+        /// Nested subqueries run in their own scope, so functions inside them must not fence the
+        /// outer query. `ASTSelectQuery` is where all of a subquery's expressions hang, so stopping
+        /// there is sufficient, but stop at the wrapper nodes (`ASTSubquery`,
+        /// `ASTSelectWithUnionQuery`) too, to make the boundary explicit and skip the pointless
+        /// descent through them. Mirrors `isIndependentSubqueryScope` in `InterpreterSelectQuery.cpp`.
+        if (!child->as<ASTSelectQuery>() && !child->as<ASTSelectWithUnionQuery>() && !child->as<ASTSubquery>()
+            && astContainsStatefulFunctionImpl(child, context, visited_udfs))
             return true;
     return false;
 }

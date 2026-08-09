@@ -16,6 +16,7 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -383,6 +384,15 @@ namespace
 /// also hide behind a SQL UDF wrapper (`CREATE FUNCTION explode AS a -> arrayJoin(a)`), so the
 /// check descends into SQL UDF bodies with cycle protection (mirrors
 /// `expressionContainsArrayJoin` in `RowPolicy.cpp`).
+/// Nested subqueries run in their own scope, so functions inside them must not fence the outer
+/// query. `ASTSelectQuery` is where all of a subquery's expressions hang, so stopping there is
+/// sufficient, but stop at the wrapper nodes (`ASTSubquery`, `ASTSelectWithUnionQuery`) too, to
+/// make the boundary explicit and skip the pointless descent through them.
+bool isIndependentSubqueryScope(const ASTPtr & ast)
+{
+    return ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSubquery>();
+}
+
 bool selectListHasArrayJoinFunctionImpl(const ASTPtr & ast, std::unordered_set<String> & visited_udfs)
 {
     if (!ast)
@@ -397,7 +407,7 @@ bool selectListHasArrayJoinFunctionImpl(const ASTPtr & ast, std::unordered_set<S
             return true;
     }
     for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && selectListHasArrayJoinFunctionImpl(child, visited_udfs))
+        if (!isIndependentSubqueryScope(child) && selectListHasArrayJoinFunctionImpl(child, visited_udfs))
             return true;
     return false;
 }
@@ -430,7 +440,7 @@ bool selectListHasStatefulFunctionImpl(const ASTPtr & ast, const ContextPtr & co
             return true;
     }
     for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && selectListHasStatefulFunctionImpl(child, context, visited_udfs))
+        if (!isIndependentSubqueryScope(child) && selectListHasStatefulFunctionImpl(child, context, visited_udfs))
             return true;
     return false;
 }
