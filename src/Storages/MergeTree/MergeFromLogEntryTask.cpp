@@ -369,12 +369,29 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// means the disk - local, or remote like HDFS - has no multipart upload buffers and the local
     /// per-stream estimate applies.
     const DiskPtr output_disk = reserved_space->getDisk();
+    /// Snapshot of the pending mutations for the source parts, built with the same parameters MergeTask
+    /// builds its own: the estimate must observe the same pending RENAME COLUMN mutations the merge will
+    /// apply on-fly, or a not-yet-materialized rename target would be priced as expired while the merge
+    /// reads and rewrites it (see the pending-rename handling in estimateNeededMemoryForMerge).
+    const auto parts_info = MergeTreeData::getPartsSnapshotInfo(future_merged_part->parts);
+    const MergeTreeData::IMutationsSnapshot::Params mutations_params
+    {
+        .metadata_version = metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = nullptr,
+        .max_mutation_versions = nullptr,
+        .need_data_mutations = false,
+        .need_alter_mutations = !future_merged_part->patch_parts.empty(),
+        .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+    };
+    const auto mutations_snapshot = storage.getMutationsSnapshot(mutations_params);
     /// The merge below runs with entry.create_time as its time_of_merge, so the TTL trigger of
     /// merge_may_reduce_rows is priced against that same clock - never against a fresher one that could
     /// disagree with the merge about whether a TTL boundary has passed.
     memory_reservation = MergeMemoryReservation::reserve(
         CompactionStatistics::estimateNeededMemoryForMerge(
-            *future_merged_part, metadata_snapshot, task_context, *storage_settings_ptr, entry.create_time,
+            *future_merged_part, metadata_snapshot, task_context, *storage_settings_ptr, mutations_snapshot, entry.create_time,
             output_disk->isRemote(), CompactionStatistics::getDiskWriteBufferMemory(output_disk),
             entry.deduplicate, entry.cleanup));
 

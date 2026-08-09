@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
@@ -939,6 +940,7 @@ UInt64 estimateNeededMemoryForMerge(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context,
     const MergeTreeSettings & settings,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     time_t time_of_merge,
     bool output_on_remote_disk,
     std::optional<DiskWriteBufferMemory> remote_write_buffer_memory,
@@ -1063,28 +1065,92 @@ UInt64 estimateNeededMemoryForMerge(
     const auto & columns_description = metadata_snapshot->getColumns();
     NamesAndTypesList output_columns = columns_description.getAllPhysical();
 
-    /// A storage column absent from every base source part and without a default expression is expired:
+    /// A storage column absent from every source part and without a default expression is expired:
     /// MergeTask marks it so (new_data_part->expired_columns) and erases it from the storage / merging
     /// columns, so the merge neither reads nor writes it - after a metadata-only ALTER ... ADD COLUMN with
     /// no default the next merge does not open a writer for that column at all. Price the output side
     /// without such columns, or a table that accumulated late-added semi-structured columns would reserve
     /// writer streams (and raise the adaptive-write-buffer threshold) for columns the merge never writes
-    /// and saturate merges_mutations_memory_usage_soft_limit for no real memory pressure. Only base parts
-    /// decide expiry, exactly as in MergeTask: a patch part stores just the columns it patches, so its
-    /// absence proves nothing. The full expired set (before the required-columns exemption below) also
-    /// decides which projections the merge rebuilds, so it is computed once here and reused by the
-    /// projection pricing below.
+    /// and saturate merges_mutations_memory_usage_soft_limit for no real memory pressure. Mirror
+    /// MergeTask's expiry decision exactly, all three presence sources:
+    ///  - the base parts' own columns;
+    ///  - the patch parts' columns: a column added by ADD COLUMN and then filled by a lightweight UPDATE
+    ///    is physically absent from every base part, yet its only live values sit in the patch parts -
+    ///    MergeTask keeps it and writes it, so it must stay priced;
+    ///  - the targets of a pending, not yet materialized RENAME COLUMN old TO new: the rename is applied
+    ///    on-fly at read time, so the merged metadata carries `new` while the source parts still
+    ///    physically store `old` - the merge keeps `new` alive (reading `old` through AlterConversions)
+    ///    whenever a base or patch part holds `old` and `old` is not itself a live storage column (then
+    ///    the physical data belongs to `new` only after the rename materializes and MergeTask falls back
+    ///    to expiring `new`). The mapping is remembered (pending_rename_sources) and every later helper
+    ///    that probes the source parts for a column probes them under the source part's own name for it
+    ///    (see part_source_name below), so the read/write buffers of a rename target are not silently
+    ///    dropped from the reservation while the real merge reads and rewrites the column.
+    /// The full expired set (before the required-columns exemption below) also decides which projections
+    /// the merge rebuilds, so it is computed once here and reused by the projection pricing below.
     NameSet expired_columns;
+    std::unordered_map<String, String> pending_rename_sources;
     {
         NameSet columns_present_in_parts;
         for (const auto & part : future_part.parts)
             for (const auto & part_column : part->getColumns())
                 columns_present_in_parts.insert(part_column.name);
 
+        NameSet columns_present_in_patch_parts;
+        for (const auto & part : future_part.patch_parts)
+            for (const auto & part_column : part->getColumns())
+                columns_present_in_patch_parts.insert(part_column.name);
+
+        if (mutations_snapshot)
+        {
+            const auto storage_column_names = output_columns.getNameSet();
+            for (const auto & part : future_part.parts)
+            {
+                const auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                    , nullptr
+#endif
+                    );
+                for (const auto & rename : conversions->getRenameMap())
+                {
+                    if ((columns_present_in_parts.contains(rename.rename_from)
+                         || columns_present_in_patch_parts.contains(rename.rename_from))
+                        && !storage_column_names.contains(rename.rename_from))
+                        pending_rename_sources.emplace(rename.rename_to, rename.rename_from);
+                }
+            }
+        }
+
         for (const auto & storage_column : output_columns)
-            if (!columns_present_in_parts.contains(storage_column.name) && !columns_description.getDefault(storage_column.name))
+            if (!columns_present_in_parts.contains(storage_column.name)
+                && !columns_present_in_patch_parts.contains(storage_column.name)
+                && !pending_rename_sources.contains(storage_column.name)
+                && !columns_description.getDefault(storage_column.name))
                 expired_columns.insert(storage_column.name);
     }
+
+    /// The source-part view of a column name: a pending rename target is stored in the source parts under
+    /// its old name, so every probe of a source part for it - stream counts, recorded substreams, column
+    /// sizes, missing-rows accounting - goes through this mapping. The merge predicates only select parts
+    /// with equal pending-mutation versions into one merge, so one mapping fits every source part (a part
+    /// that already materialized the rename has an empty rename map and would never be merged with one
+    /// that has not). Renames do not change the column's type, so a translated probe hits the source
+    /// column with exactly the output column's type, and every type-sensitive path behaves as if the
+    /// column had never been renamed. With no pending renames both are the identity.
+    const auto part_source_name = [&](const String & name) -> const String &
+    {
+        const auto it = pending_rename_sources.find(name);
+        return it == pending_rename_sources.end() ? name : it->second;
+    };
+    const auto part_source_view = [&](const NamesAndTypesList & columns)
+    {
+        if (pending_rename_sources.empty())
+            return columns;
+        NamesAndTypesList result;
+        for (const auto & column : columns)
+            result.emplace_back(part_source_name(column.name), column.type);
+        return result;
+    };
 
     /// MergeTask keeps an expired column its merge semantics still require (merge_required_columns, see
     /// extractMergingAndGatheringColumns) - such a column IS written, filled with the type's default
@@ -1171,6 +1237,11 @@ UInt64 estimateNeededMemoryForMerge(
     NamesAndTypesList input_columns = output_columns;
     input_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
 
+    /// The source-part views of the read and written column sets: identical to the sets themselves unless
+    /// a pending rename maps an output column to a differently-named source column (see part_source_view).
+    const NamesAndTypesList part_view_input_columns = part_source_view(input_columns);
+    const NamesAndTypesList part_view_output_columns = part_source_view(output_columns);
+
     /// Input side: one reader stream per column substream a base merge reader actually opens on every
     /// source part. The reader buffers hold a window of the compressed file plus the decompressed block,
     /// so they can never hold more than the data they read through: cap the per-part estimate by the size
@@ -1184,10 +1255,10 @@ UInt64 estimateNeededMemoryForMerge(
     {
         /// Compact and in-memory parts read all columns through a single shared stream.
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
-            ? countPartStreamsForColumns(*part, input_columns)
+            ? countPartStreamsForColumns(*part, part_view_input_columns)
             : 1;
         const UInt64 read_buffer_size = part_read_buffer_size(part);
-        const ColumnSize read_bytes = partReadBytes(*part, input_columns);
+        const ColumnSize read_bytes = partReadBytes(*part, part_view_input_columns);
         input_memory += std::min<UInt64>(streams * read_buffer_size, read_bytes.data_compressed + read_bytes.data_uncompressed);
         sum_input_bytes_uncompressed += read_bytes.data_uncompressed;
     }
@@ -1265,25 +1336,32 @@ UInt64 estimateNeededMemoryForMerge(
             || !future_part.patch_parts.empty()
             || future_part.parts.front()->storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary);
 
+    /// Missing-ness is probed under the source part's own name for the column (a pending rename target is
+    /// stored - and read - under its old name, and is default-filled only for the rows of parts that lack
+    /// that old name, exactly as the reader behaves). default_filled_columns keeps the OUTPUT names (it is
+    /// matched against output_columns below), while default_filled_dynamic_columns keeps the source-view
+    /// names: its only consumers are countOutputStreams / countRebuiltProjectionStreams, which probe the
+    /// source parts through the translated column lists. With no pending renames the two spaces coincide.
     NameSet default_filled_columns;
     NameSet default_filled_dynamic_columns;
     for (const auto & column : output_columns)
     {
+        const String & source_name = part_source_name(column.name);
         const bool missing_from_some_part = std::any_of(
             future_part.parts.begin(), future_part.parts.end(),
-            [&](const auto & part) { return !part->getColumns().contains(column.name); });
+            [&](const auto & part) { return !part->getColumns().contains(source_name); });
         if (missing_from_some_part && (columns_description.getDefault(column.name) || synthesized_columns.contains(column.name)))
         {
             default_filled_columns.insert(column.name);
             if (column.type->hasDynamicStructure())
-                default_filled_dynamic_columns.insert(column.name);
+                default_filled_dynamic_columns.insert(source_name);
         }
     }
 
     /// A compact output part writes every column through one shared writer buffer, and that writer does not
     /// take the wide writer's per-stream adaptive decision, so its single stream is priced non-adaptive.
     const auto output_stream_counts = future_part.part_format.part_type == MergeTreeDataPartType::Wide
-        ? countOutputStreams(output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
+        ? countOutputStreams(part_view_output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
         : WriterStreamCounts{.total = 1, .non_adaptive = 1};
     const size_t output_streams = output_stream_counts.total;
 
@@ -1438,7 +1516,7 @@ UInt64 estimateNeededMemoryForMerge(
             continue;
         if (column.type->haveMaximumSizeOfValue())
             default_filled_value_bytes
-                += countRowsMissingColumn(future_part.parts, column.name) * column.type->getMaximumSizeOfValueInMemory();
+                += countRowsMissingColumn(future_part.parts, part_source_name(column.name)) * column.type->getMaximumSizeOfValueInMemory();
     }
 
     const UInt64 default_filled_term = 3 * default_filled_value_bytes;
@@ -1582,8 +1660,9 @@ UInt64 estimateNeededMemoryForMerge(
 
             if (gathering_columns.size() >= settings[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate])
             {
+                const NamesAndTypesList part_view_merging_columns = part_source_view(merging_columns);
                 const auto merging_stream_counts
-                    = countOutputStreams(merging_columns, source_and_patch_parts, settings, default_filled_dynamic_columns);
+                    = countOutputStreams(part_view_merging_columns, source_and_patch_parts, settings, default_filled_dynamic_columns);
 
                 /// The eager buffers are priced per WRITER, mirroring how a vertical merge writes: the
                 /// horizontal stage's writer sees only the merging columns (so the count-based adaptive
@@ -1596,7 +1675,7 @@ UInt64 estimateNeededMemoryForMerge(
                 UInt64 max_gathering_column_uncompressed = 0;
                 for (const auto & column : gathering_columns)
                 {
-                    const NamesAndTypesList single_column{column};
+                    const NamesAndTypesList single_column{NameAndTypePair(part_source_name(column.name), column.type)};
                     const auto column_stream_counts
                         = countOutputStreams(single_column, source_and_patch_parts, settings, default_filled_dynamic_columns);
                     gathering_streams_total += column_stream_counts.total;
@@ -1612,7 +1691,7 @@ UInt64 estimateNeededMemoryForMerge(
 
                 UInt64 merging_uncompressed = 0;
                 for (const auto & part : source_and_patch_parts)
-                    merging_uncompressed += partReadBytes(*part, merging_columns).data_uncompressed;
+                    merging_uncompressed += partReadBytes(*part, part_view_merging_columns).data_uncompressed;
 
                 const UInt64 delayed_streams = remote_write_buffer_size != 0
                     ? std::min<UInt64>(gathering_streams_total, settings[MergeTreeSetting::max_merge_delayed_streams_for_parallel_write])
@@ -1705,7 +1784,7 @@ UInt64 estimateNeededMemoryForMerge(
                     for (const auto & column : projection_columns)
                     {
                         if (!it->second->tryGetColumn(column.name)
-                            && (part->tryGetColumn(column.name)
+                            && (part->tryGetColumn(part_source_name(column.name))
                                 || !columns_description.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
                         {
                             projection_part_misses_column = true;
@@ -1760,11 +1839,15 @@ UInt64 estimateNeededMemoryForMerge(
             {
                 FutureMergedMutatedPart projection_future_part;
                 projection_future_part.assign(std::move(projection_parts), /*patch_parts_=*/ {}, &projection);
+                /// A projection part is never subject to a pending on-fly rename (renaming a column used
+                /// in a projection is forbidden, and the nested merge runs over the projection's own
+                /// columns), so the recursion needs no mutations snapshot.
                 projection_memory += estimateNeededMemoryForMerge(
                     projection_future_part,
                     projection.metadata,
                     context,
                     projection_settings,
+                    /*mutations_snapshot=*/ nullptr,
                     time_of_merge,
                     output_on_remote_disk,
                     remote_write_buffer_memory);
@@ -1780,7 +1863,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// reservation.
                 const auto projection_column_list = projection.sample_block.getNamesAndTypesList();
                 const auto projection_wide_stream_counts = countRebuiltProjectionStreams(
-                    projection_column_list, source_and_patch_parts, projection_settings, default_filled_dynamic_columns);
+                    part_source_view(projection_column_list), source_and_patch_parts, projection_settings, default_filled_dynamic_columns);
 
                 /// The temp-part writer's per-stream buffers are sized by the projection's own
                 /// max_compress_block_size and by the projection columns' own column-level overrides
@@ -1835,12 +1918,13 @@ UInt64 estimateNeededMemoryForMerge(
                     bool part_stores_required_column = false;
                     for (const auto & required_column : required_columns)
                     {
-                        const auto part_column = part->tryGetColumn(required_column);
+                        const String & required_source_name = part_source_name(required_column);
+                        const auto part_column = part->tryGetColumn(required_source_name);
                         if (!part_column)
                             continue;
                         part_stores_required_column = true;
                         part_projection_bytes += part_column->isSubcolumn()
-                            ? part->getSubcolumnSize(required_column).data_uncompressed
+                            ? part->getSubcolumnSize(required_source_name).data_uncompressed
                             : part->getColumnSize(part_column->getNameInStorage()).data_uncompressed;
                     }
                     if (part_stores_required_column && part->getColumnSizes()->empty())
@@ -1849,7 +1933,7 @@ UInt64 estimateNeededMemoryForMerge(
                 }
                 for (const auto & required_column : required_columns)
                 {
-                    const UInt64 missing_rows = countRowsMissingColumn(future_part.parts, required_column);
+                    const UInt64 missing_rows = countRowsMissingColumn(future_part.parts, part_source_name(required_column));
                     if (missing_rows == 0)
                         continue;
                     const auto column = columns_description.tryGetColumn(GetColumnsOptions::AllPhysical, required_column);

@@ -71,6 +71,13 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
   * part_min_ttl against it; pricing against a different clock than the merge executes with would let a
   * merge selected just before a TTL boundary flip to the row-reducing TTL path after its reservation is
   * already fixed.
+  * mutations_snapshot must be the pending-mutations snapshot for the source parts, built with the same
+  * parameters MergeTask builds its own (see the call sites): a pending, not yet materialized
+  * RENAME COLUMN old TO new is applied on-fly at read time, so the merge keeps `new` alive and reads the
+  * source parts' `old` while writing `new` - the estimate mirrors that by probing the source parts under
+  * the old name (see the pending-rename handling in the implementation). Pass nullptr when the source
+  * parts can have no pending on-fly renames (the nested projection-merge recursion does: renaming a
+  * column used in a projection is forbidden).
   * A merge reserves this amount up front (see MergeMemoryReservation) so that many merges starting
   * at once - for example right after a mutation - do not all grow their buffers and oversubscribe memory.
   */
@@ -79,6 +86,7 @@ UInt64 estimateNeededMemoryForMerge(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context,
     const MergeTreeSettings & settings,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     time_t time_of_merge,
     bool output_on_remote_disk,
     std::optional<DiskWriteBufferMemory> remote_write_buffer_memory = std::nullopt,

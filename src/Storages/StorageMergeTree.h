@@ -473,6 +473,14 @@ private:
     PartMutationBackoffPolicy mutation_backoff_policy;
 
     MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const override;
+
+    /// The body of getMutationsSnapshot for callers that already hold currently_processing_in_background_mutex
+    /// (getMutationsSnapshot itself takes it, so calling it under the mutex would deadlock). The patch parts,
+    /// which the public method fetches before taking the mutex, are passed in by the caller.
+    MutationsSnapshotPtr getMutationsSnapshotUnlocked(
+        const IMutationsSnapshot::Params & params,
+        DataPartsVector patch_parts,
+        std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock) const;
 };
 
 }

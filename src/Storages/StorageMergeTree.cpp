@@ -1787,8 +1787,28 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// clock the same way, via entry.create_time.
             const time_t time_of_merge = std::time(nullptr);
 
+            /// Snapshot of the pending mutations for the source parts, built with the same parameters
+            /// MergeTask builds its own: the estimate must observe the same pending RENAME COLUMN
+            /// mutations the merge will apply on-fly, or a not-yet-materialized rename target would be
+            /// priced as expired while the merge reads and rewrites it (see the pending-rename handling
+            /// in estimateNeededMemoryForMerge). currently_processing_in_background_mutex is held here,
+            /// so the snapshot is taken through the unlocked variant.
+            const auto parts_info = MergeTreeData::getPartsSnapshotInfo(future_part->parts);
+            const MergeTreeData::IMutationsSnapshot::Params mutations_params
+            {
+                .metadata_version = metadata_snapshot->getMetadataVersion(),
+                .min_part_metadata_version = parts_info.min_metadata_version,
+                .min_part_data_versions = nullptr,
+                .max_mutation_versions = nullptr,
+                .need_data_mutations = false,
+                .need_alter_mutations = !future_part->patch_parts.empty(),
+                .need_patch_parts = false,
+                .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+            };
+            const auto mutations_snapshot = getMutationsSnapshotUnlocked(mutations_params, /*patch_parts=*/ {}, lock);
+
             const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
-                *future_part, metadata_snapshot, merge_context, *getSettings(), time_of_merge,
+                *future_part, metadata_snapshot, merge_context, *getSettings(), mutations_snapshot, time_of_merge,
                 output_may_be_on_remote_disk, admission_write_buffer_memory, deduplicate, cleanup);
 
             std::optional<MergeMemoryReservation> memory_reservation;
@@ -1838,7 +1858,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             {
                 memory_reservation = MergeMemoryReservation::reserve(
                     CompactionStatistics::estimateNeededMemoryForMerge(
-                        *future_part, metadata_snapshot, merge_context, *getSettings(), time_of_merge,
+                        *future_part, metadata_snapshot, merge_context, *getSettings(), mutations_snapshot, time_of_merge,
                         actual_output_on_remote_disk, CompactionStatistics::getDiskWriteBufferMemory(actual_disk),
                         deduplicate, cleanup));
             }
@@ -3704,13 +3724,21 @@ NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
 MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
 {
     DataPartsVector patch_parts;
-    MutationCounters mutations_snapshot_counters;
-    MutationsSnapshot::MutationsByVersion mutations_snapshot;
-
     if (params.need_patch_parts)
         patch_parts = getPatchPartsVectorForInternalUsage();
 
-    std::lock_guard lock(currently_processing_in_background_mutex);
+    std::unique_lock lock(currently_processing_in_background_mutex);
+    return getMutationsSnapshotUnlocked(params, std::move(patch_parts), lock);
+}
+
+MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshotUnlocked(
+    const IMutationsSnapshot::Params & params,
+    DataPartsVector patch_parts,
+    std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
+{
+    MutationCounters mutations_snapshot_counters;
+    MutationsSnapshot::MutationsByVersion mutations_snapshot;
+
     if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 
