@@ -20,6 +20,18 @@ BOUND=$((SCALE * 4000))
 # What a bound allows on top of its deadline. A case that needs a deadline of its own keeps this
 # allowance rather than the bound itself, so shortening a deadline does not loosen the assertion with it.
 SLACK_MS=$((BOUND - DEADLINE_MS))
+# The two cases below whose haystack is a megabyte per row. Materializing `BIG_ROWS` megabytes is not
+# interruptible here, so it has to cost well under `BIG_DEADLINE_MS` or the query stops in the prologue
+# and the case passes whatever the function does. Only the thread sanitizer is slow enough for a
+# gigabyte and a half to reach that deadline, and it slows the match loop three times harder than the
+# materialization, which is the room this trade needs. The other sanitizers stay on the larger haystack,
+# where they need every row of it to outlast the deadline at all.
+BIG_ROWS=1600
+BIG_DEADLINE_MS=$DEADLINE_MS
+if [ -n "$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS' AND value LIKE '%sanitize=thread%'")" ]; then
+    BIG_ROWS=200
+    BIG_DEADLINE_MS=4000
+fi
 # `max_execution_time` is given in seconds; every deadline here is a whole number of milliseconds.
 to_seconds() { printf '%d.%03d' "$(($1 / 1000))" "$(($1 % 1000))"; }
 DEADLINE=$(to_seconds "$DEADLINE_MS")
@@ -96,11 +108,12 @@ run "many rows" \
 # 5. One match per row over a megabyte: about two loop iterations per row, so an iteration counter alone
 #    never reaches its threshold and the deadline is observed only because the bytes each match scanned are
 #    charged too. This is the case that distinguishes charging bytes from counting iterations. The rows must
-#    arrive in one block, which puts the whole haystack in memory at once, so the row count is what keeps
-#    that block well inside the 5G `max_memory_usage` the test profile sets; the alternation pattern rather
-#    than a larger block is what makes the call outlast the deadline.
+#    arrive in one block, which puts the whole haystack in memory at once, so `BIG_ROWS` is what keeps that
+#    block well inside the 5G `max_memory_usage` the test profile sets; the alternation pattern rather than
+#    a larger block is what makes the call outlast the deadline.
 run "sparse matches" \
-    "SELECT sum(countMatches(materialize(concat(repeat('a', 1000000), 'b')), '(a|aa|aaa|aaaa)*b')) FROM numbers(1600) SETTINGS max_block_size = 1600"
+    "SELECT sum(countMatches(materialize(concat(repeat('a', 1000000), 'b')), '(a|aa|aaa|aaaa)*b')) FROM numbers($BIG_ROWS) SETTINGS max_block_size = $BIG_ROWS" \
+    throw "" "" "$BIG_DEADLINE_MS"
 
 # 5b. A pattern that matches empty, which advances a single byte per iteration and reaches its own charge
 #     rather than the one a non-empty match reaches. A whole-match offset is a sentinel and not a position
@@ -114,7 +127,8 @@ run "empty matches" \
 #     counted classes are what make that scan cost enough to outlast the deadline. Charging one unit for it
 #     would put the whole call under a single unit per row.
 run "empty stop" \
-    "SELECT sum(countMatches(materialize(concat(repeat(' ', 1000000), 'a')), '\\\\b(?:[^ ]{8}|[^a]{9}|[^b]{11}|[^c]{13})*')) FROM numbers(1600) SETTINGS max_block_size = 1600, count_matches_stop_at_empty_match = 1"
+    "SELECT sum(countMatches(materialize(concat(repeat(' ', 1000000), 'a')), '\\\\b(?:[^ ]{8}|[^a]{9}|[^b]{11}|[^c]{13})*')) FROM numbers($BIG_ROWS) SETTINGS max_block_size = $BIG_ROWS, count_matches_stop_at_empty_match = 1" \
+    throw "" "" "$BIG_DEADLINE_MS"
 
 # 6. `countMatchesCaseInsensitive`, the second registered function: the same template with
 #    `case_insensitive = true`, so it is covered by construction rather than by its own charge.
