@@ -54,6 +54,17 @@ test_queries = [
         ],
     ),
     (
+        'up{instance=~"demo-service-0:.*"} offset 1.5s',
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "up", "instance": "demo-service-0:10000", "job": "demo"}, "value": [1753199684.626, "1"]}]}',
+        [
+            [
+                "[('__name__','up'),('instance','demo-service-0:10000'),('job','demo')]",
+                "2025-07-22 15:54:44.626",
+                "1",
+            ]
+        ],
+    ),
+    (
         'irate(prometheus_http_requests_total{code="200",handler="/api/v1/query"}[30s])',
         '{"resultType": "vector", "result": [{"metric": {"code": "200", "handler": "/api/v1/query", "instance": "prometheus:9090", "job": "prometheus"}, "value": [1753199684.626, "0.2"]}]}',
         [
