@@ -5,8 +5,11 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/IDisk.h>
 
+#include <IO/PlatformFileIO.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+
+#include <Common/ErrnoException.h>
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -33,6 +36,7 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int TOO_DEEP_RECURSION;
     extern const int FAULT_INJECTED;
+    extern const int CANNOT_STAT;
 }
 
 namespace FailPoints
@@ -299,8 +303,15 @@ void RemoveRecursiveOperation::traverseDirectory(const std::string & mid_path)
     for (auto it = disk.iterateDirectory(mid_path); it->isValid(); it->next())
     {
         const std::string next_to_visit = it->path();
-        const int64_t path_inode = disk.stat(next_to_visit).st_ino;
-        const bool is_new_path = visited_inodes.emplace(path_inode).second;
+
+        /// The disk behind local metadata storage is a local disk, so the entry's identity can be
+        /// read from the filesystem directly. Not through `disk.stat`: `struct stat` cannot carry
+        /// a Windows file identity (the CRT reports `st_ino` as zero for every file), and a zero
+        /// key would make every directory after the first look like a revisit.
+        PlatformFileVersion file_version;
+        if (0 != platformFileVersion(pathToString(fs::path(disk.getPath()) / next_to_visit), file_version))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, next_to_visit, "Cannot stat file {}", next_to_visit);
+        const bool is_new_path = visited_file_ids.emplace(file_version.device_id, file_version.file_id).second;
 
         /// Hardlinks will point to the same inode for different files.
         /// So here we need to remove file in any case.
