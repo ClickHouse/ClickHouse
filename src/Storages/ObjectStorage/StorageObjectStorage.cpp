@@ -74,8 +74,28 @@ namespace FailPoints
     extern const char datalake_simulate_missing_table_state[];
 }
 
+/// Stored tables (not table functions) must interpret their persisted path the same way in
+/// every session: schema/format inference, hive-partition sample-path resolution and reads
+/// must not reclassify the path with the per-query `use_glob_ast_parser` setting, otherwise
+/// a table created or first resolved under one setting would read a different object set
+/// (e.g. the literal key `data_{x}.json` vs the expansion `data_x.json`) under another.
+/// Pin the legacy classifier, consistent with `initPartitionStrategy` and `write`/`truncate`.
+static ContextPtr contextWithPinnedGlobParser(const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::use_glob_ast_parser])
+        return context;
+
+    auto pinned = Context::createCopy(context);
+    pinned->setSetting("use_glob_ast_parser", false);
+    return pinned;
+}
+
 String StorageObjectStorage::getPathSample(ContextPtr context)
 {
+    /// The sample path feeds hive-partition column discovery, which is shared table metadata.
+    if (!is_table_function)
+        context = contextWithPinnedGlobParser(context);
+
     const auto path = configuration->getRawPath();
     const bool use_glob_ast = context->getSettingsRef()[Setting::use_glob_ast_parser];
 
@@ -268,7 +288,12 @@ StorageObjectStorage::StorageObjectStorage(
     configuration->check(context);
 
     if (need_resolve_columns_or_format)
-        resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
+    {
+        /// The inferred schema/format become persisted table metadata for stored tables, so the
+        /// path classification driving the inference listing must not depend on the session setting.
+        const auto inference_context = is_table_function ? context : contextWithPinnedGlobParser(context);
+        resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, inference_context);
+    }
     else
         validateSupportedColumns(columns, *configuration);
 
@@ -759,6 +784,11 @@ void StorageObjectStorage::read(
 
     configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
+    /// The step's context drives the file iterator (glob classification, matcher, archive filter):
+    /// a stored table must list the same object set in every session, so pin the parser choice
+    /// to the one its persisted metadata was built with.
+    const auto read_context = is_table_function ? local_context : contextWithPinnedGlobParser(local_context);
+
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         storage_id,
         object_storage,
@@ -771,7 +801,7 @@ void StorageObjectStorage::read(
         distributed_processing,
         read_from_format_info,
         need_only_count,
-        local_context,
+        read_context,
         max_block_size,
         num_streams);
 

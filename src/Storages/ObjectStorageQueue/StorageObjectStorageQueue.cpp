@@ -374,7 +374,13 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     ColumnsDescription columns{columns_};
     std::string sample_path;
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context_);
+    /// The whole `S3Queue` path pipeline (CREATE-time validation, `FileIterator`, direct reads) is
+    /// pinned to the legacy glob classifier, so schema/format inference of the persisted path must
+    /// use it too: the per-query `use_glob_ast_parser` setting must not make inference probe a
+    /// literal-brace key while the queue lists its expansion.
+    auto inference_context = Context::createCopy(context_);
+    inference_context->setSetting("use_glob_ast_parser", false);
+    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, inference_context);
     configuration->check(context_);
 
     bool is_path_with_hive_partitioning = false;
