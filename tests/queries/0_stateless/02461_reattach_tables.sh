@@ -737,3 +737,18 @@ check_if_detached "CREATE OR REPLACE TABLE t_reattach_repl_dst (a UInt64) ENGINE
 ${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_repl_view"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_repl_src"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_repl_dst"
+
+# A temporary-table `CREATE` rejected on its syntax alone — a database-qualified temporary
+# (`BAD_DATABASE_FOR_TEMPORARY_TABLE`) or a temporary created `ON CLUSTER` (`INCORRECT_QUERY`) — is thrown
+# out at the very top of `InterpreterCreateQuery::createTable`, before the populating `SELECT` or the
+# `AS src` structure source is ever analyzed, so the hook must not reattach those sources on the way to
+# the rejection. The same statement without the rejected clause does read the source and keeps detaching it.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_tmp_src"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_tmp_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+check_fails_kind_without_detach "CREATE TEMPORARY TABLE ${CLICKHOUSE_DATABASE}.t_reattach_tmp ENGINE = Memory AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src" "BAD_DATABASE_FOR_TEMPORARY_TABLE"
+check_fails_kind_without_detach "CREATE TEMPORARY TABLE t_reattach_tmp ON CLUSTER test_shard_localhost ENGINE = Memory AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src" "INCORRECT_QUERY"
+
+check_if_detached "CREATE TEMPORARY TABLE t_reattach_tmp ENGINE = Memory AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_tmp_src"

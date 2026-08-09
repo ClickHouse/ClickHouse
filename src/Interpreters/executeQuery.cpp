@@ -1454,6 +1454,16 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     String destination_database = create.getDatabase();
     String destination_table = create.getTable();
 
+    /// Temporary tables and views live outside databases and are session-local, so
+    /// `InterpreterCreateQuery::createTable` rejects the forms that contradict that at its very top —
+    /// `ATTACH` of a temporary with `SYNTAX_ERROR`, a database-qualified temporary with
+    /// `BAD_DATABASE_FOR_TEMPORARY_TABLE`, and an `ON CLUSTER` temporary with `INCORRECT_QUERY` — before
+    /// `getTablePropertiesAndNormalizeCreateQuery` ever touches the `AS src` structure source or the
+    /// populating `SELECT`. Mirror those guards so such a rejected statement does not reattach its sources
+    /// on the way to the rejection.
+    if (create.isTemporary() && (create.attach || create.database || !create.cluster.empty()))
+        return true;
+
     /// A persistent destination is resolved in the ordinary namespace (`InterpreterCreateQuery` never
     /// resolves it against session temporary tables); a temporary one carries no database at all.
     if (create.table && !create.isTemporary())
