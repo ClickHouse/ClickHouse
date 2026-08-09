@@ -1428,10 +1428,11 @@ std::optional<time_t> tryComputeConstantTTLDelta(
             parser, old_ttl_expression.data(), old_ttl_expression.data() + old_ttl_expression.size(),
             "rows TTL expression", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
-        /// The stored fingerprint is a single unconditional DELETE TTL expression, so `is_attach = true`
-        /// merely skips the suspicious-expression check (the expression was already validated on write).
+        /// The stored fingerprint is a single unconditional DELETE TTL expression that was already
+        /// validated when the part was written, so it is rebuilt exactly as when loading existing
+        /// metadata: no validation, lenient build.
         TTLTableDescription old_ttl = TTLTableDescription::getTTLForTableFromAST(
-            definition_ast, columns, context, primary_key, /*is_attach=*/ true);
+            definition_ast, columns, context, primary_key, TTLValidationMode::Attach);
 
         if (!old_ttl.rows_ttl.expression_ast)
             return {};
