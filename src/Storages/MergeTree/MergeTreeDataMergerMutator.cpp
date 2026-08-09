@@ -457,6 +457,54 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         metadata_snapshot = future_part->parts.front()->getMetadataSnapshot();
     }
 
+    /// Root merges only: a projection sub-merge re-enters this from a running merge whose group is already
+    /// attached, and an attach copies `shared_data` once, so a write here would not reach its threads.
+    /// The enclosing merge's predicate covers it.
+    if (!projection_merge_list_element)
+    {
+        auto entry_context = (*merge_entry)->thread_group->query_context.lock();
+        if (!entry_context)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Merge list entry for part {} has no query context: every caller keeps it alive for the "
+                "whole merge",
+                future_part->name);
+
+        /// `optimizeDryRun` passes a user query's context and runs the task inline under that query's
+        /// group, so its entry group is never attached and its cancellation is already the query's.
+        if (entry_context->isBackgroundContext())
+        {
+            /// Same latch as `MergeTask::GlobalRuntimeContext::isCancelled`: the IO layer and the merge's
+            /// own checks poll independently, so a blocker released in between must not resurrect the read.
+            /// `ttl_merges_blocker` is not a source here, see the commit message.
+            auto is_cancelled
+                = [&blocker = merges_blocker, merge_entry, partition_id = future_part->part_info.getPartitionId()]
+            {
+                if ((*merge_entry)->is_cancelled.load(std::memory_order_relaxed))
+                    return true;
+
+                if (blocker.isCancelledForPartition(partition_id))
+                {
+                    (*merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+                    return true;
+                }
+
+                return false;
+            };
+
+            /// The IO layer polls the thread's cancellation predicates, which are constant `false` for a
+            /// merge/mutate group because they resolve through a process-list element it does not have.
+            /// Installed here because a root merge creates its entry and calls this in one un-attached step.
+            (*merge_entry)->thread_group->setCancellationPredicates(
+                is_cancelled,
+                [is_cancelled]
+                {
+                    if (is_cancelled())
+                        throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+                });
+        }
+    }
+
     return std::make_shared<MergeTask>(
         std::move(future_part),
         std::move(metadata_snapshot),
