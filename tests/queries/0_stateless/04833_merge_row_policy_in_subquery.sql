@@ -32,7 +32,11 @@ SELECT * FROM merge(currentDatabase(), '^mrp_mt$') ORDER BY id
 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
 
 SELECT 'global in';
-CREATE ROW POLICY 04833_mt_g ON mrp_mt FOR SELECT USING value GLOBAL IN (SELECT 10) TO ALL;
+-- Permissive policies are OR-ed, so 04833_mt is dropped for the next two arms: it accepts the
+-- same row and would mask a silently empty set. The accepted row here differs from every other
+-- arm's, so a decline in either direction changes the output.
+DROP ROW POLICY 04833_mt ON mrp_mt;
+CREATE ROW POLICY 04833_mt_g ON mrp_mt FOR SELECT USING value GLOBAL IN (SELECT 20) TO ALL;
 SELECT * FROM merge(currentDatabase(), '^mrp_mt$') FINAL ORDER BY id;
 DROP ROW POLICY 04833_mt_g ON mrp_mt;
 
@@ -40,6 +44,7 @@ SELECT 'not in';
 CREATE ROW POLICY 04833_mt_n ON mrp_mt FOR SELECT USING value NOT IN (SELECT 20) TO ALL;
 SELECT * FROM merge(currentDatabase(), '^mrp_mt$') FINAL ORDER BY id;
 DROP ROW POLICY 04833_mt_n ON mrp_mt;
+CREATE ROW POLICY 04833_mt ON mrp_mt FOR SELECT USING value IN (SELECT 10) TO ALL;
 
 SELECT 'granules still pruned';
 -- index_granularity is pinned so the exact count survives the runner's randomization.

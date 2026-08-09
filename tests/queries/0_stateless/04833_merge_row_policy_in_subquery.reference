@@ -3,7 +3,7 @@ final
 plain, prewhere disabled
 5	10
 global in
-5	10
+6	20
 not in
 5	10
 granules still pruned

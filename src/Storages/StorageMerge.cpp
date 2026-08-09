@@ -1465,8 +1465,8 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
 
-    /// The analyzer owns the predicate's IN-subqueries, so keep them alive past its scope:
-    /// addFilterTransform needs them to plant the step that builds the sets.
+    /// Keep the analyzer's set registry: it is the only list of the predicate's IN-subqueries,
+    /// and addFilterTransform needs it to plant the step that builds them.
     prepared_sets = expression_analyzer.getPreparedSets();
 
     /// The filter column is dropped from the stream after filtering, so it must be a dedicated
@@ -1531,8 +1531,8 @@ void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan, ContextP
     auto filter_step = std::make_unique<FilterStep>(plan.getCurrentHeader(), actions_dag.clone(), filter_column_name, true /* remove filter column */);
     plan.addStep(std::move(filter_step));
 
-    /// Nothing else builds the sets this filter may reference: addStorageFilter is only an
-    /// additional pushdown, and it is not applied for every engine. No subquery adds no step.
+    /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an
+    /// additional pushdown. No subquery adds no step.
     addDelayedCreatingSetsStep(plan, prepared_sets, local_context);
 }
 
