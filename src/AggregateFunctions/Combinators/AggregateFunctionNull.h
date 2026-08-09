@@ -282,6 +282,11 @@ public:
         return nested_function->allocatesMemoryInArena();
     }
 
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        return nested_function->getArgumentsThatCanBeOnlyNull();
+    }
+
     bool isState() const override
     {
         return nested_function->isState();
