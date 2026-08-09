@@ -2,8 +2,10 @@
 
 #include <Parsers/LogsQL/LogsQLParser.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/TokenIterator.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 
 #include <algorithm>
 
@@ -20,10 +22,39 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// SET queries are parsed with the normal ClickHouse parser, so that settings
     /// like `dialect` and `logsql_table` can always be changed. This is checked before
-    /// the feature gate so users can recover from misconfigured profiles.
-    ParserSetQuery set_parser;
-    if (set_parser.parse(pos, node, expected))
-        return true;
+    /// the feature gate so users can recover from misconfigured profiles. The escape
+    /// applies only to a complete standalone SET statement: a LogsQL query merely
+    /// starting with the word `set` (e.g. `set error | count()`) keeps its word-filter
+    /// meaning. The statement is re-tokenized from the raw text after skipping LogsQL
+    /// `#` comments, which are lexer errors for the ClickHouse token stream.
+    {
+        const char * probe = pos->begin;
+        while (probe < raw_end)
+        {
+            if (isWhitespaceASCII(*probe))
+                ++probe;
+            else if (*probe == '#')
+                while (probe < raw_end && *probe != '\n')
+                    ++probe;
+            else
+                break;
+        }
+
+        Tokens set_tokens(probe, raw_end, max_query_size, /*skip_insignificant=*/ true);
+        Pos set_pos(set_tokens, pos);
+        ASTPtr set_node;
+        ParserSetQuery set_parser;
+        if (set_parser.parse(set_pos, set_node, expected)
+            && (set_pos->isEnd() || set_pos->type == TokenType::Semicolon))
+        {
+            node = std::move(set_node);
+            /// Advance the original token iterator to the end of the SET statement.
+            const char * set_end = set_pos->begin;
+            while (!pos->isEnd() && pos->begin < set_end)
+                ++pos;
+            return true;
+        }
+    }
 
     if (!feature_enabled)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

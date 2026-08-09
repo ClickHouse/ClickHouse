@@ -1697,7 +1697,9 @@ void LogsQLParser::parsePipeUnroll(Layer & layer)
         rows_count = makeASTFunction("greatest", rows_count, makeASTFunction("length", array_of(fields[i])));
 
     /// The inner layer adds the unrolling index; arrayJoin must appear exactly once.
-    wrapLayerIf(layer, !layer.select.empty());
+    /// A pending `limit` / `offset` must also stay in an inner layer: it counts the
+    /// source rows, while `arrayJoin` in the same SELECT would count the unrolled rows.
+    wrapLayerIf(layer, !layer.select.empty() || layer.limit.has_value() || layer.offset.has_value());
     ASTPtr index = makeASTFunction("arrayJoin",
         makeASTFunction("range", makeASTFunction("greatest", makeUInt64Literal(1), rows_count)));
     layer.select.push_back(make_intrusive<ASTAsterisk>());
@@ -2257,6 +2259,7 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
         ASTPtr column = args.empty() ? nullptr : columnExpr(args[0]);
         std::optional<Float64> range_seconds;
         ASTPtr range_seconds_expr;
+        bool range_may_be_empty = false;
         /// A `_time` bucket of the same stats pipe takes precedence over the whole query range.
         if (current_stats_time_bucket_ns && *current_stats_time_bucket_ns > 0)
             range_seconds = static_cast<Float64>(*current_stats_time_bucket_ns) / 1e9;
@@ -2269,16 +2272,32 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
                 range_seconds = static_cast<Float64>(*query_time_upper_bound_ns - *query_time_lower_bound_ns) / 1e9;
         }
         else if (query_time_lower_bound_expr && query_time_upper_bound_expr)
+        {
+            /// Unlike a bucket length, the intersection of the `_time` filters may turn out
+            /// empty at runtime; the guard below then falls back to the plain aggregate,
+            /// the same way the parse-time branch above does.
             range_seconds_expr = makeTimeRangeSecondsExpr(query_time_lower_bound_expr, query_time_upper_bound_expr);
-        return {canonical, [column, range_seconds, range_seconds_expr](ASTPtr condition)
+            range_may_be_empty = true;
+        }
+        return {canonical, [column, range_seconds, range_seconds_expr, range_may_be_empty](ASTPtr condition)
         {
             ASTPtr result = column
                 ? makeAggregate("sum", {column->clone()}, condition)
                 : makeAggregate("count", {}, condition);
             if (range_seconds)
+            {
                 result = makeASTFunction("divide", result, make_intrusive<ASTLiteral>(Field(*range_seconds)));
+            }
             else if (range_seconds_expr)
-                result = makeASTFunction("divide", result, range_seconds_expr->clone());
+            {
+                ASTPtr divided = makeASTFunction("divide", result->clone(), range_seconds_expr->clone());
+                if (range_may_be_empty)
+                    result = makeASTFunction("if",
+                        makeASTFunction("greater", range_seconds_expr->clone(), make_intrusive<ASTLiteral>(Field(0.0))),
+                        std::move(divided), std::move(result));
+                else
+                    result = std::move(divided);
+            }
             return result;
         }};
     }
@@ -2458,14 +2477,34 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
             if (columns.size() == 1)
                 return makeAggregate("avg", {columns[0]->clone()}, condition);
 
-            /// The values of all listed fields are pooled together.
-            ASTPtr total = makeAggregate("sum", {columns[0]->clone()}, condition);
-            for (size_t i = 1; i < columns.size(); ++i)
-                total = makeASTFunction("plus", total, makeAggregate("sum", {columns[i]->clone()}, condition ? condition->clone() : ASTPtr{}));
             if (!is_avg)
+            {
+                /// The values of all listed fields are pooled together.
+                ASTPtr total = makeAggregate("sum", {columns[0]->clone()}, condition);
+                for (size_t i = 1; i < columns.size(); ++i)
+                    total = makeASTFunction("plus", total, makeAggregate("sum", {columns[i]->clone()}, condition ? condition->clone() : ASTPtr{}));
                 return total;
-            ASTPtr rows = makeAggregate("count", {}, condition ? condition->clone() : nullptr);
-            return makeASTFunction("divide", total, makeASTFunction("multiply", rows, makeUInt64Literal(columns.size())));
+            }
+
+            /// The pooled average is the sum of the present values divided by their number:
+            /// a NULL slot contributes to neither, so it does not dilute the average, and
+            /// `sum` of a fully-NULL column (which is NULL) does not poison the numerator.
+            ASTPtr total;
+            ASTPtr values;
+            for (const auto & column : columns)
+            {
+                ASTPtr column_sum = makeASTFunction("ifNull",
+                    makeAggregate("sum", {column->clone()}, condition ? condition->clone() : ASTPtr{}),
+                    makeUInt64Literal(0));
+                ASTPtr column_values = makeAggregate("count", {column->clone()}, condition ? condition->clone() : ASTPtr{});
+                total = total ? makeASTFunction("plus", total, column_sum) : column_sum;
+                values = values ? makeASTFunction("plus", values, column_values) : column_values;
+            }
+            /// With no present values at all the average is NULL, like for a single field.
+            return makeASTFunction("if",
+                makeASTFunction("greater", values->clone(), makeUInt64Literal(0)),
+                makeASTFunction("divide", total, values),
+                make_intrusive<ASTLiteral>(Field()));
         }};
     }
 

@@ -1,0 +1,7 @@
+1
+2024-01-01 00:00:00	cannot set error handler
+standalone SET ok
+SET after comment ok
+allow_experimental_logsql_dialect
+1
+client standalone SET ok

@@ -8567,7 +8567,8 @@ SET dialect = 'logsql';
 _time:1h error | stats by (host) count()
 ```
 
-The `SET` query is still parsed as plain SQL so that the dialect can be switched back.
+A complete standalone `SET` query is still parsed as plain SQL so that the dialect can
+be switched back; a LogsQL query merely starting with the word `set` keeps its meaning.
 The `logsql_time_column` and `logsql_message_column` settings configure the columns
 referred to by the `_time` field and by the default (message) field.
 

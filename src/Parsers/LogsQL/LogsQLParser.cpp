@@ -676,16 +676,24 @@ ASTPtr LogsQLParser::parseFilterRange(const String & field_name)
         throwSyntaxError(fmt::format("unexpected closing token {} in range(); expecting ')' or ']'", lex.getToken()));
     lex.nextToken();
 
-    auto is_infinite = [](const Field & field)
+    /// The sign of an infinite endpoint matters: `-inf` as the lower or `+inf` as the
+    /// upper bound means "this side is unbounded", while the wrong-way infinities
+    /// (`range[+inf, 10]`, `range(10, -inf)`) make an empty interval that matches nothing.
+    auto infinity_sign = [](const Field & field) -> int
     {
-        return field.getType() == Field::Types::Float64 && std::isinf(field.safeGet<Float64>());
+        if (field.getType() != Field::Types::Float64 || !std::isinf(field.safeGet<Float64>()))
+            return 0;
+        return field.safeGet<Float64>() > 0 ? 1 : -1;
     };
 
+    if (infinity_sign(*min_value) > 0 || infinity_sign(*max_value) < 0)
+        return make_intrusive<ASTLiteral>(Field(static_cast<UInt8>(0)));
+
     ASTs conditions;
-    if (!is_infinite(*min_value))
+    if (infinity_sign(*min_value) == 0)
         conditions.push_back(makeNumericComparison(field_name, include_min ? "greaterOrEquals" : "greater",
             make_intrusive<ASTLiteral>(*min_value), min_text));
-    if (!is_infinite(*max_value))
+    if (infinity_sign(*max_value) == 0)
         conditions.push_back(makeNumericComparison(field_name, include_max ? "lessOrEquals" : "less",
             make_intrusive<ASTLiteral>(*max_value), max_text));
 
@@ -1073,6 +1081,15 @@ ASTPtr LogsQLParser::parseFilterLenRange(const String & field_name)
         throwSyntaxError("cannot parse len_range() bounds as numbers");
     if ((!std::isinf(*min_value) && *min_value != std::floor(*min_value)) || (!std::isinf(*max_value) && *max_value != std::floor(*max_value)))
         throwSyntaxError("len_range() bounds must be integers");
+    /// Lengths are non-negative, so a negative finite bound is a mistake rather than
+    /// an interval endpoint; it is rejected instead of wrapping around in `UInt64`.
+    if ((!std::isinf(*min_value) && *min_value < 0) || (!std::isinf(*max_value) && *max_value < 0))
+        throwSyntaxError("len_range() bounds must be non-negative");
+    /// The sign of an infinite endpoint matters, like in range(): `-inf` as the lower or
+    /// `+inf` as the upper bound means "this side is unbounded", while the wrong-way
+    /// infinities make an empty interval that matches nothing.
+    if ((std::isinf(*min_value) && *min_value > 0) || (std::isinf(*max_value) && *max_value < 0))
+        return make_intrusive<ASTLiteral>(Field(static_cast<UInt8>(0)));
 
     /// Both bounds are inclusive.
     ASTs conditions;
@@ -1499,6 +1516,44 @@ ASTPtr LogsQLParser::makeNumericComparison(const String & field_name, const Stri
     bool literal_fits_decimal = literal_value.getType() != Field::Types::Float64
         || (std::isfinite(literal_value.safeGet<Float64>()) && std::abs(literal_value.safeGet<Float64>()) < 1e38);
 
+    /// A plain decimal literal is compared with its exact original text: high-precision
+    /// values like `10.50000000000000000002` would otherwise be rounded through the
+    /// `Float64` literal field. For rich forms (`10.5KiB`) the shortest round-trip
+    /// formatting of the `Float64` value restores its exact decimal text.
+    String literal_text;
+    if (!original_text.empty() && isPlainNumber(original_text))
+        literal_text = original_text[0] == '+' ? original_text.substr(1) : original_text;
+    else if (literal_value.getType() == Field::Types::Float64)
+        literal_text = fmt::format("{}", literal_value.safeGet<Float64>());
+    else if (literal_value.getType() == Field::Types::Int64)
+        literal_text = fmt::format("{}", literal_value.safeGet<Int64>());
+    else
+        literal_text = fmt::format("{}", literal_value.safeGet<UInt64>());
+
+    /// The default scale of 38 splits the 76 digits of `Decimal256` evenly between the
+    /// integer and the fractional parts. `toDecimal256` silently truncates the fraction
+    /// beyond the scale, so a literal with more than 38 fractional digits would compare
+    /// equal to values differing only beyond the scale. For such literals the scale is
+    /// widened to the exact fractional length of the literal (trading integer capacity
+    /// on the column side), and when even the full `Decimal256` precision cannot hold
+    /// the literal, the decimal branch is skipped in favor of the branches below.
+    UInt64 decimal_scale = 38;
+    if (size_t dot = literal_text.find('.'); dot != String::npos && literal_text.find_first_of("eE") == String::npos)
+    {
+        size_t fractional_digits = literal_text.size() - dot - 1;
+        if (fractional_digits > 38)
+        {
+            size_t first_significant = literal_text[0] == '-' ? 1 : 0;
+            while (first_significant < dot && literal_text[first_significant] == '0')
+                ++first_significant;
+            size_t integer_digits = dot - first_significant;
+            if (integer_digits + fractional_digits <= 76)
+                decimal_scale = fractional_digits;
+            else
+                literal_fits_decimal = false;
+        }
+    }
+
     ASTPtr exact = makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Int128"))));
     ASTPtr lossy = makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Float64"))));
     ASTPtr exact_comparison = makeASTFunction(function_name, exact, literal->clone());
@@ -1511,23 +1566,10 @@ ASTPtr LogsQLParser::makeNumericComparison(const String & field_name, const Stri
     {
         ASTPtr decimal = makeASTFunction("toDecimal256OrNull",
             makeASTFunction("toString", columnExpr(field_name)),
-            make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(38))));
-        /// A plain decimal literal is compared with its exact original text: high-precision
-        /// values like `10.50000000000000000002` would otherwise be rounded through the
-        /// `Float64` literal field. For rich forms (`10.5KiB`) the shortest round-trip
-        /// formatting of the `Float64` value restores its exact decimal text.
-        String literal_text;
-        if (!original_text.empty() && isPlainNumber(original_text))
-            literal_text = original_text[0] == '+' ? original_text.substr(1) : original_text;
-        else if (literal_value.getType() == Field::Types::Float64)
-            literal_text = fmt::format("{}", literal_value.safeGet<Float64>());
-        else if (literal_value.getType() == Field::Types::Int64)
-            literal_text = fmt::format("{}", literal_value.safeGet<Int64>());
-        else
-            literal_text = fmt::format("{}", literal_value.safeGet<UInt64>());
+            make_intrusive<ASTLiteral>(Field(decimal_scale)));
         ASTPtr decimal_literal = makeASTFunction("toDecimal256",
             make_intrusive<ASTLiteral>(Field(literal_text)),
-            make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(38))));
+            make_intrusive<ASTLiteral>(Field(decimal_scale)));
         ASTPtr decimal_comparison = makeASTFunction(function_name, decimal, std::move(decimal_literal));
         result = makeASTFunction("if",
             makeASTFunction("isNotNull", decimal->clone()),
