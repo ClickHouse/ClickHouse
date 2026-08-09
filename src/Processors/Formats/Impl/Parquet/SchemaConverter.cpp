@@ -38,11 +38,13 @@ namespace DB::Parquet
 
 SchemaConverter::SchemaConverter(
     const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
-    const Block * sample_block_)
+    const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
     : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
-    if (options.format.parquet.allow_geoparquet_parser)
+    if (precomputed_geo_columns.has_value())
+        geo_columns = std::move(*precomputed_geo_columns);
+    else if (options.format.parquet.allow_geoparquet_parser)
     {
         for (const auto & kv : file_metadata.key_value_metadata)
         {
@@ -116,6 +118,7 @@ void SchemaConverter::prepareForReading()
         missing_output.output_type = missing_output.input_type;
         missing_output.is_missing_column = true;
     }
+
 }
 
 NamesAndTypesList SchemaConverter::inferSchema()
@@ -1027,7 +1030,7 @@ void SchemaConverter::processPrimitiveColumn(
 
     if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
     {
-        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
+        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
         out_inferred_type = getGeoDataType(GeoType::Mixed);
         out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
         return;
@@ -1214,6 +1217,9 @@ void SchemaConverter::processPrimitiveColumn(
         UInt32 scale = logical.__isset.DECIMAL ? logical.DECIMAL.scale : element.scale;
         precision = std::max(precision, scale);
 
+        /// Precision of the Decimal type exactly as wide as one decoded value. Legal parquet can
+        /// make it exceed `precision` (e.g. INT64 with precision 9), so it, not `precision`,
+        /// determines the width of the column we decode into.
         UInt32 max_precision = 0;
         if (type == parq::Type::INT32 || type == parq::Type::INT64)
         {
@@ -1282,8 +1288,15 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal type precision or scale is too big ({} digits) for physical type {}", precision, thriftToString(type));
 
         out_inferred_type = createDecimal<DataTypeDecimal>(precision, scale);
-        size_t output_size = out_inferred_type->getSizeOfValueInMemory();
-        out_decoder.allow_stats = is_output_type_decimal(output_size, scale);
+
+        /// Decode into a column as wide as the converter writes; castColumn then narrows it to the
+        /// declared precision, throwing DECIMAL_OVERFLOW for values that don't fit.
+        auto decoded_type = createDecimal<DataTypeDecimal>(max_precision, scale);
+        size_t decoded_size = decoded_type->getSizeOfValueInMemory();
+        if (decoded_size != out_inferred_type->getSizeOfValueInMemory())
+            out_decoded_type = std::move(decoded_type);
+
+        out_decoder.allow_stats = is_output_type_decimal(decoded_size, scale);
 
         return;
     }
