@@ -167,6 +167,22 @@ static void AddPrefixToKeys(
 namespace
 {
 
+/** Appends an unsigned integer that does not fit a signed 64-bit one, which is the widest integer
+  * BSON has. A `double` would lose its low digits, so the value goes as a BSON decimal128 - the
+  * type a Mongo client spells as `$numberDecimal` - which holds 34 significant digits and
+  * therefore every `UInt64` exactly.
+  */
+void appendLargeUInt64(bson_t * document, const String & key, UInt64 value)
+{
+    const int key_length = static_cast<int>(key.size());
+    auto text = std::to_string(value);
+    bson_decimal128_t decimal;
+    if (bson_decimal128_from_string(text.c_str(), &decimal))
+        bson_append_decimal128(document, key.data(), key_length, &decimal);
+    else
+        bson_append_utf8(document, key.data(), key_length, text.data(), static_cast<int>(text.size()));
+}
+
 /// Appends a JSON value whose column type says no more than the JSON itself: the shape of the
 /// value is kept, and a number becomes the narrowest of `int32`/`int64`/`double` that holds it.
 void appendUntypedValue(bson_t * document, const String & key, const rapidjson::Value & value)
@@ -191,13 +207,13 @@ void appendUntypedValue(bson_t * document, const String & key, const rapidjson::
     }
     else if (value.IsUint64())
     {
-        /// BSON has no unsigned type, so what does not fit a signed 64-bit integer loses
-        /// precision rather than its magnitude.
+        /// BSON has no unsigned type, so what does not fit a signed 64-bit integer goes as a
+        /// decimal128, which holds it exactly.
         UInt64 unsigned_value = value.GetUint64();
         if (unsigned_value <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
             bson_append_int64(document, key.data(), key_length, static_cast<Int64>(unsigned_value));
         else
-            bson_append_double(document, key.data(), key_length, static_cast<Float64>(unsigned_value));
+            appendLargeUInt64(document, key, unsigned_value);
     }
     else if (value.IsNumber())
     {
@@ -293,6 +309,19 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
     if ((which.isInt64() || which.isUInt32()) && value.IsInt64())
     {
         bson_append_int64(document, key.data(), key_length, value.GetInt64());
+        return;
+    }
+    if (which.isUInt64() && value.IsUint64())
+    {
+        /// `output_format_json_quote_64bit_integers` is pinned to `false` (see `MongoProtocol.cpp`),
+        /// so a `UInt64` arrives as a JSON number of up to 20 digits. The ones that fit a signed
+        /// 64-bit integer keep the type every other integer column returns as; the larger ones
+        /// would lose their low digits as a double, so they go as a decimal128.
+        UInt64 unsigned_value = value.GetUint64();
+        if (unsigned_value <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+            bson_append_int64(document, key.data(), key_length, static_cast<Int64>(unsigned_value));
+        else
+            appendLargeUInt64(document, key, unsigned_value);
         return;
     }
     if (which.isFloat() && value.IsString())
