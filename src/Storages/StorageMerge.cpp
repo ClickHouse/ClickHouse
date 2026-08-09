@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <base/scope_guard.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -2038,6 +2039,16 @@ std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPt
             if (!table)
                 return false;
 
+            const auto id = table->getStorageID();
+
+            /// A row policy on a source table filters what the current user reads through this `Merge`
+            /// table without the source itself changing, and a policy change is invisible to the source's
+            /// own hash - fail closed, matching `computeTableModificationHashForConsistency`. A filter
+            /// that is literally always true does not affect the result and is not counted.
+            if (auto row_policy_filter = query_context->getRowPolicyFilter(id.database_name, id.table_name, RowPolicyFilterType::SELECT_FILTER);
+                row_policy_filter && !row_policy_filter->isAlwaysTrue())
+                return true;
+
             /// Refresh lazily applied external metadata before hashing, so that the first read through
             /// this `Merge` table does not report a change that is only the child's own first-use
             /// metadata update (see `getModificationHashWithRefreshedMetadata`). It touches the same external
@@ -2052,7 +2063,6 @@ std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPt
             /// which uniquely identifies a table incarnation regardless of name reuse, in addition to the
             /// database and table name.
             SipHash per_table;
-            const auto id = table->getStorageID();
             per_table.update(id.database_name);
             per_table.update(id.table_name);
             per_table.update(id.uuid);

@@ -2,6 +2,7 @@
 #include <Storages/StorageDistributed.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
 
 #include <Databases/IDatabase.h>
 
@@ -1939,6 +1940,15 @@ std::optional<UInt128> StorageDistributed::getModificationHash(const StorageSnap
 
     /// Table functions have no stable identity on the shards, so we cannot ask system.tables about them.
     if (remote_table_function_ptr)
+        return {};
+
+    /// A row policy on the underlying table in this server's context filters what the current user reads
+    /// from a local shard (executed in-process), and a policy change is invisible to the underlying
+    /// table's hash - fail closed, matching `computeTableModificationHashForConsistency`. A filter that
+    /// is literally always true does not affect the result and is not counted. Policies that exist only
+    /// on remote shard servers cannot be seen from here and are part of the documented best-effort window.
+    if (auto row_policy_filter = query_context->getRowPolicyFilter(remote_database, remote_table, RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter && !row_policy_filter->isAlwaysTrue())
         return {};
 
     /// Without a table UUID (e.g. a table in an `Ordinary` database) we cannot distinguish incarnations of

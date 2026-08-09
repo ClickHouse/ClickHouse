@@ -10,6 +10,7 @@
 #include <Interpreters/misc.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessType.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
@@ -368,6 +369,20 @@ std::optional<UInt128> computeTableModificationHashForConsistency(const StorageI
         if (!can_read)
             return {};
     }
+
+    /// A row policy filters what the current user reads from the table without the table itself
+    /// changing, so an unchanged table hash is not proof that the result is unchanged: an
+    /// `ALTER ROW POLICY` (or a `CREATE`/`DROP` of one) changes the result while every referenced table
+    /// stays the same, and the cache key only folds the user and role IDs, not the policy. Fail closed
+    /// on any non-trivial `SELECT` filter in the reading context. (Folding the filter into the hash
+    /// instead would have to recurse into the tables the filter's subqueries reference - which can
+    /// have policies of their own - so bailing out is the safe choice.) A filter that is literally
+    /// always true does not affect the result and is deliberately not counted: when it is later
+    /// altered to a real condition, the filter becomes non-trivial and this check starts failing
+    /// closed, so no stale entry can be served across the change in either direction.
+    if (auto row_policy_filter = context->getRowPolicyFilter(resolved_id.database_name, resolved_id.table_name, RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        return {};
 
     /// Refreshes lazily applied external metadata first, so that the hash computed before the query
     /// reads the table agrees with the one computed at finalization, after the read has performed that
