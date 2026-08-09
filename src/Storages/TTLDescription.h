@@ -81,7 +81,17 @@ struct TTLDescription
     /// TTL d + INTERVAL 1 DAY
     ///    ^~~~~~~~~~~~~~~~~~~^
     ASTPtr expression_ast;
+
+    /// The columns the *built* expression reads at execution time. Constant folding can prune a column the
+    /// AST refers to (`WHERE isNull(x)` over a non-`Nullable` `x` folds to `0`), so this list can be smaller
+    /// than `expression_source_columns`. It is what the read planners (`MergeTask`, `getColumnDependencies`)
+    /// must consume - reading the folded-out columns there would be wasted I/O.
     NamesAndTypesList expression_columns;
+
+    /// The columns the stored AST refers to, taken from the syntax analysis *before* constant folding.
+    /// Rebuilding the expression from the AST needs all of them to be available as source columns, even the
+    /// ones the built expression no longer reads - so the rebuild must not use `expression_columns`.
+    NamesAndTypesList expression_source_columns;
 
     /// Expression actions evaluated from AST
     ExpressionAndSets buildExpression(const ContextPtr & context) const;
@@ -93,7 +103,11 @@ struct TTLDescription
     /// TTL ... WHERE x % 10 == 0 and y > 5
     ///              ^~~~~~~~~~~~~~~~~~~~~~^
     ASTPtr where_expression_ast;
+
+    /// Same split as `expression_columns` / `expression_source_columns`, for the WHERE part.
     NamesAndTypesList where_expression_columns;
+    NamesAndTypesList where_expression_source_columns;
+
     ExpressionAndSets buildWhereExpression(const ContextPtr & context) const;
 
     /// Name of result column from WHERE expression

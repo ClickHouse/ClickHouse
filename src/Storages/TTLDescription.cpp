@@ -1075,9 +1075,11 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     : mode(other.mode)
     , expression_ast(other.expression_ast ? other.expression_ast->clone() : nullptr)
     , expression_columns(other.expression_columns)
+    , expression_source_columns(other.expression_source_columns)
     , result_column(other.result_column)
     , where_expression_ast(other.where_expression_ast ? other.where_expression_ast->clone() : nullptr)
     , where_expression_columns(other.where_expression_columns)
+    , where_expression_source_columns(other.where_expression_source_columns)
     , where_result_column(other.where_result_column)
     , group_by_keys(other.group_by_keys)
     , set_parts(other.set_parts)
@@ -1101,6 +1103,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
         expression_ast.reset();
 
     expression_columns = other.expression_columns;
+    expression_source_columns = other.expression_source_columns;
     result_column = other.result_column;
 
     if (other.where_expression_ast)
@@ -1109,6 +1112,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
         where_expression_ast.reset();
 
     where_expression_columns = other.where_expression_columns;
+    where_expression_source_columns = other.where_expression_source_columns;
     where_result_column = other.where_result_column;
     group_by_keys = other.group_by_keys;
     set_parts = other.set_parts;
@@ -1129,6 +1133,8 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 /// this is deliberately taken from the syntax analysis and not from the built expression: constant folding
 /// can prune a column out of the expression (`WHERE isNull(x)` over a non-`Nullable` `x` folds to `0`),
 /// while the stored AST still refers to it and every later rebuild of that AST needs it to be available.
+/// The built expression's own required columns (the runtime read set the read planners consume) are taken
+/// separately, from `getRequiredColumnsWithTypes` of the returned expression.
 static ExpressionAndSets buildExpressionAndSets(
     ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context, NamesAndTypesList * required_source_columns = nullptr)
 {
@@ -1188,7 +1194,7 @@ static void checkTTLGroupBySetForAggregateFunctions(
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
     auto ast = expression_ast->clone();
-    return buildExpressionAndSets(ast, expression_columns, context);
+    return buildExpressionAndSets(ast, expression_source_columns, context);
 }
 
 ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
@@ -1196,7 +1202,7 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     if (where_expression_ast)
     {
         auto ast = where_expression_ast->clone();
-        return buildExpressionAndSets(ast, where_expression_columns, context);
+        return buildExpressionAndSets(ast, where_expression_source_columns, context);
     }
 
     return {};
@@ -1234,7 +1240,8 @@ TTLDescription TTLDescription::getTTLFromAST(
         build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ false, /*dynamic_throw_on_type_mismatch=*/ false);
 
     auto ttl_ast = result.expression_ast->clone();
-    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context, &result.expression_columns).expression;
+    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context, &result.expression_source_columns).expression;
+    result.expression_columns = expression->getRequiredColumnsWithTypes();
 
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
 
@@ -1260,7 +1267,8 @@ TTLDescription TTLDescription::getTTLFromAST(
 
                 ASTPtr ast = where_expr_ast->clone();
                 where_expression
-                    = buildExpressionAndSets(ast, columns.getAllPhysical(), context, &result.where_expression_columns).expression;
+                    = buildExpressionAndSets(ast, columns.getAllPhysical(), context, &result.where_expression_source_columns).expression;
+                result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
         }
