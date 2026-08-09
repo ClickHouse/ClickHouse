@@ -3,6 +3,17 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/typeid_cast.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -132,6 +143,99 @@ static void forEachAggregateStateLeaf(const IColumn & column, const std::functio
         });
 }
 
+static bool hasAggregateStateLeaf(const IColumn & column)
+{
+    bool has_leaf = false;
+    forEachAggregateStateLeaf(column, [&](const ColumnAggregateFunction &) { has_leaf = true; });
+    return has_leaf;
+}
+
+/// Samples the compression of everything in a state-bearing column except the aggregate-state leaves
+/// themselves: the carriers' own payload - null maps, array offsets, sibling tuple elements, ... - and any
+/// state-free subtrees. The leaves are sized and compression-sampled from their serialized states in
+/// `recordColumns`, and Native-serializing the whole column would write every state a second time; but the
+/// non-state payload still needs a compression sample of its own, otherwise the leaf-only ratio is applied
+/// to it - e.g. `tuple(groupArrayState(x), s)` would estimate the sibling string's bytes with the states'
+/// compression ratio.
+static void sampleNonStatePartsCompression(
+    const ColumnPtr & column, const DataTypePtr & type, size_t & sample_bytes, size_t & compressed_bytes)
+{
+    /// The leaf itself is measured from its serialized states by the caller.
+    if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
+        return;
+
+    /// A state-free subtree is a plain column; serialize a sample of it as a whole.
+    if (!hasAggregateStateLeaf(*column))
+    {
+        const auto [sample, compressed] = estimateCompressedColumnSize(ColumnWithTypeAndName{column, type, {}});
+        sample_bytes += sample;
+        compressed_bytes += compressed;
+        return;
+    }
+
+    /// A carrier with state leaves somewhere below: take it apart and recurse, sampling its own payload.
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
+    {
+        sampleNonStatePartsCompression(const_column->getDataColumnPtr(), type, sample_bytes, compressed_bytes);
+        return;
+    }
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        {
+            sampleNonStatePartsCompression(
+                nullable_column->getNullMapColumnPtr(), std::make_shared<DataTypeUInt8>(), sample_bytes, compressed_bytes);
+            sampleNonStatePartsCompression(
+                nullable_column->getNestedColumnPtr(), nullable_type->getNestedType(), sample_bytes, compressed_bytes);
+            return;
+        }
+    }
+    else if (const auto * tuple_column = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+            tuple_type && tuple_type->getElements().size() == tuple_column->tupleSize())
+        {
+            for (size_t i = 0; i < tuple_column->tupleSize(); ++i)
+                sampleNonStatePartsCompression(
+                    tuple_column->getColumnPtr(i), tuple_type->getElements()[i], sample_bytes, compressed_bytes);
+            return;
+        }
+    }
+    else if (const auto * array_column = typeid_cast<const ColumnArray *>(column.get()))
+    {
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        {
+            sampleNonStatePartsCompression(
+                array_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), sample_bytes, compressed_bytes);
+            sampleNonStatePartsCompression(array_column->getDataPtr(), array_type->getNestedType(), sample_bytes, compressed_bytes);
+            return;
+        }
+    }
+    else if (const auto * map_column = typeid_cast<const ColumnMap *>(column.get()))
+    {
+        if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+        {
+            sampleNonStatePartsCompression(map_column->getNestedColumnPtr(), map_type->getNestedType(), sample_bytes, compressed_bytes);
+            return;
+        }
+    }
+    else if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(column.get()))
+    {
+        sampleNonStatePartsCompression(
+            sparse_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), sample_bytes, compressed_bytes);
+        sampleNonStatePartsCompression(sparse_column->getValuesPtr(), type, sample_bytes, compressed_bytes);
+        return;
+    }
+
+    /// A state-bearing carrier this walk does not know how to take apart (or whose type does not match its
+    /// structure): count its own payload as incompressible rather than applying the leaves' ratio to it.
+    size_t leaves_byte_size = 0;
+    forEachAggregateStateLeaf(*column, [&](const ColumnAggregateFunction & leaf) { leaves_byte_size += leaf.byteSize(); });
+    const size_t carrier_bytes = column->byteSize() - leaves_byte_size;
+    sample_bytes += carrier_bytes;
+    compressed_bytes += carrier_bytes;
+}
+
 bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
 {
     // Empty blocks produced during planning, when we calculate output headers. Skip them.
@@ -217,9 +321,15 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
         for (size_t i = 0; i < cols.size(); ++i)
         {
             /// Columns holding aggregate-state leaves are measured above, from the same sample as their
-            /// uncompressed figure; serializing them here would write every state a second time.
+            /// uncompressed figure; serializing them whole here would write every state a second time. But
+            /// the leaves' sample says nothing about the rest of such a column - the carriers' own payload
+            /// and any non-state siblings, which `plain_bytes` counts - so those parts get a compression
+            /// sample of their own instead of inheriting the leaf-only ratio.
             if (col_has_states[i])
+            {
+                sampleNonStatePartsCompression(cols[i].column, cols[i].type, sample_bytes, compressed_bytes);
                 continue;
+            }
             auto [sample, compressed] = estimateCompressedColumnSize(cols[i]);
             sample_bytes += sample;
             compressed_bytes += compressed;

@@ -3,10 +3,12 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Chunk.h>
@@ -139,6 +141,66 @@ TEST(RuntimeDataflowStatisticsStateSampling, WrappedStatesAreSizedFromSerialized
         updater.recordOutputChunk(chunk, header);
     }
 
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact.compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact.compressed_bytes * 2);
+}
+
+/// A state-bearing carrier can also hold non-state payload - e.g. `SELECT tuple(groupArrayState(x), s)`
+/// emits a `ColumnTuple` around a state leaf and a plain sibling string. The leaves' serialized-state
+/// sample says nothing about the sibling's compressibility, so the sibling needs a compression sample of
+/// its own: with only the (incompressible) states sampled, a highly compressible sibling that dominates
+/// the column would be estimated at the leaves' ratio of ~1, overstating `output_bytes` by the sibling's
+/// real compression ratio.
+TEST(RuntimeDataflowStatisticsStateSampling, MixedWrapperSamplesNonStatePayloadCompression)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 512;
+    constexpr size_t giant_state_row = 511;
+    constexpr size_t elements_in_giant_state = 100000;
+    /// The sibling string column dwarfs the states uncompressed and vanishes compressed.
+    constexpr size_t string_size = 10240;
+
+    auto states_arena = std::make_shared<Arena>();
+    AggregateFunctionPtr function;
+    auto column = createSkewedGroupArrayColumn(rows, giant_state_row, elements_in_giant_state, function, states_arena.get());
+    column->addArena(states_arena);
+
+    const auto exact = column->sampledStateSizes(rows);
+    ASSERT_EQ(exact.bytes, exact.sample_bytes);
+    ASSERT_GT(exact.compressed_bytes, elements_in_giant_state * sizeof(UInt64) / 2);
+
+    auto string_column = ColumnString::create();
+    const std::string value(string_size, 'a');
+    for (size_t row = 0; row < rows; ++row)
+        string_column->insertData(value.data(), value.size());
+    /// Uncompressed the sibling dominates the states by far more than the 2x margin asserted below, so an
+    /// estimate that applies the states' ratio of ~1 to it lands several-fold above the upper bound.
+    ASSERT_GT(string_column->byteSize(), exact.compressed_bytes * 4);
+
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+
+    const size_t cache_key = 0x111985 + 2;
+
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+
+        Block header;
+        header.insert(ColumnWithTypeAndName{
+            nullptr,
+            std::make_shared<DataTypeTuple>(DataTypes{state_type, std::make_shared<DataTypeString>()}),
+            "wrapped_state_and_string"});
+
+        Columns tuple_elements;
+        tuple_elements.emplace_back(std::move(column));
+        tuple_elements.emplace_back(std::move(string_column));
+        Chunk chunk(Columns{ColumnTuple::create(std::move(tuple_elements))}, rows);
+        updater.recordOutputChunk(chunk, header);
+    }
+
+    /// The sibling compresses to almost nothing, so the whole column's compressed size is the states'.
     const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
     ASSERT_TRUE(stats.has_value());
     EXPECT_GE(stats->output_bytes, exact.compressed_bytes / 2);
