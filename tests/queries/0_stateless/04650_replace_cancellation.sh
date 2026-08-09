@@ -29,7 +29,9 @@ DEADLINE=$(to_seconds "$DEADLINE_MS")
 
 # $1 = label, $2 = query, $3 = overflow mode (default "throw"), $4 = query id (default none),
 # $5 = "fold" if the call is constant-folded (no pipeline), empty for a pipeline case,
-# $6 = the deadline in milliseconds (default `DEADLINE_MS`)
+# $6 = the deadline in milliseconds (default `DEADLINE_MS`),
+# $7 = the allowance in milliseconds (default `SLACK_MS`). A case whose work the memory profile caps
+#      cannot outrun the shared allowance, so it states its own: `$6 + $7` is what bounds it.
 #
 # Regexp compilation is pinned off for every case but the one that is about the compiled matcher: the
 # compiled-regexp cache is server-global with a compile threshold of 3, and this test runs up to 5 times,
@@ -45,8 +47,9 @@ DEADLINE=$(to_seconds "$DEADLINE_MS")
 # inconclusive rather than passed.
 run() {
     local label="$1" query="$2" mode="${3:-throw}" query_id="${4:-}" shape="${5:-}" deadline_ms="${6:-$DEADLINE_MS}"
-    local output start_ms elapsed_ms wall_ms
-    local bound=$((deadline_ms + SLACK_MS))
+    local slack_ms="${7:-$SLACK_MS}"
+    local output start_ms elapsed_ms wall_ms code
+    local bound=$((deadline_ms + slack_ms))
     start_ms=$(date +%s%N)
     # shellcheck disable=SC2086
     output=$(timeout 600 ${CLICKHOUSE_CLIENT} --max_execution_time "$(to_seconds "$deadline_ms")" --timeout_overflow_mode "$mode" \
@@ -63,7 +66,14 @@ run() {
             echo "$label: OVERSHOT ${elapsed_ms} ms"
         fi
     elif ! printf '%s' "$output" | grep -q TIMEOUT_EXCEEDED; then
-        echo "$label: no timeout"
+        # Neither asserts anything about the checkpoint, and they need different repairs: a completion
+        # means the case is too small for its deadline, an error means it left the memory profile.
+        code=$(printf '%s' "$output" | grep -oP 'Code: \K[0-9]+' | head -1)
+        if [ -n "$code" ]; then
+            echo "$label: FAILED WITH CODE $code INSTEAD OF THE DEADLINE"
+        else
+            echo "$label: FINISHED INSIDE THE DEADLINE"
+        fi
     elif [ "$shape" = fold ]; then
         # Wall clock covers the whole client call, not server time alone, hence case 19's allowance.
         if [ "$wall_ms" -lt "$((bound * 2))" ]; then
@@ -123,8 +133,12 @@ run "expanding replacement" "SELECT $EXPAND FORMAT Null" throw "" fold
 #    deadline on the slowest build, or the query is stopped before the function is entered and the case
 #    passes whatever the function does. The value is kept small and the cost carried by the replacement
 #    length instead, which is charged inside the loop.
+#    What the case can offer is capped by what the output may occupy: one more step up the result
+#    buffer's doubling ladder lands past the 5GiB profile. So the work cannot be raised to clear the
+#    shared allowance and the case takes its own, which the deadline shrinks along with the doubling.
 run "regexp fallback to literal" \
-    "SELECT length(replaceRegexpAll(materialize(repeat(repeat('ab', 1000000), 60)), 'ab', 'YZYZYZYZYZYZYZYZYZYZYZYZYZYZYZYZ')) FROM numbers(1) FORMAT Null"
+    "SELECT length(replaceRegexpAll(materialize(repeat(repeat('ab', 1000000), 60)), 'ab', 'YZYZYZYZYZYZYZYZYZYZYZYZYZYZYZYZ')) FROM numbers(1) FORMAT Null" \
+    throw "" "" "$((SCALE * 200))" "$((SCALE * 300))"
 
 # 7. The same work reached directly through replaceAll rather than through that shortcut.
 #    Split across independent folds like case 5, and for the same two reasons: building one 600MB constant
@@ -350,5 +364,9 @@ esac
 #     The row count bounds that unavoidable prologue, which the deadline covers but this fix cannot
 #     interrupt: at 400000 rows it alone outlasted the deadline on a thread-sanitizer build, so the query
 #     was stopped before the function was entered and the case reported the same time either way.
+#     The row count also bounds the result buffer, which doubles: the block is one call, so at 50000 rows
+#     the step past the 2GiB needed asks 4GiB on top and the query died of the memory limit, not the
+#     deadline. 20000 rows keeps the peak a third of the profile; the work falls with it, so do the times.
 run "fixed string literal" \
-    "SELECT sum(length(replaceAll(toFixedString(materialize(repeat('b', 1600)), 1600), 'b', 'YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY'))) FROM numbers(50000) SETTINGS max_block_size = 50000"
+    "SELECT sum(length(replaceAll(toFixedString(materialize(repeat('b', 1600)), 1600), 'b', 'YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY'))) FROM numbers(20000) SETTINGS max_block_size = 20000" \
+    throw "" "" "$((SCALE * 100))" "$((SCALE * 150))"
