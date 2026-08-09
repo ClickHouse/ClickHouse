@@ -3495,8 +3495,6 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
 
     LOG_INFO(log, "Will clone part from shard {} and replica {}", entry.source_shard, replica);
 
-    MutableDataPartPtr part;
-
     {
         auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
         String source_replica_path = entry.source_shard + "/replicas/" + replica;
@@ -3521,7 +3519,8 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
             return fetched_part;
         };
 
-        part = get_part();
+        /// Declared after the claim, so the staging directory is removed before its name is released.
+        MutableDataPartPtr part = get_part();
 
         /// `ALTER TABLE ... DETACH` claims a detached name under `lockParts`, so holding it here
         /// makes the two mutually exclusive. The scope is the probe, the occupant's checksum read
