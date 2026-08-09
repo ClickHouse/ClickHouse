@@ -648,6 +648,51 @@ std::unordered_set<String> parseFreshnessCheckedTables(const String & serialized
     return tables;
 }
 
+String serializeMergeChildTableSets(const std::vector<std::vector<QualifiedTableName>> & table_sets)
+{
+    String serialized;
+    for (const auto & table_set : table_sets)
+    {
+        /// The names are sorted so that equal sets serialize identically however they were enumerated.
+        std::set<String> names;
+        for (const auto & table : table_set)
+            names.insert(freshnessCheckedTableName(table));
+        for (const auto & name : names)
+        {
+            serialized += name;
+            if (name != *names.rbegin())
+                serialized += ',';
+        }
+        /// `;` terminates (not separates) every set: an empty string is "no sets", while a single
+        /// `;` is one empty set - a `Merge` table that currently matches no tables at all.
+        serialized += ';';
+    }
+    return serialized;
+}
+
+std::vector<std::set<String>> parseMergeChildTableSets(const String & serialized)
+{
+    std::vector<std::set<String>> table_sets;
+    for (size_t pos = 0; pos < serialized.size();)
+    {
+        size_t semicolon = serialized.find(';', pos);
+        if (semicolon == String::npos)
+            semicolon = serialized.size();
+
+        std::set<String> names;
+        for (size_t name_pos = pos; name_pos < semicolon;)
+        {
+            size_t comma = std::min(serialized.find(',', name_pos), semicolon);
+            names.emplace(serialized.substr(name_pos, comma - name_pos));
+            name_pos = comma + 1;
+        }
+        table_sets.push_back(std::move(names));
+
+        pos = semicolon + 1;
+    }
+    return table_sets;
+}
+
 /// Walk the query tree looking for a UNION node whose every child query
 /// ultimately reads from a table eligible for parallel replicas.
 /// Returns the first such UNION node, or nullptr if none found.

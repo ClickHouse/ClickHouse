@@ -97,6 +97,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_upper;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
+    extern const SettingsBool parallel_replicas_allow_merge_tables;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool skip_unavailable_shards;
@@ -878,6 +879,16 @@ public:
         return {tables.begin(), tables.end()};
     }
 
+    /// Whether the walk saw a `Merge` table (or `merge` table function) leaf. The internal
+    /// settings that make replicas fail closed on `Merge`-table disagreements are shipped only
+    /// for such queries: they are marked important, so an older replica rejects a query carrying
+    /// them instead of silently re-planning without them, and queries that read no `Merge` table
+    /// must not pay that price on a cluster with mixed versions.
+    bool hasMergeStorage() const { return !merge_child_table_sets.empty(); }
+
+    /// The child table sets of every `Merge` leaf, for `parallel_replicas_merge_child_tables`.
+    const std::vector<std::vector<QualifiedTableName>> & mergeChildTableSets() const { return merge_child_table_sets; }
+
 private:
     void visitQueryTree(const IQueryTreeNode * root)
     {
@@ -917,6 +928,7 @@ private:
         {
             auto child_tables = merge_storage->getReplicatedChildTableNames(context);
             tables.insert(child_tables.begin(), child_tables.end());
+            merge_child_table_sets.push_back(merge_storage->getChildTableNames(context));
         }
         else if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
         {
@@ -948,6 +960,7 @@ private:
     bool enumerate_view_sources;
     std::set<QualifiedTableName> tables;
     std::set<const IStorage *> visited_storages;
+    std::vector<std::vector<QualifiedTableName>> merge_child_table_sets;
 };
 
 void executeQueryWithParallelReplicas(
@@ -971,15 +984,6 @@ void executeQueryWithParallelReplicas(
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
 
-    /// Every replica plans the query it receives for itself and designates a table expression of it for
-    /// coordinated reading. Tell them which one this initiator designated - the eligibility of a `Merge`
-    /// table expression depends on the set of its underlying tables, so a replica can arrive at a
-    /// different designation, and would then read one table only partially and another one in full.
-    if (query_tree)
-        new_context->setSetting(
-            "parallel_replicas_designated_table",
-            parallelReplicasDesignatedTableName(findTableDesignatedForParallelReplicas(query_tree)));
-
     /// A replica lagging behind by more than `max_replica_delay_for_distributed_queries` must not
     /// participate in coordinated reading when falling back to stale replicas is switched off. The
     /// fragment sent to the replicas can read several replicated tables (a `Merge` table stands for
@@ -987,6 +991,15 @@ void executeQueryWithParallelReplicas(
     /// too), so check the freshness of all of them, not only of the table expression designated
     /// for coordinated reading.
     std::vector<QualifiedTableName> tables_to_check;
+    /// Whether the query reads through a `Merge` table (or the `merge` table function) with the
+    /// feature enabled. The internal settings below defend against the set of underlying tables
+    /// of a `Merge` table differing between the replicas; they are marked important, so an older
+    /// replica that does not know them rejects the query instead of silently re-planning without
+    /// them and reopening the very disagreements they close. Queries that read no `Merge` table
+    /// do not consume the settings on the replicas and must keep working with older replicas in
+    /// a cluster with mixed versions - do not ship the settings for them.
+    bool uses_merge_tables = false;
+    std::vector<std::vector<QualifiedTableName>> merge_child_table_sets;
     if (query_tree)
     {
         /// Enumerating the sources of a view requires resolving its stored query, so do it only
@@ -994,13 +1007,25 @@ void executeQueryWithParallelReplicas(
         const auto & settings_ref = context->getSettingsRef();
         const bool exclude_stale_replicas = !settings_ref[Setting::fallback_to_stale_replicas_for_distributed_queries]
             && settings_ref[Setting::max_replica_delay_for_distributed_queries] > 0;
-        tables_to_check = ReplicatedTablesToCheckCollector(context, /*enumerate_view_sources_=*/ exclude_stale_replicas).collect(query_tree);
+        ReplicatedTablesToCheckCollector collector(context, /*enumerate_view_sources_=*/ exclude_stale_replicas);
+        tables_to_check = collector.collect(query_tree);
+        uses_merge_tables = collector.hasMergeStorage() && settings_ref[Setting::parallel_replicas_allow_merge_tables];
+        merge_child_table_sets = collector.mergeChildTableSets();
+
+        /// Every replica plans the query it receives for itself and designates a table expression of it for
+        /// coordinated reading. Tell them which one this initiator designated - the eligibility of a `Merge`
+        /// table expression depends on the set of its underlying tables, so a replica can arrive at a
+        /// different designation, and would then read one table only partially and another one in full.
+        if (uses_merge_tables)
+            new_context->setSetting(
+                "parallel_replicas_designated_table",
+                parallelReplicasDesignatedTableName(findTableDesignatedForParallelReplicas(query_tree)));
 
         /// The set of tables matched by a `Merge` table is enumerated again at reading time and may
         /// have grown by then. Tell the replicas which replicated tables were actually checked when
         /// the replicas were selected, so that reading a replicated table absent from this snapshot
         /// fails closed instead of letting a replica that may be lagging behind on it serve it.
-        if (exclude_stale_replicas)
+        if (uses_merge_tables && exclude_stale_replicas)
             new_context->setSetting("parallel_replicas_freshness_checked_tables", serializeFreshnessCheckedTables(tables_to_check));
     }
 
@@ -1095,6 +1120,17 @@ void executeQueryWithParallelReplicas(
     {
         chassert(max_replicas_to_use <= connection_pools.size());
         connection_pools.resize(max_replicas_to_use);
+
+        /// Without a local plan the reading coordinator has no pinned snapshot replica: every
+        /// underlying table of a `Merge` table is announced by whichever replicas matched it, so a
+        /// child table that this initiator matched but no participating replica did would never be
+        /// announced at all, and its rows would silently vanish from the result. Tell the replicas
+        /// which child sets this initiator saw, so a replica whose `Merge` table resolves to a
+        /// different set fails closed instead (with a local plan this is not needed: the coordinator
+        /// ignores streams the local replica did not announce, and the local replica reads them in
+        /// full by itself).
+        if (uses_merge_tables)
+            new_context->setSetting("parallel_replicas_merge_child_tables", serializeMergeChildTableSets(merge_child_table_sets));
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,

@@ -119,6 +119,13 @@ public:
     /// (`max_replica_delay_for_distributed_queries`).
     std::vector<QualifiedTableName> getReplicatedChildTableNames(const ContextPtr & query_context) const;
 
+    /// Full names of every underlying table this table currently matches. The initiator of a
+    /// parallel replicas query without a local plan passes them to the replicas
+    /// (`parallel_replicas_merge_child_tables`): a replica whose child set differs fails closed,
+    /// because a child table matched by no participating replica would never be announced to the
+    /// reading coordinator and its rows would silently vanish from the result.
+    std::vector<QualifiedTableName> getChildTableNames(const ContextPtr & query_context) const;
+
     /// The database name (or regexp) the underlying tables are looked up in. For the one-argument
     /// form of the `merge` table function this is the current database resolved at creation time.
     const String & getSourceDatabaseNameOrRegexp() const { return database_name_or_regexp.source_database_name_or_regexp; }

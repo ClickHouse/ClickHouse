@@ -5,6 +5,7 @@
 
 #include <list>
 #include <memory>
+#include <set>
 #include <unordered_set>
 #include <vector>
 
@@ -50,6 +51,17 @@ String parallelReplicasDesignatedTableName(const IQueryTreeNode * table_expressi
 String freshnessCheckedTableName(const QualifiedTableName & name);
 String serializeFreshnessCheckedTables(const std::vector<QualifiedTableName> & tables);
 std::unordered_set<String> parseFreshnessCheckedTables(const String & serialized);
+
+/// Serialization of the child table sets of the `Merge` tables (and `merge` table functions) the
+/// query reads, one set per `Merge` table expression, for the internal setting
+/// `parallel_replicas_merge_child_tables`. When the initiator builds no local plan, the reading
+/// coordinator has no pinned snapshot replica and a child table matched by no participating
+/// replica would never be announced, so its rows would silently vanish from the result. A replica
+/// whose `Merge` table resolves to a child set equal to none of the initiator's sets fails closed
+/// instead. Each set is serialized as the `freshnessCheckedTableName` names joined by `,` and
+/// terminated by `;`, so an empty string means "no sets" while `;` alone is a single empty set.
+String serializeMergeChildTableSets(const std::vector<std::vector<QualifiedTableName>> & table_sets);
+std::vector<std::set<String>> parseMergeChildTableSets(const String & serialized);
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;

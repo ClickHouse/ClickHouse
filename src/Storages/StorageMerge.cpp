@@ -78,6 +78,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Functions/FunctionFactory.h>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -94,6 +96,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsString parallel_replicas_freshness_checked_tables;
+    extern const SettingsString parallel_replicas_merge_child_tables;
 }
 
 namespace MergeTreeSetting
@@ -378,6 +381,26 @@ std::vector<QualifiedTableName> StorageMerge::getReplicatedChildTableNames(const
         [&](const StoragePtr & table)
         {
             if (table && table->supportsReplication())
+                names.push_back(table->getStorageID().getQualifiedName());
+
+            /// Never stop early: every matching table has to be looked at.
+            return false;
+        });
+
+    return names;
+}
+
+std::vector<QualifiedTableName> StorageMerge::getChildTableNames(const ContextPtr & query_context) const
+{
+    std::vector<QualifiedTableName> names;
+
+    traverseTablesUntilImpl(
+        query_context,
+        this,
+        database_name_or_regexp,
+        [&](const StoragePtr & table)
+        {
+            if (table)
                 names.push_back(table->getStorageID().getQualifiedName());
 
             /// Never stop early: every matching table has to be looked at.
@@ -818,6 +841,42 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
     {
         const auto & settings = context->getSettingsRef();
 
+        /// The initiator sets the internal settings consumed below on the context it plans the
+        /// local plan and the shipped query with; the context this step was created with predates
+        /// that.
+        const auto & initiator_settings = parallel_replicas_local_plan_info
+            ? parallel_replicas_local_plan_info->context->getSettingsRef()
+            : settings;
+
+        /// When the initiator builds no local plan, the reading coordinator has no pinned snapshot
+        /// replica: every underlying table is announced by whichever replicas matched it, so a
+        /// child table that the initiator matched but no participating replica did would never be
+        /// announced at all, and its rows would silently vanish from the result (with a local plan
+        /// the initiator itself announces every child and reads the ones nobody else announced in
+        /// full). The initiator passes the child sets of the `Merge` tables it read - one set per
+        /// `Merge` table expression of the query, this table's own set is not identified among
+        /// them - so require the set of tables this replica matches to be equal to one of them.
+        /// The comparison is of the raw matched sets, before the pruning of children by a filter
+        /// on `_database`/`_table` (`getSelectedTables`), which is derived on every node from the
+        /// same query.
+        const auto initiator_child_table_sets = parseMergeChildTableSets(initiator_settings[Setting::parallel_replicas_merge_child_tables]);
+        if (!initiator_child_table_sets.empty())
+        {
+            std::set<String> child_tables_here;
+            for (const auto & child_name : assert_cast<const StorageMerge &>(*storage_merge).getChildTableNames(context))
+                child_tables_here.insert(freshnessCheckedTableName(child_name));
+
+            if (std::find(initiator_child_table_sets.begin(), initiator_child_table_sets.end(), child_tables_here)
+                == initiator_child_table_sets.end())
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot coordinate reading from table {} with parallel replicas: the set of its underlying "
+                    "tables ({}) differs from every set the initiator read, so it changed after the query was "
+                    "planned, or differs on this replica",
+                    storage_merge->getStorageID().getNameForLogs(),
+                    fmt::join(child_tables_here, ", "));
+        }
+
         /// The initiator selected the replicas against the replicated tables enumerated at planning
         /// time: a replicated table that started matching after that was never checked for
         /// replication delay, so a replica already admitted to coordinated reading may be lagging
@@ -826,14 +885,7 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
             && settings[Setting::max_replica_delay_for_distributed_queries] > 0;
         std::unordered_set<String> freshness_checked_tables;
         if (exclude_stale_replicas)
-        {
-            /// The initiator sets the setting on the context it plans the local plan and the shipped
-            /// query with; the context this step was created with predates that.
-            const auto & initiator_settings = parallel_replicas_local_plan_info
-                ? parallel_replicas_local_plan_info->context->getSettingsRef()
-                : settings;
             freshness_checked_tables = parseFreshnessCheckedTables(initiator_settings[Setting::parallel_replicas_freshness_checked_tables]);
-        }
 
         for (const auto & [database_name, table, _, table_name] : selected_tables)
         {
