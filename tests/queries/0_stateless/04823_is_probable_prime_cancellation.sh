@@ -44,7 +44,7 @@ run() {
     local query_id="04823_${label// /_}_${CLICKHOUSE_DATABASE}" output elapsed_ms rows breaks
     local bound=$((deadline_ms + SLACK_MS))
     # shellcheck disable=SC2086
-    output=$(timeout 900 ${CLICKHOUSE_CLIENT} --query_id "$query_id" \
+    output=$(timeout 600 ${CLICKHOUSE_CLIENT} --query_id "$query_id" \
         --max_execution_time "$(to_seconds "$deadline_ms")" --timeout_overflow_mode "$mode" \
         --log_profile_events 1 --max_threads 1 \
         --query "$query" 2>&1)
@@ -117,17 +117,26 @@ run "cheap exit budget" \
 
 # 5. KILL QUERY, a different channel from the elapsed-time limit: it sets the killed flag and surfaces
 #    through a separate branch of the same check. No time limit is set, so only the kill can stop the query,
-#    and what is asserted is how long the synchronous kill waits.
+#    and what is asserted is how long the synchronous kill waits. `KILL ... SYNC` polls until the target
+#    leaves the process list, so an unfixed server holds it for the rest of the block and then still
+#    reports a number rather than hanging.
+#    The row count is sized against the FASTEST build rather than this one, because the bound scales with
+#    the sanitizer while this work does not: an instrumented build is optimized where a debug build is
+#    not, so a row costs 42 ms there against 82 ms here while the bound doubles. 2000 rows keeps an
+#    unfixed block at 5x the bound on the tighter of the two. The fixed side is independent of the count,
+#    since it notices the flag within one row.
 KILL_BOUND=$((SCALE * 8000))
 kill_id="04823_kill_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$kill_id" --max_threads 1 \
-    --query "SELECT sum(isProbablePrime(toUInt256(materialize('$P256')), 256)) FROM numbers(1000000) SETTINGS max_block_size = 1000000" \
+    --query "SELECT sum(isProbablePrime(materialize(toUInt256('$P256')), 256)) FROM numbers(2000) SETTINGS max_block_size = 2000" \
     > /dev/null 2>&1 &
 kill_bg=$!
 
-# Waiting for the query to be RUNNING rather than merely visible: `ProcessList` makes it visible before the
-# executor is attached, and `addPipelineExecutor` serves a kill that won that race through the generic path,
-# so such a kill would return promptly even unfixed.
+# Waiting for the query to be RUNNING rather than merely visible, because two windows serve a kill through
+# the generic path and would return promptly even unfixed: `ProcessList` publishes the query before the
+# executor is attached, and `ExpressionActions` checks cancellation after every action, so a conversion
+# done per row in the prologue is interruptible on its own. `materialize` wraps the finished `UInt256`
+# rather than the string, which keeps that prologue a copy rather than one parse per row.
 kill_seen=0
 for _ in $(seq 1 200); do
     # shellcheck disable=SC2086
@@ -139,10 +148,11 @@ for _ in $(seq 1 200); do
 done
 
 # `KILL ... SYNC` polls without a deadline of its own, so it is given a query id and a hard timeout: a
-# regression must fail with a readable verdict instead of hanging until the runner's own limit.
+# regression must fail with a readable verdict instead of hanging. The runner arms its own alarm at
+# `int(timeout * 1.1) + 60`, 720 s by default, so a guard above that would never be the one to fire.
 sync_id="${kill_id}_sync"
 # shellcheck disable=SC2086
-timeout 900 ${CLICKHOUSE_CLIENT} --query_id "$sync_id" --query "KILL QUERY WHERE query_id = '$kill_id' SYNC" > /dev/null 2>&1
+timeout 600 ${CLICKHOUSE_CLIENT} --query_id "$sync_id" --query "KILL QUERY WHERE query_id = '$kill_id' SYNC" > /dev/null 2>&1
 wait $kill_bg 2>/dev/null
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
