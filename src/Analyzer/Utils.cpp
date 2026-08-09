@@ -947,8 +947,9 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     const auto & name = function_node->getFunctionName();
     if (function_node->isOrdinaryFunction())
     {
-        // Special case, don't need to be resolved. It must be processed by GroupingFunctionsResolvePass.
-        if (name == "grouping")
+        // Special case, don't need to be resolved.
+        // grouping is processed by GroupingFunctionsResolvePass, exists is resolved by a dedicated path.
+        if (name == "grouping" || name == "exists")
             return;
         auto function = FunctionFactory::instance().get(name, context);
         function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
