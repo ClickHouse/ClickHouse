@@ -35,6 +35,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -69,6 +70,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
@@ -92,6 +94,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool share_nested_offsets;
 }
 
+namespace FailPoints
+{
+    extern const char storage_merge_create_children_plans_pause[];
+}
+
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
@@ -101,6 +108,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
@@ -522,7 +530,13 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+        /// The source database may have been dropped (`UNKNOWN_DATABASE`), or it may be the internal
+        /// database of temporary tables, which `getDatabaseIterator` refuses to enumerate
+        /// (`DATABASE_ACCESS_DENIED`). Neither should prevent resolving the table's own metadata:
+        /// the virtual columns of the source tables are a best-effort enrichment, and an actual read
+        /// still throws in `getDatabaseIterators`. In particular, loading a stored table definition
+        /// (`ATTACH`, backup `RESTORE`, replicated-database replay) validates the storage through here.
+        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::DATABASE_ACCESS_DENIED)
             throw;
     }
 
@@ -687,6 +701,11 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
 
     selected_tables = getSelectedTables(context);
     child_plans = createChildrenPlans(query_info);
+
+    /// A `'break'`-mode deadline stops that loop early, so drop the tables left unplanned to keep
+    /// `selected_tables` aligned 1:1 with `child_plans` for every reader.
+    if (child_plans->size() < selected_tables.size())
+        selected_tables.resize(child_plans->size());
 }
 
 std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQueryInfo & query_info_) const
@@ -751,8 +770,12 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     {
         /// Building a plan (including query analysis) for every child table can take a long time when
         /// the Merge table matches many tables, so honor `KILL QUERY` and `max_execution_time` between tables.
-        if (query_status)
-            query_status->checkTimeLimit();
+        /// `checkTimeLimit` throws for `KILL QUERY` and `timeout_overflow_mode = 'throw'`; for `'break'` it
+        /// returns false instead, and the caller then truncates `selected_tables` to the plans built here.
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
+        FailPointInjection::pauseFailPoint(FailPoints::storage_merge_create_children_plans_pause);
 
         const auto & storage = std::get<1>(table);
 
@@ -897,6 +920,20 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                         cached_query_info.query = cached_query_info.query->clone();
                     query_info_cache[structure_key] = {std::move(cached_query_info), column_names_as_aliases, is_smallest_column_requested, aliases};
                 }
+            }
+
+            /// Filter DAGs can be modified by optimizations, so each child must own its own copy:
+            /// otherwise optimizing one child's plan invalidates the sibling headers that were
+            /// derived from the shared object.
+            if (modified_query_info.prewhere_info)
+                modified_query_info.prewhere_info = std::make_shared<PrewhereInfo>(modified_query_info.prewhere_info->clone());
+            if (modified_query_info.row_level_filter)
+            {
+                auto row_level_filter_copy = std::make_shared<FilterDAGInfo>();
+                row_level_filter_copy->actions = modified_query_info.row_level_filter->actions.clone();
+                row_level_filter_copy->column_name = modified_query_info.row_level_filter->column_name;
+                row_level_filter_copy->do_remove_column = modified_query_info.row_level_filter->do_remove_column;
+                modified_query_info.row_level_filter = std::move(row_level_filter_copy);
             }
 
             if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
@@ -1571,6 +1608,12 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
 
 DatabaseTablesIteratorPtr StorageMerge::DatabaseNameOrRegexp::getDatabaseIterator(const String & database_name, ContextPtr local_context) const
 {
+    /// The internal database of temporary tables holds the temporary tables of all sessions and all users,
+    /// and it is not covered by access control, so direct access to it is denied, see `DatabaseCatalog::tryGetDatabaseAndTable`.
+    if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        throw Exception(
+            ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
+
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     auto table_name_match = [this, database_name](const String & table_name_) -> bool
@@ -1613,6 +1656,10 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
 
         for (const auto & db : databases)
         {
+            /// A regexp is not an explicit request for the internal database of temporary tables, so it is skipped silently.
+            if (db.first == DatabaseCatalog::TEMPORARY_DATABASE)
+                continue;
+
             if (source_database_regexp->match(db.first))
                 database_table_iterators.emplace_back(getDatabaseIterator(db.first, local_context));
         }
@@ -1901,7 +1948,12 @@ std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() cons
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::UNKNOWN_DATABASE)
+        /// The column sizes are a best-effort introspection (`system.columns`). The source database
+        /// may have been dropped (`UNKNOWN_DATABASE`), or it may be the internal database of temporary
+        /// tables, which `getDatabaseIterator` refuses to enumerate (`DATABASE_ACCESS_DENIED`) - such a
+        /// table can no longer be created, but a pre-existing definition still loads (`ATTACH`, backup
+        /// `RESTORE`, replicated-database replay) and must not break `system.columns`.
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::DATABASE_ACCESS_DENIED)
             return std::nullopt;
         throw;
     }
@@ -1982,6 +2034,21 @@ void registerStorageMerge(StorageFactory & factory)
             engine_args[0] = database_ast;
 
         String source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
+
+        /// With an explicit column list, `CREATE` (or a full-definition `ATTACH`, which is CREATE-like user input)
+        /// does not need schema inference and would not read the source tables, so the unusable table definition
+        /// would be stored; deny it right away, the same way as reading does, see `DatabaseNameOrRegexp::getDatabaseIterator`.
+        /// Only fresh user-supplied definitions are denied. Loads of previously stored metadata (server startup,
+        /// short-syntax `ATTACH`) and replays of definitions that already exist elsewhere (`SECONDARY_CREATE`:
+        /// replicated-database DDL replay, backup `RESTORE`) stay loadable, so a table created before this check
+        /// existed can still be restored or materialized on a new replica. Reading from such a table is denied
+        /// anyway, so unlike `StorageDistributed` there is nothing a restoring user could reach through it.
+        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        if (!is_regexp && source_database_name_or_regexp == DatabaseCatalog::TEMPORARY_DATABASE
+            && fresh_user_definition)
+            throw Exception(
+                ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
 
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
