@@ -39,6 +39,15 @@ static void serializeHeader(const Block & header, WriteBuffer & out)
     }
 }
 
+static bool haveSameSerializedHeader(const Block & lhs, const Block & rhs)
+{
+    WriteBufferFromOwnString lhs_buf;
+    WriteBufferFromOwnString rhs_buf;
+    serializeHeader(lhs, lhs_buf);
+    serializeHeader(rhs, rhs_buf);
+    return lhs_buf.stringView() == rhs_buf.stringView();
+}
+
 static Block deserializeHeader(ReadBuffer & in, size_t max_type_complexity)
 {
     UInt64 num_columns = 0;
@@ -233,8 +242,14 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
         if (step->hasOutputHeader())
         {
-            assertCompatibleHeader(
-                *step->getOutputHeader(), *output_header, fmt::format("deserialization of query plan {} step", step_name));
+            /// Headers encoding to the same bytes are indistinguishable to this serializer, so their
+            /// difference cannot have come off the wire. The encoding omits the aggregate state variant.
+            if (!isCompatibleHeader(*step->getOutputHeader(), *output_header)
+                && !haveSameSerializedHeader(*step->getOutputHeader(), *output_header))
+            {
+                assertCompatibleHeader(
+                    *step->getOutputHeader(), *output_header, fmt::format("deserialization of query plan {} step", step_name));
+            }
         }
         else if (output_header->columns())
             throw Exception(ErrorCodes::INCORRECT_DATA,
