@@ -14,6 +14,9 @@ CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs"
 # Enough GETs to prove the merge is inside the retry loop rather than merely slow.
 ATTEMPTS_TO_ACCRUE = 20
 
+# The window oracle (b) must observe in full before it may pass.
+SETTLED_WINDOW_SECONDS = 15
+
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -156,14 +159,16 @@ def test_stop_merges_cancels_s3_read(cluster, broken_s3, replicated):
 
     # Oracle (b): and it stops issuing requests. (a) alone could pass on a slow but finite
     # read; (b) alone could pass on a merge that never started.
+    # Every sample across the whole window must hold, so a pass cannot be granted by the first
+    # one: `wait_for` would return on its initial evaluation, before any request had time to land.
     settled = get_attempts(node)
-    assert wait_for(
-        node,
-        ATTEMPTS_QUERY,
-        lambda v: int(v or 0) - settled <= 2,
-        attempts=15,
-        sleep_time=1,
-    ), "the read kept retrying after the merge left system.merges"
+    for _ in range(SETTLED_WINDOW_SECONDS):
+        time.sleep(1)
+        attempts = get_attempts(node)
+        assert attempts - settled <= 2, (
+            f"the read kept retrying after the merge left system.merges "
+            f"({attempts - settled} requests since it was cancelled)"
+        )
 
     broken_s3.reset()
     optimize.get_answer_and_error()
