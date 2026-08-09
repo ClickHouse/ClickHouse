@@ -265,17 +265,40 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   * `FillingRow::updateConstraintsWithStalenessRow` whenever it comes first, so with STALENESS the sequence can stop
   * arbitrarily far below TO and nothing can be proven about TO either.
   */
-static std::optional<Int64> fillValueRequiredToFitColumnType(const FillColumnDescription & descr, int direction)
+static std::optional<Field> fillValueRequiredToFitColumnType(const FillColumnDescription & descr, int direction)
 {
-    /// Every column type reaching this point is filled through Int64: the wider Int128/Int256 columns are filled
-    /// through their own type, so their bounds have already been accepted by the representability check.
-    if (descr.fill_to.getType() != Field::Types::Int64)
+    /// Every column type reaching this point is filled either through Int64 or, for DateTime64, through a Decimal64
+    /// of the column's scale, whose raw value is the Int64 tick count that the filling arithmetic advances. The
+    /// wider Int128/Int256 columns are filled through their own type, so their bounds have already been accepted
+    /// by the representability check. All the bounds share one carrier: `tryConvertFields` converts them to the
+    /// same type up front.
+    const auto raw_value = [](const Field & field) -> std::optional<Int64>
+    {
+        if (field.getType() == Field::Types::Int64)
+            return field.safeGet<Int64>();
+        if (field.getType() == Field::Types::Decimal64)
+            return field.safeGet<DecimalField<Decimal64>>().getValue().value;
+        return {};
+    };
+
+    /// The result is wrapped back into the carrier of the bounds, so that the representability check sees a field
+    /// of the same kind as the bounds themselves (for DateTime64 a Decimal64 of the same scale, checked against
+    /// the calendar window in raw ticks).
+    const auto as_bound_field = [&](Int64 value) -> Field
+    {
+        if (descr.fill_to.getType() == Field::Types::Decimal64)
+            return DecimalField<Decimal64>(Decimal64(value), descr.fill_to.safeGet<DecimalField<Decimal64>>().getScale());
+        return value;
+    };
+
+    const auto to_raw = raw_value(descr.fill_to);
+    if (!to_raw)
         return {};
 
     if (!descr.fill_staleness.isNull())
         return {};
 
-    const Int64 to = descr.fill_to.safeGet<Int64>();
+    const Int64 to = *to_raw;
 
     /// The calendar arithmetic of an INTERVAL step stays within the column's native type and can never reach a TO
     /// outside of it, so the filling would generate wrapped-around values forever. A TO out of range against the
@@ -284,36 +307,35 @@ static std::optional<Int64> fillValueRequiredToFitColumnType(const FillColumnDes
     {
         const Int128 fatal_case = direction > 0 ? std::max<Int128>(to, 0) : std::min<Int128>(to, 0);
         /// The clamp towards zero also brought the value into the Int64 range.
-        return static_cast<Int64>(fatal_case);
+        return as_bound_field(static_cast<Int64>(fatal_case));
     }
 
-    if (descr.fill_step.getType() == Field::Types::Int64)
+    const auto step_raw = raw_value(descr.fill_step);
+    if (!step_raw)
+        return {};
+
+    const Int64 step = *step_raw;
+
+    if (const auto from_raw = raw_value(descr.fill_from))
     {
-        const Int64 step = descr.fill_step.safeGet<Int64>();
+        const Int64 from = *from_raw;
 
-        if (descr.fill_from.getType() == Field::Types::Int64)
-        {
-            const Int64 from = descr.fill_from.safeGet<Int64>();
+        /// The step is non-zero and directed towards TO, and TO is not on the wrong side of FROM: all of this is
+        /// already checked when the fill description is built.
+        const Int128 span = direction > 0 ? static_cast<Int128>(to) - from : static_cast<Int128>(from) - to;
+        if (span <= 0)
+            return as_bound_field(from); /// TO admits no filled value at all
 
-            /// The step is non-zero and directed towards TO, and TO is not on the wrong side of FROM: all of this is
-            /// already checked when the fill description is built.
-            const Int128 span = direction > 0 ? static_cast<Int128>(to) - from : static_cast<Int128>(from) - to;
-            if (span <= 0)
-                return from; /// TO admits no filled value at all
-
-            const Int128 jumps = (span - 1) / (step > 0 ? static_cast<Int128>(step) : -static_cast<Int128>(step));
-            /// The result lies between FROM and TO, so it fits into Int64.
-            return static_cast<Int64>(from + jumps * step);
-        }
-
-        /// No FROM: the possible last generated values over all anchors span one step before TO.
-        Int128 best_case = static_cast<Int128>(to) - step;
-        best_case = direction > 0 ? std::max<Int128>(best_case, 0) : std::min<Int128>(best_case, 0);
-        /// The clamp towards zero also brought the value into the Int64 range.
-        return static_cast<Int64>(best_case);
+        const Int128 jumps = (span - 1) / (step > 0 ? static_cast<Int128>(step) : -static_cast<Int128>(step));
+        /// The result lies between FROM and TO, so it fits into Int64.
+        return as_bound_field(static_cast<Int64>(from + jumps * step));
     }
 
-    return {};
+    /// No FROM: the possible last generated values over all anchors span one step before TO.
+    Int128 best_case = static_cast<Int128>(to) - step;
+    best_case = direction > 0 ? std::max<Int128>(best_case, 0) : std::min<Int128>(best_case, 0);
+    /// The clamp towards zero also brought the value into the Int64 range.
+    return as_bound_field(static_cast<Int64>(best_case));
 }
 
 /** The WITH FILL bound values are kept in a type wide enough for the arithmetic - Int64 for every integer column
@@ -374,9 +396,8 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     /// A TO bound beyond the calendar boundary in the fill direction can never be reached by an INTERVAL step
     /// even when it fits the storage type - the calendar arithmetic clamps at the boundary - and the filling
     /// would keep generating the clamped boundary value forever. STALENESS terminates the filling in-domain
-    /// (see below), so it lifts the check. For Date32 this duplicates the generic check below for the sake of
-    /// the more specific error message; for DateTime64 the generic check cannot derive a required value from
-    /// the Decimal64-carried bounds, so this is the check.
+    /// (see below), so it lifts the check. This duplicates the generic check below for the sake of the more
+    /// specific error message.
     if (descr.step_kind && !descr.fill_to.isNull() && descr.fill_staleness.isNull() && !within_calendar(descr.fill_to))
     {
         /// The window always contains zero (1970), so the sign of an out-of-window bound tells on which of the
@@ -420,12 +441,58 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     {
         const auto required_value = fillValueRequiredToFitColumnType(descr, direction);
 
-        if (required_value && !is_representable(Field(*required_value)))
+        if (required_value && !is_representable(*required_value))
             throw Exception(
                 ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL TO value {} is out of range of the ORDER BY column type {}",
                 applyVisitor(FieldVisitorToString(), descr.fill_to),
                 type->getName());
+    }
+}
+
+/** An INTERVAL step performs calendar arithmetic that clamps at the boundary of the representable calendar
+  * (the window [0000-01-01, 9999-12-31] of DateLUTImpl): adding an interval to a value whose result would leave
+  * the calendar returns the value unchanged (see e.g. DateLUTImpl::addYearsOutOfRange). A filling sequence that
+  * reaches such a fixed point strictly before TO stops advancing and never terminates, even when TO itself is
+  * perfectly representable: `WITH FILL FROM toDateTime64('9999-06-01 00:00:00', 0) TO
+  * toDateTime64('9999-12-31 00:00:00', 0) STEP INTERVAL 1 YEAR` stagnates at the FROM value right away.
+  *
+  * With an explicit FROM the whole sequence the suffix generation walks is known up front - `FillingRow::next`
+  * advances it by one application of the step function at a time - so walk it here the same way and reject the
+  * query when it provably stagnates before reaching TO. The walk is bounded: a sequence that takes more steps
+  * than the budget to settle (a fine-grained step over a huge span) is accepted as before - the walk must never
+  * misjudge a terminating sequence, and the calendar arithmetic has no closed form that could shortcut it.
+  * A sequence that wraps around instead of clamping (DateTime within UInt32) never repeats the same value twice
+  * in a row, so the walk does not misdiagnose it; whether it cycles below TO forever remains undetected.
+  *
+  * Without FROM the sequence is anchored at a data value and nothing about it is provable up front, and
+  * STALENESS replaces TO as the effective bound with the last data value plus the staleness, which the
+  * calendar arithmetic reaches in-domain.
+  */
+static void checkIntervalStepFillCanReachFillTo(const FillColumnDescription & descr, int direction)
+{
+    if (!descr.step_kind || descr.fill_from.isNull() || descr.fill_to.isNull() || !descr.fill_staleness.isNull())
+        return;
+
+    static constexpr size_t walk_budget = 65536;
+
+    Field value = descr.fill_from;
+    for (size_t i = 0; i < walk_budget && less(value, descr.fill_to, direction); ++i)
+    {
+        Field next = value;
+        descr.step_func(next, 1);
+
+        if (equals(next, value))
+            throw Exception(
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL can never reach the TO value {}: starting from the FROM value {}, the INTERVAL step stops advancing "
+                "at value {} (the calendar arithmetic clamps at the boundary of the representable calendar), "
+                "so filling would never terminate",
+                applyVisitor(FieldVisitorToString(), descr.fill_to),
+                applyVisitor(FieldVisitorToString(), descr.fill_from),
+                applyVisitor(FieldVisitorToString(), value));
+
+        value = next;
     }
 }
 
@@ -506,6 +573,7 @@ FillingTransform::FillingTransform(
         }
 
         checkFillBoundsFitColumnType(descr, type, fill_description[i].direction);
+        checkIntervalStepFillCanReachFillTo(descr, fill_description[i].direction);
     }
     logDebug("fill description", dumpSortDescription(fill_description));
 
