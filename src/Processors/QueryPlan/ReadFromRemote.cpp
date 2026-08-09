@@ -1054,6 +1054,19 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
 {
     chassert(cluster->getShardCount() == 1);
 
+    /// When the underlying tables of a `Merge` table (or of a view) are what is checked when
+    /// establishing the connections, the wrapper itself still has to exist on the replica for it
+    /// to plan the query - keep its absence a soft miss that just excludes the replica from the
+    /// pool, as it is for a plain table, instead of failing the query with `UNKNOWN_TABLE` after
+    /// the replica was admitted. A table function has no storage id: the storage it creates does
+    /// not exist on the replicas under its generated id, and there is nothing to check.
+    if (storage_id && !tables_to_check.empty())
+    {
+        auto wrapper_name = storage_id.getQualifiedName();
+        if (std::find(tables_to_check.begin(), tables_to_check.end(), wrapper_name) == tables_to_check.end())
+            tables_to_check.push_back(std::move(wrapper_name));
+    }
+
     std::vector<String> replicas;
     replicas.reserve(pools_to_use.size());
 
