@@ -6,7 +6,8 @@
   </settings>
 
   <fill_query>ALTER TABLE hits_10m_single ADD INDEX idx_sp(SearchPhrase) TYPE text(tokenizer = 'splitByNonAlpha')</fill_query>
-  <fill_query>ALTER TABLE hits_10m_single MATERIALIZE INDEX idx_sp</fill_query>
+  <!-- mutations_sync: the drop_query below is refused while this mutation is still in flight. -->
+  <fill_query>ALTER TABLE hits_10m_single MATERIALIZE INDEX idx_sp SETTINGS mutations_sync = 2</fill_query>
 
   <!-- The terms are ordered in the decreasing frequency -->
   <query>SELECT count() FROM hits_10m_single WHERE hasToken(SearchPhrase, 'video')</query>

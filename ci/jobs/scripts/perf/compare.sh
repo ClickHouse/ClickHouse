@@ -1764,8 +1764,9 @@ do
     {
         # The second grep is a heuristic for error messages like
         # "socket.timeout: timed out".
-        rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
-            || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
+        # rg is a Rust-regex engine: BRE escapes such as \( \| \+ are literals here.
+        rg --no-filename --max-count=2 -i '(Exception|Error):[^:]' "$log" \
+            || rg --no-filename --max-count=2 -i '^[^ ]+: ' "$log" \
             || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
