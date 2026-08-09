@@ -950,6 +950,13 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
         // Special case, don't need to be resolved. It must be processed by GroupingFunctionsResolvePass.
         if (name == "grouping")
             return;
+        /// 'exists' is resolved outside FunctionFactory (via FunctionExists, a special correlated-subquery
+        /// function created by the rewrite_in_to_join path). Calling
+        /// FunctionFactory::instance().get("exists", ...) would throw UNKNOWN_FUNCTION.
+        /// The FunctionNode already carries the correct return type and implementation from the original
+        /// resolution, so no re-resolution is needed — same rationale as 'grouping' above.
+        if (name == "exists")
+            return;
         auto function = FunctionFactory::instance().get(name, context);
         function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
     }
