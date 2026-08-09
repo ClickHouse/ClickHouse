@@ -21,6 +21,32 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->
+### ClickHouse release 8cb46d93b3e2aa5a952de7be80a575fdc9c23c54 (8cb46d93b3e) FIXME as compared to f9801d56492b5cb09dc874011b05d213b9bfcdb8 (f9801d56492)
+
+#### Experimental Feature
+* PromQL: preserve finite values when using modulo with an infinite divisor. [#113746](https://github.com/ClickHouse/ClickHouse/pull/113746) ([Minh Vu](https://github.com/fallintoplace)).
+
+#### Performance Improvement
+* Evaluate the PromQL aggregation operators `topk`, `bottomk` and `limitk` with a streaming plan whose selection state is `O(time_steps * k)` instead of collecting all series into a single row with `O(time_steps * series^2)` intermediate memory. Queries over high-cardinality metrics that previously failed with `MEMORY_LIMIT_EXCEEDED` now run in bounded memory, and the evaluation is parallelized instead of single-threaded. [#113656](https://github.com/ClickHouse/ClickHouse/pull/113656) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fixed `SYSTEM STOP/START CLEANUP` and `SYSTEM STOP/START VIRTUAL PARTS UPDATE` `ON CLUSTER` requiring `SYSTEM PULLING REPLICATION LOG` instead of `SYSTEM CLEANUP` / `SYSTEM VIRTUAL PARTS UPDATE`. [#110289](https://github.com/ClickHouse/ClickHouse/pull/110289) ([Groene AI](https://github.com/groeneai)).
+* Fixes `KILL QUERY` and `max_execution_time` being ignored for minutes while a row-based input format was parsing one block. Row-based input formats now check for query cancellation every 8192 rows, so a killed insert (in particular a background async-insert flush, which parses up to `max_insert_block_size` rows per block) stops promptly instead of running to the end of the block. [#112646](https://github.com/ClickHouse/ClickHouse/pull/112646) ([Groene AI](https://github.com/groeneai)).
+* Reject invalid cross-delimiter escapes in PromQL strings. [#113587](https://github.com/ClickHouse/ClickHouse/pull/113587) ([Minh Vu](https://github.com/fallintoplace)).
+* Fixes `ALTER TABLE ... MODIFY COLUMN` failing with `Cannot specify codec for column type ALIAS` when one statement both turns an `ALIAS` column into a physical one (`DEFAULT` or `MATERIALIZED`) and specifies a `CODEC`. Closes [#113693](https://github.com/ClickHouse/ClickHouse/issues/113693). [#113853](https://github.com/ClickHouse/ClickHouse/pull/113853) ([Groene AI](https://github.com/groeneai)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Fix flaky test_replicated_users grant/rename under async replication. [#111239](https://github.com/ClickHouse/ClickHouse/pull/111239) ([Groene AI](https://github.com/groeneai)).
+* Support skip indexes in ranges refiner. [#112296](https://github.com/ClickHouse/ClickHouse/pull/112296) ([Anton Popov](https://github.com/CurtizJ)).
+* The stateless-test hung check no longer crashes with `UnicodeDecodeError` when the processlist contains non-UTF-8 bytes; it reports the hung queries instead. [#113370](https://github.com/ClickHouse/ClickHouse/pull/113370) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Cap max_threads in the DistributedQueryTest gtest. [#113597](https://github.com/ClickHouse/ClickHouse/pull/113597) ([Groene AI](https://github.com/groeneai)).
+* Fix environment dump on shell startup from clickhouse-bootstrap completion. [#113694](https://github.com/ClickHouse/ClickHouse/pull/113694) ([Azat Khuzhin](https://github.com/azat)).
+* Fix a test comment. [#113714](https://github.com/ClickHouse/ClickHouse/pull/113714) ([Vitaly Baranov](https://github.com/vitlibar)).
+* Refactor text index posting list codec into pluggable block framework. [#113843](https://github.com/ClickHouse/ClickHouse/pull/113843) ([Anton Popov](https://github.com/CurtizJ)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="268"></a> ClickHouse release 26.8, FIXME (in progress)
 
 #### Backward Incompatible Change
