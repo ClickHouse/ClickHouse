@@ -2,6 +2,8 @@
 
 #include <Interpreters/ExpressionActions.h>
 
+#include <Formats/ParseError.h>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -32,12 +34,16 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
-    extern const int LOGICAL_ERROR;
-    extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int QUERY_WAS_CANCELLED;
-    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
-    extern const int TIMEOUT_EXCEEDED;
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int DECIMAL_OVERFLOW;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_DIVISION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
+    extern const int TYPE_MISMATCH;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace
@@ -45,17 +51,26 @@ namespace
 
 /// Partition constant folding is best-effort: if the predicate cannot be evaluated over a
 /// partition constant (for example division by zero while folding), the caller falls back to
-/// the unsubstituted condition, which is correct, just less selective. Non-semantic failures -
-/// resource limits, cancellation, timeouts, aborts, and logical errors - are not "cannot fold"
-/// signals and must propagate instead of being silently downgraded to the fallback.
-bool mustPropagateConstantFoldingException(int code)
+/// the unsubstituted condition, which is correct, just less selective. Only expected
+/// per-value evaluation failures are recoverable this way: arithmetic and conversion errors,
+/// parse errors, and functions rejecting the substituted constant's type or value. Everything
+/// else - resource limits (memory, array/row/recursion limits), cancellation, timeouts,
+/// aborts, and logical errors - is not a "cannot fold" signal and must propagate instead of
+/// being silently downgraded to the fallback. The set is an allowlist (fail-close): an
+/// unclassified error surfaces to the user rather than being hidden.
+bool isRecoverableConstantFoldingError(int code)
 {
-    return code == ErrorCodes::ABORTED
-        || code == ErrorCodes::LOGICAL_ERROR
-        || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
-        || code == ErrorCodes::QUERY_WAS_CANCELLED
-        || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
-        || code == ErrorCodes::TIMEOUT_EXCEEDED;
+    return isParseError(code)
+        || code == ErrorCodes::BAD_ARGUMENTS
+        || code == ErrorCodes::CANNOT_CONVERT_TYPE
+        || code == ErrorCodes::CANNOT_PARSE_TEXT
+        || code == ErrorCodes::DECIMAL_OVERFLOW
+        || code == ErrorCodes::ILLEGAL_COLUMN
+        || code == ErrorCodes::ILLEGAL_DIVISION
+        || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+        || code == ErrorCodes::NOT_IMPLEMENTED
+        || code == ErrorCodes::TYPE_MISMATCH
+        || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 void fillPartitionConstantsSubstitution(
@@ -234,10 +249,11 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartit
     {
         /// Constant substitution is best-effort: only expected query-evaluation failures
         /// (e.g. division by zero while folding a partition constant) are caught here;
-        /// resource-limit, cancellation, and logical errors must propagate (see
-        /// `mustPropagateConstantFoldingException`). Exceptions thrown by the condition
+        /// anything not explicitly classified as recoverable - resource limits,
+        /// cancellation, and logical errors in particular - propagates (see
+        /// `isRecoverableConstantFoldingError`). Exceptions thrown by the condition
         /// factory below (`generate`) must propagate as well.
-        if (mustPropagateConstantFoldingException(e.code()))
+        if (!isRecoverableConstantFoldingError(e.code()))
             throw;
 
         return generateUnsubstituted();
