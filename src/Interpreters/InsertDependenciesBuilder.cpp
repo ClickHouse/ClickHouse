@@ -1956,6 +1956,19 @@ static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 }
 
 
+/// The select state is filled last while a view is being observed, so a view that failed
+/// mid-construction can reach the log without it. Log an empty query in that case.
+String InsertDependenciesBuilder::getViewQueryForLog(StorageID view_id) const
+{
+    auto query_it = select_queries.find(view_id);
+    auto context_it = select_contexts.find(view_id);
+    if (query_it == select_queries.end() || context_it == select_contexts.end())
+        return {};
+
+    return getCleanQueryAst(query_it->second, context_it->second);
+}
+
+
 void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start) const
 {
     const auto & settings = init_context->getSettingsRef();
@@ -2000,7 +2013,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
             element.view_name = view_id.getFullTableName();
             element.view_uuid = view_id.uuid;
             element.view_type = view_type;
-            element.view_query = getCleanQueryAst(select_queries.at(view_id), select_contexts.at(view_id));
+            element.view_query = getViewQueryForLog(view_id);
             element.view_target = inner_table_id.getFullTableName();
 
             element.peak_memory_usage = thread_group->memory_tracker.getPeak() > 0 ? thread_group->memory_tracker.getPeak() : 0;

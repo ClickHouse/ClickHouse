@@ -1,0 +1,4 @@
+mv_dangling	ExceptionBeforeStart	1	1
+mv_ok	QueryFinish	0	1
+mv_present	ExceptionBeforeStart	0	1
+rows in the succeeding view target	1
