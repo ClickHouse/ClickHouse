@@ -200,6 +200,8 @@ def test_move_reuses_its_own_published_part(started_cluster):
     move_to_shard(name)
     wait_for_move_state(s0, name, "DONE")
 
+    assert reused_detached_part(s1, name), "the identical occupant was not reused"
+    assert not published_to_detached(s1, name), "the clone republished over an identical occupant"
     assert s0.query(f"SELECT count() FROM {name}").strip() == "0"
     assert s1.query(f"SELECT k, v FROM {name} ORDER BY k").strip() == "1\tfrom_s0"
 
