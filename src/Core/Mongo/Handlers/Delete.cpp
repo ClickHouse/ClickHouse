@@ -32,6 +32,9 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
     /// and 'limit'. Execute every spec; 'limit: 1' (deleteOne) cannot be expressed as a
     /// ClickHouse mutation over an unordered table, so it is rejected instead of being
     /// silently widened into deleteMany.
+    /// Every spec is translated first, and only then executed: a malformed filter has to be an
+    /// error whether the collection exists or not.
+    std::vector<String> sql_queries;
     for (const auto & delete_spec : documents[1].documents)
     {
         String serialized_filter;
@@ -74,7 +77,15 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
             ast->format(sql_buffer, IAST::FormatSettings(true));
         }
 
-        executor->execute(sql_query);
+        sql_queries.push_back(std::move(sql_query));
+    }
+
+    /// A delete from a collection that does not exist matches no document, which Mongo reports as
+    /// a delete of zero documents rather than an error.
+    if (objectExists(executor, "TABLE", collection.getQualifiedName()))
+    {
+        for (const auto & sql_query : sql_queries)
+            executor->execute(sql_query);
     }
 
     bson_t * bson_doc = bson_new();

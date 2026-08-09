@@ -52,6 +52,9 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
     /// expressed as a ClickHouse mutation over an unordered table and 'upsert' has no
     /// counterpart either, so both are rejected instead of being silently widened into
     /// updateMany or dropped.
+    /// Every spec is translated first, and only then executed: a malformed update has to be an
+    /// error whether the collection exists or not.
+    std::vector<String> alter_queries;
     for (const auto & update_spec : sections[1].documents)
     {
         String serialized_filter;
@@ -98,12 +101,24 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
             ast->format(buffer, settings);
         }
 
-        executor->execute(alter_query);
+        alter_queries.push_back(std::move(alter_query));
+    }
+
+    /// An update of a collection that does not exist matches no document, which Mongo reports as
+    /// an update of zero documents rather than an error.
+    if (objectExists(executor, "TABLE", collection.getQualifiedName()))
+    {
+        for (const auto & alter_query : alter_queries)
+            executor->execute(alter_query);
     }
 
     bson_t * bson_doc = bson_new();
 
+    /// A mutation is asynchronous, so the number of rows it will write is not known here; the
+    /// reply of an `update` carries both counts, and a driver reads a missing `nModified` as
+    /// "the server did not say" rather than as zero.
     BSON_APPEND_INT32(bson_doc, "n", 0);
+    BSON_APPEND_INT32(bson_doc, "nModified", 0);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
