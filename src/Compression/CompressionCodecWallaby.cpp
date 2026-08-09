@@ -242,6 +242,7 @@ struct DecimalEncodingResult
 {
     VectorMode mode;
     UInt32 payload_size;
+    UInt8 alpha;
 };
 
 /** Tries to encode a vector with one of the decimal modes into scratch.
@@ -251,7 +252,8 @@ struct DecimalEncodingResult
   */
 template <typename T>
 std::optional<DecimalEncodingResult<T>> encodeDecimal(
-    const typename WallabyTraits<T>::FloatType * values, UInt32 count, char * scratch, UInt32 scratch_size, UInt32 size_to_beat)
+    const typename WallabyTraits<T>::FloatType * values, UInt32 count, char * scratch, UInt32 scratch_size, UInt32 size_to_beat,
+    std::optional<UInt8> hint_alpha)
 {
     using Traits = WallabyTraits<T>;
     using SignedType = typename Traits::SignedType;
@@ -551,7 +553,18 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         }
     };
 
-    evaluate_candidate(mode_alpha);
+    /// Consecutive vectors of a column almost always share their decimal scale, so the scale
+    /// that won the previous vector is the best first guess: evaluating it first makes it the
+    /// reference and lets the estimates prune most other candidates without a full pass. The
+    /// most frequent sampled alpha is the fallback guess (and the second candidate on vectors
+    /// where the data changed); a stale hint costs at most one extra full-vector pass.
+    if (hint_alpha && *hint_alpha <= Traits::max_alpha)
+    {
+        considered[*hint_alpha] = true;
+        evaluate_candidate(*hint_alpha);
+    }
+    if (!evaluated[mode_alpha])
+        evaluate_candidate(mode_alpha);
 
     /// Fixed-point loop: evaluating a candidate can add new candidates (from exception probing),
     /// so sweep the domain until no unevaluated candidate remains. The domain has at most
@@ -624,7 +637,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         out += sizeof(T);
     }
 
-    return DecimalEncodingResult<T>{use_delta ? VectorMode::DecimalDelta : VectorMode::DecimalFor, payload_size};
+    return DecimalEncodingResult<T>{use_delta ? VectorMode::DecimalDelta : VectorMode::DecimalFor, payload_size, alpha};
 }
 
 /// Hash of the high bits of a value used to probe the ring for a reference sharing them.
@@ -967,6 +980,14 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
 
     char * out = dest;
     UInt32 processed = 0;
+
+    /// Hints carried between consecutive vectors of this call: the winning mode decides which
+    /// encoder runs first (so the loser starts from a tight size bound), and the winning decimal
+    /// scale is evaluated first by the chooser. Both are guesses verified by measurement, so a
+    /// stale hint after a data change costs speed on one vector, never correctness or size.
+    std::optional<VectorMode> previous_winner;
+    std::optional<UInt8> previous_alpha;
+
     while (processed < values_count)
     {
         const UInt32 count = std::min<UInt32>(WALLABY_VECTOR_VALUES, values_count - processed);
@@ -1006,15 +1027,17 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
         std::optional<DecimalEncodingResult<T>> decimal;
         UInt32 xor_size = 0;
 
-        if (2 * differing < count)
+        const bool xor_first = previous_winner == VectorMode::Xor
+            || (!previous_winner.has_value() && 2 * differing < count);
+        if (xor_first)
         {
             xor_size = encodeXor<T>(words.data(), count, xor_scratch.data(), scratch_size, static_cast<UInt64>(raw_size) * 8);
             const UInt32 xor_size_to_beat = xor_size == 0 ? raw_size : xor_size + static_cast<UInt32>(sizeof(UInt32));
-            decimal = encodeDecimal<T>(values.data(), count, decimal_scratch.data(), scratch_size, std::min(raw_size, xor_size_to_beat));
+            decimal = encodeDecimal<T>(values.data(), count, decimal_scratch.data(), scratch_size, std::min(raw_size, xor_size_to_beat), previous_alpha);
         }
         else
         {
-            decimal = encodeDecimal<T>(values.data(), count, decimal_scratch.data(), scratch_size, raw_size);
+            decimal = encodeDecimal<T>(values.data(), count, decimal_scratch.data(), scratch_size, raw_size, previous_alpha);
             const UInt32 decimal_size_to_beat = decimal ? std::min(decimal->payload_size, raw_size) : raw_size;
             if (xor_bits_lower_bound < static_cast<UInt64>(decimal_size_to_beat) * 8)
                 xor_size = encodeXor<T>(words.data(), count, xor_scratch.data(), scratch_size, static_cast<UInt64>(decimal_size_to_beat) * 8);
@@ -1028,6 +1051,8 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
             *out++ = static_cast<char>(decimal->mode);
             memcpy(out, decimal_scratch.data(), decimal->payload_size);
             out += decimal->payload_size;
+            previous_winner = decimal->mode;
+            previous_alpha = decimal->alpha;
         }
         else if (xor_total < raw_size)
         {
@@ -1036,12 +1061,14 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
             out += sizeof(UInt32);
             memcpy(out, xor_scratch.data(), xor_size);
             out += xor_size;
+            previous_winner = VectorMode::Xor;
         }
         else
         {
             *out++ = static_cast<char>(VectorMode::Raw);
             memcpy(out, words.data(), raw_size);
             out += raw_size;
+            previous_winner = VectorMode::Raw;
         }
 
         processed += count;
