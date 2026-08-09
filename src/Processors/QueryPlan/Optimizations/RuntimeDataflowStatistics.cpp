@@ -113,6 +113,25 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
+/// Final `-State` results can reach the output wrapped in carrier columns - `prepareOutputBlockColumns`
+/// recurses through the subcolumns of `isState()` results to attach the shared arenas to nested
+/// `ColumnAggregateFunction` leaves, so e.g. `SELECT tuple(uniqExactState(x))` emits a `ColumnTuple` around
+/// an aggregate-state leaf. Visit every such leaf, whether the column is one itself or wraps some.
+static void forEachAggregateStateLeaf(const IColumn & column, const std::function<void(const ColumnAggregateFunction &)> & callback)
+{
+    if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&column))
+    {
+        callback(*aggregate_column);
+        return;
+    }
+    column.forEachSubcolumnRecursively(
+        [&](const IColumn & subcolumn)
+        {
+            if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&subcolumn))
+                callback(*aggregate_column);
+        });
+}
+
 bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
 {
     // Empty blocks produced during planning, when we calculate output headers. Skip them.
@@ -139,15 +158,29 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
     /// `aggregation_in_order_max_block_bytes` splits large states into many small blocks, doing it per block
     /// would serialize every state of every block; so only the sampled blocks serialize, and the rest are
     /// extrapolated from the per-row figure the sampled blocks give, like the compression ratio is.
+    /// Aggregate-state leaves of every column, top-level or wrapped: the wrappers' `byteSize` just sums the
+    /// nested `byteSize`, so a wrapped leaf drops its shared-arena payload the same way a top-level one does.
+    std::vector<const ColumnAggregateFunction *> state_leaves;
+    /// Whether cols[i] contains (or is) an aggregate-state leaf.
+    std::vector<UInt8> col_has_states(cols.size(), 0);
     size_t plain_bytes = 0;
-    bool has_aggregate_states = false;
-    for (const auto & col : cols)
+    for (size_t i = 0; i < cols.size(); ++i)
     {
-        if (typeid_cast<const ColumnAggregateFunction *>(col.column.get()))
-            has_aggregate_states = true;
-        else
-            plain_bytes += col.column->byteSize();
+        const auto & col = cols[i];
+        size_t state_leaves_byte_size = 0;
+        forEachAggregateStateLeaf(
+            *col.column,
+            [&](const ColumnAggregateFunction & leaf)
+            {
+                col_has_states[i] = 1;
+                state_leaves.push_back(&leaf);
+                state_leaves_byte_size += leaf.byteSize();
+            });
+        /// The carrier's own payload (null maps, sibling tuple elements, array offsets, ...) is sized by
+        /// `byteSize` like any plain column; the state leaves are sized from their serialized states below.
+        plain_bytes += col.column->byteSize() - state_leaves_byte_size;
     }
+    const bool has_aggregate_states = !state_leaves.empty();
 
     /// Until the first sampled block lands there is no per-row figure to extrapolate from, so blocks
     /// racing with the first sampled one serialize their states too and count as extra samples.
@@ -163,31 +196,31 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
         /// swings the extrapolation several-fold depending on whether the few giant states land on the
         /// sampled positions. Blocks of up to 1000 states are measured exactly.
         static constexpr size_t max_states_to_serialize = 1000;
-        for (const auto & col : cols)
-            if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(col.column.get()))
-            {
-                /// One periodic sample yields both the uncompressed figure and the compression sample, so
-                /// the `bytes / (sample_bytes / compressed_bytes)` estimate is derived from a single
-                /// population of states even when state size or compressibility changes with key order
-                /// inside the block, and the compression side stays behind the same cap instead of
-                /// serializing a prefix of up to `min(8192, rows)` states a second time. The clamp of the
-                /// compressed size to the sample size - a sample of tiny states must read as
-                /// incompressible, not as expanding - lives in `sampledStateSizes`.
-                const auto sizes = aggregate_column->sampledStateSizes(max_states_to_serialize);
-                serialized_state_bytes += sizes.bytes;
-                sample_bytes += sizes.sample_bytes;
-                compressed_bytes += sizes.compressed_bytes;
-            }
+        for (const auto * aggregate_column : state_leaves)
+        {
+            /// One periodic sample yields both the uncompressed figure and the compression sample, so
+            /// the `bytes / (sample_bytes / compressed_bytes)` estimate is derived from a single
+            /// population of states even when state size or compressibility changes with key order
+            /// inside the block, and the compression side stays behind the same cap instead of
+            /// serializing a prefix of up to `min(8192, rows)` states a second time. The clamp of the
+            /// compressed size to the sample size - a sample of tiny states must read as
+            /// incompressible, not as expanding - lives in `sampledStateSizes`.
+            const auto sizes = aggregate_column->sampledStateSizes(max_states_to_serialize);
+            serialized_state_bytes += sizes.bytes;
+            sample_bytes += sizes.sample_bytes;
+            compressed_bytes += sizes.compressed_bytes;
+        }
     }
 
     if (sample_block)
     {
-        for (const auto & col : cols)
+        for (size_t i = 0; i < cols.size(); ++i)
         {
-            /// Aggregate-state columns are measured above, from the same sample as their uncompressed figure.
-            if (typeid_cast<const ColumnAggregateFunction *>(col.column.get()))
+            /// Columns holding aggregate-state leaves are measured above, from the same sample as their
+            /// uncompressed figure; serializing them here would write every state a second time.
+            if (col_has_states[i])
                 continue;
-            auto [sample, compressed] = estimateCompressedColumnSize(col);
+            auto [sample, compressed] = estimateCompressedColumnSize(cols[i]);
             sample_bytes += sample;
             compressed_bytes += compressed;
         }
