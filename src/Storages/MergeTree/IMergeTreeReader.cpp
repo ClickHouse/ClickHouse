@@ -447,6 +447,8 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
+            if (isColumnDroppedByPendingMutation(pos))
+                continue;
             auto column_in_part = getColumnInPart(*name_and_type);
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
