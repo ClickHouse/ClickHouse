@@ -6,7 +6,9 @@
 #include <Common/BlobStorageLogWriter.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
+#include <IO/AzureBlobStorage/getBlobPropertiesWithRetry.h>
 #include <IO/ReadBufferFromString.h>
+#include <azure/core/credentials/credentials.hpp>
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/logger_useful.h>
 #include <Common/Stopwatch.h>
@@ -339,14 +341,15 @@ std::optional<size_t> ReadBufferFromAzureBlobStorage::tryGetFileSize()
         blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
     if (!file_size)
-        file_size = blob_client->GetProperties().Value.BlobSize;
+        file_size = getBlobPropertiesWithRetry(*blob_client, max_single_download_retries, path, log).BlobSize;
 
     return file_size;
 }
 
 std::optional<RemoteFileMetadata> ReadBufferFromAzureBlobStorage::getRemoteFileMetadata() const
 {
-    const auto properties = blob_container_client->GetBlobClient(path).GetProperties().Value;
+    const auto properties = getBlobPropertiesWithRetry(
+        blob_container_client->GetBlobClient(path), max_single_download_retries, path, log);
     const auto last_modification_time = std::chrono::duration_cast<std::chrono::seconds>(
         static_cast<std::chrono::system_clock::time_point>(properties.LastModified).time_since_epoch())
         .count();
@@ -391,6 +394,8 @@ size_t ReadBufferFromAzureBlobStorage::readBigAt(char * to, size_t n, size_t ran
             setMetadataFromResponse(download_response.Value.Details, download_response.Value.BlobSize);
 
             std::unique_ptr<Azure::Core::IO::BodyStream> body_stream = std::move(download_response.Value.BodyStream);
+            if (body_stream == nullptr)
+                throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Null body stream in Azure download response for {}", path);
             bytes_copied = body_stream->ReadToCount(reinterpret_cast<uint8_t *>(to), body_stream->Length(), azure_context);
 
             LOG_TEST(log, "AzureBlobStorage readBigAt read bytes {}", bytes_copied);

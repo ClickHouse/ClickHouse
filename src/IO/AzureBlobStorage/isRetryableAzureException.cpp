@@ -6,15 +6,18 @@
 namespace DB
 {
 
-bool isRetryableAzureException(const Azure::Core::RequestFailedException & e, bool may_be_provisioning_access)
+bool isRetryableAzureException(const Azure::Core::RequestFailedException & e)
 {
     /// Always retry transport errors.
     if (dynamic_cast<const Azure::Core::Http::TransportException *>(&e))
         return true;
 
-    /// Azure may be provisioning access for quite a long time, so 403 is retriable in some cases
-    /// It makes sense for IDisk::checkAccess() which is called early on startup and terminates the server/keeper if the check fails
-    if (may_be_provisioning_access && e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden)
+    /// 403 is always retryable so a transient RBAC-propagation 403 isn't misreported as POTENTIALLY_BROKEN_DATA_PART.
+    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden)
+        return true;
+
+    /// A request timeout (incl. a synthetic 408 built from a transport timeout) is transient; retry it (#110724).
+    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::RequestTimeout)
         return true;
 
     /// Retry other 5xx errors just in case.

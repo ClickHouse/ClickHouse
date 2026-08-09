@@ -843,3 +843,51 @@ def test_reload_config_keeps_azure_endpoint_settings(cluster):
     azure_query(node, "DROP TABLE test_reload_native_copy")
     azure_query(node, "DROP TABLE test_reload_native_copy_r1")
     azure_query(node, "DROP TABLE test_reload_native_copy_r2")
+
+
+def test_incremental_backup_for_log_family_native_copy(cluster):
+    # An Engine=Log .bin grows in place on INSERT, so an incremental backup copies a ranged
+    # suffix (offset = base .bin size > 0). The delta is far below azure_max_single_part_upload_size
+    # (32 MiB), so copyAzureBlobStorageFile routes it to the read+write single-part path. That path
+    # must seek the source to `offset`; before the fix it read from offset 0 and silently copied the
+    # wrong bytes, corrupting the incremental backup.
+    node = cluster.instances["node_native_copy"]
+
+    azure_query(node, "DROP TABLE IF EXISTS log_data SYNC")
+    azure_query(
+        node,
+        "CREATE TABLE log_data (x UInt32, y String) Engine=Log "
+        "SETTINGS storage_policy='blob_storage_policy_native_copy'",
+    )
+    azure_query(
+        node, "INSERT INTO log_data SELECT number, toString(number) FROM numbers(100)"
+    )
+    assert azure_query(node, "SELECT count(), sum(x) FROM log_data") == "100\t4950\n"
+
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE log_data TO {backup_destination} SETTINGS allow_azure_native_copy = 1",
+    )
+
+    # Small append -> incremental backup copies [base_size, new_size), i.e. offset > 0.
+    azure_query(node, "INSERT INTO log_data VALUES (1000, 'a'), (1001, 'b')")
+    assert azure_query(node, "SELECT count(), sum(x) FROM log_data") == "102\t6951\n"
+
+    incremental_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE log_data TO {incremental_destination} "
+        f"SETTINGS base_backup = {backup_destination}, allow_azure_native_copy = 1",
+    )
+
+    azure_query(node, "DROP TABLE log_data SYNC")
+    azure_query(
+        node,
+        f"RESTORE TABLE log_data FROM {incremental_destination} SETTINGS allow_azure_native_copy = 1",
+    )
+
+    # A wrong-offset ranged copy corrupts the restored delta; exact match catches it.
+    assert azure_query(node, "SELECT count(), sum(x) FROM log_data") == "102\t6951\n"
+
+    azure_query(node, "DROP TABLE log_data SYNC")

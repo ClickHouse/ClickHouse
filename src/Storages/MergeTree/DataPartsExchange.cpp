@@ -966,20 +966,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
             /// entries from the expected checksums when throw_on_broken_projection is false. Genuine
             /// base-file corruption still fails checkEqual, so it is left to propagate.
             bool is_broken_projection = false;
-            auto computed_checksums = checkDataPart(new_data_part, /*require_checksums=*/ true, is_broken_projection);
-
-            /// checkDataPart returns an empty result (instead of throwing) when it hits a retryable error
-            /// such as a transient read or memory-limit exception, expecting the check to be retried
-            /// later. On the fetch path there is no later check before the part is published, so an empty
-            /// result means the archive contents were never verified. Fail the fetch so it is retried
-            /// rather than accepting a possibly-corrupted packed part. (A real part always has files, so a
-            /// genuine part never yields empty checksums here.)
-            if (computed_checksums.empty())
-                throw Exception(
-                    ErrorCodes::ABORTED,
-                    "Could not verify packed part {} on fetch (checksum computation was skipped because of a "
-                    "transient error); the fetch will be retried",
-                    part_name);
+            /// checkDataPart rethrows a retryable error (transient read / memory limit / Azure 403),
+            /// which fails the fetch so it is retried instead of publishing an unverified part.
+            checkDataPart(new_data_part, /*require_checksums=*/ true, is_broken_projection);
         }
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }

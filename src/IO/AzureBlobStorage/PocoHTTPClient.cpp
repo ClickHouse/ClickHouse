@@ -9,6 +9,7 @@
 #include <Common/Throttler.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
@@ -17,7 +18,10 @@
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/String.h>
 #include <Poco/URI.h>
+#include <azure/core/http/http.hpp>
 #include <azure/core/http/policies/policy.hpp>
+#include <azure/storage/common/storage_exception.hpp>
+#include <azure/core/credentials/credentials.hpp>
 
 
 namespace DB::ErrorCodes
@@ -25,6 +29,13 @@ namespace DB::ErrorCodes
     extern const int TOO_MANY_REDIRECTS;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::FailPoints
+{
+    extern const char azure_inject_forbidden_response[];
+    extern const char azure_inject_auth_failure[];
+    extern const char azure_inject_timeout[];
 }
 
 namespace ProfileEvents
@@ -137,6 +148,33 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::Send(
     Azure::Core::Http::Request & request,
     Azure::Core::Context const & context)
 {
+    /// Test-only: simulate an Azure 403 (the RBAC-propagation window) at the transport layer.
+    fiu_do_on(DB::FailPoints::azure_inject_forbidden_response,
+    {
+        throw Azure::Storage::StorageException::CreateFromResponse(
+            std::make_unique<Azure::Core::Http::RawResponse>(
+                1, 0,
+                Azure::Core::Http::HttpStatusCode::Forbidden,
+                "Forbidden (injected by failpoint)"));
+    });
+
+    /// Test-only: simulate a credential/RBAC token-acquisition failure (not an HTTP response).
+    fiu_do_on(DB::FailPoints::azure_inject_auth_failure,
+    {
+        throw Azure::Core::Credentials::AuthenticationException("Authentication failed (injected by failpoint)");
+    });
+
+    /// Test-only: simulate a connect/request timeout surfaced as a 408 (the #110724 path), mirroring the
+    /// synthetic 408 a Poco::TimeoutException becomes.
+    fiu_do_on(DB::FailPoints::azure_inject_timeout,
+    {
+        throw Azure::Storage::StorageException::CreateFromResponse(
+            std::make_unique<Azure::Core::Http::RawResponse>(
+                1, 0,
+                Azure::Core::Http::HttpStatusCode::RequestTimeout,
+                "Request timeout (injected by failpoint)"));
+    });
+
     CurrentMetrics::Increment metric_increment{CurrentMetrics::AzureRequests};
 
     size_t redirects_left = max_redirects;
@@ -502,15 +540,12 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             observeLatency(method, first_byte_latency_type, static_cast<HistogramMetrics::Value>(first_byte_time));
         }
 
-        auto error_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true);
-        auto response = std::make_unique<Azure::Core::Http::RawResponse>(
-            1, 1, // HTTP/1.1
-            Azure::Core::Http::HttpStatusCode::RequestTimeout,
-            error_message.text);
-
-        response->SetBodyStream(std::make_unique<EmptyBodyStream>());
         addMetric(method, AzureMetricType::Errors);
-        return response;
+
+        /// A timeout is a transport failure, not a real HTTP 408; a synthetic 408 reads as non-retryable and
+        /// can surface a transient timeout as a broken data part (#110724). Throw so the SDK RetryPolicy
+        /// retries it and isRetryableAzureException treats it as retryable.
+        throw Azure::Core::Http::TransportException(getCurrentExceptionMessageAndPattern(true).text);
     }
     catch (...)
     {

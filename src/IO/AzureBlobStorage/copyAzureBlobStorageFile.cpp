@@ -14,11 +14,15 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
+#include <IO/AzureBlobStorage/retryAzureOperation.h>
 #include <Common/getRandomASCIIString.h>
+#include <Common/FailPoint.h>
 
 
 #include <azure/core/credentials/credentials.hpp>
+#include <azure/core/http/http.hpp>
 #include <azure/storage/common/storage_credential.hpp>
+#include <azure/storage/common/storage_exception.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
 
@@ -44,8 +48,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace FailPoints
+{
+    extern const char azure_inject_forbidden_on_upload[];
+}
+
 namespace
 {
+    /// Test-only: make an UploadHelper write fail once with a retryable 403, so the
+    /// azure_inject_forbidden_on_upload failpoint exercises the write-side retry (retryAzureOperation).
+    [[noreturn, maybe_unused]] void injectForbiddenOnUpload()
+    {
+        throw Azure::Storage::StorageException::CreateFromResponse(
+            std::make_unique<Azure::Core::Http::RawResponse>(
+                1, 0,
+                Azure::Core::Http::HttpStatusCode::Forbidden,
+                "Forbidden (injected by failpoint)"));
+    }
+
     class UploadHelper
     {
     public:
@@ -165,7 +185,9 @@ namespace
         void performSinglepartUpload()
         {
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-            auto read_buffer = create_read_buffer();
+            /// Skip the first `offset` bytes of the source, same as the multipart path
+            /// (processUploadPartRequest); otherwise a ranged copy reads from byte 0.
+            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), offset, total_size);
 
             PODArray<char> memory;
             {
@@ -174,14 +196,21 @@ namespace
                 copyData(*read_buffer, wb, total_size);
             }
 
-            Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
-
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
             try
             {
-                block_blob_client.Upload(stream);
+                retryAzureOperation(
+                    [&]
+                    {
+                        fiu_do_on(FailPoints::azure_inject_forbidden_on_upload, { injectForbiddenOnUpload(); });
+                        /// Rebuild the body stream on each attempt so a retry re-sends from the start.
+                        Azure::Core::IO::MemoryBodyStream stream(
+                            reinterpret_cast<const uint8_t *>(memory.data()), total_size);
+                        block_blob_client.Upload(stream);
+                    },
+                    settings->max_single_download_retries, dest_blob, log);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
@@ -213,7 +242,13 @@ namespace
             String error_message;
             try
             {
-                block_blob_client.CommitBlockList(block_ids);
+                retryAzureOperation(
+                    [&]
+                    {
+                        fiu_do_on(FailPoints::azure_inject_forbidden_on_upload, { injectForbiddenOnUpload(); });
+                        block_blob_client.CommitBlockList(block_ids);
+                    },
+                    settings->max_single_download_retries, dest_blob, log);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
@@ -309,8 +344,6 @@ namespace
                 copyData(*read_buffer, wb, size_to_stage);
             }
 
-            Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
-
             auto block_id = getRandomASCIIString(64);
             block_ids[part_index] = block_id;
 
@@ -319,7 +352,16 @@ namespace
             String error_message;
             try
             {
-                block_blob_client.StageBlock(block_id, stream);
+                retryAzureOperation(
+                    [&]
+                    {
+                        fiu_do_on(FailPoints::azure_inject_forbidden_on_upload, { injectForbiddenOnUpload(); });
+                        /// Rebuild the body stream on each attempt so a retry re-sends from the start.
+                        Azure::Core::IO::MemoryBodyStream stream(
+                            reinterpret_cast<const uint8_t *>(memory.data()), size_to_stage);
+                        block_blob_client.StageBlock(block_id, stream);
+                    },
+                    settings->max_single_download_retries, dest_blob, log);
             }
             catch (const Azure::Core::RequestFailedException & e)
             {
@@ -392,7 +434,9 @@ void copyAzureBlobStorageFile(
     auto log = getLogger("copyAzureBlobStorageFile");
     bool is_native_copy_done = false;
 
-    if (settings->use_native_copy)
+    /// Server-side CopyFromUri copies the whole source blob, so native copy is valid only for a
+    /// full-object copy; a ranged copy (offset > 0) must go via read+write.
+    if (settings->use_native_copy && offset == 0)
     {
         /// Do native copy
         LOG_TRACE(log, "Copying Blob: {} from Container: {} using native copy", src_blob, src_container_for_logging);
@@ -400,6 +444,7 @@ void copyAzureBlobStorageFile(
         if (dest_client->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
+        std::optional<Azure::Storage::Blobs::StartBlobCopyOperation> async_operation;
         try
         {
             auto block_blob_client_src = src_client->GetBlockBlobClient(src_blob);
@@ -418,6 +463,7 @@ void copyAzureBlobStorageFile(
 
                 LOG_TRACE(log, "Copy blob sync {} -> {}", src_blob, dest_blob);
                 block_blob_client_dest.CopyFromUri(source_uri, copy_options);
+                is_native_copy_done = true;
             }
             else
             {
@@ -428,35 +474,13 @@ void copyAzureBlobStorageFile(
                         copy_options.Metadata[key] = value;
                 }
 
-                Azure::Storage::Blobs::StartBlobCopyOperation operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
-
-                auto copy_response = operation.PollUntilDone(std::chrono::milliseconds(100));
-                auto properties_model = copy_response.Value;
-
-                auto copy_status = properties_model.CopyStatus;
-                auto copy_status_description = properties_model.CopyStatusDescription;
-
-
-                if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
-                {
-                    LOG_TRACE(log, "Copy of {} to {} finished", properties_model.CopySource.Value(), dest_blob);
-                }
-                else
-                {
-                    if (copy_status.HasValue())
-                        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
-                                        src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), operation.IsDone());
-                    throw Exception(
-                        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                        "Copy from {} to {} didn't complete with success status (operation is done {})",
-                        src_blob,
-                        dest_blob,
-                        operation.IsDone());
-                }
+                /// Only *start* the server-side copy inside this try: a failure here happens before any copy
+                /// is in flight, so the catch below can still safely fall back to read+write. Polling is done
+                /// after the try, where a transient failure must not switch copy mechanisms mid-flight.
+                async_operation = block_blob_client_dest.StartCopyFromUri(source_uri, copy_options);
             }
-            is_native_copy_done = true;
         }
-        catch (const Azure::Storage::StorageException & e)
+        catch (const Azure::Core::RequestFailedException & e)
         {
             if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Unauthorized)
             {
@@ -470,8 +494,48 @@ void copyAzureBlobStorageFile(
                                "Will attempt to copy using read & write. source container = {} blob = {} and destination container = {} blob = {}",
                           e.what(), src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
             }
+            else if (e.StatusCode == Azure::Core::Http::HttpStatusCode::Forbidden)
+            {
+                /// Transient RBAC-propagation 403: fall back to read+write, whose retry loops treat
+                /// 403 as retryable (isRetryableAzureException) instead of failing the copy.
+                LOG_TRACE(log, "Copy operation got 403 Forbidden; will retry using read & write. "
+                               "source container = {} blob = {} and destination container = {} blob = {}",
+                          src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
+            }
             else
                 throw;
+        }
+        catch (const Azure::Core::Credentials::AuthenticationException & e)
+        {
+            /// Credential/RBAC token failure while starting the copy: fall back to read+write.
+            LOG_TRACE(log, "Copy operation hit an authentication error ({}); will retry using read & write. "
+                           "source container = {} blob = {} and destination container = {} blob = {}",
+                      e.what(), src_container_for_logging, src_blob, dest_container_for_logging, dest_blob);
+        }
+
+        /// StartCopyFromUri succeeded, so a server-side copy is now in flight. Poll it to completion on the
+        /// SAME operation; a transient poll failure is retried here and never falls back to read+write --
+        /// that would start a second writer to dest_blob while the copy is still pending.
+        if (async_operation.has_value())
+        {
+            auto copy_response = retryAzureOperation(
+                [&] { return async_operation->PollUntilDone(std::chrono::milliseconds(100)); },
+                settings->max_single_download_retries, dest_blob, log);
+            auto properties_model = copy_response.Value;
+            auto copy_status = properties_model.CopyStatus;
+            auto copy_status_description = properties_model.CopyStatusDescription;
+
+            if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
+            {
+                LOG_TRACE(log, "Copy of {} to {} finished", properties_model.CopySource.Value(), dest_blob);
+                is_native_copy_done = true;
+            }
+            else if (copy_status.HasValue())
+                throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
+                                src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), async_operation->IsDone());
+            else
+                throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} didn't complete with success status (operation is done {})",
+                                src_blob, dest_blob, async_operation->IsDone());
         }
     }
     if (!is_native_copy_done)

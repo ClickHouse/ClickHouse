@@ -1,0 +1,22 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <azure_disk>
+                <type>azure_blob_storage</type>
+                <storage_account_url from_env="AZURITE_STORAGE_ACCOUNT_URL"/>
+                <container_name>cont</container_name>
+                <skip_access_check>false</skip_access_check>
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+                <max_single_read_retries>3</max_single_read_retries>
+                <max_single_download_retries>3</max_single_download_retries>
+                <max_unexpected_write_error_retries>3</max_unexpected_write_error_retries>
+            </azure_disk>
+        </disks>
+        <policies>
+            <azure_policy>
+                <volumes><main><disk>azure_disk</disk></main></volumes>
+            </azure_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>
