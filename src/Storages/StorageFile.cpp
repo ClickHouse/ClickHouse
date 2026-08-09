@@ -325,7 +325,8 @@ std::vector<std::string> listFilesWithRegexpMatching(
     const std::string & for_match,
     size_t & total_bytes_to_read,
     size_t max_expansion,
-    bool use_glob_ast)
+    bool use_glob_ast,
+    bool * unexpanded_glob_fallback = nullptr)
 {
     std::vector<std::string> result;
 
@@ -334,11 +335,20 @@ std::vector<std::string> listFilesWithRegexpMatching(
     {
         GlobAST::GlobString glob(for_match);
         /// When the expansion exceeds the budget, traverse the unexpanded pattern once
-        /// (enums are then matched per directory level) instead of throwing.
+        /// (enums are then matched per directory level) instead of throwing. This collapses
+        /// overlapping enum alternatives (e.g. `{top,top}.csv` matches `top.csv` once instead
+        /// of twice), so the caller cannot derive the glob classification from the number of
+        /// returned paths anymore — report the fallback so the source stays readonly.
         if (glob.expansionSize() <= max_expansion)
+        {
             for_match_paths_expanded = glob.expand(max_expansion);
+        }
         else
+        {
             for_match_paths_expanded = {for_match};
+            if (unexpanded_glob_fallback)
+                *unexpanded_glob_fallback = true;
+        }
     }
     else
         for_match_paths_expanded = expandSelectionGlob(for_match);
@@ -418,7 +428,13 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 }
 
 /// Finds files matching a specified pattern with globs.
-Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read, bool use_glob_ast)
+Strings getPathsList(
+    const String & path_with_globs,
+    const String & user_files_path,
+    const ContextPtr & context,
+    size_t & total_bytes_to_read,
+    bool use_glob_ast,
+    bool * unexpanded_glob_fallback = nullptr)
 {
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_pattern(path_with_globs);
@@ -461,7 +477,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     else
     {
         /// We list only non-directory files.
-        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, max_expansion, use_glob_ast);
+        paths = listFilesWithRegexpMatching(pattern, total_bytes_to_read, max_expansion, use_glob_ast, unexpanded_glob_fallback);
         can_be_directory = false;
     }
 
@@ -1132,12 +1148,18 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
     FileSource res;
     String user_files_path = context->getUserFilesPath();
 
+    /// Set when the pattern's enum expansion exceeded `glob_expansion_max_elements` and the
+    /// listing traversed the unexpanded pattern instead: the path count then underestimates
+    /// the expansion multiplicity (overlapping alternatives collapse), so the source must be
+    /// classified as globbed regardless of how many paths matched.
+    bool unexpanded_glob_fallback = false;
+
     if (!path_to_archive.empty())
         res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read, *use_glob_ast_parser);
     else
-        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read, *use_glob_ast_parser);
+        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read, *use_glob_ast_parser, &unexpanded_glob_fallback);
 
-    res.with_globs = res.paths.size() > 1;
+    res.with_globs = res.paths.size() > 1 || unexpanded_glob_fallback;
 
     if (res.archive_info)
     {
