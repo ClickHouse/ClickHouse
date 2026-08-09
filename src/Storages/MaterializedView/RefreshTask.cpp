@@ -1278,13 +1278,21 @@ void RefreshTask::executeRefresh()
     /// when `last_success_end_time` advances, so those must reflect reality.
     bool params_changed_during_refresh = refresh_params_version != params_version_at_start;
     /// `unchanged` is the `REFRESH ... IF CHANGED` skip: the source data did not change, so we treat
-    /// the timeslot as completed (advancing the schedule and resetting retries) but do NOT touch the
-    /// last-success state - the view's data is unchanged, so dependent views must not be triggered.
+    /// the timeslot as completed (advancing the schedule and resetting retries) and consume the
+    /// dependency refreshes that triggered this run (`last_success_dependencies` is the scheduler
+    /// watermark for `DEPENDS ON`; without advancing it the same dependency refresh would keep looking
+    /// new and re-trigger an immediate skipped refresh forever), but do NOT touch the published
+    /// last-success output (`last_success_time` / `last_success_table_uuid` / `last_success_end_time`) -
+    /// the view's data is unchanged, so dependent views must not be triggered.
     if (new_table_uuid.has_value() || unchanged)
     {
         znode.last_attempt_succeeded = true;
         if (!params_changed_during_refresh)
+        {
             znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, start_time_seconds, end_time_seconds, execution.out_of_schedule);
+            znode.last_success_dependencies = std::move(execution.dependencies);
+            last_refresh_source_hash = source_hash;
+        }
         znode.previous_attempt_error = "";
         znode.attempt_number = 0;
         znode.randomize();
@@ -1299,11 +1307,6 @@ void RefreshTask::executeRefresh()
         else
             /// Must monotonically increase, dependencies rely on it.
             znode.last_success_end_time += std::chrono::nanoseconds(1);
-        if (!params_changed_during_refresh)
-        {
-            znode.last_success_dependencies = std::move(execution.dependencies);
-            last_refresh_source_hash = source_hash;
-        }
     }
     execution.znode = znode;
 
