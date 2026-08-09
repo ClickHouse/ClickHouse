@@ -275,9 +275,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & date_time64_type = static_cast<const DataTypeDateTime64 &>(type);
         const auto value = date_time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-        return DecimalField<DateTime64>(
-            DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
-            date_time64_type.getScale());
+        /// The whole-seconds value of an extended-range date (e.g. `9999-12-31` = 253402214400) times a large
+        /// scale multiplier can exceed the underlying `Int64`. Such a value is not representable in this
+        /// `DateTime64` and therefore cannot equal any stored value - return Null ("cannot convert") instead
+        /// of throwing `DECIMAL_OVERFLOW` from the multiplication.
+        DateTime64 result;
+        if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier(), result))
+            return {};
+        return DecimalField<DateTime64>(result, date_time64_type.getScale());
     }
     if (which_type.isDate() && which_from_type.isTime())
     {
@@ -309,9 +314,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
         const auto value = time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
-        return DecimalField<Time64>(
-            DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
-            time64_type.getScale());
+        /// Same as the `Date32` -> `DateTime64` branch above: an unrepresentable value cannot match anything.
+        Time64 result;
+        if (!DecimalUtils::tryGetDecimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier(), result))
+            return {};
+        return DecimalField<Time64>(result, time64_type.getScale());
     }
     if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
