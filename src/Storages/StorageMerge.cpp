@@ -1856,17 +1856,27 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
 {
     filterTablesAndCreateChildrenPlans();
 
-    /// Reading in reverse order with FINAL is supported only for ReplacingMergeTree
-    /// (see `ReadFromMergeTree::requestReadingInOrder`). Check all the tables upfront,
-    /// because the loop below switches the children to the in-order reading one by one,
-    /// and a child must not be switched when a later child rejects the request
-    /// and the optimization is abandoned.
+    /// Ask the reading steps rather than the enumerated storages, which `tableForRead` may replace
+    /// by a wrapper whose read still reaches a `ReadFromMergeTree`. Ask upfront, because the loop
+    /// below switches the children one by one and must not leave one switched. A child plan without
+    /// a reading step of its own is rejected too: the tables of a nested `ReadFromMerge` would never
+    /// be switched, while this step would claim that its output is sorted in the reverse order.
     if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
     {
-        for (const auto & [database_name, storage, lock, table_name] : selected_tables)
+        for (const auto & child_plan : *child_plans)
         {
-            const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
-            if (!merge_tree || merge_tree->merging_params.mode != MergeTreeData::MergingParams::Replacing)
+            if (!child_plan.plan.isInitialized())
+                continue;
+
+            size_t reading_steps = 0;
+            auto supports_reverse_order_with_final = [&](ReadFromMergeTree & read_from_merge_tree)
+            {
+                ++reading_steps;
+                return read_from_merge_tree.canReadInReverseOrderWithFinal();
+            };
+
+            if (!recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), supports_reverse_order_with_final)
+                || reading_steps == 0)
                 return false;
         }
     }
