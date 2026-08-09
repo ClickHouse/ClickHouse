@@ -476,7 +476,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         {
             /// Same latch as `MergeTask::GlobalRuntimeContext::isCancelled`: the IO layer and the merge's own
             /// checks poll independently, so a blocker released in between must not resurrect the read.
-            /// `ttl_merges_blocker` cancels an assigned TTL merge only, never a regular one.
+            /// The TTL term mirrors both of `MergeTask`'s conditions: assigned, or actually removing.
             auto is_cancelled = [&blocker = merges_blocker,
                                  &ttl_blocker = ttl_merges_blocker,
                                  is_ttl_merge = isTTLMergeType(future_part->merge_type),
@@ -486,7 +486,10 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
                 if ((*merge_entry)->is_cancelled.load(std::memory_order_relaxed))
                     return true;
 
-                if (blocker.isCancelledForPartition(partition_id) || (is_ttl_merge && ttl_blocker.isCancelled()))
+                const bool removes_expired_values
+                    = is_ttl_merge || (*merge_entry)->is_removing_expired_values.load(std::memory_order_relaxed);
+
+                if (blocker.isCancelledForPartition(partition_id) || (removes_expired_values && ttl_blocker.isCancelled()))
                 {
                     (*merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
                     return true;

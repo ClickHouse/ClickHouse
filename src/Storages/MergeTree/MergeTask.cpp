@@ -648,6 +648,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->need_remove_expired_values = false;
     }
 
+    /// The settled value, so the IO layer's predicate cancels this merge on `SYSTEM STOP TTL MERGES`
+    /// exactly when the `need_remove` term below would. Publishing the pre-downgrade value would abort
+    /// a merge that legitimately continues with removal disabled.
+    global_ctx->merge_list_element_ptr->is_removing_expired_values.store(
+        ctx->need_remove_expired_values, std::memory_order_relaxed);
+
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
     /// Snapshot of pending mutations for the source parts, fetched once and reused for
