@@ -55,6 +55,10 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT framing_exception_packet_throw
 
 echo '--- bytes already consumed by the HTTP transport compressor also fail closed'
 RESPONSE_FILE="${CLICKHOUSE_TMP}/04817_compressed_response"
+# curl does not create the output file when the connection aborts before any response byte
+# arrives, and an absent file would make the grep below spill an error to stderr, so pre-create
+# it empty (an empty response trivially contains no plain error body).
+: > "$RESPONSE_FILE"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT framing_exception_packet_throw"
 ${CLICKHOUSE_CURL} -s -H 'Accept-Encoding: br' "${URL_STREAMING}&enable_http_compression=1" \
     -d "SELECT throwIf(1) FORMAT JSONEachRow" -o "$RESPONSE_FILE"
