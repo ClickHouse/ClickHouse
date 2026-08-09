@@ -80,7 +80,7 @@ UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64
 {
     struct statvfs fs{};
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
+        fs = getStatVFS(pathToString(fs::path(disk_path) / "data" / ""));
     else
         fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_frsize;
@@ -305,7 +305,7 @@ std::optional<UInt64> DiskLocal::getAvailableSpace() const
     /// available for superuser only and for system purposes
     struct statvfs fs{};
     if (name == "default") /// for default disk we get space from path/data/
-        fs = getStatVFS((fs::path(disk_path) / "data" / "").string());
+        fs = getStatVFS(pathToString(fs::path(disk_path) / "data" / ""));
     else
         fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_frsize;
@@ -429,11 +429,12 @@ void DiskLocal::prepareRead(
     std::error_code ec;
     auto file_size = fs::file_size(full_path, ec);
 
-    StoredObject obj(full_path.string(), full_path.string(), ec ? StoredObject::UnknownSize : file_size);
+    auto full_path_string = pathToString(full_path);
+    StoredObject obj(full_path_string, full_path_string, ec ? StoredObject::UnknownSize : file_size);
 
     /// No gather for local disk — the source buffer is returned directly.
     pipeline.setLocalFileSource(
-        full_path.string(),
+        full_path_string,
         StoredObjects{obj},
         settings,
         read_hint);
@@ -791,7 +792,7 @@ struct stat DiskLocal::stat(const String & path) const
 void DiskLocal::chmod(const String & path, mode_t mode)
 {
     auto full_path = fs::path(disk_path) / path;
-    if (::chmod(full_path.string().c_str(), mode) == 0)
+    if (platformChmod(pathToString(full_path), mode) == 0)
         return;
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
 }

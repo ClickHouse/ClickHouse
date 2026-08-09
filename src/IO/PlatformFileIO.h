@@ -93,6 +93,10 @@ int platformRmdir(const std::string & path);
 /// `utime(2)`: set a file's access and modification times.
 int platformSetFileTimes(const std::string & path, time_t access_time, time_t modification_time);
 
+/// `chmod(2)`. Windows has no POSIX permission bits; the CRT's `_wchmod` maps the owner write
+/// bit onto the read-only file attribute and ignores the rest, which is the closest it gets.
+int platformChmod(const std::string & path, mode_t mode);
+
 /// A file's identity, size and modification time at full precision - the parts `stat` cannot
 /// report on Windows, where the CRT's `struct stat` carries whole seconds and a zero `st_ino`
 /// (see src/Common/createHardLink.cpp). NTFS itself keeps 100-nanosecond timestamps and a
