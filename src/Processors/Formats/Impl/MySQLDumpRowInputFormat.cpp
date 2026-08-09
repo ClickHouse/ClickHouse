@@ -521,6 +521,11 @@ NamesAndTypesList MySQLDumpSchemaReader::readSchema()
     Names names;
     readFirstCreateAndInsertQueries(in, table_name, structure_from_create, names);
 
+    /// The parser decides between the by-name and the positional column mapping by the same
+    /// condition (see `MySQLDumpRowInputFormat::readPrefix`, which reads the names with the same
+    /// helper), so latch whether the data provided column names for `mapsColumnsByName`.
+    column_names_read_from_data = !names.empty();
+
     if (!structure_from_create.empty())
         return structure_from_create;
 

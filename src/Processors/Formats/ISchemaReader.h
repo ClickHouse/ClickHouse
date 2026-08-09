@@ -90,10 +90,12 @@ public:
     /// True when the parser maps the input's fields to destination columns by name rather than by
     /// position. Besides the inherently name-based formats (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...,
     /// which also return `hasStrictOrderOfColumns() == false`), this holds for a `*WithNames*` format
-    /// whose names header the parser is configured to use (`input_format_with_names_use_header`), and
-    /// for the formats that store named columns and read them by name into the destination: `Native`,
+    /// whose names header the parser is configured to use (`input_format_with_names_use_header`), for
+    /// the formats that store named columns and read them by name into the destination: `Native`,
     /// `Avro`, the external-schema `Protobuf` / `CapnProto` families, the columnar `Parquet` / `Arrow` /
-    /// `ORC`, and the named columnar JSON formats. Note that
+    /// `ORC`, and the named columnar JSON formats — and for `MySQLDump` when the dump provided column
+    /// names (in a `CREATE` query or in the `INSERT` column list) and
+    /// `input_format_mysql_dump_map_column_names` is enabled. Note that
     /// `FormatFactory::checkIfFormatSupportsSubsetOfColumns` is NOT a valid proxy for this property:
     /// `Npy` supports reading a subset of columns yet writes its single column positionally (while its
     /// schema reader always names that column `array`), and `RowBinaryWithNamesAndTypes` maps columns
