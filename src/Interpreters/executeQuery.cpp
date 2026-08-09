@@ -1571,7 +1571,19 @@ static BlockIO executeQueryImpl(
         /// the client-supplied `query_kind` (which is deliberately not trusted above for the
         /// secondary-query case), `internal` is a server-side flag and cannot be spoofed, so it
         /// is safe to skip rule application on it.
-        if (!internal)
+        ///
+        /// Distributed DDL (`ON CLUSTER` / `Replicated` database) workers replay the initiator's
+        /// query with `QueryFlags{ .internal = false }` (`DDLWorker::tryExecuteQuery`), so the
+        /// `internal` guard does not cover them. Rules were already applied once, on the
+        /// initiator, before the query was written to the DDL log; the entry-settings strip in
+        /// `DDLLogEntry::setSettingsIfRequired` suppresses the worker's `query_rules` only for
+        /// entry formats that carry settings (v2+), while a `distributed_ddl_entry_format_version = 1`
+        /// entry leaves the worker on its local profile defaults. Skip rule application on the
+        /// `isDDLOrOnClusterInternal` flag (set by `DDLTaskBase::makeQueryContext` and the
+        /// `DatabaseReplicated` task for every replayed query, and likewise a server-side flag),
+        /// so a worker-side default `query_rules` cannot rewrite or reject the replayed DDL
+        /// regardless of the entry format version.
+        if (!internal && !context->isDDLOrOnClusterInternal())
             astTraversal(out_ast, context, applied_rewrite_rules);
     }
     catch (...)

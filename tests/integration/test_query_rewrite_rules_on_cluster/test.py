@@ -78,3 +78,46 @@ def test_on_cluster_ddl_is_not_rewritten_second_time_on_workers(started_cluster)
 
     for node in (node1, node2):
         node.query("DROP RULE rule_reject")
+
+
+def test_on_cluster_ddl_v1_entry_skips_worker_default_rules(started_cluster):
+    # `distributed_ddl_entry_format_version = 1` entries carry no `settings` at all, so the
+    # empty `query_rules` override recorded by `DDLLogEntry::setSettingsIfRequired` (v2+) never
+    # reaches the worker and `DDLTaskBase::makeQueryContext` starts from the worker's local
+    # profile defaults. The worker must still not apply rewrite rules to the replayed DDL:
+    # `executeQuery` skips rule application on the `isDDLOrOnClusterInternal` flag.
+    node1.query(
+        "CREATE TABLE t_v1 ON CLUSTER test_cluster (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+
+    # A rule on node2 whose source template matches the worker-local form of the `DROP` below,
+    # activated through node2's default settings profile (not through the DDL entry settings).
+    node2.query(
+        "CREATE RULE rule_v1_reject AS (DROP TABLE default.t_v1) REJECT WITH 'denied on worker'"
+    )
+    node2.replace_config(
+        "/etc/clickhouse-server/users.d/query_rules_default.xml",
+        "<clickhouse><profiles><default><query_rules>rule_v1_reject</query_rules></default></profiles></clickhouse>",
+    )
+    node2.query("SYSTEM RELOAD CONFIG")
+
+    # Sanity: the profile default is active on node2 — the same query submitted directly there
+    # is rejected.
+    assert "denied on worker" in node2.query_and_get_error("DROP TABLE default.t_v1")
+
+    # The replayed v1 DDL on node2 must not be matched against node2's default rules, so the
+    # `DROP` succeeds on both nodes.
+    node1.query(
+        "DROP TABLE t_v1 ON CLUSTER test_cluster",
+        settings={"distributed_ddl_entry_format_version": 1},
+    )
+    for node in (node1, node2):
+        assert node.query("EXISTS TABLE t_v1").strip() == "0"
+
+    # Remove the profile default before dropping the rule it names, so no query on node2 runs
+    # with a default naming a dropped rule.
+    node2.exec_in_container(
+        ["bash", "-c", "rm /etc/clickhouse-server/users.d/query_rules_default.xml"]
+    )
+    node2.query("SYSTEM RELOAD CONFIG")
+    node2.query("DROP RULE rule_v1_reject")
