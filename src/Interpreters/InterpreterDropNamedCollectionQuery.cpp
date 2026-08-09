@@ -69,32 +69,26 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
         /// A detached table is not in `DatabaseCatalog`, but the metadata it is attached from still
         /// references the collection: if the collection is dropped, the `ATTACH` replayed at the next
         /// server start throws `NAMED_COLLECTION_DOESNT_EXIST` and the server does not start.
+        /// Every entry blocks the drop, even when a table with that name exists in `DatabaseCatalog`
+        /// again. The entry cannot be pruned here based on the table's existence: a concurrent `ATTACH`
+        /// registers its live dependency after the check above already ran, and a concurrent `DETACH`
+        /// records the entry while the table is still in the catalog - in both windows the table exists,
+        /// yet nothing in this query has validated the live dependency. Entries are removed only by the
+        /// events that prove the metadata under the recorded name is gone or harmless: `DROP TABLE`,
+        /// `DETACH TABLE ... PERMANENTLY`, `RENAME` of the table, and `DROP DATABASE`.
         auto detached_dependents = NamedCollectionFactory::instance().getDetachedDependents(query.collection_name);
         if (!detached_dependents.empty())
         {
             std::vector<String> detached_names;
             detached_names.reserve(detached_dependents.size());
             for (const auto & dep : detached_dependents)
-            {
-                /// The entry is not removed when the dependencies of the table are registered again:
-                /// that happens while the engine arguments are resolved, and the `ATTACH` can still
-                /// fail after that, leaving the table detached with the entry as its only protection.
-                /// A table that exists in the catalog proves the attach went through - such an entry
-                /// only lingered here, and the dependency of the attached table was checked above.
-                if (DatabaseCatalog::instance().isTableExist(dep, current_context))
-                    NamedCollectionFactory::instance().removeDetachedDependencies(dep);
-                else
-                    detached_names.push_back(dep.getFullTableName());
-            }
+                detached_names.push_back(dep.getFullTableName());
 
-            if (!detached_names.empty())
-            {
-                throw Exception(
-                    ErrorCodes::NAMED_COLLECTION_IS_USED,
-                    "Named collection `{}` may still be used by detached tables: {}",
-                    query.collection_name,
-                    fmt::join(detached_names, ", "));
-            }
+            throw Exception(
+                ErrorCodes::NAMED_COLLECTION_IS_USED,
+                "Named collection `{}` may still be used by detached tables: {}",
+                query.collection_name,
+                fmt::join(detached_names, ", "));
         }
     }
 

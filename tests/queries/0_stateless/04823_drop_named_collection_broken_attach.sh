@@ -41,8 +41,10 @@ DROP NAMED COLLECTION ${NC};
 "
 
 echo "--- a rename of the re-attached table releases its detached record ---"
-# After a successful `ATTACH` the record lingers until the table proves it exists again. `RENAME` frees
-# the old name (only an attached table can be renamed), so the record must go with it: afterwards the
+# After a successful `ATTACH` the record lingers: it is removed only when the table is dropped, renamed,
+# or detached permanently, never by the `DROP NAMED COLLECTION` check itself (the table's existence in
+# the catalog is racy against in-flight attaches and detaches, so it proves nothing to that check).
+# `RENAME` frees the old name (only an attached table can be renamed), so the record must go with it: the
 # collection is only held by the regular dependency of the attached table, and dropping the table
 # releases it.
 ${CLICKHOUSE_CLIENT} -m -q "
@@ -50,6 +52,7 @@ CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'CSV';
 CREATE TABLE t (x UInt32) ENGINE = URL(${NC});
 DETACH TABLE t;
 ATTACH TABLE t;
+DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
 RENAME TABLE t TO t_renamed;
 DROP TABLE t_renamed;
 DROP NAMED COLLECTION ${NC};

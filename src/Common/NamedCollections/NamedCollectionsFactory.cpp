@@ -432,8 +432,8 @@ void NamedCollectionFactory::addDependency(const String & collection_name, const
 
     /// The detached entry of the table, if any, is deliberately not removed here: the dependencies are
     /// registered while the engine arguments are resolved, and the `ATTACH` can still fail after that,
-    /// leaving the table detached. The entry is removed when the table is dropped, detached permanently,
-    /// or renamed, and by the `DROP NAMED COLLECTION` check once the table demonstrably exists again.
+    /// leaving the table detached. The entry is removed only when the table is dropped, detached
+    /// permanently, or renamed.
 }
 
 void NamedCollectionFactory::removeDependencies(const StorageID & table_id)

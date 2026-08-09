@@ -100,21 +100,21 @@ public:
 
     /// `DETACH TABLE` moves the dependencies of the table here: a detached table is not in
     /// `DatabaseCatalog`, but the metadata it is attached from still references the collections, so they
-    /// must not be dropped. An entry is removed when the table is dropped, detached permanently, or
-    /// renamed (all of which require the table to have been attached back first), when its database is
-    /// dropped, and by the `DROP NAMED COLLECTION` check once the table demonstrably exists again.
-    /// `ATTACH` itself does not remove the entry: the dependencies are registered again while the engine
-    /// arguments are resolved, but the attach can still fail after that, leaving the table detached.
+    /// must not be dropped. An entry is removed only when the table is dropped, detached permanently, or
+    /// renamed (all of which require the table to have been attached back first), and when its database
+    /// is dropped. `ATTACH` itself does not remove the entry: the dependencies are registered again while
+    /// the engine arguments are resolved, but the attach can still fail after that, leaving the table
+    /// detached. The `DROP NAMED COLLECTION` check does not prune the entries of tables that exist in
+    /// `DatabaseCatalog` either: the table's existence there is racy against in-flight `ATTACH`/`DETACH`
+    /// and proves nothing about whether the drop validated the live dependency.
     /// The list is kept in memory only, which is consistent across a restart: a plainly detached table
     /// is attached again at the next start (its dependencies are registered normally), and a permanently
     /// detached table does not record entries at all - it is not loaded at startup, so a dropped
-    /// collection cannot break the start. The list is deliberately imprecise: dropping the collection
-    /// may still be refused for a while after the detached table itself is gone.
+    /// collection cannot break the start. The list is deliberately imprecise: an entry may keep refusing
+    /// the drop after the table was attached back (until the table is dropped or renamed) or after the
+    /// detached table itself is gone.
     void markDependenciesDetached(const StorageID & table_id);
-    /// The detached tables that referenced the collection when they were detached. The caller is
-    /// expected to prune the entries of tables that exist in `DatabaseCatalog` again with
-    /// `removeDetachedDependencies`: the attach went through (an attached table is tracked by the
-    /// regular dependencies), the entry only lingered here.
+    /// The detached tables that referenced the collection when they were detached.
     std::vector<StorageID> getDetachedDependents(const String & collection_name) const;
     /// `DROP TABLE` and `DETACH TABLE ... PERMANENTLY` remove the metadata the entry stands for.
     void removeDetachedDependencies(const StorageID & table_id);
