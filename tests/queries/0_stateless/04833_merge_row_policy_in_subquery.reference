@@ -1,0 +1,22 @@
+final
+5	10
+plain, prewhere disabled
+5	10
+global in
+5	10
+not in
+5	10
+granules still pruned
+1
+no unconverted delayed step
+0
+key column, index for in disabled
+5	10
+nullable, nullIn
+5	10
+two children, two policies
+1	10
+3	30
+no subquery in policy
+5	10
+6	20
