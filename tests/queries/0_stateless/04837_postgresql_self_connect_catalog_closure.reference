@@ -1,0 +1,20 @@
+--- every emulated catalog view resolves and reads back through a self-connect
+pg_type	1
+pg_attribute	1
+pg_class	1
+pg_namespace	1
+pg_proc	1
+pg_range	1
+pg_enum	1
+--- pg_type round-trips in full, including the leading oid column, and oid columns are numbers
+UInt32	UInt32	String
+26	oid	0
+1007	_int4	23
+--- the catalog names resolve through pg_namespace to pg_catalog
+pg_attribute	r
+pg_class	r
+pg_enum	r
+pg_namespace	r
+pg_proc	r
+pg_range	r
+pg_type	r

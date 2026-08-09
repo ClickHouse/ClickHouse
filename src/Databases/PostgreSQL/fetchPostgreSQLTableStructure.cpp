@@ -97,6 +97,11 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
         res = std::make_shared<DataTypeFloat64>();
     else if (type == "serial")
         res = std::make_shared<DataTypeUInt32>();
+    else if (type == "oid")
+        /// Object identifiers are unsigned 32-bit integers in PostgreSQL. The emulated `pg_catalog` of the
+        /// PostgreSQL wire-protocol handler declares its `oid` columns with this type, so a self-connected
+        /// read of a catalog view recovers them as numbers rather than falling through to `String`.
+        res = std::make_shared<DataTypeUInt32>();
     else if (type == "bigserial")
         res = std::make_shared<DataTypeUInt64>();
     else if (type.starts_with("timestamp"))
