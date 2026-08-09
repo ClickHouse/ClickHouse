@@ -1,6 +1,7 @@
 #include <IO/ParallelGzipDeflatingWriteBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/setThreadName.h>
 #include <base/scope_guard.h>
@@ -14,7 +15,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int FAULT_INJECTED;
     extern const int ZLIB_DEFLATE_FAILED;
+}
+
+namespace FailPoints
+{
+    extern const char parallel_gzip_compression_fail[];
 }
 
 void ParallelGzipDeflatingWriteBuffer::nextImpl()
@@ -35,8 +42,6 @@ void ParallelGzipDeflatingWriteBuffer::finalFlushBefore()
     /// response body empty and to be able to replace it with an exception message.
     if (!header_written && !compress_empty)
         return;
-
-    ensureHeaderWritten();
 
     auto * in_buf = reinterpret_cast<unsigned char *>(working_buffer.begin());
     compressAndWrite(in_buf, offset(), true);
@@ -157,11 +162,6 @@ size_t ParallelGzipDeflatingWriteBuffer::calcCheck(const unsigned char * buf, si
 
 void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, size_t in_len, bool final_compression_flag)
 {
-    /// The first byte of output is about to be produced, so the gzip header must precede it.
-    /// On the final flush the header has already been written (or deliberately skipped) by
-    /// `finalFlushBefore`, and this call is a no-op.
-    ensureHeaderWritten();
-
     ulen += in_len;
 
     const size_t def_block = BLOCK_SIZE;
@@ -173,6 +173,7 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
         if (final_compression_flag)
         {
             CompressedBuf result = compressBlock(in_buf, in_len, true);
+            ensureHeaderWritten();
             out->write(result.mem->data(), result.len);
         }
         return;
@@ -183,6 +184,9 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
         getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
         runner = threadPoolCallbackRunnerUnsafe<CompressedBuf>(getIOThreadPool().get(), ThreadName::UNKNOWN);
     }
+
+    fiu_do_on(FailPoints::parallel_gzip_compression_fail,
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of parallel gzip compression"));
 
     /// Schedule deflation of every block of this pass on the shared IO thread pool. The number of
     /// blocks per pass is bounded by the staging buffer size (~num_threads blocks).
@@ -238,6 +242,12 @@ void ParallelGzipDeflatingWriteBuffer::compressAndWrite(unsigned char * in_buf, 
         out->position() = out->buffer().begin();
         std::rethrow_exception(exception);
     }
+
+    /// The gzip header is committed only after the whole pass has compressed successfully, right
+    /// before its first byte of compressed output. This keeps the buffer's output empty when the
+    /// first pass fails (e.g. a memory-tracked allocation above throws), so the HTTP response path
+    /// can still discard the body and replace it with a clean, uncompressed exception message.
+    ensureHeaderWritten();
 
     for (size_t i = 0; i < scheduled; ++i)
         out->write(results[i].mem->data(), results[i].len);
