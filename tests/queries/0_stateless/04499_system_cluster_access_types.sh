@@ -48,14 +48,29 @@ cluster="test_shard_localhost"
 # so the entry never executes here; the access check under test runs on the initiator before enqueue.
 unavailable_cluster="test_cluster_multiple_nodes_all_unavailable"
 
-# is_local is computed by the same isLocalAddress(resolved, tcp_port) predicate that
-# DDLTask::findCurrentHostID uses to pick up an entry, so these two guards pin where each
-# group of probes executes. count() > 0 keeps a missing cluster from passing vacuously.
+# getServerPort() only knows ports whose listener bound, but isSelfHostID reads the configured
+# one, so take both. 0 is a safe filler: a cluster node can never have port 0.
+secure_port=$(${CLICKHOUSE_CLIENT} --query "SELECT getServerPort('tcp_port_secure')" 2>/dev/null || echo 0)
+[ -n "$secure_port" ] || secure_port=0
+secure_port_cfg=${CLICKHOUSE_PORT_TCP_SECURE:-0}
+[ -n "$secure_port_cfg" ] || secure_port_cfg=0
+routable_ports="tcpPort(), $secure_port, $secure_port_cfg"
+
+# An entry can only be picked up here if its port matches tcp_port or tcp_port_secure exactly,
+# so a port that is neither makes this host unreachable whatever its hostname resolves to.
+# Abort rather than continue: the no-table probes below are host-global, so running them
+# against a routable cluster would touch every other test's tables.
+n_routable=$(${CLICKHOUSE_CLIENT} --query "
+    SELECT countIf(port IN ($routable_ports)) + 1000 * (count() = 0)
+    FROM system.clusters WHERE cluster = '$unavailable_cluster'")
+if [ "$n_routable" = 0 ]; then
+    echo "ok"
+else
+    echo "FAIL: $unavailable_cluster has $n_routable node(s) reachable here (or is missing)"
+    exit 1
+fi
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT if(countIf(is_local) = 0 AND count() > 0, 'ok', 'FAIL: expected no local replica in $unavailable_cluster')
-    FROM system.clusters WHERE cluster = '$unavailable_cluster'"
-${CLICKHOUSE_CLIENT} --query "
-    SELECT if(countIf(is_local) > 0, 'ok', 'FAIL: expected a local replica in $cluster')
+    SELECT if(countIf(port IN ($routable_ports)) > 0, 'ok', 'FAIL: expected a routable replica in $cluster')
     FROM system.clusters WHERE cluster = '$cluster'"
 
 run() { ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none "$@"; }
