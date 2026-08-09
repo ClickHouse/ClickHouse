@@ -2,9 +2,16 @@
 
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char filter_sorted_stream_by_range_pause[];
+    extern const char filter_sorted_stream_by_range_fallback_pause[];
+}
 
 FilterSortedStreamByRange::FilterSortedStreamByRange(
     SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_, bool remove_filter_column_, bool on_totals_)
@@ -27,12 +34,35 @@ void FilterSortedStreamByRange::onCancel() noexcept
     filter_transform.cancel();
 }
 
+bool FilterSortedStreamByRange::stopIfCancelled(Chunk & chunk)
+{
+    if (!isCancelled())
+        return false;
+
+    chunk.clear();
+    stopReading();
+    return true;
+}
+
 void FilterSortedStreamByRange::transform(Chunk & chunk)
 {
+    /// A cancelled processor keeps being scheduled until it reports that it is finished, so a chunk
+    /// buffered in the input port can still arrive here after `KILL QUERY`. Do not enter the filter
+    /// expression again: drop the chunk and stop reading.
+    if (stopIfCancelled(chunk))
+        return;
+
+    /// Pauses every entry that passed the cancellation guard above. Tests arm it after `KILL QUERY`,
+    /// so a transform re-entered after the cancellation blocks here and the test times out.
+    FailPointInjection::pauseFailPoint(FailPoints::filter_sorted_stream_by_range_pause);
+
     const UInt64 rows_before_filtration = chunk.getNumRows();
     if (rows_before_filtration < 2)
     {
         filter_transform.transform(chunk);
+        /// The query was killed during the evaluation: the inner transform returned an empty chunk,
+        /// and this outer transform must stop pulling further input.
+        stopIfCancelled(chunk);
         return;
     }
 
@@ -51,12 +81,8 @@ void FilterSortedStreamByRange::transform(Chunk & chunk)
     /// The query was killed while the probe was being evaluated: the inner transform returned
     /// an empty chunk, which must not be mistaken for a failed quick check — that would re-run
     /// the full expression on the whole chunk just to unwind. Return an empty chunk instead.
-    if (isCancelled())
-    {
-        chunk.clear();
-        stopReading();
+    if (stopIfCancelled(chunk))
         return;
-    }
 
     const bool all_rows_will_pass_filter = chunk.getNumRows() == 2;
 
@@ -64,7 +90,13 @@ void FilterSortedStreamByRange::transform(Chunk & chunk)
 
     // Not all rows satisfy conditions.
     if (!all_rows_will_pass_filter)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::filter_sorted_stream_by_range_fallback_pause);
         filter_transform.transform(chunk);
+        /// Same as above: a kill during the full evaluation must not leave a partially processed
+        /// chunk in the output, and must stop this outer transform from pulling further input.
+        stopIfCancelled(chunk);
+    }
 }
 
 }
