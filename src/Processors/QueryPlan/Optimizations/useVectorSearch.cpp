@@ -87,6 +87,14 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     if (!expression_step)
         return no_layers_updated;
 
+    /// A row-changing action (e.g. `arrayJoin`) below the sort expands or drops rows before the sort and the
+    /// limit. Vector search shortlists a few base rows and feeds only those to this `ExpressionStep`, so the
+    /// rows a later base row would have contributed are never produced and the query returns fewer rows than
+    /// the `LIMIT` - e.g. the nearest base rows hold empty arrays, `arrayJoin` drops them, and the result is
+    /// empty. This mirrors the `hasArrayJoin` guard in `optimizeTopK`. See #82279.
+    if (expression_step->getExpression().hasArrayJoin())
+        return no_layers_updated;
+
     if (node->children.size() != 1)
         return no_layers_updated;
     node = node->children.front();
@@ -98,6 +106,10 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
         filter_step = typeid_cast<FilterStep *>(node->step.get());
         if (!filter_step)
             return no_layers_updated;
+        /// Same reasoning as above: `arrayJoin` inside a `FilterStep` below the sort changes the number of rows
+        /// before the sort and the limit, but vector search prunes rows before it.
+        if (filter_step->getExpression().hasArrayJoin())
+            return no_layers_updated;
         if (node->children.size() != 1)
             return no_layers_updated;
         node = node->children.front();
@@ -108,6 +120,15 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     }
 
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
+        additional_filters_present = true;
+
+    /// A row-level policy filter is reader-side as well: it restricts the set of rows just like a `WHERE` or a
+    /// `PREWHERE`, so it must participate in `additional_filters_present`. Otherwise a query filtered only by a
+    /// policy is treated as unfiltered: the `vector_search_filter_strategy = 'prefilter'` bailout below is
+    /// skipped, so an explicit request for exact search is ignored, and `MergeTreeIndexConditionVectorSimilarity`
+    /// fetches only `LIMIT` neighbours without the `vector_search_index_fetch_multiplier` compensation, which the
+    /// policy can then discard.
+    if (read_from_mergetree_step->getRowLevelFilter())
         additional_filters_present = true;
 
     if (additional_filters_present && settings.vector_search_filter_strategy == VectorSearchFilterStrategy::PREFILTER)

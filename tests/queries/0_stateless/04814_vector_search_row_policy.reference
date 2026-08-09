@@ -1,0 +1,6 @@
+no policy, prefilter: uses the index
+1
+policy, prefilter: exact search
+0
+policy, postfilter: uses the index
+1
