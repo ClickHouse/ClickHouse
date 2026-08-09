@@ -107,9 +107,9 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
 
     /// Go through the list of projection parts.
     MergeTreeData::DataPartStateVector all_parts_state;
-    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column);
-
     QueryStatusPtr query_status = context->getProcessListElement();
+
+    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column, query_status);
 
     for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {

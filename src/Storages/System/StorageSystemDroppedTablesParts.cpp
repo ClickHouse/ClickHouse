@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <Storages/VirtualColumnUtils.h>
 
@@ -34,6 +35,13 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
     auto tables_mark_dropped = DatabaseCatalog::instance().getTablesMarkedDropped();
     for (const auto & dropped_table : tables_mark_dropped)
     {
+        /// Enumerating the dropped tables can take a long time if there are many of them,
+        /// and it is done eagerly before returning the first row, so check for query cancellation
+        /// and time limits here. If the time limit is exceeded in the 'break' mode,
+        /// stop the enumeration and return what was collected so far.
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
         StoragePtr storage = dropped_table.table;
         if (!storage)
             continue;

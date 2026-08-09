@@ -8889,10 +8889,11 @@ std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     DataPartsVector res;
     DataPartsVector buf;
+    bool stopped = false;
 
     for (auto state : affordable_states)
     {
@@ -8901,8 +8902,41 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
             auto range = getDataPartsStateRange(state, kind);
             std::swap(buf, res);
             res.clear();
-            std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+
+            if (need_stop)
+            {
+                /// Merge manually instead of std::merge to be able to check `need_stop`
+                /// periodically during the walk (the ranges can be arbitrarily large).
+                auto it = range.begin();
+                auto buf_it = buf.begin();
+                size_t counter = 0;
+                while (it != range.end() || buf_it != buf.end())
+                {
+                    if (0 == ++counter % 8192 && need_stop())
+                    {
+                        stopped = true;
+                        break;
+                    }
+
+                    if (it == range.end())
+                        res.push_back(*buf_it++);
+                    else if (buf_it == buf.end() || !LessDataPart()(*buf_it, *it))
+                        res.push_back(*it++);
+                    else
+                        res.push_back(*buf_it++);
+                }
+            }
+            else
+            {
+                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+            }
+
+            if (stopped)
+                break;
         }
+
+        if (stopped)
+            break;
     }
 
     if (out_states != nullptr)
@@ -8915,10 +8949,10 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     auto lock = readLockParts();
-    return getDataPartsVectorForInternalUsage(affordable_states, affordable_kinds, lock, out_states);
+    return getDataPartsVectorForInternalUsage(affordable_states, affordable_kinds, lock, out_states, need_stop);
 }
 
 DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states) const
@@ -8969,19 +9003,30 @@ DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & pa
     return getPatchPartsVectorForPartition(partition_id, lock);
 }
 
-MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
+MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     auto lock = readLockParts();
     ProjectionPartsVector res;
+    size_t counter = 0;
+    bool stopped = false;
     for (auto state : affordable_states)
     {
         auto range = getDataPartsStateRange(state);
         for (const auto & part : range)
         {
+            if (need_stop && 0 == ++counter % 8192 && need_stop())
+            {
+                stopped = true;
+                break;
+            }
+
             res.data_parts.push_back(part);
             for (const auto & [_, projection_part] : part->getProjectionParts())
                 res.projection_parts.push_back(projection_part);
         }
+
+        if (stopped)
+            break;
     }
 
     if (out_states != nullptr)
@@ -8994,11 +9039,25 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForI
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     DataPartsVector res;
     auto lock = readLockParts();
-    res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
+    if (need_stop)
+    {
+        res.reserve(data_parts_by_info.size());
+        size_t counter = 0;
+        for (const auto & part : data_parts_by_info)
+        {
+            if (0 == ++counter % 8192 && need_stop())
+                break;
+            res.push_back(part);
+        }
+    }
+    else
+    {
+        res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
+    }
     if (out_states != nullptr)
     {
         out_states->resize(res.size());
@@ -9061,12 +9120,16 @@ bool MergeTreeData::areAsynchronousInsertsEnabled() const
     return (*getSettings())[MergeTreeSetting::async_insert];
 }
 
-MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
+MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     ProjectionPartsVector res;
     auto lock = readLockParts();
+    size_t counter = 0;
     for (const auto & part : data_parts_by_info)
     {
+        if (need_stop && 0 == ++counter % 8192 && need_stop())
+            break;
+
         res.data_parts.push_back(part);
         for (const auto & [p_name, projection_part] : part->getProjectionParts())
             res.projection_parts.push_back(projection_part);

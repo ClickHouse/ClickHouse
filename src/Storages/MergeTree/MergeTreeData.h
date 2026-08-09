@@ -742,8 +742,10 @@ public:
 
     /// Returns sorted list of the parts with specified states
     /// out_states will contain snapshot of each part state
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
-    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states = nullptr) const;
+    /// If `need_stop` is provided, it is checked periodically during the enumeration,
+    /// and if it returns true, the enumeration stops and the partial result is returned.
+    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
+    DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states = nullptr) const;
     DataPartsVector getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr) const;
 
@@ -761,7 +763,9 @@ public:
     DataPartsVector getPatchPartsVectorForPartition(const String & partition_id) const;
 
     /// Returns absolutely all parts (and snapshot of their states)
-    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
+    /// If `need_stop` is provided, it is checked periodically during the enumeration,
+    /// and if it returns true, the enumeration stops and the partial result is returned.
+    DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
@@ -770,12 +774,13 @@ public:
     virtual MutationCounters getMutationCounters() const = 0;
 
     /// Same as above but only returns projection parts
-    ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
+    ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
         const DataPartStates & affordable_states,
-        MergeTreeData::DataPartStateVector * out_states) const;
+        MergeTreeData::DataPartStateVector * out_states,
+        const std::function<bool()> & need_stop = {}) const;
 
     void filterVisibleDataParts(DataPartsVector & maybe_visible_parts, CSN snapshot_version, TransactionID current_tid) const;
 

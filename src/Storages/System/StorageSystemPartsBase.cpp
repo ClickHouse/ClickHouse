@@ -123,42 +123,62 @@ bool StorageSystemPartsBase::hasStateColumn(const Names & column_names, const St
     return has_state_column;
 }
 
+namespace
+{
+
+/// A callback for the part enumeration in MergeTreeData to stop it on query cancellation or a time limit.
+/// checkTimeLimit returns false (instead of throwing) only in the 'break' overflow mode,
+/// so a stopped enumeration returns partial data, consistent with the 'break' semantics.
+std::function<bool()> makeNeedStopCallback(const QueryStatusPtr & query_status)
+{
+    if (!query_status)
+        return {};
+
+    return [query_status] { return !query_status->checkTimeLimit(); };
+}
+
+}
+
 MergeTreeData::DataPartsVector
-StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
+StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const
 {
     using State = MergeTreeData::DataPartState;
     using Kind = MergeTreeData::DataPartKind;
+
+    auto need_stop = makeNeedStopCallback(query_status);
 
     if (need_inactive_parts)
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, {Kind::Regular, Kind::Patch}, &state);
+            return data->getDataPartsVectorForInternalUsage({State::Active, State::Outdated}, {Kind::Regular, Kind::Patch}, &state, need_stop);
 
-        return data->getAllDataPartsVector(&state);
+        return data->getAllDataPartsVector(&state, need_stop);
     }
 
-    return data->getDataPartsVectorForInternalUsage({State::Active}, {Kind::Regular, Kind::Patch}, &state);
+    return data->getDataPartsVectorForInternalUsage({State::Active}, {Kind::Regular, Kind::Patch}, &state, need_stop);
 }
 
 MergeTreeData::ProjectionPartsVector
-StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
+StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const
 {
     auto metadata_snapshot = data->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     if (metadata_snapshot->projections.empty())
         return {};
 
+    auto need_stop = makeNeedStopCallback(query_status);
+
     using State = MergeTreeData::DataPartState;
     if (need_inactive_parts)
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getProjectionPartsVectorForInternalUsage({State::Active, State::Outdated}, &state);
+            return data->getProjectionPartsVectorForInternalUsage({State::Active, State::Outdated}, &state, need_stop);
 
-        return data->getAllProjectionPartsVector(&state);
+        return data->getAllProjectionPartsVector(&state, need_stop);
     }
 
-    return data->getProjectionPartsVectorForInternalUsage({State::Active}, &state);
+    return data->getProjectionPartsVectorForInternalUsage({State::Active}, &state, need_stop);
 }
 
 StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_database, std::optional<ActionsDAG> filter_by_other_columns, ContextPtr context)

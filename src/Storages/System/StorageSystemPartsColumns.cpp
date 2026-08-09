@@ -121,9 +121,9 @@ void StorageSystemPartsColumns::processNextStorage(
     /// Go through the list of parts.
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
-    all_parts = info.getParts(all_parts_state, has_state_column);
-
     QueryStatusPtr query_status = context->getProcessListElement();
+
+    all_parts = info.getParts(all_parts_state, has_state_column, query_status);
 
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
