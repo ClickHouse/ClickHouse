@@ -46,7 +46,10 @@ $CLICKHOUSE_CLIENT --query "$QUERY SETTINGS $PR_SETTINGS" 2>&1 | grep -o -m1 -e 
 query_pid=$!
 
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT parallel_replicas_pause_before_sending_queries PAUSE"
-$CLICKHOUSE_CLIENT --query "DROP TABLE t_pr_merge_wrapper"
+# The drop must not be synchronous: the paused query holds a reference to the table, so waiting
+# for the data to be finally dropped (the CI default, `database_atomic_wait_for_drop_and_detach_synchronously = 1`)
+# would deadlock with the failpoint. Detaching the table from the catalog is immediate either way.
+$CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 --query "DROP TABLE t_pr_merge_wrapper"
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT parallel_replicas_pause_before_sending_queries"
 
 wait $query_pid
