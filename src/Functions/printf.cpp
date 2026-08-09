@@ -175,8 +175,8 @@ public:
     {
         /// format string + 0+ substitution args (numbers or strings).
         return
-            "(String) -> String"
-            " OR (String, NativeNumber | StringOrFixedString, ...) -> String";
+            "(format String) -> String"
+            " OR (format String, sub NativeNumber | StringOrFixedString, ...) -> String";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

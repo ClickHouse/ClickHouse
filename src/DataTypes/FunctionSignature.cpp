@@ -159,7 +159,8 @@ struct Variables
             if (it->second == Value(var))
                 return true;
 
-            out_reason = "argument " + DB::toString(arg_num + 1) + " must be of type " + key.toString()
+            out_reason = "value provided as " + DB::toString(arg_num + 1) + getOrdinalSuffix(arg_num + 1)
+                + " argument must be of type " + key.toString()
                 + " that was captured as " + it->second.toString();
 
             if (it->second.captured_at_arg_num)
@@ -181,7 +182,8 @@ struct Variables
             if (it->second == Value(var))
                 return true;
 
-            out_reason = "argument " + DB::toString(arg_num) + " must equals to " + key.toString()
+            out_reason = "value provided as " + DB::toString(arg_num + 1) + getOrdinalSuffix(arg_num + 1)
+                + " argument must be equal to " + key.toString()
                 + " that was captured as " + applyVisitor(FieldVisitorToString(), var);
 
             if (it->second.captured_at_arg_num)
@@ -354,7 +356,8 @@ struct ArgumentDescription
             const bool known_non_const = column ? !isColumnConst(*column) : !vars.types_only;
             if (known_non_const)
             {
-                out_reason = "argument " + DB::toString(arg_num + 1) + (argument_name.name.empty() ? "" : " (" + argument_name.name + ")")
+                out_reason = "value provided as " + DB::toString(arg_num + 1) + getOrdinalSuffix(arg_num + 1)
+                    + " argument" + (argument_name.name.empty() ? "" : " '" + argument_name.name + "'")
                     + " must be " + toString() + ", but it is not constant";
                 return false;
             }
@@ -380,7 +383,8 @@ struct ArgumentDescription
 
         if (!type_matcher->match(type, vars, iteration, arg_num, out_reason))
         {
-            out_reason = "argument " + DB::toString(arg_num + 1) + (argument_name.name.empty() ? "" : " (" + argument_name.name + ")")
+            out_reason = "value provided as " + DB::toString(arg_num + 1) + getOrdinalSuffix(arg_num + 1)
+                + " argument" + (argument_name.name.empty() ? "" : " '" + argument_name.name + "'")
                 + " has type " + type->getName() + " that is not " + type_matcher->toString()
                 + (out_reason.empty() ? "" : ": " + out_reason);
             return false;

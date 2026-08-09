@@ -970,7 +970,7 @@ namespace
             /// "too many arguments...", "number of arguments..."); type problems
             /// never start with those words. So: if the reason contains any of
             /// those phrases *and* nothing that looks like a type mismatch
-            /// (a matcher's "argument N (...) has type X that is not Y" prefix),
+            /// (a matcher's "value provided as Nth argument ... has type X that is not Y" prefix),
             /// we're confident this is an arity-only failure. This keeps existing
             /// `serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH` test annotations
             /// valid after a function adopts a declarative signature.
