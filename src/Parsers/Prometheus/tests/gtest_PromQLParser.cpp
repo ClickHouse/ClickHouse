@@ -1328,6 +1328,29 @@ TEST(PromQLParser, ErrorPosition)
 }
 
 
+/// Selector-validation errors must report the position as a UTF-8 byte offset, like all other
+/// parser errors. `метрика` takes 7 code points but 14 bytes, so the invalid selector below
+/// starts at code point 24 and byte offset 31.
+TEST(PromQLParser, SelectorValidationErrorPositionIsByteOffset)
+{
+    for (const auto & [query, expected_error_pos, expected_error_message] :
+         std::initializer_list<std::tuple<std::string_view, size_t, std::string_view>>{
+             {R"({__name__="метрика"} or {job=~".*"})", 31, "vector selector must contain at least one non-empty matcher"},
+             {R"({__name__="метрика"} or {job=~"(.*"})", 31, "invalid regular expression in label matcher: missing ): (.*"},
+             {R"({__name__="метрика"} or foo{__name__="foo"})", 31, "metric name must not be set twice"},
+         })
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = String::npos;
+
+        EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos));
+        EXPECT_EQ(error_pos, expected_error_pos) << query;
+        EXPECT_EQ(error_message, expected_error_message) << query;
+    }
+}
+
+
 TEST(PromQLParser, InvalidStringQuoteEscapes)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
