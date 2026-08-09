@@ -436,7 +436,7 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
     // recompression codec is normalized the same way as when the local metadata was loaded, keeping the two
     // sides of the comparison consistent.
     String parsed_zk_ttl_table = formattedAST(
-        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_metadata_load */ true, /* allow_suspicious */ true, /* allow_experimental_codecs */ true).definition_ast);
+        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, TTLValidationMode::Attach, /* allow_experimental_codecs */ true).definition_ast);
     if (ttl_table != parsed_zk_ttl_table)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table, strict_check, logger);
@@ -596,7 +596,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
                 auto ttl_for_table_ast = parseQuery(parser, new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
                 new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
                     ttl_for_table_ast, new_metadata.columns, context, new_metadata.primary_key,
-                    /* is_metadata_load */ true, /* allow_suspicious */ true, /* allow_experimental_codecs */ true /* because it is replication */);
+                    TTLValidationMode::Attach, /* allow_experimental_codecs */ true /* because it is replication */);
             }
             else /// TTL was removed
             {
@@ -609,7 +609,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     new_metadata.column_ttls_by_name.clear();
     for (const auto & [name, ast] : new_metadata.columns.getColumnTTLs())
     {
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, /* is_metadata_load */ true, /* allow_suspicious */ true, /* allow_experimental_codecs */ true /* because it is replication */);
+        auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, new_metadata.columns, context, new_metadata.primary_key, TTLValidationMode::Attach, /* allow_experimental_codecs */ true /* because it is replication */);
         new_metadata.column_ttls_by_name[name] = new_ttl_entry;
     }
 
@@ -679,7 +679,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
     if (!ttl_table_changed && new_metadata.table_ttl.definition_ast != nullptr)
         new_metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
             new_metadata.table_ttl.definition_ast, new_metadata.columns, context, new_metadata.primary_key,
-            /* is_metadata_load */ true, /* allow_suspicious */ true, /* allow_experimental_codecs */ true /* because it is replication */);
+            TTLValidationMode::Attach, /* allow_experimental_codecs */ true /* because it is replication */);
 
     if (!projections_changed)
     {

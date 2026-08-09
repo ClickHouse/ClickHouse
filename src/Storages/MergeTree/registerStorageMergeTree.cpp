@@ -847,31 +847,38 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
-        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like user
-        /// input that runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from metadata
-        /// stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart) are marked
-        /// with `attach_short_syntax` (see `createTableFromAST`).
+        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
+        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
+        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
+        /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
+        /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
         const bool is_full_definition_attach
             = args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax;
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE || is_full_definition_attach;
 
-        /// `is_metadata_load` marks a genuine metadata load (short-syntax `ATTACH` / `RESTORE` / replicated
-        /// internal create — but not a full-definition `ATTACH`, which is fresh user input); it gates the
-        /// recompression-codec normalization and exempts the codec from the `allow_experimental_codecs`
-        /// check. `allow_suspicious_ttl` additionally relaxes the TTL checks when the user opts in with
-        /// `allow_suspicious_ttl_expressions`, but that setting must not by itself be treated as a metadata
-        /// load, so a `CREATE` with it keeps a user-specified `RECOMPRESS` codec instead of having it
-        /// silently normalized. See `TTLDescription::getTTLFromAST`.
-        bool is_metadata_load = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode && !is_full_definition_attach;
-        bool allow_suspicious_ttl = is_metadata_load || local_settings[Setting::allow_suspicious_ttl_expressions];
+        /// Previously validated definitions must stay loadable even if the current strictness settings
+        /// would reject them (`TTLValidationMode::Attach`), but a fresh definition gets full validation:
+        /// otherwise a strict session could attach a TTL that `CREATE TABLE` rejects, and the first
+        /// strict TTL rebuild (`INSERT`, background TTL merge) would throw.
+        /// A genuine metadata load also gates the recompression-codec normalization and exempts the codec
+        /// from the `allow_experimental_codecs` check; `allow_suspicious_ttl_expressions` must not by itself
+        /// be treated as a metadata load, so a `CREATE` with it keeps a user-specified `RECOMPRESS` codec
+        /// instead of having it silently normalized. See `TTLDescription::getTTLFromAST`.
+        TTLValidationMode ttl_validation_mode = TTLValidationMode::Validate;
+        if (!is_fresh_definition)
+            ttl_validation_mode = TTLValidationMode::Attach;
+        else if (local_settings[Setting::allow_suspicious_ttl_expressions])
+            ttl_validation_mode = TTLValidationMode::SkipValidation;
+
         /// The experimental-codec gate is tied to `allow_experimental_codecs` only:
         /// `allow_suspicious_ttl_expressions` is an escape hatch for suspicious TTL *expressions* and must not
         /// double as a way to use an experimental codec in `TTL ... RECOMPRESS`.
-        bool allow_experimental_ttl_codecs = is_metadata_load || local_settings[Setting::allow_experimental_codecs];
+        bool allow_experimental_ttl_codecs = !is_fresh_definition || local_settings[Setting::allow_experimental_codecs];
 
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, is_metadata_load, allow_suspicious_ttl, allow_experimental_ttl_codecs);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, ttl_validation_mode, allow_experimental_ttl_codecs);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -898,14 +905,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
         /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use, so an
         /// experimental codec (e.g. `ZXC`) could slip in through `SETTINGS default_compression_codec = ...`.
-        /// For freshly introduced definitions the merged value (explicit or inherited from the current
-        /// `<merge_tree>` config defaults) is checked against `allow_experimental_codecs`. A full-definition
-        /// `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like user input that also runs
-        /// under `LoadingStrictnessLevel::ATTACH`, so it counts as fresh too. Definitions read back from
-        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart) are
-        /// marked with `attach_short_syntax` (see `createTableFromAST`); for those (and for
-        /// `SECONDARY_CREATE`: DDL replay in `Replicated` databases, `RESTORE`) values written in the stored
-        /// `SETTINGS` clause were already gated when they were introduced and are exempt, so existing tables
+        /// For freshly introduced definitions (`is_fresh_definition` above) the merged value (explicit or
+        /// inherited from the current `<merge_tree>` config defaults) is checked against
+        /// `allow_experimental_codecs`. For stored definitions values written in the stored `SETTINGS`
+        /// clause were already gated when they were introduced and are exempt, so existing tables
         /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
         /// introduce an experimental codec into existing tables via a config default plus a restart, without
@@ -917,7 +920,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// default profile — the same policy source `Context::chooseCompressionCodec` uses for the
         /// server-level `<compression>` config. `FORCE_RESTORE` is documented to skip all sanity checks
         /// and is left alone.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE || is_full_definition_attach;
         if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE)
         {
             const bool session_allows = local_settings[Setting::allow_experimental_codecs];
@@ -1117,7 +1119,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, is_metadata_load, allow_suspicious_ttl, allow_experimental_ttl_codecs);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, ttl_validation_mode, allow_experimental_ttl_codecs);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 

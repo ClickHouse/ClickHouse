@@ -149,7 +149,7 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     if (storage.sample_by)
         KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, virtuals, context);
     if (storage.ttl_table && primary_key.has_value())
-        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, /* is_metadata_load */ true, /* allow_suspicious */ true, /* allow_experimental_codecs */ true);
+        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, TTLValidationMode::Attach, /* allow_experimental_codecs */ true);
 }
 }
 

@@ -1,7 +1,6 @@
 #include <Storages/TTLDescription.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Common/logger_useful.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDynamic.h>
@@ -14,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
+#include <Functions/TypeMismatchStrictness.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
@@ -44,9 +44,10 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
+#include <optional>
 #include <unordered_set>
 
 
@@ -55,8 +56,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_suspicious_codecs;
-    extern const SettingsBool variant_throw_on_type_mismatch;
-    extern const SettingsBool dynamic_throw_on_type_mismatch;
 }
 
 namespace ErrorCodes
@@ -993,54 +992,6 @@ std::vector<ColumnPtr> checkActionsDAGForAggregateFunctions(
     return {};
 }
 
-/// RAII guard setting `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch` on the query
-/// context of the *current thread* - the only place the `Variant`/`Dynamic` function adaptors read them
-/// from - and restoring the previous values on scope exit. Note the DDL `context` cannot be used for this:
-/// on a server it has no query context, and the adaptors would not see settings changed on it.
-class MismatchSettingsGuard
-{
-public:
-    MismatchSettingsGuard(bool variant_throw, bool dynamic_throw)
-    {
-        if (CurrentThread::isInitialized())
-        {
-            if (auto thread_query_context = CurrentThread::tryGetQueryContext())
-                thread_context = std::const_pointer_cast<Context>(thread_query_context);
-        }
-
-        if (!thread_context)
-            return;
-
-        const auto & settings = thread_context->getSettingsRef();
-        if (settings[Setting::variant_throw_on_type_mismatch] != variant_throw)
-        {
-            old_variant_throw = settings[Setting::variant_throw_on_type_mismatch];
-            thread_context->setSetting("variant_throw_on_type_mismatch", Field(variant_throw));
-        }
-        if (settings[Setting::dynamic_throw_on_type_mismatch] != dynamic_throw)
-        {
-            old_dynamic_throw = settings[Setting::dynamic_throw_on_type_mismatch];
-            thread_context->setSetting("dynamic_throw_on_type_mismatch", Field(dynamic_throw));
-        }
-    }
-
-    ~MismatchSettingsGuard()
-    {
-        if (!thread_context)
-            return;
-
-        if (old_variant_throw)
-            thread_context->setSetting("variant_throw_on_type_mismatch", Field(*old_variant_throw));
-        if (old_dynamic_throw)
-            thread_context->setSetting("dynamic_throw_on_type_mismatch", Field(*old_dynamic_throw));
-    }
-
-private:
-    ContextMutablePtr thread_context;
-    std::optional<bool> old_variant_throw;
-    std::optional<bool> old_dynamic_throw;
-};
-
 void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expression, std::string_view expression_kind)
 {
     /// The synthetic probe in `checkActionsDAGForAggregateFunctions` exercises consumers over `Variant`/`Dynamic`
@@ -1049,9 +1000,8 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
     /// `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch`, which the adaptors read from the
     /// query context of the current thread. But a stored TTL expression is later rebuilt and executed under
     /// several unrelated contexts: the *inserting* session in `MergeTreeDataWriter::updateTTL` (strict by
-    /// default), the background context during TTL merges (settings from the `background_profile` server
-    /// config, strict by default), and table loading on ATTACH/restart (no thread query context at all, so
-    /// the adaptors fall back to strict). The DDL-time verdict must therefore not depend on any one of them:
+    /// default) and the background context during TTL merges (settings from the `background_profile` server
+    /// config, strict by default). The DDL-time verdict must therefore not depend on any one of them:
     /// the probe always runs strict, which is the superset - an expression that survives the strict probe
     /// only ever gets *more* lenient at execution (a mismatch turns into NULL instead of an exception), so it
     /// is safe under every context, while anything rejected here would throw on the first
@@ -1060,7 +1010,7 @@ void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expres
     /// (Conversion functions such as `toDateTime` handle `Variant`/`Dynamic` natively, ignore both settings
     /// and always throw on a stored type they cannot convert, so for them the probe's verdict is the same
     /// under any settings.)
-    MismatchSettingsGuard probe_guard(/*variant_throw=*/ true, /*dynamic_throw=*/ true);
+    TypeMismatchStrictnessOverride probe_strictness(/*variant_throw_on_type_mismatch=*/ true, /*dynamic_throw_on_type_mismatch=*/ true);
 
     checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
@@ -1125,9 +1075,11 @@ TTLDescription::TTLDescription(const TTLDescription & other)
     : mode(other.mode)
     , expression_ast(other.expression_ast ? other.expression_ast->clone() : nullptr)
     , expression_columns(other.expression_columns)
+    , expression_source_columns(other.expression_source_columns)
     , result_column(other.result_column)
     , where_expression_ast(other.where_expression_ast ? other.where_expression_ast->clone() : nullptr)
     , where_expression_columns(other.where_expression_columns)
+    , where_expression_source_columns(other.where_expression_source_columns)
     , where_result_column(other.where_result_column)
     , group_by_keys(other.group_by_keys)
     , set_parts(other.set_parts)
@@ -1151,6 +1103,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
         expression_ast.reset();
 
     expression_columns = other.expression_columns;
+    expression_source_columns = other.expression_source_columns;
     result_column = other.result_column;
 
     if (other.where_expression_ast)
@@ -1159,6 +1112,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
         where_expression_ast.reset();
 
     where_expression_columns = other.where_expression_columns;
+    where_expression_source_columns = other.where_expression_source_columns;
     where_result_column = other.where_result_column;
     group_by_keys = other.group_by_keys;
     set_parts = other.set_parts;
@@ -1175,11 +1129,20 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     return * this;
 }
 
-static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
+/// `required_source_columns`, when given, receives the columns of `columns` that the AST refers to. Note
+/// this is deliberately taken from the syntax analysis and not from the built expression: constant folding
+/// can prune a column out of the expression (`WHERE isNull(x)` over a non-`Nullable` `x` folds to `0`),
+/// while the stored AST still refers to it and every later rebuild of that AST needs it to be available.
+/// The built expression's own required columns (the runtime read set the read planners consume) are taken
+/// separately, from `getRequiredColumnsWithTypes` of the returned expression.
+static ExpressionAndSets buildExpressionAndSets(
+    ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context, NamesAndTypesList * required_source_columns = nullptr)
 {
     ExpressionAndSets result;
     auto ttl_string = ast->formatWithSecretsOneLine();
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
+    if (required_source_columns)
+        *required_source_columns = syntax_analyzer_result->required_source_columns;
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
     auto dag = analyzer.getActionsDAG(false);
 
@@ -1231,7 +1194,7 @@ static void checkTTLGroupBySetForAggregateFunctions(
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
     auto ast = expression_ast->clone();
-    return buildExpressionAndSets(ast, expression_columns, context);
+    return buildExpressionAndSets(ast, expression_source_columns, context);
 }
 
 ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & context) const
@@ -1239,7 +1202,7 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     if (where_expression_ast)
     {
         auto ast = where_expression_ast->clone();
-        return buildExpressionAndSets(ast, where_expression_columns, context);
+        return buildExpressionAndSets(ast, where_expression_source_columns, context);
     }
 
     return {};
@@ -1250,21 +1213,20 @@ TTLDescription TTLDescription::getTTLFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    bool is_metadata_load,
-    bool allow_suspicious,
+    TTLValidationMode validation_mode,
     bool allow_experimental_codecs)
 {
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
 
-    /// `allow_suspicious` relaxes the checks below; it is set on a genuine metadata load (short-syntax `ATTACH` /
+    /// `validation_mode` relaxes the checks below on a genuine metadata load (`Attach`: short-syntax `ATTACH` /
     /// `RESTORE` / replicated metadata — a full-definition `ATTACH` is fresh user input and does not count) and
-    /// when the user opts in with `allow_suspicious_ttl_expressions` (the caller derives it from the query
-    /// settings). `is_metadata_load` marks only the genuine metadata load and additionally triggers the
-    /// recompression-codec normalization below; `allow_suspicious_ttl_expressions` must not, so that a `CREATE`
-    /// / `ALTER ... MODIFY TTL` keeps the user-specified codec instead of having it silently rewritten.
-    /// `allow_experimental_codecs` exempts a `RECOMPRESS` codec from the experimental-codec gate; the caller
-    /// derives it from the same sources plus the `allow_experimental_codecs` setting.
+    /// when the user opts in with `allow_suspicious_ttl_expressions` (`SkipValidation`). Only `Attach`
+    /// additionally triggers the recompression-codec normalization below; `allow_suspicious_ttl_expressions`
+    /// must not, so that a `CREATE` / `ALTER ... MODIFY TTL` keeps the user-specified codec instead of having
+    /// it silently rewritten. `allow_experimental_codecs` exempts a `RECOMPRESS` codec from the
+    /// experimental-codec gate; the caller derives it from the same sources plus the
+    /// `allow_experimental_codecs` setting.
 
     /// First child is expression: `TTL expr TO DISK`
     if (ttl_element != nullptr)
@@ -1274,22 +1236,21 @@ TTLDescription TTLDescription::getTTLFromAST(
 
     checkExpressionDoesntContainSubqueries(*result.expression_ast);
 
-    /// Building a TTL expression can itself consult `variant_throw_on_type_mismatch`: the `Variant`
-    /// function adaptor throws in its constructor when none of the alternatives is compatible with the
-    /// consumer, and under a lenient setting resolves the result to constant NULL instead. Such a lenient
-    /// build must not slip through DDL validation regardless of the session (or even the background
-    /// profile) settings, because it produces a table that is broken no matter how TTL runs later: the
-    /// constant fold prunes the referenced column from the stored TTL column list, so every subsequent
-    /// rebuild of the TTL expression fails with "Missing columns", and the table cannot even be re-attached
-    /// on server restart (loading has no query context, so the adaptor defaults to strict and throws).
-    /// Hence the validation build always runs strict. The escape hatches stay intact: on ATTACH or with
-    /// `allow_suspicious_ttl_expressions` the build behaves exactly as the session dictates.
-    std::optional<MismatchSettingsGuard> build_guard;
-    if (!allow_suspicious)
-        build_guard.emplace(/*variant_throw=*/ true, /*dynamic_throw=*/ true);
+    const bool skip_validation = validation_mode != TTLValidationMode::Validate;
+
+    /// Pin the `Variant`/`Dynamic` build strictness per the validation mode (see `TTLValidationMode` for
+    /// the reasoning): strict for a validated user DDL, lenient when loading existing metadata. With
+    /// `allow_suspicious_ttl_expressions` nothing is pinned - the escape hatch skips the TTL validator but
+    /// does not override the session's mismatch policy, so the build reads the ambient settings exactly as
+    /// any other expression build does.
+    std::optional<TypeMismatchStrictnessOverride> build_strictness;
+    if (validation_mode == TTLValidationMode::Validate)
+        build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ true, /*dynamic_throw_on_type_mismatch=*/ true);
+    else if (validation_mode == TTLValidationMode::Attach)
+        build_strictness.emplace(/*variant_throw_on_type_mismatch=*/ false, /*dynamic_throw_on_type_mismatch=*/ false);
 
     auto ttl_ast = result.expression_ast->clone();
-    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context).expression;
+    auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context, &result.expression_source_columns).expression;
     result.expression_columns = expression->getRequiredColumnsWithTypes();
 
     result.result_column = expression->getSampleBlock().safeGetByPosition(0).name;
@@ -1315,7 +1276,8 @@ TTLDescription TTLDescription::getTTLFromAST(
                 result.where_expression_ast = where_expr_ast->clone();
 
                 ASTPtr ast = where_expr_ast->clone();
-                where_expression = buildExpressionAndSets(ast, columns.getAllPhysical(), context).expression;
+                where_expression
+                    = buildExpressionAndSets(ast, columns.getAllPhysical(), context, &result.where_expression_source_columns).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
@@ -1348,7 +1310,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
                     "Invalid expression for assignment of column {}. Should contain an aggregate function", assignment.column_name);
 
-                if (!allow_suspicious)
+                if (!skip_validation)
                     checkTTLGroupBySetForAggregateFunctions(ass_expression, columns.getAllPhysical(), context);
 
                 ass_expression = addTypeConversionToAST(std::move(ass_expression), columns.getPhysical(assignment.column_name).type->getName());
@@ -1375,7 +1337,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 /// is executed later by TTLAggregationAlgorithm. When an aggregate returns an AggregateFunction
                 /// state itself (e.g. `any(ts)`), casting it to an incompatible target type (e.g. `DateTime`)
                 /// must be rejected here instead of failing during the TTL merge.
-                if (!allow_suspicious)
+                if (!skip_validation)
                     checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
 
                 result.set_parts.emplace_back(set_part);
@@ -1392,21 +1354,22 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// actually be used there: it would throw or silently corrupt data at the first `TTL ... RECOMPRESS`
             /// merge.
             ///
-            /// Only on a genuine metadata load (`is_metadata_load`), where rejecting would make an existing table
-            /// unloadable, normalize such a codec to `CODEC(Default)` so the table stays loadable and writable,
-            /// mirroring the marks / primary key / default codec sanitization in the `MergeTreeData` constructor.
-            /// `MergeTreeData::getCompressionCodecForPart` treats a `CODEC(Default)` recompression entry as "no
-            /// forced codec" and falls through to the normal default selection (the `default_compression_codec`
-            /// setting, then the server `<compression>` selector), the same path an ordinary part write takes. `getTTLForTableFromAST` rewrites the stored TTL AST accordingly so the normalization is
-            /// durable. `allow_suspicious_ttl_expressions` deliberately does not trigger this: it only relaxes the
-            /// checks, so a `CREATE` / `ALTER ... MODIFY TTL` keeps the user-specified codec (as for the sibling
-            /// per-column codec handling) instead of having it silently rewritten. At `CREATE` an unsafe codec is
-            /// still rejected by `validateCodecAndGetPreprocessedAST` below (`PCO` unconditionally, because it
-            /// requires a column type; lossy / experimental ones unless the matching `allow_suspicious_codecs` /
-            /// `allow_experimental_codecs` escape hatch is set).
+            /// Only on a genuine metadata load (`TTLValidationMode::Attach`), where rejecting would make an
+            /// existing table unloadable, normalize such a codec to `CODEC(Default)` so the table stays loadable
+            /// and writable, mirroring the marks / primary key / default codec sanitization on the MergeTree
+            /// settings load path. `MergeTreeData::getCompressionCodecForPart` treats a `CODEC(Default)`
+            /// recompression entry as "no forced codec" and falls through to the normal default selection (the
+            /// `default_compression_codec` setting, then the server `<compression>` selector), the same path an
+            /// ordinary part write takes. `getTTLForTableFromAST` rewrites the stored TTL AST accordingly so the
+            /// normalization is durable. `allow_suspicious_ttl_expressions` deliberately does not trigger this:
+            /// it only relaxes the checks, so a `CREATE` / `ALTER ... MODIFY TTL` keeps the user-specified codec
+            /// (as for the sibling per-column codec handling) instead of having it silently rewritten. At
+            /// `CREATE` an unsafe codec is still rejected by `validateCodecAndGetPreprocessedAST` below (`PCO`
+            /// unconditionally, because it requires a column type; lossy / experimental ones unless the matching
+            /// `allow_suspicious_codecs` / `allow_experimental_codecs` escape hatch is set).
             auto & factory = CompressionCodecFactory::instance();
             String unsafe_reason;
-            if (is_metadata_load)
+            if (validation_mode == TTLValidationMode::Attach)
                 unsafe_reason = factory.getReasonUnsafeForUntypedData(ttl_element->recompression_codec);
 
             if (!unsafe_reason.empty())
@@ -1424,17 +1387,16 @@ TTLDescription TTLDescription::getTTLFromAST(
                 result.recompression_codec =
                     factory.validateCodecAndGetPreprocessedAST(
                         ttl_element->recompression_codec, {},
-                        !allow_suspicious && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
+                        !skip_validation && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
                         allow_experimental_codecs);
             }
         }
     }
 
-    checkTTLExpression(expression, result.result_column, allow_suspicious);
+    checkTTLExpression(expression, result.result_column, skip_validation);
 
-    if (where_expression && !allow_suspicious)
+    if (where_expression && !skip_validation)
         checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ");
-
 
     return result;
 }
@@ -1474,8 +1436,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    bool is_metadata_load,
-    bool allow_suspicious,
+    TTLValidationMode validation_mode,
     bool allow_experimental_codecs)
 {
     TTLTableDescription result;
@@ -1490,13 +1451,13 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     for (size_t i = 0; i < ttl_elements.size(); ++i)
     {
         const auto & ttl_element_ptr = ttl_elements[i];
-        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, is_metadata_load, allow_suspicious, allow_experimental_codecs);
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, validation_mode, allow_experimental_codecs);
 
         /// If a recompression codec was normalized on the metadata-load path (see `getTTLFromAST`), rewrite the
         /// stored TTL AST as well, so `SHOW CREATE`, replicated metadata and later re-parses (e.g. from
         /// `AlterCommands`, which rebuilds the table TTL from `definition_ast` on unrelated `ALTER`s) use the
         /// normalized codec instead of the unsafe stored one, rather than only the parsed runtime field.
-        if (is_metadata_load && ttl.mode == TTLMode::RECOMPRESS)
+        if (validation_mode == TTLValidationMode::Attach && ttl.mode == TTLMode::RECOMPRESS)
         {
             const auto * original_element = ttl_element_ptr->as<ASTTTLElement>();
             if (original_element && original_element->recompression_codec
@@ -1539,7 +1500,12 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
 }
 
 TTLTableDescription TTLTableDescription::parse(
-    const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious, bool allow_experimental_codecs)
+    const String & str,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    const KeyDescription & primary_key,
+    TTLValidationMode validation_mode,
+    bool allow_experimental_codecs)
 {
     TTLTableDescription result;
     if (str.empty())
@@ -1549,7 +1515,7 @@ TTLTableDescription TTLTableDescription::parse(
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key, is_metadata_load, allow_suspicious, allow_experimental_codecs);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, validation_mode, allow_experimental_codecs);
 }
 
 }
