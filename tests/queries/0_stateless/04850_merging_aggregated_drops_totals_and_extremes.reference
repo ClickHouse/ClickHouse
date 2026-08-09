@@ -1,7 +1,7 @@
 -- memory-efficient branch, several merge threads
 1
 -- memory-efficient branch, single merge thread
-1
+1	0
 -- non-memory-efficient branch
 1	0
 -- ungrouped value then TOTALS row, both 90

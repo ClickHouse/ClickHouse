@@ -31,26 +31,32 @@ SET enable_analyzer = 1;
 SET inject_random_order_for_select_without_order_by = 1;
 
 SELECT '-- memory-efficient branch, several merge threads';
--- Several merge threads attach MergingAggregatedBucketTransform through Pipe::addSimpleTransform,
--- which applies it to totals_port too. That is the connect that used to fail.
-SELECT count() > 0 AS reached_memory_efficient_branch
+-- Several merge threads resize the pipe and attach MergingAggregatedBucketTransform through
+-- Pipe::addSimpleTransform, which applies it to totals_port too. That is the connect that used to
+-- fail. The multiplicity is what tells the two sub-branches apart: one transform per merge thread
+-- here, a single one below. The count is pinned in the same query, so 4 is exact, and asserting it
+-- also confirms the resize honoured the setting.
+SELECT count() > 0 AS reached_several_merge_threads
 FROM (
     EXPLAIN PIPELINE
     SELECT sum(v) FROM merge(currentDatabase(), '^(v_04850|v2_04850|d_04850)$') WITH TOTALS
     SETTINGS distributed_aggregation_memory_efficient = 1,
              aggregation_memory_efficient_merge_threads = 4, max_threads = 4
-) WHERE explain ILIKE '%MergingAggregatedBucketTransform%';
+) WHERE explain ILIKE '%MergingAggregatedBucketTransform × 4%';
 
 SELECT '-- memory-efficient branch, single merge thread';
 -- A single merge thread returns early via addTransform, so the stale port instead survives into
--- TotalsHavingStep, which requires it to be null.
-SELECT count() > 0 AS reached_memory_efficient_branch
+-- TotalsHavingStep, which requires it to be null. One bare transform, so the multiplicity suffix
+-- must be absent.
+SELECT
+    countIf(explain ILIKE '%MergingAggregatedBucketTransform%') > 0 AS reached_bucket_transform,
+    countIf(explain ILIKE '%MergingAggregatedBucketTransform ×%') AS several_merge_threads
 FROM (
     EXPLAIN PIPELINE
     SELECT sum(v) FROM merge(currentDatabase(), '^(v_04850|v2_04850|d_04850)$') WITH TOTALS
     SETTINGS distributed_aggregation_memory_efficient = 1,
              aggregation_memory_efficient_merge_threads = 1, max_threads = 1
-) WHERE explain ILIKE '%MergingAggregatedBucketTransform%';
+);
 
 SELECT '-- non-memory-efficient branch';
 -- This branch uses MergingAggregatedTransform and never the bucket transform.
