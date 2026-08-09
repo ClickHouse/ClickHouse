@@ -358,26 +358,23 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// A single sampled high-precision value must not force a needlessly wide scale onto the
     /// whole vector: it would overflow the quantization of large values, and even when it fits,
     /// it can inflate every packed delta while a smaller alpha with a few exceptions is much
-    /// cheaper. So the largest, the median and the smallest sampled alphas are all evaluated
-    /// against the full vector and the smallest payload wins; values that do not quantize with
-    /// the winning alpha become exceptions.
-    const std::array<UInt8, 3> alpha_candidates{
-        sampled_alphas[sampled_alpha_count - 1],
-        sampled_alphas[sampled_alpha_count / 2],
-        sampled_alphas[0]};
-
+    /// cheaper. And with mixed-precision data the cheapest legal scale can be any of the
+    /// sampled alphas, not just an extreme one (e.g. when the scales below it lose too many
+    /// values to exceptions while the scales above it widen every packed delta). So every
+    /// distinct sampled alpha is evaluated against the full vector and the smallest payload
+    /// wins; values that do not quantize with the winning alpha become exceptions. Typical
+    /// vectors sample only one or two distinct alphas, so the exhaustive evaluation does not
+    /// add full-vector passes in the common case.
     UInt8 alpha = 0;
     /// The alpha whose quantization the scratch arrays currently hold; a failed quantize_all
     /// leaves them clobbered halfway, so it resets this tracker.
     std::optional<UInt8> scratch_alpha;
     std::optional<Packing> best;
-    for (size_t candidate_index = 0; candidate_index < alpha_candidates.size(); ++candidate_index)
+    for (UInt32 candidate_index = sampled_alpha_count; candidate_index > 0; --candidate_index)
     {
-        const UInt8 candidate = alpha_candidates[candidate_index];
-        bool already_tried = false;
-        for (size_t previous = 0; previous < candidate_index; ++previous)
-            already_tried |= alpha_candidates[previous] == candidate;
-        if (already_tried)
+        const UInt8 candidate = sampled_alphas[candidate_index - 1];
+        /// The array is sorted, so all duplicates of the previously evaluated candidate are adjacent.
+        if (candidate_index < sampled_alpha_count && sampled_alphas[candidate_index] == candidate)
             continue;
         if (!quantize_all(candidate))
         {

@@ -3154,4 +3154,27 @@ TEST_F(WallabyTest, ChoosesCheaperAlphaOverSampledOutlier)
     EXPECT_LT(wallabyCompressedSize(values), 600u);
 }
 
+TEST_F(WallabyTest, ChoosesInteriorAlphaOnMixedPrecisionData)
+{
+    /// The cheapest legal decimal scale can be an interior sampled alpha, not just the
+    /// smallest, median or largest one: on this vector the ramp needs alpha = 2, the 1e-7
+    /// block pushes some samples to alpha = 7 and the sparse 1e-13 values to alpha = 13.
+    /// alpha <= 2 loses too many values to exceptions, alpha = 13 packs 43-bit deltas
+    /// (~5.5 KiB), while alpha = 7 packs 24-bit deltas with 60 exceptions (~3.7 KiB).
+    /// An earlier encoder revision evaluated only the {min, median, max} sampled alphas
+    /// and settled for alpha = 13.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (i < 64)
+            values[i] = 1e-7;
+        else if (i % 16 == 0)
+            values[i] = 1e-13;
+        else
+            values[i] = static_cast<Float64>(i) * 0.25;
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 4200u);
+}
+
 }
