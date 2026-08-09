@@ -109,6 +109,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsBool materialize_projections_on_insert;
+    extern const MergeTreeSettingsUInt64 max_number_of_parts_in_partition_for_full_part_storage_on_insert;
 }
 
 namespace ErrorCodes
@@ -918,6 +919,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
+    const UInt64 max_parts_for_full_storage
+        = (*data_settings)[MergeTreeSetting::max_number_of_parts_in_partition_for_full_part_storage_on_insert];
+    if (part_format.storage_type == MergeTreeDataPartStorageType::Full && max_parts_for_full_storage)
+    {
+        auto parts_lock = data.readLockParts();
+        /// Only committed `Active` parts are counted. Parts from this or concurrent inserts that have not become
+        /// `Active` yet are deliberately excluded: this heuristic describes the partition state visible at format selection time.
+        if (data.hasAtLeastActivePartsInPartition(new_part_info.getPartitionId(), max_parts_for_full_storage, parts_lock))
+            part_format.storage_type = MergeTreeDataPartStorageType::Packed;
+    }
+
     /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
     /// (`unique_key_index.sst`) is opened directly by filesystem path via RocksDB
     /// `SstFileReader`, which cannot read a file packed inside an archive. Packed

@@ -7294,6 +7294,24 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForIn
     return res;
 }
 
+bool MergeTreeData::hasAtLeastActivePartsInPartition(
+    const String & partition_id, UInt64 min_count, const DataPartsAnyLock & /* acquired_lock */) const
+{
+    DataPartStateAndPartitionID active_parts{DataPartState::Active, partition_id};
+    auto it = data_parts_by_state_and_info.lower_bound(active_parts);
+    const auto end = data_parts_by_state_and_info.upper_bound(active_parts);
+
+    /// Stop at the threshold to keep the scan bounded by O(min_count), regardless of the total number of parts in the partition.
+    UInt64 parts_count = 0;
+    while (it != end && parts_count < min_count)
+    {
+        ++it;
+        ++parts_count;
+    }
+
+    return parts_count >= min_count;
+}
+
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(
     const MergeTreeData::DataPartState & state, const String & partition_id, const DataPartsAnyLock & /* lock */) const
 {
