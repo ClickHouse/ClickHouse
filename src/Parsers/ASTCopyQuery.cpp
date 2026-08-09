@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 void ASTCopyQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
     ostr << table_name;
@@ -31,9 +26,7 @@ String toString(ASTCopyQuery::Formats format)
         case ASTCopyQuery::Formats::CSV:
             return "CSV";
         case ASTCopyQuery::Formats::Binary:
-            /// PostgreSQL binary `COPY` is rejected before we ever serialize the format name
-            /// (see `PostgreSQLHandler::processCopyQuery`), so this is unreachable.
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "PostgreSQL binary COPY has no backing ClickHouse format");
+            return "Binary";
     }
 }
 
