@@ -27,6 +27,7 @@
 
 #endif // USE_LIBFIU
 
+#include <optional>
 #include <unordered_map>
 
 
@@ -187,6 +188,11 @@ public:
       * - Will timeout if notify was already called before wait starts
       */
     static void waitForResume(const String & fail_point_name);
+
+    /** Number of times a thread has paused at this failpoint since it was enabled, or nullopt
+      * when it is not enabled, so that "never paused" is not reported as a count.
+      */
+    static std::optional<size_t> getPauseCount(const String & fail_point_name);
 
     /** Return a snapshot of every registered failpoint with its type and enabled status.
       *

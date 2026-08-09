@@ -42,6 +42,7 @@ namespace FailPoints
     extern const char unlink_file_operation_fail_on_remove[];
     extern const char unlink_file_operation_pause_after_counting_links[];
     extern const char remove_recursive_operation_pause_after_traverse[];
+    extern const char remove_recursive_operation_fail_on_remove[];
 }
 
 namespace
@@ -431,6 +432,11 @@ void RemoveRecursiveOperation::finalize()
         if (!inserted)
             it->second = it->second && ok;
     }
+
+    fiu_do_on(FailPoints::remove_recursive_operation_fail_on_remove,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in RemoveRecursiveOperation remove");
+    });
 
     if (temp_file_path.has_value())
         disk.removeFile(temp_file_path.value());

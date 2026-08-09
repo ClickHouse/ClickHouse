@@ -201,6 +201,7 @@ static struct InitFiu
     ONCE(unlink_file_operation_fail_on_remove) \
     PAUSEABLE(unlink_file_operation_pause_after_counting_links) \
     PAUSEABLE(remove_recursive_operation_pause_after_traverse) \
+    ONCE(remove_recursive_operation_fail_on_remove) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     REGULAR(iceberg_slow_manifest_read) \
@@ -474,6 +475,19 @@ void FailPointInjection::waitForResume(const String & fail_point_name)
     });
 }
 
+std::optional<size_t> FailPointInjection::getPauseCount(const String & fail_point_name)
+{
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
+    std::lock_guard lock(mu);
+    auto iter = fail_point_wait_channels.find(fail_point_name);
+    if (iter == fail_point_wait_channels.end())
+        return {};
+
+    return iter->second->pause_epoch;
+}
+
 std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()
 {
     std::vector<FailPointInfo> result;
@@ -547,6 +561,11 @@ void FailPointInjection::waitForPause(const String &)
 }
 
 void FailPointInjection::waitForResume(const String &)
+{
+    throwDisabled();
+}
+
+std::optional<size_t> FailPointInjection::getPauseCount(const String &)
 {
     throwDisabled();
 }

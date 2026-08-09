@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -31,6 +32,7 @@ namespace DB::FailPoints
 {
     extern const char unlink_file_operation_fail_on_remove[];
     extern const char unlink_file_operation_pause_after_counting_links[];
+    extern const char remove_recursive_operation_fail_on_remove[];
 }
 
 class MetadataLocalDiskTest : public testing::Test
@@ -1690,6 +1692,56 @@ TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenTheOnlyUnlinkOfTheTransactionFails
     verifyBlobsToRemove(metadata, {});
 }
 
+/// A recursive removal must not enqueue blobs before the links are actually gone, for the same
+/// reason a single unlink must not. The single link here is deliberate: with two links the link
+/// gate alone would withhold the blob, and the ordering would go untested.
+class MetadataLocalDiskRecursiveRemoveOrderingTest : public MetadataLocalDiskTest, public testing::WithParamInterface<bool>
+{
+};
+
+TEST_P(MetadataLocalDiskRecursiveRemoveOrderingTest, TestBlobKeptOnlyWhenRecursiveRemoveFails)
+{
+    const bool remove_fails = GetParam();
+    auto metadata = getMetadataStorage(std::string("/TestBlobKeptOnlyWhenRecursiveRemoveFails.") + (remove_fails ? "fails" : "succeeds"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("root");
+        tx->createMetadataFile("root/A", {blobFor("key1", "root/A")});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    if (remove_fails)
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::remove_recursive_operation_fail_on_remove);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root", /*should_remove_objects=*/nullptr);
+        /// finalize() is best-effort, so the commit itself still succeeds either way.
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    if (remove_fails)
+    {
+        DB::FailPointInjection::disableFailPoint(DB::FailPoints::remove_recursive_operation_fail_on_remove);
+
+        /// The metadata file still exists under its temporary name, so it still references the blob.
+        verifyBlobsToRemove(metadata, {});
+    }
+    else
+    {
+        /// The same scenario without the injected failure must release, or the case above would
+        /// pass against an implementation that never releases here at all.
+        verifyBlobsToRemove(metadata, {"key1"});
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    RemoveOutcome,
+    MetadataLocalDiskRecursiveRemoveOrderingTest,
+    testing::Bool(),
+    [](const testing::TestParamInfo<bool> & param_info) { return param_info.param ? "RemoveFails" : "RemoveSucceeds"; });
+
 /// Which of two aliases the recursive walk reaches first is unspecified, so both are covered:
 /// the AND-fold must give the same verdict either way.
 class MetadataLocalDiskRetentionListedAliasTest : public MetadataLocalDiskTest, public testing::WithParamInterface<std::string>
@@ -1822,16 +1874,19 @@ TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenHardlinkIsCreatedAfterUnlinkInSame
 /// releases the blob. Without it both can count two links before either unlinks, both decline,
 /// and the blob is leaked with no hard link left that could ever release it.
 ///
-/// The mutex makes that interleaving impossible rather than merely unlikely, so every round owes a
-/// release and a single round without one is a real failure. Rounds are repeated because the test
-/// has to HIT the failing interleaving to reject an implementation without the mutex; the pauseable
-/// failpoint widens the window so that hitting it is likely, by parking the first transaction
-/// between counting and unlinking while the second only has to reach its own count.
+/// What is asserted is the exclusion itself, not a released blob, because the exclusion holds by
+/// construction while the release only follows from whichever interleaving a round happens to get.
+/// The failpoint is PAUSEABLE, so it blocks EVERY thread that reaches it: while the first
+/// transaction is parked between counting and unlinking, a second park is reachable exactly when
+/// the second transaction can enter finalization concurrently. With the mutex it cannot, so the
+/// park count stays at one for as long as the first thread is held there.
 TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLastHardlink)
 {
     auto metadata = getMetadataStorage("/TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLastHardlink");
 
-    static constexpr size_t rounds = 200;
+    /// Each round is a complete test of the property; a few are run only to catch a state leak
+    /// between rounds, not to make an unlikely interleaving eventually appear.
+    static constexpr size_t rounds = 3;
     std::set<std::string> expected_released;
 
     for (size_t round = 0; round < rounds; ++round)
@@ -1847,6 +1902,7 @@ TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLa
             tx->commit(DB::NoCommitOptions{});
         }
 
+        /// Enabling creates a fresh channel, so the park count below starts from zero each round.
         DB::FailPointInjection::enableFailPoint(DB::FailPoints::unlink_file_operation_pause_after_counting_links);
 
         /// Parks inside finalize(), after counting this inode's links and before unlinking one.
@@ -1858,6 +1914,7 @@ TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLa
         });
 
         DB::FailPointInjection::waitForPause(DB::FailPoints::unlink_file_operation_pause_after_counting_links);
+        EXPECT_EQ(DB::FailPointInjection::getPauseCount(DB::FailPoints::unlink_file_operation_pause_after_counting_links), 1UL);
 
         std::atomic<bool> second_is_committing = false;
         std::thread second([&]
@@ -1868,12 +1925,26 @@ TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLa
             tx->commit(DB::NoCommitOptions{});
         });
 
-        /// Returns once the second transaction is at the door. Under the mutex it then blocks on
-        /// it, which is the property under test; without the mutex it walks into the same window.
+        /// Only a precondition for the window below: it says the second transaction has finished
+        /// its own execute() and entered commit(), so the window is not spent on thread startup.
         while (!second_is_committing)
             std::this_thread::yield();
 
-        /// Resumes the parked thread and stops the second one from parking as well.
+        /// The assertion. A second park means both transactions were inside finalization at once.
+        /// Polled rather than waited on because the expected outcome is that it never happens.
+        size_t observed_parks = 1;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            observed_parks
+                = DB::FailPointInjection::getPauseCount(DB::FailPoints::unlink_file_operation_pause_after_counting_links).value_or(0);
+            if (observed_parks > 1)
+                break;
+            sleepForMilliseconds(1);
+        }
+        EXPECT_EQ(observed_parks, 1UL) << "two transactions finalized concurrently in round " << round;
+
+        /// Resumes the parked thread. The second one then finalizes on its own.
         DB::FailPointInjection::disableFailPoint(DB::FailPoints::unlink_file_operation_pause_after_counting_links);
 
         first.join();
@@ -1882,7 +1953,8 @@ TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLa
         EXPECT_FALSE(metadata->existsFile(first_name));
         EXPECT_FALSE(metadata->existsFile(second_name));
 
-        /// Each round takes both links of its own inode, so each round owes exactly one release.
+        /// Serialized finalization leaves the second one looking at a single link, so the release
+        /// is owed in every round rather than in some of them.
         expected_released.insert(key);
         verifyBlobsToRemove(metadata, expected_released);
     }
