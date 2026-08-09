@@ -1,7 +1,6 @@
 #if defined(OS_LINUX)
 #    include <sys/syscall.h>
 #endif
-#include <cstdio>
 #include <cstdlib>
 #include <unistd.h>
 #include <base/safeExit.h>
@@ -28,8 +27,13 @@
     if (run_leak_check)
         __lsan_do_leak_check();
     else
-        /// Keep this free of "<Name>Sanitizer:", which CI log parsing reads as a failure.
-        fputs("Not running the leak check: other threads are still running.\n", stderr);
+    {
+        /// write(2) rather than stderr: this also runs from the client's SIGINT handler.
+        /// Keep it free of "<Name>Sanitizer:", which CI log parsing reads as a failure.
+        static constexpr char message[] = "Not running the leak check: other threads are still running.\n";
+        auto res = write(STDERR_FILENO, message, sizeof(message) - 1);
+        (void)res;
+    }
 #    endif
     _exit(code);
 #endif

@@ -38,26 +38,32 @@ namespace
 
 /// Leak in a joined thread, as `SanitizerDeathTest.LSan` above does: a pointer left in the
 /// current frame stays reachable through the scanned stack and would not be reported.
-void leakAndExit(bool run_leak_check)
+void leakInJoinedThread()
 {
     std::thread leak_in_thread([] { ASSERT_NE(malloc(4096), nullptr); });
     leak_in_thread.join();
-    safeExit(0, run_leak_check);
 }
+
+/// Separate entry points rather than a forwarded flag, so the default arm exercises the
+/// one-argument overload that Keeper and the client's signal handler actually call.
+[[noreturn]] void leakAndExitByDefault() { leakInJoinedThread(); safeExit(0); }
+[[noreturn]] void leakAndExitSkipping() { leakInJoinedThread(); safeExit(0, /*run_leak_check=*/ false); }
 
 }
 
 /// safeExit() runs the leak check by default, ...
 TEST(SanitizerDeathTest, SafeExitRunsLeakCheckByDefault)
 {
-    EXPECT_DEATH(leakAndExit(/*run_leak_check=*/ true), ".*LeakSanitizer: detected memory leaks.*");
+    EXPECT_DEATH(leakAndExitByDefault(), ".*LeakSanitizer: detected memory leaks.*");
 }
 
-/// ... and skips it when the caller says other threads are still running.
+/// ... and skips it, saying so, when the caller says other threads are still running.
 TEST(SanitizerDeathTest, SafeExitSkipsLeakCheckOnRequest)
 {
-    EXPECT_EXIT(leakAndExit(/*run_leak_check=*/ false), testing::ExitedWithCode(0),
-        testing::Not(testing::ContainsRegex("LeakSanitizer: detected memory leaks")));
+    EXPECT_EXIT(leakAndExitSkipping(), testing::ExitedWithCode(0),
+        testing::AllOf(
+            testing::HasSubstr("Not running the leak check"),
+            testing::Not(testing::ContainsRegex("LeakSanitizer: detected memory leaks"))));
 }
 
 #endif
