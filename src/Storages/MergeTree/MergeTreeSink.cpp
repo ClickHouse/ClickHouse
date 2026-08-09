@@ -81,6 +81,25 @@ MergeTreeSink::MergeTreeSink(
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
 {
     LOG_DEBUG(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
+
+    /// It's only allowed to throw "too many parts" before write,
+    /// because interrupting long-running INSERT query in the middle is not convenient for users.
+    /// The check has to run here, on the query thread while the insert pipeline is being built,
+    /// and not in onStart: a plain INSERT fans out to multiple parallel sinks, and a sink whose
+    /// onStart runs late would count the parts already committed by its sibling sinks and
+    /// spuriously reject the very insert that wrote them. All sinks are constructed before the
+    /// pipeline executes, so the check never sees this query's own parts. The throw itself is
+    /// deferred to onStart, so that the error still surfaces during execution, where the callers
+    /// expect it (e.g. `materialized_views_ignore_errors` and async insert flushes handle errors
+    /// thrown by an executing sink, not errors thrown while the insert chain is being built).
+    try
+    {
+        storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false);
+    }
+    catch (...)
+    {
+        too_many_parts_exception = std::current_exception();
+    }
 }
 
 void MergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
@@ -91,15 +110,17 @@ void MergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
 
 void MergeTreeSink::onStart()
 {
-    /// Delay only, without the "too many parts" throw. The throw check runs once per query in
-    /// StorageMergeTree::write, before the insert pipeline executes: a plain INSERT fans out to
-    /// multiple parallel sinks, and a sink whose onStart runs late would otherwise count the parts
-    /// already committed by its sibling sinks and spuriously reject the very insert that wrote them.
-
     /// Used by tests: skews the start of the parallel sinks of one insert, widening the window
     /// between one sink committing its part and a sibling sink starting.
     fiu_do_on(FailPoints::merge_tree_sink_on_start_random_sleep, { sleepForMicroseconds(thread_local_rng() % 3000); });
 
+    /// The "too many parts" check was evaluated at sink construction (see the constructor for why);
+    /// here it only surfaces its result.
+    if (too_many_parts_exception)
+        std::rethrow_exception(too_many_parts_exception);
+
+    /// Delay only: the parts were already counted at sink construction, and counting them again
+    /// here would include the parts committed by the sibling sinks of this very insert.
     storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ false);
 }
 
