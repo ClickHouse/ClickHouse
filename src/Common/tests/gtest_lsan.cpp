@@ -67,7 +67,7 @@ TEST(SanitizerDeathTest, SafeExitSkipsLeakCheckOnRequest)
             testing::Not(testing::ContainsRegex("LeakSanitizer: detected memory leaks"))));
 }
 
-/// The client's signal handler skips it without a word, because its stderr is program output.
+/// ... or without a word, for callers whose stderr is program output.
 TEST(SanitizerDeathTest, SafeExitSkipsLeakCheckQuietly)
 {
     EXPECT_EXIT(leakAndExitSkipQuietly(), testing::ExitedWithCode(0),

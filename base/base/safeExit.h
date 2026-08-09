@@ -9,8 +9,8 @@ enum class LeakCheck
     /// stops the world and classifies chunks those threads still own, so it reports leaks it
     /// cannot attribute.
     SkipAndReport,
-    /// Skip it silently. As above, but for callers whose stderr is program output (the client's
-    /// signal handler), where an extra line would be read as a test failure.
+    /// Skip it silently. As above, but for callers that do not redirect stderr, where a notice
+    /// would land in program output and be read as a test failure.
     SkipQuietly,
 };
 
