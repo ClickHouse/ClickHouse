@@ -3644,9 +3644,8 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
-                /// Connection handlers and refresh tasks are still running here, so a leak check
-                /// would scan their live working sets.
-                safeExit(0, /*run_leak_check=*/ false);
+                /// Connection handlers and refresh tasks are still running here.
+                safeExit(0, LeakCheck::SkipAndReport);
             }
         });
 

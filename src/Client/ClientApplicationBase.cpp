@@ -55,9 +55,8 @@ void interruptSignalHandler(int signum)
     if (auto * instance = ClientApplicationBase::instanceRawPtr(); instance)
         if (auto * base = dynamic_cast<ClientApplicationBase *>(instance); base)
             if (base->tryStopQuery())
-                /// Signal context, and query threads may still be running: the leak check scans
-                /// them, and it deadlocks if the interrupt arrived under the allocator lock.
-                safeExit(128 + signum, /*run_leak_check=*/ false);
+                /// Signal context, and the leak check deadlocks if the interrupt landed under the allocator lock.
+                safeExit(128 + signum, LeakCheck::SkipQuietly);
 }
 
 ClientApplicationBase::~ClientApplicationBase()

@@ -45,9 +45,10 @@ void leakInJoinedThread()
 }
 
 /// Separate entry points rather than a forwarded flag, so the default arm exercises the
-/// one-argument overload that Keeper and the client's signal handler actually call.
+/// one-argument overload that Keeper actually calls.
 [[noreturn]] void leakAndExitByDefault() { leakInJoinedThread(); safeExit(0); }
-[[noreturn]] void leakAndExitSkipping() { leakInJoinedThread(); safeExit(0, /*run_leak_check=*/ false); }
+[[noreturn]] void leakAndExitSkipReporting() { leakInJoinedThread(); safeExit(0, LeakCheck::SkipAndReport); }
+[[noreturn]] void leakAndExitSkipQuietly() { leakInJoinedThread(); safeExit(0, LeakCheck::SkipQuietly); }
 
 }
 
@@ -60,9 +61,18 @@ TEST(SanitizerDeathTest, SafeExitRunsLeakCheckByDefault)
 /// ... and skips it, saying so, when the caller says other threads are still running.
 TEST(SanitizerDeathTest, SafeExitSkipsLeakCheckOnRequest)
 {
-    EXPECT_EXIT(leakAndExitSkipping(), testing::ExitedWithCode(0),
+    EXPECT_EXIT(leakAndExitSkipReporting(), testing::ExitedWithCode(0),
         testing::AllOf(
             testing::HasSubstr("Not running the leak check"),
+            testing::Not(testing::ContainsRegex("LeakSanitizer: detected memory leaks"))));
+}
+
+/// The client's signal handler skips it without a word, because its stderr is program output.
+TEST(SanitizerDeathTest, SafeExitSkipsLeakCheckQuietly)
+{
+    EXPECT_EXIT(leakAndExitSkipQuietly(), testing::ExitedWithCode(0),
+        testing::AllOf(
+            testing::Not(testing::HasSubstr("Not running the leak check")),
             testing::Not(testing::ContainsRegex("LeakSanitizer: detected memory leaks"))));
 }
 

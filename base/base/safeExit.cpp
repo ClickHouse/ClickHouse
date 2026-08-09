@@ -10,7 +10,7 @@
 #    include <sanitizer/lsan_interface.h>
 #endif
 
-[[noreturn]] void safeExit(int code, [[maybe_unused]] bool run_leak_check)
+[[noreturn]] void safeExit(int code, [[maybe_unused]] LeakCheck leak_check)
 {
 #if defined(THREAD_SANITIZER) && defined(OS_LINUX)
     /// Thread sanitizer tries to do something on exit that we don't need if we want to exit immediately,
@@ -24,12 +24,11 @@
     /// (e.g., OPENSSL_cleanup) never run, causing their global state to appear leaked
     /// at the at-exit LSan check. Calling __lsan_do_leak_check() early also disables
     /// the subsequent at-exit check, preventing these false positives.
-    if (run_leak_check)
+    if (leak_check == LeakCheck::Run)
         __lsan_do_leak_check();
-    else
+    else if (leak_check == LeakCheck::SkipAndReport)
     {
-        /// write(2) rather than stderr: this also runs from the client's SIGINT handler.
-        /// Keep it free of "<Name>Sanitizer:", which CI log parsing reads as a failure.
+        /// write(2), not stderr: nothing here may allocate or take a lock.
         static constexpr char message[] = "Not running the leak check: other threads are still running.\n";
         auto res = write(STDERR_FILENO, message, sizeof(message) - 1);
         (void)res;
