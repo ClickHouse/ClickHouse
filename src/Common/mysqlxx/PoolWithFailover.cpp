@@ -1,3 +1,4 @@
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ReplicasReconnector.h>
 #include <algorithm>
@@ -229,6 +230,8 @@ PoolWithFailover::Entry PoolWithFailover::get()
                 if (bg_reconnect && !pool->isOnline())
                     continue;
 
+                DB::CurrentThread::checkIfNotCancelled();
+
                 try
                 {
                     Entry entry = shareable ? pool->get(wait_timeout) : pool->tryGet();
@@ -265,6 +268,10 @@ PoolWithFailover::Entry PoolWithFailover::get()
         else
             app.logger().error("Connection to mysql failed " + std::to_string(try_no + 1) + " times");
     }
+
+    /// The last attempt has no next iteration to reach the check above, and the full pool below
+    /// can still return a connection, so a cancelled query would be served or misreported.
+    DB::CurrentThread::checkIfNotCancelled();
 
     if (full_pool)
     {

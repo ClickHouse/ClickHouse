@@ -7,9 +7,92 @@
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Exception.h>
 
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+
+#include <algorithm>
+#include <cerrno>
+#include <ctime>
+#include <poll.h>
+
 static inline const char* ifNotEmpty(const char* s)
 {
     return s && *s ? s : nullptr;
+}
+
+namespace
+{
+
+/// Replacement for the connector's own pvio_socket_wait_io_or_timeout, installed via
+/// MARIADB_OPT_IO_WAIT. It waits in short slices so that a cancelled query stops instead of
+/// staying parked in a single poll() for the whole connect timeout.
+/// Contract: `timeout` is in milliseconds and <= 0 means wait indefinitely; a return value
+/// below 1 is a failure, 1 means the socket is ready.
+int cancellationAwareIoWait(my_socket handle, my_bool is_read, int timeout) noexcept
+{
+    static constexpr int slice_ms = 200;
+
+    /// Invoked from C: nothing may escape. The cancellation predicate can throw.
+    try
+    {
+        pollfd poll_fd{};
+        poll_fd.fd = handle;
+        poll_fd.events = is_read ? POLLIN : POLLOUT;
+
+        const bool bounded = timeout > 0;
+        timespec start{};
+        if (bounded)
+            clock_gettime(CLOCK_MONOTONIC, &start);
+
+        int remaining = timeout;
+        while (true)
+        {
+            const int rc = poll(&poll_fd, 1, bounded ? std::min(remaining, slice_ms) : slice_ms);
+
+            /// Ready, or a failure other than a signal: hand it back untouched, errno included.
+            if (rc != 0 && !(rc == -1 && errno == EINTR))
+                return rc;
+
+            if (DB::CurrentThread::isInitialized() && DB::CurrentThread::get().isQueryCanceled())
+                return 0;
+
+            /// Recompute the budget from the start of the wait, so neither a signal nor a
+            /// slice boundary extends the deadline. An unbounded wait has no budget to spend.
+            if (bounded)
+            {
+                timespec now{};
+                clock_gettime(CLOCK_MONOTONIC, &now);
+                const int64_t elapsed_ms
+                    = (now.tv_sec - start.tv_sec) * 1000 + (now.tv_nsec - start.tv_nsec) / 1000000;
+                remaining = timeout - static_cast<int>(elapsed_ms);
+                if (remaining <= 0)
+                {
+                    errno = ETIMEDOUT;
+                    return 0;
+                }
+            }
+        }
+    }
+    catch (...)
+    {
+        return 0;
+    }
+}
+
+/// Scoped so that only the connect is affected: the same hook is also the wait for ordinary
+/// reads and writes, whose cancellation is handled elsewhere.
+struct ScopedCancellationAwareIoWait
+{
+    MYSQL * driver;
+
+    explicit ScopedCancellationAwareIoWait(MYSQL * driver_) : driver(driver_)
+    {
+        mysql_options(driver, MARIADB_OPT_IO_WAIT, reinterpret_cast<const void *>(&cancellationAwareIoWait));
+    }
+
+    ~ScopedCancellationAwareIoWait() { mysql_options(driver, MARIADB_OPT_IO_WAIT, nullptr); }
+};
+
 }
 
 namespace mysqlxx
@@ -120,12 +203,16 @@ void Connection::connect(const char* db,
     if (mysql_ssl_set(driver.get(), ifNotEmpty(ssl_key), ifNotEmpty(ssl_cert), ifNotEmpty(ssl_ca), nullptr, nullptr))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    if (!mysql_real_connect(driver.get(), server, user, password, db, port, ifNotEmpty(socket), driver->client_flag))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    {
+        ScopedCancellationAwareIoWait io_wait_guard(driver.get());
 
-    /// Sets UTF-8 as default encoding. See https://mariadb.com/kb/en/mysql_set_character_set/
-    if (mysql_set_character_set(driver.get(), "utf8mb4"))
-        throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+        if (!mysql_real_connect(driver.get(), server, user, password, db, port, ifNotEmpty(socket), driver->client_flag))
+            throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+
+        /// Sets UTF-8 as default encoding. See https://mariadb.com/kb/en/mysql_set_character_set/
+        if (mysql_set_character_set(driver.get(), "utf8mb4"))
+            throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    }
 
     is_connected = true;
 }
@@ -151,7 +238,13 @@ void Connection::disconnect()
 
 bool Connection::ping()
 {
-    return is_connected && !mysql_ping(driver.get());
+    if (!is_connected)
+        return false;
+
+    /// With MYSQL_OPT_RECONNECT set, a dropped link makes ma_simple_command reconnect via
+    /// mariadb_reconnect -> mysql_real_connect, so a ping can block like a connect.
+    ScopedCancellationAwareIoWait io_wait_guard(driver.get());
+    return !mysql_ping(driver.get());
 }
 
 Query Connection::query(const std::string & str)

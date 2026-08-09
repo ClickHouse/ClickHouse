@@ -1,0 +1,5 @@
+kill_one_try ok
+kill_three_tries ok
+kill_unbounded_timeout ok
+max_execution_time ok
+not_cancelled_still_waits ok
