@@ -13,7 +13,11 @@ namespace DB
 /// TimeSeries storage: the 'metric_name' column for '__name__', a dedicated column for a tag moved
 /// there via the 'tags_to_columns' setting, and an element of the 'tags' map otherwise.
 /// A dedicated column may be Nullable, in which case NULL (a missing tag) is normalized to '',
-/// because Prometheus treats a missing label as equal to the empty label value.
+/// because Prometheus treats a missing label as equal to the empty label value. A supported external
+/// tags table can also carry a 'tags_to_columns' tag in the residual 'tags' map (e.g. legacy rows
+/// written before the dedicated column was adopted), so when the dedicated column is empty the
+/// expression falls back to the map, and a row with different non-empty values in the two carriers
+/// is rejected - the same normalization rules as `timeSeriesStoreTags` applies on the write path.
 ASTPtr timeSeriesTagNameToAST(const String & tag_name, const std::unordered_map<String, String> & column_name_by_tag_name);
 
 /// Makes an AST for the condition filtering rows of the 'tags' target table of a TimeSeries storage

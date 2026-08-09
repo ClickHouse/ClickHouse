@@ -218,6 +218,12 @@ namespace
             std::sort(tags.begin(), tags.end(), less_by_tag_name);
             tags.erase(std::unique(tags.begin(), tags.end()), tags.end());
 
+            /// An empty tag value means the tag is absent (as in Prometheus, where an empty label value is
+            /// equal to a missing label), so it must be removed before the conflict check below: a tag present
+            /// with a non-empty value in one source and absent in another (e.g. in the residual `tags` Map but
+            /// not in the dedicated column configured via `tags_to_columns`) is not a conflict.
+            std::erase_if(tags, is_tag_value_empty);
+
             auto adjacent = std::adjacent_find(tags.begin(), tags.end(), equal_by_tag_name);
             if (adjacent != tags.end())
             {
@@ -225,8 +231,6 @@ namespace
                     "Found two tags with the same name {} but different values {} and {} while executing function {}",
                     quoteString(adjacent->first), quoteString(adjacent->second), quoteString(std::next(adjacent)->second), function_name);
             }
-
-            std::erase_if(tags, is_tag_value_empty);
         }
     }
 
