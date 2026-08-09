@@ -1577,7 +1577,25 @@ def test_mysql_ssl_empty_override_is_rejected(started_cluster):
                     f"SELECT count() FROM mysql(mysql_ssl_contents_nc, {key} = '')"
                 )
             assert "cannot be overridden with an empty" in str(exception.value)
+
+        # The overrides of a dictionary created with a DDL query arrive as generated configuration
+        # keys rather than as an AST, and must be recognized as query-supplied all the same. The
+        # source of a dictionary is instantiated when it is loaded, so the load is what surfaces
+        # the rejection.
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_empty_override_dictionary")
+        node1.query(
+            """
+            CREATE DICTIONARY mysql_ssl_empty_override_dictionary (id UInt32, name String)
+            PRIMARY KEY id
+            SOURCE(MYSQL(NAME mysql_ssl_contents_nc SSL_CA_PEM ''))
+            LAYOUT(FLAT()) LIFETIME(0)
+            """
+        )
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query("SYSTEM RELOAD DICTIONARY mysql_ssl_empty_override_dictionary")
+        assert "cannot be overridden with an empty" in str(exception.value)
     finally:
+        node1.query("DROP DICTIONARY IF EXISTS mysql_ssl_empty_override_dictionary")
         node1.query("DROP NAMED COLLECTION mysql_ssl_contents_nc")
 
     # The rejection covers exactly the overrides that would drop a credential the collection
