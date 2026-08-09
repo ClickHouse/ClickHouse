@@ -20,6 +20,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
@@ -434,6 +435,7 @@ namespace
         /// remote('addresses_expr', db_name.table_name, ...)
         /// remote('addresses_expr', 'db_name', 'table_name', ...)
         /// remote('addresses_expr', table_function(), ...)
+        /// remote(cluster_name_or_named_collection, ...)
         /// cluster('cluster_name', db_name.table_name, ...)
         /// cluster('cluster_name', 'db_name', 'table_name', ...)
         /// cluster('cluster_name', table_function(), ...)
@@ -441,6 +443,10 @@ namespace
         {
             /// We consider dependencies on local tables only.
             bool has_local_replicas = false;
+
+            const ASTIdentifier * first_arg_identifier = nullptr;
+            if (!is_cluster_function && function.arguments && !function.arguments->children.empty())
+                first_arg_identifier = function.arguments->children[0]->as<ASTIdentifier>();
 
             if (is_cluster_function)
             {
@@ -451,6 +457,24 @@ namespace
                         if (cluster->getLocalShardCount())
                             has_local_replicas = true;
                     }
+                }
+            }
+            else if (first_arg_identifier)
+            {
+                /// A bare identifier names either a named collection or a configured cluster;
+                /// `parseRemoteFunctionArguments` tries them in this order. Both carry their target
+                /// specification differently from the positional form, so they are handled here and
+                /// not by the address-pattern check below.
+                if (auto collection = tryGetNamedCollection(first_arg_identifier->name()))
+                {
+                    visitRemoteFunctionNamedCollection(function, *collection, function.name == "remoteSecure");
+                    return;
+                }
+
+                if (auto cluster = global_context->tryGetCluster(first_arg_identifier->name()))
+                {
+                    if (cluster->getLocalShardCount())
+                        has_local_replicas = true;
                 }
             }
             else
@@ -512,6 +536,91 @@ namespace
             }
         }
 
+        /// remote(nc[, key = value, ...]) / remoteSecure(nc[, key = value, ...]): the named-collection form.
+        /// The addresses, database, and table come from the collection, each replaceable by a `key = value`
+        /// override argument (`tryGetNamedCollectionWithOverrides` merges them the same way at read time), so
+        /// both locality and the target name are derived from the merged view. Mirroring
+        /// `parseRemoteFunctionArguments`: a missing database key means the fixed `default` database, while
+        /// an empty value falls back to the current database of the querying session at read time and so
+        /// does not name a stable object (a persisted `Distributed` target has the create-time database
+        /// injected as an override by `bindTableFunctionTargetToCurrentDatabase`, so it keeps yielding a
+        /// dependency here); a table-function value of the `database` / `db` override is the
+        /// named-collection spelling of `remote('addr', table_function())`.
+        void visitRemoteFunctionNamedCollection(const ASTFunction & function, const NamedCollection & collection, bool secure)
+        {
+            const ASTs & args = function.arguments->children;
+
+            bool has_database_override = false;
+            bool has_table_override = false;
+            bool has_addresses_override = false;
+            std::optional<String> database_override;
+            std::optional<String> table_override;
+            const ASTFunction * target_table_function = nullptr;
+
+            for (size_t i = 1; i < args.size(); ++i)
+            {
+                const auto * override_function = args[i]->as<ASTFunction>();
+                if (!override_function || override_function->name != "equals" || !override_function->arguments
+                    || override_function->arguments->children.size() != 2)
+                    continue;
+
+                const auto * key_identifier = override_function->arguments->children[0]->as<ASTIdentifier>();
+                if (!key_identifier)
+                    continue;
+
+                const String & key = key_identifier->name();
+                const ASTPtr & value = override_function->arguments->children[1];
+
+                if (key == "database" || key == "db")
+                {
+                    has_database_override = true;
+                    if (const auto * value_function = value->as<ASTFunction>();
+                        value_function && TableFunctionFactory::instance().isTableFunctionName(value_function->name))
+                        target_table_function = value_function;
+                    else
+                        database_override = tryGetStringFromAST(value);
+                }
+                else if (key == "table")
+                {
+                    has_table_override = true;
+                    table_override = tryGetStringFromAST(value);
+                }
+                else if (key == "addresses_expr" || key == "host" || key == "hostname" || key == "port")
+                {
+                    /// The addresses could be recomputed from the overridden values, but such spellings are
+                    /// not seen in practice; keep the long-standing assumption that the target is not local.
+                    has_addresses_override = true;
+                }
+            }
+
+            const bool has_local_replicas = !has_addresses_override && namedCollectionAddressesContainLocalHost(collection, secure);
+
+            if (target_table_function)
+            {
+                if (!has_local_replicas)
+                {
+                    /// The table function will be executed remotely, so we won't check it or its arguments
+                    /// for dependencies.
+                    skip_asts.emplace(target_table_function);
+                }
+                return;
+            }
+
+            if (!has_local_replicas)
+                return;
+
+            /// An override that could not be resolved to a constant here leaves the target undecidable.
+            if ((has_database_override && !database_override) || (has_table_override && !table_override))
+                return;
+
+            String database = database_override ? *database_override : collection.getAnyOrDefault<String>({"db", "database"}, "default");
+            String table = table_override ? *table_override : collection.getOrDefault<String>("table", "");
+            if (database.empty() || table.empty())
+                return;
+
+            dependencies.emplace(QualifiedTableName{std::move(database), std::move(table)});
+        }
+
         /// Gets an argument as a string, evaluates constants if necessary.
         std::optional<String> tryGetStringFromArgument(const ASTFunction & function, size_t arg_idx, bool evaluate = true) const
         {
@@ -522,8 +631,12 @@ namespace
             if (arg_idx >= args.size())
                 return {};
 
-            const auto & arg = args[arg_idx];
+            return tryGetStringFromAST(args[arg_idx], evaluate);
+        }
 
+        /// Gets an AST node as a string, evaluates constants if necessary.
+        std::optional<String> tryGetStringFromAST(const ASTPtr & arg, bool evaluate = true) const
+        {
             if (const auto * id = arg->as<ASTIdentifier>())
                 return id->name();
 
@@ -715,6 +828,24 @@ namespace
             return tryGetStringFromArgument(function, arg_idx);
         }
 
+        /// Looks up a named collection. The collections are loaded early at server startup, before any
+        /// table metadata, so this is an in-memory lookup even when this analysis re-runs from metadata
+        /// while the tables are being loaded.
+        NamedCollectionPtr tryGetNamedCollection(const String & collection_name) const
+        {
+            try
+            {
+                NamedCollectionFactory::instance().loadIfNot();
+                return NamedCollectionFactory::instance().tryGet(collection_name);
+            }
+            catch (...)
+            {
+                /// Ok: an identifier that cannot be looked up as a collection is treated as a cluster name,
+                /// exactly as parseRemoteFunctionArguments treats an unknown collection.
+                return nullptr;
+            }
+        }
+
         /// Best-effort check whether the address pattern of a `remote()` / `remoteSecure()` call names this
         /// server. At read time the function builds its cluster from the pattern and marks an address local
         /// exactly when `isLocalAddress` accepts its IP and its port is the server's own TCP port. Resolving
@@ -729,6 +860,35 @@ namespace
             if (!addresses_expr)
                 return false;
 
+            return addressesPatternContainsLocalHost(*addresses_expr, secure);
+        }
+
+        /// The addresses of the named-collection form of remote() / remoteSecure(), assembled the way
+        /// `parseRemoteFunctionArguments` assembles them: `addresses_expr`, or `host` / `hostname` with an
+        /// optional `port`.
+        bool namedCollectionAddressesContainLocalHost(const NamedCollection & collection, bool secure) const
+        {
+            try
+            {
+                String addresses = collection.getOrDefault<String>("addresses_expr", "");
+                if (addresses.empty() && collection.hasAny({"host", "hostname"}))
+                {
+                    addresses = collection.getAny<String>({"host", "hostname"});
+                    if (collection.has("port"))
+                        addresses += ':' + toString(collection.get<UInt64>("port"));
+                }
+                return !addresses.empty() && addressesPatternContainsLocalHost(addresses, secure);
+            }
+            catch (...)
+            {
+                /// Ok: a collection value of an unexpected type cannot be attributed to this server; the
+                /// function itself reports such a collection when it is executed.
+                return false;
+            }
+        }
+
+        bool addressesPatternContainsLocalHost(const String & addresses_expr, bool secure) const
+        {
             UInt16 clickhouse_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
             if (!clickhouse_port)
                 return false;
@@ -736,7 +896,7 @@ namespace
             try
             {
                 size_t max_addresses = global_context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-                for (const auto & shard : parseRemoteDescription(*addresses_expr, 0, addresses_expr->size(), ',', max_addresses))
+                for (const auto & shard : parseRemoteDescription(addresses_expr, 0, addresses_expr.size(), ',', max_addresses))
                 {
                     for (const auto & replica : parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses))
                     {
