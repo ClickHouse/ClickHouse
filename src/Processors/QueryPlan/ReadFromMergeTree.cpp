@@ -3750,10 +3750,17 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         max_block_numbers_to_read,
         log,
         std::move(analysis_result_copy),
-        is_parallel_reading_from_replicas,
-        all_ranges_callback,
-        read_task_callback,
+        /*enable_parallel_reading=*/false,
+        /*all_ranges_callback_=*/std::nullopt,
+        /*read_task_callback_=*/std::nullopt,
         number_of_current_replica);
+    /// Copy the parallel-reading state rather than passing it to the ctor, which falls back to the context
+    /// for a callback it was not given: a read marked by `enableParallelReadingFromReplicasForSerialization`
+    /// has none, and on an initiator neither does the context. All three fields move together, otherwise a
+    /// marked read that does carry callbacks loses them and `getParallelReadingExtension` asserts.
+    cloned_step->is_parallel_reading_from_replicas = is_parallel_reading_from_replicas;
+    cloned_step->all_ranges_callback = all_ranges_callback;
+    cloned_step->read_task_callback = read_task_callback;
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
     /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
