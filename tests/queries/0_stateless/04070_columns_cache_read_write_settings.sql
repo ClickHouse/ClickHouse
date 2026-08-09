@@ -29,12 +29,14 @@ SYSTEM DROP COLUMNS CACHE;
 SET use_columns_cache = 1;
 SET enable_reads_from_columns_cache = 1;
 SET enable_writes_to_columns_cache = 1;
+SET log_queries = 1;
 
 -- First read: should populate cache (writes enabled)
 SELECT count(), sum(number) FROM t_cache_settings WHERE id < 2000;
 
 -- Second read: should use cache (reads enabled)
-SELECT count(), sum(number) FROM t_cache_settings WHERE id < 2000;
+SELECT count(), sum(number) FROM t_cache_settings WHERE id < 2000
+SETTINGS log_comment = '04070_test1_read2';
 
 -- Verify cache has data by reading different range
 SELECT count(), sum(number) FROM t_cache_settings WHERE id >= 2000 AND id < 4000;
@@ -61,6 +63,9 @@ SELECT count(), sum(number) FROM t_cache_settings WHERE id < 1000;
 -- Third read: verify still reading from disk
 SELECT count(), sum(number) FROM t_cache_settings WHERE id < 1000;
 
+-- With writes disabled the reads above must not have populated the cache.
+SELECT count() FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_cache_settings';
+
 -- =============================================================================
 -- Test 3: Writes enabled, reads disabled
 -- Cache should populate but NOT be used for reads
@@ -77,11 +82,16 @@ SET enable_writes_to_columns_cache = 1;   -- Enable writes
 -- First read: should populate cache but read from disk
 SELECT count(), sum(number) FROM t_cache_settings WHERE id >= 1000 AND id < 2000;
 
+-- With writes enabled the read above must have populated the cache even though reads are disabled.
+SELECT count() > 0 FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_cache_settings';
+
 -- Second read: cache has data, but reads disabled, so should still read from disk
-SELECT count(), sum(number) FROM t_cache_settings WHERE id >= 1000 AND id < 2000;
+SELECT count(), sum(number) FROM t_cache_settings WHERE id >= 1000 AND id < 2000
+SETTINGS log_comment = '04070_test3_read2';
 
 -- Third read: verify still reading from disk despite cache being populated
-SELECT count(), sum(number) FROM t_cache_settings WHERE id >= 1000 AND id < 2000;
+SELECT count(), sum(number) FROM t_cache_settings WHERE id >= 1000 AND id < 2000
+SETTINGS log_comment = '04070_test3_read3';
 
 -- =============================================================================
 -- Test 4: Both writes and reads disabled
@@ -256,5 +266,22 @@ SET enable_writes_to_columns_cache = 1;
 SELECT count(), sum(number) FROM t_cache_settings PREWHERE id < 2000 WHERE number > 100;
 
 DROP TABLE t_cache_settings;
+
+-- =============================================================================
+-- Verify through ProfileEvents that the settings actually changed behavior:
+-- with reads enabled the repeated read of Test 1 was served from the cache,
+-- and with reads disabled the repeated reads of Test 3 never touched it.
+-- =============================================================================
+
+SELECT 'ProfileEvents checks';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT log_comment, ProfileEvents['ColumnsCacheHits'] > 0 AS has_hits
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND log_comment IN ('04070_test1_read2', '04070_test3_read2', '04070_test3_read3')
+ORDER BY event_time_microseconds;
 
 SELECT 'All read/write settings tests passed';

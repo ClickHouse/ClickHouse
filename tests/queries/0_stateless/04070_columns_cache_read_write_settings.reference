@@ -6,8 +6,10 @@ Test 2: Writes disabled, reads enabled
 500	249500
 500	249500
 500	249500
+0
 Test 3: Writes enabled, reads disabled
 500	749500
+1
 500	749500
 500	749500
 Test 4: Both writes and reads disabled
@@ -41,4 +43,8 @@ Test 10: Settings with PREWHERE
 949	996450
 2500	13747500
 949	996450
+ProfileEvents checks
+04070_test1_read2	1
+04070_test3_read2	0
+04070_test3_read3	0
 All read/write settings tests passed

@@ -2,6 +2,7 @@
 -- Test cache metrics, ProfileEvents, and system commands
 
 SET max_threads = 1;
+SET log_queries = 1;
 SYSTEM DROP COLUMNS CACHE;
 
 DROP TABLE IF EXISTS t_cache_metrics;
@@ -20,15 +21,20 @@ SYSTEM DROP COLUMNS CACHE;
 
 -- First read (cache miss expected)
 SELECT sum(id), count() FROM t_cache_metrics
-SETTINGS use_columns_cache = 1;
+SETTINGS use_columns_cache = 1, log_comment = '04064_test1_read1';
 
 -- Second read (cache hit expected)
 SELECT sum(id), count() FROM t_cache_metrics
-SETTINGS use_columns_cache = 1;
+SETTINGS use_columns_cache = 1, log_comment = '04064_test1_read2';
 
 -- Third read (cache hit expected)
 SELECT sum(id), count() FROM t_cache_metrics
-SETTINGS use_columns_cache = 1;
+SETTINGS use_columns_cache = 1, log_comment = '04064_test1_read3';
+
+-- The reads above populated the cache: the current metrics and the system table must expose it.
+SELECT value > 0 FROM system.metrics WHERE metric = 'ColumnsCacheEntries';
+SELECT value > 0 FROM system.metrics WHERE metric = 'ColumnsCacheBytes';
+SELECT count() > 0 FROM system.columns_cache WHERE database = currentDatabase() AND table = 't_cache_metrics';
 
 -- ============================================================================
 -- Test 2: Selective column reads
@@ -62,6 +68,10 @@ SETTINGS use_columns_cache = 1;
 
 -- Drop cache
 SYSTEM DROP COLUMNS CACHE;
+
+-- Verify the drop through the exposed metrics: both must be back to zero.
+SELECT value FROM system.metrics WHERE metric = 'ColumnsCacheEntries';
+SELECT value FROM system.metrics WHERE metric = 'ColumnsCacheBytes';
 
 -- Verify cache was dropped by checking that next read still works
 SELECT sum(id), count() FROM t_cache_metrics
@@ -224,5 +234,22 @@ SELECT count() FROM t_cache_sample SAMPLE 0.5 SETTINGS use_columns_cache = 1;
 DROP TABLE t_cache_sample;
 
 DROP TABLE t_cache_metrics;
+
+-- ============================================================================
+-- Verify the ProfileEvents contract for Test 1: the first read after dropping
+-- the cache only misses, and the repeated reads are served from the cache.
+-- ============================================================================
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    log_comment,
+    ProfileEvents['ColumnsCacheHits'] > 0 AS has_hits,
+    ProfileEvents['ColumnsCacheMisses'] > 0 AS has_misses
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND log_comment LIKE '04064_test1_read%'
+ORDER BY event_time_microseconds;
 
 SELECT 'All metrics tests passed' as result;
