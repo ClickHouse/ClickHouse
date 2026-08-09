@@ -45,6 +45,7 @@ public:
         /// "results truncated due to limit" warning. Scalar and string results are not series
         /// and are never truncated.
         UInt64 limit = 0;
+        String lookback_delta_param;
     };
 
     /// Execute an instant query (/api/v1/query) or range query (/api/v1/query_range)

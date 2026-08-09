@@ -455,7 +455,7 @@ public:
         /// Additionally reserve the Prometheus HTTP API parameters consumed by these endpoints.
         /// Prometheus defines `limit` on all of them, so it must not fall through to ClickHouse's
         /// generic `limit` setting. The standard parameters that are not implemented yet (`timeout`,
-        /// `lookback_delta`, `stats`) are reserved as well, so that a valid Prometheus request such as
+        /// `stats`) are reserved as well, so that a valid Prometheus request such as
         /// `/api/v1/query?query=up&timeout=5s` is rejected explicitly by `handlingRequestWithContext`
         /// instead of failing as an unknown ClickHouse setting in `makeContext`.
         static const NameSet reserved_param_names{
@@ -553,6 +553,7 @@ public:
                 String end = params->get("end", "");
                 String step = params->get("step", "");
                 UInt64 limit = getLimitParam();
+                String lookback_delta = params->get("lookback_delta", "");
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -563,6 +564,7 @@ public:
                     .end_param = end,
                     .step_param = step,
                     .limit = limit,
+                    .lookback_delta_param = lookback_delta,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -572,6 +574,7 @@ public:
                 String query = params->get("query", "");
                 String time = params->get("time", "");
                 UInt64 limit = getLimitParam();
+                String lookback_delta = params->get("lookback_delta", "");
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -582,6 +585,7 @@ public:
                     .end_param = "",
                     .step_param = "",
                     .limit = limit,
+                    .lookback_delta_param = lookback_delta,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
