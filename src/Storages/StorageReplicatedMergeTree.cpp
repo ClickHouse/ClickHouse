@@ -3522,9 +3522,56 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         };
 
         part = get_part();
-        // The fetched part is valuable and should not be cleaned like a temp part.
+
+        /// `ALTER TABLE ... DETACH` claims a detached name under `lockParts`, so holding it here
+        /// makes the two mutually exclusive. Covers only the check and the rename: no download and
+        /// no ZooKeeper access under it.
+        auto data_parts_lock = lockParts();
+
+        /// `rename` below only probes our own disk, while the detached namespace spans the whole
+        /// storage policy, so a directory on another disk has to be found explicitly.
+        if (auto occupied_disk = tryGetDiskForDetachedPart(entry.new_part_name))
+        {
+            /// This entry is retried until it succeeds, so its own earlier publication has to be
+            /// accepted, and only its content identifies it: the log entry carries no checksum.
+            String occupant_checksum;
+            try
+            {
+                Expect404ResponseScope scope; /// 404 is not an error
+                auto volume = std::make_shared<SingleDiskVolume>("volume_" + entry.new_part_name, occupied_disk);
+                auto occupant = getDataPartBuilder(
+                    entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / entry.new_part_name,
+                    getReadSettings(), PartDirIntent::OpenExisting)
+                    .withPartFormatFromDisk()
+                    .build();
+                /// `require` must stay true: the other branch writes checksums.txt into the occupant.
+                occupant->loadChecksums(/*require=*/ true);
+                occupant_checksum = occupant->checksums.getTotalChecksumHex();
+            }
+            catch (...)
+            {
+                /// An occupant that cannot be identified is foreign.
+                tryLogCurrentException(log, fmt::format(
+                    "cannot read checksums of detached part {}, treating it as a foreign part", entry.new_part_name));
+            }
+
+            if (!part->checksums.empty() && !occupant_checksum.empty()
+                && occupant_checksum == part->checksums.getTotalChecksumHex())
+            {
+                LOG_INFO(log, "Part {} is already in the detached directory with the same checksum, "
+                    "it was published by an earlier attempt of this entry", entry.new_part_name);
+                return;
+            }
+
+            throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
+                "Detached part directory {} already exists and holds a different part", entry.new_part_name);
+        }
+
+        part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, /*remove_new_dir_if_exists=*/ false);
+
+        /// Cleared only once published: until then the destructor has to remove the staging
+        /// directory, since nothing sweeps leftovers inside `detached/`.
         part->is_temp = false;
-        part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, true);
 
         LOG_INFO(log, "Cloned part {} to detached directory", part->name);
     }
@@ -9755,6 +9802,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 void StorageReplicatedMergeTree::movePartitionToShard(
     const ASTPtr & partition, bool move_part, const String & to, ContextPtr /*query_context*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::movePartitionToShard");
+
     /// This is a lightweight operation that only optimistically checks if it could succeed and queues tasks.
 
     if (!move_part)

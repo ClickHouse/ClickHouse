@@ -1,0 +1,24 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <jbod1>
+                <path>/jbod1/</path>
+            </jbod1>
+            <jbod2>
+                <path>/jbod2/</path>
+            </jbod2>
+        </disks>
+        <policies>
+            <two_disks>
+                <volumes>
+                    <first>
+                        <disk>jbod1</disk>
+                    </first>
+                    <second>
+                        <disk>jbod2</disk>
+                    </second>
+                </volumes>
+            </two_disks>
+        </policies>
+    </storage_configuration>
+</clickhouse>
