@@ -1340,6 +1340,20 @@ void pushOrderByIntoView(
     if (sel->orderBy() || sel->limitBy() || sel->limitLength() || sel->limitOffset())
         return;
 
+    /// The guard on the outer projection above is not enough: the view's own query can contain a
+    /// stateful function as well (e.g. `CREATE VIEW v AS SELECT neighbor(v, 1) AS n, k FROM t`).
+    /// Injecting `ORDER BY`/`LIMIT` into the view definition moves the sort and the truncation to
+    /// the same query level as the stateful expression: the inner query is then planned (and, for
+    /// a view over `Distributed`, shipped to the shards) as an ordered top-N query, so the
+    /// stateful function can run under a different read strategy — and observe a different
+    /// row/block stream — than in the original plan, where the view executes in full and the sort
+    /// and `LIMIT` stay above it. Reject the rewrite when any top-level clause of the view's
+    /// select (projection, `WHERE`, `PREWHERE`, ...) contains a stateful call, including one
+    /// hidden behind a SQL UDF wrapper. The walk deliberately stops at nested subqueries — those
+    /// form independent scopes whose plans carry their own stateful fences.
+    if (astContainsStatefulFunction(union_ast->list_of_selects->children[0], query_context))
+        return;
+
     /// View must not carry `LIMIT`/`OFFSET` through its own `SETTINGS` clause.
     /// `SETTINGS limit = N` / `offset = N` constrain which rows the view exposes,
     /// just like an explicit `LIMIT`/`OFFSET`. Pushing the outer `ORDER BY`/`LIMIT`
