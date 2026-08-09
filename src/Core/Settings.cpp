@@ -1915,7 +1915,7 @@ Possible values:
     DECLARE(Bool, enable_group_by_top_k_optimization, true, R"(
 Enable TopK filtering optimization during aggregation in `GROUP BY keys ORDER BY <prefix of keys> LIMIT N` queries, and in `GROUP BY keys LIMIT N` queries without `ORDER BY` (any `N` groups are a valid result there, so a sort over all keys is synthesized).
 
-When enabled, the aggregator maintains a bounded heap of the top `N` keys seen so far and skips inserting new rows into the hash table when their grouping key cannot make it into the final result. This reduces the size of the intermediate hash table and avoids aggregating rows that would be discarded by the subsequent `ORDER BY ... LIMIT`.
+When enabled, the aggregator maintains a bounded heap of the top `N` keys seen so far and skips inserting new rows into the hash table when their grouping key cannot make it into the final result. This avoids aggregating rows that would be discarded by the subsequent `ORDER BY ... LIMIT`, and when the heap ranks the full `GROUP BY` key it also prunes evicted groups out of the intermediate hash table, bounding its size by the `LIMIT` instead of the number of distinct keys. When the `ORDER BY` covers only a proper prefix of the `GROUP BY` keys, the ranking cannot identify a full group, so only row skipping applies: the hash table keeps every admitted group and can still grow with the cardinality of the remaining key columns.
 
 This optimization also relies on the value of the `query_plan_max_limit_for_top_k_optimization` setting: it is disabled when the requested `LIMIT` is higher than that setting allows, because a heap larger than the number of distinct keys is pure overhead.
 
