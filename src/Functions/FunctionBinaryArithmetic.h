@@ -3577,8 +3577,7 @@ public:
             // Division is undefined at zero, so we must not report monotonicity:
             // - divide(const, x) or intDiv(const, x) at x = 0 (right_arg_is_zero)
             // - divide(x, 0) or intDiv(x, 0) where the constant divisor is 0 (right_const_is_zero)
-            // Only division reads the two checks below, and an `IPv4`/`IPv6` `Field` has no
-            // accurate-comparison arm against a number, so a non-division function must not run them.
+            // Guarded: only division reads these, and comparing an IP-tagged `Field` here throws.
             bool is_div_function = name_view == "divide" || name_view == "intDiv";
             if (is_div_function)
             {
@@ -3746,9 +3745,7 @@ public:
             const auto & const_side = (right.column && isColumnConst(*right.column)) ? right : left;
             if (const_side.column && isColumnConst(*const_side.column))
             {
-                /// The constant and both endpoints are compared against numbers and converted to the
-                /// result type below, so an `IPv4`/`IPv6` value must first be substituted with the
-                /// integer the multiplication actually computes on (see `substituteIPField`).
+                /// Compared against numbers below, so an IP operand must be substituted first.
                 auto constant = substituteIPField((*const_side.column)[0]);
                 if (accurateEquals(constant, Field(0)))
                     return {true, true, false, false}; /// x * 0 is constant, trivially monotonic but not strict
@@ -3904,12 +3901,8 @@ public:
         return accurateLessOrEqual(wrap_field, constant);
     }
 
-    /// `IPv4`/`IPv6` operands never reach the arithmetic as themselves: an IP-tagged `Field` has no
-    /// accurate-comparison arm against a number, so it must be converted before it is compared here.
-    /// `IPv6` is stored big-endian and the substitution casts it through `convertFromIPv6ToUInt128`,
-    /// which swaps the limbs and byte-swaps each, so a raw `toUnderType()` bit copy would yield a
-    /// different number; reuse the same cast the substitution in `executeImpl2` performs, whose
-    /// type-side twin is `getReturnTypeImplStatic`.
+    /// Returns the integer an `IPv4`/`IPv6` operand is substituted with, other fields unchanged.
+    /// Must cast: `IPv6` is big-endian, so a raw `toUnderType()` bit copy yields a different number.
     static Field substituteIPField(const Field & field)
     {
         const bool is_ipv4 = field.getType() == Field::Types::IPv4;
