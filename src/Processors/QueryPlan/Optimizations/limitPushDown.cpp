@@ -16,7 +16,10 @@ namespace DB::QueryPlanOptimizations
 /// If plan looks like Limit -> Sorting, update limit for Sorting
 static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
 {
-    if (limit == 0)
+    /// A sorting step of a `SQL SECURITY` view's subplan must not receive the invoker's
+    /// limit: it would stop reading by the rows the view drops or collapses.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (limit == 0 || node->step->isSecurityBarrier())
         return false;
 
     QueryPlanStepPtr & step = node->step;
@@ -55,6 +58,14 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
 
     /// Skip LIMIT WITH TIES by now.
     if (limit->withTies())
+        return 0;
+
+    /// The invoker's LIMIT must not cross into a `SQL SECURITY` view's subplan: pushing it
+    /// below the view's sealing step, seeding `DistinctStep::limit_hint`, or updating a
+    /// sorting limit makes the source stop reading by the rows the view itself drops or
+    /// collapses, which reports their presence through `read_rows`, progress and timing.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (child->isSecurityBarrier())
         return 0;
 
     /// Push LIMIT into each branch of UNION ALL.
@@ -160,6 +171,11 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
 
     auto * sort = typeid_cast<SortingStep *>(expr_node->children.front()->step.get());
     if (!sort)
+        return;
+
+    /// The invoker's LIMIT BY must not truncate the streams of a `SQL SECURITY` view's own
+    /// sorting. See IQueryPlanStep::isSecurityBarrier.
+    if (expr_step->isSecurityBarrier() || sort->isSecurityBarrier())
         return;
 
     /// `arrayJoin` in the expression above sort changes row cardinality after the sort runs.
