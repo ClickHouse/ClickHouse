@@ -489,6 +489,17 @@ static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filte
 
 std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context)
 {
+    /// Inside a transaction the read uses the transaction's snapshot, while this walk samples each
+    /// table's live state (`MergeTree` hashes its current active part set, not the transaction-visible
+    /// one). The two can diverge for the whole duration of the query - a commit from another session
+    /// after `BEGIN TRANSACTION` moves the live state to `H1` while this query still reads the `H0`
+    /// snapshot - so the query could hit an existing `H1` cache entry or store its `H0` result under the
+    /// `H1` key, and the pre/post finalization recheck cannot notice because the divergence is stable
+    /// across the read. Fail closed until the hash is made transaction-snapshot-aware: the consistent
+    /// query cache is bypassed and `REFRESH ... IF CHANGED` refreshes unconditionally.
+    if (context->getCurrentTransaction())
+        return {};
+
     ASTs filter_asts;
     if (!parseFilterASTsInjectedFromSettings(context, filter_asts))
         return {};
