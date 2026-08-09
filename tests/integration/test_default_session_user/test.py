@@ -777,6 +777,54 @@ def test_config_reload_prometheus_handlers_switch_to_fixed_user():
     assert session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before
 
 
+def test_config_reload_prometheus_no_restart_when_handlers_fixed_user():
+    # This test runs after `test_config_reload_prometheus_handlers_switch_to_fixed_user`,
+    # so every handler in `node_reject`'s shared `prometheus.handlers` section now carries
+    # a fixed `user`.
+    #
+    # First, the reload of the previous test changed the shared section itself, which must
+    # restart *every* non-keeper composable `prometheus` listener serving it — including
+    # `prometheus-write-noreload` (port 9117), whose own `default_session_user` did not
+    # change in that reload (the section is baked into the listener's handler factory).
+    assert node_reject.contains_in_log(
+        "<prometheus.handlers> had been changed, will reload prometheus-write-noreload"
+    )
+
+    # The restarted listener serves the fixed-user handler set. It comes back
+    # asynchronously after the reload, so poll.
+    count_before = session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus")
+    for _ in range(30):
+        try:
+            prometheus_write(9117, node=node_reject)
+        except Exception:
+            pass
+        if session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before:
+            break
+        time.sleep(1)
+    assert session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before
+
+    # Second, with a handler set that never consults `default_session_user`, changing the
+    # endpoint's override must not restart the listener: a restart would interrupt writes
+    # for a setting change that is a no-op there.
+    config_path = "/etc/clickhouse-server/config.d/config_reject.xml"
+    node_reject.replace_in_config(
+        config_path,
+        "proto_prometheus_norestart_user",
+        "proto_prometheus_norestart_user_changed",
+    )
+    node_reject.query("SYSTEM RELOAD CONFIG")
+
+    # `updateServers` runs within `SYSTEM RELOAD CONFIG`, so by now the decision not to
+    # restart has been made and logged (or not).
+    assert not node_reject.contains_in_log(
+        "<default_session_user> had been changed, will reload prometheus-write-noreload"
+    )
+
+    # The listener keeps serving without interruption.
+    with assert_login_success("fixed_write_user", "Prometheus", node=node_reject):
+        prometheus_write(9117, node=node_reject)
+
+
 def test_config_reload_http_handlers_reference_switch():
     # Re-pointing an `http` endpoint's `handlers` reference to a different, already-defined
     # section must restart the listener, even when the newly referenced section is itself

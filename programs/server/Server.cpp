@@ -4456,6 +4456,7 @@ void Server::updateServers(
             std::string port_name = server->getPortName();
             bool has_host = false;
             bool is_http = false;
+            bool is_non_keeper_prometheus = false;
             bool default_session_user_changed = false;
             String handlers_key = "http_handlers";
             String previous_handlers_key = handlers_key;
@@ -4501,17 +4502,18 @@ void Server::updateServers(
                         }
                         if (type == "tcp" || type == "mysql" || type == "postgres")
                             consumes_default_session_user = true;
-                        /// Unlike `http` endpoints, composable `prometheus` listeners are not restarted
-                        /// when their handler set (the global `prometheus.handlers` section) changes, so
-                        /// the running listener may still serve the *previous* handler set. Consider the
-                        /// setting consumed when either the old or the new set consumes it: otherwise a
-                        /// reload that both switches a live anonymous time-series handler to a fixed user
-                        /// and changes `default_session_user` would skip the restart and leave the old
-                        /// anonymous-authentication behavior on the port.
+                        /// The running listener still serves the handler set of the *previous*
+                        /// configuration (the shared `prometheus.handlers` section), so consider the
+                        /// setting consumed when either the old or the new set consumes it. A change
+                        /// of the section itself forces a restart below, like a change of an `http`
+                        /// endpoint's `handlers` section.
                         if (type == "prometheus" && !server_settings[ServerSetting::prometheus_keeper_metrics_only])
+                        {
+                            is_non_keeper_prometheus = true;
                             consumes_default_session_user = consumes_default_session_user
                                 || prometheusHandlersConsumeDefaultSessionUser(previous_config)
                                 || prometheusHandlersConsumeDefaultSessionUser(config);
+                        }
                     }
 
                     if (!config.has(prefix + "impl"))
@@ -4555,6 +4557,14 @@ void Server::updateServers(
             {
                 force_restart = true;
                 LOG_TRACE(log, "<{}> had been changed, will reload {}", handlers_key, server->getDescription());
+            }
+            /// A composable non-keeper `prometheus` listener serves the shared `prometheus.handlers`
+            /// section, which is baked into its handler factory, so the listener must be restarted
+            /// when the section changes (a fixed `user`, a route, or a handler type may have changed).
+            if (is_non_keeper_prometheus && !isSameConfiguration(previous_config, config, "prometheus.handlers"))
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<prometheus.handlers> had been changed, will reload {}", server->getDescription());
             }
             if (default_session_user_changed)
             {

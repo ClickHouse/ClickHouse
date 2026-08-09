@@ -42,5 +42,17 @@
             <default_session_user>proto_prometheus_user</default_session_user>
             <description>prometheus-write-reload</description>
         </prometheus_write_reload>
+        <!-- A second listener over the same shared `prometheus.handlers` section. It is
+             restarted together with the listener above when the section changes (even
+             though its own `default_session_user` does not), and once every handler in
+             the section carries a fixed `user`, changing its `default_session_user`
+             must no longer restart it. -->
+        <prometheus_write_noreload>
+            <type>prometheus</type>
+            <host>0.0.0.0</host>
+            <port>9117</port>
+            <default_session_user>proto_prometheus_norestart_user</default_session_user>
+            <description>prometheus-write-noreload</description>
+        </prometheus_write_noreload>
     </protocols>
 </clickhouse>
