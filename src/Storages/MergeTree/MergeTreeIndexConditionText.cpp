@@ -8,6 +8,7 @@
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -964,7 +965,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                         target_type = key_array->getNestedType();
                 }
 
-                if (target_type && !target_type->equals(*value_type))
+                if (target_type
+                    && !removeLowCardinalityAndNullable(target_type)->equals(*removeLowCardinalityAndNullable(value_type)))
                     return false;
             }
 
