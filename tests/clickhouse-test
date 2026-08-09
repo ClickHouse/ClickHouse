@@ -6358,7 +6358,10 @@ ORDER BY (test_name, callee_offset)
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist.decode())
+            # The processlist may contain arbitrary bytes: under the AST fuzzer, query
+            # texts (e.g. of KILL QUERY attempts) can carry invalid UTF-8 sequences,
+            # and a strict decode would crash the hung check instead of reporting it.
+            print(processlist.decode(errors="replace"))
             print(get_transactions_list(args))
 
             # `processlist` above already shows per-thread stacks for
