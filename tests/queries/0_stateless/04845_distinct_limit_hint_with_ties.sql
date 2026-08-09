@@ -45,8 +45,10 @@ SELECT DISTINCT c FROM (SELECT n AS k, count() AS c FROM t_erbl GROUP BY k WITH 
 -- Same for WITH TOTALS on the query itself rather than in a subquery in FROM.
 SELECT DISTINCT count() FROM t_erbl GROUP BY n WITH TOTALS LIMIT 1 FORMAT JSONCompact SETTINGS output_format_write_statistics = 0, query_plan_remove_redundant_distinct = 0;
 SELECT DISTINCT count() FROM t_erbl GROUP BY n WITH TOTALS LIMIT 1 FORMAT JSONCompact SETTINGS output_format_write_statistics = 0, query_plan_remove_redundant_distinct = 0, enable_analyzer = 0;
--- WITH TOTALS plus ORDER BY does not read till end, so the hint still applies and stays correct.
--- TSV prints the row and the totals but not rows_before_limit_at_least, which tracks max_threads.
-SELECT DISTINCT c FROM (SELECT n AS k, count() AS c FROM t_erbl GROUP BY k WITH TOTALS) ORDER BY c LIMIT 1 FORMAT TabSeparatedWithNames;
+-- WITH TOTALS plus ORDER BY on the same query does not read till end, so the hint still applies.
+-- The LIMIT must not be marked as reading all data, and the totals must still be complete.
+SELECT countIf(explain LIKE '%Reads all data%') FROM (EXPLAIN PLAN SELECT DISTINCT count() AS c FROM t_erbl GROUP BY n WITH TOTALS ORDER BY c LIMIT 1 SETTINGS query_plan_remove_redundant_distinct = 0);
+SELECT DISTINCT count() AS c FROM t_erbl GROUP BY n WITH TOTALS ORDER BY c LIMIT 1 FORMAT TabSeparatedWithNames SETTINGS query_plan_remove_redundant_distinct = 0;
+SELECT DISTINCT count() AS c FROM t_erbl GROUP BY n WITH TOTALS ORDER BY c LIMIT 1 FORMAT TabSeparatedWithNames SETTINGS query_plan_remove_redundant_distinct = 0, enable_analyzer = 0;
 
 DROP TABLE t_erbl;
