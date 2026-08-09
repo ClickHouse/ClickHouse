@@ -20,6 +20,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <utility>
 
 
 namespace DB
@@ -491,12 +492,18 @@ void KQLParser::parseFunctionDefinition(const String & name)
     {
         /// The names the body may stand on to be tabular without saying so: the enclosing
         /// tabular bindings and tabular-bodied functions it can see (`let F = () { Base };`).
-        /// A parameter shadows anything of the same name outside.
+        /// A parameter shadows anything of the same name outside; only scalar parameters
+        /// reach this point, since a tabular one already classified the body.
         std::set<String> tabular_names = scopeTabularNames();
+        std::set<String> scalar_names = scopeScalarNames();
         for (const auto & parameter : definition.parameters)
+        {
             tabular_names.erase(parameter.name);
+            scalar_names.insert(parameter.name);
+        }
 
-        definition.body_looks_tabular = bodyLooksTabular(definition.body_begin, definition.body_end, std::move(tabular_names));
+        definition.body_looks_tabular
+            = bodyLooksTabular(definition.body_begin, definition.body_end, std::move(tabular_names), std::move(scalar_names));
     }
 
     scope.functions[name] = std::move(definition);
@@ -572,7 +579,18 @@ std::set<String> KQLParser::scopeTabularNames() const
     return names;
 }
 
-bool KQLParser::bodyLooksTabular(size_t begin, size_t end, std::set<String> tabular_names)
+std::set<String> KQLParser::scopeScalarNames() const
+{
+    std::set<String> names;
+    for (const auto & [scalar_name, _] : scope.scalars)
+        names.insert(scalar_name);
+    for (const auto & [function_name, function] : scope.functions)
+        if (!function.body_looks_tabular)
+            names.insert(function_name);
+    return names;
+}
+
+bool KQLParser::bodyLooksTabular(size_t begin, size_t end, std::set<String> tabular_names, std::set<String> scalar_names)
 {
     DepthGuard guard(*this, "function body");
 
@@ -592,6 +610,7 @@ bool KQLParser::bodyLooksTabular(size_t begin, size_t end, std::set<String> tabu
             /// A function definition - an optional `view`, a parenthesized parameter list, a
             /// braced body - binds a name that is tabular when its own body is.
             bool is_function_definition = false;
+            bool bound_tabular = false;
             size_t parameters = rhs + (tokenIsKeyword(rhs, "view") ? 1 : 0);
             if (parameters < let_end && tokens[parameters].type == KQLTokenType::OpeningRoundBracket)
             {
@@ -608,22 +627,35 @@ bool KQLParser::bodyLooksTabular(size_t begin, size_t end, std::set<String> tabu
                 if (nesting == 0 && body < let_end && tokens[body].type == KQLTokenType::OpeningCurlyBrace)
                 {
                     is_function_definition = true;
-                    if (tokens[let_end - 1].type == KQLTokenType::ClosingCurlyBrace && bodyLooksTabular(body + 1, let_end - 1, tabular_names))
-                        tabular_names.insert(bound_name);
+                    bound_tabular = tokens[let_end - 1].type == KQLTokenType::ClosingCurlyBrace
+                        && bodyLooksTabular(body + 1, let_end - 1, tabular_names, scalar_names);
                 }
             }
 
-            if (!is_function_definition && expressionLooksTabular(rhs, let_end, tabular_names))
+            if (!is_function_definition)
+                bound_tabular = expressionLooksTabular(rhs, let_end, tabular_names, scalar_names);
+
+            /// The binding shadows anything of the same name outside.
+            if (bound_tabular)
+            {
                 tabular_names.insert(bound_name);
+                scalar_names.erase(bound_name);
+            }
+            else
+            {
+                scalar_names.insert(bound_name);
+                tabular_names.erase(bound_name);
+            }
         }
 
         probe = let_end < end ? let_end + 1 : end;
     }
 
-    return expressionLooksTabular(probe, end, tabular_names);
+    return expressionLooksTabular(probe, end, tabular_names, scalar_names);
 }
 
-bool KQLParser::expressionLooksTabular(size_t begin, size_t end, const std::set<String> & tabular_names) const
+bool KQLParser::expressionLooksTabular(
+    size_t begin, size_t end, const std::set<String> & tabular_names, const std::set<String> & scalar_names) const
 {
     /// Where the bracket at `position` closes, or `end`.
     const auto matching_close = [&](size_t position)
@@ -691,11 +723,22 @@ bool KQLParser::expressionLooksTabular(size_t begin, size_t end, const std::set<
     }
 
     /// A name known to be tabular, standing alone (`Base`) or called (`F()`, `F(x)`).
-    if (tokens[begin].type != KQLTokenType::BareWord || !tabular_names.contains(String(tokens[begin].text())))
+    if (tokens[begin].type != KQLTokenType::BareWord)
         return false;
-    if (begin + 1 == end)
-        return true;
-    return tokens[begin + 1].type == KQLTokenType::OpeningRoundBracket && matching_close(begin + 1) == end - 1;
+    const String name(tokens[begin].text());
+    if (tabular_names.contains(name))
+    {
+        if (begin + 1 == end)
+            return true;
+        return tokens[begin + 1].type == KQLTokenType::OpeningRoundBracket && matching_close(begin + 1) == end - 1;
+    }
+
+    /// A bare name standing alone that is bound to nothing scalar can only be a physical
+    /// table (`let T = StormEvents;`). `true` and `false` are literals, not names.
+    const String lowered = Poco::toLower(name);
+    if (lowered == "true" || lowered == "false")
+        return false;
+    return begin + 1 == end && !scalar_names.contains(name);
 }
 
 KQLParser::Scope KQLParser::bindArguments(const String & name, const FunctionDefinition & definition, const KQLToken & call_token)
@@ -868,9 +911,10 @@ void KQLParser::parseLetStatement()
     /// A `let` may bind either a scalar or a whole tabular expression, and nothing at the `=`
     /// says which. The classifier that already reads function bodies decides: it knows
     /// pipelines, the source keywords (`datatable`, `union`, ...) under any parenthesizing,
-    /// and the names bound to something tabular - so `let T = (datatable (n: long) [1]);` and
-    /// `let U = union A, B;` bind tables, while `let x = (1 + 2);` stays a scalar.
-    if (expressionLooksTabular(index, statementEnd(index, tokens.size()), scopeTabularNames()))
+    /// the names bound to something tabular, and bare physical table names - so
+    /// `let T = (datatable (n: long) [1]);`, `let U = union A, B;` and `let T = Events;`
+    /// bind tables, while `let x = (1 + 2);` stays a scalar.
+    if (expressionLooksTabular(index, statementEnd(index, tokens.size()), scopeTabularNames(), scopeScalarNames()))
         scope.tabulars[name] = parseTabularExpression();
     else
         scope.scalars[name] = parseExpression();
@@ -880,12 +924,17 @@ KQLTabularExpressionPtr KQLParser::parseTabularExpression()
 {
     DepthGuard guard(*this, "tabular expression");
 
+    /// A tabular expression nested in an aggregation argument (`x in (T | ...)`) starts its
+    /// own expression contexts; its operators may not aggregate any more than usual.
+    const bool outer_in_aggregation = std::exchange(in_aggregation, false);
+
     auto result = std::make_shared<KQLTabularExpression>();
     result->source = parseSource();
 
     while (consume(KQLTokenType::Pipe))
         result->operators.push_back(parsePipelineOperator());
 
+    in_aggregation = outer_in_aggregation;
     return result;
 }
 
@@ -1172,12 +1221,15 @@ KQLOperatorPtr KQLParser::parseSummarize()
     op->kind = KQLOperatorKind::Summarize;
 
     /// `summarize by X` aggregates nothing and just groups - the aggregation list is optional.
+    /// Only its expressions may call aggregate functions; the `by` keys may not.
     if (!atKeyword("by"))
     {
+        in_aggregation = true;
         do
         {
             op->expressions.push_back(parseNamedExpression());
         } while (consume(KQLTokenType::Comma));
+        in_aggregation = false;
     }
 
     if (consumeKeyword("by"))
@@ -2077,7 +2129,7 @@ ASTPtr KQLParser::parseFunctionCall(const String & name)
     expect(KQLTokenType::ClosingRoundBracket);
 
     String error;
-    ASTPtr result = translateKQLFunction(name, String(name_token.text()), arguments, error);
+    ASTPtr result = translateKQLFunction(name, String(name_token.text()), arguments, in_aggregation, error);
     if (!result)
         failAt(name_token, error);
 
@@ -2125,7 +2177,7 @@ ASTPtr KQLParser::tryParseWordOperator(const ASTPtr & left)
         /// The right-hand side may also be a whole tabular expression whose first column
         /// supplies the values: `x in (T | project key)`. The classifier that already reads
         /// `let` right-hand sides decides, over the tokens up to the closing ')'.
-        if (expressionLooksTabular(index, closingBracket(index), scopeTabularNames()))
+        if (expressionLooksTabular(index, closingBracket(index), scopeTabularNames(), scopeScalarNames()))
         {
             /// There is no case-insensitive `IN`, and the spelled-out disjunction the list
             /// form uses needs the values at hand, which a subquery's are not.

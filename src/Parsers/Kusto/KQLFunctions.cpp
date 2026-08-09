@@ -1455,7 +1455,7 @@ bool isUnsupportedKQLFunction(const String & name)
     return unsupportedKQLFunctions().contains(name);
 }
 
-ASTPtr translateKQLFunction(const String & name, const String & original_name, const ASTs & arguments, String & error)
+ASTPtr translateKQLFunction(const String & name, const String & original_name, const ASTs & arguments, bool allow_aggregates, String & error)
 {
     const auto * entry = [&]() -> const Entry *
     {
@@ -1465,6 +1465,12 @@ ASTPtr translateKQLFunction(const String & name, const String & original_name, c
             return &it->second;
         return nullptr;
     }();
+
+    if (entry && !allow_aggregates && !scalarFunctions().contains(name) && aggregateFunctions().contains(name))
+    {
+        error = fmt::format("'{}' is an aggregate function, and may only be used in the aggregation of a 'summarize'", name);
+        return nullptr;
+    }
 
     if (!entry)
     {

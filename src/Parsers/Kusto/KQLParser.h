@@ -109,12 +109,16 @@ private:
     void parseFunctionDefinition(const String & name);
     /// Whether the token range `[begin, end)` - any number of `let` statements followed by one
     /// expression - reads as a pipeline rather than a scalar expression. `tabular_names` seeds
-    /// the names known to stand for a table; the range's own `let`s add theirs while scanning.
-    bool bodyLooksTabular(size_t begin, size_t end, std::set<String> tabular_names);
-    bool expressionLooksTabular(size_t begin, size_t end, const std::set<String> & tabular_names) const;
+    /// the names known to stand for a table and `scalar_names` those known to stand for a
+    /// scalar; the range's own `let`s add theirs while scanning. A bare name standing alone
+    /// that neither set knows is a physical table.
+    bool bodyLooksTabular(size_t begin, size_t end, std::set<String> tabular_names, std::set<String> scalar_names);
+    bool expressionLooksTabular(size_t begin, size_t end, const std::set<String> & tabular_names, const std::set<String> & scalar_names) const;
     /// The names the current scope knows to stand for a table: the tabular bindings and the
     /// tabular-bodied functions. Seeds the classifiers above.
     std::set<String> scopeTabularNames() const;
+    /// Likewise for the scalars: the scalar bindings and the scalar-bodied functions.
+    std::set<String> scopeScalarNames() const;
     /// The first ';' outside any brackets at or after `position`, or `end`.
     size_t statementEnd(size_t position, size_t end) const;
     /// Where the bracket open just before `position` closes, or `tokens.size()`.
@@ -189,6 +193,9 @@ private:
     Scope scope;
     /// Guards against a function that calls itself; Kusto has no recursion either.
     std::set<String> functions_in_progress;
+    /// Whether an aggregation is being parsed - the aggregation list of `summarize`. Only
+    /// there may a KQL aggregate function be called.
+    bool in_aggregation = false;
 };
 
 }

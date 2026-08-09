@@ -66,7 +66,9 @@ name two statements both need has to be bound twice.
 **Literals**: strings (including verbatim `@'...'`), numbers, `datetime(...)`, `guid(...)`,
 timespans such as `1d` / `2.5h` / `500ms`, and `dynamic([...])` arrays.
 
-Around 130 scalar and aggregate functions are translated.
+Around 130 scalar and aggregate functions are translated. As in Kusto, the aggregate
+functions may only be called in the aggregation list of `summarize`; `print count()` is
+rejected rather than passed through to the ClickHouse aggregate of the same name.
 
 **ClickHouse functions** are reachable too. A name the KQL registry does not know is passed
 through to ClickHouse under the spelling you wrote, so a query can use anything the server

@@ -24,8 +24,12 @@ namespace DB
   *
   * `name` is the call lower-cased; `original_name` is the spelling the user wrote, which is
   * what case 3 passes on, because ClickHouse function names are case-sensitive.
+  *
+  * Kusto allows aggregate functions in an aggregation context only, so a call to one is
+  * rejected unless `allow_aggregates` says the caller is parsing one - the aggregation list
+  * of `summarize`.
   */
-ASTPtr translateKQLFunction(const String & name, const String & original_name, const ASTs & arguments, String & error);
+ASTPtr translateKQLFunction(const String & name, const String & original_name, const ASTs & arguments, bool allow_aggregates, String & error);
 
 /// Kusto function names this dialect does not implement.
 ///
