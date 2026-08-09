@@ -402,13 +402,12 @@ private:
     /// `(SELECT a + s * number AS x FROM numbers(count))`.
     ASTPtr buildRange(const KQLSource & source)
     {
-        /// `number` is `numbers()`'s output column.
-        ASTPtr span = makeASTFunction("minus", source.range_to, source.range_from);
-        ASTPtr steps = makeASTFunction("floor", makeASTFunction("divide", span, source.range_step));
-        ASTPtr count = makeASTFunction(
-            "greatest", makeASTFunction("plus", makeASTFunction("toInt64", steps), lit(Int64(1))), lit(Int64(0)));
+        /// Only the runtime sees whether the range goes over numbers, datetimes or timespans,
+        /// so both the row count and the scaling of the step dispatch there: `kqlRangeCount`
+        /// counts a temporal range in nanoseconds, and `kqlMultiply` scales a timespan.
+        ASTPtr count = makeASTFunction("kqlRangeCount", source.range_from, source.range_to, source.range_step);
 
-        auto numbers = makeASTFunction("numbers", makeASTFunction("toUInt64", count));
+        auto numbers = makeASTFunction("numbers", count);
         auto numbers_expression = make_intrusive<ASTTableExpression>();
         numbers_expression->table_function = numbers;
         numbers_expression->children.push_back(numbers);
@@ -416,8 +415,9 @@ private:
         SelectBuilder inner;
         inner.setTableExpression(numbers_expression);
 
+        /// `number` is `numbers()`'s output column.
         ASTPtr value = makeASTFunction(
-            "plus", source.range_from->clone(), makeASTFunction("multiply", source.range_step->clone(), ident("number")));
+            "plus", source.range_from->clone(), makeASTFunction("kqlMultiply", source.range_step->clone(), ident("number")));
         value->setAlias(source.range_column);
         inner.setProjection({value});
 

@@ -18,6 +18,8 @@
 #include <Poco/String.h>
 
 #include <cmath>
+#include <limits>
+#include <optional>
 
 
 namespace DB
@@ -41,6 +43,42 @@ ASTPtr makeLiteral(Field value)
 ASTPtr makeIdentifier(const String & name)
 {
     return make_intrusive<ASTIdentifier>(name);
+}
+
+/// The constant value of a parsed expression, when it has one that is known at parse time:
+/// a plain literal, or `negate` over one - the form a negative number parses to, since the
+/// lexer has no signed numbers. Used where a construct takes constants rather than
+/// expressions, such as the elements of a `dynamic([...])` literal.
+std::optional<Field> tryFoldConstant(const ASTPtr & node)
+{
+    if (const auto * literal = node->as<ASTLiteral>())
+        return literal->value;
+
+    const auto * function = node->as<ASTFunction>();
+    if (!function || function->name != "negate" || function->arguments->children.size() != 1)
+        return {};
+
+    std::optional<Field> operand = tryFoldConstant(function->arguments->children[0]);
+    if (!operand)
+        return {};
+
+    switch (operand->getType())
+    {
+        case Field::Types::Int64:
+            return Field(-operand->safeGet<Int64>());
+        case Field::Types::UInt64:
+        {
+            /// Only hexadecimal literals parse as `UInt64`; the decimal ones are `Int64`.
+            const UInt64 value = operand->safeGet<UInt64>();
+            if (value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                return {};
+            return Field(-static_cast<Int64>(value));
+        }
+        case Field::Types::Float64:
+            return Field(-operand->safeGet<Float64>());
+        default:
+            return {};
+    }
 }
 
 /// Whether a parsed expression is a literal in the KQL sense: a plain literal, or one of the
@@ -1778,10 +1816,10 @@ ASTPtr KQLParser::parseDynamicLiteral()
             do
             {
                 ASTPtr element = parseDynamicLiteral();
-                const auto * literal = element->as<ASTLiteral>();
-                if (!literal)
+                std::optional<Field> value = tryFoldConstant(element);
+                if (!value)
                     fail("a dynamic literal may only contain constants");
-                elements.push_back(literal->value);
+                elements.push_back(std::move(*value));
             } while (consume(KQLTokenType::Comma));
         }
         expect(KQLTokenType::ClosingSquareBracket);

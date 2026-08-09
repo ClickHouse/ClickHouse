@@ -30,6 +30,8 @@ Kusto documents, or rejected by name with a parse error — nothing is approxima
 If a query parses, its result is meant to match Kusto's.
 
 **Sources**: a table name, `print`, `datatable`, `range`, a parenthesized pipeline, and `union`.
+A `range` goes from a number by a number, from a datetime by a timespan, or from a timespan by
+a timespan.
 
 **Operators**: `where` / `filter`, `extend`, `project`, `project-away`, `project-keep`,
 `project-rename`, `summarize`, `sort by` / `order by`, `take` / `limit`, `top`, `distinct`,
