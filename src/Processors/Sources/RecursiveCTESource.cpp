@@ -50,7 +50,9 @@
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 
+#include <map>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <unordered_set>
 
@@ -66,6 +68,7 @@ namespace Setting
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
@@ -107,6 +110,30 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 
     return result;
 }
+
+/// How a query subtree could engage parallel replicas. The two flavors matter because the
+/// planner treats them differently under the forcing mode: for a read it serves from a local
+/// `MergeTree`-family table it may still *silently disable* parallel replicas after estimating
+/// the number of rows to read (`parallel_replicas_min_number_of_rows_per_replica`, see
+/// `PlannerJoinTree`), even with `allow_experimental_parallel_reading_from_replicas = 2`,
+/// while a read shipped through `ClusterProxy` never runs that estimate.
+struct ParallelReplicasEngagement
+{
+    /// Via the planner's own storage-level rule (`canUseTableForParallelReplicas`): a local
+    /// `MergeTree`-family table (possibly behind a view), subject to the row-count estimate.
+    bool local_merge_tree = false;
+    /// Via a `ClusterProxy`-served storage (`Distributed` and its wrappers): no row-count
+    /// estimate applies, the parallel-replica settings are honoured as-is.
+    bool remote = false;
+
+    bool any() const { return local_merge_tree || remote; }
+
+    void merge(const ParallelReplicasEngagement & other)
+    {
+        local_merge_tree |= other.local_merge_tree;
+        remote |= other.remote;
+    }
+};
 
 /// Whether parallel replicas could actually be engaged for a remote storage.
 ///
@@ -155,9 +182,9 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 /// re-interprets the inner query with the reading context's settings and can engage
 /// parallel replicas all the same, so unwrapped storages are judged with
 /// `mayEngageParallelReplicasForWrappedStorage`, which sees through views.
-bool mayEngageParallelReplicasForWrappedStorage(const StoragePtr & storage, const ContextPtr & context);
+ParallelReplicasEngagement mayEngageParallelReplicasForWrappedStorage(const StoragePtr & storage, const ContextPtr & context);
 
-bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const ContextPtr & context)
+ParallelReplicasEngagement mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const ContextPtr & context)
 {
     /// `isRemote` on these wrappers already forced the nested/target storage, so unwrapping
     /// it here has no extra side effect.
@@ -179,17 +206,22 @@ bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const C
         /// `_table` / `_database` filters before planning, and any subset of an
         /// all-eligible child set is still eligible, while a mixed set is not.
         bool has_children = false;
+        ParallelReplicasEngagement children_engagement;
         bool has_ineligible_child = merge->hasChildTable([&](const StoragePtr & child)
         {
             has_children = true;
-            return !mayEngageParallelReplicasForWrappedStorage(child, context);
+            auto child_engagement = mayEngageParallelReplicasForWrappedStorage(child, context);
+            children_engagement.merge(child_engagement);
+            return !child_engagement.any();
         });
-        return has_children && !has_ineligible_child;
+        if (!has_children || has_ineligible_child)
+            return {};
+        return children_engagement;
     }
 
     const auto * distributed = dynamic_cast<const StorageDistributed *>(&storage);
     if (!distributed)
-        return false;
+        return {};
 
     auto cluster = distributed->getCluster();
 
@@ -205,7 +237,7 @@ bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const C
 
     /// Every algorithm needs at least one shard with more than one node to split the read.
     if (!has_shard_with_several_nodes)
-        return false;
+        return {};
 
     /// This is the table's full configured cluster, but the read path may shrink it before
     /// deciding on parallel replicas: `StorageDistributed::getQueryProcessingStage` applies
@@ -223,19 +255,19 @@ bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const C
     if (has_single_node_shard && settings[Setting::optimize_skip_unused_shards] && distributed->hasShardingKey()
         && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || distributed->isShardingKeyDeterministic())
         && !context->canUseParallelReplicasCustomKeyForCluster(*cluster))
-        return false;
+        return {};
 
     /// A `remote()` table function without a named cluster cannot use the task-based mode,
     /// but the custom-key and sampling modes do not go through `cluster_for_parallel_replicas`
     /// and work with the ad-hoc cluster.
     if (cluster->getName().empty() && !context->canUseParallelReplicasCustomKeyForCluster(*cluster)
         && !context->canUseOffsetParallelReplicas())
-        return false;
+        return {};
 
-    return true;
+    return {.local_merge_tree = false, .remote = true};
 }
 
-bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_context);
+ParallelReplicasEngagement mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_context);
 
 /// Whether reading an ordinary `VIEW` that the analyzer did not inline could engage
 /// parallel replicas.
@@ -256,14 +288,14 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_c
 /// (`StorageView::getUnderlyingMergeTreeStorageForParallelReplicas`): resolve the inner
 /// query into a query tree — with the same context the read would use — and run the
 /// same eligibility walk over it. Nested views recurse naturally through the walk.
-bool mayEngageParallelReplicasForView(const StorageView & view, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
+ParallelReplicasEngagement mayEngageParallelReplicasForView(const StorageView & view, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
 {
     /// A parameterized view cannot be resolved without its arguments. It also cannot
     /// really appear here: the analyzer resolves a parameterized-view invocation into a
     /// fresh `StorageView` with the parameters already substituted
     /// (`Context::buildParameterizedViewStorage`), for which this is `false`.
     if (view.isParameterizedView())
-        return false;
+        return {};
 
     /// Resolving a query with an insertion-table context can poison the schema cache of
     /// table functions inside the view (`use_structure_from_insertion_table_in_table_functions`
@@ -271,7 +303,7 @@ bool mayEngageParallelReplicasForView(const StorageView & view, const StorageSna
     /// `StorageView::getUnderlyingMergeTreeStorageForParallelReplicas`. The read itself
     /// decides then; nothing is checked ahead of it.
     if (context->hasInsertionTable())
-        return false;
+        return {};
 
     auto view_context = StorageView::getViewSubqueryContext(context, storage_snapshot);
 
@@ -291,7 +323,7 @@ bool mayEngageParallelReplicasForView(const StorageView & view, const StorageSna
             __PRETTY_FUNCTION__,
             fmt::format("Failed to resolve the inner query of view {} while checking parallel-replica eligibility", view.getStorageID().getFullTableName()),
             LogsLevel::trace);
-        return false;
+        return {};
     }
 
     return mayEngageParallelReplicas(inner_query_tree.get(), view_context);
@@ -306,10 +338,10 @@ bool mayEngageParallelReplicasForView(const StorageView & view, const StorageSna
 /// `isRemote` would wrongly stop at wrappers whose `isRemote` does not see the remote
 /// source (`StorageMerge::isRemote` is `false` when the remote table hides behind a
 /// view child, because `StorageView::isRemote` is `false`).
-bool mayEngageParallelReplicasForWrappedStorage(const StoragePtr & storage, const ContextPtr & context)
+ParallelReplicasEngagement mayEngageParallelReplicasForWrappedStorage(const StoragePtr & storage, const ContextPtr & context)
 {
     if (!storage)
-        return false;
+        return {};
 
     if (const auto * view = typeid_cast<const StorageView *>(storage.get()))
     {
@@ -359,12 +391,14 @@ bool mayEngageParallelReplicasForWrappedStorage(const StoragePtr & storage, cons
 /// self-referential branch would be rejected because of a sibling branch that reads a
 /// `MergeTree` table. Nodes that share `scope_context` are the ones whose settings
 /// really are the ones being examined, so only those are walked.
-bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_context)
+ParallelReplicasEngagement mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_context)
 {
+    ParallelReplicasEngagement engagement;
+
     std::vector<IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push_back(root);
 
-    while (!nodes_to_process.empty())
+    while (!nodes_to_process.empty() && !(engagement.local_merge_tree && engagement.remote))
     {
         auto * subtree_node = nodes_to_process.back();
         nodes_to_process.pop_back();
@@ -389,15 +423,14 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_c
             /// `isRemote` to their targets, and a target that is an ordinary `VIEW` over a
             /// remote table is not remote itself yet can engage parallel replicas.
             const auto & storage = table_node->getStorage();
-            if (storage && mayEngageParallelReplicasForRemoteStorage(*storage, scope_context))
-                return true;
+            if (storage)
+                engagement.merge(mayEngageParallelReplicasForRemoteStorage(*storage, scope_context));
 
             if (canUseTableForParallelReplicas(*table_node, scope_context))
-                return true;
+                engagement.local_merge_tree = true;
 
-            if (const auto * view = typeid_cast<const StorageView *>(storage.get());
-                view && mayEngageParallelReplicasForView(*view, table_node->getStorageSnapshot(), scope_context))
-                return true;
+            if (const auto * view = typeid_cast<const StorageView *>(storage.get()))
+                engagement.merge(mayEngageParallelReplicasForView(*view, table_node->getStorageSnapshot(), scope_context));
         }
         else if (const auto * table_function_node = subtree_node->as<TableFunctionNode>())
         {
@@ -407,12 +440,11 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_c
             /// function and a parameterized-view invocation resolve to a `StorageView`, whose
             /// read re-interprets the inner query — check it like a view table.
             const auto & storage = table_function_node->getStorage();
-            if (storage && mayEngageParallelReplicasForRemoteStorage(*storage, scope_context))
-                return true;
+            if (storage)
+                engagement.merge(mayEngageParallelReplicasForRemoteStorage(*storage, scope_context));
 
-            if (const auto * view = typeid_cast<const StorageView *>(storage.get());
-                view && mayEngageParallelReplicasForView(*view, table_function_node->getStorageSnapshot(), scope_context))
-                return true;
+            if (const auto * view = typeid_cast<const StorageView *>(storage.get()))
+                engagement.merge(mayEngageParallelReplicasForView(*view, table_function_node->getStorageSnapshot(), scope_context));
         }
 
         for (auto & child : subtree_node->getChildren())
@@ -422,7 +454,7 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_c
         }
     }
 
-    return false;
+    return engagement;
 }
 
 /// Equi-join key between the recursive CTE working table and a real table,
@@ -939,7 +971,7 @@ public:
         /// context in the recursive query, so that the result does not depend on the order in
         /// which the nodes sharing a context happen to be visited. A context counts as
         /// parallel-replica-eligible if any node using it may engage parallel replicas.
-        std::map<const Context *, bool> context_may_engage_parallel_replicas;
+        std::map<const Context *, ParallelReplicasEngagement> context_may_engage_parallel_replicas;
         {
             std::vector<IQueryTreeNode *> nodes_to_scan;
             nodes_to_scan.push_back(recursive_query.get());
@@ -955,10 +987,7 @@ public:
                     node_context = un->getContext();
 
                 if (node_context)
-                {
-                    bool & may_engage = context_may_engage_parallel_replicas[node_context.get()];
-                    may_engage = may_engage || mayEngageParallelReplicas(node, node_context);
-                }
+                    context_may_engage_parallel_replicas[node_context.get()].merge(mayEngageParallelReplicas(node, node_context));
 
                 for (auto & child : node->getChildren())
                     if (child)
@@ -1039,11 +1068,35 @@ public:
             /// property is per context rather than per query, so that a branch-local
             /// `SETTINGS` clause is not rejected because of a sibling branch.
             auto may_engage_it = context_may_engage_parallel_replicas.find(ctx.get());
-            const bool may_engage_parallel_replicas
-                = may_engage_it != context_may_engage_parallel_replicas.end() && may_engage_it->second;
+            const ParallelReplicasEngagement engagement = may_engage_it != context_may_engage_parallel_replicas.end()
+                ? may_engage_it->second
+                : ParallelReplicasEngagement{};
+
+            /// Even under the forcing mode the planner itself does not always throw. When
+            /// `parallel_replicas_min_number_of_rows_per_replica > 0`, a task-based read
+            /// served from a local `MergeTree` table first estimates the rows to read and
+            /// *silently disables* parallel replicas when the estimate is below the
+            /// threshold (see `PlannerJoinTree`: "Disabling parallel replicas because
+            /// there aren't enough rows to read") — even with `... = 2`. A small recursive
+            /// step over such a table would therefore run plainly on the non-recursive
+            /// path, and rejecting it here would fail a query the plain planner accepts.
+            /// The estimate needs per-step index analysis that cannot run ahead of
+            /// planning, so when it *could* still disable parallel replicas — the
+            /// threshold is set, the mode is the task-based one (the only one the
+            /// estimate applies to), and every table this context could engage them for
+            /// is a local `MergeTree` (a `ClusterProxy`-served read never runs the
+            /// estimate) — do not throw preemptively; fall through to the disable below,
+            /// mirroring the planner's own silent disable. For a step the estimate would
+            /// have let through this keeps parallel replicas off — the same documented
+            /// under-throw trade-off as elsewhere in this file: the read stays correct.
+            const bool row_estimate_may_disable_parallel_replicas
+                = ctx->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0
+                && ctx->canUseTaskBasedParallelReplicas()
+                && !engagement.remote;
 
             if (ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2
-                && may_engage_parallel_replicas
+                && engagement.any()
+                && !row_estimate_may_disable_parallel_replicas
                 && (ctx->canUseTaskBasedParallelReplicas()
                     || ctx->canUseParallelReplicasCustomKey()
                     || ctx->canUseOffsetParallelReplicas()))
@@ -1077,6 +1130,47 @@ public:
 
         recursive_query_context = recursive_query->as<QueryNode>() ? recursive_query->as<QueryNode &>().getMutableContext() :
             recursive_query->as<UnionNode &>().getMutableContext();
+
+        /// Collect every distinct context of the recursive query tree (after the rewrite
+        /// above, so on the legacy path the rewritten copies are the ones collected). The
+        /// working table has to be (re-)registered as an external table in each of them
+        /// before every step, not only in the root's context: the query-tree builder gives
+        /// every `QueryNode`/`UnionNode` its own `Context` copy, and
+        /// `Context::getExternalTables` overlays the node-local mapping over the *query*
+        /// context — never over an intermediate parent — so an entry added to the root
+        /// recursive context alone is invisible to a branch's own context (a union branch,
+        /// or any subquery with a `SETTINGS` clause). Those branch contexts are exactly
+        /// what plan-based parallel replicas ship to the remote replicas:
+        /// `ReadFromParallelReplicasStep` sends `context->getExternalTables()` of the
+        /// context that planned the fragment's read. Today a fragment can never contain
+        /// the working-table read itself (`ReadFromMemoryStorage` is not serializable, so
+        /// the join is not lifted into the fragment and runs on the initiator), but that
+        /// is an accident of step serializability — keep every context's view of the
+        /// working table current so a fragment that does reference it resolves the
+        /// frontier of the current step, not a stale or missing one.
+        {
+            std::set<const Context *> seen_contexts;
+            std::vector<IQueryTreeNode *> nodes_to_scan;
+            nodes_to_scan.push_back(recursive_query.get());
+            while (!nodes_to_scan.empty())
+            {
+                auto * node = nodes_to_scan.back();
+                nodes_to_scan.pop_back();
+
+                ContextMutablePtr node_context;
+                if (auto * qn = node->as<QueryNode>())
+                    node_context = qn->getMutableContext();
+                else if (auto * un = node->as<UnionNode>())
+                    node_context = un->getMutableContext();
+
+                if (node_context && seen_contexts.emplace(node_context.get()).second)
+                    recursive_query_tree_contexts.push_back(std::move(node_context));
+
+                for (auto & child : node->getChildren())
+                    if (child)
+                        nodes_to_scan.push_back(child.get());
+            }
+        }
 
         /// The seed (non-recursive) query keeps its original context, which was
         /// not rewritten above and therefore still permits parallel replicas.
@@ -1352,7 +1446,8 @@ private:
         SelectQueryOptions select_query_options;
 
         const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
-        recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
+        for (const auto & tree_context : recursive_query_tree_contexts)
+            tree_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
 
         /// `recursive_step` was already incremented above, so the seed query is
         /// step 1 and recursive iterations are step >1. Run the seed with its
@@ -1464,6 +1559,9 @@ private:
     QueryTreeNodePtr recursive_query;
     ContextMutablePtr recursive_query_context;
     ContextMutablePtr non_recursive_query_context;
+    /// Every distinct context of the recursive query tree; the working table is registered
+    /// as an external table in all of them before each step (see the constructor).
+    std::vector<ContextMutablePtr> recursive_query_tree_contexts;
 
     TemporaryTableHolderPtr working_temporary_table_holder;
     StoragePtr working_temporary_table_storage;

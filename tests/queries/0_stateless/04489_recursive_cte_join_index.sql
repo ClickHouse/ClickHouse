@@ -1387,3 +1387,127 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_rep
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
 
 DROP TABLE edges_pb;
+
+-- Under the forcing mode the planner itself does not always throw: with
+-- `parallel_replicas_min_number_of_rows_per_replica > 0` a task-based read from a local
+-- `MergeTree` table first estimates the rows to read and *silently disables* parallel
+-- replicas when the estimate is below the threshold, even with
+-- `allow_experimental_parallel_reading_from_replicas = 2`. A small recursive step over such
+-- a table would run plainly on the non-recursive path, so the recursive-step rejection must
+-- not fire preemptively when that later estimate could still disable parallel replicas —
+-- the step falls back to a plain run instead (mirroring the planner's own silent disable).
+DROP TABLE IF EXISTS edges_minrows;
+CREATE TABLE edges_minrows
+(
+    from_id UInt64,
+    to_id UInt64
+) ENGINE = MergeTree ORDER BY from_id;
+
+INSERT INTO edges_minrows SELECT number, number + 1 FROM numbers(10);
+
+WITH RECURSIVE minrows_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM minrows_pr AS t INNER JOIN edges_minrows AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM minrows_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    parallel_replicas_min_number_of_rows_per_replica = 1000000;
+
+-- Conversely, the row-count estimate never runs for a read served through `ClusterProxy`
+-- (a `Distributed` table), so for a remote-eligible recursive step the threshold cannot
+-- disable parallel replicas later and the forcing mode must still fail closed, even with
+-- `parallel_replicas_min_number_of_rows_per_replica` set.
+DROP TABLE IF EXISTS edges_minrows_dist;
+CREATE TABLE edges_minrows_dist AS cluster('test_cluster_one_shard_three_replicas_localhost', currentDatabase(), edges_minrows);
+
+WITH RECURSIVE minrows_dist_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM minrows_dist_pr AS t INNER JOIN edges_minrows_dist AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM minrows_dist_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    parallel_replicas_min_number_of_rows_per_replica = 1000000; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE edges_minrows_dist;
+
+-- The estimate applies only to the task-based mode: a forced custom-key mode never runs it,
+-- so it must keep failing closed regardless of the threshold.
+WITH RECURSIVE minrows_custom_key_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM minrows_custom_key_pr AS t INNER JOIN edges_minrows AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM minrows_custom_key_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'from_id',
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    parallel_replicas_min_number_of_rows_per_replica = 1000000; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE edges_minrows;
+
+-- The working table must be visible — and current — through *every* context of the
+-- recursive query tree, not only the root's: every `QueryNode`/`UnionNode` has its own
+-- `Context` copy, and `Context::getExternalTables` overlays the node-local mapping over the
+-- query context, never over an intermediate parent. Plan-based parallel replicas ship
+-- `getExternalTables()` of the context that planned each fragment to the remote replicas,
+-- so a branch with its own context (a multi-branch recursive part, or a branch-local
+-- `SETTINGS` clause) must see the frontier of the current step there. These walks only
+-- reach 10 if every step joins against the fresh working table.
+DROP TABLE IF EXISTS edges_pb_branches;
+CREATE TABLE edges_pb_branches
+(
+    from_id UInt64,
+    to_id UInt64
+) ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 128;
+
+INSERT INTO edges_pb_branches SELECT number, number + 1 FROM numbers(10);
+INSERT INTO edges_pb_branches SELECT number + 1000, number + 1000000 FROM numbers(5000);
+
+OPTIMIZE TABLE edges_pb_branches FINAL;
+
+WITH RECURSIVE plan_based_branch_settings_pr AS
+(
+    SELECT to_id AS current_id
+    FROM edges_pb_branches
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM edges_pb_branches AS e
+    INNER JOIN plan_based_branch_settings_pr AS t ON e.from_id = t.current_id
+    SETTINGS max_block_size = 65409
+)
+SELECT current_id FROM plan_based_branch_settings_pr ORDER BY current_id
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_plan_based = 1, cluster_for_parallel_replicas = 'parallel_replicas',
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+WITH RECURSIVE plan_based_multi_branch_pr AS
+(
+    SELECT to_id AS current_id
+    FROM edges_pb_branches
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM edges_pb_branches AS e
+    INNER JOIN plan_based_multi_branch_pr AS t ON e.from_id = t.current_id AND t.current_id < 5
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM edges_pb_branches AS e
+    INNER JOIN plan_based_multi_branch_pr AS t ON e.from_id = t.current_id AND t.current_id >= 5
+)
+SELECT current_id FROM plan_based_multi_branch_pr ORDER BY current_id
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_plan_based = 1, cluster_for_parallel_replicas = 'parallel_replicas',
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+DROP TABLE edges_pb_branches;
