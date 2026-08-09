@@ -106,6 +106,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_cleanup_old_data_files_compaction", false, false, "New setting"},
             {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
             {"allow_rank_dense_rank_arguments", true, false, "New setting. Before 26.5, the `RANK` and `DENSE_RANK` window functions silently ignored any provided arguments (equivalent to `allow_rank_dense_rank_arguments = 1`). From 26.5, they reject arguments by default with `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` because per SQL standard these functions take zero arguments. Set this to `1` to restore the legacy behavior."},
+            {"filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {

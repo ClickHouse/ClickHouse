@@ -73,6 +73,7 @@ static struct InitFiu
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
+    PAUSEABLE(file_segment_pause_before_write) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
