@@ -540,8 +540,8 @@ Possible values:
 **Usage**
 
 The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting
-should be less than the value of the [background_pool_size](/reference/settings/server-settings/settings/background#background_pool_size)
-* [background_merges_mutations_concurrency_ratio](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
+must not exceed the product of [`background_pool_size`](/reference/settings/server-settings/settings/background#background_pool_size)
+and [`background_merges_mutations_concurrency_ratio`](/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
 Otherwise, ClickHouse will throw an exception.
 )", 0) \
     DECLARE(UInt64, max_number_of_mutations_for_replica, 0, R"(
@@ -1326,6 +1326,32 @@ from other replicas.
 Possible values:
 - true, false
 )", 0) \
+    DECLARE(Bool, always_fetch_mutated_part, false, R"(
+If true, this replica never executes `MUTATE_PART` replication log entries
+(regular mutations such as `ALTER TABLE ... UPDATE/DELETE`) and always
+downloads the resulting mutated parts from other replicas.
+
+At least one replica must have this setting disabled; otherwise mutations
+cannot finish.
+
+This setting does not affect patch parts created by lightweight updates:
+they are still applied locally when parts are merged. Enable
+`always_fetch_merged_part` as well to also offload merges (including the
+application of patch parts) to other replicas.
+
+Because this replica does not execute mutations, and mutation failure
+status is local to each replica, a synchronous wait on this replica
+cannot observe mutation failures that happen on the replicas executing
+the mutation. Therefore synchronous mutations (`mutations_sync` = 1
+or 2) and synchronous `ALTER` queries that mutate data
+(`alter_sync` = 1 or 2) are rejected on such a replica with a
+`SUPPORT_IS_DISABLED` error instead of a wait that would hang if the
+mutation fails. Use `mutations_sync` = 0 (`alter_sync` = 0), or issue
+these queries on a replica that executes mutations.
+
+Possible values:
+- true, false
+)", 0) \
     DECLARE(UInt64, number_of_partitions_to_consider_for_merge, 10, R"(
 Only available in ClickHouse Cloud. Up to top N partitions which we will
 consider for merge. Partitions picked in a random weighted way where weight
@@ -2070,7 +2096,7 @@ Maximum time between runs of merge coordinator thread
     DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
 Time changing factor for delay of coordinator thread
 )", 0) \
-    DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::WATER_FILLING, R"(
+    DECLARE(MergeCoordinatorDistributionAlgorithm, shared_merge_tree_merge_coordinator_distribution_algorithm, MergeCoordinatorDistributionAlgorithm::SAINTE_LAGUE, R"(
 What algorithm will be used by merge coordinator thread to distribute merges between replicas
 )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
