@@ -3,6 +3,7 @@
 
 #include <Client/HedgedConnections.h>
 #include <Client/scaleInteractiveDelayByFanout.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
@@ -16,6 +17,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char hedged_connections_cancel_with_pending_replica[];
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
@@ -258,12 +264,25 @@ void HedgedConnections::disconnect()
             if (replica.connection)
                 finishProcessReplica(replica, true);
 
-    if (hedged_connections_factory.hasEventsInProcess())
-    {
-        if (hedged_connections_factory.numberOfProcessingReplicas() > 0)
-            epoll.remove(hedged_connections_factory.getFileDescriptor());
+    /// Must precede the factory stop: it empties the factory epoll, after which
+    /// numberOfProcessingReplicas() reads 0 and the descriptor would leak.
+    if (hedged_connections_factory.hasEventsInProcess()
+        && hedged_connections_factory.numberOfProcessingReplicas() > 0)
+        epoll.remove(hedged_connections_factory.getFileDescriptor());
 
+    stopChoosingReplicas();
+}
+
+void HedgedConnections::stopChoosingReplicas()
+{
+    if (hedged_connections_factory.hasEventsInProcess())
         hedged_connections_factory.stopChoosingReplicas();
+
+    /// Unconditional: an offset can be queued while the factory is already idle.
+    while (!offsets_queue.empty())
+    {
+        offset_states[offsets_queue.front()].next_replica_in_process = false;
+        offsets_queue.pop();
     }
 }
 
@@ -304,8 +323,11 @@ void HedgedConnections::sendCancel()
     /// had been created differs from the thread where the dtor of
     /// QueryPipeline will be called and the initial thread could be already
     /// destroyed (especially when the system is under pressure).
-    if (hedged_connections_factory.hasEventsInProcess())
-        hedged_connections_factory.stopChoosingReplicas();
+    stopChoosingReplicas();
+
+    /// Holds the query between the factory stop and `cancelled`, so a test can let a surviving
+    /// replica time out while an offset still expects a replacement.
+    FailPointInjection::pauseFailPoint(FailPoints::hedged_connections_cancel_with_pending_replica);
 
     cancelled = true;
 
@@ -406,9 +428,15 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             ReplicaLocation location = timeout_fd_to_replica_location[event_fd];
             offset_states[location.offset].replicas[location.index].change_replica_timeout.reset();
             offset_states[location.offset].replicas[location.index].is_change_replica_timeout_expired = true;
+            ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
+
+            /// The factory is already stopped, so no replacement can arrive; marking the offset
+            /// as pending would suppress the timeout exit in resumePacketReceiver().
+            if (cancelled)
+                continue;
+
             offset_states[location.offset].next_replica_in_process = true;
             offsets_queue.push(static_cast<int>(location.offset));
-            ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
             startNewReplica();
         }
         else
@@ -542,11 +570,13 @@ void HedgedConnections::disableChangingReplica(const ReplicaLocation & replica_l
     }
 
     /// If we disabled changing replica with all offsets, we need to stop choosing new replicas.
-    if (hedged_connections_factory.hasEventsInProcess() && offsets_with_disabled_changing_replica == offset_states.size())
+    if (offsets_with_disabled_changing_replica == offset_states.size())
     {
-        if (hedged_connections_factory.numberOfProcessingReplicas() > 0)
+        if (hedged_connections_factory.hasEventsInProcess()
+            && hedged_connections_factory.numberOfProcessingReplicas() > 0)
             epoll.remove(hedged_connections_factory.getFileDescriptor());
-        hedged_connections_factory.stopChoosingReplicas();
+
+        stopChoosingReplicas();
     }
 }
 

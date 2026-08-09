@@ -1,0 +1,9 @@
+-- use_hedged_requests = 0
+count: 100
+sum: 4950
+limited: 5
+-- use_hedged_requests = 1
+count: 100
+sum: 4950
+limited: 5
+replacement was put in flight
