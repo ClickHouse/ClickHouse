@@ -1004,6 +1004,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             f'grep -a -v "ASan is ignoring requested __asan_handle_no_return" | '
             f'grep -a -v "False positive error reports may follow" | '
             f'grep -a -v "For details see https://github.com/google/sanitizers" | '
+            f'grep -a -v -F -x "Not running the leak check: other threads are still running." | '
             "head -n 1 || true"
         )
         fatal_hits = Shell.get_output(
