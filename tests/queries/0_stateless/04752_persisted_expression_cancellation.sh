@@ -15,7 +15,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # already-finished deadline), so the in-loop cancellation check the function already contains reads a
 # query that is not the one running and never fires.
 #
-# Each case below therefore runs a persisted expression from a LATER query. Three fixture properties
+# Each case below therefore runs a persisted expression from a LATER query. Four fixture properties
 # are load-bearing, and getting any of them wrong makes the case pass unfixed:
 #   * no `%` in a `PARTITION BY` key. `MergeTreePartition::adjustPartitionKey` rebuilds the whole key
 #     description with the INSERT's own context when the key mentions `modulo`, which hands the
@@ -24,6 +24,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     on a direct call with a correct status, and never reaches the persisted expression.
 #   * arguments must be column-dependent. A constant argument is folded once, so the function runs a
 #     single time whatever the row count.
+#   * `arrayFold`'s elements must sit in one row rather than spread evenly. Its checkpoints are in the
+#     fold loop, which runs `max_array_size` times over every row, while the selector loop and
+#     `scatter` ahead of them are O(total elements) and effectively uninterruptible; spread evenly the
+#     arm pays that prologue on all of them and lands only about twice the bound unfixed.
 #
 # `max_insert_block_size`/`min_insert_block_size_rows`/`max_threads` are pinned statement-level because
 # the runner randomizes them and the effect size is a function of rows-per-block: split into enough
@@ -86,7 +90,7 @@ deadline_case "geohash_partition" \
     "src_f"
 deadline_case "arrayfold_partition" \
     "CREATE TABLE t_arrayfold_partition (a UInt64, k UInt64) ENGINE = MergeTree
-     PARTITION BY intDiv(arrayFold((acc, x) -> acc + x + a, range(3000), toUInt64(0)), 100000000000) ORDER BY tuple()" \
+     PARTITION BY intDiv(arrayFold((acc, x) -> acc + x + a, range(if(k = 0, 400000, 1)), toUInt64(0)), 100000000000) ORDER BY tuple()" \
     "src_i"
 # Three `sleep` calls, not one: a single call cannot overshoot by more than
 # `function_sleep_max_microseconds_per_block` (3s by default) whatever the deadline, which is under the
@@ -110,7 +114,7 @@ deadline_case "geohash_orderby" \
     "src_f"
 deadline_case "arrayfold_orderby" \
     "CREATE TABLE t_arrayfold_orderby (a UInt64, k UInt64) ENGINE = MergeTree
-     ORDER BY (k, arrayFold((acc, x) -> acc + x + a, range(3000), toUInt64(0)))" \
+     ORDER BY (k, arrayFold((acc, x) -> acc + x + a, range(if(k = 0, 400000, 1)), toUInt64(0)))" \
     "src_i"
 deadline_case "sleep_orderby" \
     "CREATE TABLE t_sleep_orderby (a UInt64, k UInt64) ENGINE = MergeTree
