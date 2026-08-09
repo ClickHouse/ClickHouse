@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-shared-merge-tree, no-encrypted-storage
+# Tags: no-object-storage, no-shared-merge-tree, no-encrypted-storage, no-random-detach
 # The tags are needed because the test manipulates part directories directly on the local filesystem.
+# no-random-detach: a random DETACH/ATTACH reloads the table and cleans up the planted stale
+# tmp_merge_ directory before the merge sees it, so the expected reclaim warning is never logged.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
