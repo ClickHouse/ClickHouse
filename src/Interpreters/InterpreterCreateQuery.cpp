@@ -163,6 +163,7 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char create_or_replace_before_rename[];
+    extern const char create_table_pause_before_commit[];
 }
 
 namespace ErrorCodes
@@ -2316,6 +2317,15 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (during table creation)");
         }
     }
+
+    /// Between the construction of the storage above and the commit below the table is not in the
+    /// catalog yet, while its side effects (e.g. the named collection dependencies registered when
+    /// the engine arguments were resolved) are already visible; the `DDLGuard` held by this query is
+    /// what makes the window invisible to the queries that synchronize on it. The pause lets tests
+    /// keep a create in this window. Internal creates (e.g. of the system log tables) are exempt:
+    /// they may run at any moment and would consume the failpoint behind the test's back.
+    if (!internal)
+        FailPointInjection::pauseFailPoint(FailPoints::create_table_pause_before_commit);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
 

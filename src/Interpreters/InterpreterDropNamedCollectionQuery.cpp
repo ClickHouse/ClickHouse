@@ -51,9 +51,32 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
             for (const auto & dep : dependents)
             {
                 if (DatabaseCatalog::instance().isTableExist(dep, current_context))
+                {
                     dependent_names.push_back(dep.getFullTableName());
-                else
-                    NamedCollectionFactory::instance().removeDependencies(dep);
+                    continue;
+                }
+
+                /// The table is also absent while the `CREATE`/`ATTACH` that registered the dependency
+                /// is still in flight: the registration happens while the engine arguments are resolved,
+                /// before the table is committed to the catalog. Classifying such an entry as stale would
+                /// let the drop proceed while the create later succeeds, leaving metadata that references
+                /// a collection that no longer exists. The creating query holds the `DDLGuard` of the
+                /// table name for the whole window between the registration and the commit, so re-check
+                /// under that guard: once it is acquired, no create is in flight, and the table's absence
+                /// proves the earlier create failed and left a stale entry.
+                /// An empty database name identifies a dictionary defined in the configuration files; it
+                /// is not created through DDL, so there is no guard to synchronize with.
+                if (!dep.database_name.empty())
+                {
+                    auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(dep.database_name, dep.table_name, nullptr);
+                    if (DatabaseCatalog::instance().isTableExist(dep, current_context))
+                    {
+                        dependent_names.push_back(dep.getFullTableName());
+                        continue;
+                    }
+                }
+
+                NamedCollectionFactory::instance().removeDependencies(dep);
             }
 
             if (!dependent_names.empty())
