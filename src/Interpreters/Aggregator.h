@@ -760,6 +760,14 @@ private:
         const AggregatedDataVariants & data_variants,
         MutableColumns & aggregate_columns) const;
 
+    /// Appends the key row without creating an aggregate state. For callers that aggregate into
+    /// the hash table and never read `data_variants.without_key`.
+    void fillKeyColumnsWithSingleKey(
+        Columns & key_columns, size_t key_row,
+        MutableColumns & final_key_columns) const;
+
+    /// Additionally creates a state in `data_variants.without_key`. The caller must hand it over
+    /// with `addSingleKeyToAggregateColumns`, which is what destroys it.
     void createStatesAndFillKeyColumnsWithSingleKey(
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
