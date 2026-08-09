@@ -8,5 +8,10 @@
 # passes in ~3s locally. Looks like a runner-specific hang in the scipy import. Needs further investigation.
 02294_anova_cmp
 
+# Marginal timeout on the macOS CI runner: the test averages ~47s there with a 60s per-test
+# limit (vs ~27s on the Linux fast test), so a few percent of runs cross the limit and fail.
+# The test keeps full coverage on Linux; re-enable if the runner gets faster or the limit grows.
+03008_deduplication_diagnostics_opt_in
+
 # Flaky on CI (stuck timeout)
 04319_skip_unavailable_shards_mode_table_missing
