@@ -58,7 +58,8 @@ public:
     {
         struct Operand
         {
-            ColumnPtr column;
+            ColumnPtr full_column; /// Owns the column `values` and `nulls` point into.
+            const IColumn * values = nullptr;
             DataTypePtr type;
             const NullMap * nulls = nullptr;
         };
@@ -66,12 +67,13 @@ public:
         std::array<Operand, 3> operands;
         for (size_t i = 0; i < 3; ++i)
         {
-            operands[i].column = arguments[i].column->convertToFullColumnIfConst();
+            operands[i].full_column = arguments[i].column->convertToFullColumnIfConst();
+            operands[i].values = operands[i].full_column.get();
             operands[i].type = removeNullable(arguments[i].type);
-            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(operands[i].column.get()))
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(operands[i].values))
             {
                 operands[i].nulls = &nullable->getNullMapData();
-                operands[i].column = nullable->getNestedColumnPtr();
+                operands[i].values = &nullable->getNestedColumn();
             }
         }
 
@@ -88,9 +90,9 @@ public:
 
             if (domain == Domain::Numeric)
             {
-                const Float64 from = operands[0].column->getFloat64(row);
-                const Float64 to = operands[1].column->getFloat64(row);
-                const Float64 step = operands[2].column->getFloat64(row);
+                const Float64 from = operands[0].values->getFloat64(row);
+                const Float64 to = operands[1].values->getFloat64(row);
+                const Float64 step = operands[2].values->getFloat64(row);
                 if (step == 0)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The step of a 'range' must not be zero");
 
@@ -101,21 +103,18 @@ public:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'range' has too many rows to count");
                 counts[row] = steps < 0 ? 0 : static_cast<UInt64>(steps) + 1;
             }
+            else if (domain == Domain::Integral)
+            {
+                const Int128 span = integerAt(*operands[1].values, *operands[1].type, row) - integerAt(*operands[0].values, *operands[0].type, row);
+                const Int128 step = integerAt(*operands[2].values, *operands[2].type, row);
+                counts[row] = flooredCount(span, step);
+            }
             else
             {
                 const Int128 span
-                    = nanosecondsAt(*operands[1].column, *operands[1].type, row) - nanosecondsAt(*operands[0].column, *operands[0].type, row);
-                const Int128 step = nanosecondsAt(*operands[2].column, *operands[2].type, row);
-                if (step == 0)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The step of a 'range' must not be zero");
-
-                /// `floor(span / step)`: integer division truncates toward zero.
-                Int128 steps = span / step;
-                if (span % step != 0 && (span < 0) != (step < 0))
-                    --steps;
-                if (steps >= Int128(std::numeric_limits<UInt64>::max()))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'range' has too many rows to count");
-                counts[row] = steps < 0 ? 0 : static_cast<UInt64>(steps) + 1;
+                    = nanosecondsAt(*operands[1].values, *operands[1].type, row) - nanosecondsAt(*operands[0].values, *operands[0].type, row);
+                const Int128 step = nanosecondsAt(*operands[2].values, *operands[2].type, row);
+                counts[row] = flooredCount(span, step);
             }
         }
 
@@ -126,11 +125,16 @@ private:
     enum class Domain : uint8_t
     {
         Numeric,
+        Integral,
         Temporal,
     };
 
     Domain classify(const DataTypePtr & from, const DataTypePtr & to, const DataTypePtr & step) const
     {
+        /// Integers up to 64 bits count exactly: a `Float64` cannot tell integers above 2^53 apart.
+        if (isNativeInteger(from) && isNativeInteger(to) && isNativeInteger(step))
+            return Domain::Integral;
+
         if (isNumber(from) && isNumber(to) && isNumber(step))
             return Domain::Numeric;
 
@@ -153,6 +157,29 @@ private:
             from->getName(),
             to->getName(),
             step->getName());
+    }
+
+    /// `floor(span / step) + 1`, and never less than zero. Integer division truncates
+    /// toward zero, so an inexact quotient of differing signs is one too high.
+    static UInt64 flooredCount(Int128 span, Int128 step)
+    {
+        if (step == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The step of a 'range' must not be zero");
+
+        Int128 steps = span / step;
+        if (span % step != 0 && (span < 0) != (step < 0))
+            --steps;
+        if (steps >= Int128(std::numeric_limits<UInt64>::max()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'range' has too many rows to count");
+        return steps < 0 ? 0 : static_cast<UInt64>(steps) + 1;
+    }
+
+    /// A native integer of either sign, widened losslessly.
+    static Int128 integerAt(const IColumn & column, const IDataType & type, size_t row)
+    {
+        if (isNativeUInt(type))
+            return Int128(column.getUInt(row));
+        return Int128(column.getInt(row));
     }
 
     /// A datetime, or an interval of a fixed-length kind, as integer nanoseconds.
