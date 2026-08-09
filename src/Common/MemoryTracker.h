@@ -327,6 +327,15 @@ public:
     static void updateRSS(Int64 rss_);
     static void updateAllocated(Int64 allocated_, bool log_change);
 
+    /// Sum of live speculative reservations (see `additional_memory_tracking_per_thread`)
+    /// currently charged on the total tracker via `CurrentMemoryTracker::allocGlobal`.
+    /// No actual allocation backs them, so they are invisible to external measurements
+    /// (resident memory, jemalloc stats). `updateRSS`/`updateAllocated` add this sum back
+    /// when replacing the total tracker's counters with a measured value — otherwise the
+    /// paired `CurrentMemoryTracker::freeGlobal` would push the corrected counters below
+    /// the actual memory usage, breaking the upper-bound invariant the reservations provide.
+    static std::atomic<Int64> global_speculative_reservations;
+
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
 };

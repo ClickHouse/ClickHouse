@@ -418,7 +418,9 @@ The amount of memory that is speculatively reserved on the server-wide `MemoryTr
 Each thread accumulates up to `max_untracked_memory` of allocations before reporting them to the server-wide `MemoryTracker`.
 With many query threads, this unreported memory can sum to a large amount, causing the server's tracked memory usage to under-count actual memory consumption and leading to OOM.
 
-By charging this amount to the server-wide `MemoryTracker` for each active pipeline worker, the server-wide tracked memory becomes a much tighter upper bound on the actual memory consumption of in-flight queries. If a reservation would exceed the server memory limit, the corresponding query or pipeline fails with `MEMORY_LIMIT_EXCEEDED` — the same behavior as if the worker itself had allocated this amount.
+By charging this amount to the server-wide `MemoryTracker` for each active pipeline worker, the server-wide tracked memory becomes a much tighter upper bound on the actual memory consumption of in-flight queries. If a reservation would exceed the server memory limit, the corresponding query or pipeline fails with `MEMORY_LIMIT_EXCEEDED` — the same behavior as if the worker itself had allocated this amount, including the global memory overcommit logic (a failing reservation may wait for or stop the query selected by the overcommit tracker before giving up).
+
+Each spawned pipeline worker holds one reservation for the duration of its job. For step-driven executors (`PullingPipelineExecutor`, `PushingPipelineExecutor`), where the calling thread is the pipeline's only worker, the reservation is held by the calling thread for the whole pipeline lifetime.
 
 The reservation is charged to the server-wide tracker only. Query-level and user-level memory accounting (`max_memory_usage`, `memory_usage` in `system.processes`, and memory-based heuristics such as the conversion of aggregation hash tables to two-level or spilling to disk) is not affected.
 

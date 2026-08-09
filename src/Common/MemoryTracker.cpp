@@ -719,20 +719,29 @@ void MemoryTracker::reset()
 }
 
 
+std::atomic<Int64> MemoryTracker::global_speculative_reservations = 0;
+
 void MemoryTracker::updateRSS(Int64 rss_)
 {
-    total_memory_tracker.rss.store(rss_, std::memory_order_relaxed);
+    /// Live speculative reservations are not backed by allocations, so they are not part
+    /// of the measured resident memory; add them back to keep the counter an upper bound.
+    total_memory_tracker.rss.store(
+        rss_ + global_speculative_reservations.load(std::memory_order_relaxed), std::memory_order_relaxed);
 }
 
 void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
 {
-    Int64 new_amount = allocated_;
+    /// Live speculative reservations (`CurrentMemoryTracker::allocGlobal`) are not backed
+    /// by allocations, so they are not part of the externally measured `allocated_`.
+    /// Add them back, otherwise the paired `freeGlobal` would push the corrected amount
+    /// below the actual memory usage.
+    Int64 new_amount = allocated_ + global_speculative_reservations.load(std::memory_order_relaxed);
     if (log_change)
         LOG_INFO(
             getLogger("MemoryTracker"),
             "Correcting the value of global memory tracker from {} to {}",
             ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
-            ReadableSize(allocated_));
+            ReadableSize(new_amount));
 
     auto current_amount = total_memory_tracker.amount.exchange(new_amount, std::memory_order_relaxed);
     total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);

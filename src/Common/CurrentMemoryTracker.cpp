@@ -136,14 +136,46 @@ AllocationTrace CurrentMemoryTracker::allocThrow(Int64 size)
 
 void CurrentMemoryTracker::allocGlobal(Int64 size)
 {
-    /// The returned trace is intentionally dropped: no actual allocation backs
-    /// this reservation, so it must not be reported to the allocation profiler.
-    std::ignore = total_memory_tracker.allocImpl(size, /*enforce_memory_limit=*/ true);
+    /// Find the current query's process-level tracker (if any): the total tracker uses it
+    /// for the global overcommit decision (`OvercommitTracker::needToStopQuery`), so a
+    /// reservation that crosses the server memory limit waits for or kills the selected
+    /// overcommitted query exactly like a real allocation from this thread would.
+    /// Nothing is charged on the query tracker chain itself.
+    MemoryTracker * process_tracker = nullptr;
+    for (auto * tracker = DB::CurrentThread::getMemoryTracker(); tracker; tracker = tracker->getParent())
+    {
+        if (tracker->level == VariableContext::Process)
+        {
+            process_tracker = tracker;
+            break;
+        }
+    }
+
+    /// The reservations counter must be raised before the charge: if an external correction
+    /// of the total tracker (`MemoryTracker::updateAllocated`) interleaves, the reservation
+    /// is counted twice until the next correction, which errs on the safe side (the tracked
+    /// amount stays an upper bound), while the opposite order could leave the corrected
+    /// amount below the actual usage after `freeGlobal`.
+    MemoryTracker::global_speculative_reservations.fetch_add(size, std::memory_order_relaxed);
+    try
+    {
+        /// The returned trace is intentionally dropped: no actual allocation backs
+        /// this reservation, so it must not be reported to the allocation profiler.
+        std::ignore = total_memory_tracker.allocImpl(size, /*enforce_memory_limit=*/ true, process_tracker);
+    }
+    catch (...)
+    {
+        MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_relaxed);
+        throw;
+    }
 }
 
 void CurrentMemoryTracker::freeGlobal(Int64 size)
 {
+    /// The reverse order of `allocGlobal`: subtract from the total tracker first, then lower
+    /// the reservations counter, so an interleaved external correction can only overcount.
     std::ignore = total_memory_tracker.free(size);
+    MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_relaxed);
 }
 
 void CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(UInt64 value)
