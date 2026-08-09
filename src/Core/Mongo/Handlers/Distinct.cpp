@@ -60,18 +60,6 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
         pipeline.PushBack(group, allocator);
     }
 
-    {
-        /// MongoDB returns the distinct values in ascending order, and a `GROUP BY` alone
-        /// leaves the order arbitrary.
-        rapidjson::Value direction(1);
-        rapidjson::Value sort_key(rapidjson::kObjectType);
-        sort_key.AddMember("_id", direction, allocator);
-
-        rapidjson::Value sort(rapidjson::kObjectType);
-        sort.AddMember("$sort", sort_key, allocator);
-        pipeline.PushBack(sort, allocator);
-    }
-
     /// The `query` of a `distinct` becomes a `$match` stage, whose filter `serializePipeline`
     /// normalizes the same way the filter of a `find` is normalized.
     auto serialized_pipeline = serializePipeline(pipeline);
@@ -94,7 +82,37 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
         WriteBufferFromString sql_buffer(sql_query);
         ast->format(sql_buffer, IAST::FormatSettings(true));
     }
-    sql_query += " FORMAT JSON";
+
+    /// `distinct` on an array-valued field is element-wise in Mongo: a document whose field
+    /// holds `["red", "blue"]` contributes the elements, not the array. `flatten([x])` reads a
+    /// scalar as the one-element array and an array as its elements - the same normalization the
+    /// filters use for `$eq` and `$in` - so one expression covers both; an array of arrays is
+    /// flattened all the way down, the same known limitation those filters have. The grouped
+    /// values of the pipeline are unwrapped, deduplicated again (two arrays are free to share
+    /// elements) and returned in ascending order, which Mongo promises and a `GROUP BY` alone
+    /// does not.
+    sql_query = fmt::format(
+        "SELECT DISTINCT arrayJoin(flatten([_id])) AS _id FROM ({}) ORDER BY _id ASC "
+        "SETTINGS allow_suspicious_types_in_order_by = 1 FORMAT JSON",
+        sql_query);
+
+    /// Mongo reads a collection that does not exist as empty rather than raising an error, so
+    /// its distinct values are `[]`. The query is translated first, so that a malformed query
+    /// is still an error.
+    if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
+    {
+        bson_t * empty_reply = bson_new();
+
+        bson_t values;
+        static constexpr std::string_view key_identifier = "values";
+        bson_append_array_begin(empty_reply, key_identifier.data(), static_cast<int>(key_identifier.size()), &values);
+        bson_append_array_end(empty_reply, &values);
+        BSON_APPEND_DOUBLE(empty_reply, "ok", 1.0);
+
+        std::vector<Document> result;
+        result.emplace_back(empty_reply);
+        return result;
+    }
 
     auto output = executor->execute(sql_query);
 
