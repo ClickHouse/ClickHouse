@@ -3532,30 +3532,38 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         /// storage policy, so a directory on another disk has to be found explicitly.
         if (auto occupied_disk = tryGetDiskForDetachedPart(entry.new_part_name))
         {
+            /// `getDetachedParts` skips read-only and write-once disks, so `ATTACH_PART` would find
+            /// no occupant there: accepting one as our own publication would stall the move at
+            /// `DESTINATION_ATTACH` instead of refusing it here.
+            const bool occupant_is_attachable = !occupied_disk->isReadOnly() && !occupied_disk->isWriteOnce();
+
             /// This entry is retried until it succeeds, so its own earlier publication has to be
             /// accepted, and only its content identifies it: the log entry carries no checksum.
             String occupant_checksum;
-            try
+            if (occupant_is_attachable)
             {
-                Expect404ResponseScope scope; /// 404 is not an error
-                auto volume = std::make_shared<SingleDiskVolume>("volume_" + entry.new_part_name, occupied_disk);
-                auto occupant = getDataPartBuilder(
-                    entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / entry.new_part_name,
-                    getReadSettings(), PartDirIntent::OpenExisting)
-                    .withPartFormatFromDisk()
-                    .build();
-                /// `require` must stay true: the other branch writes checksums.txt into the occupant.
-                occupant->loadChecksums(/*require=*/ true);
-                occupant_checksum = occupant->checksums.getTotalChecksumHex();
-            }
-            catch (...)
-            {
-                /// An occupant that cannot be identified is foreign.
-                tryLogCurrentException(log, fmt::format(
-                    "cannot read checksums of detached part {}, treating it as a foreign part", entry.new_part_name));
+                try
+                {
+                    Expect404ResponseScope scope; /// 404 is not an error
+                    auto volume = std::make_shared<SingleDiskVolume>("volume_" + entry.new_part_name, occupied_disk);
+                    auto occupant = getDataPartBuilder(
+                        entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / entry.new_part_name,
+                        getReadSettings(), PartDirIntent::OpenExisting)
+                        .withPartFormatFromDisk()
+                        .build();
+                    /// `require` must stay true: the other branch writes checksums.txt into the occupant.
+                    occupant->loadChecksums(/*require=*/ true);
+                    occupant_checksum = occupant->checksums.getTotalChecksumHex();
+                }
+                catch (...)
+                {
+                    /// An occupant that cannot be identified is foreign.
+                    tryLogCurrentException(log, fmt::format(
+                        "cannot read checksums of detached part {}, treating it as a foreign part", entry.new_part_name));
+                }
             }
 
-            if (!part->checksums.empty() && !occupant_checksum.empty()
+            if (occupant_is_attachable && !part->checksums.empty() && !occupant_checksum.empty()
                 && occupant_checksum == part->checksums.getTotalChecksumHex())
             {
                 LOG_INFO(log, "Part {} is already in the detached directory with the same checksum, "

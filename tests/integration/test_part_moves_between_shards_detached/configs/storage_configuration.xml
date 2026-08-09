@@ -7,6 +7,13 @@
             <jbod2>
                 <path>/jbod2/</path>
             </jbod2>
+            <!-- Plain metadata makes the disk write-once, which `getDetachedParts` skips. -->
+            <write_once>
+                <type>object_storage</type>
+                <object_storage_type>local_blob_storage</object_storage_type>
+                <metadata_type>plain</metadata_type>
+                <path>/write_once/</path>
+            </write_once>
         </disks>
         <policies>
             <two_disks>
@@ -19,6 +26,16 @@
                     </second>
                 </volumes>
             </two_disks>
+            <with_write_once>
+                <volumes>
+                    <first>
+                        <disk>jbod1</disk>
+                    </first>
+                    <second>
+                        <disk>write_once</disk>
+                    </second>
+                </volumes>
+            </with_write_once>
         </policies>
     </storage_configuration>
 </clickhouse>

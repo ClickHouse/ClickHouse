@@ -16,7 +16,7 @@ s1 = cluster.add_instance(
     "s1",
     main_configs=["configs/merge_tree.xml", "configs/storage_configuration.xml"],
     with_zookeeper=True,
-    tmpfs=["/jbod1:size=100M", "/jbod2:size=100M"],
+    tmpfs=["/jbod1:size=100M", "/jbod2:size=100M", "/write_once:size=100M"],
 )
 
 PART = "all_0_0_0"
@@ -204,6 +204,55 @@ def test_move_reuses_its_own_published_part(started_cluster):
     assert not published_to_detached(s1, name), "the clone republished over an identical occupant"
     assert s0.query(f"SELECT count() FROM {name}").strip() == "0"
     assert s1.query(f"SELECT k, v FROM {name} ORDER BY k").strip() == "1\tfrom_s0"
+
+    drop_tables(name)
+
+
+def test_move_refuses_conflict_on_a_disk_attach_cannot_see(started_cluster):
+    """The occupant sits on a write-once disk, which `getDetachedParts` deliberately skips.
+
+    `DESTINATION_ATTACH` builds its candidates from that enumeration, so accepting such an
+    occupant as this entry's own publication would report success here and then fail at attach
+    time with an unrelated-looking NO_REPLICA_HAS_PART. Reuse has to mean "the publication attach
+    will consume", so the clone must refuse here instead."""
+    name = create_tables("t_hidden", dst_settings=", storage_policy = 'with_write_once'")
+
+    s0.query(f"INSERT INTO {name} VALUES (1, 'from_s0')")
+    # A write-once disk rejects FETCH PART and MOVE PART, which is why such an occupant only ever
+    # arrives as a directory - "produced on another machine", as getDetachedParts puts it. The copy
+    # is byte-identical to the part the move will fetch, so only the disk makes it unreusable.
+    src_part = s0.query(
+        f"SELECT path FROM system.parts WHERE database = currentDatabase()"
+        f" AND table = '{name}' AND active"
+    ).strip().rstrip("/")
+    dst_uuid = s1.query(
+        f"SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase()"
+        f" AND name = '{name}'"
+    ).strip()
+    detached_dir = f"/write_once/store/{dst_uuid[:3]}/{dst_uuid}/detached"
+    occupant = f"{detached_dir}/{PART}"
+    started_cluster.copy_file_from_container_to_container(s0, src_part, s1, "/tmp/")
+    s1.exec_in_container(
+        ["bash", "-c", f"mkdir -p {detached_dir} && cp -r /tmp/{PART} {occupant}"]
+    )
+    # The premise of the whole test: the probe finds it, the enumeration does not.
+    assert detached_rows(s1, name) == "", "the occupant must be invisible to getDetachedParts"
+
+    move_to_shard(name)
+    wait_for_clone_outcome(s1, name)
+
+    assert not reused_detached_part(s1, name), "an occupant ATTACH cannot see was reused"
+    assert not published_to_detached(s1, name), "clone published over an occupied name"
+    assert "DIRECTORY_ALREADY_EXISTS" in s1.query(
+        f"SELECT last_exception FROM system.replication_queue"
+        f" WHERE database = currentDatabase() AND table = '{name}'"
+        f" AND type = 'CLONE_PART_FROM_SHARD'"
+    ), "the refusal has to name the conflict on this entry, not stall later at attach"
+    # Never modified, never removed.
+    assert (
+        s1.exec_in_container(["bash", "-c", f"cd {occupant} && md5sum * | sort"])
+        == s1.exec_in_container(["bash", "-c", f"cd /tmp/{PART} && md5sum * | sort"])
+    )
 
     drop_tables(name)
 
