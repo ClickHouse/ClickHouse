@@ -296,6 +296,12 @@ ProcessList::EntryPtr ProcessList::insert(
         }
         ProcessListForUser & user_process_list = user_process_list_it->second;
 
+        /// A tracker reset deferred by `~ProcessListEntry` (while borrowed-scope async work could
+        /// still charge the user trackers) is retried here, before this query's limits are applied,
+        /// so that a lowered `max_memory_usage_for_user` still takes effect.
+        if (user_process_list.queries.empty() && !user_process_list.lingering_query_groups.empty())
+            user_process_list.resetTrackersIfUnreferenced();
+
         /// Actualize thread group info
         CurrentThread::attachQueryForLog(query_);
         auto thread_group = CurrentThread::getGroup();
@@ -492,7 +498,16 @@ ProcessListEntry::~ProcessListEntry()
     /// The `user_to_queries` entry is intentionally kept (do not erase it here): `getUserInfo`
     /// reads entries lock-free via raw pointers and relies on them never being erased.
     if (user_process_list.queries.empty())
-        user_process_list.resetTrackers();
+    {
+        /// If the query's owning `ThreadGroup` is referenced beyond `process_list_element_ptr`
+        /// (e.g. by an async-callback companion of a borrowed group, see
+        /// `ThreadGroup::getAsyncCallbackGroup`), late async work may still charge it - and,
+        /// through its `memory_tracker` parent, `user_memory_tracker`. Defer the reset then:
+        /// resetting would clear the `max_memory_usage_for_user` limits for exactly that work.
+        if (process_list_element_ptr->thread_group && process_list_element_ptr->thread_group.use_count() > 1)
+            user_process_list.lingering_query_groups.emplace_back(process_list_element_ptr->thread_group);
+        user_process_list.resetTrackersIfUnreferenced();
+    }
 }
 
 

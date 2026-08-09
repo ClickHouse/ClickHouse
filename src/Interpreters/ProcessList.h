@@ -343,6 +343,15 @@ struct ProcessListForUser
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
 
+    /// Owning `ThreadGroup`s of queries that already left the process list but were still referenced
+    /// at that point: borrowed-scope async work may keep charging such a group - and, through its
+    /// `memory_tracker` parent, `user_memory_tracker` - past the query's removal (an async-callback
+    /// companion group holds the owning group alive, see `ThreadGroup::getAsyncCallbackGroup`).
+    /// While any of them survives, `user_memory_tracker` must not be reset: that would clear the
+    /// `max_memory_usage_for_user` limits in the exact post-query window the companion covers.
+    /// Guarded by `ProcessList::mutex`, like `queries`.
+    std::vector<std::weak_ptr<ThreadGroup>> lingering_query_groups;
+
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
     /// Clears MemoryTracker for the user.
@@ -354,6 +363,15 @@ struct ProcessListForUser
         user_memory_tracker.reset();
 
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
+    }
+
+    /// Resets the trackers unless a lingering query group can still charge them (see above).
+    /// A reset skipped here is retried when the user's next query is inserted or removed.
+    void resetTrackersIfUnreferenced()
+    {
+        std::erase_if(lingering_query_groups, [](const auto & group) { return group.expired(); });
+        if (lingering_query_groups.empty())
+            resetTrackers();
     }
 };
 
