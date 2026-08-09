@@ -1035,9 +1035,19 @@ struct ByteJaroSimilarityImpl
         {
             const auto * s1 = reinterpret_cast<const unsigned char *>(haystack);
             const auto * s2 = reinterpret_cast<const unsigned char *>(needle);
-            return (s2len <= 64)
-                ? TargetSpecific::x86_64_v3::jaroSmall(s1, s1len, s2, s2len, max_range)
-                : TargetSpecific::x86_64_v3::jaroScan (s1, s1len, s2, s2len, max_range);
+            /// `jaroSmall` hoists the second string into two AVX2 registers, so it requires that
+            /// string to be at most 64 bytes. Which of the two arguments ends up here as the
+            /// needle is not under our control: `FunctionStringDistanceImpl::vectorConstant`
+            /// forwards `jaroSimilarity(column, const)` through `constantVector(const, column)`,
+            /// so the row value can arrive as the needle. Jaro similarity is symmetric - both the
+            /// matching window `max_range` and the final score are - so pick the kernel by the
+            /// shorter of the two strings rather than by the argument position, and swap the
+            /// arguments when the needle is the longer one.
+            if (s2len <= 64)
+                return TargetSpecific::x86_64_v3::jaroSmall(s1, s1len, s2, s2len, max_range);
+            if (s1len <= 64)
+                return TargetSpecific::x86_64_v3::jaroSmall(s2, s2len, s1, s1len, max_range);
+            return TargetSpecific::x86_64_v3::jaroScan(s1, s1len, s2, s2len, max_range);
         }
 #endif
         return processScalar(haystack, needle, s1len, s2len, max_range);

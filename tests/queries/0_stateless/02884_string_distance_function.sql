@@ -141,7 +141,7 @@ SELECT levenshteinDistanceUTF8('詳で恥総げちうづ住池高そもぽょ宗
 SELECT levenshteinDistanceUTF8('半テ絶力へじづひ情日ヲフオマ型読9緊覧だづや田立だリ九高わす二申むドい生著るべや断彰ユカツ複95済モナス稿国ネサナユ近無メエ飯承ぱ項天法ら抜乾凍刷くゃイあ。公当記てあ茂全ー間仙サエ藤96送域エチキル資属企済7開フリセラ高5数なル名惑もせむ春午く済並めぜれ数なル名惑もせむ春午く済並めぜ', '話ゅへ成写ミヨ異読サ週製事ぼげ成権ク公地ウコトヘ録物内ンで手制ぜ江務たほ沼部よイとげ所46入ぽ閉載ハウ強集ヘ立問えろ後応披ぜやまよ裁捕藤やこも。京チ食相つてふば予真りぞ熱4一発ヤヒリ月能まぽどお曜主ずンぴ載告キヱ界未ヨセラ意古林ぐめ勝禁ヘヱナワ際無えくちゃ話稿けび文担達リ。公全ツハネレ失16変え軽将ケムトリ量4紙ミカ説海ちレろし年邦健ルチタ養未8既杉乾凍つンろめ。問えろ後応披ぜやまよJapanese Lorem Ipsum is based') AS actual, 215 AS expected;
 
 SELECT '-- jaroSimilarity/jaroWinklerSimilarity: AVX2 kernel boundary and match-order coverage';
--- jaroSimilarity dispatches on the needle (2nd argument) length: <= 64 uses the jaroSmall
+-- jaroSimilarity dispatches on the shorter of the two arguments: <= 64 bytes uses the jaroSmall
 -- kernel, > 64 uses the jaroScan sliding-window kernel. All strings below contain repeated
 -- bytes with overlapping match windows, so a matcher that picks a different (but still valid)
 -- occurrence than the leftmost one changes the transposition count and therefore the result.
@@ -157,9 +157,31 @@ SELECT jaroWinklerSimilarity(materialize('XYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXYZXY
 -- haystack longer than 64, needle (kernel selector) at exactly 60: still jaroSmall
 SELECT jaroSimilarity(materialize('CDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD'), materialize('DCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDC'));
 SELECT jaroWinklerSimilarity(materialize('CDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCD'), materialize('DCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDCDC'));
--- haystack shorter than 64, needle (kernel selector) at 70: jaroScan, also exercises the
--- jaroWinklerSimilarity common-prefix boost together with the sliding-window kernel
+-- haystack 40 bytes, needle 70 bytes: the needle is the longer side, so the arguments are
+-- swapped internally to reach jaroSmall; also exercises the jaroWinklerSimilarity
+-- common-prefix boost, which must still be computed on the original argument order
 SELECT jaroSimilarity(materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD'), materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDAB'));
 SELECT jaroWinklerSimilarity(materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCD'), materialize('ABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDABCDAB'));
+
+-- Which of the two arguments arrives as the needle is not under the control of the
+-- implementation: `FunctionStringDistanceImpl::vectorConstant` forwards
+-- `jaroSimilarity(column, const)` through `constantVector(const, column)`, so a row value can
+-- arrive as the needle. The kernel must therefore be selected by the shorter side, and all four
+-- shapes below - both argument orders, `column, const` and `const, column` - must give exactly
+-- the same result as the plain `column, column` call.
+SELECT jaroSimilarity(materialize(h), materialize(n)) FROM (SELECT repeat('AB', 60) AS h, repeat('BA', 21) AS n);
+SELECT
+    jaroSimilarity(materialize(n), materialize(h)) = jaroSimilarity(materialize(h), materialize(n)) AS symmetric,
+    jaroSimilarity(materialize(h), n) = jaroSimilarity(materialize(h), materialize(n)) AS vector_constant,
+    jaroSimilarity(h, materialize(n)) = jaroSimilarity(materialize(h), materialize(n)) AS constant_vector,
+    jaroWinklerSimilarity(materialize(h), n) = jaroWinklerSimilarity(materialize(h), materialize(n)) AS winkler_vector_constant,
+    jaroWinklerSimilarity(h, materialize(n)) = jaroWinklerSimilarity(materialize(h), materialize(n)) AS winkler_constant_vector
+FROM (SELECT repeat('AB', 60) AS h, repeat('BA', 21) AS n);
+-- Same, with the long string as the second argument, so the swap happens on the other side.
+SELECT
+    jaroSimilarity(materialize(n), materialize(h)) = jaroSimilarity(materialize(h), materialize(n)) AS symmetric,
+    jaroSimilarity(materialize(n), h) = jaroSimilarity(materialize(h), materialize(n)) AS vector_constant,
+    jaroSimilarity(n, materialize(h)) = jaroSimilarity(materialize(h), materialize(n)) AS constant_vector
+FROM (SELECT repeat('XYZ', 40) AS h, repeat('ZYX', 7) AS n);
 
 DROP TABLE t;
