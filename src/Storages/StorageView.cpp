@@ -19,6 +19,8 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
@@ -755,9 +757,35 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     if (!table)
         return true;
 
+    /// A proxy (a lazily loaded table of a database with `lazy_load_tables`, or a table created
+    /// from a table function) and an `Alias` table forward `read` to another storage while
+    /// reporting their own engine, so classify the storage that actually serves the read.
+    /// Fail closed on a chain that cannot be resolved.
+    for (size_t depth = 0;; ++depth)
+    {
+        if (depth >= 16)
+            return true;
+
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()))
+            table = proxy->getNested();
+        else if (const auto * alias = typeid_cast<const StorageAlias *>(table.get()))
+            table = alias->tryGetTargetTable();
+        else
+            break;
+
+        if (!table)
+            return true;
+    }
+
     /// A view can hide rows of its own, and these engines read other tables, which may be views.
     const auto & engine = table->getName();
     if (table->isView() || table->isRemote() || engine == "Merge" || engine == "Buffer")
+        return true;
+
+    /// `MaterializedPostgreSQL` rewrites every read of its data with `FINAL` and a `_sign = 1`
+    /// filter, so it hides the overwritten and deleted versions of a row just like a filtering
+    /// view does, and outer predicates must stay above it.
+    if (table->needRewriteQueryWithFinal({}))
         return true;
 
     return false;
