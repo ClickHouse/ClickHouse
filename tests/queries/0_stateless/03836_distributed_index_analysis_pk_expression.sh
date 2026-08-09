@@ -25,10 +25,11 @@ $CLICKHOUSE_CLIENT -nm -q "
       -- auto_statistics_types='': otherwise the auto column statistics (materialized on INSERT by default) add a statistics.packed file that inflates part sizes and perturbs the distributed index analysis counters.
       auto_statistics_types='';
   system stop merges test_pk_expr;
-  -- 100 parts of 1000 rows; the step of 10 seconds keeps each part spanning multiple hours,
-  -- so the probe minute below still selects exactly one part (as with 10000 rows of step 1),
-  -- while the insert writes 10 times less data (it has to fit the flaky-check time limit under sanitizers).
-  insert into test_pk_expr select toDateTime64('2024-01-01 00:00:00', 9) + (number * 10), number from numbers(1e5)
+  -- 50 parts of 1000 rows; the step of 10 seconds keeps each part spanning multiple hours,
+  -- so the probe minute below still selects exactly one part (as with 10000 rows of step 1).
+  -- The part count is what has to fit the flaky-check time limit under sanitizers: with metadata
+  -- in Keeper, every part commit is a round trip, and the insert dominates the test wall time.
+  insert into test_pk_expr select toDateTime64('2024-01-01 00:00:00', 9) + (number * 10), number from numbers(5e4)
     settings max_block_size=1000, min_insert_block_size_rows=1000, max_insert_threads=1;
   select count() from system.parts where database = currentDatabase() and table = 'test_pk_expr' and active;
 "
