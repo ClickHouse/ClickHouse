@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/ProjectionIndexReadRangesRefiner.h>
+#include <Storages/MergeTree/IndexReadRangesRefiner.h>
 
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -10,7 +10,7 @@
 namespace DB
 {
 
-ProjectionIndexReadRangesRefiner::ProjectionIndexReadRangesRefiner(
+IndexReadRangesRefiner::IndexReadRangesRefiner(
     MergeTreeIndexBuildContextPtr index_build_context_, StorageMetadataPtr metadata_snapshot_)
     : index_build_context(std::move(index_build_context_))
     , metadata_snapshot(std::move(metadata_snapshot_))
@@ -18,39 +18,39 @@ ProjectionIndexReadRangesRefiner::ProjectionIndexReadRangesRefiner(
     chassert(index_build_context);
 }
 
-MarkRanges ProjectionIndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const
+MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const
 {
     auto projection_it = index_build_context->projection_read_ranges.find(info.part_index_in_query);
-    if (projection_it == index_build_context->projection_read_ranges.end())
+    bool has_projection_ranges = projection_it != index_build_context->projection_read_ranges.end();
+
+    /// No index read result can exist for this part, do not touch the shared registry.
+    if (!has_projection_ranges && !index_build_context->index_reader_pool->hasSkipIndexReader())
         return ranges;
 
     const auto & part_ranges = index_build_context->read_ranges.at(info.part_index_in_query);
     const auto & all_updated_columns = info.alter_conversions->getAllUpdatedColumns();
 
     /// Built once per part; concurrent callers wait on a shared future inside the pool.
-    /// The same cached result is later reused by MergeTreeReaderIndex for row-level filtering.
+    /// The same cached result is later reused by MergeTreeReaderIndex for granule- and row-level filtering.
     auto index_read_result = index_build_context->index_reader_pool->getOrBuildIndexReadResult(
-        part_ranges, projection_it->second, metadata_snapshot, all_updated_columns);
+        part_ranges,
+        has_projection_ranges ? projection_it->second : RangesInDataParts{},
+        metadata_snapshot,
+        all_updated_columns);
 
     /// The read may have been cancelled; refinement is an optimization, so just do nothing.
-    if (!index_read_result || !index_read_result->projection_index_read_result)
+    if (!index_read_result || (!index_read_result->skip_index_read_result && !index_read_result->projection_index_read_result))
         return ranges;
 
-    const auto & bitmap = *index_read_result->projection_index_read_result;
     const auto & index_granularity = info.data_part_info->getIndexGranularity();
-
-    /// Same predicate as the projection branch of MergeTreeReaderIndex::canSkipMark,
-    /// applied before the ranges become a read task.
     MarkRanges result;
     size_t dropped_marks = 0;
+
     for (const auto & range : ranges)
     {
         for (size_t mark = range.begin; mark < range.end; ++mark)
         {
-            size_t rows_begin = index_granularity.getMarkStartingRow(mark);
-            size_t rows_end = rows_begin + index_granularity.getMarkRows(mark);
-
-            if (bitmap.rangeAllZero(rows_begin, rows_end))
+            if (index_read_result->canSkipMark(mark, index_granularity))
             {
                 ++dropped_marks;
                 continue;
