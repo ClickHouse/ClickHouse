@@ -27,6 +27,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -318,10 +319,18 @@ ASTPtr makeArrayForNonConstantInRightOperand(
     bool right_operand_tuple_function_is_set,
     bool include_right_operand_tuple_value,
     const DataTypePtr & right_operand_type,
-    bool left_operand_is_tuple)
+    bool left_operand_is_tuple,
+    const DataTypePtr & cast_elements_to)
 {
     if (right_operand_is_array)
         return right_operand->clone();
+
+    auto make_element = [&](ASTPtr element) -> ASTPtr
+    {
+        if (cast_elements_to)
+            return makeASTFunction("CAST", std::move(element), make_intrusive<ASTLiteral>(cast_elements_to->getName()));
+        return element;
+    };
 
     if (const auto * function = right_operand->as<ASTFunction>())
     {
@@ -331,9 +340,9 @@ ASTPtr makeArrayForNonConstantInRightOperand(
             auto & array_arguments = array_function->arguments->children;
             array_arguments.reserve(function->arguments->children.size() + include_right_operand_tuple_value);
             for (const auto & child : function->arguments->children)
-                array_arguments.push_back(child->clone());
+                array_arguments.push_back(make_element(child->clone()));
             if (include_right_operand_tuple_value)
-                array_arguments.push_back(right_operand->clone());
+                array_arguments.push_back(make_element(right_operand->clone()));
             return array_function;
         }
     }
@@ -347,12 +356,12 @@ ASTPtr makeArrayForNonConstantInRightOperand(
         auto & array_arguments = array_function->arguments->children;
         array_arguments.reserve(right_operand_tuple_type->getElements().size());
         for (size_t i = 0; i != right_operand_tuple_type->getElements().size(); ++i)
-            array_arguments.push_back(
-                makeASTFunction("tupleElement", right_operand->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1))));
+            array_arguments.push_back(make_element(
+                makeASTFunction("tupleElement", right_operand->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1)))));
         return array_function;
     }
 
-    return makeASTFunction("array", right_operand->clone());
+    return makeASTFunction("array", make_element(right_operand->clone()));
 }
 
 ASTPtr makeFunctionCall(const String & function_name, ASTs arguments)
@@ -397,7 +406,8 @@ ASTPtr makeNonConstantInReplacement(
     const DataTypePtr & right_operand_type,
     bool left_operand_is_tuple,
     size_t left_operand_tuple_size,
-    bool left_operand_is_always_null)
+    bool left_operand_is_always_null,
+    const DataTypePtr & cast_elements_to)
 {
     const auto & arguments = node.arguments->children;
     const auto & left_operand = arguments.at(0);
@@ -454,13 +464,22 @@ ASTPtr makeNonConstantInReplacement(
         return null_presence;
     }
 
+    /// `NULL IN (...)` with `transform_null_in = 0` is `NULL` regardless of the set elements,
+    /// and the elements are not required to share a common type with each other. Mirror the
+    /// analyzer and return a typed `NULL` directly instead of building an `array(...)` of the
+    /// elements, which could fail with `NO_COMMON_TYPE` for a heterogeneous RHS.
+    if (left_operand_is_null && !inFunctionComparesNulls(node.name) && !right_operand_is_array)
+        return makeASTFunction(
+            "CAST", make_intrusive<ASTLiteral>(Field{}), make_intrusive<ASTLiteral>(String("Nullable(UInt8)")));
+
     ASTPtr right_operand_array = makeArrayForNonConstantInRightOperand(
         right_operand,
         right_operand_is_array,
         right_operand_tuple_function_is_set,
         include_right_operand_tuple_value,
         right_operand_type,
-        left_operand_is_tuple);
+        left_operand_is_tuple,
+        cast_elements_to);
 
     auto has_function = makeASTFunction(
         "has",
@@ -1159,6 +1178,81 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 }
                 else
                 {
+                    /// The row-wise rewrite compares the left-hand side against an `array(...)` of the
+                    /// set elements, which requires a common supertype of the left-hand side and all
+                    /// elements. When no such supertype exists, the analyzer instead casts each element
+                    /// to the left-hand side type (a failed `CAST` to a `Nullable` target produces
+                    /// `NULL`, mirroring how the constant `Set` path skips unrepresentable elements).
+                    /// Mirror that fallback here to keep both analyzers in agreement.
+                    DataTypePtr cast_elements_to;
+                    if (!right_argument_is_array && left_argument_type && !left_argument_type->onlyNull())
+                    {
+                        DataTypes element_types;
+                        bool element_types_known = true;
+                        bool rhs_has_null_element = false;
+
+                        if (right_argument_function && right_argument_function->name == "tuple"
+                            && right_argument_tuple_function_is_set)
+                        {
+                            visit(right_argument, data);
+                            const auto & actions_index = data.actions_stack.getLastActionsIndex();
+                            for (const auto & child : right_argument_function->arguments->children)
+                            {
+                                /// A literal child of an already-visited identical tuple may not have its
+                                /// unique column name assigned, so take its type from the value directly.
+                                if (const auto * child_literal = child->as<ASTLiteral>())
+                                {
+                                    rhs_has_null_element |= child_literal->value.isNull();
+                                    element_types.push_back(applyVisitor(FieldToDataType(), child_literal->value));
+                                    continue;
+                                }
+                                const auto * child_node = actions_index.tryGetNode(child->getColumnName());
+                                if (!child_node)
+                                {
+                                    element_types_known = false;
+                                    break;
+                                }
+                                rhs_has_null_element |= child_node->result_type->onlyNull();
+                                element_types.push_back(child_node->result_type);
+                            }
+                        }
+                        else if (const auto * right_argument_tuple_type = right_argument_type
+                                     ? typeid_cast<const DataTypeTuple *>(removeNullable(right_argument_type).get())
+                                     : nullptr;
+                                 right_argument_tuple_type && !left_argument_is_tuple)
+                        {
+                            for (const auto & element_type : right_argument_tuple_type->getElements())
+                            {
+                                rhs_has_null_element |= element_type->onlyNull();
+                                element_types.push_back(element_type);
+                            }
+                        }
+                        else if (right_argument_type)
+                        {
+                            rhs_has_null_element = right_argument_type->onlyNull();
+                            element_types.push_back(right_argument_type);
+                        }
+                        else
+                        {
+                            element_types_known = false;
+                        }
+
+                        if (element_types_known && !element_types.empty())
+                        {
+                            DataTypes supertype_candidates;
+                            supertype_candidates.reserve(element_types.size() + 1);
+                            supertype_candidates.push_back(left_argument_type);
+                            supertype_candidates.insert(supertype_candidates.end(), element_types.begin(), element_types.end());
+                            if (!tryGetLeastSupertype(supertype_candidates))
+                            {
+                                cast_elements_to = left_argument_type;
+                                if ((rhs_has_null_element || !data.getContext()->getSettingsRef()[Setting::transform_null_in])
+                                    && !isTupleType(cast_elements_to))
+                                    cast_elements_to = makeNullableOrLowCardinalityNullableSafe(cast_elements_to);
+                            }
+                        }
+                    }
+
                     replacement = makeNonConstantInReplacement(
                         node,
                         right_argument_is_array,
@@ -1167,7 +1261,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         right_argument_type,
                         left_argument_is_tuple,
                         getTupleElementCount(left_argument_type, node.arguments->children.at(0)),
-                        left_argument_type && left_argument_type->onlyNull());
+                        left_argument_type && left_argument_type->onlyNull(),
+                        cast_elements_to);
                 }
 
                 visit(replacement, data);
