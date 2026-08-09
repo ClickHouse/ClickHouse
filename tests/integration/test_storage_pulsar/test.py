@@ -569,6 +569,19 @@ def test_event_timestamp_virtual_columns(pulsar_cluster):
     # whose producer did not set it. `pulsar-client produce` cannot set the
     # event timestamp, so publish through the broker's REST producer, which
     # accepts an explicit `eventTime` per message.
+    # The REST producer does not create the topic on demand, so create it
+    # before the engine's consumers get a chance to auto-create it.
+    subprocess.check_call(
+        [
+            "docker",
+            "exec",
+            pulsar_cluster.pulsar_docker_id,
+            "bin/pulsar-admin",
+            "topics",
+            "create",
+            "persistent://public/default/event_ts_topic",
+        ]
+    )
     instance.query("CREATE DATABASE IF NOT EXISTS test")
     instance.query(pulsar_table("test.pulsar_reader", "event_ts_topic", "event_ts_group"))
     instance.query(
@@ -583,19 +596,6 @@ def test_event_timestamp_virtual_columns(pulsar_cluster):
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
         SELECT key, value, _timestamp AS ts, _timestamp_ms AS ts_ms FROM test.pulsar_reader
         """
-    )
-
-    # The REST producer does not create the topic on demand.
-    subprocess.check_call(
-        [
-            "docker",
-            "exec",
-            pulsar_cluster.pulsar_docker_id,
-            "bin/pulsar-admin",
-            "topics",
-            "create",
-            "persistent://public/default/event_ts_topic",
-        ]
     )
     event_time_ms = 1690000000123
     body = (
