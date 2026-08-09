@@ -696,7 +696,7 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo
 }
 
 /// Where a tuple may legally appear as the row value `(a, b)` in the SQL of the external
-/// database. External databases accept row values only next to a comparison or `IN`
+/// database. SQLite and MySQL accept row values only next to a comparison or `IN`
 /// (`(a, b) = (1, 'x')`, `(a, b) IN ((1, 'x'), (2, 'y'))`); anywhere else - e.g. in the SELECT
 /// list - the parenthesized form is a syntax error there (SQLite reports "row value misused"),
 /// so such tuples must be rejected in ClickHouse instead of being sent as broken SQL.
@@ -711,6 +711,14 @@ enum class RowValueContext
     /// elements may in turn be row values (the multi-row case).
     INSet,
 };
+
+/// In PostgreSQL a row constructor is an ordinary value expression, valid in any expression
+/// position (`SELECT (a, b)`, `WHERE (a, b) IS NOT NULL`), so the row-value position
+/// restriction above does not apply to it.
+static bool rowValueIsValidAnywhere(LiteralEscapingStyle literal_escaping_style)
+{
+    return literal_escaping_style == LiteralEscapingStyle::PostgreSQL;
+}
 
 static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, RowValueContext row_value_context)
 {
@@ -754,7 +762,7 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
                     "Cannot format a tuple with fewer than two elements for the external database: "
                     "it can only be written in ClickHouse-specific syntax. Rewrite the query passed "
                     "to the external database without it");
-            if (row_value_context == RowValueContext::Disallowed)
+            if (row_value_context == RowValueContext::Disallowed && !rowValueIsValidAnywhere(literal_escaping_style))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot format a tuple for the external database: the row value ('x', 'y') is "
                     "only valid as an operand of a comparison or IN there. Rewrite the query passed "
@@ -812,6 +820,7 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
         /// `tuple` function above: outside a row-value position its parenthesized text form
         /// is a syntax error for the external database.
         if (row_value_context == RowValueContext::Disallowed
+            && !rowValueIsValidAnywhere(literal_escaping_style)
             && literal->value.getType() == Field::Types::Tuple
             && literal->value.safeGet<Tuple>().size() >= 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
