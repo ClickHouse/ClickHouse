@@ -1,0 +1,4 @@
+xform_except:	1	target_b	0.5
+xform_except_one:	2	user_b	0.5
+nondet_consistent:	1
+nondet_rowcount:	1

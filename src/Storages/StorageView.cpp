@@ -4,20 +4,30 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/TreeRewriter.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
 
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
@@ -25,9 +35,12 @@
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/Names.h>
 #include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -35,8 +48,14 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/castColumn.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/processColumnTransformers.h>
 #include <Parsers/QueryParameterVisitor.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -67,6 +86,8 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_IDENTIFIER;
+    extern const int VIOLATED_CONSTRAINT;
 }
 
 
@@ -118,6 +139,796 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
     }
     return false;
 }
+
+/// Extracts the single ASTSelectQuery from the view definition.
+/// Throws if the view uses UNION.
+const ASTSelectQuery & getSingleSelectQuery(const StorageMetadataPtr & metadata, const StorageID & view_id)
+{
+    const auto & inner_query = metadata->getSelectQuery().inner_query;
+    const auto * select_union = inner_query->as<ASTSelectWithUnionQuery>();
+
+    if (!select_union || select_union->list_of_selects->children.size() != 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains UNION",
+            view_id.getFullTableName());
+
+    const auto * select = select_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+    if (!select)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query is not a simple SELECT",
+            view_id.getFullTableName());
+
+    return *select;
+}
+
+/// Validates the view's SELECT query is simple enough for INSERTs.
+void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID & view_id)
+{
+    if (select.prewhere())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains PREWHERE",
+            view_id.getFullTableName());
+
+    if (select.distinct)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains DISTINCT",
+            view_id.getFullTableName());
+
+    if (select.groupBy())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains GROUP BY",
+            view_id.getFullTableName());
+
+    if (select.having())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains HAVING",
+            view_id.getFullTableName());
+
+    if (select.limitLength() || select.limitBy() || select.limitOffset())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains LIMIT or OFFSET",
+            view_id.getFullTableName());
+
+    /// `SAMPLE` selects a fraction of rows on read, but the insert path forwards every row.
+    /// Accepting it would silently ignore the clause, so reject it like the other read-only clauses.
+    if (select.sampleSize() || select.sampleOffset())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains SAMPLE",
+            view_id.getFullTableName());
+
+    if (hasJoin(select))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains a JOIN",
+            view_id.getFullTableName());
+
+    if (select.arrayJoinExpressionList().first)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains an ARRAY JOIN",
+            view_id.getFullTableName());
+
+    if (select.qualify())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains QUALIFY",
+            view_id.getFullTableName());
+
+    if (const auto & window_expr = select.window(); window_expr && !window_expr->children.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains a WINDOW clause",
+            view_id.getFullTableName());
+
+    /// A `WITH` clause can introduce aliases that look like simple column references in the SELECT list
+    /// (e.g. `WITH a + 1 AS x SELECT x FROM t`) but do not correspond to columns of the underlying table.
+    /// Rejecting `WITH` keeps the "simple projection" contract honest.
+    if (const auto & with_expr = select.with(); with_expr && !with_expr->children.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains a WITH clause",
+            view_id.getFullTableName());
+
+    /// `FINAL` changes the read row-set for collapsing/replacing engines, but the insert path
+    /// forwards rows untouched. Accepting it would silently ignore the modifier on writes.
+    if (select.final())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains FINAL",
+            view_id.getFullTableName());
+
+    /// A `SETTINGS` clause (e.g. `additional_table_filters`) can change which rows the view reads,
+    /// but it is not applied on the insert path. Rejecting it keeps the "pass-through projection"
+    /// contract honest instead of silently ignoring read-time semantics on writes.
+    if (const auto & settings_ast = select.settings(); settings_ast)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains a SETTINGS clause",
+            view_id.getFullTableName());
+
+    /// Plain `ORDER BY` is allowed and ignored on the insert path, because sorting does not change
+    /// which rows the view represents. `ORDER BY ... WITH FILL` (optionally with `INTERPOLATE`) is
+    /// different: at read time it synthesizes rows that are not present in the underlying table, so
+    /// the view no longer represents a one-to-one projection. Accepting it would silently ignore the
+    /// row-generating read semantics on writes, so reject it like the other read-only clauses.
+    if (select.withFill() || select.interpolate())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query contains ORDER BY ... WITH FILL or INTERPOLATE",
+            view_id.getFullTableName());
+
+    /// If the view has a WHERE clause with identifiers, we need to ensure they can be evaluated.
+    /// For now, we accept WHERE clauses as-is and rely on runtime validation during INSERT execution.
+    /// Lambda parameters (e.g., in WHERE arrayExists(x -> x > 0, [1])) are not table columns
+    /// and should not prevent insertion.
+}
+
+/// Collects the short names of all *unqualified* identifiers referenced in an expression subtree,
+/// excluding names that are bound by an enclosing lambda parameter. A lambda parameter such as `a` in
+/// `arrayExists(a -> a > 0, arr)` shadows any outer column or alias of the same name within the
+/// lambda body, so it is a local binding rather than a reference to the outer name. Recording it
+/// would make the ambiguity guard below reject a view whose WHERE merely uses the name as a lambda
+/// parameter, even though read-time semantics are unambiguous (the parameter shadows the column).
+/// An `ASTSubquery` opens its own scope and is not descended into: the identifiers inside
+/// `WHERE 1 IN (SELECT a FROM allowed)` are resolved against `allowed`, not against the view's input,
+/// so an `a` there is not a reference to the outer alias and must not arm the ambiguity guard. A
+/// *correlated* reference to the outer scope is not silently accepted either: the write-time
+/// constraint check analyses the subquery against its own tables when it builds the set, so an
+/// identifier that only exists in the outer scope raises `UNKNOWN_IDENTIFIER` there instead of
+/// evaluating an ambiguous name.
+void collectIdentifierShortNames(const ASTPtr & ast, NameSet & names, NameSet & bound_lambda_params)
+{
+    if (!ast || ast->as<ASTSubquery>())
+        return;
+
+    /// A lambda is represented as `lambda(tuple(params...), body)`. Mask its parameter names while
+    /// visiting the body and skip the parameter-declaration tuple entirely. Stay defensive about the
+    /// shape: anything that does not match the canonical lambda layout falls through to the generic
+    /// traversal, which is the conservative (fail-close) behavior.
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+    {
+        if (const auto * params_tuple = function->arguments->children[0]->as<ASTFunction>();
+            params_tuple && params_tuple->name == "tuple" && params_tuple->arguments)
+        {
+            Names newly_bound;
+            for (const auto & param : params_tuple->arguments->children)
+                if (const auto * param_identifier = param->as<ASTIdentifier>())
+                    if (bound_lambda_params.insert(param_identifier->shortName()).second)
+                        newly_bound.push_back(param_identifier->shortName());
+
+            collectIdentifierShortNames(function->arguments->children[1], names, bound_lambda_params);
+
+            for (const auto & name : newly_bound)
+                bound_lambda_params.erase(name);
+            return;
+        }
+    }
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        /// A compound identifier such as `t.a` (table-qualified) or `n.x` (a `Nested` subcolumn) is
+        /// never a reference to a SELECT-list alias: an alias is always a single-part name, so it can
+        /// only be matched by an unqualified identifier. `SELECT t.a AS b, t.b AS a FROM t AS t
+        /// WHERE t.a > 0` therefore has unambiguous read semantics — `t.a` is the underlying column
+        /// regardless of `prefer_column_name_to_alias` — and must not be recorded as a reference to
+        /// the colliding alias `a`. Only unqualified names can be ambiguous, and those still fall
+        /// through to the fail-close guard below. Query-parameter identifiers (`{name:Identifier}`)
+        /// carry an empty name and their value is not known at this point, so they keep the generic
+        /// (conservative) handling.
+        if (identifier->compound() && !identifier->isParam())
+            return;
+
+        const String short_name = identifier->shortName();
+        if (!bound_lambda_params.contains(short_name))
+            names.insert(short_name);
+    }
+
+    for (const auto & child : ast->children)
+        collectIdentifierShortNames(child, names, bound_lambda_params);
+}
+
+/// Strips the target-table qualifier from the identifiers of an expression subtree, in place.
+///
+/// The view's `WHERE` is stored exactly as written, so it may qualify columns with the table name or
+/// its alias, as in `SELECT t.a AS b, t.b AS a FROM t AS t WHERE t.a > 0`. The write-time constraint
+/// check analyses the expression against a plain block of view and target column names, where a
+/// qualified `t.a` does not resolve. Strip the qualifier — exactly the way `extractColumnMapping`
+/// resolves the SELECT list — so a qualified predicate is evaluated instead of being rejected.
+///
+/// `IdentifierSemantic::extractNestedName` strips only a leading table/database/alias qualifier that
+/// actually matches the target table, so a compound subcolumn such as a `Nested` `n.x` is preserved.
+/// Independent subquery scopes are left untouched: their identifiers refer to their own tables, and
+/// a name that happens to match the outer table there is not ours to rewrite.
+///
+/// Lambda scopes are masked the same way as in `collectIdentifierShortNames`: a lambda parameter
+/// shadows the table name/alias within the lambda body, so in `SELECT ... FROM t AS x WHERE
+/// arrayExists(x -> x.a > 0, arr)` the compound `x.a` is the tuple element `a` of the lambda
+/// parameter, not the table-qualified column `a`, and must not be rewritten.
+void stripTargetTableQualifier(ASTPtr & ast, const DatabaseAndTableWithAlias & target_table_ref, NameSet & bound_lambda_params)
+{
+    if (!ast || ast->as<ASTSubquery>())
+        return;
+
+    /// A lambda is represented as `lambda(tuple(params...), body)`. Mask its parameter names while
+    /// visiting the body and skip the parameter-declaration tuple entirely. Anything that does not
+    /// match the canonical lambda layout falls through to the generic traversal.
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->name == "lambda" && function->arguments && function->arguments->children.size() == 2)
+    {
+        if (const auto * params_tuple = function->arguments->children[0]->as<ASTFunction>();
+            params_tuple && params_tuple->name == "tuple" && params_tuple->arguments)
+        {
+            Names newly_bound;
+            for (const auto & param : params_tuple->arguments->children)
+                if (const auto * param_identifier = param->as<ASTIdentifier>())
+                    if (bound_lambda_params.insert(param_identifier->shortName()).second)
+                        newly_bound.push_back(param_identifier->shortName());
+
+            stripTargetTableQualifier(function->arguments->children[1], target_table_ref, bound_lambda_params);
+
+            for (const auto & name : newly_bound)
+                bound_lambda_params.erase(name);
+            return;
+        }
+    }
+
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->compound() && !identifier->isParam())
+    {
+        /// A leading component bound by an enclosing lambda parameter shadows the table
+        /// name/alias: `x.a` inside `x -> ...` is a member of the parameter, never a
+        /// table-qualified column, even when `x` is also the table alias.
+        if (bound_lambda_params.contains(identifier->name_parts.front()))
+            return;
+
+        const String stripped = IdentifierSemantic::extractNestedName(*identifier, target_table_ref);
+        if (!stripped.empty() && stripped != identifier->name())
+        {
+            auto replacement = make_intrusive<ASTIdentifier>(stripped);
+            replacement->setAlias(identifier->tryGetAlias());
+            ast = replacement;
+        }
+        return;
+    }
+
+    for (auto & child : ast->children)
+        stripTargetTableQualifier(child, target_table_ref, bound_lambda_params);
+}
+
+/// Extracts column mapping from view column names to target table column names.
+/// Returns empty map for asterisk (all columns map 1:1 by name).
+///
+/// Each identifier in the SELECT list must name a real column of the target table.
+/// Otherwise the projection is not a "simple column reference" — for example, the identifier
+/// could resolve to a `WITH` alias or another non-table symbol — and the view is rejected
+/// as not insertable.
+///
+/// `AS` aliases are the only renaming mechanism that can reach this point: an explicit view
+/// column list, as in `CREATE VIEW v (id, name) AS SELECT a, b FROM t`, is rewritten into
+/// SELECT-list aliases (`SELECT a AS id, b AS name`) when the view is created, so it is
+/// covered by the alias handling here.
+///
+/// The target column name is resolved with `IdentifierSemantic::extractNestedName`, which strips
+/// only a leading table/database/alias qualifier and preserves a compound subcolumn name such as
+/// a `Nested` column `n.x`. Using `shortName` here would be wrong: it also drops the compound
+/// prefix, so a view `SELECT n.x AS nx FROM t` over a table that has both a plain column `x` and a
+/// `Nested` column `n.x` would map `nx -> x` and silently write the inserted values into the wrong
+/// column.
+std::unordered_map<String, String> extractColumnMapping(
+    const ASTSelectQuery & select,
+    const StorageID & view_id,
+    const NameSet & target_columns,
+    const DatabaseAndTableWithAlias & target_table_ref)
+{
+    std::unordered_map<String, String> mapping;
+
+    if (!select.select())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "View {} has no SELECT expression list", view_id.getFullTableName());
+
+    bool has_asterisk = false;
+    bool has_explicit_column = false;
+    NameSet used_target_columns;
+
+    for (const auto & expr : select.select()->children)
+    {
+        if (const auto * asterisk = expr->as<ASTAsterisk>())
+        {
+            if (asterisk->transformers)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot INSERT into view {} because its SELECT list contains * with column transformers",
+                    view_id.getFullTableName());
+
+            has_asterisk = true;
+            continue;
+        }
+
+        if (const auto * qualified_asterisk = expr->as<ASTQualifiedAsterisk>())
+        {
+            if (qualified_asterisk->transformers)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot INSERT into view {} because its SELECT list contains * with column transformers",
+                    view_id.getFullTableName());
+
+            has_asterisk = true;
+            continue;
+        }
+
+        /// Must be a simple column reference (possibly with alias).
+        const auto * identifier = expr->as<ASTIdentifier>();
+        if (!identifier)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot INSERT into view {} because its SELECT list contains "
+                "expressions that are not simple column references",
+                view_id.getFullTableName());
+
+        has_explicit_column = true;
+        if (has_asterisk)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot INSERT into view {} because its SELECT list mixes * with explicit columns",
+                view_id.getFullTableName());
+
+        String target_col = IdentifierSemantic::extractNestedName(*identifier, target_table_ref);
+        if (!target_columns.contains(target_col))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot INSERT into view {} because identifier '{}' in its SELECT list "
+                "does not refer to a column of the underlying table",
+                view_id.getFullTableName(), target_col);
+
+        /// Two view columns must not resolve to the same target column, as in
+        /// `SELECT a AS x, a AS y FROM t`: there is no clear write semantics for such a view,
+        /// and the nested insert would fail later with a confusing `DUPLICATE_COLUMN` error
+        /// about a query the user did not write.
+        if (!used_target_columns.emplace(target_col).second)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot INSERT into view {} because multiple columns in its SELECT list "
+                "refer to the same column '{}' of the underlying table",
+                view_id.getFullTableName(), target_col);
+
+        String view_col = identifier->tryGetAlias();
+        if (view_col.empty())
+            view_col = target_col;
+
+        if (view_col != target_col)
+            mapping[view_col] = target_col;
+    }
+
+    if (has_asterisk && has_explicit_column)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its SELECT list mixes * with explicit columns",
+            view_id.getFullTableName());
+
+    if (has_asterisk)
+        return {};
+
+    return mapping;
+}
+
+/// Gets the target table from the view's FROM clause.
+/// When `out_table_ref` is not null, it is filled with the database/table/alias of the FROM table,
+/// so the caller can resolve qualified column identifiers against it (see `extractColumnMapping`).
+StoragePtr getViewTargetTable(
+    const ASTSelectQuery & select,
+    const StorageID & view_id,
+    ContextPtr context,
+    DatabaseAndTableWithAlias * out_table_ref = nullptr)
+{
+    const auto & tables = select.tables();
+    if (!tables || tables->children.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {}: no tables in FROM clause",
+            view_id.getFullTableName());
+
+    if (tables->children.size() > 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its query references multiple tables",
+            view_id.getFullTableName());
+
+    const auto * element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
+    if (!element || !element->table_expression)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {}: unsupported FROM clause",
+            view_id.getFullTableName());
+
+    const auto * table_expr = element->table_expression->as<ASTTableExpression>();
+    if (!table_expr || !table_expr->database_and_table_name)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {}: FROM clause must reference a table directly",
+            view_id.getFullTableName());
+
+    const auto * table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
+    if (!table_id)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {}: FROM clause must reference a table directly",
+            view_id.getFullTableName());
+
+    if (out_table_ref)
+        *out_table_ref = DatabaseAndTableWithAlias(*table_expr, context->getCurrentDatabase());
+
+    auto resolved_id = context->resolveStorageID(table_id->getTableId());
+    return DatabaseCatalog::instance().getTable(resolved_id, context);
+}
+
+/// Sink that inserts data into the target table of a view.
+/// Handles column name mapping (for aliased views) and WHERE constraint checking.
+class SinkToStorageView : public SinkToStorage
+{
+public:
+    SinkToStorageView(
+        SharedHeader view_header,
+        StoragePtr target_table,
+        ContextPtr context,
+        std::unordered_map<String, String> column_mapping,
+        Names user_specified_columns,
+        ASTPtr where_condition,
+        const StorageID & view_id,
+        bool async_insert)
+        : SinkToStorage(view_header)
+        , target_table_(std::move(target_table))
+        , column_mapping_(std::move(column_mapping))
+        , user_specified_columns_(std::move(user_specified_columns))
+        , view_id_(view_id)
+        , context_(context)
+        , async_insert_(async_insert)
+    {
+        /// Build an INSERT query targeting the underlying table.
+        auto insert_query = make_intrusive<ASTInsertQuery>();
+        insert_query->table_id = target_table_->getStorageID();
+
+        /// All view columns are always forwarded to the underlying table.
+        /// For a partial `INSERT INTO view (subset) ...`, the omitted view columns are
+        /// pre-computed in `consume` (see `omitted_view_columns_` and `materializeTargetDefaults`)
+        /// with the target table's own DEFAULT values. That way the inner `INSERT` pipeline
+        /// receives full rows and does not re-evaluate any non-deterministic DEFAULT
+        /// expression a second time after the view's `WHERE` predicate has already validated it.
+        Names forwarded_view_columns;
+        forwarded_view_columns.reserve(getHeader().columns());
+        for (const auto & col : getHeader().getColumnsWithTypeAndName())
+            forwarded_view_columns.push_back(col.name);
+
+        const NameSet user_set(user_specified_columns_.begin(), user_specified_columns_.end());
+        if (!user_set.empty())
+        {
+            const auto target_metadata = target_table_->getInMemoryMetadataPtr(context_, false);
+            const auto & target_cols = target_metadata->getColumns();
+            for (const auto & view_name : forwarded_view_columns)
+            {
+                if (user_set.contains(view_name))
+                    continue;
+                auto it = column_mapping_.find(view_name);
+                const String target_name = (it != column_mapping_.end()) ? it->second : view_name;
+                if (!target_cols.has(target_name))
+                    continue;
+                omitted_view_columns_.push_back(view_name);
+            }
+        }
+
+        /// Set column list: view columns mapped to target column names.
+        auto columns_ast = make_intrusive<ASTExpressionList>();
+        for (const auto & view_name : forwarded_view_columns)
+        {
+            auto it = column_mapping_.find(view_name);
+            String target_name = (it != column_mapping_.end()) ? it->second : view_name;
+            columns_ast->children.push_back(make_intrusive<ASTIdentifier>(target_name));
+        }
+        insert_query->columns = columns_ast;
+        insert_query->children.push_back(insert_query->columns);
+
+        /// The inner `INSERT` pipeline is created and started in `onStart`, after the
+        /// constructor has finished all validation below (the `WHERE` analysis can throw).
+        insert_query_ = insert_query;
+
+        /// Build WHERE constraint expression if the view has a WHERE clause.
+        if (where_condition)
+        {
+            auto where_clone = where_condition->clone();
+
+            /// Provide both view names and target names for aliases used in the `WHERE` condition.
+            NamesAndTypesList source_columns;
+            NameSet source_column_names;
+            for (const auto & col : getHeader().getColumnsWithTypeAndName())
+            {
+                source_columns.emplace_back(col.name, col.type);
+                source_column_names.insert(col.name);
+
+                auto it = column_mapping_.find(col.name);
+                String target_name = (it != column_mapping_.end()) ? it->second : col.name;
+                if (!source_column_names.contains(target_name))
+                {
+                    source_columns.emplace_back(target_name, col.type);
+                    source_column_names.insert(target_name);
+                }
+            }
+
+            TreeRewriterResultPtr syntax;
+            try
+            {
+                syntax = TreeRewriter(context).analyze(where_clone, source_columns);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::UNKNOWN_IDENTIFIER)
+                    throw;
+
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot INSERT into view {} because its WHERE condition references columns "
+                    "that are not projected by the view",
+                    view_id_.getFullTableName());
+            }
+
+            where_actions_ = ExpressionAnalyzer(where_clone, syntax, context).getActions(false, true);
+            where_column_name_ = where_clone->getColumnName();
+        }
+    }
+
+    ~SinkToStorageView() override
+    {
+        /// On cancellation without an exception (e.g. `timeout_overflow_mode = 'break'` or user
+        /// cancellation) neither `onFinish()` nor `onException()` runs after `onStart()` started the
+        /// inner pipeline, leaving the nested executor started but unfinished. Cancel it so
+        /// `~PushingPipelineExecutor`'s finished-or-unwinding invariant holds, mirroring
+        /// `StorageAlias::AliasSink`.
+        if (executor_)
+        {
+            try
+            {
+                executor_->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("SinkToStorageView");
+            }
+        }
+    }
+
+    String getName() const override { return "SinkToStorageView"; }
+
+    void onStart() override
+    {
+        /// Create and start the inner `INSERT` pipeline only when the outer pipeline begins
+        /// executing, mirroring `StorageAlias::AliasSink`. Doing this in the constructor would
+        /// check target privileges, acquire target locks and start the target sink before the
+        /// constructor's own validation has succeeded — and if that validation threw, the
+        /// half-constructed sink would never receive `onException`, so the already-started
+        /// executor would only be torn down by member destructors.
+        auto insert_context = Context::createCopy(context_);
+        addInterpreterContext(insert_context);
+
+        InterpreterInsertQuery interpreter(insert_query_, insert_context, /*allow_materialized=*/false, /*no_squash=*/false, /*no_destination=*/false, async_insert_);
+        block_io_ = interpreter.execute();
+        executor_ = std::make_unique<PushingPipelineExecutor>(block_io_.pipeline);
+        executor_->start();
+    }
+
+    void consume(Chunk & chunk) override
+    {
+        /// Preserve any metadata attached to the incoming chunk (e.g. async-insert deduplication
+        /// tokens and offsets stored by `AsynchronousInsertQueue`) so it can be forwarded to the
+        /// inner `INSERT` pipeline below. `detachColumns` only moves the columns out of the chunk.
+        auto chunk_infos = chunk.getChunkInfos().clone();
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+
+        /// For a partial `INSERT INTO view (subset) ...`, columns omitted by the user have been
+        /// filled with view-schema *type* defaults (e.g. `0`, `''`) by `InsertDependenciesBuilder::createPreSink`.
+        /// Replace them in place with the target table's own DEFAULT values. This serves two purposes:
+        ///   1. The view's `WHERE` predicate is evaluated against the values that will actually be stored.
+        ///   2. The inner `INSERT` pipeline receives the materialized values and does not re-evaluate
+        ///      the DEFAULT a second time — important for non-deterministic defaults such as
+        ///      `DEFAULT now64()` or `DEFAULT rand()`, where the two evaluations would otherwise diverge.
+        if (!omitted_view_columns_.empty())
+            materializeTargetDefaults(block);
+
+        /// Check the `WHERE` constraint: every inserted row must satisfy the view's condition.
+        if (where_actions_)
+        {
+            /// The `WHERE` predicate may contain set-dependent functions such as `a IN (SELECT ...)`.
+            /// Without building those sets first, `FunctionIn` sees a not-ready set and throws a
+            /// logical error instead of enforcing the constraint. Build them once, lazily, on the
+            /// first chunk — mirroring `CheckConstraintsTransform::onConsume`. The set is built by
+            /// running the subquery's own pipeline, which must happen while this sink is executing,
+            /// not while it is being constructed, so building it here rather than in the
+            /// constructor avoids a nested-pipeline execution during outer-pipeline construction.
+            if (!where_sets_built_)
+            {
+                VirtualColumnUtils::buildSetsForDAG(where_actions_->getActionsDAG(), context_);
+                where_sets_built_ = true;
+            }
+
+            /// Build the predicate input block by position: map each projected view column to its
+            /// target name. By-position mapping (rather than a name-based copy guarded by
+            /// `has(target_name)`) keeps every value under its correct target name even when the
+            /// projection swaps aliases, e.g. `SELECT a AS b, b AS a, c FROM t WHERE c > 0`.
+            /// A `WHERE` that itself references one of the colliding names is ambiguous and is
+            /// rejected with `NOT_IMPLEMENTED` in `StorageView::write` before the sink is created.
+            Block check_block;
+            for (const auto & col : block)
+            {
+                auto it = column_mapping_.find(col.name);
+                const String target_name = (it != column_mapping_.end()) ? it->second : col.name;
+                ColumnWithTypeAndName target_col = col;
+                target_col.name = target_name;
+                check_block.insert(std::move(target_col));
+            }
+
+            /// Also expose the original view-column names for predicates that reference a view
+            /// alias, but only when the name does not collide with a target name already inserted
+            /// above — the target-name binding wins, matching the table-level predicate semantics.
+            for (const auto & col : block)
+            {
+                if (!check_block.has(col.name))
+                    check_block.insert(col);
+            }
+
+            where_actions_->execute(check_block);
+
+            const auto & result_column = check_block.getByName(where_column_name_).column;
+            for (size_t i = 0; i < result_column->size(); ++i)
+            {
+                if (result_column->isNullAt(i) || !result_column->getBool(i))
+                    throw Exception(
+                        ErrorCodes::VIOLATED_CONSTRAINT,
+                        "Cannot INSERT into view {}: the inserted row does not satisfy "
+                        "the view's WHERE condition",
+                        view_id_.getFullTableName());
+            }
+        }
+
+        /// Capture the accepted rows in the *view's* own header (after target defaults were
+        /// materialized and the `WHERE` constraint passed, before renaming to target columns).
+        /// `SinkToStorage::onConsume` moves `chunk` into `cur_chunk` after this method returns, and
+        /// `onGenerate` forwards `cur_chunk` to materialized views that depend on this view. We
+        /// detached the columns above, so without restoring them such a dependent materialized view
+        /// (e.g. `CREATE MATERIALIZED VIEW mv TO dst AS SELECT * FROM v`) would receive an empty
+        /// chunk and silently miss the inserted rows. The chunk keeps its original infos (only the
+        /// columns were detached), so async-insert metadata is preserved for the dependent views too.
+        Columns view_columns = block.getColumns();
+        const size_t view_rows = block.rows();
+
+        /// Rename view columns to target table columns, processing each column by position.
+        /// A name-based in-place rename is unsafe when aliases collide with target column
+        /// names: for `CREATE VIEW v AS SELECT a AS b, b AS a FROM t` the mapping holds both
+        /// `b -> a` and `a -> b`, and renaming one column first leaves the block with two
+        /// columns sharing a name, so a later `getByName` could pick the wrong one. Building a
+        /// fresh block from the original column order, mapping each name exactly once, avoids
+        /// the ambiguity and rebuilds the name index consistently.
+        Block renamed_block;
+        for (const auto & col : block)
+        {
+            auto renamed_col = col;
+            auto it = column_mapping_.find(col.name);
+            if (it != column_mapping_.end())
+                renamed_col.name = it->second;
+            renamed_block.insert(std::move(renamed_col));
+        }
+        block = std::move(renamed_block);
+
+        /// Push to the inner `INSERT` pipeline which handles constraints and writing. Forward the
+        /// row data as a `Chunk` carrying the original chunk metadata: pushing a bare `Block` would
+        /// wrap the columns in a fresh `Chunk` and drop the incoming infos, so `async_insert`
+        /// deduplication tokens/offsets would no longer match a direct insert into the target table.
+        /// Mirrors `StorageAlias::AliasSink`.
+        Chunk renamed_chunk(block.getColumns(), block.rows());
+        renamed_chunk.setChunkInfos(std::move(chunk_infos));
+        executor_->push(std::move(renamed_chunk));
+
+        /// Restore the detached columns (in the view's header) so the chunk that
+        /// `SinkToStorage::onGenerate` forwards downstream carries the inserted rows to any
+        /// materialized views depending on this view, instead of an empty chunk.
+        chunk.setColumns(std::move(view_columns), view_rows);
+    }
+
+    void onFinish() override
+    {
+        executor_->finish();
+        executor_.reset();
+
+        block_io_.onFinish();
+        block_io_ = {};
+    }
+
+    void onException(std::exception_ptr) override
+    {
+        /// A chunk may fail mid-insert — for example a later chunk violates the view's `WHERE`
+        /// constraint after earlier chunks were already pushed. Cancel and tear down the inner
+        /// insert pipeline so it does not leak or block, mirroring `StorageAlias::AliasSink`.
+        if (executor_)
+            executor_->cancel();
+        executor_.reset();
+        block_io_.onException();
+        block_io_ = {};
+    }
+
+private:
+    /// Replace the type-default values of omitted view columns with the target table's
+    /// own DEFAULT expressions, evaluated exactly once. The materialized values are
+    /// written back in the *view's* column type so the same block can be used both for
+    /// the view's `WHERE` predicate and for the inner `INSERT` pipeline.
+    void materializeTargetDefaults(Block & block)
+    {
+        const auto target_metadata = target_table_->getInMemoryMetadataPtr(context_, false);
+        const auto & target_cols = target_metadata->getColumns();
+
+        Block target_named;
+        for (const auto & view_name : user_specified_columns_)
+        {
+            auto col = block.getByName(view_name);
+            auto it = column_mapping_.find(view_name);
+            if (it != column_mapping_.end())
+                col.name = it->second;
+            target_named.insert(std::move(col));
+        }
+
+        struct OmittedColumn
+        {
+            String view_name;
+            String target_name;
+            DataTypePtr view_type;
+        };
+        std::vector<OmittedColumn> omitted;
+        omitted.reserve(omitted_view_columns_.size());
+        for (const auto & view_name : omitted_view_columns_)
+        {
+            auto it = column_mapping_.find(view_name);
+            const String target_name = (it != column_mapping_.end()) ? it->second : view_name;
+            if (target_named.has(target_name))
+                continue;
+            omitted.push_back({view_name, target_name, block.getByName(view_name).type});
+        }
+
+        if (omitted.empty())
+            return;
+
+        NamesAndTypesList required_target_columns;
+        for (const auto & o : omitted)
+            required_target_columns.emplace_back(o.target_name, target_cols.get(o.target_name).type);
+
+        auto dag = evaluateMissingDefaults(target_named, required_target_columns, target_cols, context_);
+        if (dag)
+        {
+            /// A target `DEFAULT` may read a *subcolumn* of another target column, as in
+            /// `CREATE TABLE t (obj Tuple(x UInt8), b UInt8 DEFAULT obj.x)`. The block forwarded
+            /// here holds whole columns only, so the defaults DAG must be preceded by the same
+            /// subcolumn-extraction step that the normal insert path uses (`AddingDefaultsTransform`,
+            /// `InsertDependenciesBuilder::createPreSink`). Without it the DAG would look for an
+            /// input named `obj.x` and fail with `NOT_FOUND_COLUMN_IN_BLOCK`, even though a direct
+            /// `INSERT INTO t (obj)` derives the default just fine. The extraction DAG is empty
+            /// when no required name is a subcolumn of an available column, so this is a no-op for
+            /// plain defaults.
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(target_named, dag->getRequiredColumnsNames(), context_);
+            ExpressionActions(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(*dag))).execute(target_named);
+        }
+
+        for (const auto & o : omitted)
+        {
+            if (!target_named.has(o.target_name))
+                continue;
+            auto materialized = target_named.getByName(o.target_name);
+            if (!materialized.type->equals(*o.view_type))
+            {
+                materialized.column = castColumn(materialized, o.view_type);
+                materialized.type = o.view_type;
+            }
+            materialized.name = o.view_name;
+            /// Replace the column at its original position. The inner `INSERT` pipeline
+            /// forwards columns by position; erase+append would route values into the
+            /// wrong target columns when an omitted view column is not at the tail.
+            const size_t pos = block.getPositionByName(o.view_name);
+            block.erase(pos);
+            block.insert(pos, std::move(materialized));
+        }
+    }
+
+    StoragePtr target_table_;
+    std::unordered_map<String, String> column_mapping_;
+    Names user_specified_columns_;
+    Names omitted_view_columns_;
+    StorageID view_id_;
+    ContextPtr context_;
+    bool async_insert_;
+
+    /// The inner `INSERT` query built in the constructor and executed in `onStart`.
+    ASTPtr insert_query_;
+
+    BlockIO block_io_;
+    std::unique_ptr<PushingPipelineExecutor> executor_;
+
+    ExpressionActionsPtr where_actions_;
+    String where_column_name_;
+    bool where_sets_built_ = false;
+};
+
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
@@ -388,6 +1199,237 @@ void StorageView::readImpl(
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
+}
+
+SinkToStoragePtr StorageView::write(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context,
+    bool async_insert)
+{
+    if (is_parameterized_view)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into parameterized view {}", getStorageID().getFullTableName());
+
+    const auto & select = getSingleSelectQuery(metadata_snapshot, getStorageID());
+    validateViewSelectForInsert(select, getStorageID());
+
+    /// Use the view's SQL security context for accessing the target table.
+    auto context = metadata_snapshot->getSQLSecurityOverriddenContext(local_context);
+    DatabaseAndTableWithAlias target_table_ref;
+    auto target_table = getViewTargetTable(select, getStorageID(), context, &target_table_ref);
+
+    /// The target of an insertable view must be a real storage, not another view (regular,
+    /// materialized, or otherwise). A view as the target would break the "omitted columns receive
+    /// the target table's defaults" contract, because the intermediate view carries no column
+    /// `DEFAULT`s: an omitted column would be materialized as a type default here and the final
+    /// storage's `DEFAULT` expression would never apply. For example, with
+    /// `CREATE TABLE t (a UInt8, b UInt8 DEFAULT 42)`, `CREATE VIEW v1 AS SELECT * FROM t`,
+    /// `CREATE VIEW v2 AS SELECT * FROM v1`, the statement `INSERT INTO v2 (a) VALUES (1)` would
+    /// store `b = 0` instead of `42`. The same divergence happens when the target is a materialized
+    /// view: with `CREATE MATERIALIZED VIEW mv TO t AS SELECT a, b FROM src` and
+    /// `CREATE VIEW v AS SELECT a, b FROM mv`, forwarding a full `INSERT INTO mv (a, b)` hides the
+    /// omitted `b` from `t`'s `DEFAULT`. Reject any view target via `isView` instead of silently
+    /// storing diverging values.
+    /// The target is resolved through `Alias` tables first: an `Alias` forwards both the metadata and
+    /// the write to its own target, so `CREATE TABLE a ENGINE = Alias('v1')` over a view `v1` would
+    /// otherwise pass a direct `isView` check while still routing the insert through `v1`.
+    const auto resolved_target_table = StorageAlias::resolveRecursively(target_table);
+    if (resolved_target_table->isView())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot INSERT into view {} because its target {} is itself a view; "
+            "inserting through a chain of views is not supported",
+            getStorageID().getFullTableName(), resolved_target_table->getStorageID().getFullTableName());
+
+    NameSet target_columns;
+    const auto target_table_metadata = target_table->getInMemoryMetadataPtr(context, false);
+    for (const auto & col : target_table_metadata->getColumns().getOrdinary())
+        target_columns.insert(col.name);
+
+    auto column_mapping = extractColumnMapping(select, getStorageID(), target_columns, target_table_ref);
+
+    /// A `SELECT *` view does not carry a per-column mapping, so the identifier check inside
+    /// `extractColumnMapping` never runs for it. The wildcard is expanded and frozen into the view's
+    /// column list when the view is created, and that expansion is not limited to insertable target
+    /// columns: under `asterisk_include_materialized_columns = 1` / `asterisk_include_alias_columns = 1`
+    /// a view defined as `CREATE VIEW v AS SELECT * FROM t` persists a header that also contains the
+    /// target's `MATERIALIZED` and `ALIAS` columns. Forwarding such a header would fail deep inside the
+    /// nested `INSERT` with an error naming a column and a table the user never wrote — for example
+    /// `INSERT INTO v (a)` reporting `No such column al in table t`. Validate the whole view surface
+    /// against the target's insertable columns here so the view is rejected up front instead.
+    for (const auto & col : metadata_snapshot->getSampleBlockNonMaterialized())
+    {
+        auto it = column_mapping.find(col.name);
+        const String target_name = (it != column_mapping.end()) ? it->second : col.name;
+        if (!target_columns.contains(target_name))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot INSERT into view {} because its column '{}' does not correspond to a column of "
+                "the underlying table {} that can be written to",
+                getStorageID().getFullTableName(), col.name,
+                target_table->getStorageID().getFullTableName());
+    }
+
+    /// A SELECT-list alias may collide with the name of a *different* underlying column, as in
+    /// `SELECT t.a AS b, t.b AS a FROM t WHERE a > 0`. If the WHERE references such a name, the
+    /// constraint is ambiguous: at read time the name resolves to the alias by default but to the
+    /// underlying column under `prefer_column_name_to_alias = 1`, and the old and new analyzers do
+    /// not even agree on whether the unqualified definition is valid (the old one throws
+    /// `CYCLIC_ALIASES`). There is no single read semantics the write-time constraint check could
+    /// mirror, so reject such views as not insertable instead of guessing. An explicit view
+    /// column list (`CREATE VIEW v (b, a) AS SELECT a, b FROM t WHERE a > 0`) is rewritten into
+    /// SELECT-list aliases when the view is created, so colliding renames are caught here
+    /// regardless of which renaming syntax the view was defined with.
+    if (const auto & where_expr = select.where(); where_expr)
+    {
+        NameSet where_identifiers;
+        NameSet bound_lambda_params;
+        collectIdentifierShortNames(where_expr, where_identifiers, bound_lambda_params);
+        for (const auto & expr : select.select()->children)
+        {
+            const auto * identifier = expr->as<ASTIdentifier>();
+            if (!identifier)
+                continue;
+
+            const String alias = identifier->tryGetAlias();
+            if (alias.empty())
+                continue;
+
+            /// Decide whether this is a genuine rename by comparing the alias with its *resolved*
+            /// target column, not with `shortName()`. A subcolumn rename such as `n.x AS x` has
+            /// `shortName() == "x" == alias` yet `extractColumnMapping` maps the alias `x` to the
+            /// underlying `n.x`, which is distinct from a real top-level column `x`. Using
+            /// `shortName()` here would treat `n.x AS x` as a non-rename and let an ambiguous view
+            /// (target also has a top-level `x`) slip past this fail-close guard.
+            auto mapping_it = column_mapping.find(alias);
+            const String mapped_target = (mapping_it != column_mapping.end()) ? mapping_it->second : alias;
+            if (alias == mapped_target)
+                continue;
+
+            if (target_columns.contains(alias) && where_identifiers.contains(alias))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot INSERT into view {} because its WHERE condition references '{}', which is "
+                    "both an alias of the underlying column '{}' and a column of the underlying table "
+                    "itself, so the constraint is ambiguous",
+                    getStorageID().getFullTableName(), alias, mapped_target);
+        }
+    }
+
+    /// The write path forwards the view-typed values straight into the target table and evaluates
+    /// the view's `WHERE` against them. If the view declares an output type that differs from the
+    /// mapped target column — e.g. `CREATE VIEW v (a String) AS SELECT a FROM t` over `t.a UInt8` —
+    /// the read path would `CAST` the value while this write path would not, so reads and writes
+    /// would disagree and an omitted column's default could be stored under the wrong type. Reject
+    /// such views rather than silently inserting mistyped data.
+    {
+        const auto target_metadata = target_table->getInMemoryMetadataPtr(context, false);
+        const auto & target_cols = target_metadata->getColumns();
+        for (const auto & col : metadata_snapshot->getSampleBlockNonMaterialized())
+        {
+            auto it = column_mapping.find(col.name);
+            const String target_name = (it != column_mapping.end()) ? it->second : col.name;
+            if (!target_cols.has(target_name))
+                continue;
+            const auto & target_type = target_cols.get(target_name).type;
+            if (!target_type->equals(*col.type))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot INSERT into view {} because its column '{}' of type {} differs from "
+                    "the target table column '{}' of type {}",
+                    getStorageID().getFullTableName(), col.name, col.type->getName(),
+                    target_name, target_type->getName());
+        }
+    }
+
+    /// Honor an explicit column list in `INSERT INTO view (col1, col2) ...`.
+    /// Without this, omitted view columns would receive the *view-schema* default
+    /// (filled in by `InsertDependenciesBuilder::createPreSink`) instead of the
+    /// target table's own default. The column list is expanded through the same
+    /// transformer path used by `InterpreterInsertQuery::getSampleBlock`, so
+    /// asterisks and `EXCEPT(...)` / `APPLY(...)` modifiers are handled correctly.
+    Names user_specified_columns;
+    if (const auto * insert_query = query ? query->as<ASTInsertQuery>() : nullptr; insert_query && insert_query->columns)
+    {
+        const auto & view_sample = metadata_snapshot->getSampleBlockNonMaterialized();
+        const auto columns_ast = processColumnTransformers(
+            context->getCurrentDatabase(),
+            getStorageID(),
+            metadata_snapshot->getColumns(),
+            insert_query->columns);
+        for (const auto & child : columns_ast->children)
+        {
+            const String name = child->getColumnName();
+            if (view_sample.has(name))
+                user_specified_columns.push_back(name);
+        }
+    }
+
+    /// The view's WHERE clause becomes a constraint for inserts. Qualified references such as
+    /// `t.a` are resolved against the target table the same way the SELECT list is, so that a
+    /// predicate written with table qualification is evaluated rather than rejected.
+    ASTPtr where_condition = select.where() ? select.where()->clone() : nullptr;
+    if (where_condition)
+    {
+        NameSet where_bound_lambda_params;
+        stripTargetTableQualifier(where_condition, target_table_ref, where_bound_lambda_params);
+    }
+
+    auto view_header = std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized());
+
+    return std::make_shared<SinkToStorageView>(
+        std::move(view_header),
+        std::move(target_table),
+        context,
+        std::move(column_mapping),
+        std::move(user_specified_columns),
+        std::move(where_condition),
+        getStorageID(),
+        async_insert);
+}
+
+StoragePtr StorageView::tryGetInsertTargetTable(ContextPtr context) const
+{
+    if (is_parameterized_view)
+        return nullptr;
+
+    const auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+
+    /// Mirror the structural part of `getSingleSelectQuery` / `getViewTargetTable` without
+    /// throwing: any shape `write` would reject maps to nullptr here, and the probes fail closed.
+    /// Note: `hasSelectQuery` cannot be used as a guard — `StorageView` fills only `inner_query`
+    /// of its `SelectQueryDescription`, not `select_query`.
+    const auto & inner_query = metadata_snapshot->getSelectQuery().inner_query;
+    const auto * select_union = inner_query ? inner_query->as<ASTSelectWithUnionQuery>() : nullptr;
+    if (!select_union || select_union->list_of_selects->children.size() != 1)
+        return nullptr;
+    const auto * select = select_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+    if (!select)
+        return nullptr;
+
+    const auto & tables = select->tables();
+    if (!tables || tables->children.size() != 1)
+        return nullptr;
+    const auto * element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
+    if (!element || !element->table_expression)
+        return nullptr;
+    const auto * table_expr = element->table_expression->as<ASTTableExpression>();
+    if (!table_expr || !table_expr->database_and_table_name)
+        return nullptr;
+    const auto * table_id = table_expr->database_and_table_name->as<ASTTableIdentifier>();
+    if (!table_id)
+        return nullptr;
+
+    /// The stored view query is database-qualified at CREATE time (`InterpreterCreateQuery` runs
+    /// `AddDefaultDatabaseVisitor` over every view select), so the view's own database is only a
+    /// fallback for metadata predating that qualification.
+    auto storage_id = table_id->getTableId();
+    if (storage_id.database_name.empty())
+        storage_id.database_name = getStorageID().database_name;
+    return DatabaseCatalog::instance().tryGetTable(storage_id, context);
+}
+
+bool StorageView::supportsParallelInsert() const
+{
+    auto target = tryGetInsertTargetTable(Context::getGlobalContextInstance());
+    return target && target->supportsParallelInsert();
 }
 
 void StorageView::drop()

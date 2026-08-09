@@ -49,6 +49,26 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override;
+
+    /// The table an `INSERT` into this view is forwarded to (the single table of the view's
+    /// `SELECT`), or nullptr when the view's query does not directly reference a single table or
+    /// the target cannot be resolved. This is a cheap structural lookup for the
+    /// `InsertDependenciesBuilder` forwarding-hazard probes, which fail closed on nullptr: it does
+    /// not repeat the full insertability validation of `write`, because a view rejected there
+    /// never forwards any data, so over-approximating the target is safe for the probes.
+    StoragePtr tryGetInsertTargetTable(ContextPtr context) const;
+
+    /// Each sink runs an independent nested `INSERT` into the target (like `StorageAlias`), so a
+    /// parallel fan-out is safe whenever it is safe for the target itself. The forwarding-hazard
+    /// probes in `InsertDependenciesBuilder` keep the hazardous combinations (deduplicating targets
+    /// under `use_strict_insert_block_limits`, hidden dependent-view graphs, ...) single-stream.
+    bool supportsParallelInsert() const override;
+
     void drop() override;
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 

@@ -35,8 +35,9 @@ run_and_report() {
     fi
 }
 
-# Inserting into the source pushes to mv_04329, whose target vw_04329 is a View and cannot be written to.
-# The error must name both the materialized view and its target table.
+# Inserting into the source pushes to mv_04329, whose target vw_04329 is a View and cannot be used
+# as a materialized view target (even an insertable view would forward the push back into
+# src_04329 and recurse forever). The error must name both the materialized view and its target table.
 # async_insert is pinned off because the async path appends its own "While executing WaitForAsyncInsert".
 run_and_report --async_insert=0 --query "INSERT INTO src_04329 VALUES (100);"
 
@@ -52,7 +53,8 @@ run_and_report --async_insert=0 --query "INSERT INTO mv_04329 VALUES (102);"
 # outside this change; the line below pins the current message so a later fix has to update it.
 run_and_report --async_insert=0 --implicit_transaction=1 --query "INSERT INTO mv_04329 VALUES (103);"
 
-# A direct INSERT into a View keeps the plain message, with no materialized view context appended.
+# A direct INSERT into the View is forwarded to src_04329, whose insert pushes to mv_04329 and hits
+# the same rejection of a View as a materialized view target, with the context appended.
 run_and_report --async_insert=0 --query "INSERT INTO vw_04329 VALUES (100);"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS src_04329; DROP VIEW IF EXISTS vw_04329; DROP TABLE IF EXISTS mv_04329;"

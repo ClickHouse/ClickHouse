@@ -1,0 +1,18 @@
+===== DEFINER without target privileges =====
+OK_insert_blocked
+===== DEFINER with target privileges =====
+2	via_definer	0.5
+OK_direct_blocked
+===== DEFINER + WHERE constraint =====
+OK_constraint
+3	ok_via_definer
+===== INVOKER requires invoker privileges =====
+OK_invoker_blocked
+===== SQL SECURITY NONE skips checks =====
+5	invoker_ok
+6	none_ok
+===== Revoking definer privileges blocks further inserts =====
+OK_revoked
+===== ALTER ... MODIFY SQL SECURITY =====
+OK_after_alter_invoker
+9	restored

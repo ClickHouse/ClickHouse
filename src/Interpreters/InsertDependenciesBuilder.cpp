@@ -17,6 +17,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
+#include <Storages/StorageView.h>
 
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
@@ -807,6 +808,13 @@ bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StorageP
         auto target = alias->tryGetTargetTable();
         return !target || storageDeduplicatesBlocksOnInsert(target, depth + 1);
     }
+    /// A writable regular view forwards the insert into the single table of its `SELECT`
+    /// (`SinkToStorageView` runs a nested `INSERT` per sink, like `AliasSink`).
+    if (const auto * view = dynamic_cast<const StorageView *>(storage.get()))
+    {
+        auto target = view->tryGetInsertTargetTable(Context::getGlobalContextInstance());
+        return !target || storageDeduplicatesBlocksOnInsert(target, depth + 1);
+    }
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
         return storageDeduplicatesBlocksOnInsert(proxy->getNested(), depth + 1);
 
@@ -852,6 +860,17 @@ bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const St
         return !target || storageRebuildsDeduplicationIdsOnInsert(target, depth + 1);
     }
 
+    /// A writable regular view behaves like `Alias` here: `SinkToStorageView` runs its nested
+    /// `INSERT` in this query's context and forwards the chunk's `DeduplicationInfo` intact (it
+    /// clones the chunk infos onto the renamed chunk it pushes), so a chunk stamped in the
+    /// single-stream head keeps its global numbering across the hop. Look through to the target,
+    /// failing closed when it cannot be resolved.
+    if (const auto * view = dynamic_cast<const StorageView *>(storage.get()))
+    {
+        auto target = view->tryGetInsertTargetTable(Context::getGlobalContextInstance());
+        return !target || storageRebuildsDeduplicationIdsOnInsert(target, depth + 1);
+    }
+
     /// `MaterializedView` and proxies pass the write through to the target table's sink within the
     /// same pipeline, preserving the deduplication info: look through them (failing closed when the
     /// target cannot be resolved).
@@ -876,6 +895,11 @@ bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const Storag
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
+        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+    }
+    if (const auto * view = dynamic_cast<const StorageView *>(storage.get()))
+    {
+        auto target = view->tryGetInsertTargetTable(Context::getGlobalContextInstance());
         return !target || forwardedInsertReachesDependentView(target, depth + 1);
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
@@ -910,6 +934,16 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
+        return !target || forwardedInsertReachesDependentView(target, depth + 1);
+    }
+
+    /// A writable regular view runs a full nested `INSERT` into the single table of its `SELECT`
+    /// per sink (`SinkToStorageView`), exactly like `AliasSink`: the target's dependent-view graph
+    /// is expanded only inside that nested `INSERT` at execution time, so anything the nested
+    /// write can reach counts as hidden.
+    if (const auto * view = dynamic_cast<const StorageView *>(storage.get()))
+    {
+        auto target = view->tryGetInsertTargetTable(Context::getGlobalContextInstance());
         return !target || forwardedInsertReachesDependentView(target, depth + 1);
     }
 
@@ -959,6 +993,14 @@ bool InsertDependenciesBuilder::storageForwardsInsertToSeparateContext(const Sto
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
+        return !target || storageForwardsInsertToSeparateContext(target, depth + 1);
+    }
+    /// A writable regular view also runs its nested `INSERT` in this query's context
+    /// (`SinkToStorageView::onStart` copies the context passed to `StorageView::write`), so this
+    /// query's deduplication settings reach its write.
+    if (const auto * view = dynamic_cast<const StorageView *>(storage.get()))
+    {
+        auto target = view->tryGetInsertTargetTable(Context::getGlobalContextInstance());
         return !target || storageForwardsInsertToSeparateContext(target, depth + 1);
     }
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
@@ -1021,6 +1063,18 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
     if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
     {
         auto target = alias->tryGetTargetTable();
+        if (!target)
+            return true;
+        return dependentViewForwardsInsertToSeparateContext(target, context, depth + 1)
+            || forwardedInsertHidesDependentViewForwardingToSeparateContext(target, context, depth + 1);
+    }
+
+    /// A writable regular view hides its target's dependent-view graph behind the nested `INSERT`
+    /// each `SinkToStorageView` runs, exactly like an `Alias` hop: check that hidden graph for a
+    /// separate-context forwarder, and follow further hops of the target chain.
+    if (const auto * view = dynamic_cast<const StorageView *>(storage.get()))
+    {
+        auto target = view->tryGetInsertTargetTable(context);
         if (!target)
             return true;
         return dependentViewForwardsInsertToSeparateContext(target, context, depth + 1)
@@ -1875,6 +1929,18 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
     }
     else
     {
+        /// A normal view cannot be the target of a materialized view. `StorageView` serves an
+        /// insert by forwarding it into its own underlying table through a nested INSERT pipeline,
+        /// and when that table is the source of this very cascade (`CREATE MATERIALIZED VIEW mv TO v
+        /// AS SELECT x FROM src` with `v` reading from `src`), the nested insert triggers the
+        /// cascade again and recurses forever. The nested pipeline is a separate query, so the
+        /// cycle is invisible to this builder. Reject fail-close before creating the sink. The
+        /// target is resolved through `Alias` tables first because they forward writes to their
+        /// own target.
+        if (!view_id.empty() && StorageAlias::resolveRecursively(inner_storage)->as<StorageView>())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Pushing data from a materialized view into a normal view is not supported");
+
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
