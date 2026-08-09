@@ -134,6 +134,9 @@ A name is also limited to 65536 bytes, which applies to the generated string-len
 String column as well. A column whose name is not one of these - including a name that is not valid
 UTF-8, which a quoted identifier of ClickHouse may be - cannot be written, and throws an exception.
 
+The names of the variables of a file are unique, so a result set with two columns of the same name,
+which a query such as `SELECT x, x FROM t` produces, cannot be written and throws an exception.
+
 The version of the format is chosen automatically: CDF-5 when a column needs one of the types that
 only CDF-5 has, or when a number that the header of a CDF-2 file writes as a 32-bit value - the
 length of a dimension or the size of a variable - does not fit into it, and CDF-2 otherwise.

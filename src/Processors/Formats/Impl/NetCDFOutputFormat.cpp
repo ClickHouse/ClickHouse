@@ -391,9 +391,17 @@ NetCDFOutputFormat::NetCDFOutputFormat(WriteBuffer & out_, SharedHeader header_)
     for (const auto & column : *header_)
         used_dimension_names.insert(column.name);
 
+    /// A block can carry duplicate column names (`SELECT x, x FROM t`), but a file with two
+    /// variables of the same name would not be read back: the reader rejects it as malformed.
+    std::unordered_set<String> variable_names;
+
     for (const auto & column : *header_)
     {
         checkName(column.name);
+
+        if (!variable_names.insert(column.name).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The NetCDF format cannot store more than one column named {}", column.name);
 
         DataTypePtr type = removeLowCardinality(column.type);
         bool is_nullable = type->isNullable();
