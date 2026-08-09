@@ -13,6 +13,7 @@ DROP ROW POLICY IF EXISTS 04833_mt_g ON mrp_mt;
 DROP ROW POLICY IF EXISTS 04833_mt_n ON mrp_mt;
 DROP ROW POLICY IF EXISTS 04833_mt_k ON mrp_mt;
 DROP ROW POLICY IF EXISTS 04833_plain ON mrp_mt;
+DROP ROW POLICY IF EXISTS 04833_ctl ON mrp_mt;
 DROP ROW POLICY IF EXISTS 04833_pk ON mrp_pk;
 DROP ROW POLICY IF EXISTS 04833_log ON mrp_log;
 DROP ROW POLICY IF EXISTS 04833_a ON mrp_a;
@@ -102,6 +103,14 @@ DROP ROW POLICY 04833_ord ON mrp_ord;
 SELECT 'no subquery in policy';
 CREATE ROW POLICY 04833_plain ON mrp_mt FOR SELECT USING value > 0 TO ALL;
 SELECT * FROM merge(currentDatabase(), '^mrp_mt$') FINAL ORDER BY id;
+-- Rows cannot witness this: an empty set-creating step is converted to a pass-through pipeline,
+-- so only the plan shows whether one was planted. Parallel replicas eligibility keys on its presence.
+SELECT count() FROM (EXPLAIN SELECT * FROM merge(currentDatabase(), '^mrp_mt$') FINAL)
+WHERE explain ILIKE '%CreatingSet%' OR explain ILIKE '%DelayedCreatingSets%';
+CREATE ROW POLICY 04833_ctl ON mrp_mt FOR SELECT USING value IN (SELECT 10) TO ALL;
+SELECT count() > 0 FROM (EXPLAIN SELECT * FROM merge(currentDatabase(), '^mrp_mt$') FINAL)
+WHERE explain ILIKE '%CreatingSet%';
+DROP ROW POLICY 04833_ctl ON mrp_mt;
 DROP ROW POLICY 04833_plain ON mrp_mt;
 
 DROP TABLE mrp_mt;
