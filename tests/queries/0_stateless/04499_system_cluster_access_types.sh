@@ -44,7 +44,12 @@ ${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER ON *.* TO $wrong_global_user"
 ${CLICKHOUSE_CLIENT} --query "GRANT SYSTEM PULLING REPLICATION LOG ON *.* TO $wrong_global_user"
 
 cluster="test_shard_localhost"
+# The no-table form is host-global: it walks every database on the host. Route it to unreachable nodes
+# so the entry never executes here; the access check under test runs on the initiator before enqueue.
+unavailable_cluster="test_cluster_multiple_nodes_all_unavailable"
 run() { ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none "$@"; }
+# The unavailable nodes never report back, so do not wait for them.
+run_global() { run --distributed_ddl_task_timeout 0 "$@"; }
 
 is_cloud=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
 
@@ -63,6 +68,18 @@ vparts_allowed() {
     fi
 }
 
+# Same, for the no-table form: nothing executes on the unavailable cluster, so the grant holder gets a
+# silent success in both builds instead of BAD_ARGUMENTS.
+vparts_global_allowed() {
+    local out
+    out=$(run_global --user "$1" --query "$2" 2>&1)
+    if [ -z "$out" ]; then
+        echo "ok"
+    else
+        echo "FAIL: expected the enqueue to succeed silently: $out"
+    fi
+}
+
 # The ON CLUSTER path must check the dedicated grant, not SYSTEM PULLING REPLICATION LOG.
 
 # Holder of SYSTEM CLEANUP is allowed (command runs on MergeTree).
@@ -78,19 +95,16 @@ run --user "$wrong_user" --query "SYSTEM STOP VIRTUAL PARTS UPDATE ON CLUSTER $c
 # REPLICATION LOG grant to the dedicated global SYSTEM CLEANUP / SYSTEM VIRTUAL PARTS UPDATE grant.
 # The no-table check is a single global grant on the initiator, so these need ON *.* grants.
 
-# Holder of global SYSTEM CLEANUP is allowed. START (not STOP) only wakes cleanup threads: idempotent
-# and holds no lock, so it stays parallel-safe despite touching all tables on the host.
-run --user "$cleanup_global_user" --query "SYSTEM START CLEANUP ON CLUSTER $cluster" >/dev/null || exit 1
+# Holder of global SYSTEM CLEANUP is allowed.
+run_global --user "$cleanup_global_user" --query "SYSTEM START CLEANUP ON CLUSTER $unavailable_cluster" >/dev/null || exit 1
 echo "ok"
-# START, not STOP: both spellings share one access branch, and START cannot leave updates
-# globally stopped for other tests if the private build does execute the command.
-vparts_allowed "$vparts_global_user" "SYSTEM START VIRTUAL PARTS UPDATE ON CLUSTER $cluster"
+vparts_global_allowed "$vparts_global_user" "SYSTEM START VIRTUAL PARTS UPDATE ON CLUSTER $unavailable_cluster"
 
 # Holder of only global SYSTEM PULLING REPLICATION LOG is now denied both no-table commands.
 # This is the discriminating case: the no-table branch is a single global check, so the old code
 # would have allowed this user via the global SYSTEM PULLING REPLICATION LOG grant; the fix denies it.
-run --user "$wrong_global_user" --query "SYSTEM STOP CLEANUP ON CLUSTER $cluster -- { serverError ACCESS_DENIED }"
-run --user "$wrong_global_user" --query "SYSTEM STOP VIRTUAL PARTS UPDATE ON CLUSTER $cluster -- { serverError ACCESS_DENIED }"
+run_global --user "$wrong_global_user" --query "SYSTEM STOP CLEANUP ON CLUSTER $unavailable_cluster -- { serverError ACCESS_DENIED }"
+run_global --user "$wrong_global_user" --query "SYSTEM STOP VIRTUAL PARTS UPDATE ON CLUSTER $unavailable_cluster -- { serverError ACCESS_DENIED }"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $cleanup_user, $vparts_user, $cleanup_global_user, $vparts_global_user, $wrong_user, $wrong_global_user"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
