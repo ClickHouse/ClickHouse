@@ -224,6 +224,97 @@ def check_functional_test_cases(files):
     return " ".join(errors)
 
 
+# A query that pulls a server-side filesystem path out of a system table into the shell.
+FETCHES_SERVER_PATH_RE = re.compile(
+    r"(?i)\b(path|data_paths|metadata_path)\b[^\"'`|;]{0,300}?"
+    r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks)\b"
+)
+# The server data root fetched as SELECT value FROM system.server_settings WHERE name = 'path'.
+FETCHES_SERVER_ROOT_RE = re.compile(
+    r"(?i)\bfrom\s+system\.server_settings\b[^\"'`|;]{0,100}?\bname\s*=\s*'path'"
+)
+# Shell commands that create, modify, or delete files, at the start of a line or after a
+# pipe / && / ; separator.
+FILE_MUTATION_CMD_RE = re.compile(
+    r"(?:^|\||&&|;)\s*(?:sudo\s+)?(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred)\s"
+)
+SED_IN_PLACE_RE = re.compile(r"\bsed\s+(?:-\w+\s+)*-i\b")
+# Redirection into a path built from a shell variable, except well-known test scratch areas.
+REDIRECT_TO_VAR_RE = re.compile(
+    r">>?\s*\"?\$\{?(?!CLICKHOUSE_TMP|CUR_DIR|CURDIR|USER_FILES_PATH"
+    r"|CLICKHOUSE_USER_FILES|CLICKHOUSE_SCHEMA_FILES|CLICKHOUSE_LOG|\()"
+)
+CLICKHOUSE_DISKS_WRITE_RE = re.compile(
+    r"clickhouse-disks\b.*\b(?:write|remove|copy|move|mkdir|link|truncate)\b"
+)
+
+# Do not add new entries: tests that modify the server's data on disk must be integration
+# tests instead. The only acceptable additions are false positives - tests that only touch
+# their own scratch files - and they must say so in a comment.
+SERVER_DATA_MANIPULATION_EXCLUSIONS = {
+    # Being converted to an integration test (test_packed_io) in
+    # https://github.com/ClickHouse/ClickHouse/pull/114057; remove after it merges.
+    "04630_merge_over_stale_packed_tmp_dir.sh",
+    # False positive: writes only an mktemp scratch file under CLICKHOUSE_TMP.
+    "04326_disks_app_read_checksums.sh",
+}
+
+
+def check_no_server_data_manipulation(files):
+    """
+    Stateless tests must not modify the server's on-disk data: part directories, detached
+    parts, table metadata, or anything else under the server path. The stateless suite runs
+    against arbitrary server configurations - object storage, shared MergeTree, encrypted
+    disks - where the local part layout either does not exist or does not mean what the
+    test assumes, and modifying it corrupts shared state (on a remote disk, a plain `cp` of
+    a part directory duplicates metadata files without incrementing blob reference counts,
+    and the later removal deletes blobs still referenced by the live part - see
+    https://github.com/ClickHouse/ClickHouse/pull/113978). Such scenarios belong in
+    integration tests, where the environment is fully controlled.
+
+    Heuristic: the test fetches a server-side filesystem path from a system table and also
+    runs file-modifying shell commands.
+    """
+
+    errors = []
+    for test_case in files:
+        if "0_stateless" not in test_case or not test_case.endswith(".sh"):
+            continue
+        if os.path.basename(test_case) in SERVER_DATA_MANIPULATION_EXCLUSIONS:
+            continue
+        try:
+            with open(test_case, "r", encoding="utf-8", errors="replace") as f:
+                file_content = f.read()
+        except Exception as e:
+            errors.append(f"Error checking {test_case}: {e}")
+            continue
+
+        joined_content = " ".join(file_content.splitlines())
+        if not FETCHES_SERVER_PATH_RE.search(
+            joined_content
+        ) and not FETCHES_SERVER_ROOT_RE.search(joined_content):
+            continue
+
+        for line_number, line in enumerate(file_content.splitlines(), 1):
+            code = line.split("#")[0]
+            if (
+                FILE_MUTATION_CMD_RE.search(code)
+                or SED_IN_PLACE_RE.search(code)
+                or REDIRECT_TO_VAR_RE.search(code)
+                or CLICKHOUSE_DISKS_WRITE_RE.search(code)
+            ):
+                errors.append(
+                    f"{test_case}:{line_number} fetches a server-side filesystem path from a system table "
+                    f"and runs file-modifying commands: `{code.strip()}`. Modifying the server's data "
+                    f"on disk is not allowed in stateless tests (they run against arbitrary server "
+                    f"configurations: object storage, shared MergeTree, encrypted disks). "
+                    f"Write an integration test instead."
+                )
+                break
+
+    return "\n".join(errors)
+
+
 def check_gaps_in_tests_numbers(file_paths, gap_threshold=100):
     test_numbers = set()
 
@@ -817,6 +908,15 @@ if __name__ == "__main__":
             run_check_concurrent(
                 check_name=testname,
                 check_function=check_functional_test_cases,
+                files=functional_test_files,
+            )
+        )
+    testname = "server_data_manipulation_in_stateless_tests"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_no_server_data_manipulation,
                 files=functional_test_files,
             )
         )
