@@ -594,10 +594,9 @@ TEST_F(ResolvePoolTest, BannedForConsiquenceFail)
     ASSERT_TRUE(addresses.contains(*failed_addr));
 
 
-    // `setFail` stamps the ban's anchor before it refreshes DNS, so the anchor lies in
-    // [before, after]. A deadline that gates a "still banned" assertion must therefore use
-    // `before` (a lower bound on expiry) and one that waits for expiry must use `after` (an
-    // upper bound); a single anchor taken after `setFail` can outlive the ban it waits on.
+    // `setFail` stamps the ban's anchor before refreshing DNS, so the anchor lies in
+    // [before, after]. Deadlines gating "still banned" must use `before`, waits for expiry
+    // `after`; one anchor taken after `setFail` can outlive the ban it waits on.
     auto before = now();
     failed_addr.setFail();
     auto after = now();
@@ -642,9 +641,8 @@ TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
     ASSERT_TRUE(addresses.contains(*failed_addr));
 
     // Anchors bracket the ban's own timestamp; see BannedForConsiquenceFail. `setFail` restamps
-    // that timestamp on every call, so the window under test belongs to the last one and the
-    // anchors go around it: bracketing all three would be sound but needlessly loose by two
-    // whole DNS refreshes.
+    // it on every call, so the window belongs to the last one: bracketing all three would be
+    // sound but needlessly loose by two whole DNS refreshes.
     failed_addr.setFail();
     failed_addr.setFail();
     auto before = now();
