@@ -2,6 +2,9 @@
 
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTWatchQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
@@ -166,6 +169,57 @@ bool queryKindHasSideEffectsUnderReadonly(IAST::QueryKind kind)
     }
 }
 
+/// Whether the query can mutate an *existing* session temporary table when run under `readonly = 2` (the mode
+/// the HTTP execution path sets for safe methods such as `GET`). Access to temporary tables is not controlled
+/// like access to normal tables: `ContextAccess` grants everything on the session's temporary database
+/// unconditionally (see `ContextAccess::checkAccessImplHelper`), so `readonly` blocks none of these operations -
+/// `00543_access_to_temporary_table_in_readonly_mode` pins `INSERT` into and `DROP TEMPORARY TABLE` of a
+/// temporary table under `readonly = 2`. A temporary table is a session object that does not exist when the
+/// handler is created, so whether an unqualified table name will resolve to one cannot be known here - the check
+/// is over query *shapes* and fails close:
+/// - an `INSERT` whose target table is not qualified with a database may resolve to a session temporary table
+///   (temporary tables shadow tables of the current database);
+/// - `DROP TEMPORARY TABLE` targets one explicitly;
+/// - `DROP TABLE` / `TRUNCATE TABLE` of a table not qualified with a database resolves external-first
+///   (see `InterpreterDropQuery::executeToTableImpl`), so it too may hit a session temporary table.
+/// A database-qualified target can never be a temporary table, so such queries are not fenced - under
+/// `readonly = 2` they are rejected at invocation time by the normal access checks. `DETACH` of temporary
+/// tables is rejected outright by `InterpreterDropQuery`, so `DETACH` is not fenced either.
+bool queryMayMutateTemporaryTable(const IAST & query)
+{
+    if (const auto * insert = query.as<ASTInsertQuery>(); insert && insert->getQueryKind() == IAST::QueryKind::Insert)
+        return !insert->table_function && insert->table && insert->getDatabase().empty();
+
+    if (const auto * drop = query.as<ASTDropQuery>())
+    {
+        if (drop->kind != ASTDropQuery::Kind::Drop && drop->kind != ASTDropQuery::Kind::Truncate)
+            return false;
+
+        if (drop->isTemporary())
+            return true;
+
+        /// `TRUNCATE ALL TABLES FROM db` always names a database.
+        if (drop->has_all)
+            return false;
+
+        /// `DROP TABLE t1, t2, ...` - fenced if any of the targets is unqualified.
+        if (drop->database_and_tables)
+        {
+            for (const auto & child : drop->database_and_tables->as<ASTExpressionList &>().children)
+            {
+                const auto * identifier = child->as<ASTTableIdentifier>();
+                if (identifier && identifier->getTableId().database_name.empty())
+                    return true;
+            }
+            return false;
+        }
+
+        return drop->table && drop->getDatabase().empty();
+    }
+
+    return false;
+}
+
 /// Whether the concrete query still produces side effects under `readonly = 2`. This refines
 /// `queryKindHasSideEffectsUnderReadonly` for the `Create` kind: `CREATE TEMPORARY TABLE` /
 /// `CREATE TEMPORARY VIEW` need only the `CREATE_TEMPORARY_TABLE` access flag, which `ContextAccess` still
@@ -173,9 +227,13 @@ bool queryKindHasSideEffectsUnderReadonly(IAST::QueryKind kind)
 /// in the session - with `session_id` it persists across requests, so a `GET` (or the implicitly served `HEAD`)
 /// would invisibly mutate session state. `WATCH` also reports `QueryKind::Create` but is a read-only streaming
 /// query without such effects; it is not an `ASTCreateQuery`, so it does not enter the branch.
+/// It also covers queries that can mutate an *existing* session temporary table, which `readonly = 2`
+/// does not block either - see `queryMayMutateTemporaryTable`.
 bool queryHasSideEffectsUnderReadonly(const IAST & query)
 {
     if (const auto * create = query.as<ASTCreateQuery>(); create && create->isTemporary())
+        return true;
+    if (queryMayMutateTemporaryTable(query))
         return true;
     return queryKindHasSideEffectsUnderReadonly(query.getQueryKind());
 }
@@ -185,6 +243,15 @@ std::string_view describeSideEffectsUnderReadonly(const IAST & query)
 {
     if (const auto * create = query.as<ASTCreateQuery>(); create && create->isTemporary())
         return "a CREATE TEMPORARY query, which creates an object living in the session";
+
+    if (queryMayMutateTemporaryTable(query))
+    {
+        if (query.as<ASTInsertQuery>())
+            return "an INSERT into a table not qualified with a database, which may be a temporary table living in the session "
+                   "(qualify the table with a database if a temporary table is not intended)";
+        return "a DROP or TRUNCATE that may target a temporary table living in the session "
+               "(qualify the table with a database if a temporary table is not intended)";
+    }
 
     switch (query.getQueryKind())
     {
@@ -279,7 +346,8 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
 
     /// The `readonly` enforcement above cannot fence off queries whose side effects survive `readonly = 2` - the
     /// mode that safe methods set: `BACKUP` / `RESTORE` write durable data, and `SET` / `SET ROLE` / `USE` /
-    /// transaction control / `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW` mutate session state that
+    /// transaction control / `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW` / an `INSERT`, `DROP` or
+    /// `TRUNCATE` that may target an existing temporary table mutate session state that
     /// persists across requests when `session_id` is in use. A safe method must never trigger them - `GET` is
     /// expected to be side-effect-free, and a declared `GET` is also served for `HEAD` (see `HTTPHandlerFactory`),
     /// where the suppressed response body would hide the effect entirely. So require *every* allowed method of
