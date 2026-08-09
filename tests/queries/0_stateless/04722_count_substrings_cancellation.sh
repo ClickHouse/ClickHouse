@@ -29,9 +29,22 @@ LOG_PINS="--enable_parallel_replicas 0"
 # A duration alone cannot tell a stopped call from a query that never ran, so the verdict asserts the
 # termination cause too. Only `ExecutionSpeedLimits::checkTimeLimit` formats "elapsed N ms"; a kill landing
 # before the pipeline starts omits it, and such a run is reported as inconclusive rather than as a pass.
+#
+# On a loaded runner the deadline can expire while the query is still being parsed and analyzed, which
+# yields exactly that inconclusive verdict without any server defect. Such a case is retried: a missing
+# checkpoint makes the call OVERSHOOT, never turn inconclusive, so retrying does not mask the regression.
 run() {
-    local label="$1" query="$2" mode="${3:-throw}"
-    local query_id="04722_${label}_${CLICKHOUSE_DATABASE}" output elapsed_ms code rows breaks
+    local label="$1" query="$2" mode="${3:-throw}" verdict attempt
+    for attempt in 1 2 3 4 5; do
+        verdict=$(run_once "$label" "$query" "$mode" "$attempt")
+        [ "$verdict" = "$label: cancelled before the pipeline started" ] || break
+    done
+    echo "$verdict"
+}
+
+run_once() {
+    local label="$1" query="$2" mode="$3" attempt="$4"
+    local query_id="04722_${label}_${attempt}_${CLICKHOUSE_DATABASE}" output elapsed_ms code rows breaks
     # `log_profile_events` is pinned: the `break` verdict reads a counter out of the `query_log` row.
     output=$(timeout 600 ${CLICKHOUSE_CLIENT} --query_id "$query_id" --max_execution_time 1 \
         --log_profile_events 1 --timeout_overflow_mode "$mode" --query "$query" 2>&1)
