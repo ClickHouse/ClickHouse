@@ -373,12 +373,8 @@ class ClickHouseProc:
 
     @staticmethod
     def stop_log_exports():
-        # Flush any buffered system-log records so the final queries are
-        # exported before the replication views are detached.
-        Shell.check(
-            'clickhouse-client --query "SYSTEM FLUSH LOGS"',
-            verbose=True,
-        )
+        # The final SYSTEM FLUSH LOGS happens inside stop_logs_replication so
+        # it inherits the script's NO_AST_FUZZER guard.
         return Shell.check(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
             verbose=True,

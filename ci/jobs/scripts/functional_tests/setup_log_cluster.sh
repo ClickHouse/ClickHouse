@@ -184,13 +184,21 @@ function setup_logs_replication()
 
 function stop_logs_replication()
 {
+    # Flush any buffered system-log records so the final queries reach the
+    # `_watcher` materialized views before the replication tables are dropped.
+    # Kept here (rather than in the caller) so it obeys the same
+    # "the harness's own queries are not fuzzed" contract as the rest of this
+    # script via `NO_AST_FUZZER`.
+    echo "Flush system logs"
+    clickhouse-client ${NO_AST_FUZZER:-} --query "SYSTEM FLUSH LOGS" || echo "WARNING: failed to flush system logs, some rows may be lost"
+
     # The `_sender` tables are `Distributed` engine with `flush_on_detach=0`
     # (set so a slow/unreachable remote cluster can't hang server shutdown),
     # and inserts into them via the `_watcher` materialized views are batched
     # and sent to the remote cluster in the background. Without an explicit
     # `SYSTEM FLUSH DISTRIBUTED` here, whatever is still queued locally - e.g.
-    # the just-flushed rows from the caller's preceding `SYSTEM FLUSH LOGS` -
-    # is silently discarded when the table below is dropped. Bound it with the
+    # the just-flushed rows from the preceding `SYSTEM FLUSH LOGS` - is
+    # silently discarded when the table below is dropped. Bound it with the
     # same `timeout` pattern as the drop step so an unreachable cluster cannot
     # block teardown indefinitely.
     echo "Flush pending log records to the remote cluster"
