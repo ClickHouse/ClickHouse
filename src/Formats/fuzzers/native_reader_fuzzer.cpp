@@ -55,7 +55,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         if (size < 1)
             return 0;
 
-        /// `NativeReader` has two independent switches, so use one selector bit for each.
+        /// `NativeReader` has several independent switches, so use one selector bit for each.
         ///
         /// Bit 0 toggles the type encoding (a format setting):
         ///   0 = text type names (classic protocol)
@@ -73,8 +73,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
             ? DBMS_MIN_REVISION_WITH_CLIENT_INFO
             : DBMS_TCP_PROTOCOL_VERSION;
 
+        /// Bit 2 toggles the binary type complexity limit:
+        ///   0 = the production input-format limit (`FormatFactory` populates it from
+        ///       `input_format_binary_max_type_complexity`, default 1000), so the
+        ///       complexity-limit rejection branch in `decodeDataType` is exercised
+        ///   1 = unlimited (0), the trusted path used for internal/stored-data decodes
+        bool use_unlimited_type_complexity = (data[0] & 4) != 0;
+
         FormatSettings format_settings;
         format_settings.native.decode_types_in_binary_format = use_binary_type_encoding;
+        format_settings.binary.max_binary_type_complexity = use_unlimited_type_complexity ? 0 : 1000;
 
         DB::ReadBufferFromMemory in(data + 1, size - 1);
         NativeReader reader(in, server_revision, std::make_optional(format_settings));

@@ -41,7 +41,8 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
 
 /// Auxiliary header at the start of the fuzz input:
 ///   [0]    max_types_selector: chooses max_dynamic_types (1, 4, 16, 255)
-///   [1]    flags: bit 0 = native_format, bit 1 = use_specialized_prefixes
+///   [1]    flags: bit 0 = native_format, bit 1 = use_specialized_prefixes,
+///          bit 2 = read_statistics
 ///   [2..9] rows: uint64_t LE, capped at 65536
 ///
 /// SerializationDynamic binary layout (simplified):
@@ -87,6 +88,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         const size_t rows = static_cast<size_t>(aux->rows % 65536);
         const bool use_native_format = (aux->flags & 1) != 0;
         const bool use_specialized_prefixes = (aux->flags & 2) != 0;
+        /// Both MergeTree part readers enable statistics reading on the production
+        /// read path, and the V2/V3 statistics block in the prefix is only parsed
+        /// when it is set, so fuzz both states.
+        const bool read_statistics = (aux->flags & 4) != 0;
         const size_t max_dynamic_types = selectMaxTypes(aux->max_types_selector);
 
         auto dynamic_type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
@@ -107,6 +112,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         settings.native_format = use_native_format;
         settings.format_settings = &format_settings;
         settings.use_specialized_prefixes_and_suffixes_substreams = use_specialized_prefixes;
+        settings.object_and_dynamic_read_statistics = read_statistics;
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);

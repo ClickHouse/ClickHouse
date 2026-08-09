@@ -10,7 +10,6 @@
 /// the type-parsing and column-deserialization code paths.
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <cstring>
 #include <string_view>
@@ -19,6 +18,14 @@
 
 /// Provided by libFuzzer — invokes the built-in mutation engine.
 extern "C" size_t LLVMFuzzerMutate(uint8_t * Data, size_t Size, size_t MaxSize);
+
+/// The mode byte encodes independent selector bits consumed by native_reader_fuzzer:
+/// bit 0 = type encoding (text / binary), bit 1 = protocol revision (recent / legacy),
+/// bit 2 = binary type complexity limit (production / unlimited). Keep in sync with
+/// native_reader_fuzzer.cpp. The mutator must be able to synthesize every combination
+/// from an empty corpus, so it seeds and flips all of these bits, not just bit 0.
+static constexpr unsigned kModeBitCount = 3;
+static constexpr uint8_t kModeMask = (1u << kModeBitCount) - 1;
 
 /// A small dictionary of valid ClickHouse type names that appear verbatim in
 /// the Native wire format as VarUInt-length-prefixed UTF-8 strings.
@@ -103,19 +110,22 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t * Data, size_t Size, size_t Ma
     pcg64_fast rng(Seed);
 
     /// Preserve the mode byte across all mutation strategies.
-    uint8_t mode_byte = (Size >= 1) ? Data[0] : static_cast<uint8_t>(rng() & 1u);
+    uint8_t mode_byte = (Size >= 1) ? Data[0] : static_cast<uint8_t>(rng() & kModeMask);
 
     const uint32_t strategy = rng() % 100;
 
     if (strategy < 15)
     {
-        /// Strategy 1: flip the mode byte only, keep payload intact.
+        /// Strategy 1: mutate the mode byte only, keep payload intact.
+        /// Flip a random selector bit so every mode combination is reachable
+        /// from an empty corpus.
+        const uint8_t flip = static_cast<uint8_t>(1u << (rng() % kModeBitCount));
         if (Size < 1)
         {
-            Data[0] = mode_byte ^ 1u;
+            Data[0] = mode_byte ^ flip;
             return 1;
         }
-        Data[0] ^= 1u;
+        Data[0] ^= flip;
         return Size;
     }
     else if (strategy < 45)
