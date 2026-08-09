@@ -19,11 +19,17 @@ SET parallel_replicas_prefer_local_join=1;
 -- Keep the parallelized side oriented as written (the randomizer may flip this).
 SET query_plan_join_swap_table='false';
 
--- Join-order randomization and runtime join filters restructure the plan around the JOIN, so
--- `findReadingStep` no longer instruments the parallelized reading step and `input_bytes` stays 0
--- under the settings randomizer -- pin both off.
+-- Under `query_plan_optimize_join_order_randomize` (a test-only fuzzing setting) the join-order
+-- optimizer draws fresh random table statistics on every plan build. The single-replica plan and
+-- the parallel-replicas candidate plan are built independently, so they can draw different random
+-- statistics and pick different join orders; the plan-hash match in
+-- `considerEnablingParallelReplicas` then fails ("Cannot find step with matching hash in
+-- single-node plan"), no reading step gets instrumented, and `input_bytes` stays 0. Pin it off.
 SET query_plan_optimize_join_order_randomize=0;
-SET enable_join_runtime_filters=0;
+-- Keep the runtime join filters pinned ON (their default): the added `BuildRuntimeFilterStep` /
+-- filter steps around the JOIN are a supported plan shape for the input-bytes instrumentation, and
+-- this test doubles as the regression coverage for it -- it must not be randomized off.
+SET enable_join_runtime_filters=1;
 
 -- Reading aggregation states / external sort spills from disk would inflate `ReadCompressedBytes`.
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
