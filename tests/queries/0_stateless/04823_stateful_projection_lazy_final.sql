@@ -5,6 +5,9 @@
 -- `runningAccumulate`, `logTrace`) would observe a different stream than in the unoptimized query.
 -- `optimizeLazyFinal` must keep the regular FINAL read when the projection is stateful.
 
+-- The lazy FINAL optimization is a query-plan rewrite exercised through the analyzer plan shape;
+-- pin the analyzer so the control keeps optimizing in the old-analyzer CI configuration.
+SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_final = 1;
 SET allow_deprecated_error_prone_window_functions = 1;
 SET max_threads = 1;

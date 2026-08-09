@@ -10,6 +10,11 @@
 -- that discards the rows outside its share of the key space
 -- (companion to `04620_parallel_replicas_custom_key_trivial_limit`).
 
+-- The per-query `enable_analyzer = 1` below sits inside `FROM (EXPLAIN ...)` subqueries; pin the
+-- analyzer at the session level too, or the old-analyzer CI configuration rejects the queries with
+-- "Setting 'enable_analyzer' is changed in the subquery" (`INCORRECT_QUERY`).
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_04824;
 CREATE TABLE t_04824 (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8;
 INSERT INTO t_04824 SELECT number FROM numbers(1000);

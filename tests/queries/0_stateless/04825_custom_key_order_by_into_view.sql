@@ -7,6 +7,11 @@
 -- that replica's range. This models the replica-side planning directly, like
 -- `04620_parallel_replicas_custom_key_trivial_limit`.
 
+-- The per-query `enable_analyzer = 1` below sits inside `FROM (EXPLAIN ...)` subqueries; pin the
+-- analyzer at the session level too, or the old-analyzer CI configuration rejects the queries with
+-- "Setting 'enable_analyzer' is changed in the subquery" (`INCORRECT_QUERY`).
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_04825;
 DROP VIEW IF EXISTS v_04825;
 
@@ -31,9 +36,11 @@ FROM (EXPLAIN SELECT k FROM v_04825 ORDER BY k ASC LIMIT 1 SETTINGS
     enable_analyzer = 1);
 
 -- Control: without the custom-key filter the pushdown still fires (a second `Sorting` step inside
--- the view subquery), so the check above stays meaningful.
+-- the view subquery), so the check above stays meaningful. Pin `enable_parallel_replicas = 0`:
+-- the parallel-replicas CI configuration enables it at the session level, and a parallel-replicas
+-- plan legitimately suppresses the pushdown.
 SELECT if(countIf(explain LIKE '%Sorting%') = 2, 'pushed', 'not pushed')
-FROM (EXPLAIN SELECT k FROM v_04825 ORDER BY k ASC LIMIT 1 SETTINGS max_threads = 1, enable_analyzer = 1);
+FROM (EXPLAIN SELECT k FROM v_04825 ORDER BY k ASC LIMIT 1 SETTINGS max_threads = 1, enable_parallel_replicas = 0, enable_analyzer = 1);
 
 -- The second replica owns the upper half of the key range: its top row is `500`, which is not the
 -- globally top row, so a `LIMIT` pushed into the view would starve it.
