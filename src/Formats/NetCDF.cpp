@@ -509,6 +509,43 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
                 next.begin - header.records_begin, previous.slab_size);
     }
 
+    /// The data of the fixed-size variables lives between the header and the records, and the
+    /// payloads have to be disjoint for the same reason the slabs of the record variables do.
+    /// A payload reaching past `records_begin` would additionally be counted as extra records
+    /// when the number of records is derived from the file size in the streaming case.
+    std::vector<const NetCDFVariable *> fixed_variables;
+    for (const auto & variable : header.variables)
+        if (!variable.is_record)
+            fixed_variables.push_back(&variable);
+
+    std::sort(fixed_variables.begin(), fixed_variables.end(),
+        [](const NetCDFVariable * lhs, const NetCDFVariable * rhs) { return lhs->begin < rhs->begin; });
+
+    UInt64 previous_end = 0;
+    for (size_t i = 0; i < fixed_variables.size(); ++i)
+    {
+        const NetCDFVariable & variable = *fixed_variables[i];
+
+        UInt64 end = 0;
+        if (common::addOverflow(variable.begin, variable.slab_size, end))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The end of the variable {} of the NetCDF file does not fit in 64 bits", variable.name);
+
+        if (num_record_variables != 0 && end > header.records_begin)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The variable {} of the NetCDF file ends at the offset {}, inside the records that begin at the offset {}",
+                variable.name, end, header.records_begin);
+
+        if (i != 0 && previous_end > variable.begin)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The variables {} and {} of the NetCDF file overlap: their data begins at the offsets {} and {} "
+                "of the file, and the first one is {} bytes",
+                fixed_variables[i - 1]->name, variable.name, fixed_variables[i - 1]->begin,
+                variable.begin, fixed_variables[i - 1]->slab_size);
+
+        previous_end = end;
+    }
+
     return header;
 }
 
