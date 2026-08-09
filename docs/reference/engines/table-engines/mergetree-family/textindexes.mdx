@@ -1174,10 +1174,9 @@ Subcolumn access with explicit `CAST`:
 
 ```sql
 SELECT * FROM events WHERE hasAllTokens(data.message::String, 'connection timeout');
+SELECT * FROM events WHERE data.status_code::UInt64 = 404;
+SELECT * FROM events WHERE has(data.tags::Array(String), 'bug')
 ```
-
-For statically typed subcolumns, the index can optimize casts to `String` because they use the same text representation stored by `JSONAllValues`.
-Other non-identity casts are evaluated without this index because a value-changing cast can map multiple stored values to the same result.
 
 `IN` operator:
 

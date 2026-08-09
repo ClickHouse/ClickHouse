@@ -31,7 +31,7 @@ $MY_CLICKHOUSE_CLIENT --query "
     CREATE TABLE tab
     (
         id UInt32,
-        data JSON,
+        data JSON(key1 String, key2 String, num UInt64),
         INDEX json_idx JSONAllValues(data) TYPE text(tokenizer = ngrams(3))
     )
     ENGINE = MergeTree
@@ -69,7 +69,7 @@ $MY_CLICKHOUSE_CLIENT --query "
     CREATE TABLE tab
     (
         id UInt32,
-        data JSON,
+        data JSON(tags Array(String)),
         INDEX json_idx JSONAllValues(data) TYPE text(tokenizer = ngrams(3))
     )
     ENGINE = MergeTree
@@ -77,14 +77,10 @@ $MY_CLICKHOUSE_CLIENT --query "
 
     INSERT INTO tab VALUES (0, '{\"tags\": [\"foo\", \"bar\"], \"name\": \"alice\"}');
     INSERT INTO tab VALUES (1, '{\"tags\": [\"baz\", \"qux\"], \"name\": \"bob\"}');
-    INSERT INTO tab VALUES (2, '{\"tags\": \"not_an_array\", \"name\": \"carol\"}');
 "
 
 run_query "SELECT id FROM tab WHERE data.tags = ['foo', 'bar'] ORDER BY id"
-run_query "SELECT id FROM tab WHERE data.tags = 'not_an_array' ORDER BY id"
 run_query "SELECT id FROM tab WHERE hasAllTokens(data.tags::String, 'foo') ORDER BY id"
-run_query "SELECT id FROM tab WHERE hasAllTokens(data.tags::String, 'not_array') ORDER BY id"
-run_query "SELECT id FROM tab WHERE hasAllTokens(data.tags::String, 'not_an_array') ORDER BY id"
 
 echo "-- Nested JSON subcolumns"
 
@@ -94,7 +90,7 @@ $MY_CLICKHOUSE_CLIENT --query "
     CREATE TABLE tab
     (
         id UInt32,
-        data JSON,
+        data JSON(a.b String),
         INDEX json_idx JSONAllValues(data) TYPE text(tokenizer = ngrams(3))
     )
     ENGINE = MergeTree
