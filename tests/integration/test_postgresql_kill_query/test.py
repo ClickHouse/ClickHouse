@@ -226,6 +226,9 @@ class StatementStallingProxy:
 
     def _pump(self, source, destination, is_client_to_server):
         stalled_once = False
+        # TCP is a stream, so the marker can straddle two reads. Keep the last few bytes of the
+        # previous one to search across the boundary.
+        carry = b""
         while not self._stop:
             try:
                 data = source.recv(4096)
@@ -236,7 +239,13 @@ class StatementStallingProxy:
             if not data:
                 break
 
-            if is_client_to_server and not stalled_once and self._marker in data:
+            seen_marker = False
+            if is_client_to_server and not stalled_once:
+                seen_marker = self._marker in carry + data
+                keep = len(self._marker) - 1
+                carry = (carry + data)[-keep:] if keep else b""
+
+            if seen_marker:
                 stalled_once = True
                 if self._should_stall():
                     self._stalled.set()
@@ -308,10 +317,10 @@ class StatementStallingProxy:
 def test_kill_query_while_transaction_is_starting(started_cluster, setup_infinite_query):
     """A cancel arriving while the transaction is still being constructed must not be lost.
 
-    In that window `onStart` has not published `tx`, so `onCancel` cannot cancel anything --
-    it only consumes the one-shot `is_completed` flag. Without a recheck after publication,
-    `onStart` then proceeds into the blocking COPY and the cancellation is dropped, so the
-    query keeps running until PostgreSQL finishes it on its own.
+    In that window `onStart` has not published `tx`, so `onCancel` cannot reach the connection
+    and only raises `stop_requested`. `onStart` has to honour that flag once the transaction is
+    published, instead of proceeding into the blocking COPY, or the cancellation is dropped and
+    the query keeps running until PostgreSQL finishes it on its own.
     """
     _, _ = setup_infinite_query
     proxy = StatementStallingProxy(marker=StatementStallingProxy.BEGIN)
@@ -388,9 +397,9 @@ ENGINE = PostgreSQL(
         )
     finally:
         # A failed assertion must not leave the read, the proxy or the table behind for the
-        # tests that run after this one. Tear the proxy down before joining: the first cancel
-        # already consumed `is_completed`, so a second KILL QUERY can be a no-op, and dropping
-        # the connection is then what ends a read that reached the endless COPY.
+        # tests that run after this one. Tear the proxy down before joining: a second KILL QUERY
+        # can find the source already streaming, where `onCancel` leaves the connection to the
+        # pipeline thread, and dropping the connection is then what ends the endless COPY.
         node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
         proxy.stop()
         query_thread.join(timeout=60)
@@ -405,9 +414,9 @@ def test_kill_query_while_copy_is_starting(started_cluster, setup_streaming_view
     This is one step later than `test_kill_query_while_transaction_is_starting`. Here `tx` is
     already published, so `onCancel` does call `cancel_query()` -- but no statement is running
     on that connection yet, so PostgreSQL has nothing to interrupt and the cancel is dropped.
-    `onStart` then opens the COPY anyway, and nothing cancels it afterwards: `onCancel` already
-    consumed the one-shot `is_completed` flag, so the destructor returns early and never
-    reaches its own `cancel_query()`, which leaves the rollback waiting for the COPY.
+    `onStart` opens the COPY straight afterwards, so the destructor has to be the one that
+    cancels it. If a cancel could take the teardown away from it, nothing would, and the
+    rollback would sit waiting for the COPY.
 
     Stalling the COPY request rather than the `BEGIN` is what places the cancel in this
     window; `test_kill_query_while_transaction_is_starting` cannot reach it, because there
