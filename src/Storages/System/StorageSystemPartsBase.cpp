@@ -43,6 +43,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 StoragesInfoStreamBase::StoragesInfoStreamBase(ContextPtr context)
     : query_id(context->getCurrentQueryId()), lock_timeout(std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds())), query_status(context->getProcessListElement()), next_row(0), rows(0)
 {
