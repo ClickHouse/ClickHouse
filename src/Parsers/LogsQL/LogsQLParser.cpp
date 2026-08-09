@@ -289,7 +289,13 @@ void LogsQLParser::parseQueryOptions()
             if (!lex.isKeyword("("))
                 throwSyntaxError("the global_filter option must have the following format: global_filter=(<filter>)");
             lex.nextToken();
-            options_global_filter = parseFilterOr("");
+            ASTPtr local_global_filter = parseFilterOr("");
+            /// A subquery inherits the global filter of the outer query, and its own
+            /// global_filter option must be combined with the inherited one, not replace it.
+            if (options_global_filter)
+                options_global_filter = makeASTFunction("and", options_global_filter->clone(), local_global_filter);
+            else
+                options_global_filter = local_global_filter;
             if (!lex.isKeyword(")"))
                 throwSyntaxError(fmt::format("missing ')' after the global_filter option; got {}", lex.getToken()));
             lex.nextToken();
