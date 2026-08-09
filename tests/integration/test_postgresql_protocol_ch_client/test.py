@@ -382,6 +382,52 @@ def test_copy_escape_string_option_values(started_cluster):
         conn.close()
 
 
+def test_copy_null_marker_spellings(started_cluster):
+    # The handler reports `standard_conforming_strings = on`, so a backslash inside a plain string literal
+    # is an ordinary byte: `NULL '\N'` is the supported default marker, while `NULL '\\N'` (a doubled
+    # backslash in the SQL text) requests a three-byte marker and must be rejected as non-default rather
+    # than silently served as `\N`. The escape-string `E'\\N'` decodes to `\N` and stays accepted.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        # SQL text `NULL AS '\N'` - the default marker, accepted as a no-op for the text format.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, CAST(NULL AS Nullable(Int32)) AS b) TO STDOUT WITH NULL AS '\\N'", out
+        )
+        assert out.getvalue() == "1\t\\N\n"
+
+        # SQL text `NULL AS E'\\N'` - decodes to `\N`, accepted the same way.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, CAST(NULL AS Nullable(Int32)) AS b) TO STDOUT WITH NULL AS E'\\\\N'", out
+        )
+        assert out.getvalue() == "1\t\\N\n"
+
+        # SQL text `NULL AS '\\N'` - a distinct three-byte marker, rejected instead of being mis-served.
+        with pytest.raises(py_psql.Error, match="non-default NULL marker"):
+            cur.copy_expert(
+                "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH NULL AS '\\\\N'", io.StringIO()
+            )
+        conn.rollback()
+
+        # Same in the parenthesized grammar and for CSV.
+        with pytest.raises(py_psql.Error, match="non-default NULL marker"):
+            cur.copy_expert(
+                "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, NULL '\\\\N')", io.StringIO()
+            )
+        conn.rollback()
+
+        # The connection stayed usable after the rejections.
+        cur.execute("SELECT 42")
+        assert cur.fetchone() == (42,)
+    finally:
+        conn.close()
+
+
 def test_copy_rejects_unsupported_options(started_cluster):
     # Only the format (text/CSV) is honoured; a data-formatting option we cannot faithfully apply must be
     # rejected with a clear error instead of being silently ignored (which would stream output that does not

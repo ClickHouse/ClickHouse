@@ -517,9 +517,11 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         const String default_delimiter = is_csv ? "," : "\t";
         /// The `NULL` marker. Its value is taken as the raw bytes between the quotes without ClickHouse
         /// unescaping (that would turn a lone `'\N'` into an empty string), and the `\N` marker therefore
-        /// has two accepted spellings: a standard-conforming client sends it as `'\N'` (raw `\N`), while
-        /// psycopg2 doubles the backslash and sends `'\\N'` (raw `\\N`). An escape-string `E'\\N'` is
-        /// decoded to raw `\N` before this comparison, so it matches the first spelling.
+        /// has two accepted spellings: a plain `'\N'` (raw `\N`; the handler reports
+        /// `standard_conforming_strings = on`, so a backslash in a plain literal is an ordinary byte) and
+        /// the escape-string `E'\\N'`, which is decoded to raw `\N` before this comparison. A plain
+        /// `'\\N'` is a different, three-byte marker under `standard_conforming_strings = on` and is
+        /// rejected below like any other non-default marker rather than silently served as `\N`.
         ///
         /// For the text format PostgreSQL's default marker is `\N`, which is also ClickHouse's TSV default,
         /// so both an absent `NULL` option and an explicit `NULL '\N'` (what libpq/psycopg2 append) are
@@ -528,12 +530,11 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         /// the `\N` marker instead - the handler applies the marker to the CSV reader/writer through
         /// `format_csv_null_representation`. Any other marker is rejected rather than silently ignored.
         const String backslash_n = "\\N";
-        const String backslash_n_doubled = "\\\\N";
         if (delimiter_value && *delimiter_value != default_delimiter)
             node->unsupported_option = "a non-default DELIMITER";
         else if (header_requested)
             node->unsupported_option = "HEADER";
-        else if (null_value && (*null_value == backslash_n || *null_value == backslash_n_doubled))
+        else if (null_value && *null_value == backslash_n)
         {
             if (is_csv)
                 node->csv_null_marker = backslash_n;

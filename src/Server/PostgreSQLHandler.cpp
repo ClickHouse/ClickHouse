@@ -253,8 +253,8 @@ bool isSingleStatementQuery(const String & query)
         if (c == '\'')
         {
             /// A string literal: `''` stands for an embedded quote. In the `E'...'` form a backslash
-            /// escapes the next character as well; ClickHouse does not report
-            /// `standard_conforming_strings`, so treat a backslash as an escape only in that form.
+            /// escapes the next character as well; ClickHouse reports
+            /// `standard_conforming_strings = on`, so a backslash is an escape only in that form.
             const bool backslash_escapes = i > 0 && (query[i - 1] == 'E' || query[i - 1] == 'e')
                 && (i == 1 || !isWordCharASCII(query[i - 2]));
             ++i;
@@ -862,6 +862,12 @@ void PostgreSQLHandler::sendParameterStatusData(PostgreSQLProtocol::Messaging::S
     message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("server_version", VERSION_STRING));
     message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("server_encoding", "UTF8"));
     message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("DateStyle", "ISO"));
+    /// The simple-query scanner treats a backslash in a plain string literal as an ordinary character
+    /// (only the `E'...'` form escapes), which is PostgreSQL's `standard_conforming_strings = on`
+    /// behavior - report it, so libpq-based clients do not double backslashes in plain literals
+    /// (libpq assumes `off` when the parameter is not reported). `current_setting` reports the same.
+    message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("standard_conforming_strings", "on"));
+    message_transport->send(PostgreSQLProtocol::Messaging::ParameterStatus("integer_datetimes", "on"));
     message_transport->flush();
 }
 
