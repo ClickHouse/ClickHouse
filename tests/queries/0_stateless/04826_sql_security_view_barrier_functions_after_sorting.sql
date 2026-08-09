@@ -8,7 +8,9 @@
 -- below would show nothing to compare against; the barrier behavior under the old analyzer is
 -- covered by 04822.
 SET enable_analyzer = 1;
-SET query_plan_execute_functions_after_sorting = 1, optimize_read_in_order = 1, enable_parallel_replicas = 0;
+-- `optimize_sorting_by_input_stream_properties` produces the `Prefix sort description` marker that
+-- the `INVOKER` control below asserts on; the test harness randomizes it, so pin it.
+SET query_plan_execute_functions_after_sorting = 1, optimize_read_in_order = 1, enable_parallel_replicas = 0, optimize_sorting_by_input_stream_properties = 1;
 
 DROP TABLE IF EXISTS t04826;
 CREATE TABLE t04826 (key UInt64, owner String, val String) ENGINE = MergeTree ORDER BY key;
