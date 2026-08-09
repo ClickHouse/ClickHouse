@@ -245,11 +245,13 @@ struct DecimalEncodingResult
 };
 
 /** Tries to encode a vector with one of the decimal modes into scratch.
-  * Returns std::nullopt when the data does not fit the decimal representation.
+  * Returns std::nullopt when the data does not fit the decimal representation, or when no
+  * decimal encoding can come in under size_to_beat — the size of the best other encoding of
+  * this vector (the RAW mode at worst, the already-measured XOR encoding when it ran first).
   */
 template <typename T>
 std::optional<DecimalEncodingResult<T>> encodeDecimal(
-    const typename WallabyTraits<T>::FloatType * values, UInt32 count, char * scratch, UInt32 scratch_size)
+    const typename WallabyTraits<T>::FloatType * values, UInt32 count, char * scratch, UInt32 scratch_size, UInt32 size_to_beat)
 {
     using Traits = WallabyTraits<T>;
     using SignedType = typename Traits::SignedType;
@@ -287,11 +289,12 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     std::array<UInt16, WALLABY_VECTOR_VALUES> exception_positions; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     UInt32 exception_count = 0;
 
-    /// The raw mode is always available, so no candidate may spend more than that on exceptions
-    /// alone. The budget tightens as better candidates are measured, turning the exception cap
-    /// into a size-based break-even instead of a fixed count: a candidate is abandoned exactly
-    /// when its exceptions alone already make it larger than the best encoding known so far.
-    UInt32 best_total_size = count * sizeof(T);
+    /// No candidate may spend more on exceptions alone than the size of the best encoding of
+    /// this vector known so far — initially the caller-provided bound (the RAW mode at worst),
+    /// tightening as better candidates are measured. This turns the exception cap into a
+    /// size-based break-even instead of a fixed count: a candidate is abandoned exactly when
+    /// its exceptions alone already make it larger than something we can already do.
+    UInt32 best_total_size = std::min<UInt32>(count * sizeof(T), size_to_beat);
 
     const auto exception_budget = [&]() -> UInt32
     {
@@ -444,7 +447,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
       */
     const auto estimate_allows = [&](UInt8 candidate) -> bool
     {
-        if (!reference_filled || candidate == reference_alpha || !best)
+        if (!reference_filled || candidate == reference_alpha)
             return true;
         UInt32 sampled_failures = 0;
         for (UInt32 i = 0; i < sampled_alpha_count; ++i)
@@ -472,7 +475,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         }
         const UInt32 size_estimate = header_size + Compression::FFOR::calculateBitpackedBytes(static_cast<UInt8>(bits_estimate))
             + exceptions_estimate * exceptionCost<T>();
-        return size_estimate < best->payload_size;
+        /// best_total_size also carries the caller-provided bound, so a candidate that cannot
+        /// beat the other encoding of this vector is skipped even before any candidate wins.
+        return size_estimate < best_total_size;
     };
 
     bool candidates_pending = false;
@@ -650,10 +655,12 @@ ALWAYS_INLINE UInt16 lowBitsProbeKey(T word)
 }
 
 /** Encodes a vector with the XOR mode into scratch and returns the payload size in bytes,
-  * or 0 when the encoding is abandoned because it cannot beat the RAW mode.
+  * or 0 when the encoding is abandoned because it provably cannot come in under
+  * abandon_threshold_bits — the size of the best other encoding of this vector (the RAW mode
+  * at worst, the already-measured decimal encoding when it ran first and is smaller).
   */
 template <typename T>
-UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_size)
+UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_size, UInt64 abandon_threshold_bits)
 {
     using Traits = WallabyTraits<T>;
     constexpr UInt8 width = Traits::width_bits;
@@ -839,13 +846,13 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
         previous = value;
         ++i;
 
-        /// Bail out early on incompressible data: abandon the XOR encoding once even the cheapest
-        /// conceivable encoding of the remaining suffix (runs for repeated values, the EQUAL
-        /// branch for everything else) cannot bring the total below the cost of the RAW mode,
-        /// which is always available as a candidate.
+        /// Bail out early on data this mode does not fit: abandon the XOR encoding once even the
+        /// cheapest conceivable encoding of the remaining suffix (runs for repeated values, the
+        /// EQUAL branch for everything else) cannot bring the total below the best encoding
+        /// already known for this vector.
         constexpr UInt32 min_single_bits = 3 + WALLABY_RING_INDEX_BITS;
         if ((i & 255) == 0
-            && writer.count() + static_cast<UInt64>(suffix_differing[i]) * min_single_bits >= static_cast<UInt64>(count) * width)
+            && writer.count() + static_cast<UInt64>(suffix_differing[i]) * min_single_bits >= abandon_threshold_bits)
             return 0;
     }
 
@@ -966,11 +973,11 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
         memcpy(words.data(), source + static_cast<size_t>(processed) * sizeof(T), static_cast<size_t>(count) * sizeof(T));
         memcpy(values.data(), words.data(), static_cast<size_t>(count) * sizeof(T));
 
-        bool all_equal = true;
-        for (UInt32 i = 1; i < count && all_equal; ++i)
-            all_equal = words[i] == words[0];
+        UInt32 differing = 0;
+        for (UInt32 i = 1; i < count; ++i)
+            differing += words[i] != words[i - 1] ? 1 : 0;
 
-        if (all_equal)
+        if (differing == 0)
         {
             *out++ = static_cast<char>(VectorMode::Const);
             unalignedStoreLittleEndian<T>(out, words[0]);
@@ -979,25 +986,40 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
             continue;
         }
 
-        const auto decimal = encodeDecimal<T>(values.data(), count, decimal_scratch.data(), scratch_size);
+        const UInt32 raw_size = count * sizeof(T);
 
-        /// The XOR encoding is skipped only when it provably cannot beat the decimal one: every
-        /// value differing from its predecessor costs at least the cheapest single-value branch
-        /// (the '0' selector, the 2-bit tag and a ring index), while repeats may collapse into
-        /// runs almost for free. The bound must account for that collapse — a heuristic based on
-        /// the decimal bit width alone would miss piecewise-constant data, where the XOR mode
-        /// encodes long plateaus in a few bytes while the decimal modes pay per value.
-        UInt32 differing = 0;
-        for (UInt32 i = 1; i < count; ++i)
-            differing += words[i] != words[i - 1] ? 1 : 0;
+        /** The decimal and XOR encodings prune each other: whichever runs first hands its
+          * measured size to the other as the size to beat, so the second encoder can abandon or
+          * skip candidates that provably cannot win. Every value differing from its predecessor
+          * costs the XOR mode at least the cheapest single-value branch (the '0' selector, the
+          * 2-bit tag and a ring index), while repeats may collapse into runs almost for free —
+          * so on run-dominated vectors the XOR mode is both cheap to produce and likely to win,
+          * and runs first; everywhere else the decimal chooser runs first and the XOR encoding
+          * is attempted only when its lower bound leaves it a chance. The bounds must account
+          * for the run collapse — a heuristic based on the decimal bit width alone would miss
+          * piecewise-constant data, where the XOR mode encodes long plateaus in a few bytes
+          * while the decimal modes pay per value.
+          */
         constexpr UInt32 min_single_bits = 3 + WALLABY_RING_INDEX_BITS;
         const UInt64 xor_bits_lower_bound = 8 + Traits::width_bits + static_cast<UInt64>(differing) * min_single_bits;
 
+        std::optional<DecimalEncodingResult<T>> decimal;
         UInt32 xor_size = 0;
-        if (!decimal || xor_bits_lower_bound < static_cast<UInt64>(decimal->payload_size) * 8)
-            xor_size = encodeXor<T>(words.data(), count, xor_scratch.data(), scratch_size);
 
-        const UInt32 raw_size = count * sizeof(T);
+        if (2 * differing < count)
+        {
+            xor_size = encodeXor<T>(words.data(), count, xor_scratch.data(), scratch_size, static_cast<UInt64>(raw_size) * 8);
+            const UInt32 xor_size_to_beat = xor_size == 0 ? raw_size : xor_size + static_cast<UInt32>(sizeof(UInt32));
+            decimal = encodeDecimal<T>(values.data(), count, decimal_scratch.data(), scratch_size, std::min(raw_size, xor_size_to_beat));
+        }
+        else
+        {
+            decimal = encodeDecimal<T>(values.data(), count, decimal_scratch.data(), scratch_size, raw_size);
+            const UInt32 decimal_size_to_beat = decimal ? std::min(decimal->payload_size, raw_size) : raw_size;
+            if (xor_bits_lower_bound < static_cast<UInt64>(decimal_size_to_beat) * 8)
+                xor_size = encodeXor<T>(words.data(), count, xor_scratch.data(), scratch_size, static_cast<UInt64>(decimal_size_to_beat) * 8);
+        }
+
         const UInt32 decimal_size = decimal ? decimal->payload_size : std::numeric_limits<UInt32>::max();
         const UInt32 xor_total = xor_size == 0 ? std::numeric_limits<UInt32>::max() : xor_size + static_cast<UInt32>(sizeof(UInt32));
 
