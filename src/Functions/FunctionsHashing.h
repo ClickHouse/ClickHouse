@@ -1559,7 +1559,19 @@ public:
 
     /// Keep the type-aware override so master's per-Impl `check_all_arguments_are_strings` validation is
     /// still enforced (the declarative `[Any]` signature above cannot express a per-Impl compile-time
-    /// constraint, so it remains documentation-only for this family).
+    /// constraint, so it remains documentation-only for this family). The `ColumnsWithTypeAndName`
+    /// overload must also be overridden: otherwise the base-class overload would apply the `[Any]`
+    /// signature on the normal resolution path and skip this validation, letting e.g. an `Array`
+    /// argument reach `xxHash64Spark`, whose `combineHashes` throws `LOGICAL_ERROR` and aborts
+    /// builds with assertions enabled.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            types[i] = arguments[i].type;
+        return getReturnTypeImpl(types);
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if constexpr (requires { Impl::check_all_arguments_are_strings; })
