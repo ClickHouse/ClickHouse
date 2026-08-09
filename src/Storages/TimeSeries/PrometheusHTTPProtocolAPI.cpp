@@ -31,7 +31,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Core/Types.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -658,18 +657,39 @@ void PrometheusHTTPProtocolAPI::getSeries(
     auto tags_table_id = tags_table->getStorageID();
 
     /// Tags configured via `tags_to_columns` are stored in dedicated columns instead of the `tags` Map,
-    /// so they must be selected and emitted separately. They are read back as strings and the "absent"
-    /// default is rendered as an empty string.
+    /// but a supported external `tags` table can also carry such a tag in the residual Map (e.g. legacy
+    /// rows written before the tag was moved to a dedicated column). Deduplicating by the raw table layout
+    /// (`metric_name`, `tags`, the dedicated columns) would then return the same logical series twice, or
+    /// emit the same label key twice from a single mixed row. So normalize each row to its logical
+    /// Prometheus label set right in the query, with the same rules `timeSeriesStoreTags` applies on the
+    /// write path: merge both carriers, collapse exact duplicates (`arrayDistinct`), drop empty values
+    /// (an empty label value means the label is absent), and sort by label name. Conflicting carriers
+    /// (same name, different values) survive as adjacent entries of the sorted array and are rejected
+    /// during emission below, again as in `timeSeriesStoreTags`.
     auto tag_columns = getConfiguredTagColumns();
 
-    String select_columns = fmt::format("{}, {}", TimeSeriesColumnNames::MetricName, TimeSeriesColumnNames::Tags);
-    for (size_t i = 0; i < tag_columns.size(); ++i)
-        select_columns += fmt::format(", coalesce(toString({}), '') AS `__tsc_{}`", backQuoteIfNeed(tag_columns[i].second), i);
+    String labels_expr = fmt::format("arrayZip(mapKeys({0}), mapValues({0}))", TimeSeriesColumnNames::Tags);
+    if (!tag_columns.empty())
+    {
+        String dedicated_entries;
+        for (const auto & [tag_name, column_name] : tag_columns)
+        {
+            if (!dedicated_entries.empty())
+                dedicated_entries += ", ";
+            dedicated_entries += fmt::format("({}, coalesce(toString({}), ''))", quoteString(tag_name), backQuoteIfNeed(column_name));
+        }
+        labels_expr = fmt::format("arrayConcat({}, [{}])", labels_expr, dedicated_entries);
+    }
 
-    /// Build query: SELECT DISTINCT metric_name, tags[, <tags_to_columns>] FROM <tags_table> [WHERE ...]
+    String select_columns = fmt::format(
+        "{}, arraySort(arrayDistinct(arrayFilter(x -> x.2 != '', {}))) AS `__series_labels`",
+        TimeSeriesColumnNames::MetricName,
+        labels_expr);
+
+    /// Build query: SELECT DISTINCT metric_name, <normalized labels> FROM <tags_table> [WHERE ...]
     /// The tags target is usually `AggregatingMergeTree`/`ReplacingMergeTree` and stores a row per write,
     /// so the same series can be present multiple times until parts are merged. `DISTINCT` deduplicates
-    /// by series identity (metric name + full label set).
+    /// by series identity (metric name + normalized label set).
     String query = fmt::format("SELECT DISTINCT {} FROM {}", select_columns, tags_table_id.getFullTableName());
 
     std::vector<String> conditions;
@@ -695,6 +715,35 @@ void PrometheusHTTPProtocolAPI::getSeries(
         PullingAsyncPipelineExecutor executor(io.pipeline);
         Block result_block;
 
+        /// Exact duplicates were collapsed by `arrayDistinct`, so two adjacent entries with the same
+        /// name in a sorted `__series_labels` array mean the row stores conflicting values for one
+        /// label (e.g. in the residual `tags` map and in a dedicated `tags_to_columns` column). Reject
+        /// it like `timeSeriesStoreTags` does on the write path instead of emitting an invalid series
+        /// with a repeated label key. Validated right after `pull` so that (at least for the first
+        /// block) the error is raised before the success envelope is written.
+        auto validate_labels = [&](const Block & block)
+        {
+            const auto & array_column = typeid_cast<const ColumnArray &>(*block.getByName("__series_labels").column);
+            const auto & offsets = array_column.getOffsets();
+            const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+            const auto & key_column = tuple_column.getColumn(0);
+            const auto & value_column = tuple_column.getColumn(1);
+            for (size_t i = 0; i < block.rows(); ++i)
+            {
+                size_t start = (i == 0) ? 0 : offsets[i - 1];
+                for (size_t j = start + 1; j < offsets[i]; ++j)
+                {
+                    if (key_column.getDataAt(j) == key_column.getDataAt(j - 1))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Found two tags with the same name {} but different values {} and {} in a row of the 'tags' table",
+                            quoteString(key_column.getDataAt(j)),
+                            quoteString(value_column.getDataAt(j - 1)),
+                            quoteString(value_column.getDataAt(j)));
+                }
+            }
+        };
+
         /// Pull until the first non-empty block is ready before writing the success envelope: `pull` can
         /// throw after `executeQuery` has already succeeded (read error, limit exceeded, killed query, ...),
         /// and once `{"status":"success",...}` has been written `PrometheusRequestHandler::QueryImpl` can no
@@ -705,7 +754,10 @@ void PrometheusHTTPProtocolAPI::getSeries(
             while (executor.pull(result_block))
             {
                 if (result_block.rows() > 0)
+                {
+                    validate_labels(result_block);
                     return true;
+                }
             }
             return false;
         };
@@ -719,12 +771,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
         while (has_output)
         {
             const auto & metric_name_col = result_block.getByName(TimeSeriesColumnNames::MetricName).column;
-            const auto & tags_col = result_block.getByName(TimeSeriesColumnNames::Tags).column;
-
-            std::vector<const IColumn *> tag_value_cols;
-            tag_value_cols.reserve(tag_columns.size());
-            for (size_t c = 0; c < tag_columns.size(); ++c)
-                tag_value_cols.push_back(result_block.getByName(fmt::format("__tsc_{}", c)).column.get());
+            const auto & labels_col = result_block.getByName("__series_labels").column;
 
             for (size_t i = 0; i < result_block.rows(); ++i)
             {
@@ -744,16 +791,16 @@ void PrometheusHTTPProtocolAPI::getSeries(
                 writeString(R"({"__name__":)", response);
                 writeJSONString(metric_name_col->getDataAt(i), response, format_settings);
 
-                /// The `tags` column is a `Map(String, String)`, which materializes as `ColumnMap`.
-                /// `ColumnMap` wraps a `ColumnArray(ColumnTuple(keys, values))`, so read the nested array
-                /// to enumerate the key-value pairs of each row.
-                const auto & map_column = typeid_cast<const ColumnMap &>(*tags_col);
-                const auto & array_column = map_column.getNestedColumn();
+                /// `__series_labels` is an `Array(Tuple(String, String))` of (label name, label value)
+                /// pairs, already normalized in the query: sorted by name, exact duplicates collapsed,
+                /// empty values dropped. `ColumnArray(ColumnTuple(names, values))` — read the nested
+                /// tuple to enumerate the pairs of each row.
+                const auto & array_column = typeid_cast<const ColumnArray &>(*labels_col);
                 const auto & offsets = array_column.getOffsets();
                 size_t start = (i == 0) ? 0 : offsets[i - 1];
                 size_t end = offsets[i];
 
-                const auto & tuple_column = map_column.getNestedData();
+                const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
                 const auto & key_column = tuple_column.getColumn(0);
                 const auto & value_column = tuple_column.getColumn(1);
 
@@ -763,19 +810,6 @@ void PrometheusHTTPProtocolAPI::getSeries(
                     writeJSONString(key_column.getDataAt(j), response, format_settings);
                     writeString(":", response);
                     writeJSONString(value_column.getDataAt(j), response, format_settings);
-                }
-
-                /// Emit tags that were moved out of the `tags` Map into dedicated columns. An empty value
-                /// means the tag is not set for this series (Prometheus treats it as absent), so skip it.
-                for (size_t c = 0; c < tag_columns.size(); ++c)
-                {
-                    auto value = tag_value_cols[c]->getDataAt(i);
-                    if (value.empty())
-                        continue;
-                    writeString(",", response);
-                    writeJSONString(std::string_view{tag_columns[c].first}, response, format_settings);
-                    writeString(":", response);
-                    writeJSONString(value, response, format_settings);
                 }
 
                 writeString("}", response);
