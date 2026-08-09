@@ -327,12 +327,17 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     csn.notify_all();
 }
 
-bool MergeTreeTransaction::rollback() noexcept
+bool MergeTreeTransaction::claimRollback() noexcept
+{
+    CSN expected = Tx::UnknownCSN;
+    return csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
+}
+
+bool MergeTreeTransaction::rollback(bool already_claimed) noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
-    CSN expected = Tx::UnknownCSN;
-    bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
+    bool need_rollback = already_claimed || claimRollback();
 
     /// Check that it was not rolled back concurrently
     if (!need_rollback)

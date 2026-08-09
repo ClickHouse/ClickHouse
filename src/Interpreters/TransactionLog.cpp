@@ -537,13 +537,13 @@ bool TransactionLog::waitForCSNLoaded(CSN csn) const
     return csn <= current_latest_snapshot;
 }
 
-void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
+void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn, bool already_claimed) noexcept
 {
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
     LOG_TRACE(log, "Rolling back transaction {}{}", txn->tid,
               std::uncaught_exceptions() ? fmt::format(" due to uncaught exception (code: {})", getCurrentExceptionCode()) : "");
 
-    if (!txn->rollback())
+    if (!txn->rollback(already_claimed))
     {
         /// Transaction was cancelled or committed concurrently
         chassert(txn->csn != Tx::UnknownCSN);
