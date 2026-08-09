@@ -45,6 +45,10 @@
 #include <scann/proto/centers.pb.h>
 #include <scann/proto/scann.pb.h>
 #include <scann/tree_x_hybrid/tree_ah_hybrid_residual.h>
+#include <scann/utils/bfloat16_helpers.h>
+#include <scann/utils/datapoint_utils.h>
+#include <scann/utils/parallel_for.h>
+#include <scann/utils/scalar_quantization_helpers.h>
 #include <scann/utils/threads.h>
 #include <scann/utils/types.h>
 #include <scann_persistence_adapter.h>
@@ -301,26 +305,26 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
 {
     size_t total = 0;
 
-    /// Reorder vectors. Before build/restore they live in the granule members. Afterwards they
-    /// live in the searcher's reorder helper. Fall back to the size implied by the precision
-    /// when only the searcher holds them.
-    const size_t reorder_member_bytes =
+    /// Reorder vectors live either in granule members, in the original float dataset retained
+    /// by a fresh build for streaming quantization, or in a restored searcher's reorder helper.
+    total +=
         vectors.size() * sizeof(float)
         + bf16_data.size() * sizeof(int16_t)
         + int8_data.size() * sizeof(int8_t)
         + (int8_multipliers.size() + int8_norms.size()) * sizeof(float);
-    if (reorder_member_bytes > 0)
+
+    if (searcher && searcher->inner)
     {
-        total += reorder_member_bytes;
-    }
-    else if (searcher && searcher->inner)
-    {
-        size_t bytes_per_elem = sizeof(float);
-        if (params.precision == "bf16")
-            bytes_per_elem = sizeof(int16_t);
-        else if (params.precision == "i8")
-            bytes_per_elem = sizeof(int8_t);
-        total += num_vectors * padded_dim * bytes_per_elem;
+        if (const auto * dataset = searcher->inner->dataset())
+            total += dataset->MemoryUsageExcludingDocids();
+        else if (searcher->inner->reordering_enabled()
+            && vectors.empty() && bf16_data.empty() && int8_data.empty())
+        {
+            const size_t bytes_per_elem = params.precision == "bf16"
+                ? sizeof(int16_t)
+                : (params.precision == "i8" ? sizeof(int8_t) : sizeof(float));
+            total += num_vectors * padded_dim * bytes_per_elem;
+        }
     }
 
     /// After buildIndexFromSerialized, hashed_data is moved into the searcher's hashed_dataset.
@@ -389,48 +393,161 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
     }
     else
     {
-        /// bf16/i8: the quantized reorder vectors. Use the granule members when populated;
-        /// otherwise read them from the searcher's reordering helper. Freshly built quantized
-        /// indexes deliberately keep no granule copy.
+        /// bf16/i8: restored indexes already own the quantized reorder vectors. A fresh build
+        /// deliberately retains only the Float32 source dataset, so quantize it in bounded
+        /// chunks directly into the final index stream instead of allocating another complete
+        /// dataset.
         research_scann::SingleMachineFactoryOptions extracted;
         const bool from_members = (precision_tag == 1) ? !bf16_data.empty() : !int8_data.empty();
-        if (!from_members)
+        const bool from_reordering_helper
+            = !from_members && searcher && searcher->inner && searcher->inner->reordering_enabled();
+        const bool stream_from_float = !from_members && !from_reordering_helper;
+
+        if (from_reordering_helper)
         {
-            chassert(searcher && searcher->inner);
             searcher->inner->reordering_helper().AppendDataToSingleMachineFactoryOptions(&extracted);
         }
 
+        const research_scann::DenseDataset<float> * float_dataset = nullptr;
+        research_scann::ScannConfig config;
+        if (stream_from_float)
+        {
+            if (!searcher || !searcher->inner || !searcher->inner->dataset())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "ScaNN fresh quantized build did not retain its Float32 dataset");
+            if (searcher->inner->needs_dataset())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "ScaNN cannot release its Float32 dataset after serialization");
+            if (!config.ParseFromString(serialized_config_proto))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "ScaNN index serialization failed: could not parse ScaNN config");
+
+            float_dataset = static_cast<const research_scann::DenseDataset<float> *>(searcher->inner->dataset());
+            chassert(float_dataset->size() == num_vectors);
+            chassert(float_dataset->dimensionality() == padded_dim);
+        }
+
+        constexpr size_t quantization_chunk_bytes = 8 * 1024 * 1024;
         if (precision_tag == 1)
         {
-            const int16_t * data = nullptr;
-            size_t count = 0;
-            if (from_members) { data = bf16_data.data(); count = bf16_data.size(); }
-            else { auto span = extracted.bfloat16_dataset->data(); data = span.data(); count = span.size(); }
-            ostr.write(reinterpret_cast<const char *>(data), count * sizeof(int16_t));
+            if (!stream_from_float)
+            {
+                const int16_t * data = nullptr;
+                size_t count = 0;
+                if (from_members)
+                {
+                    data = bf16_data.data();
+                    count = bf16_data.size();
+                }
+                else
+                {
+                    chassert(extracted.bfloat16_dataset);
+                    auto span = extracted.bfloat16_dataset->data();
+                    data = span.data();
+                    count = span.size();
+                }
+                ostr.write(reinterpret_cast<const char *>(data), count * sizeof(int16_t));
+            }
+            else
+            {
+                const double noise_shaping_threshold = params.distance_name == "L2Distance"
+                    ? std::numeric_limits<double>::quiet_NaN()
+                    : config.exact_reordering().bfloat16().noise_shaping_threshold();
+                const size_t rows_per_chunk = std::max(
+                    size_t{1}, quantization_chunk_bytes / (padded_dim * sizeof(int16_t)));
+                std::vector<int16_t> chunk(std::min(num_vectors, rows_per_chunk) * padded_dim);
+
+                for (size_t first_row = 0; first_row < num_vectors; first_row += rows_per_chunk)
+                {
+                    const size_t rows = std::min(rows_per_chunk, num_vectors - first_row);
+                    research_scann::ParallelFor<128>(
+                        research_scann::Seq(rows), getScannBuildThreadPool().get(), [&](size_t row)
+                        {
+                            research_scann::MutableSpan<int16_t> quantized(
+                                chunk.data() + row * padded_dim, padded_dim);
+                            if (std::isfinite(noise_shaping_threshold))
+                                research_scann::Bfloat16QuantizeFloatDatapointWithNoiseShaping(
+                                    (*float_dataset)[first_row + row], noise_shaping_threshold, quantized);
+                            else
+                                research_scann::Bfloat16QuantizeFloatDatapoint(
+                                    (*float_dataset)[first_row + row], quantized);
+                        });
+                    ostr.write(
+                        reinterpret_cast<const char *>(chunk.data()),
+                        rows * padded_dim * sizeof(int16_t));
+                }
+            }
         }
         else
         {
-            const int8_t * data = nullptr;
-            size_t count = 0;
             const std::vector<float> * mult = nullptr;
             const std::vector<float> * norms = nullptr;
             std::vector<float> mult_tmp;
             std::vector<float> norms_tmp;
-            if (from_members)
+            if (!stream_from_float)
             {
-                data = int8_data.data(); count = int8_data.size();
-                mult = &int8_multipliers; norms = &int8_norms;
+                const int8_t * data = nullptr;
+                size_t count = 0;
+                if (from_members)
+                {
+                    data = int8_data.data();
+                    count = int8_data.size();
+                    mult = &int8_multipliers;
+                    norms = &int8_norms;
+                }
+                else
+                {
+                    const auto & fp = extracted.pre_quantized_fixed_point;
+                    chassert(fp && fp->fixed_point_dataset);
+                    auto span = fp->fixed_point_dataset->data();
+                    data = span.data();
+                    count = span.size();
+                    if (fp->multiplier_by_dimension)
+                        mult_tmp = *fp->multiplier_by_dimension;
+                    if (fp->squared_l2_norm_by_datapoint)
+                        norms_tmp = *fp->squared_l2_norm_by_datapoint;
+                    mult = &mult_tmp;
+                    norms = &norms_tmp;
+                }
+                ostr.write(reinterpret_cast<const char *>(data), count * sizeof(int8_t));
             }
             else
             {
-                const auto & fp = extracted.pre_quantized_fixed_point;
-                auto span = fp->fixed_point_dataset->data();
-                data = span.data(); count = span.size();
-                if (fp->multiplier_by_dimension) mult_tmp = *fp->multiplier_by_dimension;
-                if (fp->squared_l2_norm_by_datapoint) norms_tmp = *fp->squared_l2_norm_by_datapoint;
-                mult = &mult_tmp; norms = &norms_tmp;
+                const double noise_shaping_threshold = params.distance_name == "L2Distance"
+                    ? std::numeric_limits<double>::quiet_NaN()
+                    : config.exact_reordering().fixed_point().noise_shaping_threshold();
+                const size_t rows_per_chunk = std::max(
+                    size_t{1}, quantization_chunk_bytes / (padded_dim * sizeof(int8_t)));
+                std::vector<int8_t> chunk(std::min(num_vectors, rows_per_chunk) * padded_dim);
+
+                for (size_t first_row = 0; first_row < num_vectors; first_row += rows_per_chunk)
+                {
+                    const size_t rows = std::min(rows_per_chunk, num_vectors - first_row);
+                    research_scann::ParallelFor<128>(
+                        research_scann::Seq(rows), getScannBuildThreadPool().get(), [&](size_t row)
+                        {
+                            research_scann::MutableSpan<int8_t> quantized(
+                                chunk.data() + row * padded_dim, padded_dim);
+                            if (std::isnan(noise_shaping_threshold))
+                                research_scann::ScalarQuantizeFloatDatapoint(
+                                    (*float_dataset)[first_row + row], int8_multipliers, quantized);
+                            else
+                                research_scann::ScalarQuantizeFloatDatapointWithNoiseShaping(
+                                    (*float_dataset)[first_row + row], int8_multipliers,
+                                    noise_shaping_threshold, quantized);
+                        });
+                    ostr.write(
+                        reinterpret_cast<const char *>(chunk.data()),
+                        rows * padded_dim * sizeof(int8_t));
+                }
+
+                mult = &int8_multipliers;
+                norms = &int8_norms;
             }
-            ostr.write(reinterpret_cast<const char *>(data), count * sizeof(int8_t));
+
             writeIntBinary(static_cast<UInt64>(mult->size()), ostr);
             if (!mult->empty())
                 ostr.write(reinterpret_cast<const char *>(mult->data()), mult->size() * sizeof(float));
@@ -438,6 +555,11 @@ void MergeTreeIndexGranuleVectorSimilarityScann::serializeBinary(WriteBuffer & o
             if (!norms->empty())
                 ostr.write(reinterpret_cast<const char *>(norms->data()), norms->size() * sizeof(float));
         }
+
+        if (stream_from_float && !searcher->inner->MaybeReleaseDataset())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "ScaNN could not release its Float32 dataset after serialization");
     }
 
     /// Pre-trained ScaNN artifacts (all zero-length when index was not built).
@@ -733,10 +855,20 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
 
     research_scann::SingleMachineFactoryOptions build_opts;
     build_opts.parallelization_pool = getScannBuildThreadPool();
+
+    /// A freshly built MergeTree index granule is serialized immediately and is never queried.
+    /// Do not make the factory allocate a full bf16/i8 reordering dataset merely to expose an
+    /// immediately-queryable searcher. Keep the original config for persistence, build Tree-AH
+    /// without reordering, and quantize the retained float dataset directly into the index stream
+    /// in serializeBinary.
+    research_scann::ScannConfig build_config = config;
+    if (params.precision != "f32")
+        build_config.clear_exact_reordering();
+
     try
     {
         auto status_or = research_scann::SingleMachineFactoryScann<float>(
-            config, std::move(dataset), std::move(build_opts));
+            build_config, std::move(dataset), std::move(build_opts));
 
         if (!status_or.ok())
             throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -759,12 +891,6 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN index build failed: unknown exception");
     }
-
-    /// The bf16 and i8 reordering helpers own quantized copies of the vectors, and the
-    /// populated Tree-AH leaf searchers no longer need the original float dataset. Release it
-    /// before extracting persistent artifacts, which temporarily creates additional copies.
-    if (params.precision != "f32")
-        searcher->inner->MaybeReleaseDataset();
 
     if (!config.SerializeToString(&serialized_config_proto))
         throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -811,30 +937,37 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
             datapoints_by_token.emplace_back(token.begin(), token.end());
     }
 
-    /// Freshly built quantized indexes are serialized directly from the searcher's reordering
-    /// helper, avoiding a second full copy in the granule. The restored path still reads the
-    /// persisted data into the granule and moves it into ScaNN in buildIndexFromSerialized.
-    if (params.precision == "bf16")
+    /// For a fresh i8 build retain only the small quantization metadata. The full int8 dataset is
+    /// generated a chunk at a time in serializeBinary. For dot product (including normalized
+    /// cosine data) no per-datapoint norms are required; squared L2 persists the original norms.
+    if (params.precision == "i8")
     {
-        if (!opts.bfloat16_dataset || opts.bfloat16_dataset->empty())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN bf16 reorder dataset was not produced");
-    }
-    else if (params.precision == "i8")
-    {
-        const auto & fp = opts.pre_quantized_fixed_point;
-        if (!fp || !fp->fixed_point_dataset || fp->fixed_point_dataset->empty())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "ScaNN i8 reorder dataset was not produced");
+        const auto * float_dataset
+            = static_cast<const research_scann::DenseDataset<float> *>(searcher->inner->dataset());
+        if (!float_dataset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ScaNN fresh i8 build did not retain its Float32 dataset");
+
+        const auto & fixed_point = config.exact_reordering().fixed_point();
+        const float quantile = fixed_point.fixed_point_multiplier_quantile();
+        if (quantile <= 0.0f || quantile > 1.0f)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "ScaNN i8 multiplier quantile must be in (0, 1], got {}",
+                quantile);
+
+        int8_multipliers = std::abs(quantile - 1.0f) < 0.001f
+            ? research_scann::ComputeMaxQuantizationMultipliers(*float_dataset)
+            : research_scann::ComputeQuantiledQuantizationMultipliers(*float_dataset, quantile);
+
+        if (params.distance_name == "L2Distance")
+        {
+            int8_norms.resize(num_vectors);
+            for (size_t i = 0; i < num_vectors; ++i)
+                int8_norms[i] = static_cast<float>(research_scann::SquaredL2Norm((*float_dataset)[i]));
+        }
     }
 
     searcher_owned_memory_bytes = estimateTreeAHSearcherMemoryBytes(datapoints_by_token, hashed_dim);
-    if (params.precision == "i8")
-    {
-        const auto & fp = opts.pre_quantized_fixed_point;
-        if (fp->multiplier_by_dimension)
-            searcher_owned_memory_bytes += fp->multiplier_by_dimension->size() * sizeof(float);
-        if (fp->squared_l2_norm_by_datapoint)
-            searcher_owned_memory_bytes += fp->squared_l2_norm_by_datapoint->size() * sizeof(float);
-    }
 
     LOG_DEBUG(log, "Extracted ScaNN artifacts: partitioner={} bytes, codebook={} bytes, "
         "hashed_dataset={}×{} bytes, {} IVF tokens",

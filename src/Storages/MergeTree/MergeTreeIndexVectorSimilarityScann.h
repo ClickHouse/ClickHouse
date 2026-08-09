@@ -60,12 +60,12 @@ public:
     /// Data owned by ScaNN but not exposed through its searcher API.
     size_t searcher_owned_memory_bytes = 0;
 
-    /// Exact-reordering vectors at the configured params.precision. Exactly one of these holds
-    /// the persisted reorder data (the other(s) stay empty); for "f32" the float `vectors` above
-    /// are used. ScaNN derives these at build time and we serialize them in place of float32.
+    /// Exact-reordering vectors loaded from persistent storage. Fresh bf16/i8 builds leave the
+    /// full quantized vectors empty and quantize the retained Float32 dataset directly into the
+    /// output stream; i8 keeps only its small multiplier/norm metadata here.
     std::vector<int16_t> bf16_data;   /// "bf16": num_vectors × padded_dim bfloat16 (as int16)
     std::vector<int8_t> int8_data;    /// "i8": num_vectors × padded_dim scalar-quantized int8
-    std::vector<float> int8_multipliers; /// "i8": per-dimension inverse multiplier (padded_dim)
+    std::vector<float> int8_multipliers; /// "i8": per-dimension quantization multiplier (padded_dim)
     std::vector<float> int8_norms;    /// "i8": per-datapoint squared L2 norm (num_vectors), may be empty
 
     /// Pre-trained artifacts extracted after buildIndex() and persisted by
