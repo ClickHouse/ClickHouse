@@ -72,6 +72,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
@@ -93,6 +94,11 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
+namespace FailPoints
+{
+    extern const char storage_merge_create_children_plans_pause[];
 }
 
 namespace ErrorCodes
@@ -697,6 +703,11 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
 
     selected_tables = getSelectedTables(context);
     child_plans = createChildrenPlans(query_info);
+
+    /// A `'break'`-mode deadline stops that loop early, so drop the tables left unplanned to keep
+    /// `selected_tables` aligned 1:1 with `child_plans` for every reader.
+    if (child_plans->size() < selected_tables.size())
+        selected_tables.resize(child_plans->size());
 }
 
 /// Every materialized CTE reachable from `node`. Pointer identity is what matters:
@@ -800,8 +811,12 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     {
         /// Building a plan (including query analysis) for every child table can take a long time when
         /// the Merge table matches many tables, so honor `KILL QUERY` and `max_execution_time` between tables.
-        if (query_status)
-            query_status->checkTimeLimit();
+        /// `checkTimeLimit` throws for `KILL QUERY` and `timeout_overflow_mode = 'throw'`; for `'break'` it
+        /// returns false instead, and the caller then truncates `selected_tables` to the plans built here.
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
+        FailPointInjection::pauseFailPoint(FailPoints::storage_merge_create_children_plans_pause);
 
         const auto & storage = std::get<1>(table);
 
