@@ -12,6 +12,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -31,6 +32,7 @@
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <Formats/FormatFactory.h>
+#include <Functions/DateTimeTransforms.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
@@ -381,6 +383,65 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                                 DATE_LUT_MAX_DAY_NUM);
                     }
                     insertNumber(column, target, days_num);
+                    return true;
+                };
+            }
+            if (target.isDateTime() && root_node->logicalType().type() == avro::LogicalType::DATE)
+            {
+                /// An Avro `date` is a day count since the epoch, while the generic numeric branch
+                /// below would insert it as raw unix seconds. Convert the day count to midnight of
+                /// that day in the column's time zone, validating the same [0, MAX_DATETIME_DAY_NUM]
+                /// window that `ToDateTimeImpl` uses, the same way the other format readers do.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                return [target_type, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > MAX_DATETIME_DAY_NUM || days_num < 0)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < 0) ? 0 : MAX_DATETIME_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the day range of type DateTime, which is [0, {}]",
+                                days_num,
+                                MAX_DATETIME_DAY_NUM);
+                    }
+                    const auto & time_zone = assert_cast<const DataTypeDateTime &>(*target_type).getTimeZone();
+                    assert_cast<ColumnVector<UInt32> &>(column).insertValue(
+                        static_cast<UInt32>(time_zone.fromDayNum(ExtendedDayNum(days_num))));
+                    return true;
+                };
+            }
+            if (target.isDateTime64() && root_node->logicalType().type() == avro::LogicalType::DATE)
+            {
+                /// Same for DateTime64: convert the day count to midnight of that day instead of
+                /// inserting it as raw ticks. The day count is validated against the Date32 range,
+                /// and the resulting whole seconds are clamped to the scale-dependent DateTime64
+                /// bounds, matching the `Date32` to `DateTime64` cast.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                return [target_type, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the range of type Date32, which is [{}, {}]",
+                                days_num,
+                                DATE_LUT_MIN_EXTEND_DAY_NUM,
+                                DATE_LUT_MAX_EXTEND_DAY_NUM);
+                    }
+                    const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*target_type);
+                    const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
+                    Int64 seconds = dt64_type.getTimeZone().fromDayNum(ExtendedDayNum(days_num));
+                    seconds = std::max<Int64>(seconds, minWholeSecondsForDateTime64(scale_multiplier));
+                    seconds = std::min<Int64>(seconds, maxWholeSecondsForDateTime64(scale_multiplier));
+                    assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(
+                        DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(seconds, 0, scale_multiplier));
                     return true;
                 };
             }

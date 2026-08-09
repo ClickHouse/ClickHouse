@@ -41,6 +41,7 @@
 #include <IO/WithFileSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -1863,6 +1864,7 @@ static ColumnWithTypeAndName readColumnWithDateData(
     DataTypePtr internal_type;
     bool check_date32_range = false;
     bool check_date_range = false;
+    bool check_datetime_range = false;
 
     /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
     if (!type_hint || isDate32(*type_hint))
@@ -1877,6 +1879,24 @@ static ColumnWithTypeAndName readColumnWithDateData(
         /// type range [0, 65535]. Validate the range and throw an error
         internal_type = std::make_shared<DataTypeInt32>();
         check_date_range = true;
+    }
+    else if (isDateTime(*type_hint))
+    {
+        /// Keep the intermediate as Date32, so the later cast converts the day count to midnight
+        /// of that day instead of reading it as unix seconds. The cast is context-less, so
+        /// `date_time_overflow_behavior` does not reach it and a day number whose midnight does
+        /// not fit into DateTime would wrap to an unrelated timestamp. Validate the range here
+        /// against the same [0, MAX_DATETIME_DAY_NUM] window that `ToDateTimeImpl` uses.
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_datetime_range = true;
+    }
+    else if (isDateTime64(*type_hint))
+    {
+        /// Keep the intermediate as Date32, so the later cast converts the day count to midnight
+        /// of that day instead of reading it as raw DateTime64 ticks. The cast clamps whole
+        /// seconds that do not fit the target scale, so the Date32 range check is enough here.
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_date32_range = true;
     }
     else
     {
@@ -1920,6 +1940,19 @@ static ColumnWithTypeAndName readColumnWithDateData(
                         days_num,
                         column_name,
                         DATE_LUT_MAX_DAY_NUM);
+            }
+
+            if (check_datetime_range && (days_num > MAX_DATETIME_DAY_NUM || days_num < 0))
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < 0) ? 0 : MAX_DATETIME_DAY_NUM;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the day range of type DateTime, which is [0, {}]",
+                        days_num,
+                        column_name,
+                        MAX_DATETIME_DAY_NUM);
             }
 
             column_data.push_back(static_cast<Int32>(days_num));
