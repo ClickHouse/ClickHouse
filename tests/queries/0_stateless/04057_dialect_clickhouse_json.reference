@@ -1,6 +1,6 @@
 === Default values ===
-allow_experimental_json_ast_dialect	0	0
 dialect	clickhouse	clickhouse
+enable_json_ast_dialect	0	0
 === Without gate, client-side TCP query fails with SUPPORT_IS_DISABLED ===
 Code: 344
 SUPPORT_IS_DISABLED
@@ -8,7 +8,7 @@ SUPPORT_IS_DISABLED
 Code: 344
 SUPPORT_IS_DISABLED
 === Error message mentions the setting to enable ===
-allow_experimental_json_ast_dialect
+enable_json_ast_dialect
 === With gate, hand-written JSON-AST for SELECT 1 ===
 1
 === Round-trip: SELECT 1 + 2 + 3 (arithmetic) ===
