@@ -19,6 +19,12 @@ SET parallel_replicas_prefer_local_join=1;
 -- Keep the parallelized side oriented as written (the randomizer may flip this).
 SET query_plan_join_swap_table='false';
 
+-- Join-order randomization and runtime join filters restructure the plan around the JOIN, so
+-- `findReadingStep` no longer instruments the parallelized reading step and `input_bytes` stays 0
+-- under the settings randomizer -- pin both off.
+SET query_plan_optimize_join_order_randomize=0;
+SET enable_join_runtime_filters=0;
+
 -- Reading aggregation states / external sort spills from disk would inflate `ReadCompressedBytes`.
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
