@@ -1769,6 +1769,21 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
     return false;
 }
 
+/// Whether the final LimitStep is built with `always_read_till_end`, i.e. it must not cancel its
+/// input early. Shared by `executeDistinct` and `executeLimit` so the two cannot drift apart.
+static bool limitAlwaysReadsTillEnd(const ASTSelectQuery & query, const Settings & settings)
+{
+    if (settings[Setting::exact_rows_before_limit])
+        return true;
+
+    /// With WITH TOTALS and no ORDER BY the totals must be accumulated over the whole stream;
+    /// otherwise a WITH TOTALS on any level below would lose its totals if the input were cancelled.
+    if (query.group_by_with_totals)
+        return !query.orderBy();
+
+    return hasWithTotalsInAnySubqueryInFromClause(query);
+}
+
 template <size_t size>
 ALWAYS_INLINE void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const char (&description)[size])
 {
@@ -3443,12 +3458,12 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         /// (5) LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
         ///     all rows are read, so it cannot bound the number of distinct rows either)
         /// (6) LIMIT is not WITH TIES (the tie suffix of the last row is unbounded)
-        /// (7) `exact_rows_before_limit` is not set (it counts rows passing the LIMIT/OFFSET
-        ///     transforms, so an early stop upstream makes it short)
+        /// (7) the LIMIT does not read till end: such a LIMIT needs the whole stream, either to count
+        ///     `exact_rows_before_limit` or to accumulate WITH TOTALS, and an early stop makes both short
         /// then you can get no more than limit_length + limit_offset of different rows.
         if ((!query.orderBy() || !before_order) && !query.limitBy()
             && !query.limit_with_ties
-            && !settings[Setting::exact_rows_before_limit])
+            && !limitAlwaysReadsTillEnd(query, settings))
         {
             const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
             if (lim_info.limit_length != 0
@@ -3653,13 +3668,7 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
           *  otherwise TOTALS is counted according to incomplete data.
           */
         const Settings & settings = context->getSettingsRef();
-        bool always_read_till_end = settings[Setting::exact_rows_before_limit];
-
-        if (query.group_by_with_totals && !query.orderBy())
-            always_read_till_end = true;
-
-        if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
-            always_read_till_end = true;
+        bool always_read_till_end = limitAlwaysReadsTillEnd(query, settings);
 
         const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
