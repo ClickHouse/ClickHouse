@@ -201,6 +201,9 @@ INSERT INTO data SELECT file('a.txt'), file('b.txt');
 SELECT * FROM data;
             )",
             R"(
+┌─a───────┬─b──────┐
+│ Hello,  │ World! │
+└─────────┴────────┘
             )"
         }
     };
