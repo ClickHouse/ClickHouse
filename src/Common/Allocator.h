@@ -38,7 +38,7 @@ static constexpr size_t MALLOC_MIN_ALIGNMENT = alignof(std::max_align_t);
   * Functions __real_malloc and __real_free are used to call the MemoryTracker explicitly, so
   * it works even with sanitizers which has its own mechanism for intercepting malloc and free.
   */
-template <bool clear_memory_, bool populate>
+template <bool clear_memory_, bool populate, bool huge_pages>
 class Allocator
 {
 public:
@@ -138,7 +138,8 @@ constexpr size_t allocatorInitialBytes<AllocatorWithStackMemory<
 
 /// Prevent implicit template instantiation of Allocator
 
-extern template class Allocator<false, false>;
-extern template class Allocator<true, false>;
-extern template class Allocator<false, true>;
-extern template class Allocator<true, true>;
+extern template class Allocator<false, false, false>;
+extern template class Allocator<true, false, false>;
+extern template class Allocator<false, true, false>;
+extern template class Allocator<true, true, false>;
+extern template class Allocator<true, true, true>;

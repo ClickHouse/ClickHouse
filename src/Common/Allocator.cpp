@@ -3,6 +3,7 @@
 #include <Common/BitHelpers.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/HugePageArena.h>
 #include <Common/ErrnoException.h>
 #include <Common/VersionNumber.h>
 #include <Common/formatReadable.h>
@@ -132,21 +133,58 @@ void checkSize(size_t size)
 /// Constant is chosen almost arbitrarily, what I observed is 128KB is too small, 1MB is almost indistinguishable from 64MB and 1GB is too large.
 extern const size_t POPULATE_THRESHOLD = std::max(Int64{16 * 1024 * 1024}, ::getPageSize());
 
-template <bool clear_memory_, bool populate>
-void * Allocator<clear_memory_, populate>::alloc(size_t size, size_t alignment)
+template <bool clear_memory_, bool populate, bool huge_pages>
+void * Allocator<clear_memory_, populate, huge_pages>::alloc(size_t size, size_t alignment)
 {
     checkSize(size);
+
+    if constexpr (huge_pages)
+    {
+        if (DB::HugePageArena::shouldUse(size))
+        {
+            auto trace = CurrentMemoryTracker::alloc(size);
+
+            void * buf = DB::HugePageArena::allocate(size, alignment, clear_memory_);
+            if (nullptr == buf) [[unlikely]]
+            {
+                [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(size);
+                throw DB::ErrnoException(
+                    DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
+                    "Allocator: Cannot allocate {} from the huge page arena.",
+                    ReadableSize(static_cast<double>(size)));
+            }
+
+            /// The arena hands out untouched address space, so it is already zero-filled.
+            if constexpr (populate)
+                prefaultPages(buf, size);
+
+            trace.onAlloc(buf, size);
+            return buf;
+        }
+    }
+
     return allocImpl<clear_memory_, populate>(size, alignment);
 }
 
 
-template <bool clear_memory_, bool populate>
-void Allocator<clear_memory_, populate>::free(void * buf, size_t size, size_t /* alignment */)
+template <bool clear_memory_, bool populate, bool huge_pages>
+void Allocator<clear_memory_, populate, huge_pages>::free(void * buf, size_t size, size_t /* alignment */)
 {
     try
     {
         checkSize(size);
-        freeImpl(buf);
+
+        if constexpr (huge_pages)
+        {
+            /// `shouldUse` is a pure function of the size and a flag fixed at startup, so it gives
+            /// the same answer here as it did in `alloc` for this buffer.
+            if (DB::HugePageArena::shouldUse(size))
+                DB::HugePageArena::deallocate(buf);
+            else
+                freeImpl(buf);
+        }
+        else
+            freeImpl(buf);
         auto trace = CurrentMemoryTracker::free(size);
         trace.onFree(buf, size);
     }
@@ -157,8 +195,8 @@ void Allocator<clear_memory_, populate>::free(void * buf, size_t size, size_t /*
     }
 }
 
-template <bool clear_memory_, bool populate>
-void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, size_t new_size, size_t alignment)
+template <bool clear_memory_, bool populate, bool huge_pages>
+void * Allocator<clear_memory_, populate, huge_pages>::realloc(void * buf, size_t old_size, size_t new_size, size_t alignment)
 {
     checkSize(new_size);
 
@@ -167,6 +205,50 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
         /// nothing to do.
         /// BTW, it's not possible to change alignment while doing realloc.
         return buf;
+    }
+
+    if constexpr (huge_pages)
+    {
+        const bool old_in_arena = DB::HugePageArena::shouldUse(old_size);
+        const bool new_in_arena = DB::HugePageArena::shouldUse(new_size);
+
+        if (old_in_arena && new_in_arena)
+        {
+            /// Must go through the arena explicitly. Plain `realloc` would satisfy this from the
+            /// calling thread's arena instead, so a hash table would leave the huge pages behind
+            /// the first time it grew - which is every table of interesting size.
+            auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
+
+            void * new_buf = DB::HugePageArena::reallocate(buf, new_size, alignment, clear_memory_);
+            if (nullptr == new_buf) [[unlikely]]
+            {
+                [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
+                throw DB::ErrnoException(
+                    DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
+                    "Allocator: Cannot realloc in the huge page arena from {} to {}",
+                    ReadableSize(old_size),
+                    ReadableSize(new_size));
+            }
+
+            auto trace_free = CurrentMemoryTracker::free(old_size);
+            trace_free.onFree(buf, old_size);
+            trace_alloc.onAlloc(new_buf, new_size);
+
+            if constexpr (populate)
+                prefaultPages(new_buf, new_size);
+
+            return new_buf;
+        }
+
+        if (old_in_arena || new_in_arena)
+        {
+            /// Crossing the threshold in either direction: `alloc` and `free` already route by
+            /// size, so going through them keeps both sides consistent.
+            void * new_buf = alloc(new_size, alignment);
+            memcpy(new_buf, buf, std::min(old_size, new_size));
+            free(buf, old_size);
+            return new_buf;
+        }
     }
 
     if (alignment <= MALLOC_MIN_ALIGNMENT) [[likely]]
@@ -215,7 +297,8 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
 }
 
 
-template class Allocator<false, false>;
-template class Allocator<true, false>;
-template class Allocator<false, true>;
-template class Allocator<true, true>;
+template class Allocator<false, false, false>;
+template class Allocator<true, false, false>;
+template class Allocator<false, true, false>;
+template class Allocator<true, true, false>;
+template class Allocator<true, true, true>;
