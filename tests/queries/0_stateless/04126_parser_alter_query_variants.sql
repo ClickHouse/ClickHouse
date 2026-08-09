@@ -27,6 +27,11 @@ SELECT formatQuery('ALTER TABLE db.t MOVE PARTITION 1 TO DISK ''mydisk''');
 SELECT formatQuery('ALTER TABLE db.t MOVE PARTITION 1 TO VOLUME ''myvol''');
 SELECT formatQuery('ALTER TABLE db.t MOVE PARTITION 1 TO TABLE db.u');
 SELECT formatQuery('ALTER TABLE db.t MOVE PART ''part_1_1_0'' TO DISK ''mydisk''');
+SELECT formatQuery('ALTER TABLE db.t MOVE PART ''part_1_1_0'' TO SHARD ''/clickhouse/shard2''');
+-- Formatting the already-formatted form must be stable: this command has to survive a round trip.
+SELECT formatQuery('ALTER TABLE db.t (MOVE PART ''part_1_1_0'' TO SHARD ''/clickhouse/shard2'')');
+-- TO SHARD is accepted on MOVE PART only, never on MOVE PARTITION.
+SELECT formatQuery('ALTER TABLE db.t MOVE PARTITION 1 TO SHARD ''/clickhouse/shard2'''); -- { serverError SYNTAX_ERROR }
 
 SELECT '--- FETCH / REPLACE / ATTACH PARTITION ---';
 SELECT formatQuery('ALTER TABLE db.t FETCH PARTITION 1 FROM ''/from''');
