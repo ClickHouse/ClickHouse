@@ -1671,7 +1671,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
-        "use_projection_index_in_read_pools": lambda: random.randint(0, 1),
+        "use_indexes_refiner_in_read_pools": lambda: random.randint(0, 1),
         "enable_join_runtime_filters_index_analysis": lambda: random.randint(0, 1),
         "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
@@ -6169,7 +6169,10 @@ ORDER BY (test_name, callee_offset)
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist.decode())
+            # The processlist may contain arbitrary bytes: under the AST fuzzer, query
+            # texts (e.g. of KILL QUERY attempts) can carry invalid UTF-8 sequences,
+            # and a strict decode would crash the hung check instead of reporting it.
+            print(processlist.decode(errors="replace"))
             print(get_transactions_list(args))
 
             # `processlist` above already shows per-thread stacks for
