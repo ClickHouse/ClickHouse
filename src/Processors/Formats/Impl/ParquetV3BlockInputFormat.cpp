@@ -516,20 +516,26 @@ std::vector<FileBucketInfoPtr> computeBucketsByCount(size_t target_count, size_t
     return result;
 }
 
-/// Maps every leaf's raw dotted `path_in_schema` to the logical dotted name the native Parquet
-/// reader gives it. Mirrors `SchemaConverter`'s naming: an element contributes a name component
-/// only outside List / Map wrapper levels, so `a.list.element.x` (an `Array(Tuple(x ...))`
-/// element) becomes `a.x` and `a.list.element` (a plain array leaf) becomes `a`; for a Map the
-/// `key_value` wrapper is dropped and the key / value elements take the `keys` / `values`
-/// subcolumn names `DataTypeMap` uses (`m.key_value.value` -> `m.values`). Returns false on a
-/// malformed schema tree; the caller then falls back to raw-path matching.
+/// Maps every leaf's raw dotted `path_in_schema` to the logical dotted names the native Parquet
+/// reader can give it. Mirrors `SchemaConverter`'s naming: an element contributes a name
+/// component only outside List / Map wrapper levels, so `a.list.element.x` (an
+/// `Array(Tuple(x ...))` element) becomes `a.x` and `a.list.element` (a plain array leaf)
+/// becomes `a`. A Map leaf gets more than one logical name because the reader supports two
+/// naming modes for the same footer shape: when the column is read as a `Map`, the `key_value`
+/// wrapper is dropped and the key / value elements take the `keys` / `values` subcolumn names
+/// `DataTypeMap` uses (`m.key_value.value` -> `m.values`); when it is explicitly requested as an
+/// `Array(Tuple(...))` (`SchemaContext::MapTupleAsPlainTuple`), the wrapper is dropped but the
+/// elements keep their footer names (`m.key_value.value` -> `m.value`). Which mode applies
+/// depends on the requested type, unknown here, so every leaf carries all its possible spellings
+/// and matching accepts any of them. Returns false on a malformed schema tree; the caller then
+/// falls back to raw-path matching.
 bool collectLogicalPaths(
     const std::vector<parquet::format::SchemaElement> & schema,
     size_t & idx,
     const String & raw_prefix,
-    const String & logical_prefix,
+    const std::vector<String> & logical_prefixes,
     bool append_name,
-    std::unordered_map<String, String> & out)
+    std::unordered_map<String, std::vector<String>> & out)
 {
     if (idx >= schema.size())
         return false;
@@ -537,9 +543,10 @@ bool collectLogicalPaths(
     ++idx;
 
     String raw = raw_prefix.empty() ? elem.name : raw_prefix + "." + elem.name;
-    String logical = logical_prefix;
+    std::vector<String> logical = logical_prefixes;
     if (append_name)
-        logical = logical.empty() ? elem.name : logical + "." + elem.name;
+        for (String & prefix : logical)
+            prefix = prefix.empty() ? elem.name : prefix + "." + elem.name;
 
     const size_t num_children = elem.__isset.num_children ? static_cast<size_t>(elem.num_children) : 0;
     if (num_children == 0)
@@ -559,18 +566,35 @@ bool collectLogicalPaths(
         const size_t rep_children = rep.__isset.num_children ? static_cast<size_t>(rep.num_children) : 0;
         if (is_map && rep_children == 2)
         {
-            /// Map: the repeated `key_value` group is a wrapper, and the reader renames the
-            /// key / value elements (whatever the footer calls them) to the `keys` / `values`
-            /// subcolumn names `DataTypeMap` requires — `SchemaConverter` does this at the
-            /// output-tuple level — so a direct map-subcolumn read requests `m.keys` /
-            /// `m.values`. The whole-map name `m` is still a dotted prefix of both, so
-            /// whole-map requests keep matching.
+            /// Map: the repeated `key_value` group is a wrapper, dropped from the logical name.
+            /// When the column is read as a `Map`, the reader renames the key / value elements
+            /// (whatever the footer calls them) to the `keys` / `values` subcolumn names
+            /// `DataTypeMap` requires — `SchemaConverter` does this at the output-tuple level —
+            /// so a direct map-subcolumn read requests `m.keys` / `m.values`. When the column is
+            /// explicitly requested as an `Array(Tuple(...))`, the elements keep their footer
+            /// names instead, so the same leaf is addressed as e.g. `m.key` / `m.value`. Both
+            /// spellings are collected for each element. The whole-map name `m` is still a
+            /// dotted prefix of all of them, so whole-map requests keep matching.
             ++idx;
             String raw_rep = raw + "." + rep.name;
-            String logical_keys = logical.empty() ? "keys" : logical + ".keys";
-            String logical_values = logical.empty() ? "values" : logical + ".values";
-            return collectLogicalPaths(schema, idx, raw_rep, logical_keys, false, out)
-                && collectLogicalPaths(schema, idx, raw_rep, logical_values, false, out);
+            for (const char * map_name : {"keys", "values"})
+            {
+                if (idx >= schema.size())
+                    return false;
+                std::vector<String> child_logical;
+                child_logical.reserve(logical.size() * 2);
+                for (const String & prefix : logical)
+                {
+                    String renamed = prefix.empty() ? String(map_name) : prefix + "." + map_name;
+                    String plain = prefix.empty() ? schema[idx].name : prefix + "." + schema[idx].name;
+                    child_logical.push_back(std::move(renamed));
+                    if (plain != child_logical.back())
+                        child_logical.push_back(std::move(plain));
+                }
+                if (!collectLogicalPaths(schema, idx, raw_rep, child_logical, false, out))
+                    return false;
+            }
+            return true;
         }
         if (is_list)
         {
@@ -618,15 +642,16 @@ bool anyDottedPrefixRequested(const String & logical, const std::unordered_set<S
 /// dynamic subcolumns). Raw footer paths keep List / Map wrapper segments the
 /// logical names drop (`a.list.element.x` is addressed as `a.x` when `a` is an
 /// `Array(Tuple(...))`), so each chunk's path is normalized through the same naming
-/// the reader uses (`collectLogicalPaths`) and matches when the logical name or any
-/// dotted prefix of it is requested — so `sum(a.x)` counts only the `a.x` leaf while
+/// the reader uses (`collectLogicalPaths`) and matches when any of its logical
+/// names (a Map leaf has one per naming mode) or any dotted prefix of one is
+/// requested — so `sum(a.x)` counts only the `a.x` leaf while
 /// `sum(t)` counts every leaf under `t`. Matching only the top-level name would
 /// over-count narrow subcolumn reads and split them anyway, defeating the point of
 /// the size gate. If the schema tree cannot be walked, matching conservatively falls
 /// back to the raw path and its top-level name.
 size_t projectedCompressedBytes(const parquet::format::FileMetaData & md, const std::unordered_set<String> & requested_columns)
 {
-    std::unordered_map<String, String> logical_paths;
+    std::unordered_map<String, std::vector<String>> logical_paths;
     if (!requested_columns.empty() && !md.schema.empty())
     {
         const size_t root_children
@@ -634,7 +659,7 @@ size_t projectedCompressedBytes(const parquet::format::FileMetaData & md, const 
         size_t idx = 1;
         bool ok = true;
         for (size_t i = 0; ok && i < root_children; ++i)
-            ok = collectLogicalPaths(md.schema, idx, "", "", true, logical_paths);
+            ok = collectLogicalPaths(md.schema, idx, "", {""}, true, logical_paths);
         if (!ok)
             logical_paths.clear();
     }
@@ -661,7 +686,14 @@ size_t projectedCompressedBytes(const parquet::format::FileMetaData & md, const 
                         leaf_path += path[i];
                     }
                     if (auto it = logical_paths.find(leaf_path); it != logical_paths.end())
-                        matched = anyDottedPrefixRequested(it->second, requested_columns);
+                    {
+                        for (const String & logical : it->second)
+                        {
+                            matched = anyDottedPrefixRequested(logical, requested_columns);
+                            if (matched)
+                                break;
+                        }
+                    }
                     else
                         matched = requested_columns.contains(leaf_path);
                 }
