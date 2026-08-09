@@ -124,7 +124,24 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         version = SETTINGS_IN_ZK_VERSION;
 
     if (version >= SETTINGS_IN_ZK_VERSION)
+    {
         settings.emplace(context->getSettingsRef().changes());
+
+        /// Rewrite rules are applied once, on the initiator, before the DDL is distributed.
+        /// Strip `query_rules` from the settings recorded in the DDL log entry: they are reapplied
+        /// to the query context on every worker (`DDLTaskBase::makeQueryContext`), which then
+        /// executes the query non-internally (`DDLWorker::tryExecuteQuery`), so a session value
+        /// would make the worker either fail with `REWRITE_RULE_DOESNT_EXIST` (rule storage is
+        /// local by default, so a rule named on the initiator may not exist there) or rewrite /
+        /// reject the worker-local query a second time after `ON CLUSTER` was removed from it.
+        ///
+        /// Record the empty value as a `changed` override (do not merely remove the change) so it
+        /// also overrides any worker-side profile default for `query_rules`; otherwise a worker
+        /// with a default would apply its own rules to the replayed DDL. This mirrors the strip on
+        /// the distributed read/write paths (`MultiplexedConnections::sendQuery`,
+        /// `HedgedConnections::sendQuery`, `RemoteInserter`).
+        settings->setSetting("query_rules", "");
+    }
 }
 
 String DDLLogEntry::toString() const
