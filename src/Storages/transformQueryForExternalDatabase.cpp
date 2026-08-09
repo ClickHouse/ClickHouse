@@ -793,9 +793,12 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
             return;
         }
 
+        /// The operands of a comparison may be row values. `isNotDistinctFrom` is the NULL-safe
+        /// equality `<=>`, which MySQL accepts for row values just like the other comparisons.
         if ((function->name == "equals" || function->name == "notEquals"
              || function->name == "less" || function->name == "greater"
-             || function->name == "lessOrEquals" || function->name == "greaterOrEquals")
+             || function->name == "lessOrEquals" || function->name == "greaterOrEquals"
+             || function->name == "isNotDistinctFrom")
             && function->arguments)
         {
             for (auto & child : function->arguments->children)

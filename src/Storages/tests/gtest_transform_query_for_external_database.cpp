@@ -571,6 +571,12 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
             "(SELECT field FROM test.table WHERE (field, value) = ('foo', 'bar'))",
             IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular),
         "SELECT field FROM test.`table` WHERE (field, value) = ('foo', 'bar')");
+    /// ... including MySQL's NULL-safe equality `<=>` (`isNotDistinctFrom`).
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field FROM test.table WHERE tuple(field, value) <=> tuple('foo', 'bar'))",
+            IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular),
+        "SELECT field FROM test.`table` WHERE (field, value) <=> ('foo', 'bar')");
     /// The internal `_CAST(literal, 'Type')` wrapper that `ConstantNode::toAST` puts around
     /// literals whose type does not survive the text round trip (the analyzer re-serializes the
     /// subquery argument from its query tree) is unwrapped back to the literal instead of being
