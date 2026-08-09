@@ -260,33 +260,46 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
 
-    /// The parser produces a bare `SelectWithUnionQuery` argument of `viewIfPermitted` only for the table
-    /// function form `viewIfPermitted(SELECT ... ELSE table_function(...))`: `ViewLayer` pushes the select,
-    /// and after `ELSE` only a function call is accepted, so the shape is always exactly
-    /// (select, function) without parameters. In an expression context `viewIfPermitted` is an ordinary
-    /// function and a bare select cannot appear among its arguments at all. The formatter prints the
-    /// unparseable-elsewhere `ELSE` form for exactly the table function shape, so reject any other
-    /// combination that contains a bare select, which the parser cannot produce. The check is
-    /// case-insensitive because the parser dispatches to the table function parser on the lowercased
-    /// name, so any spelling of `viewIfPermitted` hits the same parse-back constraints.
-    if (equalsCaseInsensitive(name, "viewIfPermitted") && arguments)
+    /// The parser produces a bare `SelectWithUnionQuery` function argument only inside the table
+    /// functions `view` and `viewIfPermitted` (`ViewLayer` is their only producer): `view(SELECT ...)`
+    /// has exactly one argument, the select, and `viewIfPermitted(SELECT ... ELSE table_function(...))`
+    /// has exactly (select, function), because after `ELSE` only a function call is accepted; neither
+    /// form has parameters. In an expression context both names parse as ordinary functions and a bare
+    /// select cannot appear among their arguments at all. The formatter prints special forms for
+    /// exactly the table function shapes (the query-argument form, which silently drops parameters,
+    /// and the `ELSE` form, which is unparseable elsewhere), so reject any other combination that
+    /// contains a bare select, which the parser cannot produce. The checks are case-insensitive
+    /// because the parser dispatches to the table function parser on the lowercased name, so any
+    /// spelling hits the same parse-back constraints.
+    bool is_view = equalsCaseInsensitive(name, "view");
+    bool is_view_if_permitted = equalsCaseInsensitive(name, "viewIfPermitted");
+    if ((is_view || is_view_if_permitted) && arguments)
     {
         bool has_bare_select = std::ranges::any_of(
             arguments->children, [](const ASTPtr & child) { return child->as<ASTSelectWithUnionQuery>() != nullptr; });
-        bool is_table_function_shape = !parameters && arguments->children.size() == 2
-            && arguments->children[0]->as<ASTSelectWithUnionQuery>() && arguments->children[1]->as<ASTFunction>();
+        bool is_table_function_shape = !parameters
+            && (is_view
+                ? arguments->children.size() == 1 && arguments->children[0]->as<ASTSelectWithUnionQuery>()
+                : arguments->children.size() == 2 && arguments->children[0]->as<ASTSelectWithUnionQuery>()
+                    && arguments->children[1]->as<ASTFunction>());
         if (has_bare_select && !is_table_function_shape)
+        {
+            if (is_view)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'view' with a select query argument must have exactly one argument, a select query, "
+                    "and no parameters during AST JSON deserialization");
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'viewIfPermitted' with a select query argument must have exactly two arguments, a select query "
                 "followed by a function, and no parameters during AST JSON deserialization");
+        }
 
         /// For the table function form the parser emits only the canonical spelling (`ViewLayer`
-        /// dispatches on the lowercased name but always produces `viewIfPermitted`), and execution
-        /// matches the name case-sensitively (e.g. `StorageView::replaceWithSubquery`), so a
-        /// non-canonical spelling that reaches the interpreter through `clickhouse_json` would fail
-        /// with a logical error. Canonicalize it the way the parser does.
+        /// dispatches on the lowercased name but always produces `view` or `viewIfPermitted`), and
+        /// execution matches the name case-sensitively (e.g. `StorageView::replaceWithSubquery` and
+        /// the table function factory), so a non-canonical spelling that reaches the interpreter
+        /// through `clickhouse_json` would fail. Canonicalize it the way the parser does.
         if (is_table_function_shape)
-            name = "viewIfPermitted";
+            name = is_view ? "view" : "viewIfPermitted";
     }
 
     r.readAlias(*this);
