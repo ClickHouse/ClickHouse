@@ -712,12 +712,13 @@ ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_reattach_uncovered DETACH PART 'all_1_1_0
 check_if_not_detached "SELECT * FROM t_reattach_uncovered FORMAT Null" "t_reattach_uncovered"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_uncovered"
 
-# A replacing form that carries a source clause validates that source before the replacement path touches
-# the existing destination: the populating `SELECT` is analyzed by `getTablePropertiesAndNormalizeCreateQuery`
+# A replacing form validates the new definition before the replacement path touches the existing
+# destination: the populating `SELECT` is analyzed by `getTablePropertiesAndNormalizeCreateQuery`
 # and an `AS src` source is validated by `setEngine`, so `CREATE OR REPLACE TABLE dst AS SELECT missing_col
-# FROM src` (or `... AS view_src`) fails with `dst` untouched. The hook cannot predict whether that
-# validation passes, so such destinations must stay out of scope — even for a statement that goes on to
-# succeed. A bare replacing form with an explicit definition keeps its destination covered.
+# FROM src` (or `... AS view_src`) fails with `dst` untouched — and a source-less form can be rejected
+# there as incomplete too (`CREATE OR REPLACE TABLE dst` with no column list). The hook cannot predict
+# whether that validation passes, so every replacing destination must stay out of scope — even for a
+# statement that goes on to succeed.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_repl_dst"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_repl_src"
 ${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_repl_view"
@@ -727,12 +728,13 @@ ${CLICKHOUSE_CLIENT} -q "CREATE VIEW t_reattach_repl_view AS SELECT a FROM t_rea
 
 check_fails_kind_without_detach "CREATE OR REPLACE TABLE t_reattach_repl_dst ENGINE = MergeTree ORDER BY a AS SELECT missing_col FROM t_reattach_repl_src" "t_reattach_repl_dst" "UNKNOWN_IDENTIFIER"
 check_fails_kind_without_detach "CREATE OR REPLACE TABLE t_reattach_repl_dst AS t_reattach_repl_view" "t_reattach_repl_dst" "INCORRECT_QUERY"
+check_fails_kind_without_detach "CREATE OR REPLACE TABLE t_reattach_repl_dst" "t_reattach_repl_dst" "INCORRECT_QUERY"
 
 # The failing statements above must not have replaced or lost the destination.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_reattach_repl_dst"
 
 check_if_not_detached "CREATE OR REPLACE TABLE t_reattach_repl_dst ENGINE = MergeTree ORDER BY a AS SELECT a FROM t_reattach_repl_src" "t_reattach_repl_dst"
-check_if_detached "CREATE OR REPLACE TABLE t_reattach_repl_dst (a UInt64) ENGINE = MergeTree ORDER BY a" "t_reattach_repl_dst"
+check_if_not_detached "CREATE OR REPLACE TABLE t_reattach_repl_dst (a UInt64) ENGINE = MergeTree ORDER BY a" "t_reattach_repl_dst"
 
 ${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_repl_view"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_repl_src"
@@ -752,3 +754,15 @@ check_fails_kind_without_detach "CREATE TEMPORARY TABLE t_reattach_tmp ON CLUSTE
 check_if_detached "CREATE TEMPORARY TABLE t_reattach_tmp ENGINE = Memory AS SELECT * FROM t_reattach_tmp_src" "t_reattach_tmp_src"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_tmp_src"
+
+# An `ON CLUSTER` statement is out of the hook's scope entirely: on the initiator the interpreter
+# delegates to `executeDDLQueryOnCluster` before performing any local table operation (the local host may
+# not even be in the target cluster), and the real per-host executions replayed by the `DDLWorker` are not
+# `INITIAL_QUERY`, so neither side may reattach. The same statement without the `ON CLUSTER` clause does
+# touch the local table and keeps detaching it.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_oc"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_oc (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_oc VALUES (1)"
+check_if_not_detached "OPTIMIZE TABLE t_reattach_oc ON CLUSTER test_shard_localhost FINAL" "t_reattach_oc"
+check_if_detached "OPTIMIZE TABLE t_reattach_oc FINAL" "t_reattach_oc"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_oc"
