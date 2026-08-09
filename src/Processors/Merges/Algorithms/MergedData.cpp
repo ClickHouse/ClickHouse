@@ -203,7 +203,7 @@ bool MergedData::hasEnoughRows() const
         return true;
 
     /// Never return more than max_block_size_bytes
-    if (max_block_size_bytes)
+    if (merged_rows && max_block_size_bytes)
     {
         size_t merged_bytes = 0;
         for (const auto & column : columns)
