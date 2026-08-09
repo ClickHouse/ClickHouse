@@ -580,65 +580,73 @@ void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses
 
 TEST_F(ResolvePoolTest, BannedForConsiquenceFail)
 {
-    auto history = 10ms;
+    auto history = 100ms;
     auto resolver = make_resolver(toMilliseconds(history));
 
     auto failed_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*failed_addr));
 
 
+    // `setFail` stamps the ban's anchor before it refreshes DNS, so the anchor lies in
+    // [before, after]. A deadline that gates a "still banned" assertion must therefore use
+    // `before` (a lower bound on expiry) and one that waits for expiry must use `after` (an
+    // upper bound); a single anchor taken after `setFail` can outlive the ban it waits on.
+    auto before = now();
     failed_addr.setFail();
-    auto start_at = now();
+    auto after = now();
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
-    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, before + history - epsilon);
 
-    sleep_until(start_at + history + epsilon);
+    sleep_until(after + history + epsilon);
 
     resolver->update();
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
 
+    before = now();
     failed_addr.setFail();
-    start_at = now();
+    after = now();
 
-    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, before + history - epsilon);
 
-    sleep_until(start_at + history + epsilon);
+    sleep_until(after + history + epsilon);
 
     resolver->update();
 
     // too much time has passed
-    if (now() > start_at + 2*history - epsilon)
+    if (now() > before + 2*history)
         return;
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
 
     // ip still banned adter history_ms + update, because it was his second consiquent fail
-    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, start_at + 2*history - epsilon);
+    check_no_failed_address(2, resolver, addresses, failed_addr, metrics, before + 2*history - epsilon);
 }
 
 TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
 {
-    auto history = 10ms;
+    auto history = 100ms;
     auto resolver = make_resolver(toMilliseconds(history));
 
     auto failed_addr = resolver->resolve();
     ASSERT_TRUE(addresses.contains(*failed_addr));
 
+    // Anchors bracket the ban's own timestamp; see BannedForConsiquenceFail. Only the last
+    // `setFail` matters here: concurrent fails do not extend the window.
+    auto before = now();
     failed_addr.setFail();
     failed_addr.setFail();
     failed_addr.setFail();
-
-    auto start_at = now();
+    auto after = now();
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
-    check_no_failed_address(3, resolver, addresses, failed_addr, metrics, start_at + history - epsilon);
+    check_no_failed_address(3, resolver, addresses, failed_addr, metrics, before + history - epsilon);
 
-    sleep_until(start_at + history + epsilon);
+    sleep_until(after + history + epsilon);
 
     resolver->update();
 
