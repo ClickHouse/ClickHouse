@@ -1,8 +1,10 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <Common/Exception.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
+#include <Formats/ParseError.h>
 #include <Interpreters/convertFieldToType.h>
 
 #include <algorithm>
@@ -110,8 +112,19 @@ bool isJSONPathFilterSafe(
     /// Non-nullable type: missing path produces the type's default value.
     /// If comparing to the default, we cannot safely skip the granule.
     /// Convert value_field to the key expression type before comparing.
-    auto converted = convertFieldToType(value_field, *key_expression_type);
-    if (converted == key_expression_type->getDefault())
+    Field converted;
+    try
+    {
+        converted = convertFieldToType(value_field, *key_expression_type);
+    }
+    catch (const Exception & e)
+    {
+        if (!isParseError(e.code()))
+            throw;
+        return false;
+    }
+    /// A null means no conversion happened, so the comparison below would be meaningless.
+    if (converted.isNull() || converted == key_expression_type->getDefault())
         return false;
 
     return true;

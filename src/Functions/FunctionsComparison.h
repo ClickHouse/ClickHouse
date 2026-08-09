@@ -1089,8 +1089,6 @@ private:
 
         auto is_string_not_in_enum = [this, &string_value]<typename T>(const EnumValues<T> * enum_values) -> bool
         {
-            if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
-                return false;
             if (params.validate_enum_literals_in_operators)
                 return false;
             if (!enum_values || string_value.getType() != Field::Types::String)

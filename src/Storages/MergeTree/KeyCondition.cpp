@@ -39,6 +39,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
+#include <Formats/ParseError.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
@@ -3926,7 +3927,18 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 return false;
                         }
 
-                        const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                        try
+                        {
+                            const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                        }
+                        catch (const Exception & e)
+                        {
+                            if (!isParseError(e.code()))
+                                throw;
+                            /// A literal with no representation in the key type is not a point in
+                            /// the key domain, so this atom cannot be analyzed.
+                            return false;
+                        }
                         if (const_value.isNull())
                             return false;
                         /// No need to set condition_is_relaxed because we're doing exact conversion

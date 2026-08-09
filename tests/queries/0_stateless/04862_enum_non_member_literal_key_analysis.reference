@@ -1,0 +1,106 @@
+positive control
+2
+1
+2
+1
+six operators vs a non-member literal, key table
+0
+0
+0
+0
+0
+2
+six operators vs a non-member literal, non-key table
+0
+0
+0
+0
+0
+2
+a literal that is not even numeric-looking
+0
+0
+2
+0
+0
+2
+null-safe operators
+0
+0
+2
+2
+1
+1
+string search over an Enum key
+1
+1
+1
+1
+1
+1
+0
+0
+partition key
+1000
+500
+500
+500
+0
+0
+skip indexes on a non-key Enum column
+minmax
+1
+0
+0
+2
+1
+set
+1
+0
+0
+2
+1
+bloom_filter, scalar equality
+1
+0
+0
+2
+1
+1
+1
+bloom_filter over an Array(Enum): has / hasAny / hasAll
+1
+0
+0
+0
+0
+1
+1
+0
+0
+bloom_filter over Map(Enum, ...) keys
+1
+0
+0
+type wrappers
+Nullable(Enum8)
+1
+0
+2
+0
+3
+Nullable(Enum16)
+1
+0
+2
+0
+3
+a	0	1	0	1
+b	0	1	0	1
+\N	\N	\N	0	1
+validate_enum_literals_in_operators = 1 still rejects
+pruning for representable literals is preserved
+1
+1
+1
+1

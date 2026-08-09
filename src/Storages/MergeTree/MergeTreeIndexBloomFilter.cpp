@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Formats/ParseError.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -689,6 +690,23 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 }
 
 
+/// Like convertFieldToType, but a literal with no representation in the index type yields a null
+/// Field instead of throwing: every caller already treats null as "the index cannot be used".
+static Field convertFieldToIndexType(
+    const Field & value_field, const IDataType & actual_type, const IDataType * value_type_hint = nullptr)
+{
+    try
+    {
+        return convertFieldToType(value_field, actual_type, value_type_hint);
+    }
+    catch (const Exception & e)
+    {
+        if (!isParseError(e.code()))
+            throw;
+        return {};
+    }
+}
+
 static ColumnPtr createColumnFromConstantArray(const Field & value_field, const DataTypePtr & actual_type)
 {
     if (value_field.getType() != Field::Types::Array)
@@ -702,7 +720,7 @@ static ColumnPtr createColumnFromConstantArray(const Field & value_field, const 
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        auto converted = convertFieldToType(f, *actual_type);
+        auto converted = convertFieldToIndexType(f, *actual_type);
         if (converted.isNull())
             return nullptr;
 
@@ -818,7 +836,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 {
                     out.function = RPNElement::FUNCTION_HAS;
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    auto converted_field = convertFieldToIndexType(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
                         return false;
 
@@ -860,7 +878,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = convertFieldToIndexType(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
 
@@ -907,7 +925,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-        auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+        auto converted_field = convertFieldToIndexType(value_field, *actual_type, value_type.get());
         if (converted_field.isNull())
             return false;
 
