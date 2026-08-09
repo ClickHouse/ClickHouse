@@ -527,8 +527,11 @@ def main():
         # alive, so Node.js runs in the background and is killed as soon as the expected
         # output appears, instead of paying a fixed `timeout` on every green run. The
         # 300-second polling loop is only the worst-case deadline for module startup.
-        # If the process dies on its own before producing the output (a trap, an
-        # uncaught exception, an engine crash), its exit status fails the job.
+        # Accepted exit statuses: 0 (clean self-exit; the output is still checked by the
+        # final grep), or 137 (128+SIGKILL, the self-inflicted kill) - and 137 only when
+        # the expected output was seen first. Anything else - a trap, an uncaught
+        # exception, an engine crash, even one that happens after the output was
+        # produced - fails the job.
         if res and build_type == BuildTypes.WASM64:
             smoke_dir = f"{temp_dir}/wasm_smoke"
             smoke_query = (
@@ -549,7 +552,7 @@ def main():
                         'kill -0 "$pid" 2>/dev/null || break; sleep 1; done; '
                         'kill -9 "$pid" 2>/dev/null; wait "$pid"; status=$?; '
                         'echo "output found: $found, exit status: $status"; cat smoke.err; '
-                        '[ "$found" -eq 1 ] || [ "$status" -eq 0 ]',
+                        '[ "$status" -eq 0 ] || { [ "$found" -eq 1 ] && [ "$status" -eq 137 ]; }',
                         f"grep -x 1000-499500-999 {smoke_dir}/smoke.out",
                     ],
                 )
