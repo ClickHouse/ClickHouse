@@ -101,6 +101,9 @@ private:
         ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
         ISerialization::StreamCallback prefixes_prefetch_callback);
 
+    /// Whether another prefetch fits into `filesystem_prefetches_limit` (zero means unlimited).
+    bool canIssuePrefetch() const;
+
     void deserializePrefixForAllColumns(size_t num_columns, size_t from_mark);
     void deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t from_mark, Priority priority);
 
@@ -111,6 +114,9 @@ private:
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
     DeserializationPrefixesCache * deserialization_prefixes_cache;
     std::unordered_set<std::string> prefetched_streams;
+    /// Prefetches issued for the buffers currently owned by `streams`. Reset wherever
+    /// `prefetched_streams` is cleared, but never on erase from it: the buffer stays allocated.
+    size_t issued_prefetches = 0;
     ssize_t prefetched_from_mark = -1;
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;

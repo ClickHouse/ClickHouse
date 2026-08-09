@@ -1,0 +1,6 @@
+-- prefetches within the limit
+1
+1
+1
+-- the limit is observed, not naturally small: zero means unlimited
+1
