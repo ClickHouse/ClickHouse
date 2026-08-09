@@ -21,10 +21,9 @@ def get_array(query_result: str):
     return arr
 
 
-def skip_if_no_puffin_deletion_vector(table_name: str, error_message: str):
+def verify_puffin_deletion_vector_exists(table_name: str, error_message: str):
     table_path = Path(f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}")
-    if not any(table_path.rglob("*.puffin")):
-        pytest.skip(error_message)
+    assert any(table_path.rglob("*.puffin")), error_message
 
 
 def create_spark_v3_deletion_vector_table(started_cluster_iceberg_with_spark, table_name: str):
@@ -47,7 +46,7 @@ def create_spark_v3_deletion_vector_table(started_cluster_iceberg_with_spark, ta
     except Exception as e:
         pytest.skip(f"Spark Iceberg runtime cannot create v3 deletion vectors: {e}")
 
-    skip_if_no_puffin_deletion_vector(
+    verify_puffin_deletion_vector_exists(
         table_name, "Spark Iceberg runtime did not produce Puffin deletion vector files")
 
 
@@ -75,7 +74,7 @@ def create_spark_v3_deletion_vector_multi_data_file_table(started_cluster_iceber
     except Exception as e:
         pytest.skip(f"Spark Iceberg runtime cannot create v3 deletion vectors: {e}")
 
-    skip_if_no_puffin_deletion_vector(
+    verify_puffin_deletion_vector_exists(
         table_name, "Spark Iceberg runtime did not produce Puffin deletion vector files")
 
 
@@ -110,7 +109,7 @@ def create_spark_mixed_v2_position_delete_and_v3_deletion_vector_table(started_c
     except Exception as e:
         pytest.skip(f"Spark Iceberg runtime cannot create mixed v2/v3 delete table: {e}")
 
-    skip_if_no_puffin_deletion_vector(
+    verify_puffin_deletion_vector_exists(
         table_name, "Spark Iceberg runtime did not produce Puffin deletion vector files after v3 upgrade")
 
 
@@ -291,8 +290,8 @@ def test_v3_deletion_vectors_table_function(
         table_function=True)
 
     # Must read data files; SELECT count() uses metadata optimization and skips delete transforms.
-    old_behavior_error = instance.query_and_get_error(f"SELECT min(id) FROM {expression}")
-    assert "Position deletes are supported only for parquet format" in old_behavior_error
+    default_behavior_error = instance.query_and_get_error(f"SELECT min(id) FROM {expression}")
+    assert "Iceberg v3 deletion vectors are not enabled. Set allow_experimental_iceberg_deletion_vectors = 1" in default_behavior_error
 
     settings = {
         "allow_experimental_iceberg_deletion_vectors": 1,

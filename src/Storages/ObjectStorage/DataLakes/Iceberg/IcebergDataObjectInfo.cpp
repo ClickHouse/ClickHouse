@@ -117,6 +117,22 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFi
         if (!position_delete_object->parsed_entry->content_offset.has_value()
             || !position_delete_object->parsed_entry->content_size_in_bytes.has_value())
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Iceberg deletion vector does not have content offset or size");
+       
+        /// There can be at most one deletion vector for a data file in a snapshot.
+        if (std::any_of(
+                info.position_deletes_objects.begin(),
+                info.position_deletes_objects.end(),
+                [](const auto & object) { return object.isDeletionVector(); }))
+            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Multiple deletion vectors apply to the same Iceberg data file");
+        
+        /// Iceberg guarantees that a deletion vector for this data file contains all position deletes
+        /// from the files it replaces, so remove the replaced position delete files.
+        info.position_deletes_objects.erase(
+            std::remove_if(
+                info.position_deletes_objects.begin(),
+                info.position_deletes_objects.end(),
+                [](const auto & object) { return !object.isDeletionVector(); }),
+            info.position_deletes_objects.end());
 
         info.position_deletes_objects.emplace_back(
             resolved_storage_path,
@@ -128,6 +144,13 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFi
             position_delete_object->parsed_entry->content_size_in_bytes);
         return;
     }
+
+    /// Ignore position delete files replaced by an existing deletion vector.
+    if (std::any_of(
+            info.position_deletes_objects.begin(),
+            info.position_deletes_objects.end(),
+            [](const auto & object) { return object.isDeletionVector(); }))
+        return;
 
     info.position_deletes_objects.emplace_back(
         resolved_storage_path, position_delete_object->parsed_entry->file_format, std::nullopt,
