@@ -1016,6 +1016,18 @@ bool MergeTreeIndexAggregatorVectorSimilarityScann::empty() const
     return granule->empty();
 }
 
+void MergeTreeIndexAggregatorVectorSimilarityScann::reserve(size_t rows)
+{
+    if (granule->padded_dim != 0 && rows > granule->vectors.max_size() / granule->padded_dim)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "ScaNN index granule size is too large: {} rows with {} dimensions",
+            rows,
+            granule->padded_dim);
+
+    granule->vectors.reserve(rows * granule->padded_dim);
+}
+
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarityScann::getGranuleAndReset()
 {
     granule->buildIndex();

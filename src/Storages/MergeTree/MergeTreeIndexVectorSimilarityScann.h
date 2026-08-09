@@ -95,6 +95,7 @@ public:
     MergeTreeIndexAggregatorVectorSimilarityScann(const ScannIndexParams & params_, const String & column_name_);
 
     bool empty() const override;
+    void reserve(size_t rows) override;
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 

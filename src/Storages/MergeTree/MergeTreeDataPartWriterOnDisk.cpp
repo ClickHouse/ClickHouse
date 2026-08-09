@@ -307,6 +307,20 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
                 skip_indices_aggregators[i] = index_helper->createIndexAggregator();
+                if (!index_granularity->empty())
+                {
+                    const size_t marks_count = index_granularity->getMarksCountWithoutFinal();
+                    if (granule.mark_number < marks_count)
+                    {
+                        const size_t marks_to_reserve = std::min<size_t>(
+                            index_helper->index.granularity,
+                            marks_count - granule.mark_number);
+                        const size_t rows_to_reserve = index_granularity->getRowsCountInRange(
+                            granule.mark_number,
+                            granule.mark_number + marks_to_reserve);
+                        skip_indices_aggregators[i]->reserve(rows_to_reserve);
+                    }
+                }
 
                 for (const auto & [type, stream] : index_streams)
                 {

@@ -145,6 +145,9 @@ struct IMergeTreeIndexAggregator
     virtual bool empty() const = 0;
     virtual MergeTreeIndexGranulePtr getGranuleAndReset() = 0;
 
+    /// Optionally reserve storage for the expected number of rows in the next index granule being initialized.
+    virtual void reserve(size_t /*rows*/) {}
+
     /// Updates the stored info using rows of the specified block.
     /// Reads no more than `limit` rows.
     /// After finishing updating `pos` will store the position of the first row which was not read.
