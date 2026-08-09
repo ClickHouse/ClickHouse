@@ -773,6 +773,11 @@ void MergeTreeDataPartWriterOnDisk::setVectorDimensionsIfNeeded(CompressionCodec
         {
             for (size_t j = 0; j < column->size(); ++j)
             {
+                /// This upfront scan runs before the granule loop and materializes a Field per row,
+                /// so a large block would otherwise be an uninterruptible writer phase preceding the
+                /// per-granule cancellation points; the check is an atomic load, negligible next to `get`.
+                checkWriteCancellation();
+
                 column->get(j, sample_field);
                 codec->setAndCheckVectorDimension(sample_field.safeGet<Array>().size());
             }

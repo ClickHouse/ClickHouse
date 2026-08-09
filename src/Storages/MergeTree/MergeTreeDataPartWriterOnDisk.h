@@ -129,8 +129,9 @@ protected:
 
     virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
 
-    /// This is useful only for vector codecs (like SZ3).
-    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
+    /// This is useful only for vector codecs (like SZ3). Scans every row of the column, so it
+    /// observes query cancellation via checkWriteCancellation (hence not static).
+    void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
 
     const MergeTreeIndices skip_indices;
     const String marks_file_extension;
