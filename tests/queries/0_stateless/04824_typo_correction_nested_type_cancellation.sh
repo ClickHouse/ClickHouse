@@ -25,8 +25,8 @@ done
 echo "CREATE TABLE t_04824 (c ${nested}, plain UInt8) ENGINE = Memory" \
     | $CLICKHOUSE_CLIENT --max_query_size=1000000
 
-# Only the new analyzer collects hints this way, so every statement below that depends on the walk
-# pins it: on an old-analyzer configuration the walk never runs and the assertions would be vacuous.
+# Only the analyzer collects hints this way, so every statement below that depends on the walk pins
+# it: on an old-analyzer configuration the walk never runs and the assertions would be vacuous.
 
 # A one-part identifier cannot match a compound subcolumn at any depth, so none of the four walks
 # per column can contribute a hint. They ran anyway, taking 44 s on a debug build and 348 s under a
