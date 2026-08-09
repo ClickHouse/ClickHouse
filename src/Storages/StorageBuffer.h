@@ -2,6 +2,7 @@
 
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Interpreters/InsertStartGates.h>
 #include <Storages/IStorage.h>
 #include <Common/ThreadPool_fwd.h>
 
@@ -196,12 +197,15 @@ private:
     LoggerPtr log;
 
     void flushAllBuffers(bool check_thresholds = true);
-    bool flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false);
+    bool flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false, const InsertStartGatesPtr & insert_start_gates = nullptr);
     bool checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
     bool checkThresholdsImpl(bool direct, size_t rows, size_t bytes, time_t time_passed) const;
 
     /// `table` argument is passed, as it is sometimes evaluated beforehand. It must match the `destination`.
-    void writeBlockToDestination(const Block & block, StoragePtr table);
+    /// `insert_start_gates` is the registry of the INSERT query when the write runs on behalf of one
+    /// (the direct writes of `BufferSink`), so the nested INSERT shares the query's `Too many parts`
+    /// gates; the background flush passes none and the nested INSERT creates its own.
+    void writeBlockToDestination(const Block & block, StoragePtr table, const InsertStartGatesPtr & insert_start_gates = nullptr);
 
     void backgroundFlush();
     void reschedule(size_t min_delay);

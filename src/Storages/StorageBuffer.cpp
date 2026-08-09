@@ -772,6 +772,12 @@ public:
 
     String getName() const override { return "BufferSink"; }
 
+    /// The real pre-write checks run inside the nested `INSERT` into the destination table that the
+    /// direct writes of this sink open (`StorageBuffer::writeBlockToDestination`): keep the query's
+    /// registry to thread it into them, so a later direct write of the query does not count a part an
+    /// earlier one has committed and fail the query with `Too many parts` in the middle.
+    void setInsertStartGateRegistry(InsertStartGatesPtr gates) override { insert_start_gates = std::move(gates); }
+
     void consume(Chunk & chunk) override
     {
         size_t rows = chunk.getNumRows();
@@ -800,7 +806,7 @@ public:
             if (destination)
             {
                 LOG_DEBUG(storage.log, "Writing block with {} rows, {} bytes directly.", rows, bytes);
-                storage.writeBlockToDestination(block, destination);
+                storage.writeBlockToDestination(block, destination, insert_start_gates);
             }
             return;
         }
@@ -847,6 +853,7 @@ public:
 private:
     StorageBuffer & storage;
     StorageMetadataPtr metadata_snapshot;
+    InsertStartGatesPtr insert_start_gates;
 
     void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, int32_t metadata_version)
     {
@@ -864,7 +871,7 @@ private:
               */
 
             LOG_DEBUG(storage.log, "Flush buffer by threshold");
-            storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
+            storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */, insert_start_gates);
             buffer.metadata_version = metadata_version;
         }
 
@@ -1103,7 +1110,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
 }
 
 
-bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked)
+bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked, const InsertStartGatesPtr & insert_start_gates)
 {
     Block block_to_write;
     time_t current_time = time(nullptr);
@@ -1155,7 +1162,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     Stopwatch watch;
     try
     {
-        writeBlockToDestination(block_to_write, getDestinationTable());
+        writeBlockToDestination(block_to_write, getDestinationTable(), insert_start_gates);
     }
     catch (...)
     {
@@ -1184,7 +1191,7 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 }
 
 
-void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table)
+void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr table, const InsertStartGatesPtr & insert_start_gates)
 {
     if (!destination_id || block.empty())
         return;
@@ -1249,6 +1256,9 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         /* no_squash */ false,
         /* no_destination */ false,
         /* async_isnert */ false);
+    /// Share the INSERT query's gates with the nested INSERT of a direct write, so its
+    /// `Too many parts` check is shared with the other writes of the query into the destination.
+    interpreter.setInsertStartGates(insert_start_gates);
 
     auto block_io = interpreter.execute();
     PushingPipelineExecutor executor(block_io.pipeline);
