@@ -125,8 +125,15 @@ run_case compact "min_bytes_for_wide_part = '100G', min_rows_for_wide_part = 100
 # writer-side check calls `QueryStatus::throwIfKilled`, which maps the recorded cancel reason back to
 # the right error code. This case guards that mapping for the write path (the exception mapping lives in
 # the shared writer base, so exercising one part kind covers both).
-run_timeout_case()
+# One attempt with the given `max_execution_time`. Sets `timeout_outcome` to:
+#   "pass"  - deadline fired in the write phase and was reported as TIMEOUT_EXCEEDED
+#   "slow"  - the deadline expired before the source was fully read (machine too slow for this
+#             deadline; the writer-side check was never exercised) - retry with a larger one
+#   "fail"  - anything else (wrong error code); diagnostics already printed
+timeout_attempt()
 {
+    local max_exec_time="$1"
+    local attempt="$2"
     local table="t_col_write_timeout_wide"
 
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${table}"
@@ -136,25 +143,29 @@ run_timeout_case()
     SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
     "
 
-    local query_id="col_write_timeout_${CLICKHOUSE_DATABASE}_$$"
+    local query_id="col_write_timeout_${CLICKHOUSE_DATABASE}_$$_${attempt}"
     local err="${CLICKHOUSE_TMP}/04411_col_write_timeout_err.txt"
 
-    # `max_execution_time = 8` (throw) is far above the cheap read of the pre-materialized source (a few
-    # seconds at most, even on sanitizer builds) and far below the ZSTD(22) write of the whole block
-    # (tens of seconds to minutes), so the deadline reliably lands inside the column write loop.
+    # The deadline (throw mode) must sit above the cheap read of the pre-materialized source and below
+    # the ZSTD(22) write of the whole block (tens of seconds to minutes) so that it lands inside the
+    # column write loop. No single constant does that on every machine: under a loaded sanitizer/debug
+    # run the read alone can exceed 8 seconds. The caller retries with escalating deadlines; a machine
+    # slow enough to need a larger deadline has a proportionally longer write phase, so the larger
+    # deadline still lands inside the write.
     ${CLICKHOUSE_CLIENT} --query_id "$query_id" \
         --max_block_size $ROWS --max_insert_block_size $ROWS \
         --min_insert_block_size_rows $ROWS --min_insert_block_size_bytes 0 \
-        --max_execution_time 8 --timeout_overflow_mode throw \
+        --max_execution_time "$max_exec_time" --timeout_overflow_mode throw \
         -q "INSERT INTO ${table} SELECT s FROM t_col_write_src" >/dev/null 2>"$err" &
     local insert_pid=$!
 
     # Confirm the query reaches the write phase (source fully read => execution inside the writer) before
     # the deadline; this is what makes the timeout fire in the column write loop rather than in the read.
+    local poll_iterations=$(( (max_exec_time + 60) * 10 ))
     local read_rows
     local max_read_rows=0
     local _
-    for _ in $(seq 1 600); do
+    for _ in $(seq 1 "$poll_iterations"); do
         read_rows=$(${CLICKHOUSE_CLIENT} -q "SELECT read_rows FROM system.processes WHERE query_id = '$query_id'")
         if [ -n "$read_rows" ] && [ "$read_rows" -gt "$max_read_rows" ]; then max_read_rows=$read_rows; fi
         if [ "$max_read_rows" -ge "$ROWS" ]; then break; fi
@@ -163,17 +174,17 @@ run_timeout_case()
         sleep 0.1
     done
 
-    # Bound the wait for the 8-second deadline: `CancellationChecker` can miss it entirely (its worker
+    # Bound the wait for the deadline: `CancellationChecker` can miss it entirely (its worker
     # sleeps toward a stale earliest deadline and a newly appended earlier one does not re-arm the wait),
     # and then the untracked INSERT would grind through the full ZSTD(22) block and trip the harness
     # timeout instead of this test. Kill the query and fail with a diagnostic in that case.
     local deadline_fired=0
-    for _ in $(seq 1 600); do
+    for _ in $(seq 1 "$poll_iterations"); do
         if ! kill -0 "$insert_pid" 2>/dev/null; then deadline_fired=1; break; fi
         sleep 0.1
     done
     if [ "$deadline_fired" -eq 0 ]; then
-        echo "timeout wide: max_execution_time never fired within 60s, killing the query"
+        echo "timeout wide: max_execution_time never fired within $((max_exec_time + 60))s, killing the query"
         # Bounded like the KILL in run_case: if the writer-side check regressed too, an unbounded
         # SYNC would block until the whole block is written; fall back to killing the client.
         if ! timeout 15 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" >/dev/null; then
@@ -191,19 +202,36 @@ run_timeout_case()
     fi
 
     # A TIMEOUT_EXCEEDED alone is not enough: if the source was never fully read, the deadline fired in
-    # the read/squash phase and the writer-side check was never exercised.
+    # the read/squash phase and the writer-side check was never exercised - the machine is too slow for
+    # this deadline, so report "slow" and let the caller retry with a larger one.
     if [ -z "$max_read_rows" ] || [ "$max_read_rows" -lt "$ROWS" ]; then
-        echo "timeout wide: did not observe the column write phase"
-        cat "$err"
+        timeout_outcome="slow"
     elif grep -q "TIMEOUT_EXCEEDED" "$err"; then
         echo "timeout wide: reported as timeout"
+        timeout_outcome="pass"
     else
         echo "timeout wide: wrong error"
         cat "$err"
+        timeout_outcome="fail"
     fi
 
     rm -f "$err"
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${table}"
+}
+
+run_timeout_case()
+{
+    local timeout_outcome=""
+    local attempt=0
+    local max_exec_time
+    for max_exec_time in 8 16 32 64; do
+        attempt=$((attempt + 1))
+        timeout_attempt "$max_exec_time" "$attempt"
+        if [ "$timeout_outcome" != "slow" ]; then return; fi
+    done
+    # Even the largest deadline expired before the source was fully read; something other than machine
+    # slowness is wrong (e.g. a stuck read). The per-attempt diagnostics were consumed, so re-state it.
+    echo "timeout wide: did not observe the column write phase with max_execution_time up to 64s"
 }
 
 run_timeout_case
