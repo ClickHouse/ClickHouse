@@ -1,0 +1,97 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Compact parts exercise the additional subcolumn check in `MergeTreeReaderCompact`. -->
+    <create_query>
+        CREATE TABLE json_subcolumn_type_lookup
+        (
+            part UInt16,
+            json JSON(
+                p000 UInt64, p001 UInt64, p002 UInt64, p003 UInt64, p004 UInt64, p005 UInt64, p006 UInt64, p007 UInt64,
+                p008 UInt64, p009 UInt64, p010 UInt64, p011 UInt64, p012 UInt64, p013 UInt64, p014 UInt64, p015 UInt64,
+                p016 UInt64, p017 UInt64, p018 UInt64, p019 UInt64, p020 UInt64, p021 UInt64, p022 UInt64, p023 UInt64,
+                p024 UInt64, p025 UInt64, p026 UInt64, p027 UInt64, p028 UInt64, p029 UInt64, p030 UInt64, p031 UInt64,
+                p032 UInt64, p033 UInt64, p034 UInt64, p035 UInt64, p036 UInt64, p037 UInt64, p038 UInt64, p039 UInt64,
+                p040 UInt64, p041 UInt64, p042 UInt64, p043 UInt64, p044 UInt64, p045 UInt64, p046 UInt64, p047 UInt64,
+                p048 UInt64, p049 UInt64, p050 UInt64, p051 UInt64, p052 UInt64, p053 UInt64, p054 UInt64, p055 UInt64,
+                p056 UInt64, p057 UInt64, p058 UInt64, p059 UInt64, p060 UInt64, p061 UInt64, p062 UInt64, p063 UInt64,
+                p064 UInt64, p065 UInt64, p066 UInt64, p067 UInt64, p068 UInt64, p069 UInt64, p070 UInt64, p071 UInt64,
+                p072 UInt64, p073 UInt64, p074 UInt64, p075 UInt64, p076 UInt64, p077 UInt64, p078 UInt64, p079 UInt64,
+                p080 UInt64, p081 UInt64, p082 UInt64, p083 UInt64, p084 UInt64, p085 UInt64, p086 UInt64, p087 UInt64,
+                p088 UInt64, p089 UInt64, p090 UInt64, p091 UInt64, p092 UInt64, p093 UInt64, p094 UInt64, p095 UInt64,
+                p096 UInt64, p097 UInt64, p098 UInt64, p099 UInt64, p100 UInt64, p101 UInt64, p102 UInt64, p103 UInt64,
+                p104 UInt64, p105 UInt64, p106 UInt64, p107 UInt64, p108 UInt64, p109 UInt64, p110 UInt64, p111 UInt64,
+                p112 UInt64, p113 UInt64, p114 UInt64, p115 UInt64, p116 UInt64, p117 UInt64, p118 UInt64, p119 UInt64,
+                p120 UInt64, p121 UInt64, p122 UInt64, p123 UInt64, p124 UInt64, p125 UInt64, p126 UInt64, p127 UInt64,
+                p128 UInt64, p129 UInt64, p130 UInt64, p131 UInt64, p132 UInt64, p133 UInt64, p134 UInt64, p135 UInt64,
+                p136 UInt64, p137 UInt64, p138 UInt64, p139 UInt64, p140 UInt64, p141 UInt64, p142 UInt64, p143 UInt64,
+                p144 UInt64, p145 UInt64, p146 UInt64, p147 UInt64, p148 UInt64, p149 UInt64, p150 UInt64, p151 UInt64,
+                p152 UInt64, p153 UInt64, p154 UInt64, p155 UInt64, p156 UInt64, p157 UInt64, p158 UInt64, p159 UInt64,
+                p160 UInt64, p161 UInt64, p162 UInt64, p163 UInt64, p164 UInt64, p165 UInt64, p166 UInt64, p167 UInt64,
+                p168 UInt64, p169 UInt64, p170 UInt64, p171 UInt64, p172 UInt64, p173 UInt64, p174 UInt64, p175 UInt64,
+                p176 UInt64, p177 UInt64, p178 UInt64, p179 UInt64, p180 UInt64, p181 UInt64, p182 UInt64, p183 UInt64,
+                p184 UInt64, p185 UInt64, p186 UInt64, p187 UInt64, p188 UInt64, p189 UInt64, p190 UInt64, p191 UInt64,
+                p192 UInt64, p193 UInt64, p194 UInt64, p195 UInt64, p196 UInt64, p197 UInt64, p198 UInt64, p199 UInt64,
+                p200 UInt64, p201 UInt64, p202 UInt64, p203 UInt64, p204 UInt64, p205 UInt64, p206 UInt64, p207 UInt64,
+                p208 UInt64, p209 UInt64, p210 UInt64, p211 UInt64, p212 UInt64, p213 UInt64, p214 UInt64, p215 UInt64,
+                p216 UInt64, p217 UInt64, p218 UInt64, p219 UInt64, p220 UInt64, p221 UInt64, p222 UInt64, p223 UInt64,
+                p224 UInt64, p225 UInt64, p226 UInt64, p227 UInt64, p228 UInt64, p229 UInt64, p230 UInt64, p231 UInt64,
+                p232 UInt64, p233 UInt64, p234 UInt64, p235 UInt64, p236 UInt64, p237 UInt64, p238 UInt64, p239 UInt64,
+                p240 UInt64, p241 UInt64, p242 UInt64, p243 UInt64, p244 UInt64, p245 UInt64, p246 UInt64, p247 UInt64,
+                p248 UInt64, p249 UInt64, p250 UInt64, p251 UInt64, p252 UInt64, p253 UInt64, p254 UInt64, p255 UInt64,
+                p256 UInt64, p257 UInt64, p258 UInt64, p259 UInt64, p260 UInt64, p261 UInt64, p262 UInt64, p263 UInt64,
+                p264 UInt64, p265 UInt64, p266 UInt64, p267 UInt64, p268 UInt64, p269 UInt64, p270 UInt64, p271 UInt64,
+                p272 UInt64, p273 UInt64, p274 UInt64, p275 UInt64, p276 UInt64, p277 UInt64, p278 UInt64, p279 UInt64,
+                p280 UInt64, p281 UInt64, p282 UInt64, p283 UInt64, p284 UInt64, p285 UInt64, p286 UInt64, p287 UInt64,
+                p288 UInt64, p289 UInt64, p290 UInt64, p291 UInt64, p292 UInt64, p293 UInt64, p294 UInt64, p295 UInt64,
+                p296 UInt64, p297 UInt64, p298 UInt64, p299 UInt64, p300 UInt64, p301 UInt64, p302 UInt64, p303 UInt64,
+                p304 UInt64, p305 UInt64, p306 UInt64, p307 UInt64, p308 UInt64, p309 UInt64, p310 UInt64, p311 UInt64,
+                p312 UInt64, p313 UInt64, p314 UInt64, p315 UInt64, p316 UInt64, p317 UInt64, p318 UInt64, p319 UInt64,
+                p320 UInt64, p321 UInt64, p322 UInt64, p323 UInt64, p324 UInt64, p325 UInt64, p326 UInt64, p327 UInt64,
+                p328 UInt64, p329 UInt64, p330 UInt64, p331 UInt64, p332 UInt64, p333 UInt64, p334 UInt64, p335 UInt64,
+                p336 UInt64, p337 UInt64, p338 UInt64, p339 UInt64, p340 UInt64, p341 UInt64, p342 UInt64, p343 UInt64,
+                p344 UInt64, p345 UInt64, p346 UInt64, p347 UInt64, p348 UInt64, p349 UInt64, p350 UInt64, p351 UInt64,
+                p352 UInt64, p353 UInt64, p354 UInt64, p355 UInt64, p356 UInt64, p357 UInt64, p358 UInt64, p359 UInt64,
+                p360 UInt64, p361 UInt64, p362 UInt64, p363 UInt64, p364 UInt64, p365 UInt64, p366 UInt64, p367 UInt64,
+                p368 UInt64, p369 UInt64, p370 UInt64, p371 UInt64, p372 UInt64, p373 UInt64, p374 UInt64, p375 UInt64,
+                p376 UInt64, p377 UInt64, p378 UInt64, p379 UInt64, p380 UInt64, p381 UInt64, p382 UInt64, p383 UInt64,
+                p384 UInt64, p385 UInt64, p386 UInt64, p387 UInt64, p388 UInt64, p389 UInt64, p390 UInt64, p391 UInt64,
+                p392 UInt64, p393 UInt64, p394 UInt64, p395 UInt64, p396 UInt64, p397 UInt64, p398 UInt64, p399 UInt64,
+                p400 UInt64, p401 UInt64, p402 UInt64, p403 UInt64, p404 UInt64, p405 UInt64, p406 UInt64, p407 UInt64,
+                p408 UInt64, p409 UInt64, p410 UInt64, p411 UInt64, p412 UInt64, p413 UInt64, p414 UInt64, p415 UInt64,
+                p416 UInt64, p417 UInt64, p418 UInt64, p419 UInt64, p420 UInt64, p421 UInt64, p422 UInt64, p423 UInt64,
+                p424 UInt64, p425 UInt64, p426 UInt64, p427 UInt64, p428 UInt64, p429 UInt64, p430 UInt64, p431 UInt64,
+                p432 UInt64, p433 UInt64, p434 UInt64, p435 UInt64, p436 UInt64, p437 UInt64, p438 UInt64, p439 UInt64,
+                p440 UInt64, p441 UInt64, p442 UInt64, p443 UInt64, p444 UInt64, p445 UInt64, p446 UInt64, p447 UInt64,
+                p448 UInt64, p449 UInt64, p450 UInt64, p451 UInt64, p452 UInt64, p453 UInt64, p454 UInt64, p455 UInt64,
+                p456 UInt64, p457 UInt64, p458 UInt64, p459 UInt64, p460 UInt64, p461 UInt64, p462 UInt64, p463 UInt64,
+                p464 UInt64, p465 UInt64, p466 UInt64, p467 UInt64, p468 UInt64, p469 UInt64, p470 UInt64, p471 UInt64,
+                p472 UInt64, p473 UInt64, p474 UInt64, p475 UInt64, p476 UInt64, p477 UInt64, p478 UInt64, p479 UInt64,
+                p480 UInt64, p481 UInt64, p482 UInt64, p483 UInt64, p484 UInt64, p485 UInt64, p486 UInt64, p487 UInt64,
+                p488 UInt64, p489 UInt64, p490 UInt64, p491 UInt64, p492 UInt64, p493 UInt64, p494 UInt64, p495 UInt64,
+                p496 UInt64, p497 UInt64, p498 UInt64, p499 UInt64, p500 UInt64, p501 UInt64, p502 UInt64, p503 UInt64,
+                p504 UInt64, p505 UInt64, p506 UInt64, p507 UInt64, p508 UInt64, p509 UInt64, p510 UInt64, p511 UInt64
+            )
+        )
+        ENGINE = MergeTree
+        PARTITION BY part
+        ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = '100G'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO json_subcolumn_type_lookup
+        SELECT number, toJSONString(map('target', number))
+        FROM numbers(96)
+        SETTINGS max_partitions_per_insert_block = 96
+    </fill_query>
+
+    <!-- The dynamic path is resolved once per part against a `JSON` type with many typed paths. -->
+    <query>SELECT json.target FROM json_subcolumn_type_lookup FORMAT Null</query>
+    <!-- Control for the cost of opening and reading the same parts without a subcolumn lookup. -->
+    <query>SELECT part FROM json_subcolumn_type_lookup FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_subcolumn_type_lookup</drop_query>
+</test>

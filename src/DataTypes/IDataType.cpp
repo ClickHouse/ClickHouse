@@ -273,8 +273,12 @@ DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) cons
 
 DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 {
-    if (auto result = tryGetSubcolumnTypeWithoutSerialization(subcolumn_name); result && *result)
-        return *result;
+    if (auto result = tryGetSubcolumnTypeWithoutSerialization(subcolumn_name))
+    {
+        if (*result)
+            return *result;
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
+    }
 
     auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
     return getSubcolumnData(subcolumn_name, data, {}, true)->type;

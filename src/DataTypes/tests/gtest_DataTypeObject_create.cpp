@@ -278,6 +278,11 @@ TEST(DataTypeObject, TypeOnlySubcolumnLookupPreservesSerializationPrecedence)
         "JSON({} UInt8)", DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION));
     expectSubcolumnType(
         *special_name_collision, DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, "UInt8");
+
+    auto prefixed_name_collision = std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{{"^`obj`", factory.get("JSON(x UInt8)")}});
+    expectSubcolumnType(*prefixed_name_collision, "^`obj`.x", "UInt8");
 }
 
 TEST(DataTypeObject, TypeOnlySubcolumnLookupUsesCanonicalPathNames)

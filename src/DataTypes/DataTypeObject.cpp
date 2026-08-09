@@ -629,6 +629,18 @@ std::optional<DataTypePtr> DataTypeObject::tryGetSubcolumnTypeWithoutSerializati
         return std::optional<DataTypePtr>{resolve_remaining_subcolumn(it->second, getSubcolumnAfterPath(split, it->second))};
     }
 
+    /// Multiple typed prefixes can expose colliding static and dynamic subcolumns.
+    /// Preserve serialization enumeration order for those uncommon declarations.
+    if (num_typed_prefixes > 1)
+        return std::nullopt;
+
+    if (num_typed_prefixes == 1)
+    {
+        String remaining(subcolumn_name.substr(typed_prefix_size + 1));
+        if (auto type = resolve_remaining_subcolumn(typed_prefix_type, remaining))
+            return type;
+    }
+
     if (subcolumn_name == SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION)
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
 
@@ -644,18 +656,6 @@ std::optional<DataTypePtr> DataTypeObject::tryGetSubcolumnTypeWithoutSerializati
         if (auto it = typed_paths.find(*combined_subcolumn); it != typed_paths.end())
             return it->second;
         return getDynamicType();
-    }
-
-    /// Multiple typed prefixes can expose colliding static and dynamic subcolumns.
-    /// Preserve serialization enumeration order for those uncommon declarations.
-    if (num_typed_prefixes > 1)
-        return std::nullopt;
-
-    if (num_typed_prefixes == 1)
-    {
-        String remaining(subcolumn_name.substr(typed_prefix_size + 1));
-        if (auto type = resolve_remaining_subcolumn(typed_prefix_type, remaining))
-            return type;
     }
 
     return std::optional<DataTypePtr>{resolve_remaining_subcolumn(getDynamicType(), split.fullSubcolumn())};
