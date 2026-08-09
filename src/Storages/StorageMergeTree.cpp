@@ -2036,6 +2036,11 @@ GapPartProperties StorageMergeTree::getMaxPropertiesInBetween(const PartProperti
         if (it == data_parts_by_info.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "left and right parts in the wrong order, left part {}, right part {}. It's a bug", left.name, right.name);
 
+        /// A part left behind by a rolled back transaction is skipped when loading parts, so it can
+        /// never intersect the merge result and must not hold the merge back.
+        if ((*it)->version->getInfo().creation_csn == Tx::RolledBackCSN)
+            continue;
+
         result.level = std::max(result.level, (*it)->info.level);
         result.mutation = std::max(result.mutation, (*it)->info.mutation);
     }

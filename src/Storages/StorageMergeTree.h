@@ -273,8 +273,8 @@ private:
     UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
     UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
-    /// Returns the maximum level and mutation version over all outdated parts in a range (left; right),
-    /// or zeroes in case if empty range.
+    /// Returns the maximum level and mutation version over the outdated parts in a range (left; right)
+    /// whose creation was not rolled back, or zeroes in case if empty range.
     /// Merges have to be aware of the outdated parts inside designated merge range.
     /// When two parts all_1_1_0, all_3_3_0 are merged into all_1_3_1, the gap between those parts have to be verified.
     /// There should be neither an unactive part all_1_1_1 nor all_1_1_0_9: the merge result does not contain
