@@ -104,6 +104,7 @@
 #include <Storages/System/StorageSystemFilesystemCacheSettings.h>
 #include <Storages/System/StorageSystemQueryConditionCache.h>
 #include <Storages/System/StorageSystemQueryResultCache.h>
+#include <Storages/System/StorageSystemUserQueryLog.h>
 #include <Storages/System/StorageSystemNamedCollections.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/StorageSystemCertificates.h>
@@ -164,6 +165,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int TABLE_ALREADY_EXISTS;
+}
 
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
 {
@@ -329,6 +336,32 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
     {
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
+    }
+
+    if (context->getConfigRef().getBool("query_log.enable_user_query_log", true))
+    {
+        /// The query log table is always created in the `system` database: `SystemLog::createSystemLog` coerces any
+        /// other configured `query_log.database` back to `system`. So the collision with `system.user_query_log`
+        /// happens for `query_log.table = user_query_log` regardless of the configured `query_log.database`.
+        if (context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The `query_log.table` server setting cannot be set to `user_query_log`: "
+                "the query log table is always created in the `system` database, where `system.user_query_log` "
+                "shows the query log records of the current user. "
+                "Rename the query log table or set `query_log.enable_user_query_log` to 0");
+
+        /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
+        if (system_database.isTableExist("user_query_log", context))
+            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                "Table `system.user_query_log` already exists, but this name is used for the query log records of the current user. "
+                "Rename or drop the existing table, or set `query_log.enable_user_query_log` to 0");
+
+        attach<StorageSystemUserQueryLog>(context, system_database, "user_query_log",
+            "Contains the query log records of the current user: rows of the query log table (`system.query_log` by default) "
+            "whose initiating user is the current user. Unlike the query log table itself, it can be read without any grants. "
+            "This is only supported when the query log is stored locally: if `query_log.engine` delegates reads to another "
+            "server (for example, `Distributed`), reading throws an exception, because the per-user access check cannot be "
+            "enforced across a ClickHouse-protocol server boundary; in that case set `query_log.enable_user_query_log` to 0.");
     }
 
     attach<StorageSystemCodecs>(context, system_database, "codecs", "Contains information about system codecs.");
