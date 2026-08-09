@@ -64,6 +64,8 @@ public:
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
 
+    bool readsNumericValueIntoBoolColumn() const override { return false; }
+
     bool first_row = true;
 };
 

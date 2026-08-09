@@ -79,6 +79,8 @@ public:
 private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
+    bool readsNumericValueIntoBoolColumn() const override { return false; }
+
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     using EscapingRule = FormatSettings::EscapingRule;

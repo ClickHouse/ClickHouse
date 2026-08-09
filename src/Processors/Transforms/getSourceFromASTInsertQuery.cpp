@@ -5,12 +5,16 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/EmptyReadBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -96,6 +100,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_maps_columns_by_name = false;
     bool format_honors_column_name_matching_mode = false;
     bool format_reads_numeric_into_ipv4 = false;
+    bool format_reads_numeric_into_bool = true;
     bool format_stores_typed_numeric_values = false;
     bool format_always_skips_unknown_fields = false;
     try
@@ -128,6 +133,7 @@ String getInsertDataSchemaMismatchDescription(
         format_maps_columns_by_name = schema_reader->mapsColumnsByName();
         format_honors_column_name_matching_mode = schema_reader->honorsColumnNameMatchingMode();
         format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
+        format_reads_numeric_into_bool = schema_reader->readsNumericValueIntoBoolColumn();
         format_stores_typed_numeric_values = schema_reader->storesTypedNumericValues();
         format_always_skips_unknown_fields = schema_reader->alwaysSkipsUnknownFields();
     }
@@ -230,6 +236,118 @@ String getInsertDataSchemaMismatchDescription(
         return numbers_inference_available && index < inferred_is_numeric_content.size() && !inferred_is_numeric_content[index];
     };
 
+    /// A `Bool` destination is a special case among the integer-backed types: where the parser re-parses
+    /// the field with the `Bool` deserializers, only the literal tokens `1` / `0` (and the word forms)
+    /// are accepted, so `2` or `1.5` is a genuine structure mismatch — but schema inference widens both
+    /// `1` and `2` to the same `Int64`, so the inferred type alone cannot tell a valid boolean column
+    /// from an invalid one. Inspect the actual sampled values instead: lazily parse the sampled data
+    /// once with the inferred structure (which is how the values were inferred, so this parse succeeds
+    /// where inference did) and record, per top-level column, whether every value is `0` or `1`.
+    /// A floating-point `1.0` is counted as a valid boolean literal even though the parser rejects it —
+    /// the original literal is not recoverable from the parsed value — staying on the
+    /// low-false-positive side. Best-effort like the second inference above: if the sample cannot be
+    /// parsed, the answer stays unknown and the caller treats the column as compatible.
+    bool sample_values_scanned = false;
+    std::vector<std::optional<bool>> sample_column_holds_only_bool_literals;
+    auto inferred_column_holds_only_bool_literals = [&](size_t index) -> std::optional<bool>
+    {
+        if (!sample_values_scanned)
+        {
+            sample_values_scanned = true;
+            sample_column_holds_only_bool_literals.assign(inferred.size(), std::nullopt);
+
+            std::vector<char> is_numeric_column(inferred.size(), false);
+            std::vector<char> holds_only_bool_literals(inferred.size(), true);
+            {
+                size_t column_index = 0;
+                for (const auto & column : inferred)
+                {
+                    const WhichDataType which(removeNullable(recursiveRemoveLowCardinality(column.type)));
+                    is_numeric_column[column_index] = which.isInt() || which.isUInt() || which.isFloat();
+                    ++column_index;
+                }
+            }
+
+            size_t rows_read = 0;
+            try
+            {
+                Block header;
+                for (const auto & column : inferred)
+                    header.insert(ColumnWithTypeAndName(column.type, column.name));
+
+                /// The insertion table is cleared for the same reason as in the schema inference above.
+                auto parse_context = Context::createCopy(context);
+                parse_context->setInsertionTable(StorageID::createEmpty());
+
+                auto buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
+                auto input = parse_context->getInputFormat(format_name, *buffer, header, DEFAULT_BLOCK_SIZE, format_settings);
+                QueryPipeline pipeline(std::move(input));
+                PullingPipelineExecutor executor(pipeline);
+
+                /// Inspect only the rows schema inference looked at (already clamped above to the rows
+                /// the parser had reached), so a value in a row the parser never got to cannot
+                /// contaminate the diagnosis of an earlier failure.
+                Block block;
+                while (rows_read < format_settings.max_rows_to_read_for_schema_inference && executor.pull(block))
+                {
+                    const size_t rows_to_scan = std::min<size_t>(
+                        block.rows(), format_settings.max_rows_to_read_for_schema_inference - rows_read);
+                    for (size_t i = 0; i < block.columns() && i < inferred.size(); ++i)
+                    {
+                        if (!is_numeric_column[i] || !holds_only_bool_literals[i])
+                            continue;
+                        const auto & column = *block.getByPosition(i).column;
+                        for (size_t row = 0; row < rows_to_scan; ++row)
+                        {
+                            const Field value = column[row];
+                            bool is_bool_literal = true;
+                            switch (value.getType())
+                            {
+                                case Field::Types::UInt64:
+                                    is_bool_literal = value.safeGet<UInt64>() <= 1;
+                                    break;
+                                case Field::Types::Int64:
+                                {
+                                    const auto v = value.safeGet<Int64>();
+                                    is_bool_literal = v == 0 || v == 1;
+                                    break;
+                                }
+                                case Field::Types::Float64:
+                                {
+                                    const auto v = value.safeGet<Float64>();
+                                    is_bool_literal = v == 0.0 || v == 1.0;
+                                    break;
+                                }
+                                default:
+                                    /// `NULL` and everything else: not evidence of a non-boolean value.
+                                    break;
+                            }
+                            if (!is_bool_literal)
+                            {
+                                holds_only_bool_literals[i] = false;
+                                break;
+                            }
+                        }
+                    }
+                    rows_read += block.rows();
+                }
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// Best-effort: the rows scanned before the failure (e.g. a row truncated by the
+                /// sampling byte bound) are still valid evidence, and without any the answer simply
+                /// stays unknown, so it is Ok to ignore the exception here.
+            }
+
+            if (rows_read)
+                for (size_t i = 0; i < inferred.size(); ++i)
+                    if (is_numeric_column[i])
+                        sample_column_holds_only_bool_literals[i] = static_cast<bool>(holds_only_bool_literals[i]);
+        }
+
+        return index < sample_column_holds_only_bool_literals.size() ? sample_column_holds_only_bool_literals[index] : std::nullopt;
+    };
+
     /// Compare structurally with a deliberately loose notion of compatibility. Schema inference widens
     /// types on purpose — numbers become broad types such as `Int64` / `UInt64` / `Float64`, and it does
     /// not reconstruct wrappers such as `Nullable`, `LowCardinality` or `Enum` — so comparing type names
@@ -239,9 +357,15 @@ String getInsertDataSchemaMismatchDescription(
     /// and expected types have no common supertype at all (e.g. a `String` inferred for a numeric column):
     /// a strong, low-false-positive signal that the data really has a different shape than the query expects.
     /// A `std::function` (rather than `auto`) so the structured-token rule below can recurse into the
-    /// nested value types with the same loose notion of compatibility.
-    std::function<bool(const DataTypePtr &, const DataTypePtr &, bool)> types_are_compatible
-        = [&](const DataTypePtr & inferred_type, const DataTypePtr & expected_type, bool inferred_is_text) -> bool
+    /// nested value types with the same loose notion of compatibility. `top_level_column_index` carries
+    /// the index of the top-level inferred column so the `Bool` rule below can inspect the sampled
+    /// values of that column; the recursive calls pass `std::nullopt` — the sampled values of a nested
+    /// element are not individually recoverable, so the rule stays inconclusive (compatible) there.
+    std::function<bool(const DataTypePtr &, const DataTypePtr &, bool, std::optional<size_t>)> types_are_compatible
+        = [&](const DataTypePtr & inferred_type,
+              const DataTypePtr & expected_type,
+              bool inferred_is_text,
+              std::optional<size_t> top_level_column_index) -> bool
     {
         if (inferred_type->equals(*expected_type))
             return true;
@@ -347,6 +471,30 @@ String getInsertDataSchemaMismatchDescription(
                 return false;
         }
 
+        /// A numeric value into a `Bool` destination. Where the parser re-parses the field with the
+        /// `Bool` deserializers — the typed-token JSON formats (`SerializationBool::deserializeTextJSON`
+        /// accepts only `true` / `false` and `1` / `0`) and the flat-text formats (which additionally
+        /// honor `bool_true_representation` / `bool_false_representation`, so the check applies only
+        /// when those hold their default word forms and thus cannot legitimize another numeric literal)
+        /// — a numeric value other than `0` / `1` is a genuine structure mismatch, but the widened
+        /// inferred type (`Int64` for both `1` and `2`) cannot tell them apart, so the sampled values
+        /// of the column are inspected instead. Checked before the supertype rule, which would
+        /// otherwise wrongly treat e.g. an `Int64` holding `2` as compatible with the `UInt8`-backed
+        /// `Bool`. When the values are unavailable (or the format reads numeric values by value into
+        /// the `UInt8`-backed column — see `readsNumericValueIntoBoolColumn`), stay compatible.
+        if (inferred_is_numeric && isBool(expected_unwrapped))
+        {
+            const bool parser_accepts_only_bool_literal_tokens = format_reads_typed_json_value_tokens
+                || (!format_reads_numeric_into_bool && format_settings.bool_true_representation == "true"
+                    && format_settings.bool_false_representation == "false");
+            if (parser_accepts_only_bool_literal_tokens && top_level_column_index)
+            {
+                if (const auto holds_only_bool_literals = inferred_column_holds_only_bool_literals(*top_level_column_index))
+                    return *holds_only_bool_literals;
+            }
+            return true;
+        }
+
         if (tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr)
             return true;
 
@@ -384,10 +532,10 @@ String getInsertDataSchemaMismatchDescription(
                 {
                     const auto & expected_element = expected_array->getNestedType();
                     if (inferred_array)
-                        return types_are_compatible(inferred_array->getNestedType(), expected_element, false);
+                        return types_are_compatible(inferred_array->getNestedType(), expected_element, false, std::nullopt);
                     return std::ranges::all_of(
                         inferred_tuple->getElements(),
-                        [&](const auto & element) { return types_are_compatible(element, expected_element, false); });
+                        [&](const auto & element) { return types_are_compatible(element, expected_element, false, std::nullopt); });
                 }
 
                 /// An unnamed `Tuple` destination reads the `[...]` token positionally. A named `Tuple`
@@ -400,7 +548,7 @@ String getInsertDataSchemaMismatchDescription(
                     if (inferred_array)
                         return std::ranges::all_of(
                             expected_elements,
-                            [&](const auto & element) { return types_are_compatible(inferred_array->getNestedType(), element, false); });
+                            [&](const auto & element) { return types_are_compatible(inferred_array->getNestedType(), element, false, std::nullopt); });
 
                     /// The parser requires exactly as many elements in the token as the destination
                     /// `Tuple` has, and an inferred unnamed `Tuple` preserves the element count.
@@ -408,7 +556,7 @@ String getInsertDataSchemaMismatchDescription(
                     if (inferred_elements.size() != expected_elements.size())
                         return false;
                     for (size_t i = 0; i < inferred_elements.size(); ++i)
-                        if (!types_are_compatible(inferred_elements[i], expected_elements[i], false))
+                        if (!types_are_compatible(inferred_elements[i], expected_elements[i], false, std::nullopt))
                             return false;
                     return true;
                 }
@@ -425,9 +573,9 @@ String getInsertDataSchemaMismatchDescription(
                     if (inferred_tuple)
                         return std::ranges::all_of(
                             inferred_tuple->getElements(),
-                            [&](const auto & element) { return types_are_compatible(element, expected_value, false); });
+                            [&](const auto & element) { return types_are_compatible(element, expected_value, false, std::nullopt); });
                     if (inferred_map)
-                        return types_are_compatible(inferred_map->getValueType(), expected_value, false);
+                        return types_are_compatible(inferred_map->getValueType(), expected_value, false, std::nullopt);
                     /// Inferred `Object`: the value types are unknown at the type level.
                     return true;
                 }
@@ -454,7 +602,8 @@ String getInsertDataSchemaMismatchDescription(
                             if (!types_are_compatible(
                                     inferred_tuple->getElements()[i],
                                     expected_tuple->getElements()[it - expected_names.begin()],
-                                    false))
+                                    false,
+                                    std::nullopt))
                                 return false;
                         }
                         return true;
@@ -627,7 +776,7 @@ String getInsertDataSchemaMismatchDescription(
                 corresponds = false;
                 break;
             }
-            if (!types_are_compatible(column.type, expected_types[position], inferred_is_confirmed_text(current_index)))
+            if (!types_are_compatible(column.type, expected_types[position], inferred_is_confirmed_text(current_index), current_index))
             {
                 corresponds = false;
                 break;
@@ -650,7 +799,7 @@ String getInsertDataSchemaMismatchDescription(
              corresponds && it_inferred != inferred.end() && it_expected != expected.end();
              ++it_inferred, ++it_expected, ++inferred_index)
         {
-            if (!types_are_compatible(it_inferred->type, it_expected->type, inferred_is_confirmed_text(inferred_index)))
+            if (!types_are_compatible(it_inferred->type, it_expected->type, inferred_is_confirmed_text(inferred_index), inferred_index))
                 corresponds = false;
         }
     }

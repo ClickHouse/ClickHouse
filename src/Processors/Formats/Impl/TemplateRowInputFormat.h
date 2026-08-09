@@ -122,6 +122,8 @@ public:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
 private:
+    bool readsNumericValueIntoBoolColumn() const override { return false; }
+
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     PeekableReadBuffer buf;

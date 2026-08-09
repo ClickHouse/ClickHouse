@@ -130,6 +130,23 @@ public:
     /// mismatch regardless of this capability.)
     virtual bool readsNumericValueIntoIPv4Column() const { return false; }
 
+    /// True when the parser may accept a numeric value other than the literal `0` / `1` into a `Bool`
+    /// destination column. The formats that read numeric values by value into the `UInt8`-backed
+    /// column — the binary formats that store typed values (`BSONEachRow`, `MsgPack`), `Avro`, and
+    /// the formats that cast a decoded source column to the destination type (the columnar `Parquet` /
+    /// `Arrow` / `ORC`, `Native` under `input_format_native_allow_types_conversion`) — accept e.g. `2`
+    /// there, as does `Values` through its expression-interpretation fallback
+    /// (`input_format_values_interpret_expressions`). The flat-text row formats (`TSV`, `CSV`, `TSKV`,
+    /// `CustomSeparated`, `Template`, `Regexp`) instead hand the raw field to the `Bool` deserializers
+    /// (`SerializationBool`), which accept only the configured `bool_true_representation` /
+    /// `bool_false_representation` and the fixed literal forms (`1` / `0`, `true` / `false`, ...) — so
+    /// they return false. The typed-token JSON formats are equally strict
+    /// (`SerializationBool::deserializeTextJSON` accepts only `true` / `false` and `1` / `0`), but a
+    /// caller already identifies them via `readsTypedJSONValueTokens`, so they keep the default. A
+    /// caller comparing an inferred schema against an expected one uses this (together with the actual
+    /// sampled values) to know when a numeric value is a genuine structure mismatch for a `Bool` column.
+    virtual bool readsNumericValueIntoBoolColumn() const { return true; }
+
     /// True when the format stores numeric values with their on-wire numeric kind and the parser does
     /// not convert them across the integer / floating-point family boundary. The text / JSON parsers
     /// re-parse a numeric token with the deserializer of the destination type, so any numeric token

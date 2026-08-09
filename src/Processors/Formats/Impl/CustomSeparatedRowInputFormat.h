@@ -114,6 +114,7 @@ public:
 
 private:
     bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
+    bool readsNumericValueIntoBoolColumn() const override { return false; }
 
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 
