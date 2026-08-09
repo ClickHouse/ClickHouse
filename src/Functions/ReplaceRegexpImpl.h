@@ -362,12 +362,9 @@ struct ReplaceRegexpImpl
     }
 
     /// Haystacks are often repetitive (e.g. URLs), so run the regexp once per distinct value and copy the
-    /// cached result (a range in `res_data`) for repeats: adjacent duplicates are caught by comparing with
-    /// the previous row, non-adjacent ones through a hash map. The map is switched off once the block turns
-    /// out to be mostly distinct values, so low-repetition columns do not pay for it.
-    /// This pays off only for RE2 matches; a JIT-compiled match is about as cheap as the hash table probe it
-    /// would save, which is why the JIT loop processes every row directly.
-    /// `get_haystack(i)` returns the i-th haystack, which must stay valid for the whole call.
+    /// cached result for repeats. Only worth it for RE2 matches: a JIT-compiled match is about as cheap as
+    /// the hash table probe it would save, which is why the JIT loop processes every row directly.
+    /// `get_haystack(i)` must stay valid for the whole call.
     template <typename GetHaystack>
     static void processStringsDeduplicated(
         GetHaystack && get_haystack,
@@ -378,7 +375,7 @@ struct ReplaceRegexpImpl
         const re2::RE2 & searcher,
         int num_captures,
         const Instructions & instructions,
-        ReplaceCancellationBudget & budget)
+        CancellationBudget & budget)
     {
         struct CachedResult
         {
@@ -388,8 +385,7 @@ struct ReplaceRegexpImpl
 
         HashMap<std::string_view, CachedResult> results_cache;
         bool map_enabled = true;
-        /// Blocks smaller than this never trigger a ratio check, so the map is never disabled for them.
-        /// Starts low so small max_block_size settings and naturally short blocks still benefit.
+        /// Low, so that short blocks are never written off as distinct before they can repeat.
         size_t next_distinct_ratio_check = 256;
 
         std::string_view prev_haystack;
@@ -404,8 +400,7 @@ struct ReplaceRegexpImpl
             if (cached.length)
                 memcpy(&res_data[res_offset], &res_data[cached.start], cached.length);
             res_offset += cached.length;
-            /// The row itself is charged by the caller; a cached copy can still move megabytes.
-            budget.chargeUnits(cached.length / ReplaceCancellationBudget::bytes_per_unit);
+            budget.chargeUnits(cached.length / CancellationBudget::bytes_per_unit);
         };
 
         for (size_t i = 0; i < input_rows_count; ++i)

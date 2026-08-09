@@ -165,8 +165,7 @@ run "replacement parsing" \
 
 # 13. A FixedString haystack, which reaches the regexp loop through its own entry point.
 #     Every row has to be a distinct value, or the per-block deduplication runs the regexp once and copies
-#     that result for the other rows, which leaves the loop nothing to be interrupted in. The tail is what
-#     varies, so the work per row is the same as for one repeated value.
+#     that result for the other rows, leaving the loop nothing to be interrupted in.
 run "fixed string haystack" \
     "SELECT sum(length(replaceRegexpAll(toFixedString(concat(repeat('1', 19990), toString(1000000000 + number)), 20000), '[0-9]((a|b)(c|d)|(e|f)(g|h))?', 'x'))) FROM numbers(2000) SETTINGS max_block_size = 2000"
 
@@ -201,9 +200,8 @@ run "replaceRegexpOne" \
 #     them can be made to run past the deadline: the unconditional suffix and remainder copies, the two
 #     FixedString offset loops that follow a bulk copy, the JIT implementation's output-byte charge and
 #     one-byte in-place fast path, and the per-block deduplication's copy of a cached result, which moves
-#     at memcpy speed over an output the memory profile already bounds - and whose loop the per-row charge
-#     above it bounds regardless. Their charges are verified by inspection. This is why the case numbering
-#     below has gaps.
+#     at memcpy speed over an output the memory profile already bounds. Their charges are verified by
+#     inspection. This is why the case numbering below has gaps.
 
 # 19. The "break" overflow mode, where checkTimeLimit() returns false instead of throwing, so a path that
 #     never calls it ignores the deadline entirely. What is asserted is the wall time, not the presence of
@@ -265,8 +263,7 @@ fi
 #     so the query to check is the one running the call, not the one that defined it: a definition-time
 #     query would be the wrong deadline and, held alive, a permanent `CurrentMetrics::QueryNonInternal`
 #     leak. Asserted from both sides. The rows must arrive in one block, or the pipeline's own check bounds
-#     the INSERT whatever the function does, and every row has to be a distinct value, for the reason
-#     case 13 gives.
+#     the INSERT whatever the function does, and every row has to be distinct, for the reason case 13 gives.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_replace_stored SYNC"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_replace_stored (k String) ENGINE = MergeTree
