@@ -39,6 +39,7 @@ public:
         MODIFY_TTL,
         REWRITE_PARTS,
         MATERIALIZE_TTL,
+        SHIFT_ROWS_TTL,
         MODIFY_SETTING,
         RESET_SETTING,
         MODIFY_QUERY,
@@ -227,8 +228,9 @@ public:
     String to_database;
     String to_table;
 
-    /// MATERIALIZE TTL [ttl_delta], ttl_delta represents the change before and after modifying TTL.
-    time_t ttl_delta = 0;
+    /// SHIFT ROWS TTL BY <ttl_shift> SECOND: the constant difference, in seconds, between the new
+    /// rows-TTL expression and the old one (see `AlterCommands::getMutationCommands`).
+    time_t ttl_shift = 0;
 
     String snapshot_name;
     IAST * snapshot_desc{};

@@ -5237,10 +5237,10 @@ Possible values:
     DECLARE(Bool, materialize_ttl_after_modify, true, R"(
 Apply TTL for old data, after ALTER MODIFY TTL query
 )", 0) \
-    DECLARE(Bool, enable_fast_modify_ttl, false, R"(
-Accelerate `ALTER TABLE ... MODIFY TTL` when the table has a single rows TTL and the new TTL provably differs from the old one by a constant time shift (the same date/time column plus fixed-length intervals). Instead of rewriting every part, fully expired parts are replaced with empty ones and unexpired parts are cloned with only their TTL metadata shifted; partially expired parts and all unprovable cases fall back to the regular rewrite.
+    DECLARE(Bool, enable_modify_ttl_by_extending_time_interval, false, R"(
+Accelerate `ALTER TABLE ... MODIFY TTL` when the table has a single rows TTL and the new TTL provably differs from the old one by a constant time shift (the same date/time column plus fixed-length intervals), for example when the TTL interval is extended or shortened. Instead of rewriting every part, fully expired parts are replaced with empty ones and unexpired parts are cloned with only their TTL metadata shifted; partially expired parts and all unprovable cases fall back to the regular rewrite.
 
-The resulting mutation is recorded in an internal form (`MATERIALIZE TTL <delta>`) that servers without this feature cannot parse, so enable the setting only when every replica of the table (and any server that may read a pending mutation, e.g. after a downgrade) runs a version that supports it.
+The resulting mutation is recorded in an internal form (`SHIFT ROWS TTL BY <n> SECOND`) that servers without this feature cannot parse, so enable the setting only when every replica of the table (and any server that may read a pending mutation, e.g. after a downgrade) runs a version that supports it.
 )", 0) \
     DECLARE(String, function_implementation, "", R"(
 Choose function implementation for specific target or variant (experimental). If empty enable all of them.

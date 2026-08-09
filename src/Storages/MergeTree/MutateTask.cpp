@@ -3768,13 +3768,13 @@ bool MutateTask::prepare()
     ///   * fully expired under the new TTL  -> replace with an empty part;
     ///   * not yet expired                  -> clone the part and shift its `ttl.txt` in place;
     ///   * partially expired                -> fall back to a regular `MATERIALIZE TTL` rewrite.
-    const bool is_fast_materialize_ttl = std::ranges::any_of(
-        *ctx->commands, [](const auto & command) { return command.type == MutationCommand::FAST_MATERIALIZE_TTL; });
+    const bool is_shift_rows_ttl = std::ranges::any_of(
+        *ctx->commands, [](const auto & command) { return command.type == MutationCommand::SHIFT_ROWS_TTL; });
 
-    if (is_fast_materialize_ttl)
+    if (is_shift_rows_ttl)
     {
         if (ctx->commands->size() != 1)
-            throw Exception(ErrorCodes::ABORTED, "FAST_MATERIALIZE_TTL must be the only mutation command, cancelling mutation.");
+            throw Exception(ErrorCodes::ABORTED, "SHIFT_ROWS_TTL must be the only mutation command, cancelling mutation.");
 
         /// Recompute the shift for THIS part against the rows-TTL expression that its stored timestamps
         /// were actually computed under (its `table_ttl_expression` fingerprint), rather than trusting the

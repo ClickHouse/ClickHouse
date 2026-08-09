@@ -1940,7 +1940,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             MutationCommands commands_for_size_validation;
             for (const auto & command : *it->second.commands)
             {
-                if (command.type == MutationCommand::Type::FAST_MATERIALIZE_TTL)
+                if (command.type == MutationCommand::Type::SHIFT_ROWS_TTL)
                     break;
 
                 if (command.type != MutationCommand::Type::DROP_COLUMN

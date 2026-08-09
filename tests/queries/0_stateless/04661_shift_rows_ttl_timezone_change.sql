@@ -5,7 +5,7 @@
 -- by a delta proven under a fixed-offset one, and the shifted bounds would be off by the DST offset.
 
 SET alter_sync = 2;
-SET enable_fast_modify_ttl = 1;
+SET enable_modify_ttl_by_extending_time_interval = 1;
 
 DROP TABLE IF EXISTS t_ttl_timezone_change;
 CREATE TABLE t_ttl_timezone_change (d DateTime('Europe/Berlin'), v UInt32)

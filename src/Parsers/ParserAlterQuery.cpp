@@ -43,6 +43,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_materialize(Keyword::MATERIALIZE);
     ParserKeyword s_modify_ttl(Keyword::MODIFY_TTL);
     ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
+    ParserKeyword s_shift_rows_ttl_by(Keyword::SHIFT_ROWS_TTL_BY);
+    ParserKeyword s_second(Keyword::SECOND);
     ParserKeyword s_rewrite_parts(Keyword::REWRITE_PARTS);
     ParserKeyword s_modify_setting(Keyword::MODIFY_SETTING);
     ParserKeyword s_add_enum_values(Keyword::ADD_ENUM_VALUES);
@@ -989,15 +991,23 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 command->type = ASTAlterCommand::MATERIALIZE_TTL;
 
-                ASTPtr ttl_delta;
-                if (parser_number.parse(pos, ttl_delta, expected))
-                    command->ttl_delta = ttl_delta->as<ASTLiteral &>().value.safeGet<Int64>();
-
                 if (s_in_partition.ignore(pos, expected))
                 {
                     if (!parser_partition.parse(pos, command_partition, expected))
                         return false;
                 }
+            }
+            else if (s_shift_rows_ttl_by.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::SHIFT_ROWS_TTL;
+
+                ASTPtr ttl_shift;
+                if (!parser_number.parse(pos, ttl_shift, expected))
+                    return false;
+                command->ttl_shift = ttl_shift->as<ASTLiteral &>().value.safeGet<Int64>();
+
+                if (!s_second.ignore(pos, expected))
+                    return false;
             }
             else if (s_rewrite_parts.ignore(pos, expected))
             {

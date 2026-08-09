@@ -46,7 +46,7 @@ struct MutationCommand
         DROP_PROJECTION,
         DROP_STATISTICS,
         MATERIALIZE_TTL,
-        FAST_MATERIALIZE_TTL, /// Speed up MODIFY TTL.
+        SHIFT_ROWS_TTL, /// Shift each part's stored rows-TTL timestamps by a constant instead of rewriting the parts (fast MODIFY TTL).
         REWRITE_PARTS,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
@@ -112,8 +112,8 @@ struct MutationCommand
     /// Column rename_to
     String rename_to = {};
 
-    /// delta between new_ttl and old_ttl, for FAST_MATERIALIZE_TTL.
-    time_t ttl_delta = 0;
+    /// The constant difference in seconds between the new rows TTL and the old one, for SHIFT_ROWS_TTL.
+    time_t ttl_shift = 0;
 
     /// A version of mutation to which command corresponds.
     std::optional<UInt64> mutation_version = {};

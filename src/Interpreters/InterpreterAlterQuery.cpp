@@ -504,17 +504,16 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     validateMutationsAllowed(segments, database, getContext());
     validateReplicatedDatabaseSegments(segments, database);
 
-    /// `MATERIALIZE TTL <delta>` is an internal-only command produced by the fast MODIFY TTL
+    /// `SHIFT ROWS TTL BY <n> SECOND` is an internal-only command produced by the fast MODIFY TTL
     /// optimization (see `AlterCommands::getMutationCommands`). Reject it when issued directly by a
-    /// user, because applying an arbitrary delta without validating the TTL expression would corrupt
+    /// user, because applying an arbitrary shift without validating the TTL expression would corrupt
     /// the parts' TTL metadata.
     for (const auto & child : alter.command_list->children)
     {
         const auto * command_ast = child->as<ASTAlterCommand>();
-        if (command_ast && command_ast->type == ASTAlterCommand::MATERIALIZE_TTL && command_ast->ttl_delta != 0)
+        if (command_ast && command_ast->type == ASTAlterCommand::SHIFT_ROWS_TTL)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "MATERIALIZE TTL with a delta ({}) is an internal command and cannot be specified directly",
-                command_ast->ttl_delta);
+                "SHIFT ROWS TTL BY is an internal command and cannot be specified directly");
     }
 
     if (auto lightweight_result = tryRewriteToLightweightUpdate(segments, table, getContext(), query_ptr))
@@ -772,6 +771,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
             break;
         }
         case ASTAlterCommand::MATERIALIZE_TTL:
+        case ASTAlterCommand::SHIFT_ROWS_TTL:
         {
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_TTL, database, table);
             break;

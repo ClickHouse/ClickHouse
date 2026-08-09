@@ -66,7 +66,7 @@ namespace Setting
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
-    extern const SettingsBool enable_fast_modify_ttl;
+    extern const SettingsBool enable_modify_ttl_by_extending_time_interval;
     extern const SettingsBool flatten_nested;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -2175,21 +2175,21 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-static MutationCommand createFastMaterializeTTLCommand(time_t delta)
+static MutationCommand createShiftRowsTTLCommand(time_t shift)
 {
     MutationCommand command;
     auto ast = make_intrusive<ASTAlterCommand>();
-    ast->type = ASTAlterCommand::MATERIALIZE_TTL;
-    ast->ttl_delta = delta;
-    command.type = MutationCommand::FAST_MATERIALIZE_TTL;
+    ast->type = ASTAlterCommand::SHIFT_ROWS_TTL;
+    ast->ttl_shift = shift;
+    command.type = MutationCommand::SHIFT_ROWS_TTL;
     /// `ast_text` is what gets persisted to the replicated log / ZooKeeper for this mutation,
-    /// serialized as `MATERIALIZE TTL <delta>`. This syntax is intentionally not understood by
+    /// serialized as `SHIFT ROWS TTL BY <n> SECOND`. This syntax is intentionally not understood by
     /// servers built without the fast `MODIFY TTL` optimization, so a mixed-version cluster cannot
     /// process such a mutation until every replica is upgraded. This is why the optimization is
-    /// gated behind the `enable_fast_modify_ttl` setting, disabled by default: the user asserts
-    /// that every server that may read this mutation entry understands the format.
+    /// gated behind the `enable_modify_ttl_by_extending_time_interval` setting, disabled by default:
+    /// the user asserts that every server that may read this mutation entry understands the format.
     command.ast_text = ast->formatWithSecretsOneLine();
-    command.ttl_delta = delta;
+    command.ttl_shift = shift;
     return command;
 }
 
@@ -2234,8 +2234,8 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
         {
             if (alter_cmd.isTTLAlter(original_metadata))
             {
-                /// FAST_MATERIALIZE_TTL cannot be executed together with other commands.
-                if (result.empty() && settings[Setting::enable_fast_modify_ttl])
+                /// SHIFT_ROWS_TTL cannot be executed together with other commands.
+                if (result.empty() && settings[Setting::enable_modify_ttl_by_extending_time_interval])
                 {
                     /// The fast command materializes only the rows-TTL shift of this `MODIFY TTL`
                     /// command, and the shift is proven against `original_metadata`. Any sibling
@@ -2255,7 +2255,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                         /// A zero delta (the TTL is unchanged) falls through to the regular rewrite.
                         if (auto delta = tryOptimizeModifyTTL(original_metadata, context, alter_cmd); delta.value_or(0) != 0)
                         {
-                            result.push_back(createFastMaterializeTTLCommand(*delta));
+                            result.push_back(createShiftRowsTTLCommand(*delta));
                             break;
                         }
                     }
@@ -2275,7 +2275,12 @@ std::optional<time_t> AlterCommands::tryOptimizeModifyTTL(const StorageInMemoryM
         return {};
 
     TTLTableDescription new_table_ttl = TTLTableDescription::getTTLForTableFromAST(
-        alter_cmd.ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+        alter_cmd.ttl,
+        metadata.columns,
+        context,
+        metadata.primary_key,
+        context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
+                                                                             : TTLValidationMode::Validate);
 
     /// Only optimize when the single unconditional rows TTL (`TTL <expr>`) is the one and only TTL in
     /// the table, both before and after the change. The fast path shifts each part's aggregate
