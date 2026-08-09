@@ -67,22 +67,52 @@ def test_structure_inference_respects_show_columns_access(started_cluster):
         node1.query("DROP TABLE default.local_data SYNC")
 
 
+def recover_detached_legacy_table():
+    """Recover `default.dist_legacy` if a failed `ATTACH` left it in `system.detached_tables`.
+
+    On unfixed code the `ATTACH` in `test_structure_less_distributed_loaded_from_legacy_metadata`
+    throws, and the table then stays detached: `DROP TABLE IF EXISTS` only sees attached tables,
+    while the detached metadata still blocks `CREATE TABLE` (`TABLE_ALREADY_EXISTS ... (detached)`),
+    so repeated runs on the module-scoped cluster (flaky-check) would cascade into setup failures
+    instead of independent reproductions. Restoring the backed-up metadata brings the column list
+    back, so the recovery `ATTACH` needs no structure inference and succeeds even on unfixed code.
+    `cp` over the existing stripped file truncates it in place and keeps its ownership."""
+    detached = node1.query(
+        "SELECT count() FROM system.detached_tables WHERE database = 'default' AND table = 'dist_legacy'"
+    ).strip()
+    if detached == "0":
+        return
+    node1.exec_in_container(
+        ["bash", "-c", "cp /tmp/dist_legacy.sql.bak /var/lib/clickhouse/metadata/default/dist_legacy.sql"],
+        user="root",
+    )
+    node1.query("ATTACH TABLE default.dist_legacy")
+    node1.query("DROP TABLE default.dist_legacy SYNC")
+
+
 def test_structure_less_distributed_loaded_from_legacy_metadata(started_cluster):
     """A `CREATE` persists the inferred structure into the stored definition nowadays, but
     servers upgraded from older versions still carry column-less `Distributed` metadata,
     which `DatabaseOnDisk::createTableFromAST` deliberately loads with empty columns. On
     such a load `StorageDistributed`'s constructor re-infers the structure under the
     storage's global context, which carries no client version, so the `DESC TABLE` service
-    query used to be sent with a zero initiator version and the table failed to attach."""
+    query used to be sent with a zero initiator version and the table failed to attach.
+
+    The `DETACH` must be `SYNC`: an asynchronous detach can leave the storage instance
+    still tracked while the immediate `ATTACH` runs, making it throw `TABLE_ALREADY_EXISTS`
+    instead of reproducing the bug."""
+    recover_detached_legacy_table()
     node1.query("CREATE TABLE default.dist_legacy ENGINE = Distributed('remote_only_cluster', default, remote_data)")
     try:
-        node1.query("DETACH TABLE default.dist_legacy")
-        # Strip the persisted column list to obtain the metadata an older server would have written.
+        node1.query("DETACH TABLE default.dist_legacy SYNC")
+        # Strip the persisted column list to obtain the metadata an older server would have
+        # written, keeping a backup for the detached-table recovery above.
         node1.exec_in_container(
             [
                 "bash",
                 "-c",
-                r"sed -i '/^($/,/^)$/d' /var/lib/clickhouse/metadata/default/dist_legacy.sql"
+                r"cp /var/lib/clickhouse/metadata/default/dist_legacy.sql /tmp/dist_legacy.sql.bak"
+                r" && sed -i '/^($/,/^)$/d' /var/lib/clickhouse/metadata/default/dist_legacy.sql"
                 r" && ! grep -q UInt64 /var/lib/clickhouse/metadata/default/dist_legacy.sql",
             ],
             user="root",
@@ -91,6 +121,7 @@ def test_structure_less_distributed_loaded_from_legacy_metadata(started_cluster)
         assert node1.query("DESC TABLE default.dist_legacy") == ("key\tUInt64\t\t\t\t\t\nvalue\tString\t\t\t\t\t\n")
         assert node1.query("SELECT sum(key) FROM default.dist_legacy") == "3\n"
     finally:
+        recover_detached_legacy_table()
         node1.query("DROP TABLE IF EXISTS default.dist_legacy SYNC")
 
 
