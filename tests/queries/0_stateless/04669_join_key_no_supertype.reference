@@ -54,6 +54,11 @@ The widest types
 Nullable and LowCardinality keys
 1	1
 1	1
+A Tuple key: an element out of the common range turns the whole tuple into NULL, and it does not match anything
+(0)	(0)
+(1)	(1)
+(1)	Tuple(UInt64)
+A Tuple with an element that accurateCastOrNull cannot represent, such as an Array or a Map, is rejected
 USING is supported for INNER JOIN, where the result contains only the common values
 0	UInt64
 1	UInt64

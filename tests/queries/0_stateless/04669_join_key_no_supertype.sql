@@ -62,6 +62,25 @@ SELECT * FROM (SELECT CAST(1, 'LowCardinality(UInt64)') AS x) AS a
 INNER JOIN (SELECT CAST(1, 'Int64') AS y) AS b ON a.x = b.y
 SETTINGS allow_suspicious_low_cardinality_types = 1;
 
+SELECT 'A Tuple key: an element out of the common range turns the whole tuple into NULL, and it does not match anything';
+SELECT * FROM (SELECT tuple(number) AS t FROM numbers(3)) AS a
+INNER JOIN (SELECT tuple(number - 1) AS t FROM numbers(3)) AS b ON a.t = b.t
+ORDER BY ALL;
+SELECT * FROM (SELECT tuple(CAST(18446744073709551615, 'UInt64')) AS t) AS a
+INNER JOIN (SELECT tuple(CAST(-1, 'Int64')) AS t) AS b ON a.t = b.t;
+SELECT t, toTypeName(t) FROM (SELECT tuple(CAST(1, 'UInt64')) AS t) AS a
+INNER JOIN (SELECT tuple(CAST(1, 'Int64')) AS t) AS b USING (t);
+
+SELECT 'A Tuple with an element that accurateCastOrNull cannot represent, such as an Array or a Map, is rejected';
+SELECT * FROM (SELECT tuple([CAST(1, 'UInt64')]) AS t) AS a
+INNER JOIN (SELECT tuple([CAST(1, 'Int64')]) AS t) AS b ON a.t = b.t; -- { serverError NO_COMMON_TYPE }
+SELECT * FROM (SELECT tuple([CAST(1, 'UInt64')]) AS t) AS a
+INNER JOIN (SELECT tuple([CAST(1, 'Int64')]) AS t) AS b USING (t); -- { serverError NO_COMMON_TYPE }
+SELECT * FROM (SELECT tuple(map('k', CAST(1, 'UInt64'))) AS t) AS a
+INNER JOIN (SELECT tuple(map('k', CAST(1, 'Int64'))) AS t) AS b USING (t); -- { serverError NO_COMMON_TYPE }
+SELECT * FROM (SELECT [CAST(1, 'UInt64')] AS t) AS a
+INNER JOIN (SELECT [CAST(1, 'Int64')] AS t) AS b ON a.t = b.t; -- { serverError NO_COMMON_TYPE }
+
 SELECT 'USING is supported for INNER JOIN, where the result contains only the common values';
 SELECT x, toTypeName(x) FROM t_unsigned INNER JOIN (SELECT y AS x FROM t_signed) AS t USING (x) ORDER BY ALL;
 SELECT x FROM t_unsigned INNER JOIN (SELECT y AS x FROM t_signed) AS t USING (x) ORDER BY ALL SETTINGS join_algorithm = 'full_sorting_merge';

@@ -9,6 +9,7 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/getMostSubtype.h>
@@ -175,6 +176,24 @@ void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
     }
 }
 
+/// Mirrors `validateNestedTypesForAccurateCastOrNull` in CastOverloadResolver.cpp: `accurateCastOrNull`
+/// reports an inexact conversion of a Tuple element by a NULL in place of that element, so every element
+/// has to be able to hold it, recursively. `Tuple(Array(UInt64))` is an example of a type that cannot.
+static bool isSupportedByAccurateCastOrNull(const DataTypePtr & type)
+{
+    /// `getMostSubtype` reports the absence of a common subtype for a Tuple element by `Nothing` in its place.
+    if (isNothing(type))
+        return false;
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        const auto & elements = tuple_type->getElements();
+        return std::ranges::all_of(elements, isSupportedByAccurateCastOrNull);
+    }
+    if (type->isNullable())
+        return isSupportedByAccurateCastOrNull(removeNullable(type));
+    return type->canBeInsideNullable() || canContainNull(*type);
+}
+
 DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     DataTypes types{
@@ -182,8 +201,9 @@ DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const 
         removeNullable(recursiveRemoveLowCardinality(right_type))};
 
     auto subtype = getMostSubtype(types, /* throw_if_result_is_nothing= */ false);
-    /// `accurateCastOrNull` reports an inexact conversion by returning NULL, so the type has to be allowed inside Nullable.
-    if (isNothing(subtype) || !subtype->canBeInsideNullable())
+    /// `accurateCastOrNull` reports an inexact conversion by returning NULL, so the type has to be
+    /// allowed inside Nullable, and the same holds for the elements of a Tuple, recursively.
+    if (isNothing(subtype) || !subtype->canBeInsideNullable() || !isSupportedByAccurateCastOrNull(subtype))
         return nullptr;
 
     return subtype;
