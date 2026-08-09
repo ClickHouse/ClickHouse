@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types.h>
@@ -236,7 +237,9 @@ private:
     LoggerPtr log;
 
     std::atomic_bool shutdown_called = false;
-    std::atomic_bool startup_called = false;
+    /// Both are used only by `startup`.
+    std::mutex startup_mutex;
+    bool startup_called TSA_GUARDED_BY(startup_mutex) = false;
     BackgroundSchedulePoolTaskHolder cleanup_task;
 
     FileStatusesCache local_file_statuses;
