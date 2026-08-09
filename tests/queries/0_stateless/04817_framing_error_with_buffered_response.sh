@@ -43,6 +43,32 @@ else
 fi
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT framing_exception_packet_throw"
 
+# The same fail-close must hold when the framed bytes are no longer sitting in a visible response
+# buffer but have already been consumed by an HTTP transport compressor into its internal codec
+# state (framing flushes the buffer chain after every packet, so with `Accept-Encoding: br` the
+# auxiliary packets written by the framed exception delivery are handed to the Brotli encoder).
+# Nothing can discard bytes captured in the codec state, so the response must be aborted. The
+# compressor may or may not have emitted a partial compressed prefix to the socket before the
+# abort - both are fail-closed - so the assertion here is that the client never observes a
+# *complete* HTTP response: falling through to the plain error path would append the error through
+# the same compression stream and finalize the response, making curl exit with success.
+
+echo '--- bytes already consumed by the HTTP transport compressor also fail closed'
+RESPONSE_FILE="${CLICKHOUSE_TMP}/04817_compressed_response"
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT framing_exception_packet_throw"
+${CLICKHOUSE_CURL} -s -H 'Accept-Encoding: br' "${URL_STREAMING}&enable_http_compression=1" \
+    -d "SELECT throwIf(1) FORMAT JSONEachRow" -o "$RESPONSE_FILE"
+CURL_EXIT=$?
+[[ $CURL_EXIT -ne 0 ]] && echo 'the client observes an aborted connection: OK' \
+    || echo "MISMATCH: curl succeeded on an aborted compressed response: $(cat "$RESPONSE_FILE" | base64)"
+if grep -q -a -e 'FAULT_INJECTED' -e '__exception__' "$RESPONSE_FILE"; then
+    echo "MISMATCH: a plain error body was delivered on the framed compressed response: $(cat "$RESPONSE_FILE" | base64)"
+else
+    echo 'no plain error body was appended: OK'
+fi
+rm -f "$RESPONSE_FILE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT framing_exception_packet_throw"
+
 # With `http_response_buffer_size` large enough to hold the whole output, the packets buffered in
 # the memory cascade never reach the response stream, and on a failure they are discarded cleanly
 # (nothing of the packet stream can have been delivered), so the client gets a proper plain HTTP
