@@ -22,6 +22,7 @@
 #include <Storages/StorageSnapshot.h>
 
 #include <algorithm>
+#include <map>
 #include <optional>
 
 namespace DB
@@ -839,6 +840,65 @@ void processQuery(
     }
 }
 
+/// Exported column names of a target that are dead after the rewrite: an exported column with
+/// some references replaced by pushed subcolumns and no references remaining is removed by the
+/// subsequent RemoveUnusedProjectionColumnsPass. The same underlying column can be exported
+/// under several names (`SELECT tup AS x, tup FROM ...`); a never-referenced sibling of a dead
+/// export is unused in the parents too and is removed together with it, so when no name of such
+/// an alias-equivalent class has references remaining, every name of the class is dead — keying
+/// only by the exported name would keep the sibling slots, and the whole-column references
+/// inside them would block pushdown through the deeper levels. The aliasing structure is taken
+/// from the leftmost leaf query, whose names are the exported names of the target.
+std::unordered_set<String> collectDeadExports(
+    const std::unordered_map<String, size_t> & replaced_columns,
+    const std::unordered_map<String, size_t> & alive_columns,
+    const IQueryTreeNode * node)
+{
+    std::unordered_set<String> dead;
+
+    auto alive_count = [&](const String & column_name)
+    {
+        auto it = alive_columns.find(column_name);
+        return it == alive_columns.end() ? 0uz : it->second;
+    };
+
+    for (const auto & [column_name, replaced] : replaced_columns)
+    {
+        if (replaced > 0 && alive_count(column_name) == 0)
+            dead.insert(column_name);
+    }
+
+    if (dead.empty())
+        return dead;
+
+    const auto * leaf_query = getLeftmostLeafQuery(node);
+    if (!leaf_query)
+        return dead;
+
+    std::map<CanonicalColumn, std::vector<String>> alias_classes;
+    for (const auto & [column_name, canonical] : collectCanonicalExports(*leaf_query))
+        alias_classes[canonical].push_back(column_name);
+
+    for (const auto & [canonical, column_names] : alias_classes)
+    {
+        if (column_names.size() < 2)
+            continue;
+
+        bool any_dead = false;
+        bool any_alive = false;
+        for (const auto & column_name : column_names)
+        {
+            any_dead |= dead.contains(column_name);
+            any_alive |= alive_count(column_name) > 0;
+        }
+
+        if (any_dead && !any_alive)
+            dead.insert(column_names.begin(), column_names.end());
+    }
+
+    return dead;
+}
+
 }
 
 void PushSubcolumnsIntoSubqueriesPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr /*context*/)
@@ -924,17 +984,10 @@ void PushSubcolumnsIntoSubqueriesPass::run(QueryTreeNodePtr & query_tree_node, C
             if (replaced_it == replaced_references.end())
                 return;
 
-            const auto & alive_columns = alive_references[node.get()];
             auto exported_columns = union_node->computeProjectionColumns();
 
-            for (const auto & [column_name, replaced] : replaced_it->second)
+            for (const auto & column_name : collectDeadExports(replaced_it->second, alive_references[node.get()], node.get()))
             {
-                if (replaced == 0)
-                    continue;
-
-                if (auto alive_it = alive_columns.find(column_name); alive_it != alive_columns.end() && alive_it->second > 0)
-                    continue;
-
                 auto column_index = findUnambiguousColumnIndex(exported_columns, column_name);
                 if (!column_index)
                     continue;
@@ -952,15 +1005,7 @@ void PushSubcolumnsIntoSubqueriesPass::run(QueryTreeNodePtr & query_tree_node, C
 
         std::unordered_set<String> pruned_exports;
         if (auto replaced_it = replaced_references.find(node.get()); replaced_it != replaced_references.end())
-        {
-            const auto & alive_columns = alive_references[node.get()];
-            for (const auto & [column_name, replaced] : replaced_it->second)
-            {
-                auto alive_it = alive_columns.find(column_name);
-                if (replaced > 0 && (alive_it == alive_columns.end() || alive_it->second == 0))
-                    pruned_exports.insert(column_name);
-            }
-        }
+            pruned_exports = collectDeadExports(replaced_it->second, alive_references[node.get()], node.get());
 
         QueryProcessingState state;
         processQuery(*query_node, state, pruned_exports.empty() ? nullptr : &pruned_exports);
