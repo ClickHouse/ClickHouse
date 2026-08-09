@@ -43,6 +43,22 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryF
   AND log_comment = '04830_clone_marked_user_query_log'
 SETTINGS enable_parallel_replicas = 0;
 
+-- The initiator-local arm was built for the affected shape, which is the arm holding the clone under test.
+-- The snapshot replica is pinned only on that arm, so a regression routing this shape to the remote-only
+-- arm would stop exercising the clone while the counter above stayed green.
+SYSTEM FLUSH LOGS query_log, text_log;
+SELECT count() > 0 AS local_arm_built
+FROM system.text_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND logger_name = 'ParallelReplicasReadingCoordinator'
+  AND message ILIKE '%is set as the snapshot replica%'
+  AND query_id IN (
+      SELECT query_id FROM system.query_log
+      WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+        AND current_database = currentDatabase() AND initial_query_id = query_id
+        AND log_comment = '04830_clone_marked_user_query_log')
+SETTINGS enable_parallel_replicas = 0, max_rows_to_read = 0; -- system.text_log can be really big
+
 -- Results still match non-parallel execution, and count() is not multiplied across replicas.
 SELECT count(), sum(b), min(a), max(a) FROM t_clone_marked WHERE a > 5;
 SELECT b, count() FROM t_clone_marked GROUP BY b ORDER BY b;
