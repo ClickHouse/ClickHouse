@@ -659,11 +659,12 @@ You can also read the same column into:
 
 Accessing `Dynamic` or `JSON` subcolumns read from Parquet `VARIANT` through subqueries currently requires `enable_analyzer = 1`.
 
-### Writing `Dynamic` and `JSON` {#parquet-variant-writing-dynamic-and-json}
+### Writing `Dynamic`, `Variant` and `JSON` {#parquet-variant-writing-dynamic-and-json}
 
 ClickHouse writes:
 
 * [`Dynamic`](/reference/data-types/dynamic) columns as Parquet `VARIANT`.
+* [`Variant(...)`](/reference/data-types/variant) columns as Parquet `VARIANT`. Reading the file back yields `Dynamic` by default (Parquet `VARIANT` carries no closed type set); an explicit `Variant(...)` type hint restores the original type.
 * [`JSON`](/reference/data-types/newjson) columns as Parquet `JSON` by default.
 * [`JSON`](/reference/data-types/newjson) columns as Parquet `VARIANT` if `output_format_parquet_json_as_variant = 1`.
 

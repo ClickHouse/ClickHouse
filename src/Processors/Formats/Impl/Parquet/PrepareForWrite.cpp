@@ -1267,6 +1267,17 @@ void prepareColumnRecursive(
         case TypeIndex::Dynamic:
             prepareColumnVariant(column, type, name, options, format_settings, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths);
             break;
+        case TypeIndex::Variant:
+        {
+            /// Custom-named `Variant` types (e.g. `Geometry`) keep their dedicated handling
+            /// (`prepareGeoColumn`) or the previous unsupported-type error; only a plain
+            /// `Variant(...)` is written as a `Parquet` `VARIANT`.
+            if (type->getCustomName())
+                preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_binary_payload);
+            else
+                prepareColumnVariant(column, type, name, options, format_settings, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths);
+            break;
+        }
         case TypeIndex::LowCardinality:
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
@@ -1350,6 +1361,12 @@ void analyzeVariantColumnTypesRecursive(
         case TypeIndex::Dynamic:
             analyzeVariantColumnForWrite(*column, type, format_settings, out_variant_analysis[path]);
             break;
+        case TypeIndex::Variant:
+            /// Only a plain `Variant(...)` is written as a `Parquet` `VARIANT`; custom-named
+            /// `Variant` types (e.g. `Geometry`) never reach the `VARIANT` write path.
+            if (!type->getCustomName())
+                analyzeVariantColumnForWrite(*column, type, format_settings, out_variant_analysis[path]);
+            break;
         case TypeIndex::LowCardinality:
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
@@ -1376,6 +1393,12 @@ bool variantWriteRequiresFileLevelAnalysis(const DataTypePtr & type, bool output
 
     if (typeid_cast<const DataTypeDynamic *>(normalized_type.get()))
         return true;
+
+    /// A plain `Variant(...)` is written as a `Parquet` `VARIANT` with an inferred shredded type,
+    /// which requires seeing all rows. Custom-named `Variant` types (e.g. `Geometry`) never take
+    /// the `VARIANT` write path.
+    if (normalized_type->getTypeId() == TypeIndex::Variant)
+        return !normalized_type->getCustomName();
 
     if (const auto * object_type = typeid_cast<const DataTypeObject *>(normalized_type.get()))
     {
