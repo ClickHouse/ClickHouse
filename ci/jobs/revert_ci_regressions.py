@@ -640,18 +640,28 @@ def commits_since_the_failure_query(failure: Failure, limit=COMMITS_QUERY_LIMIT)
 
     Which means a commit has to be shown to have run the check at all, or the
     name is missing for the trivial reason that nothing looked: `exercised_checks`
-    is the checks that wrote at least one genuine test-level row on this commit.
+    is the checks that got at least one run through its tests on this commit.
     A check that died before it got to the tests -- a build that failed, a
     server that would not start -- writes the row about itself and no test rows,
     and so does not count as having exercised anything. The rows the harness
     writes about itself under a test-like name (`SYNTHETIC_TEST_NAMES`) are not
-    tests and do not count either. And a check that started its tests but did
+    tests and do not count either. And a run that started its tests but did
     not finish them is no better: it ran *some* tests, not necessarily this one,
     so the failure being absent from it means nothing. Such a run records a
     failing harness row -- `Test script failed`, `Server died` -- next to the
-    test rows it did produce, and `aborted_checks` carries the checks that wrote
-    one on this commit, for `already_fixed` to subtract from the exercised set.
-    `failed_checks` is the checks that recorded this failure on this commit.
+    test rows it did produce.
+
+    Per run, though, not per commit: aborting is something a *run* does, and a
+    check is often re-run. A commit whose check aborted once and then completed
+    cleanly on a rerun was exercised -- the completed run looked and did not
+    find the failure -- and letting the aborted run erase that would hide green
+    evidence and let a revert through after the fix. So the inner query settles
+    each run first, one row per `(commit, check, run)`: a run counts as complete
+    when it wrote genuine test rows and no failing harness row, and a check
+    exercised the commit when any of its runs was complete.
+    `failed_checks` is the checks that recorded this failure on this commit,
+    in any of their runs -- a failure seen partway through an aborted run
+    still happened on that commit.
 
     Per commit, not per run: whether the failure is fixed is a question about
     the newest commits of `master`, and rows are a bad proxy for commits. A
@@ -696,21 +706,30 @@ def commits_since_the_failure_query(failure: Failure, limit=COMMITS_QUERY_LIMIT)
     return f"""\
 SELECT
     commit_sha,
-    toString(min(check_start_time)) AS first_run_time,
+    toString(min(run_start_time)) AS first_run_time,
     arraySort(groupUniqArrayIf(50)(check_name,
-        test_name != '' AND test_name NOT IN ({synthetic}))) AS exercised_checks,
-    arraySort(groupUniqArrayIf(50)(check_name,
-        test_name IN ({synthetic}) AND {failed})) AS aborted_checks,
-    arraySort(groupUniqArrayIf(50)(check_name, {failed_here})) AS failed_checks
-FROM {Settings.CI_DB_TABLE_NAME}
-WHERE check_start_time >= toDateTime({quote_sql_string(failure.first_failure_time)})
-      - INTERVAL {int(FIRST_RUN_LOOKBACK_HOURS)} HOUR
-      AND head_ref = '{BASE_BRANCH}'
-      AND startsWith(head_repo, 'ClickHouse/')
-      AND check_name IN ({checks})
-      AND test_status != 'SKIPPED'
+        ran_tests AND NOT aborted)) AS exercised_checks,
+    arraySort(groupUniqArrayIf(50)(check_name, failed_here)) AS failed_checks
+FROM
+(
+    SELECT
+        commit_sha,
+        check_name,
+        check_start_time AS run_start_time,
+        countIf(test_name != '' AND test_name NOT IN ({synthetic})) > 0 AS ran_tests,
+        countIf(test_name IN ({synthetic}) AND {failed}) > 0 AS aborted,
+        countIf({failed_here}) > 0 AS failed_here
+    FROM {Settings.CI_DB_TABLE_NAME}
+    WHERE check_start_time >= toDateTime({quote_sql_string(failure.first_failure_time)})
+          - INTERVAL {int(FIRST_RUN_LOOKBACK_HOURS)} HOUR
+          AND head_ref = '{BASE_BRANCH}'
+          AND startsWith(head_repo, 'ClickHouse/')
+          AND check_name IN ({checks})
+          AND test_status != 'SKIPPED'
+    GROUP BY commit_sha, check_name, check_start_time
+)
 GROUP BY commit_sha
-ORDER BY min(check_start_time) DESC
+ORDER BY min(run_start_time) DESC
 LIMIT {int(limit)}
 FORMAT JSONEachRow
 """
@@ -748,20 +767,20 @@ def already_fixed(cidb: CIDB, failure: Failure) -> str:
     commit is skipped rather than counted -- fully reported green commits behind
     it are still evidence, because they are still newer than every failure.
 
-    Exercised means the check's run got through its tests, not that it wrote
-    rows: a run that aborted partway ran *some* tests, and the failure being
-    absent from the part that ran says nothing about the part that did not. So
-    a check whose run on the commit recorded a failing harness row -- the
-    aborted set from the query -- does not count as having exercised it,
-    however many test rows it wrote first. Recording the failure itself is the
-    one exception worth naming: for the "still reporting under this name"
-    question a check that recorded the failure on a commit has plainly
-    re-exercised the failure there -- that commit is failing evidence, not
-    green, but the check is not missing. Without that reading, a failure whose
-    every occurrence comes with an aborted run -- a server that dies *is* the
-    check not finishing -- would make its own checks look gone and the verdict
-    "cannot be established", standing the revert down on the failure's own
-    symptom.
+    Exercised means a run of the check got through its tests, not that it
+    wrote rows: a run that aborted partway ran *some* tests, and the failure
+    being absent from the part that ran says nothing about the part that did
+    not. The query settles that run by run -- an aborted run is not evidence,
+    but it does not erase the completed rerun of the same check on the same
+    commit, which looked and did not find the failure. Recording the failure
+    itself is the one exception worth naming: for the "still reporting under
+    this name" question a check that recorded the failure on a commit has
+    plainly re-exercised the failure there -- that commit is failing evidence,
+    not green, but the check is not missing. Without that reading, a failure
+    whose every occurrence comes with an aborted run -- a server that dies *is*
+    the check not finishing -- would make its own checks look gone and the
+    verdict "cannot be established", standing the revert down on the failure's
+    own symptom.
 
     How much green is enough depends on how often the failure hits. Two clean
     commits mean a fix for something that failed on every run, and mean nothing
@@ -804,7 +823,7 @@ def already_fixed(cidb: CIDB, failure: Failure) -> str:
     ]
 
     def ran(commit: dict) -> set:
-        return set(commit["exercised_checks"]) - set(commit["aborted_checks"])
+        return set(commit["exercised_checks"])
 
     reported = {
         check
@@ -1079,6 +1098,28 @@ def genuine_revert(pull_request: dict, repo: str) -> str:
     privileges on the strength of a substring."""
     number = pull_request.get("number")
     title = pull_request.get("title") or ""
+    claims = [claim for claim in revert_claims(pull_request, repo) if claim != number]
+    for claim in claims:
+        if verified_revert_claim(pull_request, claim, repo):
+            return f"it reverts pull request #{claim}, which was merged before it"
+    if claims:
+        # Every named pull request verifiably was not merged into the base
+        # branch before this one: the revert-ish shape claims something GitHub
+        # contradicts, so it earns no exemption.
+        return ""
+    if re.fullmatch(r'Revert\s+".*"', title):
+        return f"it carries the canonical revert title {title!r}"
+    return ""
+
+
+def revert_claims(pull_request: dict, repo: str) -> List[int]:
+    """The pull requests this one *claims* to revert, through the canonical
+    shapes only: the anchored `Reverts <repo>#<n>` marker line the "Revert"
+    button and this job write into the body, and the `revert-<n>` /
+    `revert-<n>-*` branch names the automation and the button push. A prose
+    mention or a branch that merely starts with `revert-` names nothing. What
+    is claimed is not yet true: every claim is author-controlled text until
+    `verified_revert_claim` checks it against GitHub's record."""
     body = pull_request.get("body") or ""
     head = pull_request.get("headRefName") or ""
     claims = [
@@ -1090,30 +1131,31 @@ def genuine_revert(pull_request: dict, repo: str) -> str:
     branch_claim = re.match(rf"^{re.escape(REVERT_BRANCH_PREFIX)}(\d+)(?:-|$)", head)
     if branch_claim:
         claims.append(int(branch_claim.group(1)))
-    for claim in dict.fromkeys(claims):
-        if claim == number:
-            continue
-        claimed = get_pull_request(claim, repo)
-        if claimed is None:
-            raise RuntimeError(
-                f"pull request #{claim}, which #{number} claims to revert, "
-                f"could not be read from GitHub"
-            )
-        if (
-            str(claimed.get("state", "")).lower() == "merged"
-            and claimed.get("baseRefName") == BASE_BRANCH
-            and (claimed.get("mergedAt") or "")
-            <= (pull_request.get("mergedAt") or "")
-        ):
-            return f"it reverts pull request #{claim}, which was merged before it"
-    if claims:
-        # Every named pull request verifiably was not merged into the base
-        # branch before this one: the revert-ish shape claims something GitHub
-        # contradicts, so it earns no exemption.
-        return ""
-    if re.fullmatch(r'Revert\s+".*"', title):
-        return f"it carries the canonical revert title {title!r}"
-    return ""
+    return list(dict.fromkeys(claims))
+
+
+def verified_revert_claim(pull_request: dict, claim: int, repo: str) -> bool:
+    """Whether GitHub's record corroborates that `pull_request` can be the
+    revert of #`claim`: the claimed pull request is merged into the base
+    branch, and was merged before this one -- a revert undoes something that
+    was already in. A pull request that is not merged yet reverts, if it
+    reverts anything, something that is merged now, so for one the merge-order
+    half holds vacuously. Raises when the claimed pull request's record could
+    not be read: every caller is a guard on a privileged action, and a claim
+    that could not be checked must stand it down rather than read as either
+    answer."""
+    claimed = get_pull_request(claim, repo)
+    if claimed is None:
+        raise RuntimeError(
+            f"pull request #{claim}, which #{pull_request.get('number')} claims "
+            f"to revert, could not be read from GitHub"
+        )
+    merged_at = pull_request.get("mergedAt") or ""
+    return (
+        str(claimed.get("state", "")).lower() == "merged"
+        and claimed.get("baseRefName") == BASE_BRANCH
+        and (not merged_at or (claimed.get("mergedAt") or "") <= merged_at)
+    )
 
 
 def culprit_guard(
@@ -1248,8 +1290,9 @@ def search_pull_requests(repo: str, search: str, fields: str) -> List[dict]:
 
 
 def pull_requests_from_branch(repo: str, branch: str) -> List[dict]:
-    """The pull requests whose head is exactly `branch`, in any state, with
-    the state and the base branch each of them targets.
+    """The pull requests whose head is exactly the branch named `branch` *of
+    this repository*, in any state, with the state and the base branch each of
+    them targets.
 
     Read through the list API rather than the search API: this answer decides
     whether a pushed revert branch is an in-flight revert of the base branch,
@@ -1258,6 +1301,15 @@ def pull_requests_from_branch(repo: str, branch: str) -> List[dict]:
     in-flight revert sits in. The list endpoint filters by head directly and
     has no such lag.
 
+    The filter is by branch *name*, though, and a fork's branch can carry any
+    name it likes: `gh pr list --head` matches a fork pull request whose head
+    happens to be called `revert-<n>` just as well. Such a pull request says
+    nothing about the branch of this repository it was asked about -- the
+    caller reads the answer to decide what a branch *on the remote* means, and
+    whether an orphan of a failed automation run may be deleted -- and anyone
+    can open one, so cross-repository heads are dropped here rather than
+    trusted to mean an in-flight revert.
+
     As in `search_pull_requests`, an empty answer and an unreadable one must
     not be confused: `gh pr list --json` prints `[]` when nothing matched, so
     no output at all means the command kept failing, and the caller -- a guard
@@ -1265,11 +1317,16 @@ def pull_requests_from_branch(repo: str, branch: str) -> List[dict]:
     pull request exists"."""
     output = GH.get_output_with_retries(
         f"gh pr list --repo {shlex.quote(repo)} --state all "
-        f"--head {shlex.quote(branch)} --json number,state,baseRefName"
+        f"--head {shlex.quote(branch)} "
+        f"--json number,state,baseRefName,isCrossRepository"
     ).strip()
     if not output:
         raise RuntimeError(f"failed to list pull requests from {branch} in {repo}")
-    return json.loads(output)
+    return [
+        pull_request
+        for pull_request in json.loads(output)
+        if not pull_request.get("isCrossRepository")
+    ]
 
 
 def removes_it_from_base_branch(pull_request: dict) -> bool:
@@ -1305,7 +1362,15 @@ def already_handled(merge_commit: str, number: int, repo: str) -> str:
     was deleted afterwards, and one that is still open and waiting for its
     checks. And a pull request carrying the `Reverts <repo>#<pr>` marker, which
     is what the "Revert" button writes into the body and what this job writes
-    as well: that one is found whatever its branch is called.
+    as well: that one is found whatever its branch is called -- and held to
+    the same standard as everywhere else, the anchored marker line with its
+    claim verified against GitHub through `verified_revert_claim`, never a
+    substring of an author-controlled body.
+
+    The branch-named paths carry their own caveat: they match branch *names*,
+    and a fork's branch can be called `revert-<pr>` too. A fork pull request
+    is not a revert this automation or the button pushed and anyone can open
+    one, so cross-repository heads count for nothing there.
 
     Everything runs over every state, so what comes back is filtered by
     `removes_it_from_base_branch`: only a revert that is open or merged, against
@@ -1387,16 +1452,23 @@ def already_handled(merge_commit: str, number: int, repo: str) -> str:
     # at no boundary -- `head:revert-11` finds `revert-112345` -- so what comes
     # back is filtered against the names a revert of *this* pull request can
     # have. The revert of #1123456 must not stand down the revert of #112345.
+    # And it matches the branch *name* wherever the branch lives: a fork pull
+    # request whose head happens to be called `revert-<n>` is not a revert
+    # this automation or the button pushed, anyone can open one, so a
+    # cross-repository head earns the name-based exemption nothing.
     branch = branches[0]
     from_branch = [
         pull_request
         for pull_request in search_pull_requests(
-            repo, f"head:{branch}", "number,headRefName,state,baseRefName"
+            repo,
+            f"head:{branch}",
+            "number,headRefName,state,baseRefName,isCrossRepository",
         )
         if (
             pull_request["headRefName"] == branch
             or pull_request["headRefName"].startswith(f"{branch}-")
         )
+        and not pull_request.get("isCrossRepository")
         and removes_it_from_base_branch(pull_request)
     ]
     if from_branch:
@@ -1405,17 +1477,30 @@ def already_handled(merge_commit: str, number: int, repo: str) -> str:
             f"{' '.join(sorted(str(p['number']) for p in from_branch))}"
         )
 
-    # The number has to end where the marker does: `Reverts <repo>#1123456` is
-    # the revert of another pull request, not of #112345.
+    # The search finds the pull requests whose body mentions the marker at
+    # all; what it matched is never trusted. The body is author-controlled, so
+    # a mention alone must not stand the revert down -- any pull request could
+    # copy `Reverts <repo>#<n>` into its body and suppress the automatic
+    # revert of a real regression. What counts is the same evidence
+    # `culprit_guard` accepts through `genuine_revert`: the anchored marker
+    # line making the claim in its canonical shape, the claim naming *this*
+    # pull request -- `Reverts <repo>#1123456` is the revert of another one,
+    # not of #112345, and the anchored regex ends where the number does -- and
+    # GitHub's record corroborating it. A pull request cannot be the revert of
+    # itself, so the culprit carrying the marker of its own number is not a
+    # revert of it either.
     marker = f"Reverts {repo}#{int(number)}"
-    written = re.compile(f"{re.escape(marker)}(?![0-9])")
     marked = [
         pull_request
         for pull_request in search_pull_requests(
-            repo, f'"{marker}"', "number,body,state,baseRefName"
+            repo,
+            f'"{marker}"',
+            "number,body,state,baseRefName,headRefName,mergedAt",
         )
-        if written.search(pull_request.get("body") or "")
+        if pull_request.get("number") != number
         and removes_it_from_base_branch(pull_request)
+        and number in revert_claims(pull_request, repo)
+        and verified_revert_claim(pull_request, number, repo)
     ]
     if marked:
         return (

@@ -968,13 +968,23 @@ def _ls_remote(*branches):
 
 
 def _handled(
-    monkeypatch, ls_remote="", by_head=(), by_branch=(), by_marker=(), push=None
+    monkeypatch,
+    ls_remote="",
+    by_head=(),
+    by_branch=(),
+    by_marker=(),
+    push=None,
+    culprit="default",
 ):
     """`already_handled` for #112345, with the remote, the real-time lookup of
     the pull requests from the `revert-112345` branch, and the two GitHub
     searches -- by branch name and by the `Reverts ...` marker -- answered as
-    the caller says. Nothing is deleted from the remote unless the caller
-    hands in a `push` of its own."""
+    the caller says. `culprit` is GitHub's record of #112345 itself, which
+    verifying a marker's claim reads; by default it is merged into `master`,
+    as it is whenever the job gets this far. Nothing is deleted from the
+    remote unless the caller hands in a `push` of its own."""
+    if culprit == "default":
+        culprit = json.dumps(make_pull_request())
     monkeypatch.setattr(job.Shell, "get_output", _shell({"ls-remote": ls_remote}))
     monkeypatch.setattr(
         job.GH,
@@ -984,6 +994,7 @@ def _handled(
                 "--head": "" if by_head is None else json.dumps(list(by_head)),
                 "head:": json.dumps(list(by_branch)),
                 "Reverts": json.dumps(list(by_marker)),
+                "pr view 112345": culprit or "",
             }
         ),
     )
@@ -1143,6 +1154,90 @@ def test_a_revert_on_a_branch_of_any_name_stops_a_second_one(monkeypatch):
     assert "a pull request reverting #112345 already exists: 9876" in handled
 
 
+def test_a_prose_mention_of_the_marker_does_not_stop_the_revert(monkeypatch):
+    """The body is author-controlled: any pull request could copy
+    `Reverts <repo>#<n>` into a sentence and suppress the automatic revert of
+    a real regression. Only the anchored marker line -- the canonical shape
+    the "Revert" button and this job write -- makes a claim, the same standard
+    `genuine_revert` holds the culprit itself to."""
+    handled = _handled(
+        monkeypatch,
+        by_marker=[
+            _revert_pull_request(
+                body="This also Reverts ClickHouse/ClickHouse#112345 in passing.\n"
+            )
+        ],
+    )
+    assert handled == ""
+
+
+def test_the_culprit_carrying_its_own_marker_does_not_stop_its_revert(monkeypatch):
+    """A pull request cannot be the revert of itself: the culprit writing
+    `Reverts <repo>#<its own number>` into its own body is a forgery, not a
+    reason to stand down."""
+    handled = _handled(
+        monkeypatch,
+        by_marker=[
+            _revert_pull_request(
+                number=112345, body="Reverts ClickHouse/ClickHouse#112345\n"
+            )
+        ],
+    )
+    assert handled == ""
+
+
+def test_an_unreadable_record_stands_the_marker_path_down(monkeypatch):
+    """Verifying a marker's claim reads the claimed pull request from GitHub,
+    and an answer that never arrived must not read as either verdict: the
+    caller stands the revert down rather than merging a second revert next to
+    a first one it could not see."""
+    with pytest.raises(RuntimeError, match="could not be read"):
+        _handled(
+            monkeypatch,
+            by_marker=[
+                _revert_pull_request(body="Reverts ClickHouse/ClickHouse#112345\n")
+            ],
+            culprit=None,
+        )
+
+
+def test_a_fork_pull_request_named_like_a_revert_does_not_stop_this_one(monkeypatch):
+    """`head:` matches the branch *name*, and a fork's branch can be called
+    `revert-<n>` too. Anyone can open such a pull request, it is not a revert
+    this automation or the button pushed, and nothing on the base repository
+    removes the bad merge -- so it earns the name-based exemption nothing."""
+    handled = _handled(
+        monkeypatch,
+        by_branch=[
+            _revert_pull_request(
+                state="OPEN", headRefName="revert-112345", isCrossRepository=True
+            )
+        ],
+    )
+    assert handled == ""
+
+
+def test_a_fork_pull_request_does_not_vouch_for_a_pushed_branch(monkeypatch):
+    """The `--head` listing also matches fork pull requests by branch name
+    alone. A fork's `revert-<n>` says nothing about the branch of the base
+    repository it was asked about: the automation-named branch with no pull
+    request of its own is still the orphan of a failed attempt, and is deleted
+    rather than obeyed."""
+    deleted = []
+    handled = _handled(
+        monkeypatch,
+        ls_remote=_ls_remote("revert-112345"),
+        by_head=[
+            _revert_pull_request(
+                state="OPEN", headRefName="revert-112345", isCrossRepository=True
+            )
+        ],
+        push=lambda repo, refspec, **_kwargs: deleted.append(refspec) or True,
+    )
+    assert handled == ""
+    assert deleted == [":refs/heads/revert-112345"]
+
+
 def test_a_revert_of_another_pull_request_does_not_stop_this_one(monkeypatch):
     """A GitHub search matches a prefix and stops at no boundary, so the revert
     of #1123456 comes back when the revert of #112345 is searched for. It must
@@ -1223,15 +1318,13 @@ class FakeCIDB:
         return "".join(json.dumps(row) + "\n" for row in self.rows)
 
 
-def _commits(*failed, exercised=None, aborted=None, first_run_times=None):
+def _commits(*failed, exercised=None, first_run_times=None):
     """One row per commit, newest first by the commit's first run, each
     exercised by every check the failure was seen in unless the caller says
-    otherwise, none of the runs aborted unless the caller says so. Each
-    argument says whether the failure was recorded on that commit; when it
-    was, it was recorded in the first check that exercised it, which of them
-    being immaterial here."""
+    otherwise. Each argument says whether the failure was recorded on that
+    commit; when it was, it was recorded in the first check that exercised
+    it, which of them being immaterial here."""
     exercised = exercised or [make_failure().check_names] * len(failed)
-    aborted = aborted or [[]] * len(failed)
     first_run_times = first_run_times or [
         "2026-07-31 21:%02d:00" % (59 - index) for index in range(len(failed))
     ]
@@ -1240,7 +1333,6 @@ def _commits(*failed, exercised=None, aborted=None, first_run_times=None):
             "commit_sha": f"{index:040x}",
             "first_run_time": first_run_times[index],
             "exercised_checks": exercised[index],
-            "aborted_checks": aborted[index],
             "failed_checks": exercised[index][:1] if value else [],
         }
         for index, value in enumerate(failed)
@@ -1331,27 +1423,44 @@ def test_an_unfinished_commit_does_not_hide_older_full_green_evidence():
 
 def test_a_check_that_aborted_on_a_commit_did_not_exercise_it():
     """A run that died partway ran *some* tests, not necessarily this one, so
-    the failure being absent from it is not evidence. Here the newest commit's
-    slow check wrote test rows and then a failing harness row: the commit is
-    unfinished, not green, and the one clean commit behind it is not enough."""
-    aborted = [["Stateless tests (amd_tsan, parallel)"], [], []]
-    rows = _commits(0, 0, 1, aborted=aborted)
+    the failure being absent from it is not evidence: the query settles each
+    run, and a run that wrote a failing harness row next to its test rows is
+    not complete. A commit whose slow check only aborted is unfinished, not
+    green, and the one clean commit behind it is not enough."""
+    fast_only = ["Stateless tests (amd_debug, parallel)"]
+    full = make_failure().check_names
+    rows = _commits(0, 0, 1, exercised=[fast_only, full, full])
     assert job.already_fixed(FakeCIDB(rows), make_failure()) == ""
+
+
+def test_an_aborted_rerun_does_not_erase_a_completed_run_of_the_same_check():
+    """Aborting is something a run does, and a check is often re-run. A commit
+    whose check aborted once and then completed cleanly on a rerun was
+    exercised -- the completed run looked and did not find the failure -- so
+    the query settles each `(commit, check, run)` first and a check counts as
+    exercising the commit when *any* of its runs was complete. Collapsing the
+    reruns before deciding would let one aborted rerun erase the green
+    evidence of a whole commit, and an already-fixed failure could still be
+    reverted on."""
+    cidb = FakeCIDB([])
+    job.already_fixed(cidb, make_failure())
+    query = cidb.queries[0]
+    assert "GROUP BY commit_sha, check_name, check_start_time" in query
+    assert "ran_tests AND NOT aborted" in query
 
 
 def test_a_failure_whose_every_run_aborts_still_counts_as_reported():
     """A server that dies *is* the check not finishing, so every occurrence of
-    such a failure comes with an aborted run. The check that recorded the
-    failure has plainly re-exercised it there: the guard has to answer "still
-    broken" and let the revert proceed, not "cannot be established" on the
-    failure's own symptom."""
+    such a failure comes with an aborted run and the check never completes a
+    run. The check that recorded the failure has plainly re-exercised it
+    there: the guard has to answer "still broken" and let the revert proceed,
+    not "cannot be established" on the failure's own symptom."""
     check = ["Stateless tests (amd_tsan, parallel)"]
     rows = [
         {
             "commit_sha": "0" * 40,
             "first_run_time": "2026-07-31 21:59:00",
             "exercised_checks": [],
-            "aborted_checks": check,
             "failed_checks": check,
         }
     ]
@@ -1376,14 +1485,13 @@ def test_the_commits_carry_what_exercised_them_and_what_failed_on_them():
     job.already_fixed(cidb, make_failure())
     query = cidb.queries[0]
     assert "AS exercised_checks" in query
-    assert "AS aborted_checks" in query
     assert "AS failed_checks" in query
     # A check that died before it reached the tests wrote the row about itself
     # and no test rows, so it exercised nothing.
     assert "test_name != ''" in query
     # The rows the harness writes about itself under a test-like name are not
-    # tests: they must not make a check count as having exercised the commit,
-    # and a failing one marks the check's run as aborted partway.
+    # tests: they must not make a run count as having got through its tests,
+    # and a failing one marks the run as aborted partway.
     assert "test_name NOT IN ('Check errors'" in query
     assert "test_name IN ('Check errors'" in query
     assert "'Test script failed'" in query
@@ -1483,7 +1591,7 @@ def test_the_later_commits_are_looked_up_for_the_same_test_in_the_same_checks():
     # One row per commit, ordered by the commit's first run: a rerun moves a
     # commit's newest run but never its first.
     assert "GROUP BY commit_sha" in query
-    assert "ORDER BY min(check_start_time) DESC" in query
+    assert "ORDER BY min(run_start_time) DESC" in query
     # Aliasing the timestamp back to `check_start_time` would shadow the column
     # the comparison above reads, and the query would not run at all.
     assert "AS first_run_time" in query
