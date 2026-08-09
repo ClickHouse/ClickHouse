@@ -230,7 +230,9 @@ namespace Setting
     extern const SettingsBool enable_automatic_decision_for_merging_across_partitions_for_final;
     extern const SettingsBool enable_vertical_final;
     extern const SettingsBool force_aggregate_partitions_independently;
+    extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_distinct_partitions_independently;
+    extern const SettingsBool force_index_by_date;
     extern const SettingsBool force_primary_key;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_aggregation;
@@ -2787,8 +2789,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         return std::make_shared<AnalysisResult>(std::move(result));
     }
 
+    /// The `force_*` settings require index analysis to run, even when `PREWHERE` is constant false.
     if (query_info_.prewhere_info
         && settings[Setting::enable_early_constant_folding]
+        && !settings[Setting::force_primary_key]
+        && !settings[Setting::force_index_by_date]
+        && !settings[Setting::force_data_skipping_indices].changed
         && query_info_.prewhere_info->prewhere_actions.isSuitableForConstantFolding())
     {
         auto header = query_info_.prewhere_info->prewhere_actions.updateHeader(
