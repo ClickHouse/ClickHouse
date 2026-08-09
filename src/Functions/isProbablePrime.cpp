@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -82,13 +83,28 @@ public:
         auto result = ColumnUInt8::create(input_rows_count);
         auto & result_data = result->getData();
 
+        /// A whole block's rows run inside this one call, so the pipeline's between-blocks cancellation check
+        /// cannot interrupt them. A wide row reaching the Miller-Rabin rounds costs milliseconds and checks
+        /// directly; a row taking a cheap exit costs under a microsecond and is throttled by the budget.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
+
         if (!castTypeToEither<ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64, ColumnVector<UInt128>, ColumnVector<UInt256>>(
                 column,
                 [&](const auto & col)
                 {
                     const auto & data = col.getData();
+                    using ValueT = std::decay_t<decltype(data[0])>;
                     for (size_t i = 0; i < input_rows_count; ++i)
-                        result_data[i] = Primality::isProbablePrime(data[i], rounds);
+                    {
+                        if constexpr (Primality::is_big_uint<ValueT>)
+                        {
+                            budget.charge();
+                            result_data[i] = Primality::isProbablePrime(data[i], rounds, check_cancellation);
+                        }
+                        else
+                            result_data[i] = Primality::isProbablePrime(data[i], rounds);
+                    }
                     return true;
                 }))
             throw Exception(
