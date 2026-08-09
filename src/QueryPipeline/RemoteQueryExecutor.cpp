@@ -1003,6 +1003,15 @@ void RemoteQueryExecutor::finish()
                 /// skipped - and the replica is left waiting on a socket nobody reads until
                 /// `receive_timeout` expires (300 seconds by default), holding the table locks of its
                 /// query for that long, which is enough to block a concurrent `DROP TABLE`.
+                ///
+                /// It also marks the executor cancelled, which is required on its own: a
+                /// `RemoteSource::work()` may already be queued for execution (its `prepare()` ran
+                /// before the output port was closed), and both `sendQuery` and `sendQueryAsync`
+                /// gate only on `was_cancelled` - never on `finished`. Without that the query would
+                /// still be sent after we declared the executor finished, and nothing would release
+                /// it afterwards, leaving a parallel-replicas follower blocked in
+                /// `receivePartitionMergeTreeReadTaskResponse` for the whole `receive_timeout` while
+                /// holding the table's shared lock, stalling a subsequent `DROP TABLE` (#109265).
                 tryCancel("Cancelling query because the result is no longer needed");
 
                 /// A replica that received the query still has undelivered packets on its connection,
