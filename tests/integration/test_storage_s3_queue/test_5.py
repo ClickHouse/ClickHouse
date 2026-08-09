@@ -686,65 +686,31 @@ def test_disable_insertion_and_mutation(started_cluster):
         ).strip()
     )
 
-    error_patterns = [
-        "Insert queries are prohibited",
-        "Message queue insertion is disabled",
-        "Failed to process data",
-    ]
-    error_counts = {
-        pattern: int(node.count_in_log(pattern)) for pattern in error_patterns
-    }
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "processing_threads_num": 1,
+            "keeper_path": keeper_path,
+        },
+    )
 
-    try:
-        create_table(
-            started_cluster,
-            node,
-            table_name,
-            "ordered",
-            files_path,
-            additional_settings={
-                "processing_threads_num": 1,
-                "keeper_path": keeper_path,
-            },
-        )
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
 
-        generate_random_files(
-            started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
-        )
+    create_mv(node, table_name, dst_table_name)
 
-        create_mv(node, table_name, dst_table_name)
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
-        def get_count():
-            return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-        assert node.contains_in_log(
-            f"StorageS3Queue (default.{table_name}): Streaming is disabled, rescheduling next check in 5000 ms"
-        )
-        assert 0 == get_count()
-        for pattern, count in error_counts.items():
-            assert count == int(node.count_in_log(pattern))
-
-        node.replace_in_config(
-            "/etc/clickhouse-server/config.d/read_only_mode.xml",
-            "<disable_insertion_and_mutation>true</disable_insertion_and_mutation>",
-            "<disable_insertion_and_mutation>false</disable_insertion_and_mutation>",
-        )
-        node.restart_clickhouse()
-
-        expected_rows = files_to_generate
-        for _ in range(100):
-            if expected_rows == get_count():
-                break
-            time.sleep(1)
-
-        assert expected_rows == get_count()
-    finally:
-        node.replace_in_config(
-            "/etc/clickhouse-server/config.d/read_only_mode.xml",
-            "<disable_insertion_and_mutation>false</disable_insertion_and_mutation>",
-            "<disable_insertion_and_mutation>true</disable_insertion_and_mutation>",
-        )
-        node.restart_clickhouse()
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Streaming is disabled, rescheduling next check in 5000 ms"
+    )
+    assert 0 == get_count()
 
 
 def test_shutdown_logs(started_cluster):

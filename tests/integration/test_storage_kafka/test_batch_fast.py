@@ -4130,6 +4130,7 @@ def test_disable_insertion_and_mutation_disables_message_queue_insertion(
                 zk.exists(f"/clickhouse/kafka2/{kafka_table}/replicas/r1") is None
             )
         else:
+            # Disabled streaming storages must remain registered so they can be renamed.
             instance.query(
                 f"RENAME TABLE test.{kafka_table} TO test.{kafka_table}_renamed"
             )

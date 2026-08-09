@@ -3667,9 +3667,6 @@ def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique)
     ["message_queue_disable_insertion", "disable_insertion_and_mutation"],
 )
 def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_name):
-    def apply_config_change():
-        instance.restart_clickhouse()
-
     assert (
         "false"
         == instance.query(f"SELECT getServerSetting('{setting_name}')").strip()
@@ -3681,7 +3678,7 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
             f"<{setting_name}>0</{setting_name}>",
             f"<{setting_name}>1</{setting_name}>",
         )
-        apply_config_change()
+        instance.restart_clickhouse()
 
         assert (
             "true"
@@ -3707,6 +3704,8 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
                 SELECT * FROM {db}.rabbitmq;
         """
         )
+
+        # Disabled streaming storages must remain registered so they can be renamed.
         instance.query(f"RENAME TABLE {db}.rabbitmq TO {db}.rabbitmq_renamed")
         instance.query(f"RENAME TABLE {db}.rabbitmq_renamed TO {db}.rabbitmq")
 
@@ -3759,7 +3758,7 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
             f"<{setting_name}>1</{setting_name}>",
             f"<{setting_name}>0</{setting_name}>",
         )
-        apply_config_change()
+        instance.restart_clickhouse()
 
         assert (
             "false"
@@ -3776,4 +3775,4 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
             f"<{setting_name}>1</{setting_name}>",
             f"<{setting_name}>0</{setting_name}>",
         )
-        apply_config_change()
+        instance.restart_clickhouse()
