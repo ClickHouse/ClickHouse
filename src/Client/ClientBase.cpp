@@ -14,14 +14,16 @@
 #include <boost/algorithm/string/predicate.hpp>
 
 #if USE_CLIENT_AI
-#include <Client/AI/AISQLGenerator.h>
+#include <Client/AI/AIAgent.h>
 #include <Client/AI/AIClientFactory.h>
 #include <Client/AI/AIConfiguration.h>
+#include <Client/AI/AIQueryValidation.h>
 #endif
 
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
+#include <Formats/FormatSettings.h>
 #include <Common/DateLUT.h>
 #include <Common/MemoryTracker.h>
 #include <Common/formatReadable.h>
@@ -154,12 +156,16 @@ namespace Setting
     extern const SettingsBool ignore_format_null_for_explain;
     extern const SettingsBool use_client_time_zone;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsUInt64 readonly;
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsUInt64 max_memory_usage;
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
+    extern const int NETWORK_ERROR;
     extern const int DEADLOCK_AVOIDED;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
@@ -453,6 +459,10 @@ ClientBase::ClientBase(
     stdout_is_a_tty = isatty(out_fd_);
     stderr_is_a_tty = isatty(err_fd_);
     terminal_width = getTerminalWidth(in_fd_, err_fd_);
+
+#if USE_CLIENT_AI
+    ai_query_context = std::make_shared<QueryContextBuffer>();
+#endif
 }
 
 ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements)
@@ -585,6 +595,12 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     processed_rows_from_blocks += block.rows();
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
+
+#if USE_CLIENT_AI
+    /// Sample the result for the context buffer of the AI agent (blocks without rows contribute the header).
+    if (is_interactive && ai_query_context)
+        ai_query_context->addBlock(block);
+#endif
 
     /// The header block containing zero rows was used to initialize
     /// output_format, do not output it.
@@ -1274,7 +1290,12 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     }
 
     if (have_error)
+    {
+#if USE_CLIENT_AI
+        recordErrorForAIContext(full_query);
+#endif
         processError(full_query);
+    }
     return !have_error;
 }
 
@@ -2449,6 +2470,12 @@ void ClientBase::processParsedSingleQuery(
     server_exception.reset();
     client_context->setInsertionTable(StorageID::createEmpty());
 
+#if USE_CLIENT_AI
+    /// Record the query into the context buffer of the AI agent.
+    if (is_interactive && ai_query_context)
+        ai_query_context->startQuery(String(query_), ai_running_query);
+#endif
+
     /// Generate a fresh query_id for each query, unless the user fixed it with `--query_id`.
     /// In batch mode we only do this when we are going to print the query_id, so that the printed
     /// value matches the one actually used for execution (otherwise the server generates its own).
@@ -2697,6 +2724,11 @@ void ClientBase::processParsedSingleQuery(
         error_stream << '\x07';
         error_stream.flush();
     }
+
+#if USE_CLIENT_AI
+    if (is_interactive && ai_query_context)
+        ai_query_context->finishQuery(progress_indication.elapsedSeconds(), cancelled);
+#endif
 }
 
 
@@ -3209,7 +3241,12 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 // Report error.
                 if (have_error)
+                {
+#if USE_CLIENT_AI
+                    recordErrorForAIContext(full_query);
+#endif
                     processError(full_query);
+                }
 
                 // Stop processing queries if needed.
                 if (have_error && (buzz_house || !ignore_error))
@@ -3320,49 +3357,13 @@ bool ClientBase::processQueryText(const String & text)
 
 
 #if USE_CLIENT_AI
-    // Handle "?? <free_text>" command
-    if (text.starts_with("??"))
+    /// Handle the AI chat command: "? <free text>" (and "?? <free text>" for compatibility
+    /// with the older AI SQL generation command).
+    if (trimmed_input.starts_with("?"))
     {
-        size_t skip_prefix_size = 2; // Length of "??"
-        auto free_text = text.substr(skip_prefix_size);
-        // Trim leading whitespace from the free text
-        free_text = trim(free_text, [](char c) { return isWhitespaceASCII(c); });
-
-        if (!ai_generator)
-        {
-            error_stream << "AI SQL generator is not initialized. "
-                         << "Please set OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, "
-                         << "or configure AI settings in your configuration file. "
-                         << "See documentation for detailed setup instructions." << std::endl << std::endl;
-            return true;
-        }
-
-        if (free_text.empty())
-        {
-            error_stream << "Please provide a natural language query after ??" << std::endl << std::endl;
-            return true;
-        }
-
-        // Check if AI provider usage needs acknowledgment from user
-        if (!checkAIProviderAcknowledgment())
-        {
-            return true;
-        }
-
-        try
-        {
-            std::string generated_sql = ai_generator->generateSQL(free_text);
-
-            /// Prepopulate the next query with the generated SQL
-            next_query_to_prepopulate = generated_sql;
-        }
-        catch (const std::exception & e)
-        {
-            error_stream << "AI query generation failed: " << e.what() << std::endl;
-        }
-
-        error_stream << std::endl;
-        return true;
+        size_t skip_prefix_size = trimmed_input.starts_with("??") ? 2 : 1;
+        auto free_text = trim(trimmed_input.substr(skip_prefix_size), [](char c) { return isWhitespaceASCII(c); });
+        return processAIChat(free_text);
     }
 #endif
 
@@ -3488,119 +3489,280 @@ void ClientBase::stopKeystrokeInterceptorIfExists()
 }
 
 #if USE_CLIENT_AI
-void ClientBase::initAIProvider()
+void ClientBase::initAIAgent()
 {
-    try {
-        AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
+    if (ai_agent_initialized)
+        return;
+    ai_agent_initialized = true;
 
-        // Create the AI client and get metadata about how it was created
-        AIClientResult ai_result = AIClientFactory::createClient(ai_config);
+    AIConfiguration ai_config = AIClientFactory::loadConfiguration(getClientConfiguration());
 
-        // If no configuration was found, don't initialize the AI generator
-        if (ai_result.no_configuration_found || !ai_result.client.has_value())
+    AIAgentHooks hooks;
+    hooks.execute_internal = [this](const String & query, const NameToNameMap & params) { return executeInternalQueryForAI(query, params); };
+    hooks.execute_scalar = [this](const String & query, const NameToNameMap & params) { return executeScalarQueryForAI(query, params); };
+    hooks.run_visible = [this](const String & query, bool readonly) { return runQueryForAI(query, readonly); };
+    hooks.confirm_query = [this](const String & query) -> bool
+    {
+        if (!is_interactive)
+            return false;
+
+        if (need_render_progress && tty_buf)
         {
-            return;
+            std::unique_lock lock(tty_mutex);
+            progress_indication.clearProgressOutput(*tty_buf, lock);
         }
 
-        // Store metadata for later use
-        ai_inferred_from_env = ai_result.inferred_from_env;
-        ai_provider_name = ai_result.provider;
+        /// Show the query the agent wants to run before asking, as if the user typed it.
+        echoQueryForAI(query);
+        return ask("Run this query? [y/N] ", *std_in, *std_out);
+    };
 
-        // Create a query executor that uses the connection
-        auto query_executor = [this](const std::string & query) -> std::string
-        {
-            return executeQueryForSingleString(query);
-        };
+    std::unique_ptr<IAIAgentTransport> transport;
 
-        ai_generator = std::make_unique<AISQLGenerator>(ai_config, std::move(ai_result.client.value()), query_executor, error_stream);
-    }
-    catch (const std::exception & e)
+    /// Client-side AI providers are disabled for the embedded client (SSH and WebSocket
+    /// protocols) because they access the environment (API keys) of the server process,
+    /// which could be a security concern.
+    if (!isEmbeeddedClient())
     {
-        auto logger = getLogger("ClientBase");
-        LOG_DEBUG(logger, "Failed to initialize AI SQL generator: {}", e.what());
+        AIClientResult ai_result = AIClientFactory::createClient(ai_config);
+        if (ai_result.client.has_value())
+        {
+            ai_inferred_from_env = ai_result.inferred_from_env;
+            ai_provider_name = ai_result.provider;
+            transport = std::make_unique<AIClientTransport>(std::move(ai_result.client.value()), ai_config);
+        }
     }
+
+    if (!transport && AIServerFunctionTransport::isAvailable(hooks.execute_scalar))
+    {
+        /// No client-side AI provider: fall back to the `aiGenerate` function configured
+        /// on the server we are connected to (or in clickhouse-local). This adds nothing
+        /// the user could not do with a plain `SELECT aiGenerate(...)` query.
+        transport = std::make_unique<AIServerFunctionTransport>(hooks.execute_scalar);
+    }
+
+    if (!transport)
+        return;
+
+    ai_agent = std::make_unique<AIAgent>(ai_config, std::move(transport), hooks, ai_query_context, output_stream, stdout_is_a_tty);
 }
 
-std::string ClientBase::executeQueryForSingleString(const std::string & query)
+bool ClientBase::processAIChat(const String & text)
 {
-    if (!connection)
-        return "";
+    if (!is_interactive)
+    {
+        error_stream << "The AI chat (the `?` command) is only available in interactive mode." << std::endl;
+        return true;
+    }
 
     try
     {
-        std::string result;
+        initAIAgent();
+    }
+    catch (...)
+    {
+        error_stream << "Failed to initialize the AI agent: " << getCurrentExceptionMessage(false) << std::endl << std::endl;
+        return true;
+    }
 
-        /// Send the query
-        connection->sendQuery(
-            connection_parameters.timeouts,
-            query,
-            {},  /// query_parameters
-            "",  /// query_id
-            QueryProcessingStage::Complete,
-            nullptr,  /// settings
-            nullptr,  /// client_info
-            false,    /// with_pending_data
-            {},       /// external_roles
-            {}        /// external_data
-        );
+    if (!ai_agent)
+    {
+        error_stream << "The AI agent is not available: no AI provider is configured.\n"
+                        "Set the OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, configure the `ai` section\n"
+                        "of the client configuration, or configure default credentials for the `aiGenerate` function\n"
+                        "on the server (the `ai_function_text_default_credentials` setting)." << std::endl << std::endl;
+        return true;
+    }
 
-        /// Receive and process results
-        while (true)
+    if (text.empty())
+    {
+        output_stream << "\nUsage: ? <ask anything about your data or ClickHouse>\n"
+                         "\n"
+                         "The AI agent sees your recent queries with their results and errors, can explore\n"
+                         "the schema and the documentation, runs read-only queries on its own (with a 30 second\n"
+                         "and 10 GiB limit) and asks for confirmation before anything else. The conversation\n"
+                         "keeps its context between questions; type `? clear` to start over.\n"
+                         "\n"
+                      << ai_agent->status() << "\n" << std::endl;
+        return true;
+    }
+
+    if (text == "clear" || text == "reset")
+    {
+        ai_agent->reset();
+        output_stream << "The AI conversation was cleared." << std::endl << std::endl;
+        return true;
+    }
+
+    if (!checkAIProviderAcknowledgment())
+        return true;
+
+    try
+    {
+        ai_agent->chat(text);
+    }
+    catch (...)
+    {
+        error_stream << "AI chat failed: " << getCurrentExceptionMessage(false) << std::endl;
+    }
+
+    output_stream << std::endl;
+    return true;
+}
+
+String ClientBase::executeInternalQueryForAI(const String & query, const NameToNameMap & params)
+{
+    if (!connection)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
+
+    const Block result = fetchInternalQueryResult(query, params);
+    return formatBlockAsTextForAI(result);
+}
+
+String ClientBase::executeScalarQueryForAI(const String & query, const NameToNameMap & params)
+{
+    if (!connection)
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Not connected to a server");
+
+    const Block result = fetchInternalQueryResult(query, params);
+    if (result.rows() == 0 || result.columns() == 0)
+        return "";
+
+    /// Serialize the cell as unescaped text so any type is rendered faithfully (a `String` keeps
+    /// its raw bytes and newlines; a number becomes its decimal text) - not the raw column bytes.
+    /// The block is materialized first: a `Const`/`Sparse`/`LowCardinality` column (e.g. from
+    /// constant folding) cannot be serialized row by row directly.
+    const Block materialized = materializeBlock(result);
+    const auto & column_with_type = materialized.getByPosition(0);
+    WriteBufferFromOwnString buf;
+    FormatSettings format_settings;
+    column_with_type.type->getDefaultSerialization()->serializeText(*column_with_type.column, 0, buf, format_settings);
+    return buf.str();
+}
+
+void ClientBase::echoQueryForAI(const String & query)
+{
+    String text = query;
+#if USE_REPLXX
+    if (highlight_queries && stdout_is_a_tty)
+        text = highlighted(text, *client_context, rainbow_parentheses);
+#endif
+    writeString(getPrompt(), *std_out);
+    writeString(text, *std_out);
+    writeChar('\n', *std_out);
+    std_out->next();
+}
+
+String ClientBase::runQueryForAI(const String & query, bool readonly)
+{
+    if (!is_interactive)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The AI agent can run queries only in interactive mode");
+
+    if (readonly)
+    {
+        /// A single read-only statement without a way to lift the sandbox settings.
+        /// Parse errors are thrown (not printed): they go back to the model as the tool result.
+        const Settings & settings = client_context->getSettingsRef();
+        const char * begin = query.data();
+        const char * end = begin + query.size();
+        ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+        ASTPtr ast = parseQueryAndMovePosition(
+            parser, begin, end, "", /*allow_multi_statements=*/ false,
+            settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        validateReadOnlyQueryForAIAgent(*ast);
+
+        /// Queries going through the confirmation prompt were already shown there.
+        echoQueryForAI(query);
+    }
+
+    /// Temporarily enforce the sandbox settings of the read-only tool. The query is unable
+    /// to override them: the validation above rejects SETTINGS clauses that touch them.
+    /// The limits are tighten-only, so a user with a stricter session limit keeps it; and if
+    /// the session is already read-only we leave the limits alone, because the server would
+    /// reject changing them under `readonly = 1` (the query stays read-only regardless).
+    std::optional<Settings> saved_settings;
+    if (readonly)
+    {
+        static constexpr UInt64 max_execution_time_limit = 30;
+        static constexpr UInt64 max_memory_usage_limit = 10'000'000'000;
+
+        const Settings & current = client_context->getSettingsRef();
+        saved_settings = current;
+
+        if (current[Setting::readonly] == 0)
         {
-            Packet packet = connection->receivePacket();
-            switch (packet.type)
+            const auto tighten = [&](std::string_view name, UInt64 current_value, UInt64 limit)
             {
-                case Protocol::Server::Data:
-                    if (!packet.block.empty() && packet.block.rows() > 0)
-                    {
-                        /// Convert block to string representation
-                        /// For schema queries, we expect single column results
-                        const auto & column = packet.block.getByPosition(0).column;
-                        for (size_t i = 0; i < column->size(); ++i)
-                        {
-                            if (!result.empty())
-                                result += "\n";
-                            result.append(column->getDataAt(i));
-                        }
-                    }
-                    break;
-
-                case Protocol::Server::EndOfStream:
-                    return result;
-
-                case Protocol::Server::Exception:
-                    /// Return empty string on exception
-                    return "";
-
-                case Protocol::Server::Progress:
-                case Protocol::Server::ProfileInfo:
-                case Protocol::Server::Log:
-                case Protocol::Server::ProfileEvents:
-                case Protocol::Server::TimezoneUpdate:
-                    /// Ignore these packet types
-                    break;
-
-                default:
-                    /// Ignore unknown packet types
-                    break;
-            }
+                if (current_value == 0 || current_value > limit)
+                    client_context->setSetting(String(name), limit);
+            };
+            tighten("max_execution_time", static_cast<UInt64>(current[Setting::max_execution_time].totalSeconds()), max_execution_time_limit);
+            tighten("max_memory_usage", current[Setting::max_memory_usage], max_memory_usage_limit);
+            /// Applied last so the tightening above is not itself rejected under readonly.
+            client_context->setSetting("readonly", static_cast<UInt64>(1));
         }
     }
-    catch (const std::exception &)
+    SCOPE_EXIT_SAFE({
+        if (saved_settings)
+            client_context->setSettings(*saved_settings);
+    });
+
+    const UInt64 seqno_before = ai_query_context->latestSeqno();
+
+    ai_running_query = true;
+    /// The query is displayed exactly once, by `echoQueryForAI` (in the read-only branch above,
+    /// or in the confirmation prompt for `run_query`). Suppress the echo of `executeMultiQuery`
+    /// (on by default in interactive mode) so it is not shown twice.
+    const bool saved_echo_queries = echo_queries;
+    echo_queries = false;
+    SCOPE_EXIT({
+        ai_running_query = false;
+        echo_queries = saved_echo_queries;
+    });
+
+    try
     {
-        return "";
+        executeMultiQuery(query);
     }
+    catch (...)
+    {
+        /// Server-side errors are reported through the normal path; what reaches here are
+        /// client-side errors. Record the outcome for the model and restore the connection,
+        /// like the interactive loop does after a client-side exception.
+        ai_query_context->recordError(query, getCurrentExceptionMessage(false));
+        if (connection && !connection->checkConnected(connection_parameters.timeouts))
+            connect();
+    }
+
+    String summary = ai_query_context->format(seqno_before, /*skip_ai_initiated=*/ false);
+    if (summary.empty())
+        summary = "The query finished, but no outcome was recorded.";
+    return summary;
+}
+
+void ClientBase::recordErrorForAIContext(std::string_view query_or_input)
+{
+    if (!is_interactive || !ai_query_context)
+        return;
+
+    String message;
+    if (server_exception)
+        message = getExceptionMessage(*server_exception, false);
+    else if (client_exception)
+        message = getExceptionMessage(*client_exception, false);
+    else
+        return;
+
+    ai_query_context->recordError(String(query_or_input), message);
 }
 #endif
 
-Block ClientBase::fetchDocumentation(const String & query, const String & word)
+Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNameMap & params)
 {
-    const NameToNameMap query_parameters_for_help{{"word", word}};
-
     connection->sendQuery(
         connection_parameters.timeouts,
         query,
-        query_parameters_for_help,
+        params,
         "", /// query_id
         QueryProcessingStage::Complete,
         nullptr, /// settings
@@ -3692,10 +3854,10 @@ bool ClientBase::processHelpCommand(const String & word_arg)
 
     try
     {
-        const Block exact = fetchDocumentation(
+        const Block exact = fetchInternalQueryResult(
             "SELECT name, toString(type) AS type, description FROM system.documentation "
             "WHERE lower(name) = lower({word:String}) ORDER BY type, name",
-            word);
+            {{"word", word}});
 
         if (exact.rows() > 0)
         {
@@ -3720,21 +3882,21 @@ bool ClientBase::processHelpCommand(const String & word_arg)
         /// and by entities whose documentation mentions the word.
         /// `lower` (not `lowerUTF8`) is used deliberately: entity names are ASCII, and `lowerUTF8`
         /// requires ICU, which is not available in every build (e.g. the Fast test build).
-        const Block by_name = fetchDocumentation(
+        const Block by_name = fetchInternalQueryResult(
             "SELECT DISTINCT name, toString(type) AS type FROM system.documentation "
             "WHERE (lengthUTF8({word:String}) >= 3 AND positionCaseInsensitive(name, {word:String}) > 0) "
             "   OR editDistanceUTF8(lower(name), lower({word:String})) "
             "      <= greatest(1, intDiv(lengthUTF8({word:String}), 3)) "
             "ORDER BY editDistanceUTF8(lower(name), lower({word:String})), lengthUTF8(name), name "
             "LIMIT 30",
-            word);
+            {{"word", word}});
 
-        const Block by_content = fetchDocumentation(
+        const Block by_content = fetchInternalQueryResult(
             "SELECT DISTINCT name, toString(type) AS type FROM system.documentation "
             "WHERE lengthUTF8({word:String}) >= 3 AND positionCaseInsensitive(description, {word:String}) > 0 "
             "  AND lower(name) != lower({word:String}) "
             "ORDER BY name LIMIT 30",
-            word);
+            {{"word", word}});
 
         output_stream << "\nNo documentation found for '" << word << "'.\n";
 
@@ -3803,7 +3965,7 @@ bool ClientBase::checkAIProviderAcknowledgment()
         }
 
         const auto question = fmt::format(
-            "AI SQL generation will use {} API key from environment variable.\n"
+            "The AI agent will use the {} API key from an environment variable.\n"
             "Do you want to continue? [y/N] ",
             ai_provider_name);
 
@@ -4097,13 +4259,6 @@ void ClientBase::runInteractive()
 
     initQueryIdFormats();
 
-#if USE_CLIENT_AI
-    /// AI SQL generation is disabled for the embedded client (SSH and WebSocket protocols)
-    /// because it accesses the environment (API keys) which could be a security concern.
-    if (!isEmbeeddedClient())
-        initAIProvider();
-#endif
-
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
 
@@ -4322,6 +4477,11 @@ void ClientBase::runInteractive()
             /// We don't need to handle the test hints in the interactive mode.
             error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
             client_exception.reset(e.clone());
+
+#if USE_CLIENT_AI
+            if (ai_query_context)
+                ai_query_context->recordError(input, getExceptionMessage(e, false));
+#endif
         }
 
         if (client_exception)
@@ -4368,11 +4528,6 @@ void ClientBase::runNonInteractive()
 {
     if (delayed_interactive || echo_query_id)
         initQueryIdFormats();
-
-#if USE_CLIENT_AI
-    if (!isEmbeeddedClient())
-        initAIProvider();
-#endif
 
     if (!buzz_house && !queries_files.empty())
     {

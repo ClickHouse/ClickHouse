@@ -363,84 +363,74 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
     --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
 ```
 
-## AI-powered SQL generation {#ai-sql-generation}
+## AI assistant {#ai-assistant}
 
-ClickHouse Client includes built-in AI assistance for generating SQL queries from natural language descriptions. This feature helps users write complex queries without deep SQL knowledge.
-
-The AI assistance works out of the box if you have either `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` environment variable set. For more advanced configuration, see the [Configuration](#ai-sql-generation-configuration) section.
-
-### Usage {#ai-sql-generation-usage}
-
-To use AI SQL generation, prefix your natural language query with `??`:
+ClickHouse Client and `clickhouse-local` include a built-in AI assistant that helps you explore your data, write and run SQL, and investigate errors, right from the interactive prompt. Ask a question by prefixing it with `?`:
 
 ```bash
-:) ?? show all users who made purchases in the last 30 days
+:) ? how many orders did we get per day last week?
 ```
 
-The AI will:
-1. Explore your database schema automatically
-2. Generate appropriate SQL based on the discovered tables and columns
-3. Execute the generated query immediately
+The assistant is agentic: it can inspect the schema, consult the embedded documentation, look at your recent queries, and run queries on your connection to answer the question. It runs read-only queries on its own and asks for confirmation before anything else. Queries it runs are displayed and executed in your terminal exactly as if you typed them, so you see and keep every result.
 
-### Example {#ai-sql-generation-example}
+The conversation keeps its context between questions in the same session, so you can refine and follow up. Type `? clear` to start a fresh conversation, and `?` with no text to see a short status line.
+
+:::note
+The older `??` command, which generated a single SQL query and pre-filled it at the prompt, now invokes the same assistant. Both `?` and `??` are equivalent.
+:::
+
+### What the assistant can do {#ai-assistant-capabilities}
+
+To answer a question, the assistant uses a set of tools:
+
+- **Recent queries** — it is given the last queries you ran in this session, with their results truncated to the first and last rows and any error messages, and it can read further back from the [`system.user_query_log`](/operations/system-tables/user_query_log) table. When you say "my query" or "that error", it knows what you mean.
+- **Schema exploration** — it lists databases and tables and reads `CREATE TABLE` statements instead of guessing column names.
+- **Documentation** — it looks entities up in the embedded documentation (the [`system.documentation`](/operations/system-tables/documentation) table), the same source as the [`help`](#getting-help) command.
+- **Read-only queries without confirmation** — it runs `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS` and `CHECK` statements under a sandbox: `readonly = 1`, a 30-second time limit and a 10 GiB memory limit. These are displayed and executed on your connection without asking.
+- **Any query, with confirmation** — for writes, DDL, `SET`, or heavier read queries, it asks you to confirm before running. The query is shown at the prompt before you decide.
+
+### Example {#ai-assistant-example}
 
 ```bash
-:) ?? count orders by product category
+:) ? which product category made the most revenue last month?
 
-Starting AI SQL generation with schema discovery...
-──────────────────────────────────────────────────
+⚙ list_tables (database: sales_db)
+  ✓ orders, products, categories
+⚙ show_create_table (database: sales_db, table: orders)
+  ✓ CREATE TABLE orders (order_id UInt64, product_id UInt64, amount Decimal(10, 2), created_at DateTime, ...)
+Let me total the revenue per category for last month.
 
-🔍 list_databases
-   ➜ system, default, sales_db
+:) SELECT c.name AS category, sum(o.amount) AS revenue
+   FROM sales_db.orders o
+   JOIN sales_db.products p ON o.product_id = p.product_id
+   JOIN sales_db.categories c ON p.category_id = c.category_id
+   WHERE o.created_at >= date_trunc('month', now() - INTERVAL 1 MONTH)
+     AND o.created_at <  date_trunc('month', now())
+   GROUP BY category ORDER BY revenue DESC
 
-🔍 list_tables_in_database
-   database: sales_db
-   ➜ orders, products, categories
+   ┌─category────┬───revenue─┐
+   │ Electronics │ 184320.50 │
+   │ Home        │  93110.00 │
+   └─────────────┴───────────┘
 
-🔍 get_schema_for_table
-   database: sales_db
-   table: orders
-   ➜ CREATE TABLE orders (order_id UInt64, product_id UInt64, quantity UInt32, ...)
-
-✨ SQL query generated successfully!
-──────────────────────────────────────────────────
-
-SELECT
-    c.name AS category,
-    COUNT(DISTINCT o.order_id) AS order_count
-FROM sales_db.orders o
-JOIN sales_db.products p ON o.product_id = p.product_id
-JOIN sales_db.categories c ON p.category_id = c.category_id
-GROUP BY c.name
-ORDER BY order_count DESC
+Electronics led last month with $184,320.50 in revenue, about twice the Home category.
 ```
 
-### Configuration {#ai-sql-generation-configuration}
+### Providers {#ai-assistant-providers}
 
-AI SQL generation requires configuring an AI provider in your ClickHouse Client configuration file. You can use either OpenAI, Anthropic, or any OpenAI-compatible API service.
+The assistant needs a model backend. It picks one in this order:
 
-#### Environment-based fallback {#ai-sql-generation-fallback}
+1. An AI provider configured in the client configuration file (see below).
+2. An `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` environment variable.
+3. The [`aiGenerate`](/sql-reference/functions/ai-functions) function of the server you are connected to (or of `clickhouse-local`), used when no client-side provider is available and the server has default credentials configured for it (the `ai_function_text_default_credentials` setting). This lets the assistant work without any client-side configuration when the server administrator has already set up AI functions.
 
-If no AI configuration is specified in the config file, ClickHouse Client will automatically try to use environment variables:
+If none of these is available, the assistant is disabled and tells you so.
 
-1. First checks for `OPENAI_API_KEY` environment variable
-2. If not found, checks for `ANTHROPIC_API_KEY` environment variable
-3. If neither is found, AI features will be disabled
+When the API key comes from an environment variable, the client asks for confirmation once per session before contacting the provider.
 
-This allows quick setup without configuration files:
-```bash
-# Using OpenAI
-export OPENAI_API_KEY=your-openai-key
-clickhouse-client
+### Configuration {#ai-assistant-configuration}
 
-# Using Anthropic
-export ANTHROPIC_API_KEY=your-anthropic-key
-clickhouse-client
-```
-
-#### Configuration file {#ai-sql-generation-configuration-file}
-
-For more control over AI settings, configure them in your ClickHouse Client configuration file located at:
+For control over the provider, model and generation parameters, configure the `ai` section of the ClickHouse Client configuration file located at:
 - `$XDG_CONFIG_HOME/clickhouse/config.xml` (or `~/.config/clickhouse/config.xml` if `XDG_CONFIG_HOME` is not set) (XML format)
 - `$XDG_CONFIG_HOME/clickhouse/config.yaml` (or `~/.config/clickhouse/config.yaml` if `XDG_CONFIG_HOME` is not set) (YAML format)
 - `~/.clickhouse-client/config.xml` (XML format, legacy location)
@@ -452,31 +442,33 @@ For more control over AI settings, configure them in your ClickHouse Client conf
     ```xml
     <config>
         <ai>
-            <!-- Required: Your API key (or set via environment variable) -->
+            <!-- Your API key (or set it via an environment variable) -->
             <api_key>your-api-key-here</api_key>
 
-            <!-- Required: Provider type (openai, anthropic) -->
-            <provider>openai</provider>
+            <!-- Provider type (openai, anthropic) -->
+            <provider>anthropic</provider>
 
             <!-- Model to use (defaults vary by provider) -->
-            <model>gpt-4o</model>
+            <model>claude-sonnet-4-5</model>
 
-            <!-- Optional: Custom API endpoint for OpenAI-compatible services -->
-            <!-- <base_url>https://openrouter.ai/api</base_url> -->
+            <!-- Optional: custom API endpoint for OpenAI-compatible services -->
+            <!-- <base_url>https://openrouter.ai/api/v1</base_url> -->
 
-            <!-- Schema exploration settings -->
+            <!-- Let the assistant explore the schema (default: true) -->
             <enable_schema_access>true</enable_schema_access>
 
             <!-- Generation parameters -->
             <!-- Optional: temperature is only sent to the model when set here.
                  It is omitted by default because some models reject this parameter. -->
             <!-- <temperature>0.0</temperature> -->
-            <max_tokens>1000</max_tokens>
+            <max_tokens>4096</max_tokens>
             <timeout_seconds>30</timeout_seconds>
-            <max_steps>10</max_steps>
 
-            <!-- Optional: Custom system prompt -->
-            <!-- <system_prompt>You are an expert ClickHouse SQL assistant...</system_prompt> -->
+            <!-- Maximum model steps (tool-calling rounds) per question -->
+            <max_steps>24</max_steps>
+
+            <!-- Optional: custom system prompt -->
+            <!-- <system_prompt>You are an expert ClickHouse assistant...</system_prompt> -->
         </ai>
     </config>
     ```
@@ -484,34 +476,32 @@ For more control over AI settings, configure them in your ClickHouse Client conf
   <TabItem value="yaml" label="YAML">
     ```yaml
     ai:
-      # Required: Your API key (or set via environment variable)
+      # Your API key (or set it via an environment variable)
       api_key: your-api-key-here
 
-      # Required: Provider type (openai, anthropic)
-      provider: openai
+      # Provider type (openai, anthropic)
+      provider: anthropic
 
       # Model to use
-      model: gpt-4o
+      model: claude-sonnet-4-5
 
-      # Optional: Custom API endpoint for OpenAI-compatible services
-      # base_url: https://openrouter.ai/api
+      # Optional: custom API endpoint for OpenAI-compatible services
+      # base_url: https://openrouter.ai/api/v1
 
-      # Enable schema access - allows AI to query database/table information
+      # Let the assistant explore the schema
       enable_schema_access: true
 
       # Generation parameters
       # temperature is only sent to the model when set here; omitted by default
       # because some models reject this parameter.
       # temperature: 0.0    # Controls randomness (0.0 = deterministic)
-      max_tokens: 1000      # Maximum response length
+      max_tokens: 4096      # Maximum response length per model call
       timeout_seconds: 30   # Request timeout
-      max_steps: 10         # Maximum schema exploration steps
+      max_steps: 24         # Maximum model steps (tool-calling rounds) per question
 
-      # Optional: Custom system prompt
+      # Optional: custom system prompt
       # system_prompt: |
-      #   You are an expert ClickHouse SQL assistant. Convert natural language to SQL.
-      #   Focus on performance and use ClickHouse-specific optimizations.
-      #   Always return executable SQL without explanations.
+      #   You are an expert ClickHouse assistant.
     ```
   </TabItem>
 </Tabs>
@@ -531,106 +521,53 @@ ai:
 **Minimal configuration examples:**
 
 ```yaml
-# Minimal config - uses environment variable for API key
+# Minimal config - uses an environment variable for the API key
 ai:
   provider: openai  # Will use OPENAI_API_KEY env var
 
 # No config at all - automatic fallback
-# (Empty or no ai section - will try OPENAI_API_KEY then ANTHROPIC_API_KEY)
+# (Empty or no ai section: tries OPENAI_API_KEY, then ANTHROPIC_API_KEY,
+#  then the server-side aiGenerate function)
 
-# Only override model - uses env var for API key
+# Only override the model - uses env var for the API key
 ai:
   provider: openai
-  model: gpt-3.5-turbo
+  model: gpt-4o
 ```
 
-### Parameters {#ai-sql-generation-parameters}
+### Parameters {#ai-assistant-parameters}
 
 <details>
-<summary>Required parameters</summary>
+<summary>Provider and model</summary>
 
-- `api_key` - Your API key for the AI service. Can be omitted if set via environment variable:
-  - OpenAI: `OPENAI_API_KEY`
-  - Anthropic: `ANTHROPIC_API_KEY`
-  - Note: API key in config file takes precedence over environment variable
-- `provider` - The AI provider: `openai` or `anthropic`
-  - If omitted, uses automatic fallback based on available environment variables
-
-</details>
-
-<details>
-<summary>Model configuration</summary>
-
-- `model` - The model to use (default: provider-specific)
+- `provider` - The AI provider: `openai` or `anthropic`. If omitted, uses automatic fallback based on the available environment variables, and then the server-side `aiGenerate` function.
+- `api_key` - Your API key for the AI service. Can be omitted if set via an environment variable (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`); the config file takes precedence over the environment variable.
+- `model` - The model to use (default: provider-specific).
   - OpenAI: `gpt-4o`, `gpt-4`, `gpt-3.5-turbo`, etc.
-  - Anthropic: `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229`, etc.
-  - OpenRouter: Use their model naming like `anthropic/claude-3.5-sonnet`
+  - Anthropic: `claude-sonnet-4-5`, `claude-opus-4-1`, etc.
+  - OpenRouter: use their model naming, like `anthropic/claude-3.5-sonnet`.
+- `base_url` - Custom API endpoint for OpenAI-compatible services (optional).
 
 </details>
 
 <details>
-<summary>Connection settings</summary>
+<summary>Behavior</summary>
 
-- `base_url` - Custom API endpoint for OpenAI-compatible services (optional)
-- `timeout_seconds` - Request timeout in seconds (default: `30`)
-
-</details>
-
-<details>
-<summary>Schema exploration</summary>
-
-- `enable_schema_access` - Allow AI to explore database schemas (default: `true`)
-- `max_steps` - Maximum tool-calling steps for schema exploration (default: `10`)
-
-</details>
-
-<details>
-<summary>Generation parameters</summary>
-
+- `enable_schema_access` - Let the assistant explore database schemas (default: `true`).
+- `max_steps` - Maximum number of model steps (tool-calling rounds) per question (default: `24`).
+- `timeout_seconds` - Request timeout in seconds (default: `30`).
 - `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative. Omitted by default and only sent to the model when explicitly set, because some models reject this parameter.
-- `max_tokens` - Maximum response length in tokens (default: `1000`)
-- `system_prompt` - Custom instructions for the AI (optional)
+- `max_tokens` - Maximum response length in tokens per model call (default: `4096`).
+- `system_prompt` - Custom instructions for the assistant (optional).
 
 </details>
 
-### How it works {#ai-sql-generation-how-it-works}
+### Security {#ai-assistant-security}
 
-The AI SQL generator uses a multi-step process:
-
-<VerticalStepper headerLevel="list">
-
-1. **Schema Discovery**
-
-The AI uses built-in tools to explore your database
-- Lists available databases
-- Discovers tables within relevant databases
-- Examines table structures via `CREATE TABLE` statements
-
-2. **Query Generation**
-
-Based on the discovered schema, the AI generates SQL that:
-- Matches your natural language intent
-- Uses correct table and column names
-- Applies appropriate joins and aggregations
-
-3. **Execution**
-
-The generated SQL is automatically executed and results are displayed
-
-</VerticalStepper>
-
-### Limitations {#ai-sql-generation-limitations}
-
-- Requires an active internet connection
-- API usage is subject to rate limits and costs from the AI provider
-- Complex queries may require multiple refinements
-- The AI has read-only access to schema information, not actual data
-
-### Security {#ai-sql-generation-security}
-
-- API keys are never sent to ClickHouse servers
-- The AI only sees schema information (table/column names and types), not actual data
-- All generated queries respect your existing database permissions
+- API keys are never sent to the ClickHouse server; they are read by the client from its configuration or environment.
+- The assistant runs on your connection, so it acts with exactly your permissions and cannot do anything you could not do yourself.
+- Read-only queries run under `readonly = 1` with a 30-second and a 10 GiB limit; every other query requires your explicit confirmation, with the query shown before you decide.
+- For the embedded client (the SSH and WebSocket protocols), client-side AI providers are disabled, because they would read API keys from the server process environment; only the server-side `aiGenerate` backend is used there.
 
 ## Connection string {#connection_string}
 

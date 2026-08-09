@@ -27,8 +27,8 @@ struct AIConfiguration
     /// only sent when explicitly configured via `ai.temperature`.
     std::optional<double> temperature;
 
-    /// Maximum tokens to generate
-    size_t max_tokens = 1000;
+    /// Maximum tokens to generate per model call
+    size_t max_tokens = 4096;
 
     /// Request timeout in seconds
     size_t timeout_seconds = 30;
@@ -36,8 +36,8 @@ struct AIConfiguration
     /// Custom system prompt (optional)
     std::string system_prompt;
 
-    /// Maximum steps for multi-step tool calling
-    size_t max_steps = 5;
+    /// Maximum steps (model calls) of one agent turn
+    size_t max_steps = 24;
 
     /// Enable schema access - allows AI to query database/table information
     bool enable_schema_access = true;

@@ -17,7 +17,8 @@
 #include <Storages/StorageFile.h>
 
 #if USE_CLIENT_AI
-#include <Client/AI/AISQLGenerator.h>
+#include <Client/AI/AIAgent.h>
+#include <Client/AI/QueryContextBuffer.h>
 #endif
 
 #include <boost/program_options.hpp>
@@ -174,11 +175,35 @@ protected:
     void showClientVersion();
 
 #if USE_CLIENT_AI
-    void initAIProvider();
+    /// Create the AI agent on the first use of the `?` command: from a configured or
+    /// environment-provided AI API provider, or, failing that, from the server-side
+    /// `aiGenerate` function when the connected server has credentials for it.
+    void initAIAgent();
+
+    /// Handle one turn of the interactive AI chat (the `?`/`??` command).
+    bool processAIChat(const String & text);
 
     /// Check if AI provider usage needs acknowledgment from user
     /// Returns false if user declined, true otherwise
     bool checkAIProviderAcknowledgment();
+
+    /// Execute a query internally for the AI agent (not displayed to the user) and return
+    /// the result as tab-separated text with a header line. Throws on error.
+    String executeInternalQueryForAI(const String & query, const NameToNameMap & params);
+
+    /// Execute a query internally for the AI agent and return the first cell of the result as
+    /// unescaped text (empty when no rows). For free-form values with their own newlines.
+    String executeScalarQueryForAI(const String & query, const NameToNameMap & params);
+
+    /// Run a query for the AI agent through the normal query processing path: the query is
+    /// echoed and executed, and its output is displayed exactly as if the user typed it.
+    /// When `readonly` is set, the query is validated to be a single read-only statement
+    /// and executed with `readonly = 1`, 30 seconds and 10 GiB limits.
+    /// Returns a text summary of the outcome for the model.
+    String runQueryForAI(const String & query, bool readonly);
+
+    /// Record an error of the current or just-failed query into the AI context buffer.
+    void recordErrorForAIContext(std::string_view query_or_input);
 #endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;
@@ -227,10 +252,10 @@ protected:
 
     static fs::path getHistoryFilePath();
 private:
-    /// Runs a small service query against `system.documentation` (used by `processHelpCommand`),
-    /// substituting `{word:String}`, and returns the concatenated result. The query bypasses the normal
-    /// output path, so it neither prints anything nor disturbs the visible query state.
-    Block fetchDocumentation(const String & query, const String & word);
+    /// Runs a small service query with the given query parameters and returns the concatenated
+    /// result (used by `processHelpCommand` and by the tools of the AI agent). The query bypasses
+    /// the normal output path, so it neither prints anything nor disturbs the visible query state.
+    Block fetchInternalQueryResult(const String & query, const NameToNameMap & params);
 
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
@@ -275,9 +300,12 @@ private:
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
 
-    /// Execute a query and collect all results as a single string (rows separated by newlines)
-    /// Returns empty string on exception
-    std::string executeQueryForSingleString(const std::string & query);
+#if USE_CLIENT_AI
+    /// Print a query the AI agent is about to run, highlighted after the prompt,
+    /// so it looks the same as a query typed by the user.
+    void echoQueryForAI(const String & query);
+#endif
+
     virtual bool supportsLocalMetaCommands() const { return false; }
 
     /// Implements the interactive `help`/`man` meta-command: looks `word` up in `system.documentation`
@@ -486,14 +514,22 @@ protected:
     int error_code = 0;
 
 #if USE_CLIENT_AI
-    /// Cached AI SQL generator
-    std::unique_ptr<AISQLGenerator> ai_generator;
+    /// The AI agent behind the interactive `?` (and `??`) command
+    std::unique_ptr<AIAgent> ai_agent;
+    /// Recent queries with truncated results and errors: the context of the AI agent
+    std::shared_ptr<QueryContextBuffer> ai_query_context;
+    /// Whether the initialization of the AI agent was already attempted (it is lazy:
+    /// detecting the server-side aiGenerate fallback needs an established connection)
+    bool ai_agent_initialized = false;
     /// Whether the user has acknowledged AI provider usage
     bool ai_provider_acknowledged = false;
     /// Whether the AI API key was inferred from environment
     bool ai_inferred_from_env = false;
     /// The AI provider name (e.g., "openai", "anthropic")
     std::string ai_provider_name;
+    /// Set while the AI agent runs a query through the normal query path, so the
+    /// query context buffer can attribute the entry to the agent
+    bool ai_running_query = false;
 #endif
 
     struct
