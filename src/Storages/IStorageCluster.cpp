@@ -12,6 +12,8 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -117,6 +119,15 @@ void IStorageCluster::read(
         auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
         sample_block = interpreter.getSampleBlock();
         query_to_send = interpreter.getQueryInfo().query->clone();
+
+        /// Shards have no access to the other joined tables, so send only this storage's own
+        /// single-table read; getQueryProcessingStage() stops at FetchColumns for such a query,
+        /// so the initiator performs the JOIN.
+        if (auto * select_to_send = query_to_send->as<ASTSelectQuery>(); select_to_send && hasJoin(*select_to_send))
+        {
+            TreeRewriterResult rewriter_result = *interpreter.getQueryInfo().syntax_analyzer_result;
+            removeJoin(*select_to_send, rewriter_result, context);
+        }
     }
 
     updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
@@ -220,8 +231,13 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 }
 
 QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
-    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo &) const
+    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo & query_info) const
 {
+    /// A JOIN must be done on the initiator: shards receive the query with the joined tables
+    /// removed (see removeJoin() in read()) because they cannot resolve them.
+    if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
+        return QueryProcessingStage::FetchColumns;
+
     /// Only a follower reached by another node's cluster function (SECONDARY_QUERY) just fetches
     /// raw data. Everything else is the initiator of the distributed read, including internal
     /// contexts that never set the kind (NO_QUERY), e.g. a Replicated database DDL worker.

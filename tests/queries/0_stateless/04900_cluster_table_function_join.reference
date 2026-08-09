@@ -1,0 +1,116 @@
+-- INNER
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+-- LEFT
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+-- RIGHT
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+4,"","R4"
+5,"","R5"
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+4,"","R4"
+5,"","R5"
+-- FULL
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+4,"","R4"
+5,"","R5"
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+4,"","R4"
+5,"","R5"
+-- CROSS
+15
+15
+-- self join on the same file
+1,"L1","L1"
+2,"L2","L2"
+3,"L3","L3"
+1,"L1","L1"
+2,"L2","L2"
+3,"L3","L3"
+-- three cluster sides
+75
+75
+-- JOIN a temporary table
+1,"L1","T1"
+2,"L2","T2"
+1,"L1","T1"
+2,"L2","T2"
+-- aggregation over the join
+1,4
+2,4
+3,4
+1,4
+2,4
+3,4
+-- WHERE spanning both sides
+2,"L2","R2"
+2,"L2","R2"
+-- HAVING
+1,1
+2,1
+3,1
+1,1
+2,1
+3,1
+-- ORDER BY and LIMIT
+3,"L3","R3"
+2,"L2","R2"
+3,"L3","R3"
+2,"L2","R2"
+-- shapes that must not change
+-- single cluster function
+1,"L1"
+2,"L2"
+3,"L3"
+1,"L1"
+2,"L2"
+3,"L3"
+-- cluster JOIN plain file
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+-- plain file JOIN cluster
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+1,"L1","R1"
+2,"L2","R2"
+3,"L3","R3"
+-- ARRAY JOIN over a cluster function
+1,1
+1,2
+2,1
+2,2
+3,1
+3,2
+1,1
+1,2
+2,1
+2,2
+3,1
+3,2
+-- aggregation is still pushed down
+MergingAggregated
+└──ReadFromCluster
+MergingAggregated
+└──ReadFromCluster
