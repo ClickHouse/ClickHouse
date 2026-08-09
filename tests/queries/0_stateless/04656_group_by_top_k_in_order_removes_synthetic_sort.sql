@@ -70,25 +70,21 @@ SELECT countIf(with_top_k != without_top_k) FROM
 ) AS a
 FULL JOIN gt_in_order_plan AS b USING (n);
 
--- Results are unaffected either way.
-DROP TABLE IF EXISTS gt_in_order_results;
-CREATE TABLE gt_in_order_results ENGINE = Memory EMPTY AS
-SELECT k, sum(v) AS s FROM t_top_k_in_order GROUP BY k LIMIT 10;
-SET enable_group_by_top_k_optimization = 0;
-INSERT INTO gt_in_order_results
-SELECT k, sum(v) AS s FROM t_top_k_in_order GROUP BY k LIMIT 10
-SETTINGS optimize_aggregation_in_order = 1;
-SET enable_group_by_top_k_optimization = 1;
-
+-- Results are unaffected.  Without an ORDER BY the LIMIT picks an arbitrary 10
+-- groups (the in-order pipeline re-shards the final merge across threads, so
+-- even two identical statements can emit different groups); the runs cannot be
+-- compared row-for-row.  Instead, every returned group must carry its complete
+-- aggregate: 10 groups, each matching a full aggregation without the LIMIT.
 SELECT 'results_match';
-SELECT count() FROM
+SELECT count(), countIf(o.s != truth.s) FROM
 (
     SELECT k, sum(v) AS s FROM t_top_k_in_order GROUP BY k LIMIT 10
     SETTINGS optimize_aggregation_in_order = 1
 ) AS o
-FULL JOIN gt_in_order_results AS u USING (k)
-WHERE o.s != u.s;
+LEFT JOIN
+(
+    SELECT k, sum(v) AS s FROM t_top_k_in_order GROUP BY k
+) AS truth USING (k);
 
 DROP TABLE t_top_k_in_order;
 DROP TABLE gt_in_order_plan;
-DROP TABLE gt_in_order_results;
