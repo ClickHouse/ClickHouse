@@ -32,7 +32,7 @@ public:
     void read(size_t mark, size_t current_granule_num, MergeTreeIndexBulkGranulesPtr & granules);
 
     /// Read `[mark_begin, mark_end)` using bulk deserialization.
-    void readRange(size_t mark_begin, size_t mark_end, MergeTreeIndexBulkGranulesPtr & granules);
+    void readRange(size_t mark_begin, size_t mark_end, IMergeTreeIndexBulkGranules & granules);
 
     void adjustRightMark(size_t right_mark);
     void prefetchBeginOfRange(size_t from_mark, Priority priority);

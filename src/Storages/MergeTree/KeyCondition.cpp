@@ -496,32 +496,35 @@ static std::string_view reverseComparisonOperator(std::string_view op)
 }
 
 
-static void setTypedRangeBounds(
-    KeyCondition::RPNElement & element, std::string_view comparison, const DataTypePtr & type)
+static std::optional<KeyCondition::RPNElement::DirectComparison::Operator> directComparisonOperator(
+    std::string_view comparison)
 {
-    if (reverseComparisonOperator(comparison).empty()
-        || !type
-        || element.range.left.isPositiveInfinity()
-        || element.range.right.isNegativeInfinity())
+    using Operator = KeyCondition::RPNElement::DirectComparison::Operator;
+    if (comparison == "equals" || comparison == "isNotDistinctFrom") return Operator::Equals;
+    if (comparison == "notEquals") return Operator::NotEquals;
+    if (comparison == "less") return Operator::Less;
+    if (comparison == "lessOrEquals") return Operator::LessOrEquals;
+    if (comparison == "greater") return Operator::Greater;
+    if (comparison == "greaterOrEquals") return Operator::GreaterOrEquals;
+    return std::nullopt;
+}
+
+static void setDirectComparison(
+    KeyCondition::RPNElement & element,
+    std::string_view comparison,
+    const Field & value,
+    const DataTypePtr & type)
+{
+    const auto op = directComparisonOperator(comparison);
+    if (!op || !type)
         return;
 
-    auto make_constant = [&](const Field & value)
-    {
-        /// A non-NULL constant does not need Nullable or LowCardinality wrappers. Removing them
-        /// keeps comparison masks non-nullable while preserving Decimal/DateTime64 scale.
-        const auto constant_type = value.isNull() ? type : removeLowCardinalityAndNullable(type);
-        return std::make_shared<ConstantValue>(value, constant_type);
+    /// A non-NULL constant does not need Nullable or LowCardinality wrappers.
+    const auto constant_type = value.isNull() ? type : removeLowCardinalityAndNullable(type);
+    element.direct_comparison = KeyCondition::RPNElement::DirectComparison{
+        *op,
+        std::make_shared<ConstantValue>(value, constant_type),
     };
-
-    KeyCondition::RPNElement::TypedRangeBounds bounds;
-    if (!element.range.left.isNegativeInfinity())
-        bounds.left = make_constant(element.range.left);
-    if (!element.range.right.isPositiveInfinity())
-        bounds.right = make_constant(element.range.right);
-    bounds.left_included = element.range.left_included;
-    bounds.right_included = element.range.right_included;
-
-    element.typed_range_bounds = std::make_shared<KeyCondition::RPNElement::TypedRangeBounds>(std::move(bounds));
 }
 
 static bool isLogicalOperator(const String & func_name)
@@ -1459,10 +1462,10 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool skip_analysis_,
-    bool preserve_typed_range_bounds_)
+    bool preserve_direct_comparisons_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
-    , preserve_typed_range_bounds(preserve_typed_range_bounds_)
+    , preserve_direct_comparisons(preserve_direct_comparisons_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
@@ -4111,8 +4114,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
         const bool atom_created = atom_it->second(out, const_value);
-        if (atom_created && preserve_typed_range_bounds)
-            setTypedRangeBounds(out, func_name, const_type);
+        if (atom_created && preserve_direct_comparisons)
+            setDirectComparison(out, func_name, const_value, const_type);
         return atom_created;
     }
     if (node.tryGetConstant(const_value, const_type))

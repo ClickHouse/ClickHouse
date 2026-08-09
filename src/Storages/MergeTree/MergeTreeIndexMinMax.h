@@ -49,7 +49,6 @@ struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
 };
 
 
-struct MergeTreeIndexBulkGranulesMinMaxColumnar;
 struct MergeTreeIndexConditionMinMaxTestAccess;
 
 class MergeTreeIndexConditionMinMax final : public IMergeTreeIndexCondition
@@ -81,16 +80,8 @@ public:
 private:
     friend struct MergeTreeIndexConditionMinMaxTestAccess;
 
-    Block executeBulkActions(const MergeTreeIndexBulkGranulesMinMaxColumnar & bulk) const;
-
     /// Bulk expression over paired min/max columns; null when the RPN cannot be lowered.
     ExpressionActionsPtr minmax_actions;
-    /// For each index column, the paired input names in the DAG, in order.
-    std::vector<std::pair<String, String>> minmax_input_names;
-    /// Names of the two output UInt8 columns produced by `minmax_actions`.
-    static constexpr const char * OUTPUT_CAN_BE_TRUE = "__minmax_can_be_true";
-    static constexpr const char * OUTPUT_CAN_BE_FALSE = "__minmax_can_be_false";
-
     DataTypes index_data_types;
     KeyCondition condition;
 };
@@ -127,7 +118,7 @@ public:
 /// Columnar min/max values consumed by the bulk expression.
 struct MergeTreeIndexBulkGranulesMinMaxColumnar final : public IMergeTreeIndexBulkGranules
 {
-    explicit MergeTreeIndexBulkGranulesMinMaxColumnar(const Block & index_sample_block_, size_t size_hint);
+    explicit MergeTreeIndexBulkGranulesMinMaxColumnar(const Block & index_sample_block);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
     /// Optimized bulk read for fast-kind columns: one virtual call per chunk (instead of per
     /// granule) and a tight inner `readPODBinary` loop. For columns whose `fast_kind` is
@@ -152,13 +143,11 @@ struct MergeTreeIndexBulkGranulesMinMaxColumnar final : public IMergeTreeIndexBu
         FastKind fast_kind = FastKind::None;
     };
 
-    Block index_sample_block;
     DataTypes datatypes;
     Serializations serializations;
     FormatSettings format_settings;
     std::vector<PerColumn> cols;
-    /// Number of granules appended so far. Granule numbers are implicit row positions 0..size-1.
-    size_t size = 0;
+    size_t size() const { return cols.empty() ? 0 : cols.front().min_col->size(); }
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules

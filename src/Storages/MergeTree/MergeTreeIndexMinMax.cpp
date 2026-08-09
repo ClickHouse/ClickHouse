@@ -28,14 +28,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int BAD_GET;
-    extern const int CANNOT_CONVERT_TYPE;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int TYPE_MISMATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NO_COMMON_TYPE;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 namespace Setting
@@ -221,9 +213,11 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 namespace
 {
 
+constexpr auto OUTPUT_CAN_BE_TRUE = "__minmax_can_be_true";
+
 KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
-    const bool preserve_typed_range_bounds = context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering];
+    const bool preserve_direct_comparisons = context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering];
     return KeyCondition{
         filter_dag,
         context,
@@ -231,7 +225,7 @@ KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWith
         index.expression,
         /* single_point_ = */ false,
         /* skip_analysis_ = */ false,
-        preserve_typed_range_bounds};
+        preserve_direct_comparisons};
 }
 
 using Function = KeyCondition::RPNElement::Function;
@@ -241,11 +235,10 @@ String minMaxInputName(bool is_max, size_t column_index)
     return fmt::format("__minmax_{}_{}", is_max ? "max" : "min", column_index);
 }
 
-const ActionsDAG::Node & addConstUInt8(ActionsDAG & dag, UInt8 value, const String & name_hint = {})
+const ActionsDAG::Node & addConstUInt8(ActionsDAG & dag, UInt8 value, String name)
 {
     auto type = std::make_shared<DataTypeUInt8>();
     auto column = type->createColumnConst(1, Field(value));
-    String name = name_hint.empty() ? (value ? String("const_1") : String("const_0")) : name_hint;
     return dag.addColumn(std::move(column), std::move(type), std::move(name));
 }
 
@@ -260,9 +253,7 @@ const ActionsDAG::Node & addNamedFunction(ActionsDAG & dag, const String & fn_na
     return dag.addFunction(resolver, std::move(children), {});
 }
 
-/// Emit the two UInt8 nodes (intersects, contains) for a FUNCTION_IN_RANGE element. Returns
-/// {nullptr, nullptr} if the element's shape isn't expressible (monotonic chain, bloom filter,
-/// relaxed, space-filling curve, not single-column).
+/// Emit the two UInt8 nodes (intersects, contains) for a direct comparison atom.
 std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>
 buildIntersectsAndContains(
     ActionsDAG & dag,
@@ -271,15 +262,12 @@ buildIntersectsAndContains(
     const std::vector<std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>> & minmax_input_nodes,
     ContextPtr context)
 {
-    if (element.relaxed)
-        return {nullptr, nullptr};
-    if (!element.monotonic_functions_chain.empty())
-        return {nullptr, nullptr};
-    if (element.bloom_filter_data.has_value())
-        return {nullptr, nullptr};
-    if (element.argument_num_of_space_filling_curve.has_value())
-        return {nullptr, nullptr};
-    if (element.key_columns.size() != 1 || !element.typed_range_bounds)
+    if (element.relaxed
+        || !element.monotonic_functions_chain.empty()
+        || element.bloom_filter_data.has_value()
+        || element.argument_num_of_space_filling_curve.has_value()
+        || element.key_columns.size() != 1
+        || !element.direct_comparison)
         return {nullptr, nullptr};
 
     const size_t key_column = element.getKeyColumn();
@@ -288,89 +276,64 @@ buildIntersectsAndContains(
 
     const auto & min_node = *minmax_input_nodes[key_column].first;
     const auto & max_node = *minmax_input_nodes[key_column].second;
-    const auto & column_type = index_data_types[key_column];
-    const auto & bounds = *element.typed_range_bounds;
+    const auto & comparison = *element.direct_comparison;
+    const auto & literal = addLiteral(dag, *comparison.constant, fmt::format("__minmax_lit_{}", key_column));
 
-    /// intersects: the element's range overlaps the granule's range.
-    /// contains:   the granule's range is fully inside the element's range.
-    const ActionsDAG::Node * intersects_upper = nullptr;
-    const ActionsDAG::Node * intersects_lower = nullptr;
-    const ActionsDAG::Node * contains_upper = nullptr;
-    const ActionsDAG::Node * contains_lower = nullptr;
+    auto compare = [&](std::string_view name, const ActionsDAG::Node & value)
+    {
+        return &addNamedFunction(dag, String(name), {&value, &literal}, context);
+    };
 
-    if (!bounds.right)
+    auto lower_bound = [&](std::string_view name)
     {
-        intersects_upper = &addConstUInt8(dag, 1, "const_true");
-        contains_upper = &addConstUInt8(dag, 1, "const_true");
-    }
-    else
-    {
-        const auto & right_lit = addLiteral(dag, *bounds.right, fmt::format("__minmax_lit_right_{}", key_column));
-        intersects_upper = &addNamedFunction(dag, bounds.right_included ? "lessOrEquals" : "less", {&min_node, &right_lit}, context);
-        contains_upper = &addNamedFunction(dag, bounds.right_included ? "lessOrEquals" : "less", {&max_node, &right_lit}, context);
-    }
+        const ActionsDAG::Node * intersects = compare(name, max_node);
+        const ActionsDAG::Node * contains = compare(name, min_node);
 
-    if (!bounds.left)
-    {
-        intersects_lower = &addConstUInt8(dag, 1, "const_true");
-        contains_lower = &addConstUInt8(dag, 1, "const_true");
-    }
-    else
-    {
-        const auto & left_lit = addLiteral(dag, *bounds.left, fmt::format("__minmax_lit_left_{}", key_column));
-        intersects_lower = &addNamedFunction(dag, bounds.left_included ? "greaterOrEquals" : "greater", {&max_node, &left_lit}, context);
-        contains_lower = &addNamedFunction(dag, bounds.left_included ? "greaterOrEquals" : "greater", {&min_node, &left_lit}, context);
-
-        /// SQL comparisons with NaN are unordered: keep mixed `[finite, NaN]` granules, but not `[NaN, NaN]`.
-        if (WhichDataType(removeLowCardinality(column_type)).isFloat())
+        /// SQL comparisons with NaN are unordered, unlike the scalar Range ordering.
+        if (WhichDataType(removeLowCardinality(index_data_types[key_column])).isFloat())
         {
             const auto & max_is_nan = addNamedFunction(dag, "isNaN", {&max_node}, context);
             const auto & min_is_nan = addNamedFunction(dag, "isNaN", {&min_node}, context);
             const auto & max_is_finite = addNamedFunction(dag, "not", {&max_is_nan}, context);
             const auto & min_is_finite = addNamedFunction(dag, "not", {&min_is_nan}, context);
             const auto & mixed_finite_and_nan = addNamedFunction(dag, "and", {&max_is_nan, &min_is_finite}, context);
-            intersects_lower = &addNamedFunction(dag, "or", {intersects_lower, &mixed_finite_and_nan}, context);
-            contains_lower = &addNamedFunction(dag, "and", {contains_lower, &max_is_finite}, context);
+            intersects = &addNamedFunction(dag, "or", {intersects, &mixed_finite_and_nan}, context);
+            contains = &addNamedFunction(dag, "and", {contains, &max_is_finite}, context);
+        }
+        return std::pair{intersects, contains};
+    };
+
+    using Operator = KeyCondition::RPNElement::DirectComparison::Operator;
+    switch (comparison.op)
+    {
+        case Operator::Less:
+            return {compare("less", min_node), compare("less", max_node)};
+        case Operator::LessOrEquals:
+            return {compare("lessOrEquals", min_node), compare("lessOrEquals", max_node)};
+        case Operator::Greater:
+            return lower_bound("greater");
+        case Operator::GreaterOrEquals:
+            return lower_bound("greaterOrEquals");
+        case Operator::Equals:
+        case Operator::NotEquals:
+        {
+            const auto [intersects_lower, contains_lower] = lower_bound("greaterOrEquals");
+            const auto * intersects_upper = compare("lessOrEquals", min_node);
+            const auto * contains_upper = compare("lessOrEquals", max_node);
+            const auto & intersects = addNamedFunction(dag, "and", {intersects_upper, intersects_lower}, context);
+            const auto & contains = addNamedFunction(dag, "and", {contains_upper, contains_lower}, context);
+            return {&intersects, &contains};
         }
     }
-
-    const auto & intersects = addNamedFunction(dag, "and", {intersects_upper, intersects_lower}, context);
-    const auto & contains = addNamedFunction(dag, "and", {contains_upper, contains_lower}, context);
-    return {&intersects, &contains};
+    UNREACHABLE();
 }
 
-bool isRecoverableMinMaxBulkLoweringException(int code)
-{
-    /// Bulk lowering is optional: unsupported RPN/type shapes should fall back to the
-    /// per-granule scalar path. Most unsupported shapes return nullptr explicitly; this
-    /// allowlist is only for recoverable type-resolution failures while constructing mixed-type
-    /// comparisons in the ActionsDAG.
-    ///
-    /// Do not catch resource limits, cancellation, timeouts, LOGICAL_ERROR, or unknown
-    /// exception types: those are not "bulk unsupported" signals and must fail closed rather
-    /// than being silently converted into a scalar fallback. Once the typed-bound eligibility
-    /// checks cover every comparison pair, this catch can be removed.
-    return code == ErrorCodes::BAD_GET
-        || code == ErrorCodes::CANNOT_CONVERT_TYPE
-        || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
-        || code == ErrorCodes::TYPE_MISMATCH
-        || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        || code == ErrorCodes::NO_COMMON_TYPE
-        || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND
-        || code == ErrorCodes::DECIMAL_OVERFLOW;
-}
-
-/// Try to lower the entire RPN into an ActionsDAG. On success returns non-null ExpressionActions
-/// with two outputs (can_be_true, can_be_false) and fills `minmax_input_names` with per-index-column
-/// (min_name, max_name) pairs so the evaluator knows what columns to populate.
-/// On failure (any unsupported RPN element), returns nullptr.
+/// Lower the RPN into an ActionsDAG producing `can_be_true`, or return nullptr when an
+/// element cannot be represented by direct typed comparisons.
 ExpressionActionsPtr tryBuildMinMaxActions(
     const KeyCondition & key_condition,
     const DataTypes & index_data_types,
-    const ContextPtr & context,
-    std::vector<std::pair<String, String>> & minmax_input_names_out,
-    const char * output_ctr_name,
-    const char * output_cbf_name)
+    const ContextPtr & context)
 {
     const auto & rpn = key_condition.getRPN();
     if (rpn.empty())
@@ -378,21 +341,10 @@ ExpressionActionsPtr tryBuildMinMaxActions(
 
     ActionsDAG dag;
 
-    /// One pair of input nodes per index column. Nullable index columns are excluded:
-    /// (1) the v1 on-disk format prefixes each value with an is-null byte and the v2 format
-    ///     uses a Null-tagged Field for all-NULL granules, neither of which the bulk
-    ///     deserializer currently consumes correctly;
-    /// (2) even if deserialization worked, `less(Nullable(T), Nullable-literal)` returns
-    ///     `Nullable(UInt8)` and the final `and` of those stays Nullable, while the caller
-    ///     asserts a plain `ColumnUInt8` on the output.
-    /// This also covers `LowCardinality(Nullable(T))`: a comparison over it still yields
-    /// `Nullable(UInt8)`, so checking `isNullable` alone would let such a type slip through
-    /// and trip the `ColumnUInt8` assertion at evaluation time.
-    /// Falling back to the generic per-granule path is correct and preserves NULL semantics.
+    /// Nullable inputs produce nullable comparison masks and have a different serialized shape;
+    /// leave them on the scalar path.
     std::vector<std::pair<const ActionsDAG::Node *, const ActionsDAG::Node *>> inputs;
     inputs.reserve(index_data_types.size());
-    minmax_input_names_out.clear();
-    minmax_input_names_out.reserve(index_data_types.size());
     for (size_t i = 0; i < index_data_types.size(); ++i)
     {
         if (isNullableOrLowCardinalityNullable(index_data_types[i]))
@@ -402,7 +354,6 @@ ExpressionActionsPtr tryBuildMinMaxActions(
         const auto & min_input = dag.addInput(min_name, index_data_types[i]);
         const auto & max_input = dag.addInput(max_name, index_data_types[i]);
         inputs.emplace_back(&min_input, &max_input);
-        minmax_input_names_out.emplace_back(std::move(min_name), std::move(max_name));
     }
 
     /// Walk RPN, maintaining a stack of (can_be_true, can_be_false) node pairs.
@@ -494,11 +445,9 @@ ExpressionActionsPtr tryBuildMinMaxActions(
     if (stack.size() != 1)
         return nullptr;
 
-    const auto & ctr_alias = dag.addAlias(*stack.back().first, output_ctr_name);
-    const auto & cbf_alias = dag.addAlias(*stack.back().second, output_cbf_name);
+    const auto & output = dag.addAlias(*stack.back().first, OUTPUT_CAN_BE_TRUE);
     dag.getOutputs().clear();
-    dag.getOutputs().push_back(&ctr_alias);
-    dag.getOutputs().push_back(&cbf_alias);
+    dag.getOutputs().push_back(&output);
 
     /// Allow expression compilation when enabled by settings.
     ExpressionActionsSettings expr_settings(context, CompileExpressions::yes);
@@ -512,23 +461,8 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
 {
-    /// Build the bulk expression only when bulk minmax filtering is enabled.
     if (context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering] && !alwaysUnknownOrTrue())
-    {
-        try
-        {
-            minmax_actions = tryBuildMinMaxActions(condition, index_data_types, context, minmax_input_names,
-                                                   OUTPUT_CAN_BE_TRUE, OUTPUT_CAN_BE_FALSE);
-        }
-        catch (const Exception & e)
-        {
-            if (!isRecoverableMinMaxBulkLoweringException(e.code()))
-                throw;
-
-            minmax_actions = nullptr;
-            minmax_input_names.clear();
-        }
-    }
+        minmax_actions = tryBuildMinMaxActions(condition, index_data_types, context);
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
@@ -812,22 +746,6 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
 namespace
 {
 
-/// Detect infinity-tagged Null bounds before inserting them into typed columns.
-bool isPosInfNull(const Field & f)
-{
-    return f.getType() == Field::Types::Null && f.isPositiveInfinity();
-}
-
-bool isNegInfNull(const Field & f)
-{
-    return f.getType() == Field::Types::Null && f.isNegativeInfinity();
-}
-
-}
-
-namespace
-{
-
 /// Classify an index column's type for the native-width read fast path. Any Nullable type (or
 /// wrapper that prefixes bytes onto the value) is excluded: the v1 format inserts a per-value
 /// is_null byte, and v2 uses a Null-tagged Field for all-NULL granules. The slow path handles
@@ -878,12 +796,10 @@ ALWAYS_INLINE void fastReadPair(IColumn & min_col, IColumn & max_col, ReadBuffer
 
 }
 
-MergeTreeIndexBulkGranulesMinMaxColumnar::MergeTreeIndexBulkGranulesMinMaxColumnar(
-    const Block & index_sample_block_, size_t size_hint)
-    : index_sample_block(index_sample_block_)
+MergeTreeIndexBulkGranulesMinMaxColumnar::MergeTreeIndexBulkGranulesMinMaxColumnar(const Block & index_sample_block)
+    : datatypes(index_sample_block.getDataTypes())
 {
     const size_t num_columns = index_sample_block.columns();
-    datatypes = index_sample_block.getDataTypes();
     serializations.reserve(num_columns);
     cols.resize(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
@@ -891,15 +807,10 @@ MergeTreeIndexBulkGranulesMinMaxColumnar::MergeTreeIndexBulkGranulesMinMaxColumn
         const auto & type = index_sample_block.getByPosition(i).type;
         serializations.push_back(type->getDefaultSerialization());
 
-        auto & pc = cols[i];
-        /// Always materialize a column of the index column's exact type. The ActionsDAG-based
-        /// bulk path needs the type to match the DAG's inputs; any type that `IColumn::insert`
-        /// accepts for Field values works here.
-        pc.min_col = type->createColumn();
-        pc.max_col = type->createColumn();
-        pc.min_col->reserve(size_hint);
-        pc.max_col->reserve(size_hint);
-        pc.fast_kind = classifyFastKind(*type);
+        auto & column = cols[i];
+        column.min_col = type->createColumn();
+        column.max_col = type->createColumn();
+        column.fast_kind = classifyFastKind(*type);
     }
 }
 
@@ -909,7 +820,7 @@ void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinary(
     /// Rows are chunk-local, so `granule_num` is intentionally ignored.
     (void)granule_num;
 
-    const size_t num_columns = index_sample_block.columns();
+    const size_t num_columns = cols.size();
     Field min_val;
     Field max_val;
 
@@ -968,31 +879,22 @@ void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinary(
             case 2:
                 serializations[i]->deserializeBinary(min_val, istr, format_settings);
                 serializations[i]->deserializeBinary(max_val, istr, format_settings);
-                if (min_val.isNull())
-                    min_val = POSITIVE_INFINITY;
-                if (max_val.isNull())
-                    max_val = POSITIVE_INFINITY;
                 break;
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
         }
 
-        const bool min_pos_inf = isPosInfNull(min_val);
-        const bool min_neg_inf = isNegInfNull(min_val);
-        const bool max_pos_inf = isPosInfNull(max_val);
-        const bool max_neg_inf = isNegInfNull(max_val);
-        if (min_pos_inf || min_neg_inf)
+        if (min_val.isNull())
             pc.min_col->insertDefault();
         else
             pc.min_col->insert(min_val);
 
-        if (max_pos_inf || max_neg_inf)
+        if (max_val.isNull())
             pc.max_col->insertDefault();
         else
             pc.max_col->insert(max_val);
     }
 
-    ++size;
 }
 
 namespace
@@ -1024,7 +926,12 @@ ReadPairFn readPairFunction(MergeTreeIndexBulkGranulesMinMaxColumnar::FastKind k
 
 void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinaryBulk(size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
 {
-    const size_t num_columns = index_sample_block.columns();
+    const size_t num_columns = cols.size();
+    for (auto & column : cols)
+    {
+        column.min_col->reserve(column.min_col->size() + count);
+        column.max_col->reserve(column.max_col->size() + count);
+    }
 
     /// Resolve per-column fast-path function pointers once per chunk. For an index whose
     /// every column qualifies we avoid the switch-per-granule; for one that has any
@@ -1041,47 +948,17 @@ void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinaryBulk(size_t coun
         }
     }
 
-    /// Reserve once for the whole chunk, then loop. On-disk layout is per-granule
-    /// interleaved (granule0 = col0_min col0_max col1_min col1_max ..., then granule1,
-    /// ...), so the outer loop has to be over granules with the column loop inside;
-    /// bulk reads per-column would stride non-contiguously through the stream.
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        cols[i].min_col->reserve(cols[i].min_col->size() + count);
-        cols[i].max_col->reserve(cols[i].max_col->size() + count);
-    }
-
+    /// The on-disk layout is interleaved by granule, so the granule loop stays outermost.
     for (size_t g = 0; g < count; ++g)
     {
         for (size_t i = 0; i < num_columns; ++i)
             fns[i](*cols[i].min_col, *cols[i].max_col, istr);
     }
-    size += count;
 }
 
 MergeTreeIndexBulkGranulesPtr MergeTreeIndexMinMax::createIndexBulkGranules() const
 {
-    return std::make_shared<MergeTreeIndexBulkGranulesMinMaxColumnar>(index.sample_block, /*size_hint=*/1024);
-}
-
-Block MergeTreeIndexConditionMinMax::executeBulkActions(const MergeTreeIndexBulkGranulesMinMaxColumnar & bulk) const
-{
-    chassert(minmax_actions);
-    chassert(minmax_input_names.size() == bulk.cols.size());
-
-    Block block;
-    for (size_t i = 0; i < minmax_input_names.size(); ++i)
-    {
-        const auto & type = index_data_types[i];
-        const IColumn & min_ref = *bulk.cols[i].min_col;
-        const IColumn & max_ref = *bulk.cols[i].max_col;
-        block.insert(ColumnWithTypeAndName(min_ref.getPtr(), type, minmax_input_names[i].first));
-        block.insert(ColumnWithTypeAndName(max_ref.getPtr(), type, minmax_input_names[i].second));
-    }
-
-    size_t num_rows = bulk.size;
-    minmax_actions->execute(block, num_rows);
-    return block;
+    return std::make_shared<MergeTreeIndexBulkGranulesMinMaxColumnar>(index.sample_block);
 }
 
 IMergeTreeIndexCondition::FilteredGranules MergeTreeIndexConditionMinMax::getPossibleGranules(
@@ -1089,12 +966,20 @@ IMergeTreeIndexCondition::FilteredGranules MergeTreeIndexConditionMinMax::getPos
 {
     const auto & bulk = assert_cast<const MergeTreeIndexBulkGranulesMinMaxColumnar &>(*idx_granules);
 
-    FilteredGranules all_granules(bulk.size);
+    FilteredGranules all_granules(bulk.size());
     std::iota(all_granules.begin(), all_granules.end(), 0);
-    if (!minmax_actions || minmax_input_names.size() != bulk.cols.size() || bulk.size == 0)
+    if (!minmax_actions || index_data_types.size() != bulk.cols.size() || bulk.size() == 0)
         return all_granules;
 
-    Block block = executeBulkActions(bulk);
+    Block block;
+    for (size_t i = 0; i < bulk.cols.size(); ++i)
+    {
+        const auto & type = index_data_types[i];
+        block.insert(ColumnWithTypeAndName(bulk.cols[i].min_col->getPtr(), type, minMaxInputName(false, i)));
+        block.insert(ColumnWithTypeAndName(bulk.cols[i].max_col->getPtr(), type, minMaxInputName(true, i)));
+    }
+    size_t num_rows = bulk.size();
+    minmax_actions->execute(block, num_rows);
     const auto & can_be_true = block.getByName(OUTPUT_CAN_BE_TRUE).column;
     if (const auto * constant = typeid_cast<const ColumnConst *>(can_be_true.get()))
         return constant->getUInt(0) == 0 ? FilteredGranules{} : all_granules;

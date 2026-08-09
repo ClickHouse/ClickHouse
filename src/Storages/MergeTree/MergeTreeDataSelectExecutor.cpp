@@ -2543,17 +2543,15 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
 
     /// Minmax bulk filtering has its own setting and supports only lowerable conditions.
     /// With partial disjunctions, this index must own no leaf below an OR.
-    const auto * minmax_index = typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get());
-    const auto * minmax_cond = minmax_index ? typeid_cast<const MergeTreeIndexConditionMinMax *>(condition.get()) : nullptr;
-    if (minmax_index)
+    if (typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get()))
     {
-        const bool minmax_bulk_applicable
+        const auto * minmax_condition = typeid_cast<const MergeTreeIndexConditionMinMax *>(condition.get());
+        bulk_filtering
             = reader_settings.secondary_indices_enable_bulk_filtering
             && reader_settings.use_minmax_index_bulk_filtering
-            && minmax_cond
-            && minmax_cond->hasBulkFastPath()
-            && (!use_skip_indexes_for_disjunctions || minmax_cond->bulkPreservesDisjunctionPrecision());
-        bulk_filtering = minmax_bulk_applicable;
+            && minmax_condition
+            && minmax_condition->hasBulkFastPath()
+            && (!use_skip_indexes_for_disjunctions || minmax_condition->bulkPreservesDisjunctionPrecision());
     }
 
     auto skip_index_granularity = index_helper->index.granularity;
@@ -2722,7 +2720,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 /// Fresh container per chunk so its columns' growth stays bounded by the
                 /// chunk size and the memory is released before the next chunk starts.
                 MergeTreeIndexBulkGranulesPtr chunk_granules = index_helper->createIndexBulkGranules();
-                reader.readRange(chunk_begin, chunk_end, chunk_granules);
+                reader.readRange(chunk_begin, chunk_end, *chunk_granules);
 
                 /// Observable signal that the vectorized bulk path was actually taken for this
                 /// part (as opposed to silently falling back to the per-granule scalar path).

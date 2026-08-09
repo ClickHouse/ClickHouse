@@ -185,11 +185,9 @@ void MergeTreeIndexReader::read(size_t mark, size_t current_granule_num, MergeTr
     stream_mark = mark + 1;
 }
 
-void MergeTreeIndexReader::readRange(size_t mark_begin, size_t mark_end, MergeTreeIndexBulkGranulesPtr & granules)
+void MergeTreeIndexReader::readRange(size_t mark_begin, size_t mark_end, IMergeTreeIndexBulkGranules & granules)
 {
     chassert(mark_begin < mark_end);
-    if (granules == nullptr)
-        granules = index->createIndexBulkGranules();
 
     initStreamIfNeeded();
     if (streams.size() != 1)
@@ -200,7 +198,7 @@ void MergeTreeIndexReader::readRange(size_t mark_begin, size_t mark_end, MergeTr
         stream->seekToMark(mark_begin);
 
     const size_t count = mark_end - mark_begin;
-    granules->deserializeBinaryBulk(count, *stream->getDataBuffer(), version);
+    granules.deserializeBinaryBulk(count, *stream->getDataBuffer(), version);
     stream_mark = mark_end;
 }
 

@@ -13,7 +13,6 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -34,24 +33,13 @@ struct MergeTreeIndexConditionMinMaxTestAccess
         return condition.condition.checkInHyperrectangle({range}, condition.index_data_types);
     }
 
-    static std::vector<BoolMask> bulk(
+    static std::vector<UInt8> bulk(
         const MergeTreeIndexConditionMinMax & condition,
-        const MergeTreeIndexBulkGranulesMinMaxColumnar & granules)
+        const std::shared_ptr<MergeTreeIndexBulkGranulesMinMaxColumnar> & granules)
     {
-        Block block = condition.executeBulkActions(granules);
-        const auto & can_be_true = block.getByName(condition.OUTPUT_CAN_BE_TRUE).column;
-        const auto & can_be_false = block.getByName(condition.OUTPUT_CAN_BE_FALSE).column;
-        auto value_at = [](const ColumnPtr & column, size_t row)
-        {
-            if (const auto * constant = typeid_cast<const ColumnConst *>(column.get()))
-                return constant->getUInt(0) != 0;
-            return assert_cast<const ColumnUInt8 &>(*column).getData()[row] != 0;
-        };
-
-        std::vector<BoolMask> result;
-        result.reserve(granules.size);
-        for (size_t i = 0; i < granules.size; ++i)
-            result.emplace_back(value_at(can_be_true, i), value_at(can_be_false, i));
+        std::vector<UInt8> result(granules->size());
+        for (size_t index : condition.getPossibleGranules(granules))
+            result[index] = true;
         return result;
     }
 };
@@ -110,16 +98,15 @@ ConditionShape makeComparison(
     return shape;
 }
 
-std::unique_ptr<MergeTreeIndexBulkGranulesMinMaxColumnar> makeBulkGranules(
+std::shared_ptr<MergeTreeIndexBulkGranulesMinMaxColumnar> makeBulkGranules(
     const IndexDescription & index,
     const std::vector<std::pair<Field, Field>> & intervals)
 {
-    auto bulk = std::make_unique<MergeTreeIndexBulkGranulesMinMaxColumnar>(index.sample_block, intervals.size());
+    auto bulk = std::make_shared<MergeTreeIndexBulkGranulesMinMaxColumnar>(index.sample_block);
     for (const auto & [min, max] : intervals)
     {
         bulk->cols[0].min_col->insert(min);
         bulk->cols[0].max_col->insert(max);
-        ++bulk->size;
     }
     return bulk;
 }
@@ -266,7 +253,7 @@ TEST(MergeTreeIndexConditionMinMaxDifferential, TypedBoundsMatchScalarRangeEvalu
                 }
                 ASSERT_TRUE(condition.hasBulkFastPath());
 
-                const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, *bulk);
+                const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, bulk);
                 ASSERT_EQ(actual.size(), type_case.intervals.size());
 
                 const auto predicate_range = conditionRange(operation, bound);
@@ -275,7 +262,7 @@ TEST(MergeTreeIndexConditionMinMaxDifferential, TypedBoundsMatchScalarRangeEvalu
                     const auto & [min, max] = type_case.intervals[i];
                     const Range granule(min, true, max, true);
                     const auto expected = MergeTreeIndexConditionMinMaxTestAccess::scalar(condition, granule);
-                    EXPECT_EQ(actual[i], expected) << "granule=" << i;
+                    EXPECT_EQ(actual[i], expected.can_be_true) << "granule=" << i;
                     EXPECT_EQ(expected, expectedMaskForOperation(operation, predicate_range, granule)) << "granule=" << i;
                 }
             }
@@ -346,10 +333,10 @@ TEST(MergeTreeIndexConditionMinMaxDifferential, AllNaNGranuleMatchesScalar)
     MergeTreeIndexConditionMinMax condition(index, filter_dag, context);
     ASSERT_TRUE(condition.hasBulkFastPath());
 
-    const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, *bulk);
+    const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, bulk);
     ASSERT_EQ(actual.size(), 1);
-    EXPECT_EQ(actual[0], MergeTreeIndexConditionMinMaxTestAccess::scalar(condition, Range(nan, true, nan, true)));
-    EXPECT_FALSE(actual[0].can_be_true);
+    EXPECT_EQ(actual[0], MergeTreeIndexConditionMinMaxTestAccess::scalar(condition, Range(nan, true, nan, true)).can_be_true);
+    EXPECT_FALSE(actual[0]);
 }
 
 TEST(MergeTreeIndexConditionMinMaxDifferential, MixedFiniteAndNaNGranuleMatchesScalar)
@@ -365,11 +352,10 @@ TEST(MergeTreeIndexConditionMinMaxDifferential, MixedFiniteAndNaNGranuleMatchesS
     MergeTreeIndexConditionMinMax condition(index, filter_dag, context);
     ASSERT_TRUE(condition.hasBulkFastPath());
 
-    const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, *bulk);
+    const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, bulk);
     ASSERT_EQ(actual.size(), 1);
-    EXPECT_EQ(actual[0], MergeTreeIndexConditionMinMaxTestAccess::scalar(condition, Range(min, true, max, true)));
-    EXPECT_TRUE(actual[0].can_be_true);
-    EXPECT_TRUE(actual[0].can_be_false);
+    EXPECT_EQ(actual[0], MergeTreeIndexConditionMinMaxTestAccess::scalar(condition, Range(min, true, max, true)).can_be_true);
+    EXPECT_TRUE(actual[0]);
 }
 
 }
