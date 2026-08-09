@@ -1285,3 +1285,59 @@ def test_connection_status_reports_the_authenticated_user(started_cluster):
 
     node.query("DROP USER mongo_status_user", password="123")
     node.query("DROP ROLE mongo_status_role", password="123")
+
+
+def test_create_of_an_existing_collection_is_an_error(started_cluster):
+    """Mongo's `createCollection` is not idempotent: creating a namespace that already exists
+    raises `NamespaceExists` (code 48), which callers rely on to detect that somebody else
+    created the collection first."""
+    client = make_client()
+    database = client["db"]
+
+    database["created_twice"].drop()
+    database.command("create", "created_twice")
+
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        database.command("create", "created_twice")
+    assert error.value.code == 48
+    assert "already exists" in str(error.value)
+
+    database["created_twice"].drop()
+
+
+def test_missing_collection_reads_as_empty(started_cluster):
+    """Mongo treats a collection that does not exist as empty on the read commands: `find`
+    returns an empty cursor, `count` returns 0 and `distinct` returns no values, rather than
+    a missing-table error. A malformed query is still an error."""
+    client = make_client()
+    database = client["db"]
+    collection = database["never_created"]
+    collection.drop()
+
+    assert list(collection.find({})) == []
+    assert collection.find_one({"id": 1}) is None
+    assert database.command("count", "never_created")["n"] == 0
+    assert collection.distinct("id") == []
+    with pytest.raises(pymongo.errors.OperationFailure):
+        collection.find_one({"id": {"$typo": 1}})
+
+
+def test_distinct_on_an_array_field_returns_the_elements(started_cluster):
+    """Mongo's `distinct` on an array field is element-wise: a document whose `tags` holds
+    `["red", "blue"]` contributes the elements, not the array, and elements shared between
+    documents are returned once. The values come back in ascending order."""
+    client = make_client()
+    collection = client["db"]["distinct_on_arrays"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "name": "alpha", "tags": ["red", "blue"]},
+            {"id": 2, "name": "beta", "tags": ["green", "red"]},
+        ]
+    )
+
+    assert collection.distinct("tags") == ["blue", "green", "red"]
+    assert collection.distinct("tags", {"id": 2}) == ["green", "red"]
+    # A scalar field keeps its per-document values through the same normalization.
+    assert collection.distinct("name") == ["alpha", "beta"]
