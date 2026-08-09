@@ -475,7 +475,7 @@ namespace
                 }
                 catch (...) // NOLINT(bugprone-empty-catch)
                 {
-                    /// As in `resolveThenCheckAccessRights`: a non-ClickHouse exception (e.g. a remote
+                    /// Ok to swallow, as in `resolveThenCheckAccessRights`: a non-ClickHouse exception (e.g. a remote
                     /// table function that fails to connect while the nested `SELECT` is analyzed) is not
                     /// an access denial, and this nested `SELECT` is left unchecked exactly as an
                     /// unresolvable one is - nothing is revealed, the dump only ever prints the user's
