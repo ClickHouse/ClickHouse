@@ -26,8 +26,10 @@ SETTINGS max_rows_to_read = 0, max_rows_to_read = 0, read_overflow_mode = 'throw
 
 DROP TABLE IF EXISTS t_04344;
 CREATE TABLE t_04344 (a UInt64, b String, c Array(UInt64)) ENGINE = MergeTree ORDER BY a;
+-- Both INSERTs pin max_execution_time: it bounds their whole 30-clone fuzz loop, must exceed the
+-- host's object-store write latency for one part, and is stripped from the fuzzed clones.
 INSERT INTO t_04344 SELECT number, toString(number), range(number % 8) FROM numbers(100)
-SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw';
+SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw', max_execution_time = 120;
 
 -- Block-forming carrier: a trivial INSERT ... SELECT into a table that prefers large blocks copies
 -- min_insert_block_size_rows into the SELECT's max_block_size, so a fuzzed numbers(100) inflated to
@@ -35,7 +37,7 @@ SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw';
 -- read cap can fire. The fix pins both block-forming settings small and strips the query's own
 -- overrides, so this stays bounded even though the seed asks for a 1M-row block.
 INSERT INTO t_04344 SELECT number, toString(number), range(number % 8) FROM numbers(100)
-SETTINGS min_insert_block_size_rows = 1000000, max_block_size = 1000000, max_rows_to_read = 0;
+SETTINGS min_insert_block_size_rows = 1000000, max_block_size = 1000000, max_rows_to_read = 0, max_execution_time = 120;
 
 -- CREATE storage-settings carrier: the cap is parked in ASTStorage::settings. After stripping the
 -- only setting the node is empty; without pruning it ASTStorage::formatImpl emits a bare `SETTINGS`
