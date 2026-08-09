@@ -65,8 +65,14 @@ ALTER TABLE t_column_comment_order MODIFY COLUMN g COLLATE utf8_bin COMMENT 'g n
 
 -- A trailing `COLLATE` or `PRIMARY KEY` after `COMMENT` in a type-less `MODIFY COLUMN` parses,
 -- but is rejected the same way as the typed spellings above (not treated as a comment-only alter).
+-- `NULL` / `NOT NULL` require an explicit column type, so a type-less `MODIFY COLUMN` combining
+-- them with `COMMENT` is rejected at parse time in any order, never applied comment-only.
 ALTER TABLE t_column_comment_order MODIFY COLUMN g COMMENT 'g new comment' COLLATE utf8_bin; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE t_column_comment_order MODIFY COLUMN g COMMENT 'g new comment' PRIMARY KEY; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_column_comment_order MODIFY COLUMN g NULL COMMENT 'g new comment'; -- { clientError SYNTAX_ERROR }
+ALTER TABLE t_column_comment_order MODIFY COLUMN g NOT NULL COMMENT 'g new comment'; -- { clientError SYNTAX_ERROR }
+ALTER TABLE t_column_comment_order MODIFY COLUMN g COMMENT 'g new comment' NULL; -- { clientError SYNTAX_ERROR }
+ALTER TABLE t_column_comment_order MODIFY COLUMN g COMMENT 'g new comment' NOT NULL; -- { clientError SYNTAX_ERROR }
 
 SELECT name, comment FROM system.columns WHERE database = currentDatabase() AND table = 't_column_comment_order' ORDER BY name;
 
