@@ -179,3 +179,4 @@ ARM machines in CI are not slow. They are similar to x86 in performance.
 
 Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
 
+Always use YYYY-MM-DD (ISO) date format. Never write in the American date style. Never omit the year in dates. Never use the relative time (like xxx days ago).
