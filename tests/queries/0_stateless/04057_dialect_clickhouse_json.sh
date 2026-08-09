@@ -23,14 +23,18 @@ $CLICKHOUSE_CLIENT --query "SELECT name, value, default FROM system.settings WHE
 # dialect itself succeeds without the gate; the failure happens when the
 # next query is parsed.
 echo "=== Without gate, client-side TCP query fails with SUPPORT_IS_DISABLED ==="
-{ $CLICKHOUSE_CLIENT --dialect=clickhouse_json --query="SELECT 1" 2>&1 || true; } | grep -oE "Code: [0-9]+|SUPPORT_IS_DISABLED" | head -2
+OUT=$($CLICKHOUSE_CLIENT --dialect=clickhouse_json --query="SELECT 1" 2>&1 || true)
+echo "$OUT" | grep -oE "Code: [0-9]+|SUPPORT_IS_DISABLED" | head -2
+grep -qm1 "Received exception from server" <<< "$OUT" && echo "FROM_SERVER" || echo "from_client"
 
 echo "=== Without gate, server-side HTTP query fails with SUPPORT_IS_DISABLED ==="
 { ${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&dialect=clickhouse_json" --data-binary 'SELECT 1' 2>&1 || true; } | grep -oE "Code: [0-9]+|SUPPORT_IS_DISABLED" | head -2
 
 # Error message mentions the setting to enable
 echo "=== Error message mentions the setting to enable ==="
-{ $CLICKHOUSE_CLIENT --dialect=clickhouse_json --query="SELECT 1" 2>&1 || true; } | grep -oE "enable_json_ast_dialect" | head -1
+OUT=$($CLICKHOUSE_CLIENT --dialect=clickhouse_json --query="SELECT 1" 2>&1 || true)
+echo "$OUT" | grep -oE "enable_json_ast_dialect" | head -1
+grep -qm1 "Received exception from server" <<< "$OUT" && echo "FROM_SERVER" || echo "from_client"
 
 # ============================================================================
 # Basic JSON-AST execution
@@ -105,10 +109,16 @@ echo "=== With gate, server-side HTTP rejects an unknown AST type with BAD_ARGUM
 # Errors (client-side parse)
 # ============================================================================
 echo "=== With gate, malformed JSON yields BAD_ARGUMENTS ==="
-{ $CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --query="not json" 2>&1 || true; } | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+OUT=$($CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --query="not json" 2>&1 || true)
+echo "$OUT" | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+grep -qm1 "Received exception from server" <<< "$OUT" && echo "FROM_SERVER" || echo "from_client"
 
 echo "=== With gate, empty JSON object yields BAD_ARGUMENTS ==="
-{ $CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --query="{}" 2>&1 || true; } | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+OUT=$($CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --query="{}" 2>&1 || true)
+echo "$OUT" | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+grep -qm1 "Received exception from server" <<< "$OUT" && echo "FROM_SERVER" || echo "from_client"
 
 echo "=== With gate, unknown AST type yields BAD_ARGUMENTS ==="
-{ $CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --query='{"type":"NoSuchASTNode"}' 2>&1 || true; } | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+OUT=$($CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --query='{"type":"NoSuchASTNode"}' 2>&1 || true)
+echo "$OUT" | grep -oE "Code: [0-9]+|BAD_ARGUMENTS" | head -2
+grep -qm1 "Received exception from server" <<< "$OUT" && echo "FROM_SERVER" || echo "from_client"

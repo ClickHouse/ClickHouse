@@ -4,11 +4,13 @@ enable_json_ast_dialect	0	0
 === Without gate, client-side TCP query fails with SUPPORT_IS_DISABLED ===
 Code: 344
 SUPPORT_IS_DISABLED
+from_client
 === Without gate, server-side HTTP query fails with SUPPORT_IS_DISABLED ===
 Code: 344
 SUPPORT_IS_DISABLED
 === Error message mentions the setting to enable ===
 enable_json_ast_dialect
+from_client
 === With gate, hand-written JSON-AST for SELECT 1 ===
 1
 === Round-trip: SELECT 1 + 2 + 3 (arithmetic) ===
@@ -45,9 +47,12 @@ BAD_ARGUMENTS
 === With gate, malformed JSON yields BAD_ARGUMENTS ===
 Code: 36
 BAD_ARGUMENTS
+from_client
 === With gate, empty JSON object yields BAD_ARGUMENTS ===
 Code: 36
 BAD_ARGUMENTS
+from_client
 === With gate, unknown AST type yields BAD_ARGUMENTS ===
 Code: 36
 BAD_ARGUMENTS
+from_client
