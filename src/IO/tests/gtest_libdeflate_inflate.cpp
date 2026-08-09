@@ -103,6 +103,19 @@ TEST_P(LibdeflateInflateTest, RoundTripFromZlibNg)
     }
 }
 
+/// zlib-ng's deflate_quick path (compression level 1) opens a single static-Huffman block and
+/// never closes it until the end of the stream, so a multi-megabyte level-1 stream is the
+/// real-encoder version of the single-block shape of issue #114045; keep it large and the input
+/// chunks small so a decoder that re-decodes from the block start on every refill cannot hide.
+TEST_P(LibdeflateInflateTest, RoundTripFromZlibNgLevelOneLarge)
+{
+    const CompressionMethod method = GetParam();
+    const std::string data = makeData(8 << 20, 3);
+    const std::string compressed = zlibCompress(data, method, 1);
+    for (size_t chunk : {size_t(16 * 1024), size_t(256 * 1024)})
+        EXPECT_EQ(decompressViaBuffer(compressed, method, chunk, 1 << 20), data) << "chunk=" << chunk;
+}
+
 /// Two concatenated members must decode to the concatenation of their contents.
 TEST_P(LibdeflateInflateTest, MultiMember)
 {
@@ -297,7 +310,7 @@ std::pair<std::string, std::string> craftSingleBlockMember(CompressionMethod met
     while (writer.reference.size() < total_bytes)
         writer.putMatch(
             3 + rng() % 256,
-            1 + rng() % std::min<size_t>(writer.reference.size(), 32768));
+            static_cast<unsigned>(1 + rng() % std::min<size_t>(writer.reference.size(), 32768)));
     std::string reference = writer.reference;
     const std::string deflate = writer.finish();
 
