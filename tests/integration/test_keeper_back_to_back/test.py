@@ -757,8 +757,8 @@ def test_concurrent_watches(started_cluster, request):
 
         existing_path = []
         # A watch is one-shot per (path, session), so a mutation only notifies a registration
-        # that is live at that moment. Mutating a path this thread does not hold a token for can
-        # therefore consume another thread's registration, leaving it forever unnotified.
+        # live at that moment. Claim a token before mutating: mutating without one lets a stale
+        # removal drop the token of a later registration, which then never gets a mutation.
         existing_path_lock = threading.Lock()
         all_paths_created = []
         watches_created = 0
@@ -825,7 +825,7 @@ def test_concurrent_watches(started_cluster, request):
             time.sleep(0.1)
 
         assert watches_created == watches_must_be_created
-        assert trigger_called >= watches_trigger_must_be_called
+        assert trigger_called == watches_trigger_must_be_called
         assert len(existing_path) == 0
         if dumb_watch_triggered_counter != watches_must_be_triggered:
             print("All created paths", all_paths_created)
