@@ -43,6 +43,43 @@ SELECT 'crossing disjunction parity',
     (SELECT count() FROM t_minmax_disj WHERE t < 2000 OR v > 9900
          SETTINGS use_minmax_index_bulk_filtering = 1, use_skip_indexes_for_disjunctions = 1) AS ok;
 
+-- A rejected mark between two survivors must not be reintroduced by seek-gap merging before
+-- another index writes the foreign disjunction's bits. Bulk does not write idx_t's owned-leaf
+-- bits, so carrying the middle mark forward would make its default `true` look like `t = 1`.
+DROP TABLE IF EXISTS t_minmax_disj_gap;
+
+CREATE TABLE t_minmax_disj_gap
+(
+    t UInt8,
+    v UInt8,
+    INDEX idx_gap_t t TYPE minmax GRANULARITY 1,
+    INDEX idx_gap_v v TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_minmax_disj_gap VALUES (1, 0), (0, 1), (1, 0);
+
+SELECT 'foreign disjunction seek-gap pruning',
+    (SELECT count() FROM t_minmax_disj_gap WHERE t = 1 AND (v = 1 OR v = 2)
+         SETTINGS use_minmax_index_bulk_filtering = 0, use_skip_indexes_for_disjunctions = 1,
+                  merge_tree_min_rows_for_seek = 100) =
+    (SELECT count() FROM t_minmax_disj_gap WHERE t = 1 AND (v = 1 OR v = 2)
+         SETTINGS use_minmax_index_bulk_filtering = 1, use_skip_indexes_for_disjunctions = 1,
+                  merge_tree_min_rows_for_seek = 100) AS parity,
+    (SELECT count() > 0
+     FROM
+     (
+         EXPLAIN indexes = 1
+         SELECT * FROM t_minmax_disj_gap WHERE t = 1 AND (v = 1 OR v = 2)
+         SETTINGS use_minmax_index_bulk_filtering = 1, use_skip_indexes_for_disjunctions = 1,
+                  merge_tree_min_rows_for_seek = 100, parallel_replicas_local_plan = 1
+     )
+     WHERE explain ILIKE '%Ranges: 0%') AS pruned;
+
+DROP TABLE t_minmax_disj_gap;
+
 -- Path selection: the foreign disjunction must keep idx_t on the bulk path (its t >= 5000 leaf
 -- stays outside the v-only OR); the crossing disjunction must put both indexes on the scalar
 -- path (each index owns a leaf inside the OR), so no granule is evaluated by bulk.

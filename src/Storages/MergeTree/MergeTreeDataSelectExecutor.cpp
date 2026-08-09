@@ -2730,6 +2730,12 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// regardless of the chunk boundary chosen here.
         constexpr size_t chunk_size_index_granules = DEFAULT_BLOCK_SIZE;
 
+        /// Bulk evaluation does not write owned-leaf bits for partial-disjunction merging.
+        /// Do not bridge rejected gaps here: a later index would otherwise evaluate those marks
+        /// with this index's bits left at their `true` default and could retain a mark that scalar
+        /// evaluation rejects. Adjacent survivors still merge when the threshold is zero.
+        const size_t bulk_min_marks_for_seek = use_skip_indexes_for_disjunctions ? 0 : min_marks_for_seek;
+
         /// Granules survive in ascending global position order — ranges are processed in
         /// order, chunks tile each range in order, and `getPossibleGranules` returns
         /// chunk-local indices ascending — so the `res.back().end` merge below stays valid.
@@ -2757,7 +2763,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         std::max(ranges[i].begin, index_mark * skip_index_granularity),
                         std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
 
-                    if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
+                    if (res.empty() || data_range.begin - res.back().end > bulk_min_marks_for_seek)
                         res.push_back(data_range);
                     else
                         res.back().end = data_range.end;

@@ -1,4 +1,5 @@
 foreign disjunction parity	1
 crossing disjunction parity	1
+foreign disjunction seek-gap pruning	1	1
 foreign disjunction uses bulk	1
 crossing disjunction skips bulk	1

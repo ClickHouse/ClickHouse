@@ -334,4 +334,22 @@ TEST(MergeTreeIndexConditionMinMaxDifferential, NaNOrderingDifferenceIsExplicit)
     EXPECT_FALSE(evaluateTypedComparison(context, "equals", float64, nan, float64, nan));
 }
 
+TEST(MergeTreeIndexConditionMinMaxDifferential, AllNaNGranuleMatchesScalar)
+{
+    auto context = getRegisteredContext();
+    auto float64 = std::make_shared<DataTypeFloat64>();
+    auto index = makeIndex(float64, context);
+    const Field nan = std::numeric_limits<Float64>::quiet_NaN();
+    auto bulk = makeBulkGranules(index, {{nan, nan}});
+    auto shape = makeComparison(context, float64, float64, Float64(0), "greater");
+    ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context, true);
+    MergeTreeIndexConditionMinMax condition(index, filter_dag, context);
+    ASSERT_TRUE(condition.hasBulkFastPath());
+
+    const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, *bulk);
+    ASSERT_EQ(actual.size(), 1);
+    EXPECT_EQ(actual[0], MergeTreeIndexConditionMinMaxTestAccess::scalar(condition, Range(nan, true, nan, true)));
+    EXPECT_FALSE(actual[0].can_be_true);
+}
+
 }

@@ -244,6 +244,27 @@ FROM
     SETTINGS use_minmax_index_bulk_filtering = 1, use_skip_indexes_for_disjunctions = 1
 );
 
+-- The executor evaluates skip-index granules in chunks of 65,536. Exercise survivors
+-- immediately on both sides of that boundary.
+CREATE TABLE t_bulk_chunk_boundary
+(
+    x UInt32,
+    INDEX idx_x x TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_bulk_chunk_boundary SELECT number FROM numbers(65538);
+
+SELECT 'bulk chunk boundary parity',
+    (SELECT count() FROM t_bulk_chunk_boundary WHERE x = 65535 OR x = 65536
+         SETTINGS use_minmax_index_bulk_filtering = 0) =
+    (SELECT count() FROM t_bulk_chunk_boundary WHERE x = 65535 OR x = 65536
+         SETTINGS use_minmax_index_bulk_filtering = 1) AS eq,
+    (SELECT count() FROM t_bulk_chunk_boundary WHERE x = 65535 OR x = 65536) AS count;
+
+DROP TABLE t_bulk_chunk_boundary;
 DROP TABLE t_bulk_num;
 DROP TABLE t_bulk_nullable;
 DROP TABLE t_bulk_enum;
