@@ -421,7 +421,8 @@ The table below shows how Parquet data types match ClickHouse [data types](/refe
 | `UINT_64` | [UInt64](/reference/data-types/int-uint) |
 | `INT_64` | [Int64](/reference/data-types/int-uint) |
 | `DATE` | [Date32](/reference/data-types/date) |
-| `TIMESTAMP`, `TIME` | [DateTime64](/reference/data-types/datetime64) |
+| `TIMESTAMP` | [DateTime64](/reference/data-types/datetime64) |
+| `TIME` | [Time64](/reference/data-types/time64) |
 | `FLOAT` | [Float32](/reference/data-types/float) |
 | `DOUBLE` | [Float64](/reference/data-types/float) |
 | `INT96` | [DateTime64(9, 'UTC')](/reference/data-types/datetime64) |
@@ -464,8 +465,7 @@ Arrays can be nested and can have a value of `Nullable` type as an argument. `Tu
 Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to that data type which is set for the ClickHouse table column. E.g. a `UINT_32` Parquet column can be read into an [IPv4](/reference/data-types/ipv4) ClickHouse column.
 
 For some Parquet types there's no closely matching ClickHouse type. We read them as follows:
-* `TIME` (time of day) is read as a timestamp. E.g. `10:23:13.000` becomes `1970-01-01 10:23:13.000`.
-* `TIMESTAMP`/`TIME` with `isAdjustedToUTC=false` is a local wall-clock time (year, month, day, hour, minute, second and subsecond fields in a local timezone, regardless of what specific time zone is considered local), same as SQL `TIMESTAMP WITHOUT TIME ZONE`. ClickHouse reads it as if it were a UTC timestamp instead. E.g. `2025-09-29 18:42:13.000` (representing a reading of a local wall clock) becomes `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')` representing a point in time). If converted to String, it shows the correct year, month, day, hour, minute, second and subsecond, which can then be interpreted as being in some local timezone instead of UTC. Counterintuitively, changing the type from `DateTime64(3, 'UTC')` to `DateTime64(3)` would not help as both types represent a point in time rather than a clock reading, but `DateTime64(3)` would incorrectly be formatted using local timezone.
+* `TIMESTAMP` with `isAdjustedToUTC=false` is a local wall-clock time (year, month, day, hour, minute, second and subsecond fields in a local timezone, regardless of what specific time zone is considered local), same as SQL `TIMESTAMP WITHOUT TIME ZONE`. ClickHouse reads it as if it were a UTC timestamp instead. E.g. `2025-09-29 18:42:13.000` (representing a reading of a local wall clock) becomes `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')` representing a point in time). If converted to String, it shows the correct year, month, day, hour, minute, second and subsecond, which can then be interpreted as being in some local timezone instead of UTC. Counterintuitively, changing the type from `DateTime64(3, 'UTC')` to `DateTime64(3)` would not help as both types represent a point in time rather than a clock reading, but `DateTime64(3)` would incorrectly be formatted using local timezone.
 * `INTERVAL` is currently read as `FixedString(12)` with raw binary representation of the time interval, as encoded in Parquet file.
 
 ## Geo types (GeoParquet) {#geo-types}
