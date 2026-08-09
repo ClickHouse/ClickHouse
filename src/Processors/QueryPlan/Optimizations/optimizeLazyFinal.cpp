@@ -426,11 +426,8 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
                 break;
             continue;
         }
-        /// DISTINCT stops reading as soon as its pushed-down limit hint of distinct rows is produced.
-        /// The DISTINCT transform honors the hint even when the enclosing limit has
-        /// always_read_till_end (e.g. exact_rows_before_limit), so any non-zero hint means the
-        /// query terminates reading early; if the hint seeding ever starts to account for that,
-        /// this check follows automatically.
+        /// DISTINCT stops reading as soon as its pushed-down limit hint of distinct rows is
+        /// produced, so any non-zero hint means the query terminates reading early.
         if (const auto * distinct_step = typeid_cast<DistinctStep *>(step))
         {
             limit_above_reading = distinct_step->getLimitHint();

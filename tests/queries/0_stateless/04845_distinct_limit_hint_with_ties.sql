@@ -49,6 +49,12 @@ SELECT DISTINCT count() FROM t_erbl GROUP BY n WITH TOTALS LIMIT 1 FORMAT JSONCo
 -- The LIMIT must not be marked as reading all data, and the totals must still be complete.
 SELECT countIf(explain LIKE '%Reads all data%') FROM (EXPLAIN PLAN SELECT DISTINCT count() AS c FROM t_erbl GROUP BY n WITH TOTALS ORDER BY c LIMIT 1 SETTINGS query_plan_remove_redundant_distinct = 0);
 SELECT DISTINCT count() AS c FROM t_erbl GROUP BY n WITH TOTALS ORDER BY c LIMIT 1 FORMAT TabSeparatedWithNames SETTINGS query_plan_remove_redundant_distinct = 0;
-SELECT DISTINCT count() AS c FROM t_erbl GROUP BY n WITH TOTALS ORDER BY c LIMIT 1 FORMAT TabSeparatedWithNames SETTINGS query_plan_remove_redundant_distinct = 0, enable_analyzer = 0;
+
+SET enable_analyzer = 0;
+
+SELECT countIf(explain LIKE '%Reads all data%') FROM (EXPLAIN PLAN SELECT DISTINCT count() AS c FROM t_erbl GROUP BY n WITH TOTALS ORDER BY c LIMIT 1 SETTINGS query_plan_remove_redundant_distinct = 0);
+SELECT DISTINCT count() AS c FROM t_erbl GROUP BY n WITH TOTALS ORDER BY c LIMIT 1 FORMAT TabSeparatedWithNames SETTINGS query_plan_remove_redundant_distinct = 0;
+
+SET enable_analyzer = 1;
 
 DROP TABLE t_erbl;
