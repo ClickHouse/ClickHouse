@@ -1341,3 +1341,122 @@ def test_distinct_on_an_array_field_returns_the_elements(started_cluster):
     assert collection.distinct("tags", {"id": 2}) == ["green", "red"]
     # A scalar field keeps its per-document values through the same normalization.
     assert collection.distinct("name") == ["alpha", "beta"]
+
+
+def test_mutations_on_a_missing_collection_are_noops(started_cluster):
+    """Mongo treats a mutation of a namespace that does not exist the same way as a read of it:
+    nothing matches, so `update_many` and `delete_many` report zero affected documents instead
+    of a missing-table error. A malformed statement is still an error."""
+    client = make_client()
+    collection = client["db"]["never_created_mutations"]
+    collection.drop()
+
+    result = collection.update_many({"x": 1}, {"$set": {"y": 1}})
+    assert result.matched_count == 0
+    assert result.modified_count == 0
+
+    assert collection.delete_many({"x": 1}).deleted_count == 0
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        collection.update_many({"x": 1}, {"$typo": {"y": 1}})
+    with pytest.raises(pymongo.errors.OperationFailure):
+        collection.delete_many({"x": {"$typo": 1}})
+
+
+def test_oversized_incoming_document_is_an_error(started_cluster):
+    """`maxBsonObjectSize` of the handshake promises the client that a document of more than
+    16 MiB is refused. A message may hold several documents and may be much larger than one of
+    them, so the limit of a message does not enforce it: the document itself is checked."""
+    # The document is hand built rather than encoded by the driver, which refuses to send one
+    # this large in the first place: an int32 length, one string element, the terminator.
+    padding = 17 * 1024 * 1024
+    element = (
+        b"\x02" + b"pad\x00" + struct.pack("<i", padding + 1) + b"a" * padding + b"\x00"
+    )
+    document = struct.pack("<i", 4 + len(element) + 1) + element + b"\x00"
+    payload = struct.pack("<I", 0) + b"\x00" + document
+
+    sock = connect_raw()
+    try:
+        sock.sendall(struct.pack("<iiii", 16 + len(payload), 1, 0, OP_MSG) + payload)
+        # Either an error document or a closed connection is fine; accepting it is not.
+        reply = sock.recv(4096)
+        if reply:
+            assert b"larger than the maximum" in reply
+    finally:
+        sock.close()
+
+    # The server is still healthy and answers on a new connection.
+    assert cluster.instances["node"].query("SELECT 1", password="123").strip() == "1"
+
+
+def test_large_uint64_round_trips_as_a_decimal(started_cluster):
+    """BSON has no unsigned 64-bit integer, so a `UInt64` above the signed maximum cannot come
+    back as an `int64`. A `double` would lose its low digits, so it comes back as a decimal128,
+    which holds every `UInt64` exactly; the smaller values stay `int64`."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.uint64_values", password="123")
+    node.query(
+        "CREATE TABLE db.uint64_values (id UInt8, big UInt64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "INSERT INTO db.uint64_values VALUES (1, 42), (2, 18446744073709551615)",
+        password="123",
+    )
+
+    client = make_client()
+    collection = client["db"]["uint64_values"]
+
+    documents = sorted(collection.find({}), key=lambda document: document["id"])
+    assert documents[0]["big"] == 42
+    assert isinstance(documents[0]["big"], int)
+    assert documents[1]["big"] == bson.Decimal128("18446744073709551615")
+
+    node.query("DROP TABLE db.uint64_values", password="123")
+
+
+def test_update_operator_values_are_data(started_cluster):
+    """An update statement carries data, not an aggregation pipeline: a string that starts with
+    a dollar sign is stored as it is written rather than read as a field path, and a document
+    assigns the fields it names."""
+    client = make_client()
+    collection = client["db"]["update_values"]
+
+    collection.drop()
+    collection.insert_many(
+        [{"id": 1, "name": "alpha", "other": "beta", "profile": {"name": "x"}}]
+    )
+
+    collection.update_many({"id": 1}, {"$set": {"name": "$other"}})
+    assert wait_for(lambda: collection.find_one({"id": 1})["name"] == "$other")
+
+    collection.update_many({"id": 1}, {"$set": {"profile": {"name": "y"}}})
+    assert wait_for(lambda: collection.find_one({"id": 1})["profile"] == {"name": "y"})
+
+
+def test_aggregation_regex_options_are_applied(started_cluster):
+    """`$regexMatch` and `$regexFind` take the options of the match as a sibling field of the
+    pattern, so a case insensitive match must not be lowered as a case sensitive one."""
+    client = make_client()
+    collection = client["db"]["regex_options"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "name": "Abc"}, {"id": 2, "name": "abc"}])
+
+    pipeline = [
+        {
+            "$project": {
+                "id": 1,
+                "matched": {
+                    "$regexMatch": {"input": "$name", "regex": "^a", "options": "i"}
+                },
+            }
+        },
+        {"$sort": {"id": 1}},
+    ]
+    assert [document["matched"] for document in collection.aggregate(pipeline)] == [
+        True,
+        True,
+    ]

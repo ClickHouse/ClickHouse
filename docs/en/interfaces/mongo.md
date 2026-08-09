@@ -137,7 +137,7 @@ Because an omitted field is stored as the default value of its column, `$exists`
 
 A collection created explicitly with `createCollection` has no document to infer a schema from, so until the first `insert` it is a table with a single `JSON` column named `json`. The first `insert` gives it the columns of the inserted document, so a collection created explicitly ends up with the same schema as one created by the insert itself. Creating a collection that already exists is the `NamespaceExists` error, as it is in MongoDB.
 
-A collection that does not exist reads as empty, as it does in MongoDB: `find` returns an empty cursor, `count` returns `0` and `distinct` returns no values.
+A collection that does not exist reads as empty, as it does in MongoDB: `find` returns an empty cursor, `count` returns `0` and `distinct` returns no values. An `update` or a `delete` of such a collection matches no document and is a no-op rather than an error, also as in MongoDB.
 
 ### Limitations {#limitations}
 
@@ -152,7 +152,9 @@ A collection that does not exist reads as empty, as it does in MongoDB: `find` r
 - `$size` matches arrays only, so a string of the right length is not a match; on a column whose type has no length at all - a number, for instance - it is an error rather than an empty match.
 - `$currentDate` supports `true` and `{"$type": "date"}`; the BSON `timestamp` type does not exist here, so `{"$type": "timestamp"}` is rejected.
 - A projection lists exactly the fields it names: `_id` is not added to it implicitly, because a ClickHouse table has no implicit `_id` column. An exclusion of `_id` inside an inclusion projection, as in `{"name": 1, "_id": 0}`, is accepted and has nothing left to do; an exclusion of any other field there is an error, as it is in MongoDB.
-- An `update` supports `$set`, `$unset`, `$inc`, `$mul`, `$min`, `$max`, `$rename`, `$currentDate`, `$push`, `$addToSet`, `$pop`, `$pull` and `$pullAll`. A row always has a value for every column, so `$unset` - and the field a `$rename` leaves behind - writes the default of the column type, which is the value an insert that leaves the field out writes.
+- An `update` supports `$set`, `$unset`, `$inc`, `$mul`, `$min`, `$max`, `$rename`, `$currentDate`, `$push`, `$addToSet`, `$pop`, `$pull` and `$pullAll`. A row always has a value for every column, so `$unset` - and the field a `$rename` leaves behind - writes the default of the column type, which is the value an insert that leaves the field out writes. The value of an update operator is data rather than an aggregation expression, as in MongoDB: `{"$set": {"name": "$other"}}` stores the string `$other`, and a document assigns the `a.b` columns its fields name - so `{"$set": {"profile": {}}}`, which names no column, is an error.
+- A `UInt64` value above the signed 64-bit maximum reads back as a BSON `decimal128`, which holds it exactly, because BSON has no unsigned 64-bit integer and a `double` would lose its low digits. The smaller values read back as `int64`, like every other integer column.
+- A document larger than the advertised `maxBsonObjectSize` (16 MiB) is refused, both in a reply and in a request: a message can carry several documents and may be larger than one of them, so the limit of a message does not bound a document.
 - `$lookup`, `$facet`, `$out`, `$merge` and the other pipeline stages not listed above are not supported, and neither are transactions, change streams and the `OP_COMPRESSED` message.
 - A `$replaceRoot` takes a document as its new root; a field path there would name a column rather than a subdocument.
 - Database and collection names must consist of letters, digits, `_` and `-`.
@@ -174,7 +176,7 @@ db.users.insertOne({"name" : "a", "age" : 20});
 db.users.insertMany([{"name" : "a", "age" : 20}, {"name" : "b", "age" : 30}]);
 ```
 
-An `insertOne` or `insertMany` writes into an existing table: the fields of the documents name its columns, and a subdocument writes the `a.b` columns its leaves name. Every document of one `insertMany` must consist of the same fields, because the rows of one `INSERT` share a column list.
+An `insertOne` or `insertMany` writes into an existing table: the fields of the documents name its columns, and a subdocument writes the `a.b` columns its leaves name. A top level `_id` is dropped, the way the wire protocol drops the object id a driver adds. Every document of one `insertMany` must consist of the same fields, because the rows of one `INSERT` share a column list.
 
 The first name of a query is the database. The literal `db`, as written by the MongoDB shell, means the current database; any other name addresses that database explicitly:
 
