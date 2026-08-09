@@ -6,6 +6,19 @@ DROP TABLE IF EXISTS mrp_b;
 DROP TABLE IF EXISTS mrp_ord;
 DROP TABLE IF EXISTS mrp_allow;
 
+-- Row policies are keyed on {name, database, table}, so DROP TABLE does not remove them:
+-- a run that aborted mid-file leaves them behind and the next local re-run fails to create them.
+DROP ROW POLICY IF EXISTS 04833_mt ON mrp_mt;
+DROP ROW POLICY IF EXISTS 04833_mt_g ON mrp_mt;
+DROP ROW POLICY IF EXISTS 04833_mt_n ON mrp_mt;
+DROP ROW POLICY IF EXISTS 04833_mt_k ON mrp_mt;
+DROP ROW POLICY IF EXISTS 04833_plain ON mrp_mt;
+DROP ROW POLICY IF EXISTS 04833_pk ON mrp_pk;
+DROP ROW POLICY IF EXISTS 04833_log ON mrp_log;
+DROP ROW POLICY IF EXISTS 04833_a ON mrp_a;
+DROP ROW POLICY IF EXISTS 04833_b ON mrp_b;
+DROP ROW POLICY IF EXISTS 04833_ord ON mrp_ord;
+
 CREATE TABLE mrp_mt (id UInt32, value UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO mrp_mt VALUES (5, 10), (6, 20);
 CREATE ROW POLICY 04833_mt ON mrp_mt FOR SELECT USING value IN (SELECT 10) TO ALL;
@@ -73,8 +86,17 @@ INSERT INTO mrp_ord VALUES (1, 10), (2, 20), (3, 30);
 CREATE TABLE mrp_allow (v UInt32) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO mrp_allow VALUES (10), (30);
 CREATE ROW POLICY 04833_ord ON mrp_ord FOR SELECT USING tag IN (SELECT v FROM mrp_allow) TO ALL;
+-- optimize_read_in_order is randomized by the test runner, and on a 0 draw the order prefix is
+-- never requested, so both arms below are pinned to keep them meaningful in every run.
 SELECT * FROM merge(currentDatabase(), '^mrp_ord$') ORDER BY id
-SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+    optimize_read_in_order = 1, query_plan_read_in_order = 1;
+SELECT count() > 0 FROM (EXPLAIN SELECT * FROM merge(currentDatabase(), '^mrp_ord$') ORDER BY id
+    SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+        optimize_read_in_order = 1, query_plan_read_in_order = 1) WHERE explain ILIKE '%Read type: InOrder%';
+SELECT count() > 0 FROM (EXPLAIN SELECT * FROM merge(currentDatabase(), '^mrp_ord$') ORDER BY id
+    SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+        optimize_read_in_order = 0, query_plan_read_in_order = 1) WHERE explain ILIKE '%Read type: InOrder%';
 DROP ROW POLICY 04833_ord ON mrp_ord;
 
 SELECT 'no subquery in policy';
