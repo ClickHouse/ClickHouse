@@ -780,6 +780,16 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
         modified_select.group_by_with_rollup = false;
         modified_select.group_by_with_cube = false;
         modified_select.group_by_with_grouping_sets = false;
+        /// WINDOW definitions and LIMIT BY expressions may reference aliases of the original
+        /// select list, which is rewritten to raw source columns below, so they must not
+        /// survive either (removeJoin does the same for the join branch above). QUALIFY is
+        /// cleared for the same reason.
+        modified_select.setExpression(ASTSelectQuery::Expression::WINDOW, {});
+        modified_select.setExpression(ASTSelectQuery::Expression::QUALIFY, {});
+        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY, {});
+        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
+        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
+        modified_select.limit_by_all = false;
     }
 
     auto select_list = make_intrusive<ASTExpressionList>();
@@ -808,7 +818,12 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
         modified_select.order_by_all = false;
     }
     else
+    {
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+        /// LIMIT ... WITH TIES requires an ORDER BY clause, which was just removed;
+        /// a stale flag would be a logical error in InterpreterSelectQuery.
+        modified_select.limit_with_ties = false;
+    }
 
     /// INTERPOLATE belongs to the replaced (or removed) ORDER BY ... WITH FILL clause, and it may
     /// reference aliases of the original select list, which was rewritten to raw source columns above.

@@ -30,5 +30,16 @@ SELECT * FROM merge(currentDatabase(), '^t_order_by_all_merge_left$') AS m NATUR
 SELECT * FROM merge(currentDatabase(), '^t_order_by_all_merge_left$') AS m NATURAL FULL OUTER JOIN t_order_by_all_merge_right AS r GROUP BY a, s, t WITH CUBE ORDER BY ALL;
 SELECT * FROM merge(currentDatabase(), '^t_order_by_all_merge_left$') AS m NATURAL FULL OUTER JOIN t_order_by_all_merge_right AS r GROUP BY GROUPING SETS ((a, s, t)) ORDER BY ALL;
 
+-- WINDOW definitions and LIMIT BY expressions are analyzed unconditionally, so they must be
+-- removed from a `Merge` child query together with the JOIN: otherwise the child query analysis
+-- would find unknown identifiers from the removed joined table.
+SELECT * FROM merge(currentDatabase(), '^t_order_by_all_merge_left$') AS m NATURAL FULL OUTER JOIN t_order_by_all_merge_right AS r WINDOW w AS (PARTITION BY t) ORDER BY ALL;
+SELECT * FROM merge(currentDatabase(), '^t_order_by_all_merge_left$') AS m NATURAL FULL OUTER JOIN t_order_by_all_merge_right AS r ORDER BY ALL LIMIT 1 BY t;
+
+-- LIMIT ... WITH TIES requires an ORDER BY clause, which is removed together with the JOIN from
+-- a `Merge` child query, so the flag must be reset as well: a leftover flag would be a logical
+-- error in the child query interpreter.
+SELECT * FROM merge(currentDatabase(), '^t_order_by_all_merge_left$') AS m NATURAL FULL OUTER JOIN t_order_by_all_merge_right AS r ORDER BY a LIMIT 1 WITH TIES;
+
 DROP TABLE t_order_by_all_merge_left;
 DROP TABLE t_order_by_all_merge_right;
