@@ -29,6 +29,8 @@ static void append(std::vector<String> & to, const std::vector<String> & what, s
     /// the whole product would make the parsing quadratic in the description length.
     if (what.size() == 1)
     {
+        if (to.size() > max_addresses)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'remote': first argument generates too many result addresses");
         for (auto & elem_to : to)
             elem_to += what.front();
         return;

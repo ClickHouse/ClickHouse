@@ -64,6 +64,32 @@ TEST(ParseRemoteDescription, LongDescription)
     EXPECT_EQ(res[0], long_host);
 }
 
+TEST(ParseRemoteDescription, OverLimitExpansionWithLongSuffix)
+{
+    /// An oversized brace expansion followed by a long suffix must be rejected
+    /// up front, before the suffix has a chance to be appended to every
+    /// generated address. The numeric interval and the enumeration are
+    /// rejected by different checks, so both are exercised.
+    String interval = "{1..1001}";
+    interval.resize(1 << 20, 'x');
+    Stopwatch watch;
+    EXPECT_THROW(parse(interval), Exception);
+    EXPECT_LT(watch.elapsedSeconds(), 5);
+
+    String enumeration = "{";
+    for (size_t i = 0; i < 1001; ++i)
+    {
+        if (i != 0)
+            enumeration += ',';
+        enumeration += std::to_string(i);
+    }
+    enumeration += '}';
+    enumeration.resize(1 << 20, 'x');
+    watch.restart();
+    EXPECT_THROW(parse(enumeration), Exception);
+    EXPECT_LT(watch.elapsedSeconds(), 5);
+}
+
 TEST(ParseRemoteDescription, ExternalDatabase)
 {
     using Addresses = std::vector<std::pair<String, UInt16>>;
