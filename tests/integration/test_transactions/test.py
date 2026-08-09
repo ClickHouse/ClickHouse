@@ -1217,18 +1217,38 @@ def test_kill_transaction_mutation_rollback_window(start_cluster):
         # started while the rollback is still paused, so on an unfixed server
         # the cancelled mutation is selected and its mutate task is recorded in
         # system.part_log; with the fix nothing is ever selected for it.
+        # An incorrectly selected task can also be skipped silently by the
+        # rollback re-check in MutatePlainMergeTreeTask::prepare, before it
+        # writes the MutatePartStart row, so an empty part_log alone does not
+        # prove that selection never happened.  That skip logs the transaction
+        # id (unique to this test), so additionally assert that the skip
+        # message never appears in system.text_log.
+        # transactionID() prints the tuple as (csn,ltid,'uuid'), while the log
+        # message formats it as (csn, ltid, uuid).
+        tid_csn, tid_ltid, tid_host = tid.strip("()").split(",")
+        tid_host = tid_host.strip("'")
+        log_tid = f"({tid_csn}, {tid_ltid}, {tid_host})"
         node.query("SYSTEM START MERGES mt_kill_txn_rollback_window")
         for _ in range(20):
-            node.query("SYSTEM FLUSH LOGS part_log")
+            node.query("SYSTEM FLUSH LOGS part_log, text_log")
             assert (
                 node.query(
                     "SELECT count() FROM system.part_log"
                     " WHERE database = currentDatabase()"
                     " AND table = 'mt_kill_txn_rollback_window'"
-                    " AND event_type = 'MutatePart'"
+                    " AND event_type IN ('MutatePartStart', 'MutatePart')"
                 ).strip()
                 == "0"
             ), "A cancelled transactional mutation must not be scheduled"
+            assert (
+                node.query(
+                    "SELECT count() FROM system.text_log"
+                    " WHERE message LIKE 'Skipping mutation of part %'"
+                    f" AND message LIKE '%transaction {log_tid} was cancelled"
+                    " after the mutation was selected'"
+                ).strip()
+                == "0"
+            ), "A cancelled transactional mutation must not be selected"
             time.sleep(0.5)
     finally:
         # Let the rollback finish: killMutation now removes the mutation entry.
