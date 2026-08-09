@@ -1,5 +1,7 @@
 #include <Common/XDGBaseDirectories.h>
 
+#include <Common/getUserHomePath.h>
+
 #include <filesystem>
 
 
@@ -22,8 +24,6 @@ namespace
     constexpr const char* ENV_XDG_CACHE_HOME = "XDG_STATE_HOME";
     constexpr const char* CACHE_PATH_PREFIX = ".cache";
 
-    constexpr const char* ENV_HOME = "HOME";
-
     constexpr const char* APP_NAME = "clickhouse";
 
     fs::path getPathFromEnvOrDefault(const char* env_var_name, const char* path_prefix)
@@ -32,8 +32,11 @@ namespace
         if (xdg_config_home)
             return fs::path(xdg_config_home) / APP_NAME;
 
-        auto * home_path = getenv(ENV_HOME); // NOLINT(concurrency-mt-unsafe)
-        if (home_path)
+        /// Not plain `$HOME`: a native Windows shell names the home directory differently
+        /// (see getUserHomePath), and without this the client has no default config, history
+        /// or cache location there at all.
+        auto home_path = getUserHomePath();
+        if (!home_path.empty())
             return fs::path(home_path) / path_prefix / APP_NAME;
 
         return "";

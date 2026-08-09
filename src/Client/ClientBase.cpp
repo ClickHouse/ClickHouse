@@ -33,6 +33,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/ErrorCodes.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getUserHomePath.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
@@ -4817,10 +4818,10 @@ fs::path ClientBase::getHistoryFilePath()
     /// Client query history was stored in ~/.clickhouse-client-history
     /// before moving to $XDG_STATE_HOME/clickhouse/client-query-history.
     /// We'll pick up the old file and use it if it is already present.
-    auto * home_path = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-    if (home_path)
+    auto home_path = getUserHomePath();
+    if (!home_path.empty())
     {
-        auto path_in_home_dir = fs::path(home_path) / ".clickhouse-client-history";
+        auto path_in_home_dir = pathFromString(home_path) / ".clickhouse-client-history";
 
         if (fs::exists(path_in_home_dir))
             return path_in_home_dir;
@@ -4830,7 +4831,13 @@ fs::path ClientBase::getHistoryFilePath()
     if (!xdg_state_home.empty())
         return xdg_state_home / "client-query-history";
 
-    throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Neither $CLICKHOUSE_HISTORY_FILE, $HOME nor $XDG_STATE_HOME is set; cannot place history file.");
+    throw Exception(
+        ErrorCodes::CANNOT_OPEN_FILE,
+        "None of $CLICKHOUSE_HISTORY_FILE, $XDG_STATE_HOME or a home directory ($HOME"
+#if defined(OS_WINDOWS)
+        ", %USERPROFILE% or %HOMEDRIVE%%HOMEPATH%"
+#endif
+        ") is set; cannot place history file.");
 }
 
 #if !USE_FUZZING_MODE

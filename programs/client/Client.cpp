@@ -20,6 +20,7 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
+#include <Common/getUserHomePath.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -219,9 +220,9 @@ void Client::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
-    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-    if (home_path_cstr)
-        home_path = home_path_cstr;
+    /// Not plain `$HOME`: a native Windows shell spells the home directory `%USERPROFILE%`
+    /// (see getUserHomePath), and without it the default config lookup below never fires there.
+    home_path = pathFromString(getUserHomePath());
 
     const char * env_host = getenv("CLICKHOUSE_HOST"); // NOLINT(concurrency-mt-unsafe)
 
@@ -1113,11 +1114,7 @@ void Client::processConfig()
     if (is_interactive || delayed_interactive)
     {
         if (home_path.empty())
-        {
-            const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-            if (home_path_cstr)
-                home_path = home_path_cstr;
-        }
+            home_path = pathFromString(getUserHomePath());
 
         /// Load command history if present.
         if (config().has("history_file"))
