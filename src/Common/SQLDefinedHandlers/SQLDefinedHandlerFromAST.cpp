@@ -1,5 +1,6 @@
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlerFromAST.h>
 
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -182,6 +183,12 @@ bool queryKindHasSideEffectsUnderReadonly(IAST::QueryKind kind)
 /// - `DROP TEMPORARY TABLE` targets one explicitly;
 /// - `DROP TABLE` / `TRUNCATE TABLE` of a table not qualified with a database resolves external-first
 ///   (see `InterpreterDropQuery::executeToTableImpl`), so it too may hit a session temporary table.
+/// - an `ALTER` whose target table is not qualified with a database: `InterpreterAlterQuery::executeToTable`
+///   calls `tryResolveStorageID` (external-first) and rewrites the AST database to the resolved temporary
+///   database *before* `checkAccess`, so the unconditional grant on the temporary database applies and
+///   `readonly = 2` does not stop the mutation. `ALTER TEMPORARY TABLE` parses to the same unqualified AST.
+///   (`RENAME` and `OPTIMIZE` check access against the current database *before* resolving the table, so
+///   `readonly` rejects them and they need no fence here.)
 /// A database-qualified target can never be a temporary table, so such queries are not fenced - under
 /// `readonly = 2` they are rejected at invocation time by the normal access checks. `DETACH` of temporary
 /// tables is rejected outright by `InterpreterDropQuery`, so `DETACH` is not fenced either.
@@ -217,6 +224,10 @@ bool queryMayMutateTemporaryTable(const IAST & query)
         return drop->table && drop->getDatabase().empty();
     }
 
+    /// `ALTER DATABASE` has no table target; `ALTER TABLE t ...` with an unqualified `t` is fenced.
+    if (const auto * alter = query.as<ASTAlterQuery>())
+        return alter->table && alter->getDatabase().empty();
+
     return false;
 }
 
@@ -248,6 +259,9 @@ std::string_view describeSideEffectsUnderReadonly(const IAST & query)
     {
         if (query.as<ASTInsertQuery>())
             return "an INSERT into a table not qualified with a database, which may be a temporary table living in the session "
+                   "(qualify the table with a database if a temporary table is not intended)";
+        if (query.as<ASTAlterQuery>())
+            return "an ALTER of a table not qualified with a database, which may be a temporary table living in the session "
                    "(qualify the table with a database if a temporary table is not intended)";
         return "a DROP or TRUNCATE that may target a temporary table living in the session "
                "(qualify the table with a database if a temporary table is not intended)";
