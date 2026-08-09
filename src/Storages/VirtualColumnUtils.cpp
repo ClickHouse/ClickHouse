@@ -568,8 +568,12 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
         if (cur->type == ActionsDAG::ActionType::ARRAY_JOIN)
             return false;
 
-        if (cur->type == ActionsDAG::ActionType::INPUT && allowed_inputs && !allowed_inputs->has(cur->result_name))
-            return false;
+        if (cur->type == ActionsDAG::ActionType::INPUT && allowed_inputs)
+        {
+            const auto * input = allowed_inputs->findByName(cur->result_name);
+            if (!input || !input->type->equals(*cur->result_type))
+                return false;
+        }
 
         for (const auto * child : cur->children)
             nodes.push(child);
