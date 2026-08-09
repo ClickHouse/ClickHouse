@@ -1,3 +1,4 @@
+-- Tags: long
 -- A mutation is interpreted in a background thread, where the current database is not set.
 -- The database has to be substituted into the `merge` table function when the mutation is created,
 -- the same way as it is done for table names.
