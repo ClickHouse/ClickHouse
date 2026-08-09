@@ -51,7 +51,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 #include <TableFunctions/TableFunctionURL.h>
 
