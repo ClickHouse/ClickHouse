@@ -881,8 +881,15 @@ static bool matchesNodeToJSONAllValuesIndex(
             if (!node_dag || !argument_dag)
                 return false;
 
-            return node_dag->result_type->equals(*argument_dag->result_type)
-                || node_dag->result_type->getTypeId() == TypeIndex::String;
+            const auto & result_type = node_dag->result_type;
+            const auto & argument_type = argument_dag->result_type;
+
+            /// Removing `Nullable` can throw on NULL rows that the index would otherwise skip.
+            if (isNullableOrLowCardinalityNullable(argument_type) && !isNullableOrLowCardinalityNullable(result_type))
+                return false;
+
+            return result_type->getTypeId() == TypeIndex::String
+                || removeLowCardinalityAndNullable(result_type)->equals(*removeLowCardinalityAndNullable(argument_type));
         }
     }
 
