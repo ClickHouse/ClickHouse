@@ -17,6 +17,7 @@
 #include <IO/BufferWithOwnMemory.h>
 
 #include <random>
+#include <bit>
 #include <bitset>
 #include <cmath>
 #include <initializer_list>
@@ -3106,6 +3107,51 @@ TEST_F(WallabyTest, DecompressMalformedInputTrailingGarbageAfterStream)
         0xFF                                             // garbage
     };
     verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, source size does not match the encoded stream", 24);
+}
+
+/// Compresses a Float64 sequence with the Wallaby codec, verifies the bit-exact round trip
+/// and returns the compressed size including all headers.
+UInt32 wallabyCompressedSize(const std::vector<Float64> & values)
+{
+    const auto codec = makeCodec("Wallaby", std::make_shared<DataTypeFloat64>());
+    const UInt32 source_size = static_cast<UInt32>(values.size() * sizeof(Float64));
+
+    std::vector<char> compressed(codec->getCompressedReserveSize(source_size));
+    const UInt32 compressed_size
+        = codec->compress(reinterpret_cast<const char *>(values.data()), source_size, compressed.data());
+
+    std::vector<Float64> decompressed(values.size());
+    codec->decompress(compressed.data(), compressed_size, reinterpret_cast<char *>(decompressed.data()));
+    for (size_t i = 0; i < values.size(); ++i)
+        EXPECT_EQ(std::bit_cast<UInt64>(decompressed[i]), std::bit_cast<UInt64>(values[i])) << "at position " << i;
+
+    return compressed_size;
+}
+
+TEST_F(WallabyTest, CompressesSparsePeriodicExceptionsAsDecimal)
+{
+    /// A NaN in every 32nd slot of a 0, 1, 2, ... ramp must not knock out the decimal modes:
+    /// the pattern aliased with the fixed sampling stride of an earlier encoder revision, which
+    /// abandoned the decimal candidate even though 32 exceptions are well within the budget.
+    /// The decimal-delta encoding takes ~700 bytes here while XOR and RAW need several kilobytes.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = i % 32 == 0 ? std::numeric_limits<Float64>::quiet_NaN() : static_cast<Float64>(i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 1000u);
+}
+
+TEST_F(WallabyTest, ChoosesCheaperAlphaOverSampledOutlier)
+{
+    /// A single sampled high-precision value (0.01 needs two decimal places) must not force
+    /// a wide scale onto a vector of integers: alpha = 0 with one exception packs the +1 deltas
+    /// into 2 bits (~300 bytes), while alpha = 2 packs deltas of 100 into 8 bits (~1050 bytes).
+    std::vector<Float64> values(1024);
+    values[0] = 0.01;
+    for (size_t i = 1; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 600u);
 }
 
 }

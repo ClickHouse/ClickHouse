@@ -250,21 +250,27 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     using Traits = WallabyTraits<T>;
     using SignedType = typename Traits::SignedType;
 
-    /// Determine the number of decimal places from a sample. A single high-precision sample
-    /// must not force a huge scale onto the whole vector (it would overflow the quantization
-    /// of large values), so when the largest sampled alpha does not work out, the median
-    /// sampled alpha is tried too and the high-precision values become exceptions.
+    /// Determine the number of decimal places from a sample. The sample positions follow an odd
+    /// multiplicative sequence rather than a fixed stride, so that a periodic pattern of
+    /// non-quantizable values (e.g. a NaN in every 32nd slot) cannot alias with the sampling
+    /// and knock out the decimal modes while the full vector is within the exception budget.
+    /// Sampled failures are tolerated up to a fraction with the same order of magnitude as
+    /// that budget; the exact rejection of a candidate alpha is decided by the full-vector
+    /// exception count in quantize_all below.
     std::array<UInt8, 32> sampled_alphas{};
     UInt32 sampled_alpha_count = 0;
     {
         const UInt32 samples = std::min<UInt32>(count, 32);
-        const UInt32 stride = std::max<UInt32>(1, count / samples);
+        const UInt32 max_failures = std::max<UInt32>(3, samples / 4);
         UInt32 failures = 0;
-        for (UInt32 i = 0; i < count && sampled_alpha_count < sampled_alphas.size(); i += stride)
+        for (UInt32 i = 0; i < samples; ++i)
         {
-            if (auto sample_alpha = findAlpha<T>(values[i]))
+            /// An odd multiplier hits every position exactly once modulo a power of two
+            /// and spreads the samples uniformly for any other count.
+            const UInt32 position = static_cast<UInt32>((static_cast<UInt64>(i) * 2654435761u) % count);
+            if (auto sample_alpha = findAlpha<T>(values[position]))
                 sampled_alphas[sampled_alpha_count++] = *sample_alpha;
-            else if (++failures > 3)
+            else if (++failures > max_failures)
                 return std::nullopt;
         }
         if (sampled_alpha_count == 0)
@@ -303,45 +309,97 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         return true;
     };
 
-    UInt8 alpha = sampled_alphas[sampled_alpha_count - 1];
-    if (!quantize_all(alpha))
+    struct Packing
     {
-        const UInt8 median_alpha = sampled_alphas[sampled_alpha_count / 2];
-        if (median_alpha == alpha)
+        UInt8 bits = 0;
+        bool use_delta = false;
+        SignedType base = 0;
+        UInt32 payload_size = 0;
+    };
+
+    /// Chooses between Frame-of-Reference and zigzag delta packing for the quantized vector
+    /// by the resulting bit width and computes the payload size of the cheaper of the two.
+    const auto measure_packing = [&]() -> std::optional<Packing>
+    {
+        SignedType min_q = quantized[0];
+        SignedType max_q = quantized[0];
+        for (UInt32 i = 1; i < count; ++i)
+        {
+            min_q = std::min(min_q, quantized[i]);
+            max_q = std::max(max_q, quantized[i]);
+        }
+        const T for_range = static_cast<T>(max_q) - static_cast<T>(min_q);
+        const UInt8 bits_for = for_range == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(for_range));
+
+        T max_zigzag = 0;
+        bool delta_valid = true;
+        for (UInt32 i = 1; i < count && delta_valid; ++i)
+        {
+            SignedType delta;
+            if (__builtin_sub_overflow(quantized[i], quantized[i - 1], &delta))
+                delta_valid = false;
+            else
+                max_zigzag = std::max(max_zigzag, static_cast<T>((static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1))));
+        }
+        const UInt8 bits_delta = !delta_valid ? Traits::width_bits
+            : (max_zigzag == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(max_zigzag)));
+
+        const bool use_delta = delta_valid && bits_delta < bits_for;
+        const UInt8 bits = use_delta ? bits_delta : bits_for;
+        if (bits >= Traits::width_bits)
             return std::nullopt;
-        alpha = median_alpha;
-        if (!quantize_all(alpha))
-            return std::nullopt;
-    }
 
-    /// Choose between Frame-of-Reference and zigzag delta packing by the resulting bit width.
-    SignedType min_q = quantized[0];
-    SignedType max_q = quantized[0];
-    for (UInt32 i = 1; i < count; ++i)
+        const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
+        const UInt32 payload_size = 2 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16)
+            + packed_bytes + exception_count * (sizeof(UInt16) + sizeof(T));
+        return Packing{bits, use_delta, use_delta ? quantized[0] : min_q, payload_size};
+    };
+
+    /// A single sampled high-precision value must not force a needlessly wide scale onto the
+    /// whole vector: it would overflow the quantization of large values, and even when it fits,
+    /// it can inflate every packed delta while a smaller alpha with a few exceptions is much
+    /// cheaper. So the largest, the median and the smallest sampled alphas are all evaluated
+    /// against the full vector and the smallest payload wins; values that do not quantize with
+    /// the winning alpha become exceptions.
+    const std::array<UInt8, 3> alpha_candidates{
+        sampled_alphas[sampled_alpha_count - 1],
+        sampled_alphas[sampled_alpha_count / 2],
+        sampled_alphas[0]};
+
+    UInt8 alpha = 0;
+    /// The alpha whose quantization the scratch arrays currently hold; a failed quantize_all
+    /// leaves them clobbered halfway, so it resets this tracker.
+    std::optional<UInt8> scratch_alpha;
+    std::optional<Packing> best;
+    for (size_t candidate_index = 0; candidate_index < alpha_candidates.size(); ++candidate_index)
     {
-        min_q = std::min(min_q, quantized[i]);
-        max_q = std::max(max_q, quantized[i]);
+        const UInt8 candidate = alpha_candidates[candidate_index];
+        bool already_tried = false;
+        for (size_t previous = 0; previous < candidate_index; ++previous)
+            already_tried |= alpha_candidates[previous] == candidate;
+        if (already_tried)
+            continue;
+        if (!quantize_all(candidate))
+        {
+            scratch_alpha.reset();
+            continue;
+        }
+        scratch_alpha = candidate;
+        if (const auto packing = measure_packing(); packing && (!best || packing->payload_size < best->payload_size))
+        {
+            best = *packing;
+            alpha = candidate;
+        }
     }
-    const T for_range = static_cast<T>(max_q) - static_cast<T>(min_q);
-    const UInt8 bits_for = for_range == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(for_range));
-
-    T max_zigzag = 0;
-    bool delta_valid = true;
-    for (UInt32 i = 1; i < count && delta_valid; ++i)
-    {
-        SignedType delta;
-        if (__builtin_sub_overflow(quantized[i], quantized[i - 1], &delta))
-            delta_valid = false;
-        else
-            max_zigzag = std::max(max_zigzag, static_cast<T>((static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1))));
-    }
-    const UInt8 bits_delta = !delta_valid ? Traits::width_bits
-        : (max_zigzag == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(max_zigzag)));
-
-    const bool use_delta = delta_valid && bits_delta < bits_for;
-    const UInt8 bits = use_delta ? bits_delta : bits_for;
-    if (bits >= Traits::width_bits)
+    if (!best)
         return std::nullopt;
+
+    /// The quantization scratch may hold a later evaluated candidate; recompute the winner.
+    if (scratch_alpha != alpha && !quantize_all(alpha))
+        return std::nullopt;
+
+    const UInt8 bits = best->bits;
+    const bool use_delta = best->use_delta;
 
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> lanes; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> packed; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
@@ -363,20 +421,19 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         for (UInt32 i = 0; i < count; ++i)
             lanes[i] = static_cast<T>(quantized[i]);
         for (UInt32 i = count; i < WALLABY_VECTOR_VALUES; ++i)
-            lanes[i] = static_cast<T>(min_q);
-        Compression::FFOR::bitPack(lanes.data(), packed.data(), bits, static_cast<T>(min_q));
+            lanes[i] = static_cast<T>(best->base);
+        Compression::FFOR::bitPack(lanes.data(), packed.data(), bits, static_cast<T>(best->base));
     }
 
     const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
-    const UInt32 payload_size = 2 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16)
-        + packed_bytes + exception_count * (sizeof(UInt16) + sizeof(T));
+    const UInt32 payload_size = best->payload_size;
     if (payload_size > scratch_size)
         return std::nullopt;
 
     char * out = scratch;
     *out++ = static_cast<char>(alpha);
     *out++ = static_cast<char>(bits);
-    unalignedStoreLittleEndian<SignedType>(out, use_delta ? quantized[0] : min_q);
+    unalignedStoreLittleEndian<SignedType>(out, best->base);
     out += sizeof(SignedType);
     unalignedStoreLittleEndian<UInt16>(out, static_cast<UInt16>(exception_count));
     out += sizeof(UInt16);
