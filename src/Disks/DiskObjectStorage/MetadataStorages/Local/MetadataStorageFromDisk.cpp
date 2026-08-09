@@ -346,7 +346,10 @@ void MetadataStorageFromDiskTransaction::commit(const TransactionCommitOptionsVa
         operations.commit();
     }
 
-    operations.finalize();
+    {
+        std::lock_guard guard(metadata_storage.finalize_mutex);
+        operations.finalize();
+    }
 
     if (!objects_to_remove.empty())
     {

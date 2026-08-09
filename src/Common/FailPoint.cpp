@@ -198,6 +198,8 @@ static struct InitFiu
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     ONCE(write_file_operation_fail_on_read) \
+    ONCE(unlink_file_operation_fail_on_remove) \
+    PAUSEABLE(remove_recursive_operation_pause_after_traverse) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     REGULAR(iceberg_slow_manifest_read) \

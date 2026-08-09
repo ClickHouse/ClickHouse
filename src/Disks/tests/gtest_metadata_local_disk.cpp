@@ -6,7 +6,9 @@
 #include <mutex>
 #include <Core/ServerUUID.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Common/FailPoint.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -22,6 +24,11 @@
 #include <base/sleep.h>
 
 namespace fs = std::filesystem;
+
+namespace DB::FailPoints
+{
+    extern const char unlink_file_operation_fail_on_remove[];
+}
 
 class MetadataLocalDiskTest : public testing::Test
 {
@@ -1463,4 +1470,248 @@ TEST_F(MetadataLocalDiskTest, TestNonExistingObjectsInTransaction)
                 transaction->commit(DB::NoCommitOptions{});
             });
     }
+}
+
+static DB::StoredObject blobFor(const std::string & key, const std::string & path)
+{
+    return DB::StoredObject(DB::ObjectStorageKey::createAsAbsolute(key).serialize(), path, 100);
+}
+
+/// Rewrites the metadata file in place (same inode, so every hard link sees it) with ref_count
+/// one lower than the number of links. That is exactly the state a crash between the persisted
+/// decrement and the unlink leaves behind.
+static void strandRefCount(const DB::MetadataStoragePtr & metadata, const std::string & prefix, const std::string & path)
+{
+    DB::DiskObjectStorageMetadata object_metadata(prefix, path);
+    object_metadata.deserializeFromString(metadata->readFileToString(path));
+    ASSERT_GT(object_metadata.ref_count, 0);
+    object_metadata.ref_count -= 1;
+
+    auto tx = metadata->createTransaction();
+    tx->writeStringToFile(path, object_metadata.serializeToString());
+    tx->commit(DB::NoCommitOptions{});
+}
+
+/// A blob is released only when the metadata file being removed is the last hard link to it.
+
+TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenRecursiveRemoveTakesAllHardlinks)
+{
+    auto metadata = getMetadataStorage("/TestBlobReleasedWhenRecursiveRemoveTakesAllHardlinks");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("root");
+        tx->createMetadataFile("root/A", {blobFor("key1", "root/A")});
+        tx->createHardLink("root/A", "root/B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// One removal took every link, so the blob is unreferenced and must be released.
+    verifyBlobsToRemove(metadata, {"key1"});
+}
+
+TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenTwoUnlinksTakeAllHardlinks)
+{
+    auto metadata = getMetadataStorage("/TestBlobReleasedWhenTwoUnlinksTakeAllHardlinks");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("A", {blobFor("key1", "A")});
+        tx->createHardLink("A", "B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->unlinkFile("B", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    verifyBlobsToRemove(metadata, {"key1"});
+}
+
+TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenRefCountIsStrandedByCrash)
+{
+    const std::string prefix = "/TestBlobKeptWhenRefCountIsStrandedByCrash";
+    auto metadata = getMetadataStorage(prefix);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("A", {blobFor("key1", "A")});
+        tx->createHardLink("A", "B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    strandRefCount(metadata, prefix, "A");
+    EXPECT_EQ(metadata->getHardlinkCount("A"), 0);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// "B" still points at the blob, so it must survive despite ref_count reading 0.
+    EXPECT_TRUE(metadata->existsFile("B"));
+    verifyBlobsToRemove(metadata, {});
+}
+
+TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenRefCountIsStrandedByCrashRecursive)
+{
+    const std::string prefix = "/TestBlobKeptWhenRefCountIsStrandedByCrashRecursive";
+    auto metadata = getMetadataStorage(prefix);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("root");
+        tx->createMetadataFile("root/A", {blobFor("key1", "root/A")});
+        tx->createHardLink("root/A", "outside");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    strandRefCount(metadata, prefix, "root/A");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root", /*should_remove_objects=*/nullptr);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_TRUE(metadata->existsFile("outside"));
+    verifyBlobsToRemove(metadata, {});
+}
+
+TEST_F(MetadataLocalDiskTest, TestBlobReleasedOnlyByLastOfTwoTransactions)
+{
+    auto metadata = getMetadataStorage("/TestBlobReleasedOnlyByLastOfTwoTransactions");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("A", {blobFor("key1", "A")});
+        tx->createHardLink("A", "B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    verifyBlobsToRemove(metadata, {});
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("B", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    verifyBlobsToRemove(metadata, {"key1"});
+}
+
+TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenOneUnlinkOfTheTransactionFails)
+{
+    auto metadata = getMetadataStorage("/TestBlobKeptWhenOneUnlinkOfTheTransactionFails");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("A", {blobFor("key1", "A")});
+        tx->createHardLink("A", "B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// Fires once, so only the first of the two unlinks fails to remove its file.
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::unlink_file_operation_fail_on_remove);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->unlinkFile("B", /*if_exists=*/false, /*should_remove_objects=*/true);
+        /// finalize() is best-effort, so the commit itself still succeeds.
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::unlink_file_operation_fail_on_remove);
+
+    /// One link survives the failed unlink, so the blob is still referenced.
+    verifyBlobsToRemove(metadata, {});
+}
+
+TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenTheOnlyUnlinkOfTheTransactionFails)
+{
+    auto metadata = getMetadataStorage("/TestBlobKeptWhenTheOnlyUnlinkOfTheTransactionFails");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("A", {blobFor("key1", "A")});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::unlink_file_operation_fail_on_remove);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::unlink_file_operation_fail_on_remove);
+
+    /// "A" was the last link, but the unlink did not happen, so the metadata file still
+    /// references the blob and the release decision it was premised on does not hold.
+    verifyBlobsToRemove(metadata, {});
+}
+
+TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenOneHardlinkIsRetentionListed)
+{
+    auto metadata = getMetadataStorage("/TestBlobKeptWhenOneHardlinkIsRetentionListed");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("root");
+        tx->createMetadataFile("root/A", {blobFor("key1", "root/A")});
+        tx->createHardLink("root/A", "root/B");
+        tx->createMetadataFile("root/C", {blobFor("key2", "root/C")});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("root", [](const std::string & relative_path) { return relative_path != "B"; });
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The subtree removes both links to key1, but "B" is retention-listed, so key1 must be kept.
+    verifyBlobsToRemove(metadata, {"key2"});
+}
+
+TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenHardlinkIsCreatedAfterUnlinkInSameTransaction)
+{
+    auto metadata = getMetadataStorage("/TestBlobKeptWhenHardlinkIsCreatedAfterUnlinkInSameTransaction");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("A", {blobFor("key1", "A")});
+        tx->createHardLink("A", "B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->createHardLink("B", "C");
+        tx->unlinkFile("B", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// "C" outlives the transaction, so the blob must be kept.
+    EXPECT_TRUE(metadata->existsFile("C"));
+    verifyBlobsToRemove(metadata, {});
 }

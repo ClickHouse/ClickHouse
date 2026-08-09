@@ -26,6 +26,10 @@ private:
     friend class MetadataStorageFromDiskTransaction;
 
     mutable SharedMutex metadata_mutex;
+    /// Serializes finalization, where an operation counts an inode's remaining hard links and
+    /// then unlinks one. Taken after metadata_mutex is released, never while holding
+    /// removed_objects_mutex.
+    mutable std::mutex finalize_mutex;
     const DiskPtr disk;
     const std::string compatible_key_prefix;
     const ObjectStorageKeyGeneratorPtr key_generator;

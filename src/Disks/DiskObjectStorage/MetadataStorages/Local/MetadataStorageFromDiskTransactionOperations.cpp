@@ -19,6 +19,8 @@
 #include <optional>
 #include <ranges>
 #include <filesystem>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace fs = std::filesystem;
@@ -37,10 +39,27 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char write_file_operation_fail_on_read[];
+    extern const char unlink_file_operation_fail_on_remove[];
+    extern const char remove_recursive_operation_pause_after_traverse[];
 }
 
 namespace
 {
+
+/// Number of hard links to `path`, or nullopt if it cannot be determined. Callers must treat
+/// nullopt as "may still be referenced": leaking a blob is recoverable, deleting a live one is not.
+std::optional<uint64_t> tryGetHardLinkCount(const IDisk & disk, const std::string & path)
+{
+    try
+    {
+        return disk.stat(path).st_nlink;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Cannot count hard links of {}, keeping its blobs", path));
+        return std::nullopt;
+    }
+}
 
 std::optional<DiskObjectStorageMetadata> tryReadMetadataFile(const std::string & compatible_key_prefix, const std::string & path, const IDisk & disk)
 {
@@ -155,15 +174,14 @@ void UnlinkFileOperation::tryUnlinkMetadataFile()
     if (!object_metadata.has_value())
         return;
 
-    uint32_t ref_count = object_metadata->ref_count;
-    if (ref_count > 0)
+    if (object_metadata->ref_count > 0)
     {
         object_metadata->ref_count -= 1;
         write_operation = std::make_unique<WriteFileOperation>(path, object_metadata->serializeToString(), disk);
         write_operation->execute();
     }
 
-    if (ref_count == 0 && should_remove_objects)
+    if (should_remove_objects)
         removed_objects.append_range(object_metadata->objects);
 }
 
@@ -197,10 +215,23 @@ void UnlinkFileOperation::undo()
 
 void UnlinkFileOperation::finalize()
 {
-    objects_to_remove.append_range(std::move(removed_objects));
+    if (!tmp_file_path.has_value())
+        return;
 
-    if (tmp_file_path.has_value())
-        disk.removeFile(tmp_file_path.value());
+    /// execute() only renamed the file aside, so the count still includes this link.
+    const auto links = tryGetHardLinkCount(disk, tmp_file_path.value());
+    const bool is_last_link = links.has_value() && *links == 1;
+
+    fiu_do_on(FailPoints::unlink_file_operation_fail_on_remove,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in UnlinkFileOperation remove");
+    });
+
+    disk.removeFile(tmp_file_path.value());
+
+    /// Only after the link is really gone: an unlink that throws must not leave blobs enqueued.
+    if (is_last_link)
+        objects_to_remove.append_range(std::move(removed_objects));
 }
 
 CreateDirectoryOperation::CreateDirectoryOperation(std::string path_, IDisk & disk_)
@@ -280,17 +311,21 @@ void RemoveRecursiveOperation::traverseFile(const std::string & leaf)
     if (!object_metadata.has_value())
         return;
 
-    uint32_t ref_count = object_metadata->ref_count;
-    if (ref_count > 0)
+    const int64_t inode = disk.stat(leaf).st_ino;
+
+    if (object_metadata->ref_count > 0)
     {
         object_metadata->ref_count -= 1;
         write_operations.push_back(std::make_unique<WriteFileOperation>(leaf, object_metadata->serializeToString(), disk));
         write_operations.back()->execute();
     }
 
-    if (ref_count == 0)
-        if (!should_remove_objects || should_remove_objects(fs::relative(leaf, path)))
-            removed_objects.append_range(object_metadata->objects);
+    removal_candidates.push_back(RemovalCandidate{
+        .relative_path = fs::relative(leaf, path),
+        .inode = inode,
+        .should_remove_its_objects = !should_remove_objects || should_remove_objects(fs::relative(leaf, path)),
+        .objects = std::move(object_metadata->objects),
+    });
 }
 
 void RemoveRecursiveOperation::traverseDirectory(const std::string & mid_path)
@@ -326,6 +361,9 @@ void RemoveRecursiveOperation::execute()
     {
         traverseDirectory(path);
 
+        /// Decrements are persisted here but nothing is unlinked yet.
+        FailPointInjection::pauseFailPoint(FailPoints::remove_recursive_operation_pause_after_traverse);
+
         auto path_to = getRandomASCIIString(32);
         disk.moveDirectory(path, path_to);
         temp_directory_path = std::move(path_to);
@@ -345,12 +383,38 @@ void RemoveRecursiveOperation::undo()
 
 void RemoveRecursiveOperation::finalize()
 {
-    objects_to_remove.append_range(std::move(removed_objects));
+    /// One bulk removal can drop several links to the same inode, so decide per inode: release
+    /// only when every link the filesystem still reports is in this subtree.
+    std::unordered_map<int64_t, size_t> links_inside_subtree;
+    for (const auto & candidate : removal_candidates)
+        ++links_inside_subtree[candidate.inode];
+
+    /// One disallowed or unaccounted link vetoes the whole inode.
+    std::unordered_map<int64_t, bool> release_inode;
+    for (const auto & candidate : removal_candidates)
+    {
+        const std::string candidate_path = temp_file_path.has_value()
+            ? temp_file_path.value()
+            : (fs::path(temp_directory_path.value()) / candidate.relative_path).string();
+
+        const auto links = tryGetHardLinkCount(disk, candidate_path);
+        const bool ok = candidate.should_remove_its_objects && links.has_value() && *links == links_inside_subtree[candidate.inode];
+
+        auto [it, inserted] = release_inode.try_emplace(candidate.inode, ok);
+        if (!inserted)
+            it->second = it->second && ok;
+    }
 
     if (temp_file_path.has_value())
         disk.removeFile(temp_file_path.value());
     else if (temp_directory_path.has_value())
         disk.removeRecursive(temp_directory_path.value());
+
+    /// Only after the links are gone, and once per inode: every link carries the same blobs.
+    std::unordered_set<int64_t> already_released;
+    for (auto & candidate : removal_candidates)
+        if (release_inode[candidate.inode] && already_released.insert(candidate.inode).second)
+            objects_to_remove.append_range(std::move(candidate.objects));
 }
 
 CreateHardlinkOperation::CreateHardlinkOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_)

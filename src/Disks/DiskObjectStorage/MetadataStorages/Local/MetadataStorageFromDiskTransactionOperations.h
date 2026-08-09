@@ -88,6 +88,7 @@ private:
 
     std::optional<std::string> tmp_file_path;
     std::unique_ptr<WriteFileOperation> write_operation;
+    /// Candidates only. Released in finalize() iff this unlink drops the last hard link.
     StoredObjects removed_objects;
 };
 
@@ -149,11 +150,21 @@ private:
     IDisk & disk;
     StoredObjects & objects_to_remove;
 
+    /// One metadata file being removed. Entries share an inode when the subtree holds
+    /// hard links to the same file.
+    struct RemovalCandidate
+    {
+        std::string relative_path;
+        int64_t inode;
+        bool should_remove_its_objects;
+        StoredObjects objects;
+    };
+
     std::optional<std::string> temp_file_path;
     std::optional<std::string> temp_directory_path;
     std::unordered_set<int64_t> visited_inodes;
     std::vector<std::unique_ptr<WriteFileOperation>> write_operations;
-    StoredObjects removed_objects;
+    std::vector<RemovalCandidate> removal_candidates;
 };
 
 struct CreateHardlinkOperation final : public IMetadataOperation

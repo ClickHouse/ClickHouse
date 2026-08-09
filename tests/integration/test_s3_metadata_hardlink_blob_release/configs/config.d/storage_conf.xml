@@ -1,0 +1,28 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <merge_tree>
+        <!-- Wide parts, so every column is its own blob and a partial mutation hardlinks the
+             columns it does not rewrite. -->
+        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+        <min_bytes_for_full_part_storage>0</min_bytes_for_full_part_storage>
+    </merge_tree>
+</clickhouse>
