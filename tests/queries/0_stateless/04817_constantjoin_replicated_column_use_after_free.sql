@@ -3,6 +3,11 @@
 -- `enable_lazy_columns_replication` is pinned in every query because the test runner randomizes it.
 -- Join swapping and join-order optimization are pinned too: reversing `LEFT SEMI` into `RIGHT SEMI`
 -- would move the query off the selected-right-row path that materializes the replicated column.
+-- The analyzer is pinned because the deprecated interpreter cannot reach the faulting branch: it
+-- rewrites a true constant `ON` to `CROSS` (which stores all right rows) and rejects a
+-- runtime-constant `ON` outright, so no query shape covers the defect there.
+
+SET enable_analyzer = 1;
 
 SELECT 'witness: reporter repro, SEMI LEFT, Nullable(UInt8) right column';
 SELECT l, r
