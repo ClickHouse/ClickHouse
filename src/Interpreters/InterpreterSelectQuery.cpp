@@ -3442,8 +3442,13 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
         ///     the number of distinct rows collected from the head)
         /// (5) LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
         ///     all rows are read, so it cannot bound the number of distinct rows either)
+        /// (6) LIMIT is not WITH TIES (the tie suffix of the last row is unbounded)
+        /// (7) `exact_rows_before_limit` is not set (it counts rows passing the LIMIT/OFFSET
+        ///     transforms, so an early stop upstream makes it short)
         /// then you can get no more than limit_length + limit_offset of different rows.
-        if ((!query.orderBy() || !before_order) && !query.limitBy())
+        if ((!query.orderBy() || !before_order) && !query.limitBy()
+            && !query.limit_with_ties
+            && !settings[Setting::exact_rows_before_limit])
         {
             const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
             if (lim_info.limit_length != 0

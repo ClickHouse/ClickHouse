@@ -926,12 +926,17 @@ void addDistinctStep(QueryPlan & query_plan,
       *    the number of distinct rows collected from the head).
       * 5. LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
       *    all rows are read, so it cannot bound the number of distinct rows either).
+      * 6. LIMIT is not WITH TIES (the tie suffix of the last row is unbounded).
+      * 7. `exact_rows_before_limit` is not set (it counts rows passing the LIMIT/OFFSET transforms,
+      *    so an early stop upstream makes it short).
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
     if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
         && limit_length != 0
         && !query_analysis_result.is_limit_length_negative
-        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
+        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0
+        && !query_node.isLimitWithTies()
+        && !settings[Setting::exact_rows_before_limit])
     {
         if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
             limit_hint_for_distinct = limit_length + limit_offset;
