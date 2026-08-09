@@ -13,6 +13,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # whole task: a bound narrowed to the ranges started by each read advances on every read,
 # and each advance drops the in-flight read request of the buffer and issues a new small one,
 # which multiplies S3 read requests.
+#
+# The ranges of a read task get fragmented the same way by the ranges refiner in read pools
+# (`use_indexes_refiner_in_read_pools`), which applies the result of the skip index read to
+# the ranges cut for a task, so the same bound is asserted with the refiner enabled.
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS t_prewhere_s3_requests;
@@ -33,8 +37,6 @@ SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0, index_granularity = 16,
 INSERT INTO t_prewhere_s3_requests SELECT number, intDiv(number, 16) % 10, number FROM numbers(60000);
 "
 
-query_id="04812_prewhere_s3_requests_${CLICKHOUSE_DATABASE}_$RANDOM"
-
 # The skip index is applied at analysis time and must fragment the ranges before the read.
 ${CLICKHOUSE_CLIENT} --query "
 EXPLAIN indexes = 1
@@ -42,26 +44,38 @@ SELECT sum(b) FROM t_prewhere_s3_requests PREWHERE v = 3
 SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, enable_parallel_replicas = 0
 " | grep -A4 'Name: ix_v' | grep 'Granules:' | sed 's/^ *//'
 
-${CLICKHOUSE_CLIENT} --query_id "$query_id" -m --query "
-SELECT sum(b) FROM t_prewhere_s3_requests
-PREWHERE v = 3
-SETTINGS
-    use_skip_indexes = 1,
-    use_skip_indexes_on_data_read = 0,
-    merge_tree_min_rows_for_seek = 0,
-    merge_tree_min_bytes_for_seek = 0,
-    max_rows_to_read = 0,
-    enable_parallel_replicas = 0,
-    max_threads = 1,
-    max_block_size = 64,
-    merge_tree_min_rows_for_concurrent_read = 1000000000,
-    merge_tree_min_bytes_for_concurrent_read = 1000000000,
-    allow_prefetched_read_pool_for_remote_filesystem = 0,
-    use_page_cache_for_disks_without_file_cache = 0,
-    enable_filesystem_cache = 0,
-    use_query_condition_cache = 0,
-    remote_read_min_bytes_for_seek = 4194304;
-"
+function run_query()
+{
+    local query_id=$1
+    local extra_settings=$2
+
+    ${CLICKHOUSE_CLIENT} --query_id "$query_id" -m --query "
+    SELECT sum(b) FROM t_prewhere_s3_requests
+    PREWHERE v = 3
+    SETTINGS
+        use_skip_indexes = 1,
+        merge_tree_min_rows_for_seek = 0,
+        merge_tree_min_bytes_for_seek = 0,
+        max_rows_to_read = 0,
+        enable_parallel_replicas = 0,
+        max_threads = 1,
+        max_block_size = 64,
+        merge_tree_min_rows_for_concurrent_read = 1000000000,
+        merge_tree_min_bytes_for_concurrent_read = 1000000000,
+        allow_prefetched_read_pool_for_remote_filesystem = 0,
+        use_page_cache_for_disks_without_file_cache = 0,
+        enable_filesystem_cache = 0,
+        use_query_condition_cache = 0,
+        remote_read_min_bytes_for_seek = 4194304,
+        $extra_settings;
+    "
+}
+
+query_id_analysis="04812_prewhere_s3_requests_analysis_${CLICKHOUSE_DATABASE}_$RANDOM"
+query_id_refiner="04812_prewhere_s3_requests_refiner_${CLICKHOUSE_DATABASE}_$RANDOM"
+
+run_query "$query_id_analysis" "use_skip_indexes_on_data_read = 0"
+run_query "$query_id_refiner" "use_skip_indexes_on_data_read = 1, use_indexes_refiner_in_read_pools = 1"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
@@ -74,7 +88,19 @@ SELECT
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND query_id = '$query_id';
+    AND query_id = '$query_id_analysis';
+"
+
+# The same, with the ranges fragmented by the refiner in the read pool instead of the index
+# analysis. The number of dropped marks shows that the refiner did cut the ranges of the task.
+${CLICKHOUSE_CLIENT} -m --query "
+SELECT
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 3000 AS refiner_dropped_marks,
+    ProfileEvents['S3ReadRequestsCount'] < 20 AS few_read_requests
+FROM system.query_log
+WHERE event_date >= yesterday() AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND query_id = '$query_id_refiner';
 "
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_prewhere_s3_requests"
