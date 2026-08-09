@@ -43,6 +43,7 @@ static struct InitFiu
     REGULAR(materialized_postgresql_fail_load_from_snapshot) \
     REGULAR(materialized_postgresql_fail_nested_table_drop) \
     REGULAR(materialized_postgresql_fail_database_startup) \
+    REGULAR(materialized_postgresql_fail_add_table_to_replication) \
     PAUSEABLE(materialized_postgresql_pause_after_stop_replication) \
     PAUSEABLE(materialized_postgresql_pause_before_register_replica) \
     PAUSEABLE(materialized_postgresql_pause_before_marking_snapshot_completed) \

@@ -90,6 +90,7 @@ namespace FailPoints
 {
     extern const char materialized_postgresql_fail_teardown_after_shutdown[];
     extern const char materialized_postgresql_fail_load_from_snapshot[];
+    extern const char materialized_postgresql_fail_add_table_to_replication[];
     extern const char materialized_postgresql_pause_before_register_replica[];
     extern const char materialized_postgresql_pause_before_marking_snapshot_completed[];
     extern const char materialized_postgresql_pause_before_redo_snapshot_truncate[];
@@ -2522,21 +2523,38 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes()
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::removeCoordinationNodes");
 
     auto zookeeper = getContext()->getZooKeeper();
-    zookeeper->tryRemove(coordination_keeper_path + "/leader");
-    zookeeper->tryRemoveRecursive(coordination_keeper_path + "/replicas");
-    zookeeper->tryRemove(coordination_keeper_path + "/snapshot_completed");
+
+    /// Fail closed: `tryRemove` / `tryRemoveRecursive` return recoverable Keeper failures (connection
+    /// loss, operation timeout, ...) as codes instead of throwing, and silently ignoring them here would
+    /// break the invariant this teardown exists for. If the `snapshot_completed` marker survived this
+    /// step while the PostgreSQL cleanup later leaks the shared slot/publication, a recreate on the same
+    /// keeper path would see a live marker and resume from the slot's `confirmed_flush_lsn` into empty
+    /// tables instead of redoing the snapshot. Throwing aborts the teardown before any of that - and,
+    /// on the drop paths, before the local nested tables are deleted - so the caller retries.
+    auto remove_checked = [&](const String & path, bool recursive = false, bool tolerate_not_empty = false)
+    {
+        auto code = recursive ? zookeeper->tryRemoveRecursive(path) : zookeeper->tryRemove(path);
+        if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE
+            || (tolerate_not_empty && code == Coordination::Error::ZNOTEMPTY))
+            return;
+        throw zkutil::KeeperException::fromPath(code, path);
+    };
+
+    remove_checked(coordination_keeper_path + "/leader");
+    remove_checked(coordination_keeper_path + "/replicas", /* recursive */ true);
+    remove_checked(coordination_keeper_path + "/snapshot_completed");
     /// The naming fingerprint and the table set go AFTER the marker and the replicas: if this teardown dies
     /// partway, the surviving state must keep them, or a replica with different naming settings or a
     /// different table set could adopt the leftover publication/marker unchecked. The safe failure direction
     /// is a leftover /naming or /table_set node, which merely rejects a recreate with different settings
     /// until removed manually.
-    zookeeper->tryRemove(coordination_keeper_path + "/naming");
-    zookeeper->tryRemove(coordination_keeper_path + "/table_set");
+    remove_checked(coordination_keeper_path + "/naming");
+    remove_checked(coordination_keeper_path + "/table_set");
     /// The nested Replicated tables remove their own trees under <keeper_path>/tables when they are
     /// dropped; only clean up the (then empty) parents. For the single-table engine the nested table is
-    /// dropped after this handler shuts down, so these removals may legitimately fail as not-empty,
+    /// dropped after this handler shuts down, so this removal may legitimately fail as not-empty,
     /// leaving empty nodes behind - correctness over tidiness.
-    zookeeper->tryRemove(coordination_keeper_path + "/tables");
+    remove_checked(coordination_keeper_path + "/tables", /* recursive */ false, /* tolerate_not_empty */ true);
     /// The <keeper_path>/teardown ownership token (created atomically with winning the last-replica fence in
     /// unregisterReplicaAndCheckLast) and the keeper path root itself are deliberately NOT removed here: the
     /// token must survive until the shared PostgreSQL slot/publication have actually been dropped, fencing
@@ -3428,6 +3446,13 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
     try
     {
         LOG_TRACE(log, "Adding table `{}` to replication", postgres_table_name);
+
+        fiu_do_on(FailPoints::materialized_postgresql_fail_add_table_to_replication,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Injected failure while adding table `{}` to replication", postgres_table_name);
+        });
+
         postgres::Connection replication_connection(connection_info, /* replication */true);
         String snapshot_name;
         String start_lsn;

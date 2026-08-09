@@ -557,9 +557,17 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         auto nested_table = DatabaseAtomic::tryGetTable(table_name, current_context);
         chassert(nested_table != nullptr);
 
+        /// The attach becomes durable only once `addTableToReplication` succeeds: everything published
+        /// before that - the persisted tables-list setting and the wrapper in `materialized_tables` - is
+        /// rolled back on failure, or the database would keep claiming the table is attached (in
+        /// `SHOW TABLES` and after a restart) although it never joined the publication and the handler
+        /// state, so nothing would ever replicate into it.
+        const auto original_tables_list = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+        bool tables_list_altered = false;
+        bool wrapper_published = false;
         try
         {
-            auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
+            auto tables_to_replicate = original_tables_list;
             if (tables_to_replicate.empty())
             {
                 std::lock_guard tables_lock(tables_mutex);
@@ -573,11 +581,13 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             /// Executed without `tables_mutex`: the ALTER reaches `applySettingsChanges`, which takes
             /// `handler_mutex`, and the two mutexes must always be taken in that order.
             InterpreterAlterQuery(alter_query, current_context).execute();
+            tables_list_altered = true;
 
             auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables[table_name] = storage;
+                wrapper_published = true;
             }
 
             std::lock_guard lock(handler_mutex);
@@ -588,7 +598,30 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         }
         catch (...)
         {
-            /// This is a failed attach table. Remove already created nested table.
+            /// This is a failed attach table: unpublish the wrapper, restore the persisted tables-list
+            /// setting and remove the already created nested table. The rollback of the setting is
+            /// best-effort: if it fails too, the original error still propagates, and the leftover list
+            /// entry is repaired by the next successful ATTACH / DETACH PERMANENTLY of the same table.
+            if (wrapper_published)
+            {
+                std::lock_guard tables_lock(tables_mutex);
+                materialized_tables.erase(table_name);
+            }
+            if (tables_list_altered)
+            {
+                try
+                {
+                    auto rollback_query = createAlterSettingsQuery(
+                        SettingChange("materialized_postgresql_tables_list", original_tables_list));
+                    InterpreterAlterQuery(rollback_query, current_context).execute();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format(
+                        "Failed to restore materialized_postgresql_tables_list after a failed attach of table `{}`",
+                        table_name));
+                }
+            }
             DatabaseAtomic::dropTable(current_context, table_name, true);
             throw;
         }

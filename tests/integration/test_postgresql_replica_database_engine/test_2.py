@@ -593,6 +593,62 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
     )
 
 
+def test_failed_attach_rolls_back_setting_and_table(started_cluster):
+    # A failed ATTACH TABLE must not leave the database claiming the table is attached. The persisted
+    # `materialized_postgresql_tables_list` is altered and the wrapper is published before
+    # `addTableToReplication` makes the attach durable, so on failure both are rolled back together
+    # with the already created nested table - otherwise SHOW TABLES and the persisted tables list
+    # would keep the table although it never joined the publication and nothing would replicate
+    # into it.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach"
+    pg_manager.create_and_fill_postgres_table(attached_table_name)
+
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
+        )
+        error = instance.query_and_get_error(
+            f"ATTACH TABLE test_database.{attached_table_name}"
+        )
+        assert "Injected failure while adding table" in error, error
+
+        # Nothing of the failed attach is left behind: neither the table itself...
+        assert (
+            attached_table_name
+            not in instance.query("SHOW TABLES FROM test_database").split()
+        )
+        # ...nor a mention in the persisted tables list.
+        assert attached_table_name not in instance.query(
+            "SHOW CREATE DATABASE test_database"
+        )
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_add_table_to_replication"
+        )
+
+    # A retry after the failure starts from a clean state and succeeds.
+    instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+    check_tables_are_synchronized(instance, attached_table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{attached_table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, attached_table_name)
+    assert attached_table_name in instance.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
