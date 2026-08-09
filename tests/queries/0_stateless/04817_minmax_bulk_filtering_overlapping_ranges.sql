@@ -12,6 +12,11 @@
 SET secondary_indices_enable_bulk_filtering = 1;
 SET use_minmax_index_bulk_filtering = 1;
 SET use_skip_indexes_on_data_read = 0;
+-- The bulk and scalar variants run the same predicates; the query condition cache key
+-- does not include `use_minmax_index_bulk_filtering`, so with the (randomized) cache
+-- enabled a later query could reuse the earlier variant's skip-index result instead
+-- of exercising its own path.
+SET use_query_condition_cache = 0;
 SET use_statistics_for_part_pruning = 0;
 -- Pin the seek-merge thresholds: the PK-pruned ranges must stay fragmented (not be
 -- merged into one contiguous range) for the overlap case to be exercised.
