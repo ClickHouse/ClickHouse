@@ -1497,6 +1497,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_pretty_use_nbsp_for_padding", trueOrFalseSettingNoOracle},
     {"output_format_protobuf_nullables_with_google_wrappers", trueOrFalseSettingNoOracle},
     {"output_format_sql_insert_include_column_names", trueOrFalseSettingNoOracle},
+    {"output_format_sql_insert_include_table_schema", trueOrFalseSettingNoOracle},
     {"output_format_sql_insert_quote_names", trueOrFalseSettingNoOracle},
     {"output_format_sql_insert_use_replace", trueOrFalseSettingNoOracle},
     {"output_format_write_statistics", trueOrFalseSettingNoOracle},

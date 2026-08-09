@@ -1,16 +1,52 @@
+#include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/Impl/SQLInsertRowOutputFormat.h>
 #include <Processors/Port.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 SQLInsertRowOutputFormat::SQLInsertRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_), column_names(header_->getNames()), format_settings(format_settings_)
 {
+    if (format_settings.sql_insert.include_table_schema && format_settings.sql_insert.use_replace)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Settings `output_format_sql_insert_include_table_schema` and `output_format_sql_insert_use_replace` cannot be enabled at the same time");
+}
+
+void SQLInsertRowOutputFormat::writePrefix()
+{
+    if (!format_settings.sql_insert.include_table_schema)
+        return;
+
+    writeCString("CREATE TABLE ", out);
+    writeString(format_settings.sql_insert.table_name, out);
+    writeCString("\n(\n", out);
+
+    for (size_t i = 0; i != column_names.size(); ++i)
+    {
+        writeCString("    ", out);
+        printColumnName(column_names[i]);
+        writeChar(' ', out);
+        writeString(types[i]->getName(), out);
+
+        if (i + 1 != column_names.size())
+            writeChar(',', out);
+
+        writeChar('\n', out);
+    }
+
+    writeCString(")\nENGINE = MergeTree\nORDER BY tuple();\n", out);
 }
 
 void SQLInsertRowOutputFormat::writeRowStartDelimiter()
@@ -40,18 +76,20 @@ void SQLInsertRowOutputFormat::printColumnNames()
     writeCString(" (", out);
     for (size_t i = 0; i != column_names.size(); ++i)
     {
-        if (format_settings.sql_insert.quote_names)
-            writeChar('`', out);
-
-        writeString(column_names[i], out);
-
-        if (format_settings.sql_insert.quote_names)
-            writeChar('`', out);
+        printColumnName(column_names[i]);
 
         if (i + 1 != column_names.size())
             writeCString(", ", out);
     }
     writeChar(')', out);
+}
+
+void SQLInsertRowOutputFormat::printColumnName(const String & column_name)
+{
+    if (format_settings.sql_insert.quote_names)
+        writeBackQuotedString(column_name, out);
+    else
+        writeString(column_name, out);
 }
 
 void SQLInsertRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
@@ -85,7 +123,8 @@ void SQLInsertRowOutputFormat::writeRowBetweenDelimiter()
 
 void SQLInsertRowOutputFormat::writeSuffix()
 {
-    writeCString(";\n", out);
+    if (haveWrittenData() || !format_settings.sql_insert.include_table_schema)
+        writeCString(";\n", out);
 }
 
 void SQLInsertRowOutputFormat::resetFormatterImpl()
@@ -116,6 +155,7 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
 ## Description {#description}
 
 Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
+Optionally, it can prepend a `CREATE TABLE` statement containing the result column names and types.
 
 ## Example usage {#example-usage}
 
@@ -133,7 +173,30 @@ INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
 INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
 ```
 
-To read data output by this format you can use [MySQLDump](/reference/formats/MySQLDump) input format.
+To include a table definition in the output:
+
+```sql
+SELECT number AS x, toString(number) AS y FROM numbers(2)
+FORMAT SQLInsert
+SETTINGS output_format_sql_insert_include_table_schema = 1, output_format_sql_insert_table_name = 'test'
+```
+
+```sql
+CREATE TABLE test
+(
+    `x` UInt64,
+    `y` String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO test (`x`, `y`) VALUES (0, '0'), (1, '1');
+```
+
+The generated table definition describes the query result. It does not preserve source table metadata such as keys, default expressions, codecs, TTLs, or indexes.
+
+Output without the table definition can be read using the [MySQLDump](/reference/formats/MySQLDump) input format.
+Output with the table definition can be executed as a ClickHouse SQL script instead.
+`output_format_sql_insert_include_table_schema` and `output_format_sql_insert_use_replace` cannot be enabled at the same time.
 
 ## Format settings {#format-settings}
 
@@ -144,6 +207,7 @@ To read data output by this format you can use [MySQLDump](/reference/formats/My
 | [`output_format_sql_insert_include_column_names`](/reference/settings/formats/output-format#output_format_sql_insert_include_column_names) | Include column names in INSERT query.               | `true`    |
 | [`output_format_sql_insert_use_replace`](/reference/settings/formats/output-format#output_format_sql_insert_use_replace)          | Use REPLACE statement instead of INSERT.            | `false`   |
 | [`output_format_sql_insert_quote_names`](/reference/settings/formats/output-format#output_format_sql_insert_quote_names)          | Quote column names with "\`" characters.            | `true`    |
+| [`output_format_sql_insert_include_table_schema`](/reference/settings/formats/output-format#output_format_sql_insert_include_table_schema) | Include a `CREATE TABLE` statement before the data. | `false`   |
 )DOCS_MD"});
 }
 

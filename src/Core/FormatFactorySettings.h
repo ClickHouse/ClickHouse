@@ -1554,6 +1554,9 @@ Use REPLACE statement instead of INSERT
     DECLARE(Bool, output_format_sql_insert_quote_names, true, R"(
 Quote column names with '`' characters
 )", 0) \
+    DECLARE(Bool, output_format_sql_insert_include_table_schema, false, R"(
+If enabled, prepends a `CREATE TABLE` statement using the result column names and types before `SQLInsert` data.
+)", 0) \
     \
     DECLARE(Bool, output_format_values_escape_quote_with_quote, false, R"(
 If true escape ' with '', otherwise quoted with \\'

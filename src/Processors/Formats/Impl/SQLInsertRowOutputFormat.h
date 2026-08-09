@@ -25,10 +25,12 @@ protected:
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
     void writeRowBetweenDelimiter() override;
+    void writePrefix() override;
     void writeSuffix() override;
     void resetFormatterImpl() override;
 
     void printLineStart();
+    void printColumnName(const String & column_name);
     void printColumnNames();
 
     size_t rows_in_line = 0;

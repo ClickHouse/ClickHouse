@@ -610,6 +610,7 @@ struct FormatSettings
         bool include_column_names = true;
         bool use_replace = false;
         bool quote_names = true;
+        bool include_table_schema = false;
     } sql_insert{};
 
     struct

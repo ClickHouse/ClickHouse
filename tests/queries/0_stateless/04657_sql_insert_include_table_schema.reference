@@ -1,0 +1,59 @@
+default output
+INSERT INTO plain_04657 (`x`) VALUES (1);
+incompatible settings rejected
+schema output
+CREATE TABLE sql_insert_schema_04657
+(
+    `id` UInt64,
+    `value` String,
+    `values` Array(Nullable(UInt64))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO sql_insert_schema_04657 (`id`, `value`, `values`) VALUES (0, '0', [0,NULL]);
+INSERT INTO sql_insert_schema_04657 (`id`, `value`, `values`) VALUES (1, '1', [1,NULL]);
+replayed schema
+id	UInt64
+value	String
+values	Array(Nullable(UInt64))
+replayed data
+0	0	[0,NULL]
+1	1	[1,NULL]
+schema with INSERT column names disabled
+CREATE TABLE sql_insert_no_names_04657
+(
+    `value` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO sql_insert_no_names_04657 VALUES (7);
+7
+schema with unquoted column names
+CREATE TABLE sql_insert_unquoted_04657
+(
+    x UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO sql_insert_unquoted_04657 (x) VALUES (8);
+8
+schema with an escaped column name
+CREATE TABLE sql_insert_escaped_name_04657
+(
+    `a\`b` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+INSERT INTO sql_insert_escaped_name_04657 (`a\`b`) VALUES (9);
+a`b	UInt8
+9
+empty result schema
+CREATE TABLE sql_insert_empty_schema_04657
+(
+    `x` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+replayed empty table
+x	UInt8
+0
