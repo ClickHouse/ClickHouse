@@ -28,7 +28,7 @@ FROM numbers(4);
 
 SET session_timezone = 'Europe/Moscow';
 
--- Type equality does not guarantee the same text representation.
+-- Stable typed paths serialize exactly converted constants using the path type.
 SELECT count() FROM t_json_all_values_representation_types WHERE data.explicit_dt = toDateTime('2020-01-01 00:00:00', 'UTC');
 SELECT count() FROM t_json_all_values_representation_types WHERE data.flag = 1;
 
@@ -57,6 +57,13 @@ SELECT count() FROM t_json_all_values_representation_types WHERE data.id IN (SEL
 SELECT count() FROM t_json_all_values_representation_types WHERE data.id IN (SELECT '042');
 SELECT count() FROM t_json_all_values_representation_types WHERE data.id IN (SELECT '42') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_json_all_values_representation_types WHERE data.id IN (SELECT '042') SETTINGS use_skip_indexes = 0;
+
+SELECT count() FROM
+(
+    EXPLAIN indexes = 1
+    SELECT count() FROM t_json_all_values_representation_types WHERE data.flag = 1
+)
+WHERE explain LIKE '%Granules: 1/2%';
 
 SELECT count() FROM
 (

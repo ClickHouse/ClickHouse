@@ -17,7 +17,7 @@ SELECT '{"ip":"1.2.3.4","x":256,"tag":"needle"}' FROM numbers(4);
 INSERT INTO t_json_all_values_coercion
 SELECT '{"ip":"8.8.8.8","x":1,"tag":"other"}' FROM numbers(4);
 
--- The index stores "1.2.3.4", not the UInt32 representation "16909060".
+-- Convert the constant to the typed path before serializing it for index lookup.
 SELECT count() FROM t_json_all_values_coercion WHERE data.ip = toUInt32(16909060);
 
 -- Value-changing casts cannot use the representation stored by `JSONAllValues`.

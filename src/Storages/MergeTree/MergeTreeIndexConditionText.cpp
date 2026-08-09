@@ -20,6 +20,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
@@ -1018,10 +1019,26 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 target_type = key_array->getNestedType();
             }
 
-            if (target_type
-                && removeLowCardinalityAndNullable(target_type)->getName()
-                    != removeLowCardinalityAndNullable(value_type)->getName())
-                return false;
+            if (target_type)
+            {
+                const auto target_type_without_wrappers = removeLowCardinalityAndNullable(target_type);
+                const auto value_type_without_wrappers = removeLowCardinalityAndNullable(value_type);
+                if (target_type_without_wrappers->getName() != value_type_without_wrappers->getName())
+                {
+                    if (function_name != "equals"
+                        || !target_type_without_wrappers->isValueRepresentedByNumber()
+                        || !value_type_without_wrappers->isValueRepresentedByNumber())
+                        return false;
+
+                    /// Exact numeric conversion lets the probe use the typed path's serialization.
+                    value_field = tryConvertFieldToType(
+                        value_field, *target_type_without_wrappers, value_type_without_wrappers.get(), {}, true);
+                    if (value_field.isNull())
+                        return false;
+
+                    value_type = target_type_without_wrappers;
+                }
+            }
 
             if (function_name == "has")
             {
