@@ -6,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <memory>
@@ -17,6 +18,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char metadata_transaction_pause_before_finalize[];
 }
 
 MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, std::string compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_, bool persist_removal_queue_, size_t removal_log_compaction_threshold_)
@@ -345,6 +351,9 @@ void MetadataStorageFromDiskTransaction::commit(const TransactionCommitOptionsVa
         std::unique_lock lock(metadata_storage.metadata_mutex);
         operations.commit();
     }
+
+    /// Outside the lock on purpose: parking inside it would serialize the exclusion under test.
+    FailPointInjection::pauseFailPoint(FailPoints::metadata_transaction_pause_before_finalize);
 
     {
         std::lock_guard guard(metadata_storage.finalize_mutex);

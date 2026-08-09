@@ -200,6 +200,7 @@ static struct InitFiu
     ONCE(write_file_operation_fail_on_read) \
     ONCE(unlink_file_operation_fail_on_remove) \
     PAUSEABLE(unlink_file_operation_pause_after_counting_links) \
+    PAUSEABLE(metadata_transaction_pause_before_finalize) \
     PAUSEABLE(remove_recursive_operation_pause_after_traverse) \
     ONCE(remove_recursive_operation_fail_on_remove) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \

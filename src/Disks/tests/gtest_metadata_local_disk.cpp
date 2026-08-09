@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <exception>
@@ -32,6 +31,7 @@ namespace DB::FailPoints
 {
     extern const char unlink_file_operation_fail_on_remove[];
     extern const char unlink_file_operation_pause_after_counting_links[];
+    extern const char metadata_transaction_pause_before_finalize[];
     extern const char remove_recursive_operation_fail_on_remove[];
 }
 
@@ -1876,10 +1876,14 @@ TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenHardlinkIsCreatedAfterUnlinkInSame
 ///
 /// What is asserted is the exclusion itself, not a released blob, because the exclusion holds by
 /// construction while the release only follows from whichever interleaving a round happens to get.
-/// The failpoint is PAUSEABLE, so it blocks EVERY thread that reaches it: while the first
+/// The failpoints are PAUSEABLE, so they block EVERY thread that reaches them: while the first
 /// transaction is parked between counting and unlinking, a second park is reachable exactly when
 /// the second transaction can enter finalization concurrently. With the mutex it cannot, so the
 /// park count stays at one for as long as the first thread is held there.
+///
+/// The second transaction is released from a park immediately in front of the mutex, so what
+/// remains between the release and the assertion is a single mutex acquisition rather than a
+/// thread start and a whole execute() pass.
 TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLastHardlink)
 {
     auto metadata = getMetadataStorage("/TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLastHardlink");
@@ -1916,24 +1920,28 @@ TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLa
         DB::FailPointInjection::waitForPause(DB::FailPoints::unlink_file_operation_pause_after_counting_links);
         EXPECT_EQ(DB::FailPointInjection::getPauseCount(DB::FailPoints::unlink_file_operation_pause_after_counting_links), 1UL);
 
-        std::atomic<bool> second_is_committing = false;
+        /// Enabled only now: the first thread is already past this point, so the park below is the
+        /// second thread's.
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::metadata_transaction_pause_before_finalize);
+
         std::thread second([&]
         {
             auto tx = metadata->createTransaction();
             tx->unlinkFile(second_name, /*if_exists=*/false, /*should_remove_objects=*/true);
-            second_is_committing = true;
             tx->commit(DB::NoCommitOptions{});
         });
 
-        /// Only a precondition for the window below: it says the second transaction has finished
-        /// its own execute() and entered commit(), so the window is not spent on thread startup.
-        while (!second_is_committing)
-            std::this_thread::yield();
+        /// Waits for the state "the second transaction is at the finalization gate" rather than for
+        /// a flag that only says it entered commit(), so arrival is proven and not assumed.
+        DB::FailPointInjection::waitForPause(DB::FailPoints::metadata_transaction_pause_before_finalize);
+        EXPECT_EQ(DB::FailPointInjection::getPauseCount(DB::FailPoints::metadata_transaction_pause_before_finalize), 1UL);
+        DB::FailPointInjection::disableFailPoint(DB::FailPoints::metadata_transaction_pause_before_finalize);
 
         /// The assertion. A second park means both transactions were inside finalization at once.
-        /// Polled rather than waited on because the expected outcome is that it never happens.
+        /// Polled rather than waited on because the expected outcome is that it never happens; the
+        /// window only has to cover one mutex acquisition by an already running thread.
         size_t observed_parks = 1;
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
         while (std::chrono::steady_clock::now() < deadline)
         {
             observed_parks
