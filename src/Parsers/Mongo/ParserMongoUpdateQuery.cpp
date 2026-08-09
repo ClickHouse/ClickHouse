@@ -14,7 +14,6 @@
 #include <Parsers/IAST_fwd.h>
 
 #include <Parsers/Mongo/MongoConstants.h>
-#include <Parsers/Mongo/ParserMongoAggregateExpression.h>
 #include <Parsers/Mongo/ParserMongoFilter.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/Utils.h>
@@ -54,6 +53,36 @@ ASTPtr makeDefaultValue(const std::string & column)
     return makeASTFunction("defaultValueOfTypeName", makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(column)));
 }
 
+/** The value an update operator writes. An update statement is data, not an aggregation pipeline:
+  * the value of `{"$set": {"name": "$other"}}` is the string `$other` rather than a reference to
+  * the column `other`, and `{"$inc": {"n": 1}}` adds the number one. So the value is a constant -
+  * every scalar and the Extended JSON wrappers a driver sends for the types JSON cannot represent -
+  * or an array of them; a document is a subdocument, which only `$set` can write (see
+  * `flattenAssignedDocument`).
+  */
+ASTPtr parseUpdateValue(const rapidjson::Value & value, std::string_view operator_name)
+{
+    if (value.IsArray())
+    {
+        auto array = makeASTFunction("array");
+        for (const auto & element : value.GetArray())
+            array->arguments->children.push_back(parseUpdateValue(element, operator_name));
+        return array;
+    }
+    if (auto constant = tryParseMongoConstant(value))
+        return constant;
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "The value of '{}' must be a scalar, an array, or an Extended JSON wrapper of them",
+        operator_name);
+}
+
+/** A subdocument assigned by `$set` becomes one assignment per leaf, with the dotted path as the
+  * column name - the same mapping of a nested document onto columns the insert paths make, so
+  * `{"$set": {"profile": {"name": "x"}}}` writes the column `profile.name`.
+  */
+void flattenAssignedDocument(const std::string & prefix, const rapidjson::Value & document, std::vector<ASTPtr> & assignments);
+
 /// The values `$push` and `$addToSet` append, which `$each` turns into several of them.
 std::vector<ASTPtr> parseAppendedValues(const rapidjson::Value & value, std::string_view operator_name)
 {
@@ -66,11 +95,11 @@ std::vector<ASTPtr> parseAppendedValues(const rapidjson::Value & value, std::str
         if (!each.IsArray())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '$each' of '{}' must be an array", operator_name);
         for (const auto & element : each.GetArray())
-            values.push_back(parseMongoAggregateExpression(element));
+            values.push_back(parseUpdateValue(element, operator_name));
         return values;
     }
 
-    values.push_back(parseMongoAggregateExpression(value));
+    values.push_back(parseUpdateValue(value, operator_name));
     return values;
 }
 
@@ -82,20 +111,30 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
     for (auto it = argument.MemberBegin(); it != argument.MemberEnd(); ++it)
     {
         std::string column(stringView(it->name));
+        /// An empty name is no column, and an `ASTIdentifier` cannot even hold it.
+        if (column.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of the update operator '{}' must not be empty", name);
         auto field = [&] { return make_intrusive<ASTIdentifier>(column); };
 
         if (name == "$set")
-            assignments.push_back(makeAssignment(column, parseMongoAggregateExpression(it->value)));
+        {
+            /// A document that is not an Extended JSON wrapper holds fields of its own, and every
+            /// one of them names a column.
+            if (it->value.IsObject() && !tryParseMongoConstant(it->value))
+                flattenAssignedDocument(column, it->value, assignments);
+            else
+                assignments.push_back(makeAssignment(column, parseUpdateValue(it->value, name)));
+        }
         else if (name == "$unset")
             assignments.push_back(makeAssignment(column, makeDefaultValue(column)));
         else if (name == "$inc")
-            assignments.push_back(makeAssignment(column, makeASTFunction("plus", field(), parseMongoAggregateExpression(it->value))));
+            assignments.push_back(makeAssignment(column, makeASTFunction("plus", field(), parseUpdateValue(it->value, name))));
         else if (name == "$mul")
-            assignments.push_back(makeAssignment(column, makeASTFunction("multiply", field(), parseMongoAggregateExpression(it->value))));
+            assignments.push_back(makeAssignment(column, makeASTFunction("multiply", field(), parseUpdateValue(it->value, name))));
         else if (name == "$min")
-            assignments.push_back(makeAssignment(column, makeASTFunction("least", field(), parseMongoAggregateExpression(it->value))));
+            assignments.push_back(makeAssignment(column, makeASTFunction("least", field(), parseUpdateValue(it->value, name))));
         else if (name == "$max")
-            assignments.push_back(makeAssignment(column, makeASTFunction("greatest", field(), parseMongoAggregateExpression(it->value))));
+            assignments.push_back(makeAssignment(column, makeASTFunction("greatest", field(), parseUpdateValue(it->value, name))));
         else if (name == "$currentDate")
         {
             /// The legal forms are `true` and `{"$type": "date"}`. `{"$type": "timestamp"}` asks
@@ -190,6 +229,28 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
         }
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The update operator '{}' is not supported", name);
+    }
+}
+
+void flattenAssignedDocument(const std::string & prefix, const rapidjson::Value & document, std::vector<ASTPtr> & assignments)
+{
+    if (document.MemberCount() == 0)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot assign the empty document to the field '{}': a document is stored as one column per field, so an empty one names "
+            "no column",
+            prefix);
+
+    for (auto it = document.MemberBegin(); it != document.MemberEnd(); ++it)
+    {
+        std::string name(stringView(it->name));
+        if (name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "A field name of an assigned document must not be empty");
+        std::string path = prefix + "." + name;
+        if (it->value.IsObject() && !tryParseMongoConstant(it->value))
+            flattenAssignedDocument(path, it->value, assignments);
+        else
+            assignments.push_back(makeAssignment(path, parseUpdateValue(it->value, "$set")));
     }
 }
 
