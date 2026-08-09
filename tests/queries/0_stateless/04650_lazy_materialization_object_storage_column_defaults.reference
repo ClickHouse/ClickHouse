@@ -21,6 +21,13 @@ Lazily read columns: s
 993	val_1
 986	val_2
 Lazily read columns: b, s
+-- a defaulted column needed only after the LIMIT is deferred with the inputs of its expression
+Lazily read columns: a, b, s
+-- a defaulted column whose expression input stays on the main branch is not deferred
+938	val_9
+945	val_8
+952	val_7
+Lazily read columns: s
 -- query_plan_optimize_lazy_materialization_for_object_storage = 0
 -- sorting by a defaulted column whose input is also selected
 937	val_9
@@ -41,3 +48,8 @@ Lazily read columns: b, s
 1000	val_0
 993	val_1
 986	val_2
+-- a defaulted column needed only after the LIMIT is deferred with the inputs of its expression
+-- a defaulted column whose expression input stays on the main branch is not deferred
+938	val_9
+945	val_8
+952	val_7

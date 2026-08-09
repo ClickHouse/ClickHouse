@@ -53,6 +53,11 @@ SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT c, s FROM lazy_mat_default
 SELECT '-- a defaulted column that the query does not read does not pin the inputs of its expression';
 SELECT b, s FROM lazy_mat_defaults ORDER BY k LIMIT 3;
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT b, s FROM lazy_mat_defaults ORDER BY k LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
+SELECT '-- a defaulted column needed only after the LIMIT is deferred with the inputs of its expression';
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT a, b, s FROM lazy_mat_defaults ORDER BY k LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
+SELECT '-- a defaulted column whose expression input stays on the main branch is not deferred';
+SELECT a, s FROM lazy_mat_defaults ORDER BY b LIMIT 3;
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT a, s FROM lazy_mat_defaults ORDER BY b LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
 "
 
 # `enable_analyzer` is pinned because lazy materialization requires the analyzer

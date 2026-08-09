@@ -267,6 +267,22 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
         for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
             columns_to_keep.insert(column.name);
 
+    /// Hive partition columns are parsed from the file path, reading them is cheap; keep them.
+    for (const auto & column : info.hive_partition_columns_to_read_from_file_path)
+        columns_to_keep.insert(column.name);
+
+    /// Virtual columns are cheap as well.
+    for (const auto & column : info.requested_virtual_columns)
+        columns_to_keep.insert(column.name);
+
+    NameSet requested_from_format;
+    for (const auto & column : info.requested_columns)
+        requested_from_format.insert(column.name);
+
+    NameSet source_header_names;
+    for (const auto & column : info.source_header)
+        source_header_names.insert(column.name);
+
     /// `AddingDefaultsTransform` runs independently inside every branch (see
     /// `StorageObjectStorageSource::createReader`): for a column that a file does not contain it
     /// evaluates the column's `DEFAULT` expression over the columns of that branch alone. An input
@@ -274,9 +290,17 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
     /// type's default value (see `defaultRequiredExpressions`), so splitting a defaulted column
     /// away from the inputs of its expression would silently compute it from zeros instead of the
     /// row's real values, and with the defaulted column in the sort key the `LIMIT` would then pick
-    /// the wrong rows. Keep every column that participates in a default expression - the defaulted
-    /// column itself and the transitive inputs of its expression - on the main branch, so that the
-    /// expression is always evaluated over the real values.
+    /// the wrong rows. A defaulted column and the transitive inputs of its expression must
+    /// therefore always land on the same branch.
+    ///
+    /// That does not have to be the main branch: a defaulted column that nothing needs before the
+    /// `LIMIT` moves to the lazy branch whenever every input of its expression is deferred with it,
+    /// and its expression is then evaluated there over just the surviving rows. Only a defaulted
+    /// column that stays on the main branch - one something needs before the `LIMIT`, or one whose
+    /// expression consumes an input the lazy branch would not see (an input pinned to the main
+    /// branch, or one the format does not read at all) - pins the inputs of its expression to the
+    /// main branch. The last rule feeds itself (pinning an input can strand another default's
+    /// expression), so iterate to a fixpoint.
     ///
     /// Only the defaults that this query can actually evaluate matter: `AddingDefaultsTransform`
     /// applies a default expression solely for a column present in the block of its own branch
@@ -291,8 +315,16 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
         if (column_defaults.contains(name) && names_in_default_expressions.insert(name).second)
             names_to_visit.push_back(name);
     };
+    auto default_expression_inputs = [&](const String & name)
+    {
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = column_defaults.at(name).expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+        return columns_context.requiredColumns();
+    };
     for (const auto & column : info.source_header)
-        seed_defaulted_column(column.name);
+        if (columns_to_keep.contains(column.name))
+            seed_defaulted_column(column.name);
     /// A defaulted column consumed only by the PREWHERE / row-level filter is stripped from
     /// `info.source_header` by `updateFormatPrewhereInfo`, but the main branch still reads it and
     /// `AddingDefaultsTransform` evaluates its expression there before the filter runs - so it
@@ -303,35 +335,45 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
     if (info.prewhere_info)
         for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
             seed_defaulted_column(column.name);
-    while (!names_to_visit.empty())
+    bool pinned_more = true;
+    while (pinned_more)
     {
-        const String name = names_to_visit.back();
-        names_to_visit.pop_back();
+        while (!names_to_visit.empty())
+        {
+            const String name = names_to_visit.back();
+            names_to_visit.pop_back();
 
-        auto it = column_defaults.find(name);
-        if (it == column_defaults.end())
-            continue;
+            if (!column_defaults.contains(name))
+                continue;
 
-        RequiredSourceColumnsVisitor::Data columns_context;
-        auto expression = it->second.expression->clone();
-        RequiredSourceColumnsVisitor(columns_context).visit(expression);
-        for (const auto & required_name : columns_context.requiredColumns())
-            if (names_in_default_expressions.insert(required_name).second)
-                names_to_visit.push_back(required_name);
+            for (const auto & required_name : default_expression_inputs(name))
+                if (names_in_default_expressions.insert(required_name).second)
+                    names_to_visit.push_back(required_name);
+        }
+        columns_to_keep.insert(names_in_default_expressions.begin(), names_in_default_expressions.end());
+
+        /// Pin every still-deferred defaulted column whose expression has an input the lazy
+        /// branch would not read the real value of.
+        pinned_more = false;
+        for (const auto & column : info.source_header)
+        {
+            if (columns_to_keep.contains(column.name) || !column_defaults.contains(column.name))
+                continue;
+
+            for (const auto & input : default_expression_inputs(column.name))
+            {
+                const bool input_is_deferred_too = source_header_names.contains(input)
+                    && requested_from_format.contains(input)
+                    && !columns_to_keep.contains(input);
+                if (!input_is_deferred_too)
+                {
+                    seed_defaulted_column(column.name);
+                    pinned_more = true;
+                    break;
+                }
+            }
+        }
     }
-    columns_to_keep.insert(names_in_default_expressions.begin(), names_in_default_expressions.end());
-
-    /// Hive partition columns are parsed from the file path, reading them is cheap; keep them.
-    for (const auto & column : info.hive_partition_columns_to_read_from_file_path)
-        columns_to_keep.insert(column.name);
-
-    /// Virtual columns are cheap as well.
-    for (const auto & column : info.requested_virtual_columns)
-        columns_to_keep.insert(column.name);
-
-    NameSet requested_from_format;
-    for (const auto & column : info.requested_columns)
-        requested_from_format.insert(column.name);
 
     /// Defer the physical columns that the format reads and nothing needs before the LIMIT.
     NameSet lazy_names;
