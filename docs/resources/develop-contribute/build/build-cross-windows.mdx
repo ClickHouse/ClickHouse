@@ -152,6 +152,13 @@ supported on Windows and exits: its startup goes through `BaseDaemon`, which nee
 signals and `fork`. The `clickhouse-server` alias is not installed. `clickhouse-server-lib`
 itself is still built and linked, because `clickhouse-local` needs it.
 
+**No symlink aliases.** On Linux the install tree offers `clickhouse-client`, `clickhouse-local`
+and the rest as extensionless symlinks to `clickhouse`; next to `clickhouse.exe` such a symlink
+cannot resolve, so none are generated or installed on Windows. The mode is chosen the multi-call
+way - `clickhouse.exe client`, `clickhouse.exe local` - or by copying the binary to a name such
+as `clickhouse-local.exe`: the dispatcher reads the mode from `argv[0]` with the directory and
+the case-insensitive `.exe` suffix stripped.
+
 **Compiled out, all server-side or POSIX-only:** the sampling query profiler and the signal
 handlers (Windows reports faults through SEH instead), `ThreadFuzzer`, the `fork`-based
 watchdog, `ShellCommand` and everything built on it, the pseudo-terminal features, and the
