@@ -200,6 +200,23 @@ namespace DB
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
+
+            /// `parseDateTimeBestEffort` stops at the first thing it cannot interpret instead of
+            /// requiring the whole literal to be a datetime, so left-over characters mean the parsed
+            /// deadline is not what the literal says. E.g. in a 20-digit all-digit string the first
+            /// 19 digits are read as a nanosecond-scale Unix timestamp and the last digit is left
+            /// unread, so an out-of-range value such as '18446744327111802015' would silently resolve
+            /// to a live deadline instead of being rejected (fail-open). The same applies to a
+            /// hand-edited stored definition whose surrounding whitespace makes it bypass the
+            /// overflow-checked all-digit branch above. Require full consumption, allowing only
+            /// trailing spaces (the parser itself skips the leading ones).
+            while (!in.eof() && *in.position() == ' ')
+                ++in.position();
+            if (!in.eof())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "VALID UNTIL deadline '{}' contains trailing characters that are not part of the date and time value",
+                    valid_until_str);
         }
 
         /// Reject an absolute deadline earlier than `MIN_VALID_UNTIL_TIME` (see the constant's

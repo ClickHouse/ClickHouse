@@ -235,6 +235,59 @@ TEST(ValidUntilAttachEncoding, HandEditedNumericOverflowFailsToLoad)
     EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 253402250399); /// MAX_VALID_UNTIL_TIME
 }
 
+TEST(ValidUntilAttachEncoding, HandEditedTrailingCharactersFailToLoad)
+{
+    /// `parseDateTimeBestEffort` stops at the first thing it cannot interpret instead of requiring
+    /// the whole literal to be a datetime, so a value it does not fully consume must be rejected.
+    /// Surrounding whitespace makes an all-digit value bypass the overflow-checked numeric branch
+    /// and reach the best-effort parser, which reads the first 19 digits of a 20-digit string as a
+    /// nanosecond-scale Unix timestamp and leaves the last digit unread - accepting the parsed
+    /// prefix would turn an out-of-range hand-edited deadline into a live one (fail-open).
+    /// (Trailing alphabetic garbage after a well-formed datetime, e.g. '2025-01-01 00:00:00 UTC junk',
+    /// is rejected by `parseDateTimeBestEffort` itself - "unexpected word" - before the full-consumption
+    /// check is reached; the digit-string forms below are the ones that used to slip through.)
+    for (const char * literal_value :
+         {" 18446744327111802015", /// leading space: skips the numeric branch, 19 of 20 digits parsed
+          "18446744327111802015 "}) /// trailing space: same bypass
+    {
+        ASTPtr literal = make_intrusive<ASTLiteral>(Field(String(literal_value)));
+        try
+        {
+            getValidUntilFromAST(literal, /* context= */ nullptr, /* is_interval= */ false);
+            FAIL() << "expected the deadline to be rejected: '" << literal_value << "'";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_TRUE(e.message().contains("contains trailing characters")) << e.message();
+        }
+
+        const auto definition = fmt::format("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '{}';", literal_value);
+        try
+        {
+            deserializeAccessEntity(definition);
+            FAIL() << "expected the definition to be rejected: " << definition;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_TRUE(e.message().contains("contains trailing characters")) << e.message();
+        }
+    }
+
+    /// Values the best-effort parser does consume in full - including surrounding spaces the parser
+    /// itself skips (leading) or that follow the consumed value (trailing) - still load exactly.
+    for (const auto & [literal_value, expected_deadline] : std::initializer_list<std::pair<const char *, time_t>>
+         {{" 1234567890", 1234567890}, /// a spaced all-digit value within range: read as a Unix timestamp
+          {"2025-01-01 00:00:00 UTC ", 1735689600}})
+    {
+        const auto definition = fmt::format("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '{}';", literal_value);
+        const auto entity = deserializeAccessEntity(definition);
+        const auto * user = typeid_cast<const User *>(entity.get());
+        ASSERT_NE(user, nullptr);
+        ASSERT_EQ(user->authentication_methods.size(), 1u);
+        EXPECT_EQ(user->authentication_methods.front().getValidUntil(), expected_deadline) << literal_value;
+    }
+}
+
 TEST(ValidUntilAttachEncoding, HandEditedSpacedYearZeroFailsToLoad)
 {
     /// `parseDateTimeBestEffort` skips leading spaces before it decides whether the year field was
