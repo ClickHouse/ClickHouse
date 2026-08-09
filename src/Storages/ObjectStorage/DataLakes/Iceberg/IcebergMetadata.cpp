@@ -248,7 +248,7 @@ IcebergMetadata::IcebergMetadata(
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
     if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
     {
-        background_metadata_prefetch_task = context_->getIcebergSchedulePool().createTask(
+        background_metadata_prefetch_task = context_->getIcebergSchedulePool()->createTask(
             StorageID("", persistent_components.table_uuid ? *persistent_components.table_uuid : persistent_components.table_path),
             "backgroundMetadataPrefetcherThread",
             [this]
@@ -990,6 +990,8 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             history_record.parent_id = 0;
 
         bool found_in_snapshot_log = false;
+        /// A snapshot-id can occur in snapshot-log more than once (a rollback makes an older
+        /// snapshot current again); made_current_at is the LAST such time, so do not stop early.
         for (size_t j = 0; j < snapshot_logs->size(); ++j)
         {
             const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
@@ -997,7 +999,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             {
                 history_record.made_current_at = parse_timestamp_ms(snapshot_log);
                 found_in_snapshot_log = true;
-                break;
             }
         }
 
