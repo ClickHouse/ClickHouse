@@ -189,15 +189,19 @@ struct TheilsUWindowData : CrossTabCountsState
         /// O(ε · log N) absolute noise in the derived entropies (the rounding of the
         /// per-update deltas, the final `sum + compensation`, and the division).
         /// When the computed H(A) is at or below that noise level, the true H(A)
-        /// is zero for every attainable frame size (a genuinely non-constant first
-        /// argument gives H(A) ≥ log(N) / N, which stays above the bound until
-        /// N · ε ≈ 32): the first argument is constant within the frame, and
-        /// `1 - H(A|B) / H(A)` would divide noise by noise. Take the exact
-        /// recomputation shortcut in that case: with a constant first argument it
-        /// returns 0 after scanning only the single-entry `count_a` map (every term
-        /// is `1 · log 1`), without touching `count_ab`, so the amortized O(1)
-        /// complexity is preserved. Widen the sanity-check tolerance on the fast
-        /// path by the same relative error bound.
+        /// is zero for every practically attainable frame size (a genuinely
+        /// non-constant first argument gives H(A) ≥ log(N) / N, which stays above
+        /// the bound while N < 1 / (32 · ε) ≈ 1.4e14): the first argument is
+        /// constant within the frame, and `1 - H(A|B) / H(A)` would divide noise
+        /// by noise. Take the exact recomputation shortcut in that case: with a
+        /// constant first argument it returns 0 after scanning only the
+        /// single-entry `count_a` map (every term is `1 · log 1`), without
+        /// touching `count_ab`, so the amortized O(1) complexity is preserved.
+        /// For frames beyond ~1.4e14 rows (reachable only by merging
+        /// pre-aggregated states) the shortcut may also fire on a non-constant
+        /// first argument; the result is still exact, at the cost of scanning
+        /// the count maps. Widen the sanity-check tolerance on the fast path by
+        /// the same relative error bound.
         const Float64 entropy_error = 32 * std::numeric_limits<Float64>::epsilon() * std::log(count_f);
 
         if (h_a <= entropy_error)
