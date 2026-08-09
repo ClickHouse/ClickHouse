@@ -1,6 +1,7 @@
 import os
 import random
 import string
+import threading
 import time
 from multiprocessing.dummy import Pool
 
@@ -755,8 +756,18 @@ def test_concurrent_watches(started_cluster, request):
         all_paths_triggered = []
 
         existing_path = []
+        # A watch is one-shot per (path, session), so a mutation only notifies a registration
+        # that is live at that moment. Mutating a path this thread does not hold a token for can
+        # therefore consume another thread's registration, leaving it forever unnotified.
+        existing_path_lock = threading.Lock()
         all_paths_created = []
         watches_created = 0
+
+        def claim_path():
+            with existing_path_lock:
+                if not existing_path:
+                    return None
+                return existing_path.pop(random.randrange(len(existing_path)))
 
         def create_path_and_watch(i):
             nonlocal watches_created
@@ -775,7 +786,8 @@ def test_concurrent_watches(started_cluster, request):
             fake_zk.get(global_path + "/" + str(i), watch=dumb_watch)
             all_paths_created.append(global_path + "/" + str(i))
             watches_created += 1
-            existing_path.append(i)
+            with existing_path_lock:
+                existing_path.append(i)
 
         trigger_called = 0
 
@@ -783,26 +795,19 @@ def test_concurrent_watches(started_cluster, request):
             nonlocal trigger_called
             trigger_called += 1
             fake_zk.set(global_path + "/" + str(i), b"somevalue")
-            try:
-                existing_path.remove(i)
-            except:
-                pass
 
         def call(total):
             for i in range(total):
                 create_path_and_watch(random.randint(0, 1000))
                 time.sleep(random.random() % 0.5)
-                try:
-                    rand_num = random.choice(existing_path)
+                rand_num = claim_path()
+                if rand_num is not None:
                     trigger_watch(rand_num)
-                except:
-                    pass
-            while existing_path:
-                try:
-                    rand_num = random.choice(existing_path)
-                    trigger_watch(rand_num)
-                except:
-                    pass
+            while True:
+                rand_num = claim_path()
+                if rand_num is None:
+                    break
+                trigger_watch(rand_num)
 
         p = Pool(10)
         arguments = [100] * 10
