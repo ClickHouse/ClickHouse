@@ -458,6 +458,24 @@ def test_num_consumers_zero_rejected(pulsar_cluster):
     assert "BAD_ARGUMENTS" in error
 
 
+def test_batch_size_zero_rejected(pulsar_cluster):
+    # `pulsar_max_block_size = 0` would make every source stop after its first
+    # (empty) loop iteration, and `pulsar_poll_max_batch_size = 0` would be
+    # passed straight into the client's batch receive policy, so both must be
+    # rejected up front at CREATE TABLE time.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    for setting in ("pulsar_max_block_size", "pulsar_poll_max_batch_size"):
+        error = instance.query_and_get_error(
+            pulsar_table(
+                "test.pulsar_reader",
+                "zero_batch_topic",
+                "zero_batch_group",
+                extra_settings=f", {setting} = 0",
+            )
+        )
+        assert "BAD_ARGUMENTS" in error
+
+
 def test_macros_expansion(pulsar_cluster):
     # The broker-facing string settings support macro substitution the same way
     # the other message-broker engines do: server-defined macros in the service

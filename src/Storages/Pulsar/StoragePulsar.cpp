@@ -710,6 +710,16 @@ void registerStoragePulsar(StorageFactory & factory)
         if ((*pulsar_settings)[PulsarSetting::pulsar_num_consumers].value < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_num_consumers` must be at least 1");
 
+        /// A zero block size would stop `PulsarSource` after its first (empty) loop iteration,
+        /// and a zero poll batch size would be passed straight into `setBatchReceivePolicy`.
+        if ((*pulsar_settings)[PulsarSetting::pulsar_max_block_size].changed
+            && (*pulsar_settings)[PulsarSetting::pulsar_max_block_size].value < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_max_block_size` must be at least 1");
+
+        if ((*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].changed
+            && (*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].value < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_poll_max_batch_size` must be at least 1");
+
         /// The mode is accepted by the generic `StreamingHandleErrorMode` parser but not implemented
         /// by this engine, so reject it up front instead of failing on the first broken message.
         if (args.mode <= LoadingStrictnessLevel::CREATE
