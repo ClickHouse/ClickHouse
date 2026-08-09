@@ -1,0 +1,3 @@
+after drop	0
+after reinsert r2	1
+after reinsert r1	1
