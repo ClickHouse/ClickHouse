@@ -184,7 +184,7 @@ SQLQueryPiece applyFunctionOverRange(
         && (argument.store_method == StoreMethod::RAW_DATA || argument.store_method == StoreMethod::SCALAR_GRID
             || argument.store_method == StoreMethod::VECTOR_GRID))
     {
-        const auto * offset_node = static_cast<const PQT::Offset *>(argument.node);
+        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(argument.node);
         if (offset_node->at_timestamp)
             fixed_argument_range = context.node_range_getter.get(offset_node->getExpression());
     }
