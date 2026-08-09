@@ -86,7 +86,8 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
         display.showSeparator();
 
         // Display the generated SQL
-        std::string sql = cleanSQL(result.text);
+        const std::string & final_text = result.steps.empty() ? result.text : result.steps.back().text;
+        std::string sql = cleanSQL(final_text);
         if (!sql.empty())
         {
             display.showProgress("✨ SQL query generated successfully!");
@@ -104,8 +105,8 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
             display.showProgress("⚠️  No SQL query was generated");
             /// The model replied with prose instead of a query (e.g. an explanation of
             /// why it cannot be answered) - show it to the user.
-            if (!result.text.empty())
-                output_stream << result.text << std::endl;
+            if (!final_text.empty())
+                output_stream << final_text << std::endl;
         }
 
         return sql;
