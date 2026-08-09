@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas, no-random-merge-tree-settings
+-- no-parallel-replicas: the asserted rows_before_limit_at_least depends on the read topology.
+
 -- The DISTINCT early-stop limit hint must not be derived when the consumer needs rows beyond
 -- limit + offset: WITH TIES has an unbounded tie suffix, and exact_rows_before_limit counts
 -- the whole stream.
