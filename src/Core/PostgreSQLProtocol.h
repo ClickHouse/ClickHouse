@@ -1865,17 +1865,152 @@ private:
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
-        auto body = it->second;
-        for (size_t i = 0; i < arguments.size(); ++i)
+        return substitutePlaceholders(it->second, function_name, arguments);
+    }
+
+    /// Substitutes `$n` placeholders with the supplied arguments, PostgreSQL-style: every occurrence of a
+    /// placeholder is replaced (a placeholder may be referenced any number of times, including zero), the
+    /// placeholder number is read as a whole (`$10` is the tenth parameter, not `$1` followed by `0`), and
+    /// the argument count must match the statement exactly - the statement must not reference a parameter
+    /// beyond the supplied ones, and every supplied argument must be referenced by number (PostgreSQL
+    /// reports both as `wrong number of parameters`). The scan is SQL-aware: a `$n` inside a string
+    /// literal, a quoted identifier, a dollar-quoted string or a comment is ordinary text, not a
+    /// placeholder. Substituted argument text is never rescanned, so an argument containing `$1` cannot
+    /// trigger another round of substitution.
+    static String substitutePlaceholders(const String & body, const String & function_name, const VectorWithMemoryTracking<String> & arguments)
+    {
+        String result;
+        result.reserve(body.size());
+
+        const size_t size = body.size();
+        size_t max_placeholder = 0;
+        size_t i = 0;
+
+        /// Copies body[i..end) to the result verbatim and advances the cursor.
+        auto copy_through = [&](size_t end)
         {
-            auto templ = "$" + std::to_string(i + 1);
-            auto pos = body.find(templ);
-            if (pos != std::string::npos)
+            result.append(body, i, end - i);
+            i = end;
+        };
+
+        const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+        const auto is_tag_start = [](char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; };
+        const auto is_tag_char = [&](char c) { return is_tag_start(c) || is_digit(c); };
+
+        while (i < size)
+        {
+            const char c = body[i];
+            if (c == '\'' || c == '"' || c == '`')
             {
-                body.replace(pos, templ.size(), arguments[i]);
+                /// A string literal or a quoted identifier. A doubled quote is an escaped quote in all
+                /// three; a backslash additionally escapes the next character in a single-quoted string
+                /// (ClickHouse semantics - the body is executed as ClickHouse SQL).
+                size_t j = i + 1;
+                while (j < size)
+                {
+                    if (c == '\'' && body[j] == '\\' && j + 1 < size)
+                    {
+                        j += 2;
+                        continue;
+                    }
+                    if (body[j] == c)
+                    {
+                        if (j + 1 < size && body[j + 1] == c)
+                        {
+                            j += 2;
+                            continue;
+                        }
+                        ++j;
+                        break;
+                    }
+                    ++j;
+                }
+                copy_through(j);
+            }
+            else if (c == '-' && i + 1 < size && body[i + 1] == '-')
+            {
+                const size_t j = body.find('\n', i);
+                copy_through(j == String::npos ? size : j);
+            }
+            else if (c == '/' && i + 1 < size && body[i + 1] == '*')
+            {
+                /// Block comments nest, as in PostgreSQL and ClickHouse.
+                size_t depth = 1;
+                size_t j = i + 2;
+                while (j < size && depth > 0)
+                {
+                    if (body[j] == '/' && j + 1 < size && body[j + 1] == '*')
+                    {
+                        ++depth;
+                        j += 2;
+                    }
+                    else if (body[j] == '*' && j + 1 < size && body[j + 1] == '/')
+                    {
+                        --depth;
+                        j += 2;
+                    }
+                    else
+                        ++j;
+                }
+                copy_through(j);
+            }
+            else if (c == '$' && i + 1 < size && is_digit(body[i + 1]))
+            {
+                size_t j = i + 1;
+                size_t n = 0;
+                bool overflow = false;
+                while (j < size && is_digit(body[j]))
+                {
+                    if (n > arguments.size())
+                        overflow = true;
+                    else
+                        n = n * 10 + (body[j] - '0');
+                    ++j;
+                }
+                if (overflow || n == 0 || n > arguments.size())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Wrong number of parameters for prepared statement '{}': the statement references parameter {}, "
+                        "but {} parameter(s) were supplied",
+                        function_name, body.substr(i, j - i), arguments.size());
+                max_placeholder = std::max(max_placeholder, n);
+                result += arguments[n - 1];
+                i = j;
+            }
+            else if (c == '$' && i + 1 < size && (is_tag_start(body[i + 1]) || body[i + 1] == '$'))
+            {
+                /// A dollar-quoted string: `$tag$ ... $tag$`, where the tag may be empty. The tag of a
+                /// placeholder never starts with a digit, so `$1` above and `$tag$` here do not overlap.
+                size_t j = i + 1;
+                while (j < size && is_tag_char(body[j]))
+                    ++j;
+                if (j < size && body[j] == '$')
+                {
+                    const String tag = body.substr(i, j - i + 1);
+                    const size_t close = body.find(tag, j + 1);
+                    copy_through(close == String::npos ? size : close + tag.size());
+                }
+                else
+                {
+                    result += c;
+                    ++i;
+                }
+            }
+            else
+            {
+                result += c;
+                ++i;
             }
         }
-        return body;
+
+        if (max_placeholder != arguments.size())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Wrong number of parameters for prepared statement '{}': the statement uses {} parameter(s), "
+                "but {} were supplied",
+                function_name, max_placeholder, arguments.size());
+
+        return result;
     }
 
 };
