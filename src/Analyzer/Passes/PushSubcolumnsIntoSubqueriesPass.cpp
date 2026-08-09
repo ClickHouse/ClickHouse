@@ -190,9 +190,9 @@ void collectEligibleTargets(const QueryTreeNodePtr & join_tree_node, bool can_be
         return;
     }
 
-    if (join_tree_node->getNodeType() == QueryTreeNodeType::QUERY)
+    if (isQueryOrUnionNode(join_tree_node))
     {
-        /// The same query node can occur several times in the JOIN TREE when it is a shared
+        /// The same query or union node can occur several times in the JOIN TREE when it is a shared
         /// ordinary CTE. Eligibility is tracked per node, not per occurrence, so one occurrence
         /// in a defaultable position makes the node ineligible even for its other occurrences:
         /// the projection column added for an eligible occurrence would also be exported by the
@@ -234,6 +234,37 @@ bool canAddProjectionColumns(const QueryNode & subquery)
     }
 
     return true;
+}
+
+/// Check that the target of the JOIN TREE can accept the pushed subcolumn projections.
+/// A query target must allow adding projection columns and have the optimization enabled in its
+/// own context: the subquery can carry its own settings (SETTINGS clause, view definition), and
+/// disabling the setting there must protect that subquery from the rewrite.
+/// A union target receives the pushed subcolumn into every branch, which keeps the union result
+/// unchanged only for UNION ALL: the DISTINCT modes deduplicate (and INTERSECT/EXCEPT match rows)
+/// over all projection columns, and a recursive CTE union has the fixed set of columns of its
+/// recursive table.
+bool canPushIntoTarget(const QueryTreeNodePtr & target)
+{
+    if (const auto * query_node = target->as<QueryNode>())
+    {
+        return query_node->getContext()->getSettingsRef()[Setting::optimize_push_subcolumns_into_subqueries]
+            && canAddProjectionColumns(*query_node);
+    }
+
+    const auto & union_node = target->as<const UnionNode &>();
+
+    if (union_node.getUnionMode() != SelectUnionMode::UNION_ALL || union_node.isRecursiveCTE() || union_node.hasRecursiveCTETable())
+        return false;
+
+    if (!union_node.getContext()->getSettingsRef()[Setting::optimize_push_subcolumns_into_subqueries])
+        return false;
+
+    const auto & branches = union_node.getQueries().getNodes();
+    if (branches.empty())
+        return false;
+
+    return std::ranges::all_of(branches, [](const auto & branch) { return canPushIntoTarget(branch); });
 }
 
 void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bool inside_aggregate_function, QueryProcessingState & state)
@@ -439,63 +470,148 @@ bool isSameSubcolumnProjection(const QueryTreeNodePtr & existing_node, const Que
     return existing_column->getColumnSourceOrNull() == built_column->getColumnSourceOrNull();
 }
 
-/// Add the subcolumn to the subquery projection. Returns false if the pushdown is not possible.
-bool applyGroup(PushdownGroup & group)
+/// The exported columns of a pushdown target: the projection columns of a query,
+/// the computed projection columns (names of the first branch, common types) of a union.
+NamesAndTypes getExportedColumns(const QueryTreeNodePtr & source)
 {
-    auto & subquery = group.source->as<QueryNode &>();
+    if (const auto * query_node = source->as<QueryNode>())
+        return query_node->getProjectionColumns();
+    return source->as<const UnionNode &>().computeProjectionColumns();
+}
 
-    const auto & projection_columns = subquery.getProjectionColumns();
-    std::optional<size_t> projection_index;
+/// Find the index of the exported column with the given name, when it is unambiguous.
+std::optional<size_t> findUnambiguousColumnIndex(const NamesAndTypes & exported_columns, const String & column_name)
+{
+    std::optional<size_t> result;
 
-    for (size_t i = 0; i < projection_columns.size(); ++i)
+    for (size_t i = 0; i < exported_columns.size(); ++i)
     {
-        if (projection_columns[i].name == group.column_name)
+        if (exported_columns[i].name == column_name)
         {
-            /// The name must be unambiguous.
-            if (projection_index)
-                return false;
-            projection_index = i;
+            if (result)
+                return {};
+            result = i;
         }
     }
 
-    if (!projection_index)
-        return false;
+    return result;
+}
 
-    /// The type of the column can differ from the type of the subquery projection column,
-    /// e.g. when join_use_nulls wraps columns of the outer JOIN into Nullable.
-    if (!projection_columns[*projection_index].type->equals(*group.column_type))
-        return false;
+/// A pending addition of the subcolumn projection to one leaf query of the pushdown target.
+/// The projection node is null when an identical projection column already exists and is reused.
+struct LeafApplication
+{
+    QueryNode * leaf = nullptr;
+    QueryTreeNodePtr new_projection_node;
+};
 
+/// Validate that the subcolumn projection can be added to the leaf queries of the target at
+/// the given projection column index, recursing into every branch of a union, without mutating
+/// anything: a union must add the subcolumn to all of its branches or to none of them. When
+/// `reuse_index` is set, an exported column with the name of the subcolumn already exists
+/// (e.g. it was pushed into this shared target while processing another query referencing it),
+/// and every leaf must hold the identical subcolumn projection at that index to reuse it.
+bool collectLeafApplications(
+    const PushdownGroup & group,
+    const QueryTreeNodePtr & source,
+    size_t column_index,
+    std::optional<size_t> reuse_index,
+    const String & new_column_name,
+    std::vector<LeafApplication> & applications)
+{
+    if (auto * union_node = source->as<UnionNode>())
+    {
+        for (const auto & branch : union_node->getQueries().getNodes())
+        {
+            if (!collectLeafApplications(group, branch, column_index, reuse_index, new_column_name, applications))
+                return false;
+        }
+        return true;
+    }
+
+    auto & subquery = source->as<QueryNode &>();
+    const auto & projection_columns = subquery.getProjectionColumns();
     const auto & projection_nodes = subquery.getProjection().getNodes();
 
-    const auto & inner_node = projection_nodes[*projection_index];
-    auto new_projection_node = buildSubcolumnProjectionNode(group, inner_node, subquery.getContext());
-    if (!new_projection_node)
+    if (column_index >= projection_columns.size() || column_index >= projection_nodes.size())
+        return false;
+
+    /// The types of all leaves must match the types at the reference site exactly: with
+    /// diverging branch types the union exports the least supertype, and the subcolumn of the
+    /// supertype is not guaranteed to be the supertype of the branch subcolumns.
+    if (!projection_columns[column_index].type->equals(*group.column_type))
+        return false;
+
+    auto new_projection_node = buildSubcolumnProjectionNode(group, projection_nodes[column_index], subquery.getContext());
+    if (!new_projection_node || !new_projection_node->getResultType()->equals(*group.subcolumn_type))
+        return false;
+
+    if (reuse_index)
+    {
+        if (*reuse_index >= projection_columns.size() || *reuse_index >= projection_nodes.size()
+            || !projection_columns[*reuse_index].type->equals(*group.subcolumn_type)
+            || !isSameSubcolumnProjection(projection_nodes[*reuse_index], new_projection_node))
+            return false;
+
+        applications.push_back({&subquery, nullptr});
+        return true;
+    }
+
+    /// A projection column of the leaf with the name of the subcolumn would shadow the added one.
+    for (const auto & projection_column : projection_columns)
+    {
+        if (projection_column.name == new_column_name)
+            return false;
+    }
+
+    applications.push_back({&subquery, std::move(new_projection_node)});
+    return true;
+}
+
+/// Add the subcolumn to the target projection (for a union, to the projection of every leaf
+/// query of every branch, at the same position). Returns false if the pushdown is not possible.
+bool applyGroup(PushdownGroup & group)
+{
+    auto exported_columns = getExportedColumns(group.source);
+
+    /// The name must be unambiguous.
+    auto column_index = findUnambiguousColumnIndex(exported_columns, group.column_name);
+    if (!column_index)
+        return false;
+
+    /// The type of the column can differ from the type of the exported column,
+    /// e.g. when join_use_nulls wraps columns of the outer JOIN into Nullable.
+    if (!exported_columns[*column_index].type->equals(*group.column_type))
         return false;
 
     auto new_column_name = group.column_name + "." + group.subcolumn_path;
-    for (size_t i = 0; i < projection_columns.size(); ++i)
+
+    /// An exported column with the name of the subcolumn may already exist. When it is the
+    /// same subcolumn expression in every leaf, e.g. it was pushed into this shared target
+    /// (an ordinary CTE referenced several times) while processing another query referencing
+    /// it, then it is reused (validated per leaf below). Otherwise the reference to the new
+    /// column would be ambiguous.
+    std::optional<size_t> reuse_index;
+    bool reuse_name_present = std::ranges::any_of(
+        exported_columns, [&](const auto & exported_column) { return exported_column.name == new_column_name; });
+
+    if (reuse_name_present)
     {
-        if (projection_columns[i].name != new_column_name)
-            continue;
-
-        /// A projection column with the name of the subcolumn already exists. When it is the
-        /// same subcolumn expression, e.g. it was pushed into this shared subquery (an ordinary
-        /// CTE referenced several times) while processing another query referencing it, then it
-        /// is reused. Otherwise the reference to the new column would be ambiguous.
-        if (i < projection_nodes.size()
-            && projection_columns[i].type->equals(*group.subcolumn_type)
-            && isSameSubcolumnProjection(projection_nodes[i], new_projection_node))
-        {
-            group.new_column_name = std::move(new_column_name);
-            group.applied = true;
-            return true;
-        }
-
-        return false;
+        reuse_index = findUnambiguousColumnIndex(exported_columns, new_column_name);
+        if (!reuse_index || !exported_columns[*reuse_index].type->equals(*group.subcolumn_type))
+            return false;
     }
 
-    subquery.addProjectionColumn(std::move(new_projection_node), NameAndTypePair{new_column_name, group.subcolumn_type});
+    std::vector<LeafApplication> applications;
+    if (!collectLeafApplications(group, group.source, *column_index, reuse_index, new_column_name, applications))
+        return false;
+
+    for (auto & application : applications)
+    {
+        if (application.new_projection_node)
+            application.leaf->addProjectionColumn(
+                std::move(application.new_projection_node), NameAndTypePair{new_column_name, group.subcolumn_type});
+    }
 
     group.new_column_name = std::move(new_column_name);
     group.applied = true;
@@ -511,6 +627,22 @@ using CanonicalColumn = std::pair<const IQueryTreeNode *, String>;
 /// names: `SELECT tup AS x, tup FROM t`, or a trivial ALIAS storage column next to its base
 /// column. Names whose projection expression is not a column (or is a non-trivial ALIAS)
 /// are not mapped.
+/// The leftmost leaf query of a target: the query itself, or the first branch of a union
+/// followed transitively. The exported column names of a union are the names of its leftmost
+/// leaf query (UnionNode::computeProjectionColumns).
+const QueryNode * getLeftmostLeafQuery(const IQueryTreeNode * source)
+{
+    while (const auto * union_node = source->as<UnionNode>())
+    {
+        const auto & branches = union_node->getQueries().getNodes();
+        if (branches.empty())
+            return nullptr;
+        source = branches.front().get();
+    }
+
+    return source->as<QueryNode>();
+}
+
 std::unordered_map<String, CanonicalColumn> collectCanonicalExports(const QueryNode & subquery)
 {
     std::unordered_map<String, CanonicalColumn> result;
@@ -572,13 +704,7 @@ void processQuery(
 
         for (auto it = state.eligible_targets.begin(); it != state.eligible_targets.end();)
         {
-            const auto & target_query = it->second->as<const QueryNode &>();
-
-            /// The subquery can carry its own settings (SETTINGS clause, view definition),
-            /// and disabling the setting there must protect that subquery from the rewrite.
-            bool enabled_in_target = target_query.getContext()->getSettingsRef()[Setting::optimize_push_subcolumns_into_subqueries];
-
-            if (enabled_in_target && canAddProjectionColumns(target_query))
+            if (canPushIntoTarget(it->second))
                 ++it;
             else
                 it = state.eligible_targets.erase(it);
@@ -661,9 +787,16 @@ void processQuery(
         /// physical column can be exported under several names, so the counts of every name
         /// resolving to the same underlying column as the group's column are combined: while any
         /// of them stays alive, the whole column is read from the table anyway.
+        /// For a union target the exported names come from its leftmost leaf query, whose
+        /// aliasing structure is used for the combining. Aliasing that exists only in other
+        /// branches is not detected; the guard is a cost heuristic, so at worst those branches
+        /// read both the whole column and the subcolumn.
         auto [exports_it, exports_inserted] = canonical_exports_by_source.try_emplace(group.source.get());
         if (exports_inserted)
-            exports_it->second = collectCanonicalExports(group.source->as<const QueryNode &>());
+        {
+            if (const auto * leaf_query = getLeftmostLeafQuery(group.source.get()))
+                exports_it->second = collectCanonicalExports(*leaf_query);
+        }
         const auto & canonical_exports = exports_it->second;
 
         auto group_canonical_it = canonical_exports.find(group.column_name);
@@ -777,7 +910,45 @@ void PushSubcolumnsIntoSubqueriesPass::run(QueryTreeNodePtr & query_tree_node, C
 
         auto * query_node = node->as<QueryNode>();
         if (!query_node)
+        {
+            /// A union node has no clauses of its own: its exported columns map positionally
+            /// onto the projection columns of every branch. An exported column of the union
+            /// that became dead (fully replaced by pushed subcolumns) is propagated as a dead
+            /// column of each branch, so that the branches, processed after the union, skip
+            /// the corresponding projection slots and can push the subcolumns further down.
+            const auto * union_node = node->as<UnionNode>();
+            if (!union_node || union_node->hasRecursiveCTETable())
+                return;
+
+            auto replaced_it = replaced_references.find(node.get());
+            if (replaced_it == replaced_references.end())
+                return;
+
+            const auto & alive_columns = alive_references[node.get()];
+            auto exported_columns = union_node->computeProjectionColumns();
+
+            for (const auto & [column_name, replaced] : replaced_it->second)
+            {
+                if (replaced == 0)
+                    continue;
+
+                if (auto alive_it = alive_columns.find(column_name); alive_it != alive_columns.end() && alive_it->second > 0)
+                    continue;
+
+                auto column_index = findUnambiguousColumnIndex(exported_columns, column_name);
+                if (!column_index)
+                    continue;
+
+                for (const auto & branch : union_node->getQueries().getNodes())
+                {
+                    auto branch_columns = getExportedColumns(branch);
+                    if (*column_index < branch_columns.size())
+                        ++replaced_references[branch.get()][branch_columns[*column_index].name];
+                }
+            }
+
             return;
+        }
 
         std::unordered_set<String> pruned_exports;
         if (auto replaced_it = replaced_references.find(node.get()); replaced_it != replaced_references.end())

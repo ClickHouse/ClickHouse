@@ -66,10 +66,10 @@ Output: getSubcolumn(json, \'a\')
 Output: id, json, tup, n, arr
 1
 2
-not pushed into UNION
-Output: getSubcolumn(json, \'a\')
-│     Output: json
-Output: json
+pushed into UNION ALL
+Output: json.a
+│     Output: json.a
+Output: json.a
 1
 1
 2

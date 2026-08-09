@@ -72,7 +72,7 @@ SELECT 'not pushed into DISTINCT subquery';
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT json.a FROM (SELECT DISTINCT * FROM t_push_subcolumns)) WHERE explain LIKE '%Output%';
 SELECT json.a FROM (SELECT DISTINCT * FROM t_push_subcolumns) ORDER BY json.a;
 
-SELECT 'not pushed into UNION';
+SELECT 'pushed into UNION ALL';
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT json.a FROM (SELECT * FROM t_push_subcolumns UNION ALL SELECT * FROM t_push_subcolumns)) WHERE explain LIKE '%Output%';
 SELECT json.a FROM (SELECT * FROM t_push_subcolumns UNION ALL SELECT * FROM t_push_subcolumns) ORDER BY json.a;
 

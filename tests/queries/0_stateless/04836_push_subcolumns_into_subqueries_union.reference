@@ -1,0 +1,96 @@
+UNION ALL subquery
+Output: json.a
+│     Output: json.a
+Output: json.a
+1
+2
+3
+1
+2
+3
+UNION ALL with different column names in branches
+Output: tup.a
+│     Output: tup.a
+Output: tup.a
+1
+2
+3
+UNION ALL CTE
+Output: tup.a, tup.b
+│     Output: tup.a, tup.b
+Output: tup.a, tup.b
+1	one
+2	two
+3	three
+view over UNION ALL
+Output: json.a
+│     Output: json.a
+Output: json.a
+1
+2
+3
+nested UNION ALL
+Output: json.a
+│     Output: json.a
+│     Output: json.a
+Output: json.a
+1
+1
+2
+2
+3
+two levels of subqueries under UNION ALL
+Output: json.a
+│     Output: json.a
+Output: json.a
+1
+2
+3
+UNION ALL subquery under a subquery
+Output: json.a
+│     Output: json.a
+Output: json.a
+1
+2
+3
+alias list over UNION ALL
+1
+2
+3
+UNION DISTINCT is not rewritten
+Output: getSubcolumn(tup, \'a\')
+│     Output: tup
+Output: tup
+1
+2
+3
+INTERSECT is not rewritten
+Output: getSubcolumn(tup, \'a\')
+│     Output: tup
+Output: tup
+1
+2
+whole column and subcolumn
+Output: tup, getSubcolumn(tup, \'a\')
+│     Output: tup
+Output: tup
+(1,'one')	1
+(2,'two')	2
+(3,'three')	3
+diverging branch types are not rewritten
+Output: getSubcolumn(CAST(tup AS Tuple(a UInt64, b String)), \'a\')
+│     Output: tup
+Output: tup
+1
+2
+3
+setting disabled in a branch
+Output: getSubcolumn(tup, \'a\')
+│     Output: tup
+Output: tup
+1
+2
+3
+UNION ALL on a defaultable JOIN side is not rewritten
+1	1
+2	2

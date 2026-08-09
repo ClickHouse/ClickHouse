@@ -5,8 +5,11 @@
 namespace DB
 {
 
-/** Push reading of subcolumns into subqueries (and CTEs), so that only the requested
-  * subcolumns are read from the tables instead of whole columns.
+/** Push reading of subcolumns into subqueries (including CTEs and `UNION ALL` subqueries),
+  * so that only the requested subcolumns are read from the tables instead of whole columns.
+  * For a `UNION ALL` subquery the subcolumn is added to every branch at the same position;
+  * the DISTINCT, INTERSECT and EXCEPT modes deduplicate or match rows over all projection
+  * columns, so such subqueries are not rewritten.
   *
   * A subcolumn of a column exported by a subquery is resolved into the `getSubcolumn`
   * function over the whole column:
