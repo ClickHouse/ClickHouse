@@ -546,6 +546,16 @@ Chunk StorageURLSource::generate()
             if (!cancellation->isCancelledSoftly())
                 throw;
 
+            /// The reason delivered to the source may understate a kill: the executor polls
+            /// QueryStatus::checkTimeLimitSoft, which returns false for a killed query, and cancels
+            /// the pipeline with CancelledByTimeout. When that poll wins the race against the
+            /// processor broadcast of the kill itself, ExecutingGraph::cancel keeps the poll's
+            /// reason - only PartialResult is upgraded - and the source never sees a hard reason.
+            /// The process list knows better: a killed (or hard timed out) query fails with the
+            /// proper cancellation error here instead of discarding the error of its interrupted
+            /// read as if its result were partial.
+            CurrentThread::checkIfNotCancelled();
+
             tryLogCurrentException(
                 getLogger("StorageURLSource"),
                 "The read was interrupted by a cancellation after which the query returns its partial result, discarding the error",
