@@ -1,0 +1,12 @@
+-- merge() UNION ALL merge()
+1500	624250
+1500	624250
+-- merge() UNION ALL a MergeTree table
+1500	624250
+1500	624250
+-- view over UNION ALL of MergeTree tables
+1000	499500
+1000	499500
+-- view over merge() UNION ALL a MergeTree table
+1500	624250
+1500	624250

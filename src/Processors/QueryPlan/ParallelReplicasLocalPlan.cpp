@@ -39,36 +39,7 @@ namespace FailPoints
     extern const char slowdown_parallel_replicas_local_plan_read[];
 }
 
-/// Finds and returns the first QueryPlan node containing the specified ReadingStep type or nullptr
-template <class ReadingStep>
-static QueryPlan::Node * findReadingStep(QueryPlan::Node * node)
-{
-    ReadingStep * reading_step = nullptr;
-    while (node)
-    {
-        reading_step = typeid_cast<ReadingStep *>(node->step.get());
-        if (reading_step)
-            break;
-
-        if (!node->children.empty())
-        {
-            // in case of RIGHT JOIN, - reading from right table is parallelized among replicas
-            const JoinStep * join = typeid_cast<JoinStep *>(node->step.get());
-            const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
-            if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
-                || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
-                node = node->children.at(1);
-            else
-                node = node->children.at(0);
-        }
-        else
-            node = nullptr;
-    }
-
-    return node;
-}
-
-/// Walk the plan using the same traversal as findReadingStep (following LEFT/RIGHT JOIN logic),
+/// Walk the plan following LEFT/RIGHT JOIN logic (only the side that parallel replicas coordinate),
 /// but look for a UnionStep. If found, collect all ReadFromMergeTree steps from each child branch,
 /// recursively handling nested views with their own UNION ALL.
 std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool allow_merge_tables)
@@ -120,6 +91,57 @@ std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool all
     }
 
     return {};
+}
+
+/// Mark every reading step of a shipped logical fragment that the replicas must coordinate
+/// (`ReadFromTableStep` / `ReadFromTableFunctionStep`, the latter for the merge(...) table
+/// function - the only table function eligible for parallel replicas). The fragment can contain
+/// several of them: a `UNION ALL` view expansion, or a `UNION ALL` over several `Merge` sources.
+/// A read the replicas do not coordinate is planned by them as a plain local read, and every
+/// replica would return its rows in full on top of the coordinated result of the marked reads,
+/// duplicating them - so descend into every branch of a union. For a JOIN only the side that
+/// parallel replicas coordinate is marked: the other side is a broadcast read that every replica
+/// intentionally performs in full. Marking a read that the initiator's local plan does not
+/// announce is safe: the snapshot replica is pinned to the initiator whenever a plan is shipped,
+/// so the coordinator ignores announcements for streams the local plan does not know and assigns
+/// such reads no work, while the initiator reads them in full by itself.
+static void markReadsForParallelReplicas(QueryPlan::Node * node)
+{
+    while (node)
+    {
+        if (auto * read_from_table = typeid_cast<ReadFromTableStep *>(node->step.get()))
+        {
+            read_from_table->useParallelReplicas() = true;
+            return;
+        }
+
+        if (auto * read_from_table_function = typeid_cast<ReadFromTableFunctionStep *>(node->step.get()))
+        {
+            read_from_table_function->useParallelReplicas() = true;
+            return;
+        }
+
+        if (typeid_cast<UnionStep *>(node->step.get()))
+        {
+            for (auto * child : node->children)
+                markReadsForParallelReplicas(child);
+            return;
+        }
+
+        if (!node->children.empty())
+        {
+            /// In case of RIGHT JOIN, reading from the right table is parallelized among replicas.
+            const JoinStep * join = typeid_cast<JoinStep *>(node->step.get());
+            const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
+            if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
+                || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
+                node = node->children.at(1);
+            else
+                node = node->children.at(0);
+        }
+        else
+            node = nullptr;
+    }
 }
 
 std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
@@ -180,13 +202,7 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     auto query_plan = std::make_shared<QueryPlan>(std::move(interpreter).extractQueryPlan());
     addConvertingActions(*query_plan, header, context);
 
-    // TODO: fix view with UNION case for enabled serialize_query_plan separately (use findReadingSteps() instead)
-    if (auto * node = findReadingStep<ReadFromTableStep>(query_plan->getRootNode()))
-        typeid_cast<ReadFromTableStep *>(node->step.get())->useParallelReplicas() = true;
-    /// The read designated for coordination can also be the merge(...) table function
-    /// (the only table function eligible for parallel replicas).
-    else if (auto * table_function_node = findReadingStep<ReadFromTableFunctionStep>(query_plan->getRootNode()))
-        typeid_cast<ReadFromTableFunctionStep *>(table_function_node->step.get())->useParallelReplicas() = true;
+    markReadsForParallelReplicas(query_plan->getRootNode());
 
     return query_plan;
 }
