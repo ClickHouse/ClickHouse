@@ -55,7 +55,7 @@ run_and_count_prefetches() {
     ${CLICKHOUSE_CLIENT} --query "
         SELECT ProfileEvents['RemoteFSPrefetches'] = $1
         FROM system.query_log
-        WHERE current_database = '${CLICKHOUSE_DATABASE}' AND log_comment = '$3'
+        WHERE current_database = currentDatabase() AND log_comment = '$3'
           AND type = 'QueryFinish' AND event_date >= yesterday() AND is_initial_query
         ORDER BY event_time_microseconds DESC LIMIT 1"
 }
@@ -78,7 +78,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT ProfileEvents['RemoteFSPrefetches'] > 10
     FROM system.query_log
-    WHERE current_database = '${CLICKHOUSE_DATABASE}'
+    WHERE current_database = currentDatabase()
       AND log_comment = '04841_unlimited_${CLICKHOUSE_TEST_UNIQUE_NAME}'
       AND type = 'QueryFinish' AND event_date >= yesterday() AND is_initial_query
     ORDER BY event_time_microseconds DESC LIMIT 1"
