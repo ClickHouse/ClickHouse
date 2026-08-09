@@ -1,0 +1,80 @@
+-- widen dotted compact: parent alone
+[100,200]
+-- widen dotted compact: size0 alone
+2
+-- widen dotted compact: size0, parent
+2	[100,200]
+-- widen dotted compact: parent, size0
+[100,200]	2
+-- widen dotted compact: size0, sibling member
+2	[10,20]
+-- widen dotted compact: type of the read parent
+Array(UInt64)
+-- widen dotted wide: parent alone
+[100,200]
+-- widen dotted wide: size0 alone
+2
+-- widen dotted wide: size0, parent
+2	[100,200]
+-- widen dotted wide: parent, size0
+[100,200]	2
+-- widen dotted wide: size0, sibling member
+2	[10,20]
+-- widen dotted wide: type of the read parent
+Array(UInt64)
+-- widen dotted rewritten: parent alone
+[100,200]
+-- widen dotted rewritten: size0 alone
+2
+-- widen dotted rewritten: size0, parent
+2	[100,200]
+-- widen dotted rewritten: parent, size0
+[100,200]	2
+-- widen dotted rewritten: size0, sibling member
+2	[10,20]
+-- widen dotted rewritten: type of the read parent
+Array(UInt64)
+-- widen+nullable dotted compact: subcolumn alone
+[0,0]
+-- widen+nullable dotted compact: subcolumn, parent
+[0,0]	[100,200]
+-- widen+nullable dotted compact: parent, subcolumn
+[100,200]	[0,0]
+-- widen+nullable dotted compact: subcolumn, sibling member
+[0,0]	[10,20]
+-- widen+nullable dotted wide: subcolumn alone
+[0,0]
+-- widen+nullable dotted wide: subcolumn, parent
+[0,0]	[100,200]
+-- widen+nullable dotted wide: parent, subcolumn
+[100,200]	[0,0]
+-- widen+nullable dotted wide: subcolumn, sibling member
+[0,0]	[10,20]
+-- widen+nullable dotted rewritten: subcolumn alone
+[0,0]
+-- widen+nullable dotted rewritten: subcolumn, parent
+[0,0]	[100,200]
+-- widen+nullable dotted rewritten: parent, subcolumn
+[100,200]	[0,0]
+-- widen+nullable dotted rewritten: subcolumn, sibling member
+[0,0]	[10,20]
+-- lowcardinality dotted compact: parent alone
+['a','b']
+-- lowcardinality dotted compact: size0, parent
+2	['a','b']
+-- lowcardinality dotted compact: size0, sibling member
+2	[10,20]
+-- lowcardinality dotted wide: parent alone
+['a','b']
+-- lowcardinality dotted wide: size0, parent
+2	['a','b']
+-- lowcardinality dotted wide: size0, sibling member
+2	[10,20]
+-- lowcardinality dotted rewritten: parent alone
+['a','b']
+-- lowcardinality dotted rewritten: size0, parent
+2	['a','b']
+-- lowcardinality dotted rewritten: size0, sibling member
+2	[10,20]
+-- widen scalar control
+100	UInt64
