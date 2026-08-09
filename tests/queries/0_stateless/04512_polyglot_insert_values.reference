@@ -45,3 +45,6 @@ SYNTAX_ERROR
 SYNTAX_ERROR
 --- exception-before-start log omits the data of a CTE-wrapped INSERT (expect: 1) ---
 1
+SYNTAX_ERROR
+--- exception-before-start log omits a letters-only FORMAT payload (expect: 1) ---
+1

@@ -344,6 +344,22 @@ static String redactPolyglotQueryForLogging(const char * begin, const char * end
         /// A digit starts a literal unless it continues an identifier such as `t2`.
         if (isNumericASCII(c) && (cut == pos || !isWordCharASCII(cut[-1])))
             break;
+        /// A raw FORMAT payload can start with anything (`abc`, `{"x":1}`, ...), so literal starters
+        /// alone are not enough: keep the `FORMAT <name>` header and drop everything after the
+        /// format name. This may also drop a `SETTINGS` clause following the format name — acceptable
+        /// over-redaction on this fail-close path.
+        static constexpr std::string_view format_keyword = "FORMAT";
+        if ((cut == pos || !isWordCharASCII(cut[-1])) && cut + format_keyword.size() <= end
+            && strncasecmp(cut, format_keyword.data(), format_keyword.size()) == 0
+            && (cut + format_keyword.size() == end || !isWordCharASCII(cut[format_keyword.size()])))
+        {
+            cut += format_keyword.size();
+            while (cut < end && isWhitespaceASCII(*cut))
+                ++cut;
+            while (cut < end && isWordCharASCII(*cut))
+                ++cut;
+            break;
+        }
         ++cut;
     }
 

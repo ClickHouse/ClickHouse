@@ -200,5 +200,22 @@ done
 echo "--- exception-before-start log omits the data of a CTE-wrapped INSERT (expect: 1) ---"
 echo "$cte_leak_check"
 
+# A raw FORMAT payload can start with anything, not only a VALUES-style literal: a CSV body made of
+# letters has no parenthesis, quote, or digit for the redaction to cut at, so the text must be cut
+# right after the `FORMAT <name>` header instead. The letters-only sentinel must not be logged.
+fmt_leak_id="${CLICKHOUSE_DATABASE}_04512_fmt_exc_leak"
+${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query_id=${fmt_leak_id}" -d 'INSERT INTO t FORMAT CSV
+secretleakvalue' 2>&1 | grep -om1 "SYNTAX_ERROR"
+fmt_leak_check=""
+for _ in {1..100}
+do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    fmt_leak_check=$($CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%secretleakvalue%' AND query ILIKE 'INSERT INTO%' FROM system.query_log WHERE query_id = '$fmt_leak_id' AND type = 'ExceptionBeforeStart' AND current_database = currentDatabase()")
+    [ -n "$fmt_leak_check" ] && break
+    sleep 0.3
+done
+echo "--- exception-before-start log omits a letters-only FORMAT payload (expect: 1) ---"
+echo "$fmt_leak_check"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"
