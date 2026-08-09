@@ -1,4 +1,5 @@
 DROP TABLE IF EXISTS mrp_mt;
+DROP TABLE IF EXISTS mrp_pk;
 DROP TABLE IF EXISTS mrp_log;
 DROP TABLE IF EXISTS mrp_a;
 DROP TABLE IF EXISTS mrp_b;
@@ -25,7 +26,15 @@ SELECT * FROM merge(currentDatabase(), '^mrp_mt$') FINAL ORDER BY id;
 DROP ROW POLICY 04833_mt_n ON mrp_mt;
 
 SELECT 'granules still pruned';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT * FROM merge(currentDatabase(), '^mrp_mt$')) WHERE explain ILIKE '%Granules:%';
+-- index_granularity is pinned so the exact count survives the runner's randomization.
+CREATE TABLE mrp_pk (id UInt32, value UInt32) ENGINE = MergeTree ORDER BY id
+    SETTINGS index_granularity = 4, index_granularity_bytes = '10Mi';
+INSERT INTO mrp_pk SELECT number, number * 10 FROM numbers(40);
+CREATE ROW POLICY 04833_pk ON mrp_pk FOR SELECT USING id IN (SELECT 5) TO ALL;
+SELECT * FROM merge(currentDatabase(), '^mrp_pk$') ORDER BY id;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT * FROM merge(currentDatabase(), '^mrp_pk$')) WHERE explain ILIKE '%Granules: 1/10%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT * FROM merge(currentDatabase(), '^mrp_pk$') SETTINGS use_index_for_in_with_subqueries = 0) WHERE explain ILIKE '%Granules: 10/10%';
+DROP ROW POLICY 04833_pk ON mrp_pk;
 
 SELECT 'no unconverted delayed step';
 SELECT count() FROM (EXPLAIN SELECT * FROM merge(currentDatabase(), '^mrp_mt$') FINAL) WHERE explain ILIKE '%DelayedCreatingSets%';
@@ -62,6 +71,7 @@ SELECT * FROM merge(currentDatabase(), '^mrp_mt$') FINAL ORDER BY id;
 DROP ROW POLICY 04833_plain ON mrp_mt;
 
 DROP TABLE mrp_mt;
+DROP TABLE mrp_pk;
 DROP TABLE mrp_log;
 DROP TABLE mrp_a;
 DROP TABLE mrp_b;
