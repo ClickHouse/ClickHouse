@@ -50,6 +50,10 @@ void leakInJoinedThread()
 [[noreturn]] void leakAndExitSkipReporting() { leakInJoinedThread(); safeExit(0, LeakCheck::SkipAndReport); }
 [[noreturn]] void leakAndExitSkipQuietly() { leakInJoinedThread(); safeExit(0, LeakCheck::SkipQuietly); }
 
+/// The complete line safeExit() writes, newline included: it is one write(2), and the CI
+/// detector filters it with `grep -F -x`, so any drift in its tail breaks that whole-line match.
+constexpr auto SKIP_NOTICE_LINE = "Not running the leak check: other threads are still running.\n";
+
 }
 
 /// safeExit() runs the leak check by default, ...
@@ -63,7 +67,7 @@ TEST(SanitizerDeathTest, SafeExitSkipsLeakCheckOnRequest)
 {
     EXPECT_EXIT(leakAndExitSkipReporting(), testing::ExitedWithCode(0),
         testing::AllOf(
-            testing::HasSubstr("Not running the leak check"),
+            testing::HasSubstr(SKIP_NOTICE_LINE),
             testing::Not(testing::ContainsRegex("LeakSanitizer: detected memory leaks"))));
 }
 
@@ -72,7 +76,7 @@ TEST(SanitizerDeathTest, SafeExitSkipsLeakCheckQuietly)
 {
     EXPECT_EXIT(leakAndExitSkipQuietly(), testing::ExitedWithCode(0),
         testing::AllOf(
-            testing::Not(testing::HasSubstr("Not running the leak check")),
+            testing::Not(testing::HasSubstr(SKIP_NOTICE_LINE)),
             testing::Not(testing::ContainsRegex("LeakSanitizer: detected memory leaks"))));
 }
 

@@ -24,18 +24,46 @@ Arm 4 covers the multi-server layout, where `stderr*.log` is several files that
 `sed` concatenates into one stream, so the range can open in one file and blame
 a line in the next. Arm 5 pins the filter to our exact literal, so it cannot
 grow into a blanket silencer.
+
+The notice text itself lives in three places - `safeExit.cpp` writes it, the
+pipeline filters it, and the arms below feed it - and the whole-line match only
+works while all three agree. So the arms derive it from `safeExit.cpp` and
+`test_ci_filter_matches_the_emitted_notice` holds the filter to the same source.
 """
 
 import ast
+import re
 import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROC_PY = REPO_ROOT / "ci" / "jobs" / "scripts" / "clickhouse_proc.py"
+SAFE_EXIT_CPP = REPO_ROOT / "base" / "base" / "safeExit.cpp"
 
-SKIP_NOTICE = "Not running the leak check: other threads are still running."
 
-# The `__asan_handle_no_return` block, verbatim. Its 4th line is what opens the
+def _extract_skip_notice() -> str:
+    """The notice `safeExit()` writes, taken from the C++ that writes it.
+
+    Derived rather than copied so that the arms below drive the line the server
+    really emits; the filter is pinned to the same source in
+    `test_ci_filter_matches_the_emitted_notice`.
+    """
+    literals = re.findall(
+        r'static\s+constexpr\s+char\s+message\[\]\s*=\s*"((?:[^"\\]|\\.)*)"\s*;',
+        SAFE_EXIT_CPP.read_text(),
+    )
+    assert (
+        len(literals) == 1
+    ), f"expected one message[] literal in {SAFE_EXIT_CPP}, got {len(literals)}"
+    # The escapes `safeExit.cpp` uses (`\n`) mean the same in both languages, and
+    # `literal_eval` rejects anything it cannot read rather than guessing.
+    return ast.literal_eval(f'"{literals[0]}"')
+
+
+SKIP_NOTICE_LINE = _extract_skip_notice()
+SKIP_NOTICE = SKIP_NOTICE_LINE.rstrip("\n")
+
+# The `__asan_handle_no_return` block, verbatim. Its 3rd line is what opens the
 # `sed` range; all four are on the detector's allow-list.
 ASAN_STACK_SIZE_BLOCK = [
     "==1==WARNING: ASan is ignoring requested __asan_handle_no_return: stack top: 0x7f0000000000; bottom 0x7ffd00000000; size: 0x000300000000 (12884901888)",
@@ -107,6 +135,21 @@ def _detect(log_dir: Path) -> str:
 def _write(log_dir: Path, **files) -> None:
     for name, lines in files.items():
         (log_dir / name).write_text("".join(line + "\n" for line in lines))
+
+
+def test_ci_filter_matches_the_emitted_notice():
+    """The filter is a whole-line match, so it must equal the emitted line exactly."""
+    filters = re.findall(r'grep -a -v -F -x "([^"]*)"', PIPELINE)
+    assert (
+        len(filters) == 1
+    ), f"expected one -F -x filter in the pipeline, got {filters}"
+    assert filters[0] == SKIP_NOTICE, (
+        f"the leak-check-skip notice differs between\n"
+        f"  {SAFE_EXIT_CPP} (writes {SKIP_NOTICE_LINE!r})\n"
+        f"  {PROC_PY} (filters {filters[0]!r})\n"
+        f"`grep -F -x` matches whole lines, so the filter stops matching and the "
+        f"notice becomes a BLOCKER sanitizer hit. Update both."
+    )
 
 
 def test_pipeline_filters_the_skip_notice(tmp_path):
