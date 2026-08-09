@@ -25,6 +25,9 @@ ZstdInflatingReadBuffer::ZstdInflatingReadBuffer(std::unique_ptr<ReadBuffer> in_
     size_t ret = ZSTD_DCtx_setParameter(dctx, ZSTD_d_windowLogMax, zstd_window_log_max);
     if (ZSTD_isError(ret))
     {
+        /// The destructor is not called if the constructor throws - free the just created context here.
+        ZSTD_freeDCtx(dctx);
+        dctx = nullptr;
         throw Exception(ErrorCodes::ZSTD_DECODER_FAILED, "zstd_stream_decoder init failed: {}", ZSTD_getErrorName(ret));
     }
 }
