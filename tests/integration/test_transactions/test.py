@@ -1217,12 +1217,16 @@ def test_kill_transaction_mutation_rollback_window(start_cluster):
         # started while the rollback is still paused, so on an unfixed server
         # the cancelled mutation is selected and its mutate task is recorded in
         # system.part_log; with the fix nothing is ever selected for it.
-        # An incorrectly selected task can also be skipped silently by the
-        # rollback re-check in MutatePlainMergeTreeTask::prepare, before it
-        # writes the MutatePartStart row, so an empty part_log alone does not
-        # prove that selection never happened.  That skip logs the transaction
-        # id (unique to this test), so additionally assert that the skip
-        # message never appears in system.text_log.
+        # part_log alone does not prove that selection never happened: an
+        # incorrectly selected task can also be dropped before prepare (a full
+        # background pool) or skipped silently by the rollback re-check in
+        # MutatePlainMergeTreeTask::prepare, before it writes the
+        # MutatePartStart row.  selectPartsToMutate logs a selection message
+        # with the transaction id (unique to this test) at the only place a
+        # mutate task is built, so assert that neither that message nor the
+        # prepare re-check's skip message ever appears in system.text_log
+        # (test_kill_transaction_mutation_task_selected_before_rollback pins
+        # both messages against wording drift by asserting their presence).
         # transactionID() prints the tuple as (csn,ltid,'uuid'), while the log
         # message formats it as (csn, ltid, uuid).
         tid_csn, tid_ltid, tid_host = tid.strip("()").split(",")
@@ -1243,12 +1247,20 @@ def test_kill_transaction_mutation_rollback_window(start_cluster):
             assert (
                 node.query(
                     "SELECT count() FROM system.text_log"
+                    " WHERE message LIKE 'Selected part % to mutate to version %'"
+                    f" AND message LIKE '%started by transaction {log_tid}'"
+                ).strip()
+                == "0"
+            ), "A cancelled transactional mutation must not be selected"
+            assert (
+                node.query(
+                    "SELECT count() FROM system.text_log"
                     " WHERE message LIKE 'Skipping mutation of part %'"
                     f" AND message LIKE '%transaction {log_tid} was cancelled"
                     " after the mutation was selected'"
                 ).strip()
                 == "0"
-            ), "A cancelled transactional mutation must not be selected"
+            ), "A cancelled transactional mutation must not reach prepare"
             time.sleep(0.5)
     finally:
         # Let the rollback finish: killMutation now removes the mutation entry.
@@ -1488,6 +1500,28 @@ def test_kill_transaction_mutation_task_selected_before_rollback(start_cluster):
             "SYSTEM WAIT FAILPOINT mt_mutate_task_pause_before_prepare PAUSE"
         )
 
+        # The selection already happened, so the selection message of
+        # selectPartsToMutate must be logged for this transaction.  This also
+        # pins the message wording that
+        # test_kill_transaction_mutation_rollback_window asserts the absence
+        # of, so that assertion cannot silently become vacuous.
+        # transactionID() prints the tuple as (csn,ltid,'uuid'), while the log
+        # message formats it as (csn, ltid, uuid).
+        tid_csn, tid_ltid, tid_host = tid.strip("()").split(",")
+        tid_host = tid_host.strip("'")
+        log_tid = f"({tid_csn}, {tid_ltid}, {tid_host})"
+        node.query("SYSTEM FLUSH LOGS text_log")
+        assert (
+            int(
+                node.query(
+                    "SELECT count() FROM system.text_log"
+                    " WHERE message LIKE 'Selected part % to mutate to version %'"
+                    f" AND message LIKE '%started by transaction {log_tid}'"
+                )
+            )
+            >= 1
+        ), "The selection of the mutate task must be logged"
+
         # The rollback sweep runs while the task is not in MergeList yet, so it
         # cannot cancel the task; it removes the mutation entry.
         node.query(f"KILL TRANSACTION WHERE tid = {tid}")
@@ -1526,6 +1560,23 @@ def test_kill_transaction_mutation_task_selected_before_rollback(start_cluster):
     assert (
         node.query("SELECT sum(value) FROM mt_kill_txn_selected_task").strip() == "200"
     )
+
+    # The resumed task took the rollback re-check's skip path in prepare.  The
+    # barrier UPDATE above guarantees the task has already run.  This pins the
+    # skip message wording that
+    # test_kill_transaction_mutation_rollback_window asserts the absence of.
+    node.query("SYSTEM FLUSH LOGS text_log")
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.text_log"
+                " WHERE message LIKE 'Skipping mutation of part %'"
+                f" AND message LIKE '%transaction {log_tid} was cancelled"
+                " after the mutation was selected'"
+            )
+        )
+        >= 1
+    ), "The skipped task of a cancelled transactional mutation must be logged"
 
     # The resumed task must not have started mutating the part to the cancelled
     # mutation's version: no part_log activity for that version at all.

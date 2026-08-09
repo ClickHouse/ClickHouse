@@ -2273,6 +2273,12 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             future_part->part_format = part->getFormat();
 
             tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, CompactionStatistics::estimateNeededDiskSpace({part}, false), *this, metadata_snapshot, true);
+            /// This is the only place where a mutate task is selected, so this message is the
+            /// authoritative signal that the mutation was selected for execution (the task may
+            /// still be dropped before `prepare`, e.g. when the background pool is full);
+            /// tests rely on it to prove that a dead transactional mutation is never selected.
+            LOG_DEBUG(log, "Selected part {} to mutate to version {} with mutations {}, started by transaction {}",
+                part->name, new_part_info.mutation, fmt::join(mutation_ids, ", "), first_mutation_tid);
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), commands, txn, mutation_ids);
         }
     }
