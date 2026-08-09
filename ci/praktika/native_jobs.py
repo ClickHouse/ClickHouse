@@ -605,6 +605,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 "param_1": "",
                 "summary": "",
                 "review": "",
+                "coverage": "",
             },
         )
         res1 = GH.post_commit_status(
