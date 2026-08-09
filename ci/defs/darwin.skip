@@ -16,5 +16,12 @@
 02910_prefetch_unexpceted_exception
 04640_query_log_map_columns_serialization
 
+# Marginal timeout on the macOS CI runner: the combined diagnostics test averaged ~47s there
+# with a 60s per-test limit (vs ~27s on the Linux fast test), so a few percent of runs crossed
+# the limit. The expensive driver-replay half was split into this test; the cheap
+# marker/payload assertions stay in 03008_deduplication_diagnostics_opt_in, which keeps
+# running here. Full coverage remains on Linux; re-enable if the runner gets faster.
+03008_deduplication_diagnostics_replay
+
 # Flaky on CI (stuck timeout)
 04319_skip_unavailable_shards_mode_table_missing
