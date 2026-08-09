@@ -7273,7 +7273,9 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPar
 
             ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
             ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
-            increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
+            /// The part is swapped for its byte-identical copy on another disk (same name, same
+            /// checksums), so the table's data state is unchanged and the loop-free version must not move.
+            increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0, /* membership_changes= */ 0);
 
             return;
         }
@@ -10029,7 +10031,10 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             ssize_t diff_bytes = add_bytes - reduce_bytes;
             ssize_t diff_rows = add_rows - reduce_rows;
             ssize_t diff_parts  = add_parts - reduce_parts;
-            data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
+            /// The loop-free version must see every membership change, not the net delta: a count-neutral
+            /// commit (e.g. `REPLACE PARTITION FROM` swapping one part for one part) has `diff_parts == 0`
+            /// but does change the active-part set.
+            data.increaseDataVolume(diff_bytes, diff_rows, diff_parts, add_parts + reduce_parts);
         });
     }
 
@@ -11663,26 +11668,29 @@ size_t MergeTreeData::getTotalMergesWithTTLInMergeList() const
 
 void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)
 {
-    increaseDataVolume(part->getBytesOnDisk(), part->rows_count, 1);
+    increaseDataVolume(part->getBytesOnDisk(), part->rows_count, 1, /* membership_changes= */ 1);
 }
 
 void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
-    increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1);
+    increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1, /* membership_changes= */ 1);
 }
 
-void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)
+void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts, size_t membership_changes)
 {
     total_active_size_bytes.fetch_add(bytes);
     total_active_size_rows.fetch_add(rows);
     total_active_size_parts.fetch_add(parts);
 
-    /// A change to the membership of the active-part set advances the loop-free version folded into
-    /// `getModificationHash` (see the field declaration). Size-only updates (`parts == 0`, e.g. an
-    /// in-place byte/row adjustment) must not bump it, otherwise every such update would needlessly
-    /// invalidate the query cache for the table.
-    if (parts != 0)
-        active_parts_set_version.fetch_add(1);
+    /// Every change to the membership of the active-part set advances the loop-free version folded into
+    /// `getModificationHash` (see the field declaration). `membership_changes` is the number of parts
+    /// added to plus removed from the active set, NOT the net `parts` delta: a count-neutral batch (e.g.
+    /// `REPLACE PARTITION FROM` swapping one part for one part) changes the set and must bump the
+    /// version even though `parts == 0`. Conversely, size-only updates (an in-place byte/row adjustment,
+    /// or a part swapped for its byte-identical copy on another disk) pass 0 and must not bump it,
+    /// otherwise every such update would needlessly invalidate the query cache for the table.
+    if (membership_changes != 0)
+        active_parts_set_version.fetch_add(membership_changes);
 }
 
 void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)

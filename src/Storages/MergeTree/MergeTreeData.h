@@ -2139,7 +2139,7 @@ private:
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);
 
-    void increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts);
+    void increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts, size_t membership_changes);
     void setDataVolume(size_t bytes, size_t rows, size_t parts);
 
     void addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
