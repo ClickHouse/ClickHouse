@@ -1,0 +1,86 @@
+---
+description: 'Documentación de UNDROP TABLE'
+sidebarTitle: 'UNDROP'
+slug: /sql-reference/statements/undrop
+title: 'UNDROP TABLE'
+doc_type: 'reference'
+---
+
+Cancela la eliminación de la tabla.
+
+A partir de la versión 23.3 de ClickHouse, es posible ejecutar UNDROP sobre una tabla de una base de datos Atomic
+dentro del plazo de `database_atomic_delay_before_drop_table_sec` (8 minutos de forma predeterminada) tras ejecutar la sentencia DROP TABLE. Las tablas eliminadas se enumeran en
+una tabla del sistema llamada `system.dropped_tables`.
+
+Si tiene una vista materializada sin una cláusula `TO` asociada a la tabla eliminada, también tendrá que ejecutar UNDROP sobre la tabla interna de esa vista.
+
+<Tip>
+  Consulte también [DROP TABLE](/es/reference/statements/drop)
+</Tip>
+
+Sintaxis:
+
+```sql
+UNDROP TABLE [db.]name [UUID '<uuid>'] [ON CLUSTER cluster]
+```
+
+**Ejemplo**
+
+```sql
+CREATE TABLE tab
+(
+    `id` UInt8
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+DROP TABLE tab;
+
+SELECT *
+FROM system.dropped_tables
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+index:                 0
+database:              default
+table:                 tab
+uuid:                  aa696a1a-1d70-4e60-a841-4c80827706cc
+engine:                MergeTree
+metadata_dropped_path: /var/lib/clickhouse/metadata_dropped/default.tab.aa696a1a-1d70-4e60-a841-4c80827706cc.sql
+table_dropped_time:    2023-04-05 14:12:12
+
+1 row in set. Elapsed: 0.001 sec. 
+```
+
+````sql
+UNDROP TABLE tab;
+
+SELECT *
+FROM system.dropped_tables
+FORMAT Vertical;
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.001 sec. 
+````
+
+```sql
+DESCRIBE TABLE tab
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+name:               id
+type:               UInt8
+default_type:       
+default_expression: 
+comment:            
+codec_expression:   
+ttl_expression:     
+```

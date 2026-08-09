@@ -1,0 +1,224 @@
+---
+sidebarTitle: 'إنشاء نسخة احتياطية أو استعادتها باستخدام الأوامر'
+slug: /cloud/manage/backups/backup-restore-via-commands
+title: 'إنشاء نسخة احتياطية أو استعادة نسخة احتياطية باستخدام الأوامر'
+description: 'صفحة تشرح كيفية إنشاء نسخة احتياطية أو استعادة نسخة احتياطية باستخدام حاوية التخزين الخاصة بك عبر الأوامر'
+doc_type: 'guide'
+keywords: ['النسخ الاحتياطية', 'التعافي من الكوارث', 'حماية البيانات', 'الاستعادة', 'ميزات السحابة']
+---
+
+يمكنك استخدام الأمرين `BACKUP` و`RESTORE` لتصدير النسخ الاحتياطية إلى حاويات التخزين الخاصة بك،
+بالإضافة إلى إنشاء نسخة احتياطية أو استعادتها [عبر واجهة المستخدم](/ar/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
+ويعرض هذا الدليل أوامر موفري الخدمات السحابية الثلاثة جميعًا.
+
+<div id="requirements">
+  ## المتطلبات
+</div>
+
+ستحتاج إلى التفاصيل التالية لتصدير النسخ الاحتياطية أو استعادتها إلى حاوية التخزين السحابية (CSP) الخاصة بك:
+
+<Tabs>
+  <Tab title="AWS">
+    1. نقطة نهاية AWS S3، بالتنسيق: `s3://<bucket_name>.s3.amazonaws.com/<optional_directory>`
+       على سبيل المثال: `s3://testchbackups.s3.amazonaws.com/`
+       حيث:
+       * `testchbackups` هو اسم حاوية التخزين S3 التي ستُصدَّر إليها النسخ الاحتياطية.
+       * `backups` هو دليل فرعي اختياري.
+    2. مفتاح الوصول والسر الخاصان بـ AWS. كما أن المصادقة المستندة إلى دور AWS مدعومة أيضًا، ويمكن استخدامها بدلًا من مفتاح الوصول والسر الخاصين بـ AWS كما هو موضح في القسم أعلاه.
+
+    <br />
+  </Tab>
+
+  <Tab title="GCP">
+    1. نقطة نهاية GCS، بالتنسيق: `https://storage.googleapis.com/<bucket_name>/`
+    2. مفتاح HMAC للوصول وسر HMAC.
+
+    <br />
+  </Tab>
+
+  <Tab title="Azure">
+    1. سلسلة اتصال Azure Storage.
+    2. اسم حاوية Azure في حساب التخزين.
+    3. كائن Blob في الحاوية.
+
+    <br />
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_db">
+  ## النسخ الاحتياطي / استعادة قاعدة بيانات محددة
+</div>
+
+نعرض هنا كيفية إجراء النسخ الاحتياطي والاستعادة لقاعدة بيانات *واحدة*.
+راجع [ملخص أوامر النسخ الاحتياطي](/ar/concepts/features/backup-restore/overview#command-summary) للاطلاع على أوامر النسخ الاحتياطي الكامل والاستعادة.
+
+<div id="aws-s3-bucket">
+  ### AWS S3
+</div>
+
+<Tabs>
+  <Tab title="النسخ الاحتياطي">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+
+    حيث إن `uuid` معرّف فريد يُستخدم للتمييز بين مجموعة من النسخ الاحتياطية.
+
+    <Note>
+      ستحتاج إلى استخدام `uuid` مختلف لكل نسخة احتياطية جديدة في هذا الدليل الفرعي، وإلا فسيظهر لك الخطأ `BACKUP_ALREADY_EXISTS`.
+      على سبيل المثال، إذا كنت تُجري نسخًا احتياطية يومية، فستحتاج إلى استخدام `uuid` جديد كل يوم.
+    </Note>
+  </Tab>
+
+  <Tab title="الاستعادة">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="google-cloud-storage">
+  ### Google Cloud Storage (GCS)
+</div>
+
+<Tabs>
+  <Tab title="النسخ الاحتياطي">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+
+    حيث إن `uuid` معرّف فريد يُستخدم لتحديد النسخة الاحتياطية.
+
+    <Note>
+      ستحتاج إلى استخدام `uuid` مختلف لكل نسخة احتياطية جديدة في هذا الدليل الفرعي، وإلا فسيظهر الخطأ `BACKUP_ALREADY_EXISTS`.
+      على سبيل المثال، إذا كنت تُجري نسخًا احتياطية يومية، فستحتاج إلى استخدام `uuid` جديد كل يوم.
+    </Note>
+  </Tab>
+
+  <Tab title="الاستعادة">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="azure-blob-storage">
+  ### Azure Blob Storage
+</div>
+
+<Tabs>
+  <Tab title="النسخ الاحتياطي">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<>'
+    )
+    ```
+
+    حيث إن `uuid` معرّف فريد يُستخدم لتحديد النسخة الاحتياطية.
+
+    <Note>
+      ستحتاج إلى استخدام `uuid` مختلف لكل نسخة احتياطية جديدة في هذا الدليل الفرعي، وإلا فسيظهر لك الخطأ `BACKUP_ALREADY_EXISTS`.
+      على سبيل المثال، إذا كنت تنشئ نسخًا احتياطية يومية، فستحتاج إلى استخدام `uuid` جديد كل يوم.
+    </Note>
+  </Tab>
+
+  <Tab title="الاستعادة">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<uuid>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_entire_service">
+  ## النسخ الاحتياطي / استعادة الخدمة بالكامل
+</div>
+
+لأخذ نسخة احتياطية من الخدمة بالكامل، استخدم الأوامر أدناه.
+ستتضمن هذه النسخة الاحتياطية جميع بيانات المستخدم وبيانات النظام الخاصة بالكيانات المُنشأة وملفات تعريف الإعدادات وسياسات الأدوار والحصص والدوال.
+نوردها هنا باستخدام AWS S3.
+يمكنك استخدام هذه الأوامر مع الصياغة الموضحة أعلاه لأخذ نسخ احتياطية على GCS وAzure Blob storage.
+
+<Tabs>
+  <Tab title="النسخ الاحتياطي">
+    ```sql
+    BACKUP 
+        TABLE system.users,
+        TABLE system.roles,
+        TABLE system.settings_profiles,
+        TABLE system.row_policies,
+        TABLE system.quotas,
+        TABLE system.functions,
+        ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+    TO S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+
+    حيث إن `uuid` معرّف فريد يُستخدم لتحديد النسخة الاحتياطية.
+  </Tab>
+
+  <Tab title="الاستعادة">
+    ```sql
+    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    FROM S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backups-faq">
+  ## FAQ
+</div>
+
+<Accordion title="ماذا يحدث للنسخ الاحتياطية في تخزين الكائنات السحابي الخاص بي؟ هل ينظّفها ClickHouse في مرحلة ما؟">
+  نوفر لك إمكانية تصدير النسخ الاحتياطية إلى حاوية التخزين الخاصة بك، ولكننا لا ننظف أيًا من النسخ الاحتياطية ولا نحذفها بعد كتابتها. وتقع على عاتقك مسؤولية إدارة دورة حياة النسخ الاحتياطية في حاوية التخزين الخاصة بك، بما في ذلك حذفها أو أرشفتها حسب الحاجة، أو نقلها إلى تخزين أقل تكلفة لتحسين التكلفة الإجمالية.
+</Accordion>
+
+<Accordion title="ماذا يحدث لعملية الاستعادة إذا نقلت بعض النسخ الاحتياطية الحالية إلى موقع آخر؟">
+  إذا نُقلت أي نسخ احتياطية إلى موقع آخر، فسيتعين تحديث أمر الاستعادة ليشير إلى الموقع الجديد الذي تُخزَّن فيه النسخ الاحتياطية.
+</Accordion>
+
+<Accordion title="ماذا لو غيّرت بيانات الاعتماد المطلوبة للوصول إلى تخزين الكائنات؟">
+  ستحتاج إلى تحديث بيانات الاعتماد الجديدة في واجهة المستخدم حتى تبدأ النسخ الاحتياطية بالنجاح مرة أخرى.
+</Accordion>
+
+<Accordion title="ماذا لو غيّرت الموقع الذي أُصدِّر إليه النسخ الاحتياطية الخارجية؟">
+  ستحتاج إلى تحديث الموقع الجديد في واجهة المستخدم، وستبدأ النسخ الاحتياطية في التصدير إلى الموقع الجديد. وستظل النسخ الاحتياطية القديمة في الموقع الأصلي.
+</Accordion>
+
+<Accordion title="كيف يمكنني تعطيل النسخ الاحتياطية الخارجية على خدمة سبق أن فعّلتها لها؟">
+  لتعطيل النسخ الاحتياطية الخارجية لخدمة ما، انتقل إلى شاشة إعدادات الخدمة، ثم انقر على Change external backup. وفي الشاشة التالية، انقر على Remove setup لتعطيل النسخ الاحتياطية الخارجية للخدمة.
+</Accordion>

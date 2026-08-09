@@ -1,6 +1,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -14,7 +15,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionLowCardinalityFastPath.h>
 #include <Functions/IFunction.h>
+#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/castTypeToEither.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/assert_cast.h>
@@ -52,12 +55,11 @@ class NullMapBuilder;
   * The index begins with 1. Also, the index can be negative - then it is counted from the end of the array.
   */
 template <ArrayElementExceptionMode mode = ArrayElementExceptionMode::Zero>
-class FunctionArrayElement final : public IFunction
+class FunctionArrayElement : public IFunction
 {
 public:
     static constexpr bool is_null_mode = (mode == ArrayElementExceptionMode::Null);
     static constexpr auto name = (mode == ArrayElementExceptionMode::Zero) ? "arrayElement" : "arrayElementOrNull";
-    static FunctionPtr create(ContextPtr context_);
 
     String getName() const override;
 
@@ -65,10 +67,19 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
+    /// Keep the inherited getReturnTypeImpl(ColumnsWithTypeAndName) visible alongside the
+    /// overload declared below; FunctionWithLowCardinalityFastPath calls it by qualified name.
+    using IFunction::getReturnTypeImpl;
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
+
+    /// Fast path hook for FunctionWithLowCardinalityFastPath (see FunctionLowCardinalityFastPath.h):
+    /// element access over Array(LowCardinality(String)) and Map with LowCardinality string keys
+    /// without materializing the dictionary into full columns. Returns nullptr to decline.
+    ColumnPtr tryExecuteLowCardinality(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
 private:
     ColumnPtr perform(
@@ -872,13 +883,6 @@ struct ArrayElementGenericImpl
 };
 
 }
-
-template <ArrayElementExceptionMode mode>
-FunctionPtr FunctionArrayElement<mode>::create(ContextPtr)
-{
-    return std::make_shared<FunctionArrayElement>();
-}
-
 
 template <ArrayElementExceptionMode mode>
 template <typename DataType>
@@ -1921,17 +1925,56 @@ bool castColumnString(const IColumn * column, F && f)
     return castTypeToEither<ColumnString, ColumnFixedString>(column, std::forward<F>(f));
 }
 
+bool isStringOrFixedStringColumn(const IColumn & column)
+{
+    return typeid_cast<const ColumnString *>(&column) || typeid_cast<const ColumnFixedString *>(&column);
+}
+
 template <ArrayElementExceptionMode mode>
 bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
     const IColumn & data, const Offsets & offsets, const Field & index, PaddedPODArray<UInt64> & matched_idxs)
 {
+    if (index.getType() != Field::Types::String)
+        return false;
+
+    /// The dictionary lookup below is defined only for String and FixedString keys. For other
+    /// LowCardinality key types, fall through so that the regular dispatch reports the type error
+    /// instead of silently finding no match.
+    const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&data);
+    if (low_cardinality_data
+        && isStringOrFixedStringColumn(*low_cardinality_data->getDictionary().getNestedNotNullableColumn()))
+    {
+        const auto & requested_key = index.safeGet<String>();
+        auto dictionary_index = low_cardinality_data->getDictionary().getOrFindValueIndex(requested_key);
+        matched_idxs.reserve(offsets.size());
+
+        if (!dictionary_index)
+        {
+            matched_idxs.resize_fill(offsets.size());
+            return true;
+        }
+
+        struct MatcherLowCardinalityStringConst
+        {
+            const ColumnLowCardinality & data;
+            UInt64 dictionary_index;
+
+            bool match(size_t row_data, size_t /* row_index */) const
+            {
+                return data.getIndexAt(row_data) == dictionary_index;
+            }
+        };
+
+        MatcherLowCardinalityStringConst matcher{*low_cardinality_data, *dictionary_index};
+        executeMatchKeyToIndex(offsets, matched_idxs, matcher);
+        return true;
+    }
+
     return castColumnString(
         &data,
         [&](const auto & data_column)
         {
             using DataColumn = std::decay_t<decltype(data_column)>;
-            if (index.getType() != Field::Types::String)
-                return false;
             MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<String>()};
             executeMatchKeyToIndex(offsets, matched_idxs, matcher);
             return true;
@@ -2139,7 +2182,10 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
                 getName());
     }
 
-    const IColumn & data_col = data_array.getData();
+    /// The result element type has `LowCardinality` removed, just like for the scalar index,
+    /// so materialize the dictionary before copying elements out of it.
+    ColumnPtr data_column_holder = recursiveRemoveLowCardinality(data_array.getDataPtr());
+    const IColumn & data_col = *data_column_holder;
     const auto & data_offsets = data_array.getOffsets();
     const IColumn & index_data_col = col_index_array->getData();
     const auto & index_offsets = col_index_array->getOffsets();
@@ -2386,7 +2432,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 {
     if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
     {
-        auto value_type = map_type->getValueType();
+        auto value_type = recursiveRemoveLowCardinality(map_type->getValueType());
         return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
     }
 
@@ -2411,13 +2457,16 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
                 arguments[1]->getName());
         }
 
-        auto nested_type = array_type->getNestedType();
-        if (nested_type->canBeInsideNullable())
+        /// `arr[indexes]` is equivalent to `arrayMap(i -> arr[i], indexes)`, so an element of the
+        /// result has exactly the type the scalar form returns for the same array.
+        auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
+        if (is_null_mode && nested_type->canBeInsideNullable())
             nested_type = makeNullable(nested_type);
         return std::make_shared<DataTypeArray>(nested_type);
     }
 
-    if (!isNativeInteger(arguments[1]))
+    auto index_type = removeNullable(removeLowCardinality(arguments[1]));
+    if (!isNativeInteger(index_type))
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -2426,8 +2475,71 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[1]->getName());
     }
 
-    auto nested_type = array_type->getNestedType();
+    auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
     return is_null_mode && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
+}
+
+template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::tryExecuteLowCardinality(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    if (arguments.size() != 2 || !isColumnConst(*arguments[1].column))
+        return nullptr;
+
+    /// An array of indexes is handled by `executeWithArrayIndex`, which produces an array result
+    /// this path does not know how to build.
+    if (checkAndGetDataType<DataTypeArray>(arguments[1].type.get()))
+        return nullptr;
+
+    /// Nullable and LowCardinality(Nullable) arguments make the result type Nullable,
+    /// which this path does not produce. Leave them to the default implementations.
+    for (const auto & argument : arguments)
+        if (isNullableOrLowCardinalityNullable(argument.type))
+            return nullptr;
+
+    Field index = (*arguments[1].column)[0];
+    if ((index.getType() == Field::Types::UInt64 && index.safeGet<UInt64>() == 0)
+        || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() == 0))
+        return nullptr;
+
+    /// Only optimize arrayElement here. arrayElementOrNull would need to build the null map
+    /// for out-of-bounds rows, which is a separate path from the measured materialization hot spot.
+    if constexpr (!is_null_mode)
+    {
+        if (const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get()))
+        {
+            const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&col_array->getData());
+            const auto & array_type = assert_cast<const DataTypeArray &>(*arguments[0].type);
+            if (low_cardinality_data
+                && isStringOrFixedString(removeLowCardinality(array_type.getNestedType()))
+                && (index.getType() == Field::Types::UInt64 || index.getType() == Field::Types::Int64))
+                return LowCardinalityExecutionHelpers::LowCardinalityArrayView{
+                    .elements = *low_cardinality_data,
+                    .offsets = col_array->getOffsets(),
+                    .rows = input_rows_count,
+                }.arrayElementConst(index, *result_type);
+        }
+    }
+
+    const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
+    if (!col_map)
+        return nullptr;
+
+    const auto & map_column = *col_map;
+    if (!typeid_cast<const ColumnLowCardinality *>(&map_column.getNestedData().getColumn(0)))
+        return nullptr;
+
+    /// The string key lookup below is defined only for String and FixedString keys. For other
+    /// LowCardinality key types, leave the arguments to the default implementations so that the
+    /// regular dispatch reports the type error, exactly as without the specialized path.
+    const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
+    if (!isStringOrFixedString(removeLowCardinality(map_type.getKeyType())))
+        return nullptr;
+
+    if (index.getType() != Field::Types::String)
+        return nullptr;
+
+    return recursiveRemoveLowCardinality(executeMap(arguments, result_type, input_rows_count));
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2627,8 +2739,9 @@ Gets the element of the provided array with index `n` where `n` can be any integ
 If the index falls outside of the bounds of an array, it returns a default value (0 for numbers, an empty string for strings, etc.),
 except for arguments of a non-constant array and a constant index 0. In this case there will be an error `Array indices are 1-based`.
 
-When `n` is an array of integers, returns an array of elements at the specified positions (gather operation).
-This is equivalent to `arrayMap(i -> arr[i], n)` but more efficient.
+When `n` is an array of integers, returns an array of the elements at the specified positions (a gather operation).
+This is equivalent to `arrayMap(i -> arr[i], n)`, but has a separate, more efficient implementation.
+Out-of-bounds positions produce the default value, the same as for a scalar index.
 
 :::note
 Arrays in ClickHouse are one-indexed.
@@ -2643,7 +2756,7 @@ Operator `[n]` provides the same functionality.
         {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Position of the element to get, or an array of positions. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns element of type `T`. When `n` is an array, returns `Array(T)`.", {"T or Array(T)"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(T)`.", {"Any", "Array(T)"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
@@ -2655,14 +2768,15 @@ Operator `[n]` provides the same functionality.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Zero>>(documentation);
+    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Zero>>>(documentation);
 
     FunctionDocumentation::Description description_null = R"(
 Gets the element of the provided array with index `n` where `n` can be any integer type.
 If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value.
 
-When `n` is an array of integers, returns an array of elements at the specified positions.
+When `n` is an array of integers, returns an array of the elements at the specified positions.
 Out-of-bounds positions produce `NULL` values in the result array.
+This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
 
 :::note
 Arrays in ClickHouse are one-indexed.
@@ -2675,7 +2789,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
         {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
         {"n", "Position of the element to get, or an array of positions. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)`. When `n` is an array, returns `Array(Nullable(T))`.", {"Nullable(T) or Array(Nullable(T))"}};
+    FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)`. When `n` is an array, returns `Array(Nullable(T))`.", {"Nullable(T)", "Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
@@ -2686,6 +2800,6 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, {}, returned_value_null, examples_null, introduced_in_null, category_null};
 
-    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation_null);
+    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Null>>>(documentation_null);
 }
 }

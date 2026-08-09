@@ -1,0 +1,73 @@
+---
+description: 'Documentation sur DETACH'
+sidebarTitle: 'DETACH'
+slug: /sql-reference/statements/detach
+title: 'Instruction DETACH'
+doc_type: 'reference'
+---
+
+Demande au serveur d&#39;&quot;oublier&quot; l&#39;existence d&#39;une table, d&#39;une vue matérialisée, d&#39;un dictionnaire ou d&#39;une base de données.
+
+**Syntaxe**
+
+```sql
+DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
+```
+
+Le détachement ne supprime ni les données ni les métadonnées d’une table, d’une vue matérialisée, d’un dictionnaire ou d’une base de données. Si une entité n’a pas été détachée `PERMANENTLY`, au prochain démarrage du serveur, celui-ci lira les métadonnées et rattchera de nouveau la table/la vue/le dictionnaire/la base de données. Si une entité a été détachée `PERMANENTLY`, il n’y aura pas de rattachement automatique.
+
+Qu’une table, un dictionnaire ou une base de données ait été détaché de manière permanente ou non, vous pouvez dans les deux cas les rattacher à l’aide de la requête [ATTACH](/fr/reference/statements/attach).
+Les tables de logs système peuvent également être rattachées (par ex. `query_log`, `text_log`, etc.). Les autres tables système ne peuvent pas être rattachées. Au prochain démarrage du serveur, celui-ci rattachera de nouveau ces tables.
+
+`ATTACH MATERIALIZED VIEW` ne fonctionne pas avec la syntaxe courte (sans `SELECT`), mais vous pouvez la rattacher à l’aide de la requête `ATTACH TABLE`.
+
+Notez que vous ne pouvez pas détacher de manière permanente une table déjà détachée (temporairement). En revanche, vous pouvez la rattacher, puis la détacher à nouveau de manière permanente.
+
+De plus, vous ne pouvez pas [DROP](/fr/reference/statements/drop#drop-table) la table détachée, ni exécuter [CREATE TABLE](/fr/reference/statements/create/table) avec le même nom qu’une table détachée de manière permanente, ni la remplacer par une autre table avec la requête [RENAME TABLE](/fr/reference/statements/rename).
+
+Le modificateur `SYNC` exécute l’action sans délai.
+
+**Exemple**
+
+Création d’une table :
+
+```sql title="Query"
+CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
+SELECT * FROM test;
+```
+
+```text title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Détacher la table :
+
+```sql title="Query"
+DETACH TABLE test;
+SELECT * FROM test;
+```
+
+```text title="Response"
+Received exception from server (version 21.4.1):
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test does not exist.
+```
+
+<Note>
+  Dans ClickHouse Cloud, les utilisateurs doivent utiliser la clause `PERMANENTLY`, par exemple `DETACH TABLE <table> PERMANENTLY`. Si cette clause n&#39;est pas utilisée, les tables seront rattachées au redémarrage du cluster, par exemple lors de mises à niveau.
+</Note>
+
+**Voir aussi**
+
+* [Vue matérialisée](/fr/reference/statements/create/view#materialized-view)
+* [Dictionnaires](/fr/reference/statements/create/dictionary)

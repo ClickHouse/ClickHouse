@@ -1,0 +1,284 @@
+{
+  "icon": "/images/icons/icon-concepts.svg",
+  "item": "المفاهيم",
+  "pages": [
+    "ar/concepts/index",
+    {
+      "expanded": true,
+      "group": "الأساسيات",
+      "pages": [
+        "ar/concepts/core-concepts/glossary",
+        "ar/concepts/core-concepts/parts",
+        "ar/concepts/core-concepts/partitions",
+        "ar/concepts/core-concepts/merges",
+        "ar/concepts/core-concepts/primary-indexes",
+        "ar/concepts/core-concepts/query-parallelism",
+        "ar/concepts/core-concepts/academic-overview"
+      ],
+      "root": "ar/concepts/core-concepts/index"
+    },
+    {
+      "expanded": true,
+      "group": "مفاهيم ClickHouse",
+      "pages": [
+        {
+          "group": "العروض المادية",
+          "pages": [
+            "ar/concepts/features/materialized-views/incremental-materialized-view",
+            "ar/concepts/features/materialized-views/refreshable-materialized-view",
+            "ar/concepts/features/materialized-views/cascading-materialized-views"
+          ],
+          "root": "ar/concepts/features/materialized-views/index"
+        },
+        {
+          "group": "القواميس",
+          "pages": [
+            "ar/concepts/features/dictionaries/best-practices"
+          ],
+          "root": "ar/concepts/features/dictionaries/index"
+        },
+        {
+          "group": "الإسقاطات",
+          "pages": [
+            "ar/concepts/features/projections/projections",
+            "ar/concepts/features/projections/materialized-views-versus-projections"
+          ]
+        },
+        {
+          "group": "الأداء",
+          "pages": [
+            "ar/concepts/features/performance/prewhere",
+            "ar/concepts/features/performance/allocation-profiling",
+            "ar/concepts/features/performance/allocation-profiling-old",
+            {
+              "group": "ذاكرات التخزين المؤقت",
+              "pages": [
+                "ar/concepts/features/performance/caches/caches",
+                "ar/concepts/features/performance/caches/query-cache",
+                "ar/concepts/features/performance/caches/query-condition-cache",
+                "ar/concepts/features/performance/caches/userspace-page-cache"
+              ]
+            },
+            {
+              "group": "فهارس التخطي",
+              "pages": [
+                "ar/concepts/features/performance/skip-indexes/skipping-indexes",
+                "ar/concepts/features/performance/skip-indexes/skipping-indexes-examples"
+              ]
+            },
+            "ar/concepts/features/performance/lazy-materialization",
+            {
+              "group": "استكشاف الأخطاء وإصلاحها",
+              "pages": [
+                "ar/concepts/features/performance/troubleshoot/debugging-memory-issues",
+                "ar/concepts/features/performance/troubleshoot/oom-canary",
+                "ar/concepts/features/performance/troubleshoot/performance-test",
+                "ar/concepts/features/performance/troubleshoot/sampling-query-profiler"
+              ]
+            }
+          ],
+          "root": "ar/concepts/features/performance/index"
+        },
+        {
+          "group": "العمليات",
+          "pages": [
+            {
+              "group": "إدراج",
+              "pages": [
+                "ar/concepts/features/operations/insert/inserting-data",
+                "ar/concepts/features/operations/insert/asyncinserts",
+                "ar/concepts/features/operations/insert/bulkinserts",
+                "ar/concepts/features/operations/insert/deduplication",
+                "ar/concepts/features/operations/insert/deduplicating-inserts-on-retries",
+                "ar/concepts/features/operations/insert/transactions"
+              ]
+            },
+            {
+              "group": "استعلام",
+              "pages": [
+                "ar/concepts/features/operations/select/joining-tables"
+              ]
+            },
+            {
+              "group": "تحديث",
+              "pages": [
+                "ar/concepts/features/operations/update/overview",
+                "ar/concepts/features/operations/update/on-fly-mutations",
+                "ar/concepts/features/operations/update/replacing-merge-tree"
+              ],
+              "root": "ar/concepts/features/operations/update/index"
+            },
+            {
+              "group": "حذف",
+              "pages": [
+                "ar/concepts/features/operations/delete/overview",
+                "ar/concepts/features/operations/delete/delete-mutations",
+                "ar/concepts/features/operations/delete/drop-partition",
+                "ar/concepts/features/operations/delete/lightweight-delete",
+                "ar/concepts/features/operations/delete/truncate",
+                "ar/concepts/features/operations/delete/ttl"
+              ],
+              "root": "ar/concepts/features/operations/delete/index"
+            }
+          ]
+        },
+        {
+          "group": "التهيئة",
+          "pages": [
+            {
+              "group": "الإعدادات",
+              "pages": [
+                "ar/concepts/features/configuration/settings/overview",
+                "ar/concepts/features/configuration/settings/settings-query-level",
+                "ar/concepts/features/configuration/settings/settings-users",
+                "ar/concepts/features/configuration/settings/settings-profiles",
+                "ar/concepts/features/configuration/settings/constraints-on-settings",
+                "ar/concepts/features/configuration/settings/query-complexity",
+                "ar/concepts/features/configuration/settings/permissions-for-queries",
+                "ar/concepts/features/configuration/settings/memory-overcommit",
+                "ar/concepts/features/configuration/settings/server-overload",
+                "ar/concepts/features/configuration/settings/tcp-connection-limits",
+                "ar/concepts/features/configuration/settings/alternative-query-languages"
+              ]
+            },
+            {
+              "group": "إعدادات الخادم",
+              "pages": [
+                "ar/concepts/features/configuration/server-config/configuration-files",
+                "ar/concepts/features/configuration/server-config/storing-data",
+                "ar/concepts/features/configuration/server-config/named-collections",
+                "ar/concepts/features/configuration/server-config/workload-scheduling",
+                "ar/concepts/features/configuration/server-config/quotas",
+                "ar/concepts/features/configuration/server-config/composable-protocols",
+                "ar/concepts/features/configuration/server-config/startup-scripts"
+              ]
+            }
+          ]
+        },
+        {
+          "group": "الأمان والمصادقة",
+          "pages": [
+            "ar/concepts/features/security/access-rights",
+            "ar/concepts/features/security/network-ports",
+            {
+              "group": "TLS",
+              "pages": [
+                "ar/concepts/features/security/tls/configuring-tls",
+                "ar/concepts/features/security/tls/configuring-tls-acme-client"
+              ],
+              "root": "ar/concepts/features/security/tls/index"
+            },
+            {
+              "group": "جهات المصادقة الخارجية",
+              "pages": [
+                {
+                  "group": "SSL",
+                  "pages": [
+                    "ar/concepts/features/security/external-authenticators/ssl-x509",
+                    "ar/concepts/features/security/ssl-user-auth"
+                  ]
+                },
+                {
+                  "group": "LDAP",
+                  "pages": [
+                    "ar/concepts/features/security/external-authenticators/ldap",
+                    "ar/concepts/features/security/configuring-ldap"
+                  ]
+                },
+                "ar/concepts/features/security/external-authenticators/http",
+                "ar/concepts/features/security/external-authenticators/kerberos",
+                "ar/concepts/features/security/external-authenticators/jwt"
+              ],
+              "root": "ar/concepts/features/security/external-authenticators/index"
+            }
+          ],
+          "root": "ar/concepts/features/security/index"
+        },
+        {
+          "group": "النسخ الاحتياطي والاستعادة",
+          "pages": [
+            "ar/concepts/features/backup-restore/overview",
+            "ar/concepts/features/backup-restore/local-disk",
+            "ar/concepts/features/backup-restore/s3-endpoint",
+            "ar/concepts/features/backup-restore/azure-blob-storage",
+            "ar/concepts/features/backup-restore/snapshot",
+            "ar/concepts/features/backup-restore/alternative-methods"
+          ]
+        },
+        {
+          "group": "الواجهات",
+          "pages": [
+            "ar/concepts/features/interfaces/cli",
+            "ar/concepts/features/interfaces/client",
+            {
+              "group": "برامج التشغيل والواجهات",
+              "pages": [
+                "ar/concepts/features/interfaces/http",
+                "ar/concepts/features/interfaces/tcp",
+                "ar/concepts/features/interfaces/jdbc",
+                "ar/concepts/features/interfaces/mysql",
+                "ar/concepts/features/interfaces/odbc",
+                "ar/concepts/features/interfaces/postgresql",
+                "ar/concepts/features/interfaces/prometheus",
+                "ar/concepts/features/interfaces/ssh",
+                "ar/concepts/features/interfaces/grpc",
+                "ar/concepts/features/interfaces/arrowflight"
+              ],
+              "root": "ar/concepts/features/interfaces/overview"
+            },
+            "ar/concepts/features/interfaces/cpp",
+            "ar/concepts/features/interfaces/schema-inference",
+            "ar/concepts/features/interfaces/documentation-search",
+            "ar/concepts/features/interfaces/web-sql",
+            "ar/concepts/features/interfaces/web-ui-color-coding",
+            "ar/concepts/features/interfaces/web-ui-pinned-columns",
+            "ar/concepts/features/interfaces/web-terminal",
+            {
+              "group": "عملاء الجهات الخارجية",
+              "pages": [],
+              "root": "ar/concepts/features/interfaces/third-party/index"
+            }
+          ],
+          "root": "ar/concepts/features/interfaces/native-clients-interfaces-index"
+        },
+        {
+          "group": "الأدوات والبرامج المساعدة",
+          "pages": [
+            "ar/concepts/features/tools-and-utilities/backupview",
+            "ar/concepts/features/tools-and-utilities/clickhouse-benchmark",
+            "ar/concepts/features/tools-and-utilities/clickhouse-compressor",
+            "ar/concepts/features/tools-and-utilities/clickhouse-disks",
+            "ar/concepts/features/tools-and-utilities/clickhouse-format",
+            "ar/concepts/features/tools-and-utilities/clickhouse-keeper-client",
+            "ar/concepts/features/tools-and-utilities/clickhouse-keeper-http-api",
+            "ar/concepts/features/tools-and-utilities/clickhouse-local",
+            "ar/concepts/features/tools-and-utilities/clickhouse-obfuscator",
+            "ar/concepts/features/tools-and-utilities/odbc-bridge",
+            "ar/concepts/features/tools-and-utilities/static-files-disk-uploader"
+          ],
+          "root": "ar/concepts/features/tools-and-utilities/index"
+        }
+      ],
+      "root": "ar/concepts/features/index"
+    },
+    {
+      "expanded": true,
+      "group": "أفضل الممارسات",
+      "pages": [
+        "ar/concepts/best-practices/choosing-a-primary-key",
+        "ar/concepts/best-practices/select-data-type",
+        "ar/concepts/best-practices/use-materialized-views",
+        "ar/concepts/best-practices/minimize-optimize-joins",
+        "ar/concepts/best-practices/partitioning-keys",
+        "ar/concepts/best-practices/selecting-an-insert-strategy",
+        "ar/concepts/best-practices/using-data-skipping-indices",
+        "ar/concepts/best-practices/avoid-mutations",
+        "ar/concepts/best-practices/avoid-optimize-final",
+        "ar/concepts/best-practices/avoidnullablecolumns",
+        "ar/concepts/best-practices/json-type"
+      ],
+      "root": "ar/concepts/best-practices/index"
+    }
+  ],
+  "root": "ar/concepts/index"
+}

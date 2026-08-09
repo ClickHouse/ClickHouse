@@ -1,0 +1,99 @@
+---
+sidebarTitle: 'SQL 翻译参考'
+slug: /migrations/redshift/sql-translation-reference
+description: 'Amazon Redshift 到 ClickHouse 的 SQL 翻译参考'
+keywords: ['Redshift']
+title: 'Amazon Redshift SQL 翻译指南'
+doc_type: 'reference'
+---
+
+<div id="data-types">
+  ## 数据类型
+</div>
+
+在 ClickHouse 和 Redshift 之间迁移数据的用户会立刻注意到，
+ClickHouse 提供了更丰富的类型，而且约束也更少。
+Redshift 要求用户指定字符串的可能长度，
+即使是可变长度字符串也不例外；而 ClickHouse 则通过将字符串存储为不带编码的字节，
+免除了这一限制和负担。因此，ClickHouse 的
+String 类型既没有长度限制，也无需指定长度。
+
+此外，你还可以使用 Arrays、Tuples 和枚举——这些在
+Redshift 中并不是一等公民 (尽管可以用 `SUPER` 模拟 Arrays/Structs) ，
+而这也一直是用户的常见痛点。ClickHouse 还允许持久化聚合
+状态，无论是在查询时，还是直接存储在表中。
+这使得数据可以预先聚合，通常是通过
+materialized view 来实现，并且能够显著提升常见查询的性能。
+
+下面我们将为每种 Redshift 类型映射其对应的 ClickHouse 类型：
+
+| Redshift                                                                                                                             | ClickHouse                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`SMALLINT`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                | [`Int8`](/zh/reference/data-types/int-uint) *                                                                                                                                                                                  |
+| [`INTEGER`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                 | [`Int32`](/zh/reference/data-types/int-uint) *                                                                                                                                                                                 |
+| [`BIGINT`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                  | [`Int64`](/zh/reference/data-types/int-uint) *                                                                                                                                                                                 |
+| [`DECIMAL`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-decimal-or-numeric-type)       | [`UInt128`, `UInt256`, `Int128`, `Int256`](/zh/reference/data-types/int-uint), [`Decimal(P, S)`, `Decimal32(S)`, `Decimal64(S)`, `Decimal128(S)`, `Decimal256(S)`](/zh/reference/data-types/decimal) -  (支持更高精度和更大范围)             |
+| [`REAL`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-floating-point-types)             | [`Float32`](/zh/reference/data-types/float)                                                                                                                                                                                    |
+| [`DOUBLE PRECISION`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-floating-point-types) | [`Float64`](/zh/reference/data-types/float)                                                                                                                                                                                    |
+| [`BOOLEAN`](https://docs.aws.amazon.com/redshift/latest/dg/r_Boolean_type.html)                                                      | [`Bool`](/zh/reference/data-types/boolean)                                                                                                                                                                                     |
+| [`CHAR`](https://docs.aws.amazon.com/redshift/latest/dg/r_Character_types.html#r_Character_types-char-or-character)                  | [`String`](/zh/reference/data-types/string), [`FixedString`](/zh/reference/data-types/fixedstring)                                                                                                                                |
+| [`VARCHAR`](https://docs.aws.amazon.com/redshift/latest/dg/r_Character_types.html#r_Character_types-varchar-or-character-varying) ** | [`String`](/zh/reference/data-types/string)                                                                                                                                                                                    |
+| [`DATE`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-date)                                 | [`Date32`](/zh/reference/data-types/date32)                                                                                                                                                                                    |
+| [`TIMESTAMP`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timestamp)                       | [`DateTime`](/zh/reference/data-types/datetime), [`DateTime64`](/zh/reference/data-types/datetime64)                                                                                                                              |
+| [`TIMESTAMPTZ`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timestamptz)                   | [`DateTime`](/zh/reference/data-types/datetime), [`DateTime64`](/zh/reference/data-types/datetime64)                                                                                                                              |
+| [`GEOMETRY`](https://docs.aws.amazon.com/redshift/latest/dg/geospatial-overview.html)                                                | [Geo 数据类型](/zh/reference/data-types/geo)                                                                                                                                                                                       |
+| [`GEOGRAPHY`](https://docs.aws.amazon.com/redshift/latest/dg/geospatial-overview.html)                                               | [Geo 数据类型](/zh/reference/data-types/geo) (尚不够完善，例如不支持坐标系——可[通过函数](/zh/reference/functions/regular-functions/geo/index)进行模拟)                                                                                                       |
+| [`HLLSKETCH`](https://docs.aws.amazon.com/redshift/latest/dg/r_HLLSKTECH_type.html)                                                  | [`AggregateFunction(uniqHLL12, X)`](/zh/reference/data-types/aggregatefunction)                                                                                                                                                |
+| [`SUPER`](https://docs.aws.amazon.com/redshift/latest/dg/r_SUPER_type.html)                                                          | [`Tuple`](/zh/reference/data-types/tuple), [`Nested`](/zh/reference/data-types/nested-data-structures/index), [`Array`](/zh/reference/data-types/array), [`JSON`](/zh/reference/data-types/newjson), [`Map`](/zh/reference/data-types/map) |
+| [`TIME`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-time)                                 | [`DateTime`](/zh/reference/data-types/datetime), [`DateTime64`](/zh/reference/data-types/datetime64)                                                                                                                              |
+| [`TIMETZ`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timetz)                             | [`DateTime`](/zh/reference/data-types/datetime), [`DateTime64`](/zh/reference/data-types/datetime64)                                                                                                                              |
+| [`VARBYTE`](https://docs.aws.amazon.com/redshift/latest/dg/r_VARBYTE_type.html) **                                                   | [`String`](/zh/reference/data-types/string) 配合 [`Bit`](/zh/reference/functions/regular-functions/bit-functions) 和 [编码](/zh/reference/functions/regular-functions/encoding-functions#hex) 函数使用                                        |
+
+<sub><span>*</span> ClickHouse 还支持取值范围更大的无符号整数，即 <a href="http://clickhouse.com/docs/sql-reference/data-types/int-uint">`UInt8`, `UInt32`, `UInt32` and `UInt64`</a>。</sub><br />
+<sub><span>**</span>ClickHouse 的 String 类型默认长度不受限制，但也可以使用 <a href="http://clickhouse.com/docs/sql-reference/statements/create/table#constraints">约束</a> 将其限定为特定长度。</sub>
+
+<div id="compression">
+  ## DDL 语法
+</div>
+
+<div id="sorting-keys">
+  ### 排序键
+</div>
+
+ClickHouse 和 Redshift 都有“排序键”这一概念，用于定义
+数据在存储时的排序方式。Redshift 通过
+`SORTKEY` 子句来定义排序键：
+
+```sql
+CREATE TABLE some_table(...) SORTKEY (column1, column2)
+```
+
+相比之下，ClickHouse 使用 `ORDER BY` 子句来指定排序方式：
+
+```sql
+CREATE TABLE some_table(...) ENGINE = MergeTree ORDER BY (column1, column2)
+```
+
+在大多数情况下，如果你使用的是默认的 `COMPOUND` 类型，就可以在 ClickHouse
+中使用与 Redshift 相同的排序键列及其顺序。当数据写入 Redshift
+后，你应运行 `VACUUM` 和 `ANALYZE` 命令，对新写入的数据重新排序，
+并为查询规划器更新统计信息——否则，未排序空间会不断增长。ClickHouse
+则不需要这一过程。
+
+Redshift 为排序键提供了几项便捷功能。第一项是
+自动排序键 (使用 `SORTKEY AUTO`) 。虽然这可能适合
+入门使用，但如果排序键选择得当，显式指定排序键更能确保最佳性能
+和存储效率。第二项是 `INTERLEAVED` 排序键，
+它会对排序键中的部分列赋予相同权重，以提升
+查询使用一个或多个次级排序列时的性能。ClickHouse
+支持显式[投影](/zh/concepts/features/projections/projections)，通过略有不同的配置方式
+即可达到相同效果。
+
+你应当注意，“主键”这一概念
+在 ClickHouse 和 Redshift 中所指并不相同。在 Redshift 中，主键类似于传统
+RDBMS 中用于强制执行约束的概念。不过，它们在 Redshift 中并不会被严格
+强制执行，而是作为查询规划器的提示，以及节点间数据
+分布的依据。在 ClickHouse 中，主键表示用于构建
+稀疏主索引的列，该索引用于确保数据在磁盘上有序存放，
+从而最大限度提高压缩效果，同时避免主索引受到污染并
+浪费内存。

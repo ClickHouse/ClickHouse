@@ -118,7 +118,12 @@ public:
     /// Send all contents of external (temporary) tables.
     virtual void sendExternalTablesData(ExternalTablesData & data) = 0;
 
+    /// Send all scalars.
+    virtual void sendScalarsData(Scalars & data) = 0;
+
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
+
+    virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
 
     /// Check, if has data to read.
     virtual bool poll(size_t timeout_microseconds) = 0;
@@ -133,7 +138,9 @@ public:
     virtual Packet receivePacket() = 0;
     virtual UInt64 receivePacketType() = 0;
 
-    /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
+    /// If not connected yet - then connect. If cannot connect - throw an exception.
+    /// Does not ping an already-established connection: a connection that the server has closed
+    /// while it was idle in the pool is detected and recovered when the query is sent.
     virtual void forceConnected(const ConnectionTimeouts & timeouts) = 0;
 
     virtual bool isConnected() const = 0;

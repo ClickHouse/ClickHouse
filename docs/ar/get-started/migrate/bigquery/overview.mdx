@@ -1,0 +1,537 @@
+---
+title: 'مقارنة بين ClickHouse Cloud وBigQuery'
+slug: /migrations/bigquery/biquery-vs-clickhouse-cloud
+description: 'أوجه الاختلاف بين BigQuery وClickHouse Cloud'
+keywords: ['BigQuery']
+show_related_blogs: true
+sidebarTitle: 'نظرة عامة'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="resource-organization">
+  ## تنظيم الموارد
+</div>
+
+تشبه طريقة تنظيم الموارد في ClickHouse Cloud [التسلسل الهرمي للموارد في BigQuery](https://cloud.google.com/bigquery/docs/resource-hierarchy). ونوضّح أدناه أوجه الاختلاف المحددة استنادًا إلى المخطط التالي الذي يبيّن التسلسل الهرمي لموارد ClickHouse Cloud:
+
+<Image img="/images/migrations/bigquery-1.webp" size="md" alt="تنظيم الموارد" />
+
+<div id="organizations">
+  ### المؤسسات
+</div>
+
+على غرار BigQuery، تُعدّ المؤسسات العُقد الجذرية في التسلسل الهرمي لموارد ClickHouse Cloud. يُسنَد أول مستخدم تُنشِئه في حساب ClickHouse Cloud الخاص بك تلقائيًا إلى مؤسسة يملكها هذا المستخدم. ويمكنه دعوة مستخدمين إضافيين إلى المؤسسة.
+
+<div id="bigquery-projects-vs-clickhouse-cloud-services">
+  ### مشاريع BigQuery مقابل خدمات ClickHouse Cloud
+</div>
+
+ضمن المؤسسات، يمكنك إنشاء خدمات تُعدّ مكافئة إلى حدٍّ ما لمشاريع BigQuery، لأن البيانات المخزنة في ClickHouse Cloud تكون مرتبطة بخدمة. تتوفر في ClickHouse Cloud [عدة أنواع من الخدمات](/ar/products/cloud/features/cloud-tiers). يتم نشر كل خدمة ClickHouse Cloud في Region محددة، وتتضمن:
+
+1. مجموعة من عُقد الحوسبة (حاليًا، عقدتان لخدمة من فئة Development و3 عُقد لخدمة من فئة Production). وتدعم ClickHouse Cloud لهذه العُقد [التوسع الرأسي والأفقي](/ar/products/cloud/features/autoscaling/overview#how-scaling-works-in-clickhouse-cloud)، يدويًا وتلقائيًا.
+2. مجلدًا في تخزين الكائنات تخزّن فيه الخدمة جميع البيانات.
+3. نقطة نهاية (أو عدة نقاط نهاية يتم إنشاؤها عبر Console في واجهة المستخدم لـ ClickHouse Cloud)  - أي URL خدمة تستخدمه للاتصال بالخدمة (على سبيل المثال، `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
+
+<div id="bigquery-datasets-vs-clickhouse-cloud-databases">
+  ### مجموعات بيانات BigQuery مقابل قواعد بيانات ClickHouse Cloud
+</div>
+
+ينظّم ClickHouse الجداول منطقيًا ضمن قواعد بيانات. وكما هي الحال مع مجموعات بيانات BigQuery، تُعد قواعد بيانات ClickHouse حاويات منطقية لتنظيم الوصول إلى بيانات الجداول والتحكم فيه.
+
+<div id="bigquery-folders">
+  ### مجلدات BigQuery
+</div>
+
+لا يوجد في ClickHouse Cloud حاليًا مفهوم يعادل مجلدات BigQuery.
+
+<div id="bigquery-slot-reservations-and-quotas">
+  ### حجوزات Slot والحصص في BigQuery
+</div>
+
+كما هو الحال مع حجوزات Slot في BigQuery، يمكنك [تهيئة التحجيم التلقائي الرأسي والأفقي](/ar/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling) في ClickHouse Cloud. بالنسبة إلى التحجيم التلقائي الرأسي، يمكنك تحديد الحدين الأدنى والأقصى لحجم الذاكرة وأنوية CPU لعُقد الحوسبة الخاصة بالخدمة. بعد ذلك، ستتوسع الخدمة أو تتقلص حسب الحاجة ضمن هذه الحدود. تتوفر هذه الإعدادات أيضًا أثناء عملية إنشاء الخدمة لأول مرة. ويكون لكل عقدة حوسبة في الخدمة الحجم نفسه. ويمكنك تغيير عدد عُقد الحوسبة داخل الخدمة باستخدام [التحجيم الأفقي](/ar/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling).
+
+علاوة على ذلك، وعلى غرار الحصص في BigQuery، يوفّر ClickHouse Cloud التحكم في التزامن، وحدود استخدام الذاكرة، وجدولة I/O، مما يتيح لك عزل الاستعلامات ضمن فئات أعباء العمل. ومن خلال تعيين حدود للموارد المشتركة (أنوية CPU وDRAM وI/O للقرص والشبكة) لفئات أعباء عمل محددة، يضمن ذلك ألّا تؤثر هذه الاستعلامات في استعلامات الأعمال الأخرى الحرجة. ويمنع التحكم في التزامن الإفراط في تخصيص الخيوط في السيناريوهات التي تتضمن عددًا كبيرًا من الاستعلامات المتزامنة.
+
+يتتبع ClickHouse أحجام البايت لتخصيصات الذاكرة على مستوى الخادم والمستخدم والاستعلام، مما يتيح فرض حدود مرنة لاستخدام الذاكرة. وتتيح ميزة memory overcommit للاستعلامات استخدام ذاكرة حرة إضافية تتجاوز الذاكرة المضمونة، مع ضمان حدود الذاكرة للاستعلامات الأخرى. بالإضافة إلى ذلك، يمكن تقييد استخدام الذاكرة في بنود التجميع والفرز والربط، مما يتيح الرجوع إلى خوارزميات خارجية عند تجاوز حد الذاكرة.
+
+وأخيرًا، تتيح لك جدولة I/O تقييد الوصول إلى الأقراص المحلية والبعيدة لفئات أعباء العمل استنادًا إلى الحد الأقصى لعرض النطاق، والطلبات قيد التنفيذ، والسياسة.
+
+<div id="permissions">
+  ### الأذونات
+</div>
+
+يتحكم ClickHouse Cloud في وصول المستخدمين من خلال موضعين: عبر [Cloud Console](/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) وعبر [قاعدة البيانات](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users). تُدار إمكانية الوصول إلى Console عبر واجهة المستخدم [clickhouse.cloud](https://console.clickhouse.cloud). وتُدار إمكانية الوصول إلى قاعدة البيانات عبر حسابات مستخدمي قاعدة البيانات والأدوار. بالإضافة إلى ذلك، يمكن منح مستخدمي Console أدوارًا داخل قاعدة البيانات تتيح لهم التفاعل مع قاعدة البيانات عبر [SQL Console](/ar/integrations/connectors/sql-clients/sql-console).
+
+<div id="data-types">
+  ## أنواع البيانات
+</div>
+
+يوفّر ClickHouse مستويات أدق من الدقة للأنواع العددية. على سبيل المثال، يوفّر BigQuery الأنواع العددية [`INT64` و`NUMERIC` و`BIGNUMERIC` و`FLOAT64`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types). بالمقابل، يوفّر ClickHouse أنواعًا متعددة الدقة للأعداد العشرية والأعداد ذات الفاصلة العائمة والأعداد الصحيحة. وباستخدام أنواع البيانات هذه، يمكنك تحسين استخدام التخزين وتقليل العبء على الذاكرة، مما يؤدي إلى استعلامات أسرع واستهلاك أقل للموارد. نعرض أدناه نوع ClickHouse المكافئ لكل نوع في BigQuery:
+
+| BigQuery                                                                                                 | ClickHouse                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#array_type)             | [Array(t)](/ar/reference/data-types/array)                                                                                                                                         |
+| [NUMERIC](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#decimal_types)        | [Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S)](/ar/reference/data-types/decimal)                                                                                       |
+| [BIG NUMERIC](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#decimal_types)    | [Decimal256(S)](/ar/reference/data-types/decimal)                                                                                                                                  |
+| [BOOL](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#boolean_type)            | [Bool](/ar/reference/data-types/boolean)                                                                                                                                           |
+| [BYTES](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#bytes_type)             | [FixedString](/ar/reference/data-types/fixedstring)                                                                                                                                |
+| [DATE](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#date_type)               | [Date32](/ar/reference/data-types/date32) (بنطاق أضيق)                                                                                                                             |
+| [DATETIME](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#datetime_type)       | [DateTime](/ar/reference/data-types/datetime), [DateTime64](/ar/reference/data-types/datetime64) (بنطاق أضيق ودقة أعلى)                                                               |
+| [FLOAT64](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#floating_point_types) | [Float64](/ar/reference/data-types/float)                                                                                                                                          |
+| [GEOGRAPHY](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#geography_type)     | [Geo Data Types](/ar/reference/data-types/float)                                                                                                                                   |
+| [INT64](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types)          | [UInt8, UInt16, UInt32, UInt64, UInt128, UInt256, Int8, Int16, Int32, Int64, Int128, Int256](/ar/reference/data-types/int-uint)                                                    |
+| [INTERVAL](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#integer_types)       | غير متاح - [مدعوم كتعبير](/ar/reference/data-types/special-data-types/interval#usage-remarks) أو [عبر الدوال](/ar/reference/functions/regular-functions/date-time-functions#addYears) |
+| [JSON](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#json_type)               | [JSON](/ar/guides/clickhouse/data-formats/json/inference)                                                                                                                          |
+| [STRING](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#string_type)           | [String (بايتات)](/ar/reference/data-types/string)                                                                                                                                 |
+| [STRUCT](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#constructing_a_struct) | [Tuple](/ar/reference/data-types/tuple), [Nested](/ar/reference/data-types/nested-data-structures/index)                                                                              |
+| [TIME](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#time_type)               | [DateTime64](/ar/reference/data-types/datetime64)                                                                                                                                  |
+| [TIMESTAMP](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#timestamp_type)     | [DateTime64](/ar/reference/data-types/datetime64)                                                                                                                                  |
+
+عند توفّر عدة خيارات لأنواع ClickHouse، راعِ النطاق الفعلي للبيانات واختر أقل نوع يلبّي الحاجة. وراعِ أيضًا استخدام [مرمّزات الضغط المناسبة](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema) للحصول على ضغط إضافي.
+
+<div id="query-acceleration-techniques">
+  ## تقنيات تسريع الاستعلامات
+</div>
+
+<div id="primary-and-foreign-keys-and-primary-index">
+  ### المفاتيح الأساسية والخارجية والفهرس الأساسي
+</div>
+
+في BigQuery، يمكن أن يحتوي الجدول على [قيود المفتاح الأساسي والمفتاح الخارجي](https://cloud.google.com/bigquery/docs/information-schema-table-constraints). عادةً ما تُستخدم المفاتيح الأساسية والخارجية في قواعد البيانات العلائقية لضمان تكامل البيانات. وتكون قيمة المفتاح الأساسي فريدةً عادةً لكل صف، ولا تكون `NULL`. ويجب أن تكون كل قيمة مفتاح خارجي في الصف موجودة في عمود المفتاح الأساسي لجدول المفتاح الأساسي أو أن تكون `NULL`. في BigQuery، لا تُفرَض هذه القيود، لكن مُحسِّن الاستعلامات قد يستخدم هذه المعلومات لتحسين الاستعلامات.
+
+في ClickHouse، يمكن أن يحتوي الجدول أيضًا على مفتاح أساسي. ومثل BigQuery، لا يفرض ClickHouse التفرّد على قيم عمود المفتاح الأساسي في الجدول. وعلى عكس BigQuery، تُخزَّن بيانات الجدول على القرص [مرتبة](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files) بحسب أعمدة المفتاح الأساسي. ويستفيد مُحسِّن الاستعلامات من ترتيب الفرز هذا لتجنّب إعادة الفرز، وتقليل استخدام الذاكرة في عمليات الربط، وتمكين الإنهاء المبكر لعبارات LIMIT. وعلى عكس BigQuery، ينشئ ClickHouse تلقائيًا [فهرسًا أساسيًا متناثرًا](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales) استنادًا إلى قيم أعمدة المفتاح الأساسي. ويُستخدم هذا الفهرس لتسريع جميع الاستعلامات التي تتضمن عوامل تصفية على أعمدة المفتاح الأساسي. ولا يدعم ClickHouse حاليًا قيود المفتاح الخارجي.
+
+<div id="secondary-indexes-only-available-in-clickhouse">
+  ## الفهارس الثانوية (متاحة فقط في ClickHouse)
+</div>
+
+بالإضافة إلى الفهرس الأساسي المُنشأ من قيم أعمدة المفتاح الأساسي للجدول، يتيح ClickHouse إنشاء فهارس ثانوية على أعمدة لا تدخل ضمن المفتاح الأساسي. ويوفّر ClickHouse عدة أنواع من الفهارس الثانوية، يناسب كلٌّ منها أنواعًا مختلفة من الاستعلامات:
+
+* [**فهرس Bloom Filter**](/ar/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter):
+  * يُستخدم لتسريع الاستعلامات التي تتضمن شروط مساواة (مثل: = و IN).
+  * يستخدم هياكل بيانات احتمالية لتحديد ما إذا كانت قيمة معيّنة موجودة في كتلة بيانات.
+* [**فهرس Token Bloom Filter**](/ar/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter):
+  * يشبه فهرس Bloom Filter، لكنه يُستخدم مع السلاسل النصية المُجزّأة إلى رموز، وهو مناسب لاستعلامات البحث النصي الكامل.
+* [**فهرس Min-Max**](/ar/reference/engines/table-engines/mergetree-family/mergetree#minmax):
+  * يحتفظ بالقيمتين الصغرى والكبرى لعمود معيّن في كل جزء بيانات.
+  * يساعد على تخطي قراءة أجزاء البيانات التي لا تقع ضمن النطاق المحدد.
+
+<div id="search-indexes">
+  ## فهارس البحث
+</div>
+
+على غرار [فهارس البحث](https://cloud.google.com/bigquery/docs/search-index) في BigQuery، يمكن إنشاء [فهارس النص الكامل](/ar/reference/engines/table-engines/mergetree-family/textindexes) لجداول ClickHouse على الأعمدة التي تحتوي على قيم نصية.
+
+<div id="vector-indexes">
+  ## الفهارس المتجهية
+</div>
+
+طرحت BigQuery مؤخرًا [فهارس متجهية](https://cloud.google.com/bigquery/docs/vector-index) كميزة ضمن مرحلة ما قبل GA. وبالمثل، يوفّر ClickHouse دعمًا تجريبيًا لـ [فهارس لتسريع](/ar/reference/engines/table-engines/mergetree-family/annindexes) حالات استخدام البحث المتجهي.
+
+<div id="partitioning">
+  ## التقسيم
+</div>
+
+على غرار BigQuery، يستخدم ClickHouse تقسيم الجداول لتحسين أداء الجداول الكبيرة وتسهيل إدارتها، وذلك بتقسيمها إلى أجزاء أصغر وأسهل في الإدارة تُسمى أقسامًا. نشرح تقسيم الجداول في ClickHouse بالتفصيل [هنا](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
+
+<div id="clustering">
+  ## التجميع العنقودي
+</div>
+
+باستخدام التجميع العنقودي، يرتّب BigQuery تلقائيًا بيانات الجدول وفقًا لقيم عدد قليل من الأعمدة المحددة، ويخزّنها معًا في كتل ذات أحجام مثالية. يحسّن التجميع العنقودي أداء الاستعلامات، مما يتيح لـ BigQuery تقدير تكلفة تشغيل الاستعلام بشكل أفضل. ومع الأعمدة المجمّعة عنقوديًا، تتجنب الاستعلامات أيضًا فحص البيانات غير الضرورية.
+
+في ClickHouse، تُ[جمَّع البيانات عنقوديًا على القرص](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files) تلقائيًا استنادًا إلى أعمدة المفتاح الأساسي للجدول، وتُنظَّم منطقيًا في كتل يمكن للاستعلامات التي تستخدم بنية بيانات الفهرس الأساسي تحديدها بسرعة أو استبعادها.
+
+<div id="materialized-views">
+  ## العروض المادية
+</div>
+
+يدعم كلٌّ من BigQuery وClickHouse العروض المادية، وهي نتائج تُحتسب مسبقًا استنادًا إلى ناتج استعلام تحويل على جدول أساسي، مما يحسّن الأداء ويزيد الكفاءة.
+
+<div id="querying-materialized-views">
+  ## الاستعلام عن العروض المادية
+</div>
+
+يمكن الاستعلام عن العروض المادية في BigQuery مباشرةً، أو يمكن للمُحسِّن استخدامها لمعالجة الاستعلامات على الجداول الأساسية. وإذا كانت التغييرات التي تطرأ على الجداول الأساسية قد تُبطل العرض المادي، فتُقرأ البيانات مباشرةً من الجداول الأساسية. أما إذا كانت هذه التغييرات لا تُبطل العرض المادي، فتُقرأ بقية البيانات من العرض المادي، ولا تُقرأ من الجداول الأساسية إلا التغييرات فقط.
+
+في ClickHouse، لا يمكن الاستعلام عن العروض المادية إلا مباشرةً. ومع ذلك، وبالمقارنة مع BigQuery (حيث تُحدَّث العروض المادية تلقائيًا خلال 5 دقائق من أي تغيير يطرأ على الجداول الأساسية، ولكن ليس أكثر من [كل 30 دقيقة](https://cloud.google.com/bigquery/docs/materialized-views-manage#refresh))، فإن العروض المادية تكون دائمًا متزامنة مع الجدول الأساسي.
+
+**تحديث العروض المادية**
+
+يُجري BigQuery تحديثًا كاملًا دوريًا للعروض المادية من خلال تشغيل استعلام التحويل الخاص بالعرض على الجدول الأساسي. وبين عمليات التحديث، يدمج BigQuery بيانات العرض المادي مع بيانات الجدول الأساسي الجديدة لتقديم نتائج استعلام متسقة مع الاستمرار في استخدام العرض المادي.
+
+في ClickHouse، تُحدَّث العروض المادية بشكل تزايدي. وتوفّر آلية التحديث التزايدي هذه قابلية توسّع عالية وتكاليف حوسبة منخفضة، إذ صُمِّمت العروض المادية التي تُحدَّث تزايديًا خصيصًا للسيناريوهات التي تحتوي فيها الجداول الأساسية على مليارات أو تريليونات من الصفوف. وبدلًا من الاستعلام مرارًا عن الجدول الأساسي الذي يواصل النمو لتحديث العرض المادي، يحسب ClickHouse ببساطة نتيجة جزئية من قيم الصفوف المُدرجة حديثًا في الجدول الأساسي فقط. ثم تُدمج هذه النتيجة الجزئية تدريجيًا مع النتيجة الجزئية المحسوبة سابقًا في الخلفية. ويؤدي ذلك إلى خفض كبير في تكاليف الحوسبة مقارنةً بتحديث العرض المادي مرارًا انطلاقًا من الجدول الأساسي بالكامل.
+
+<div id="transactions">
+  ## المعاملات
+</div>
+
+بخلاف ClickHouse، يدعم BigQuery المعاملات متعددة العبارات داخل استعلام واحد، أو عبر عدة استعلامات عند استخدام الجلسات. تتيح لك المعاملة متعددة العبارات تنفيذ عمليات تعديل، مثل إدراج صفوف أو حذفها في جدول واحد أو أكثر، ثم إما اعتماد التغييرات أو التراجع عنها بشكل ذرّي. المعاملات متعددة العبارات مدرجة على [خارطة طريق ClickHouse لعام 2024](https://github.com/ClickHouse/ClickHouse/issues/58392).
+
+<div id="aggregate-functions">
+  ## الدوال التجميعية
+</div>
+
+مقارنةً بـ BigQuery، يوفّر ClickHouse عددًا أكبر بكثير من الدوال التجميعية المضمّنة:
+
+* يوفّر BigQuery [18 دالة تجميعية](https://cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions)، و[4 دوال تجميعية تقريبية](https://cloud.google.com/bigquery/docs/reference/standard-sql/approximate_aggregate_functions).
+* يضم ClickHouse أكثر من [150 دالة تجميع مُعدّة مسبقًا](/ar/reference/functions/aggregate-functions/reference-index)، بالإضافة إلى [مُركِّبات تجميع](/ar/reference/functions/aggregate-functions/combinators) قوية [لتوسيع](https://www.youtube.com/watch?v=7ApwD0cfAFI) سلوك دوال التجميع المُعدّة مسبقًا. على سبيل المثال، يمكنك تطبيق أكثر من 150 دالة تجميع مُعدّة مسبقًا على المصفوفات بدلًا من صفوف الجدول، وذلك ببساطة عبر استدعائها باستخدام [اللاحقة -Array](/ar/reference/functions/aggregate-functions/combinators#-array). وباستخدام [اللاحقة -Map](/ar/reference/functions/aggregate-functions/combinators#-map)، يمكنك تطبيق أي دالة تجميع على القيم من نوع Map. وباستخدام [اللاحقة -ForEach](/ar/reference/functions/aggregate-functions/combinators#-foreach)، يمكنك تطبيق أي دالة تجميع على المصفوفات المتداخلة.
+
+<div id="data-sources-and-file-formats">
+  ## مصادر البيانات وتنسيقات الملفات
+</div>
+
+مقارنةً بـ BigQuery، يدعم ClickHouse عددًا أكبر بكثير من تنسيقات الملفات ومصادر البيانات:
+
+* يوفّر ClickHouse دعمًا أصليًا لتحميل البيانات من أي مصدر بيانات تقريبًا وبأكثر من 90 تنسيق ملفات
+* يدعم BigQuery خمسة تنسيقات ملفات و19 مصدر بيانات
+
+<div id="sql-language-features">
+  ## ميزات لغة SQL
+</div>
+
+يوفّر ClickHouse لغة SQL القياسية مع العديد من الامتدادات والتحسينات التي تجعلها أكثر ملاءمة للمهام التحليلية. على سبيل المثال، تدعم ClickHouse SQL [دوال لامبدا](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda) والدوال عالية الرتبة، لذلك لا تحتاج إلى فرد المصفوفات أو تفجيرها عند تطبيق التحويلات. وهذه ميزة كبيرة مقارنةً بأنظمة أخرى مثل BigQuery.
+
+<div id="arrays">
+  ## المصفوفات
+</div>
+
+مقارنةً بوظائف المصفوفات الثماني في BigQuery، يوفّر ClickHouse أكثر من 80 [وظيفة مصفوفات مضمّنة](/ar/reference/functions/regular-functions/array-functions) لنمذجة مجموعة واسعة من المشكلات وحلّها ببساطة وأناقة.
+
+من أنماط التصميم الشائعة في ClickHouse استخدام الدالة التجميعية [`groupArray`](/ar/reference/functions/aggregate-functions/groupArray) لتحويل قيم صفوف معيّنة من جدول إلى مصفوفة بشكل مؤقت. بعد ذلك، يمكن معالجة هذه المصفوفة بسهولة باستخدام وظائف المصفوفات، ثم تحويل النتيجة مرة أخرى إلى صفوف جدول منفصلة باستخدام الدالة [`arrayJoin`](/ar/reference/functions/regular-functions/array-join).
+
+ونظرًا إلى أن ClickHouse SQL يدعم [دوال لامبدا عالية الرتبة](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda)، يمكن تنفيذ العديد من العمليات المتقدمة على المصفوفات بمجرد استدعاء إحدى وظائف المصفوفات المضمّنة عالية الرتبة، بدلًا من تحويل المصفوفات مؤقتًا إلى جداول مرة أخرى، كما يكون [مطلوبًا](https://cloud.google.com/bigquery/docs/arrays) في كثير من الأحيان في BigQuery، مثل [تصفية](https://cloud.google.com/bigquery/docs/arrays#filtering_arrays) المصفوفات أو [دمجها عنصرًا بعنصر](https://cloud.google.com/bigquery/docs/arrays#zipping_arrays). في ClickHouse، لا تتطلب هذه العمليات سوى استدعاء بسيط للدالتين عاليتَي الرتبة [`arrayFilter`](/ar/reference/functions/regular-functions/array-functions#arrayFilter) و[`arrayZip`](/ar/reference/functions/regular-functions/array-functions#arrayZip)، على الترتيب.
+
+فيما يلي، نعرض مقابلة بين عمليات المصفوفات في BigQuery ونظيراتها في ClickHouse:
+
+| BigQuery                                                                                                                 | ClickHouse                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| [ARRAY&#95;CONCAT](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_concat)           | [arrayConcat](/ar/reference/functions/regular-functions/array-functions#arrayConcat)                         |
+| [ARRAY&#95;LENGTH](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_length)           | [length](/ar/reference/functions/regular-functions/array-functions#length)                                   |
+| [ARRAY&#95;REVERSE](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_reverse)         | [arrayReverse](/ar/reference/functions/regular-functions/array-functions#arrayReverse)                       |
+| [ARRAY&#95;TO&#95;STRING](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array_to_string) | [arrayStringConcat](/ar/reference/functions/regular-functions/splitting-merging-functions#arrayStringConcat) |
+| [GENERATE&#95;ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#generate_array)       | [range](/ar/reference/functions/regular-functions/array-functions#range)                                     |
+
+**أنشئ مصفوفة تتضمن عنصرًا واحدًا لكل صف في استعلام فرعي**
+
+*BigQuery*
+
+[الدالة ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#array)
+
+```sql
+SELECT ARRAY
+  (SELECT 1 UNION  ALL
+   SELECT 2 UNION ALL
+   SELECT 3) AS new_array;
+
+/*-----------*
+ | new_array |
+ +-----------+
+ | [1, 2, 3] |
+ *-----------*/
+```
+
+*ClickHouse*
+
+[groupArray](/ar/reference/functions/aggregate-functions/groupArray) دالة تجميعية
+
+```sql
+SELECT groupArray(*) AS new_array
+FROM
+(
+    SELECT 1
+    UNION ALL
+    SELECT 2
+    UNION ALL
+    SELECT 3
+)
+```
+
+```response
+   ┌─new_array─┐
+1. │ [1,2,3]   │
+   └───────────┘
+```
+
+**حوِّل مصفوفة إلى مجموعة من الصفوف**
+
+*BigQuery*
+
+المعامل [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator)
+
+```sql
+SELECT *
+FROM UNNEST(['foo', 'bar', 'baz', 'qux', 'corge', 'garply', 'waldo', 'fred'])
+  AS element
+WITH OFFSET AS offset
+ORDER BY offset;
+
+/*----------+--------*
+ | element  | offset |
+ +----------+--------+
+ | foo      | 0      |
+ | bar      | 1      |
+ | baz      | 2      |
+ | qux      | 3      |
+ | corge    | 4      |
+ | garply   | 5      |
+ | waldo    | 6      |
+ | fred     | 7      |
+ *----------+--------*/
+```
+
+*ClickHouse*
+
+عبارة [ARRAY JOIN](/ar/reference/statements/select/array-join)
+
+```sql
+WITH ['foo', 'bar', 'baz', 'qux', 'corge', 'garply', 'waldo', 'fred'] AS values
+SELECT element, num-1 AS offset
+FROM (SELECT values AS element) AS subquery
+ARRAY JOIN element, arrayEnumerate(element) AS num;
+
+/*----------+--------*
+ | element  | offset |
+ +----------+--------+
+ | foo      | 0      |
+ | bar      | 1      |
+ | baz      | 2      |
+ | qux      | 3      |
+ | corge    | 4      |
+ | garply   | 5      |
+ | waldo    | 6      |
+ | fred     | 7      |
+ *----------+--------*/
+```
+
+**إرجاع مصفوفة من التواريخ**
+
+*BigQuery*
+
+دالة [GENERATE&#95;DATE&#95;ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#generate_date_array)
+
+```sql
+SELECT GENERATE_DATE_ARRAY('2016-10-05', '2016-10-08') AS example;
+
+/*--------------------------------------------------*
+ | example                                          |
+ +--------------------------------------------------+
+ | [2016-10-05, 2016-10-06, 2016-10-07, 2016-10-08] |
+ *--------------------------------------------------*/
+```
+
+دالتا [range](/ar/reference/functions/regular-functions/array-functions#range) و[arrayMap](/ar/reference/functions/regular-functions/array-functions#arrayMap)
+
+*ClickHouse*
+
+```sql
+SELECT arrayMap(x -> (toDate('2016-10-05') + x), range(toUInt32((toDate('2016-10-08') - toDate('2016-10-05')) + 1))) AS example
+```
+
+```response
+   ┌─example───────────────────────────────────────────────┐
+1. │ ['2016-10-05','2016-10-06','2016-10-07','2016-10-08'] │
+   └───────────────────────────────────────────────────────┘
+```
+
+**إرجاع مصفوفة من الطوابع الزمنية**
+
+*BigQuery*
+
+دالة [GENERATE&#95;TIMESTAMP&#95;ARRAY](https://cloud.google.com/bigquery/docs/reference/standard-sql/array_functions#generate_timestamp_array)
+
+```sql
+SELECT GENERATE_TIMESTAMP_ARRAY('2016-10-05 00:00:00', '2016-10-07 00:00:00',
+                                INTERVAL 1 DAY) AS timestamp_array;
+
+/*--------------------------------------------------------------------------*
+ | timestamp_array                                                          |
+ +--------------------------------------------------------------------------+
+ | [2016-10-05 00:00:00+00, 2016-10-06 00:00:00+00, 2016-10-07 00:00:00+00] |
+ *--------------------------------------------------------------------------*/
+```
+
+*ClickHouse*
+
+دالتا [range](/ar/reference/functions/regular-functions/array-functions#range) و[arrayMap](/ar/reference/functions/regular-functions/array-functions#arrayMap)
+
+```sql
+SELECT arrayMap(x -> (toDateTime('2016-10-05 00:00:00') + toIntervalDay(x)), range(dateDiff('day', toDateTime('2016-10-05 00:00:00'), toDateTime('2016-10-07 00:00:00')) + 1)) AS timestamp_array
+```
+
+```response
+Query id: b324c11f-655b-479f-9337-f4d34fd02190
+
+   ┌─timestamp_array─────────────────────────────────────────────────────┐
+1. │ ['2016-10-05 00:00:00','2016-10-06 00:00:00','2016-10-07 00:00:00'] │
+   └─────────────────────────────────────────────────────────────────────┘
+```
+
+**تصفية المصفوفات**
+
+*BigQuery*
+
+يستلزم تحويل المصفوفات مؤقتًا إلى جداول باستخدام عامل التشغيل [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator)
+
+```sql
+WITH Sequences AS
+  (SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+   UNION ALL SELECT [2, 4, 8, 16, 32] AS some_numbers
+   UNION ALL SELECT [5, 10] AS some_numbers)
+SELECT
+  ARRAY(SELECT x * 2
+        FROM UNNEST(some_numbers) AS x
+        WHERE x < 5) AS doubled_less_than_five
+FROM Sequences;
+
+/*------------------------*
+ | doubled_less_than_five |
+ +------------------------+
+ | [0, 2, 2, 4, 6]        |
+ | [4, 8]                 |
+ | []                     |
+ *------------------------*/
+```
+
+*ClickHouse*
+
+الدالة [arrayFilter](/ar/reference/functions/regular-functions/array-functions#arrayFilter)
+
+```sql
+WITH Sequences AS
+    (
+        SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+        UNION ALL
+        SELECT [2, 4, 8, 16, 32] AS some_numbers
+        UNION ALL
+        SELECT [5, 10] AS some_numbers
+    )
+SELECT arrayMap(x -> (x * 2), arrayFilter(x -> (x < 5), some_numbers)) AS doubled_less_than_five
+FROM Sequences;
+```
+
+```response
+   ┌─doubled_less_than_five─┐
+1. │ [0,2,2,4,6]            │
+   └────────────────────────┘
+   ┌─doubled_less_than_five─┐
+2. │ []                     │
+   └────────────────────────┘
+   ┌─doubled_less_than_five─┐
+3. │ [4,8]                  │
+   └────────────────────────┘
+```
+
+**دمج المصفوفات بحسب المواضع**
+
+*BigQuery*
+
+يتطلب إعادة تحويل المصفوفات مؤقتًا إلى جداول باستخدام المعامل [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator)
+
+```sql
+WITH
+  Combinations AS (
+    SELECT
+      ['a', 'b'] AS letters,
+      [1, 2, 3] AS numbers
+  )
+SELECT
+  ARRAY(
+    SELECT AS STRUCT
+      letters[SAFE_OFFSET(index)] AS letter,
+      numbers[SAFE_OFFSET(index)] AS number
+    FROM Combinations
+    CROSS JOIN
+      UNNEST(
+        GENERATE_ARRAY(
+          0,
+          LEAST(ARRAY_LENGTH(letters), ARRAY_LENGTH(numbers)) - 1)) AS index
+    ORDER BY index
+  );
+
+/*------------------------------*
+ | pairs                        |
+ +------------------------------+
+ | [{ letter: "a", number: 1 }, |
+ |  { letter: "b", number: 2 }] |
+ *------------------------------*/
+```
+
+*ClickHouse*
+
+الدالة [arrayZip](/ar/reference/functions/regular-functions/array-functions#arrayZip)
+
+```sql
+WITH Combinations AS
+    (
+        SELECT
+            ['a', 'b'] AS letters,
+            [1, 2, 3] AS numbers
+    )
+SELECT arrayZip(letters, arrayResize(numbers, length(letters))) AS pairs
+FROM Combinations;
+```
+
+```response
+   ┌─pairs─────────────┐
+1. │ [('a',1),('b',2)] │
+   └───────────────────┘
+```
+
+**تجميع المصفوفات**
+
+*BigQuery*
+
+يتطلب إعادة تحويل المصفوفات إلى جداول باستخدام المعامل [`UNNEST`](https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#unnest_operator)
+
+```sql
+WITH Sequences AS
+  (SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+   UNION ALL SELECT [2, 4, 8, 16, 32] AS some_numbers
+   UNION ALL SELECT [5, 10] AS some_numbers)
+SELECT some_numbers,
+  (SELECT SUM(x)
+   FROM UNNEST(s.some_numbers) AS x) AS sums
+FROM Sequences AS s;
+
+/*--------------------+------*
+ | some_numbers       | sums |
+ +--------------------+------+
+ | [0, 1, 1, 2, 3, 5] | 12   |
+ | [2, 4, 8, 16, 32]  | 62   |
+ | [5, 10]            | 15   |
+ *--------------------+------*/
+```
+
+*ClickHouse*
+
+دالة [arraySum](/ar/reference/functions/regular-functions/array-functions#arraySum)، ودالة [arrayAvg](/ar/reference/functions/regular-functions/array-functions#arrayAvg)، ...، أو أيًّا من أكثر من 90 اسمًا آخر لدوال التجميع، كوسيطة للدالة [arrayReduce](/ar/reference/functions/regular-functions/array-functions#arrayReduce)
+
+```sql
+WITH Sequences AS
+    (
+        SELECT [0, 1, 1, 2, 3, 5] AS some_numbers
+        UNION ALL
+        SELECT [2, 4, 8, 16, 32] AS some_numbers
+        UNION ALL
+        SELECT [5, 10] AS some_numbers
+    )
+SELECT
+    some_numbers,
+    arraySum(some_numbers) AS sums
+FROM Sequences;
+```
+
+```response
+   ┌─some_numbers──┬─sums─┐
+1. │ [0,1,1,2,3,5] │   12 │
+   └───────────────┴──────┘
+   ┌─some_numbers──┬─sums─┐
+2. │ [2,4,8,16,32] │   62 │
+   └───────────────┴──────┘
+   ┌─some_numbers─┬─sums─┐
+3. │ [5,10]       │   15 │
+   └──────────────┴──────┘
+```

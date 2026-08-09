@@ -23,6 +23,7 @@ You can use setting `allow_deprecated_error_prone_window_functions` to allow usa
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the difference between consecutive values, with the first row's value for the first row.", {"Any"}};
     FunctionDocumentation::Examples examples = {{"Usage example",
         R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT
     number,
     runningDifferenceStartingWithFirstValue(number) AS diff

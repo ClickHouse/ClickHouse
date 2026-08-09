@@ -29,8 +29,6 @@ public:
     using Keys = std::set<Key, std::less<>>;
     enum class SourceId : uint8_t
     {
-        /// None source_id is possible only if the object is a
-        /// duplicate of some named collection. See `duplicate` method.
         NONE = 0,
         CONFIG = 1,
         SQL = 2,
@@ -58,9 +56,14 @@ public:
 
     bool isOverridable(const Key & key, bool default_value) const;
 
+    /// Record that `key` was overridden by a user query argument (e.g. `s3(collection, key = ...)`) rather
+    /// than coming from the stored collection, so callers can keep operator and user values distinct.
+    void markQueryOverridden(const Key & key);
+    bool isQueryOverridden(const Key & key) const;
+
     template <bool locked = false> void remove(const Key & key);
 
-    /// Creates mutable, with NONE source id full copy.
+    /// Creates a mutable full copy, keeping the source of the original.
     MutableNamedCollectionPtr duplicate() const;
 
     Keys getKeys(ssize_t depth = -1, const std::string & prefix = "") const;
@@ -76,7 +79,10 @@ public:
 
     bool isMutable() const { return is_mutable; }
 
-    virtual SourceId getSourceId() const { return SourceId::NONE; }
+    /// Where the collection was defined. A duplicate (see `duplicate`) keeps the source of the
+    /// collection it was made from, so that callers can distinguish values an operator put into
+    /// the server configuration from values any user could have set with SQL.
+    SourceId getSourceId() const { return source_id; }
 
     virtual String getCreateStatement(bool /*show_secrects*/) { return  {}; }
 
@@ -90,7 +96,8 @@ protected:
     NamedCollection(
         ImplPtr pimpl_,
         const std::string & collection_name,
-        bool is_mutable_
+        bool is_mutable_,
+        SourceId source_id_
     );
 
     void assertMutable() const;
@@ -99,6 +106,8 @@ protected:
     ImplPtr pimpl;
     const std::string collection_name;
     const bool is_mutable;
+    const SourceId source_id;
+    Keys query_overridden_keys;
     mutable std::mutex mutex;
 };
 
@@ -110,8 +119,6 @@ public:
     String getCreateStatement(bool show_secrects) override;
 
     void update(const ASTAlterNamedCollectionQuery & query) override;
-
-    NamedCollection::SourceId getSourceId() const override { return SourceId::SQL; }
 
 private:
     explicit NamedCollectionFromSQL(const ASTCreateNamedCollectionQuery & query_);
@@ -132,8 +139,6 @@ public:
     String getCreateStatement(bool /*show_secrects*/) override { return {}; }
 
     void update(const ASTAlterNamedCollectionQuery & /*query*/) override { NamedCollection::assertMutable(); }
-
-    NamedCollection::SourceId getSourceId() const override { return SourceId::CONFIG; }
 
 private:
 

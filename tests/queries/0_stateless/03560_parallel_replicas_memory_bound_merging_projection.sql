@@ -1,3 +1,7 @@
+-- Tags: no-random-merge-tree-settings
+-- no-random-merge-tree-settings: to fix pipeline structure
+
+SET explain_query_plan_default = 'legacy';
 drop table if exists pr_t;
 
 create table pr_t(a UInt64, b UInt64) engine=MergeTree order by a;

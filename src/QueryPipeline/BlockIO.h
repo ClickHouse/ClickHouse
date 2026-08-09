@@ -3,7 +3,6 @@
 #include <functional>
 #include <Common/QueryScope.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Interpreters/QueryMetadataCache.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>
 #include <Processors/IProcessor.h>
@@ -37,18 +36,6 @@ struct BlockIO
     /// Needed for internal queries.
     /// Each level calls executeQuery and adds its process list entry.
     VectorWithMemoryTracking<std::shared_ptr<ProcessListEntry>> process_list_entries;
-
-    /// Query-scoped cache for storage metadata and snapshots.
-    ///
-    /// The cache is created at query execution entry point and is kept alive by BlockIO for the entire lifetime of
-    /// query execution (including pipeline execution and internal/nested queries).
-    ///
-    /// It allows consistently reusing StorageMetadata and StorageSnapshot instances within the same query across
-    /// concurrent execution threads, while avoiding extending their lifetime beyond the query scope.
-    ///
-    /// The cache is *not* owned by Context to prevent reference cycles; Context only holds a weak reference to it for
-    /// access during query execution.
-    QueryMetadataCachePtr query_metadata_cache;
 
     QueryPipeline pipeline;
 
@@ -88,8 +75,17 @@ struct BlockIO
     /// Set is_all_data_sent in system.processes for this query.
     void setAllDataSent() const;
 
-    /// Release query slot early to allow client to reuse it for his next query.
+    /// Release all acquired workload resources (query slot and memory reservation).
+    /// Only safe once the pipeline has been stopped (see `releaseMemoryReservation`).
+    void releaseWorkloadResources() const;
+
+    /// Release the query slot early to allow the client to reuse it for its next query.
+    /// Safe while the pipeline is still running: pipeline threads do not access the query slot.
     void releaseQuerySlot() const;
+
+    /// Release the memory reservation. MUST be called only after the pipeline has been finalized,
+    /// because pipeline threads hold raw pointers to `MemoryReservation`.
+    void releaseMemoryReservation() const;
 
     void resetPipeline(bool cancel);
 

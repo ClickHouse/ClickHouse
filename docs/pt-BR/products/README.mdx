@@ -1,0 +1,39 @@
+---
+title: README
+---
+
+<div id="products">
+  # Produtos
+</div>
+
+**O que entra aqui:** Documentação específica de produto para as ofertas de
+implantação e os produtos gerenciados/complementares do ClickHouse. Cada subdiretório é autônomo
+e tem sua própria visão geral, primeiros passos, guias e material de
+referência para essa área do produto.
+
+**Público-alvo:** Usuários que trabalham com um produto específico do ClickHouse. O conteúdo aqui
+pressupõe que o leitor já escolheu o produto e quer detalhes aplicáveis a ele
+(faturamento, topologia de implantação, recursos específicos do produto, comportamento do
+console/API). Conteúdo que se aplica ao ClickHouse de forma geral — conceitos, padrões de consulta,
+referência SQL — pertence a `/core`, não aqui.
+
+**Subdiretórios:**
+
+* `cloud/` — ClickHouse Cloud (serviço gerenciado serverless).
+* `clickstack/` — ClickStack, a stack de observabilidade com tecnologia ClickHouse.
+* `bring-your-own-cloud/` — BYOC: ClickHouse Cloud executando na
+  própria conta de nuvem do cliente. (Na verdade, é um modo de implantação do Cloud, mas está separado aqui por simplicidade)
+* `clickhouse-private/` — ClickHouse Private: implantação auto-hospedada e isolada
+  na infraestrutura do cliente. (Na verdade, é um modo de implantação do Cloud, mas está separado aqui por simplicidade)
+* `kubernetes-operator/` — o operador Kubernetes do ClickHouse para implantar
+  e gerenciar clusters no Kubernetes.
+* `managed-postgres/` — oferta gerenciada de Postgres, integrada nativamente ao
+  ClickHouse Cloud.
+* `agentic-data-stack/` — a stack de analytics agêntico (ClickHouse + LibreChat
+  * Langfuse).
+* `chdb/` — chDB, a compilação in-process do ClickHouse.
+
+Se uma página explica um mecanismo do ClickHouse, uma função, uma configuração ou um conceito que
+se aplica independentemente do produto, ela pertence a `/core` (conceitos, guias ou
+referência). Só coloque uma página aqui se ela estiver de fato vinculada ao produto —
+seu console, faturamento, modelo de implantação ou recursos exclusivos do produto.
