@@ -1228,6 +1228,12 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
                 /// operation is done
                 return;
             }
+
+            /// RESOLVE_CONFLICTS -> LOCK_AND_COMMIT can cycle while the deduplication node keeps
+            /// reappearing, and this loop never yields to ZooKeeperRetriesControl's own check.
+            /// Same reason as the bounded quorum wait below.
+            if (auto process_list_element = context->getProcessListElement())
+                process_list_element->checkTimeLimit();
         }
     });
 
