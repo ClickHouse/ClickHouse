@@ -6424,6 +6424,16 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
             "Table is in readonly mode since table metadata was not found in zookeeper: replica_path={}",
             replica_path);
 
+    /// It's only allowed to throw "too many parts" before write,
+    /// because interrupting long-running INSERT query in the middle is not convenient for users.
+    /// The check has to happen here, on the query thread, and not in the sink's onStart: a plain
+    /// INSERT fans out to multiple parallel sinks, and a sink whose onStart runs late would count
+    /// the parts already committed by its sibling sinks and spuriously reject the very insert that
+    /// wrote them. All calls of this method happen before the insert pipeline executes, so the
+    /// check never sees this query's own parts. Delaying (as opposed to throwing) stays in the
+    /// sinks, where the parallel streams sleep concurrently rather than one after another here.
+    delayInsertOrThrowIfNeeded(nullptr, local_context, /*allow_throw=*/ true, /*allow_delay=*/ false);
+
     const auto storage_settings_ptr = getSettings();
     const Settings & query_settings = local_context->getSettingsRef();
 

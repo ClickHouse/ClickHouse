@@ -26,7 +26,9 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ThreadFuzzer.h>
+#include <Common/thread_local_rng.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <algorithm>
@@ -74,6 +76,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
     extern const char rmt_dedup_conflict_part_name_missing[];
+    extern const char merge_tree_sink_on_start_random_sleep[];
 }
 
 namespace ErrorCodes
@@ -1226,9 +1229,17 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
 
 void ReplicatedMergeTreeSink::onStart()
 {
-    /// It's only allowed to throw "too many parts" before write,
-    /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, true);
+    /// Delay only, without the "too many parts" throw. The throw check runs once per query in
+    /// StorageReplicatedMergeTree::write, before the insert pipeline executes: a plain INSERT fans
+    /// out to multiple parallel sinks, and a sink whose onStart runs late would otherwise count the
+    /// parts already committed by its sibling sinks and spuriously reject the very insert that
+    /// wrote them.
+
+    /// Used by tests: skews the start of the parallel sinks of one insert, widening the window
+    /// between one sink committing its part and a sibling sink starting.
+    fiu_do_on(FailPoints::merge_tree_sink_on_start_random_sleep, { sleepForMicroseconds(thread_local_rng() % 3000); });
+
+    storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, /*allow_throw=*/ false);
 
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onStart");
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onStart");

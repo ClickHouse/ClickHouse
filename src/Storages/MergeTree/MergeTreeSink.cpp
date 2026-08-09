@@ -10,7 +10,10 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/FailPoint.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
+#include <base/sleep.h>
 
 #include <exception>
 #include <memory>
@@ -42,6 +45,11 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_sink_on_start_random_sleep[];
 }
 
 MergeTreeSink::~MergeTreeSink()
@@ -83,9 +91,16 @@ void MergeTreeSink::setHasDependentMaterializedViews(bool has_dependent_views)
 
 void MergeTreeSink::onStart()
 {
-    /// It's only allowed to throw "too many parts" before write,
-    /// because interrupting long-running INSERT query in the middle is not convenient for users.
-    storage.delayInsertOrThrowIfNeeded(nullptr, context, true);
+    /// Delay only, without the "too many parts" throw. The throw check runs once per query in
+    /// StorageMergeTree::write, before the insert pipeline executes: a plain INSERT fans out to
+    /// multiple parallel sinks, and a sink whose onStart runs late would otherwise count the parts
+    /// already committed by its sibling sinks and spuriously reject the very insert that wrote them.
+
+    /// Used by tests: skews the start of the parallel sinks of one insert, widening the window
+    /// between one sink committing its part and a sibling sink starting.
+    fiu_do_on(FailPoints::merge_tree_sink_on_start_random_sleep, { sleepForMicroseconds(thread_local_rng() % 3000); });
+
+    storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ false);
 }
 
 void MergeTreeSink::onFinish()
