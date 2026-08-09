@@ -2201,6 +2201,48 @@ def test_the_agent_runs_as_its_own_user_with_an_empty_environment(
     )
 
 
+def test_closed_ancestors_are_opened_for_traversal_only(monkeypatch, tmp_path):
+    """Owning the workdir does not let the agent reach it: resolving the path
+    needs the execute bit on every ancestor, and a stock Ubuntu image creates
+    the job user's home 0750 -- which is where the checkout, and inside it
+    the workdir, live. Every closed ancestor is opened with the execute bit
+    for others and nothing more, only the closed ones are touched, and a
+    layout that is already open changes nothing at all."""
+    home = tmp_path / "home"
+    work = home / "checkout" / "ci" / "tmp"
+    work.mkdir(parents=True)
+    workdir = work / "investigation_0"
+    workdir.mkdir()
+    os.chmod(home, 0o750)
+
+    commands = []
+    monkeypatch.setattr(
+        job.Shell, "check", lambda command, **_: commands.append(command) or True
+    )
+
+    job.allow_traversal(str(workdir))
+
+    assert len(commands) == 1
+    command = commands[0]
+    assert command.startswith("sudo -n chmod o+x ")
+    listed = command.split("chmod o+x ", 1)[1]
+    # The closed home is opened; the directories that are already open and
+    # the workdir itself are left alone; and traversal only -- no read bit.
+    # (The test's own temporary directory may have closed ancestors of its
+    # own -- pytest keeps its base private -- and those are rightly listed
+    # too, so the assertions are about membership, not about the whole list.)
+    assert shlex.quote(str(home)) in listed
+    assert str(workdir) not in command
+    assert str(work) not in listed
+    assert "o+r" not in command
+
+    # Once the way is open, this door is not touched again.
+    os.chmod(home, 0o751)
+    commands.clear()
+    job.allow_traversal(str(workdir))
+    assert all(shlex.quote(str(home)) not in c for c in commands)
+
+
 def test_the_agent_cannot_recover_a_token_from_the_default_gh_store(
     monkeypatch, tmp_path
 ):

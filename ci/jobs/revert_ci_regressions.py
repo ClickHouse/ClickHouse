@@ -1869,6 +1869,43 @@ def chown(owner: str, *paths: str) -> None:
     Shell.check(f"sudo -n chown -R {owner} {quoted}", verbose=True, strict=True)
 
 
+def allow_traversal(*paths: str) -> None:
+    """Let `AGENT_USER` *reach* `paths`: give every ancestor directory that
+    lacks it the execute bit for other users.
+
+    Owning the workdir is not enough to use it. Resolving a path needs the
+    execute bit on every directory on the way, the runner image is free to
+    create the job user's home without it -- Ubuntu has made `/home/<user>`
+    0750 since 21.04 -- and the workdir lives inside the checkout, inside
+    that home: the agent is stopped at the door of an ancestor, however
+    thoroughly its own directories were handed over. The same chain also
+    carries what the agent's `git` reads through the clone's alternates
+    file, which points into the job checkout's `.git/objects`.
+
+    Execute without read is traversal by known name only: the directory
+    cannot be listed, and every file on the way keeps its own mode. So what
+    `confine_agent_user` relies on -- the job user's files being another
+    uid's and unreadable -- stays true; the agent gains a corridor, not a
+    view. Only the directories that are actually closed are touched."""
+    ancestors: List[str] = []
+    for path in paths:
+        directory = os.path.dirname(os.path.realpath(path))
+        while directory not in ancestors:
+            ancestors.append(directory)
+            parent = os.path.dirname(directory)
+            if parent == directory:
+                break
+            directory = parent
+    closed = [
+        directory
+        for directory in ancestors
+        if not os.stat(directory).st_mode & 0o001
+    ]
+    if closed:
+        quoted = " ".join(shlex.quote(directory) for directory in sorted(closed))
+        Shell.check(f"sudo -n chmod o+x {quoted}", verbose=True, strict=True)
+
+
 def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
     """Run the codex agent once in `workdir` and return what it wrote to
     `verdict_file`.
@@ -1960,8 +1997,12 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
         try:
             chown(f"{AGENT_USER}:", workdir, codex_home, gh_config_dir)
             # The runner's directory layout must actually let the other uid
-            # in -- a home directory without world-execute would stop the
-            # agent at the door, and better loudly here than obscurely there.
+            # in, and on a stock Ubuntu image it does not: the job user's
+            # home is 0750 and everything here lives inside it. So the
+            # closed ancestors are opened -- traversal only, see
+            # `allow_traversal` -- and the probe below stays: better loudly
+            # here than obscurely there.
+            allow_traversal(workdir, codex_home, gh_config_dir)
             Shell.check(
                 f"sudo -n -u {AGENT_USER} test -w {shlex.quote(workdir)}",
                 strict=True,
