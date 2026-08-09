@@ -108,9 +108,13 @@ stat_count()
 QUERY_ID="${CLICKHOUSE_DATABASE}_kill_after_partial_result"
 ERROR_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.err")
 
+# parallel_replicas_for_cluster_engines would rewrite url to urlCluster and read it in remote
+# queries with their own query ids: the kill of this query id would not reach the source, and the
+# log the test asserts on would be left under a different query id.
 $CLICKHOUSE_CLIENT \
     --partial_result_on_first_cancel 1 \
     --engine_url_skip_empty_files 1 \
+    --parallel_replicas_for_cluster_engines 0 \
     --query_id "$QUERY_ID" \
     --query "SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/empty_slow|http://127.0.0.1:$HTTP_PORT/data', 'CSV', 'x UInt64')" \
     >/dev/null 2>"$ERROR_FILE" &
