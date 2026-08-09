@@ -564,16 +564,41 @@ String getInsertDataSchemaMismatchDescription(
 
             if (inferred_from_object_token)
             {
-                /// The object keys are string tokens that the `Map` key type parses with its text
-                /// deserializer — mirroring the inferred-`String`-into-scalar rule above, the key type
-                /// is not checked. Only the value types are compared.
+                /// The object keys are string tokens that the `Map` key type parses with its JSON text
+                /// deserializer (`SerializationMap::deserializeTextJSONImpl` reads every key with the
+                /// key serialization). When the object was inferred as a named `Tuple`, its element
+                /// names are the actual keys of the data, so replay each of them through the key
+                /// type's deserializer: a key the key type cannot parse (e.g. `"x"` for a
+                /// `Map(UInt64, ...)` destination) is a genuine structure mismatch the parser rejects.
+                /// For an inferred `Map` / `Object` the actual key strings are unknown at the type
+                /// level, so — mirroring the inferred-`String`-into-scalar rule above — the key type is
+                /// not checked there. With `input_format_json_read_map_as_array_of_tuples` enabled the
+                /// parser reads a `Map` from a `[...]` token instead, so the keys are not replayed
+                /// (conservatively compatible). The value types are compared in every case.
                 if (expected_map)
                 {
                     const auto & expected_value = expected_map->getValueType();
                     if (inferred_tuple)
+                    {
+                        if (!format_settings.json.read_map_as_array_of_tuples)
+                        {
+                            const auto & key_type = expected_map->getKeyType();
+                            const auto key_serialization = key_type->getDefaultSerialization();
+                            for (const auto & key : inferred_tuple->getElementNames())
+                            {
+                                WriteBufferFromOwnString key_token;
+                                writeJSONString(key, key_token, format_settings);
+                                ReadBufferFromString key_buffer(key_token.str());
+                                auto key_column = key_type->createColumn();
+                                if (!key_serialization->tryDeserializeTextJSON(*key_column, key_buffer, format_settings)
+                                    || !key_buffer.eof())
+                                    return false;
+                            }
+                        }
                         return std::ranges::all_of(
                             inferred_tuple->getElements(),
                             [&](const auto & element) { return types_are_compatible(element, expected_value, false, std::nullopt); });
+                    }
                     if (inferred_map)
                         return types_are_compatible(inferred_map->getValueType(), expected_value, false, std::nullopt);
                     /// Inferred `Object`: the value types are unknown at the type level.
