@@ -552,9 +552,13 @@ namespace
 
             bool has_database_override = false;
             bool has_table_override = false;
-            bool has_addresses_override = false;
+            bool has_undecidable_addresses_override = false;
             std::optional<String> database_override;
             std::optional<String> table_override;
+            std::optional<String> addresses_expr_override;
+            std::optional<String> host_override;
+            std::optional<String> hostname_override;
+            std::optional<String> port_override;
             const ASTFunction * target_table_function = nullptr;
 
             for (size_t i = 1; i < args.size(); ++i)
@@ -587,13 +591,28 @@ namespace
                 }
                 else if (key == "addresses_expr" || key == "host" || key == "hostname" || key == "port")
                 {
-                    /// The addresses could be recomputed from the overridden values, but such spellings are
-                    /// not seen in practice; keep the long-standing assumption that the target is not local.
-                    has_addresses_override = true;
+                    /// Execution honors such overrides (`tryGetNamedCollectionWithOverrides` merges a literal
+                    /// value over the collection's own), so locality must be decided from the merged view: e.g.
+                    /// `remote(nc, addresses_expr = '127.0.0.1', ...)` reads a local table no matter what the
+                    /// collection stores. A value that cannot be resolved to a literal here leaves the
+                    /// addresses undecidable, keeping the long-standing assumption that the target is not local.
+                    auto override_value = tryGetFieldStringFromAST(value);
+                    if (!override_value)
+                        has_undecidable_addresses_override = true;
+                    else if (key == "addresses_expr")
+                        addresses_expr_override = std::move(override_value);
+                    else if (key == "host")
+                        host_override = std::move(override_value);
+                    else if (key == "hostname")
+                        hostname_override = std::move(override_value);
+                    else
+                        port_override = std::move(override_value);
                 }
             }
 
-            const bool has_local_replicas = !has_addresses_override && namedCollectionAddressesContainLocalHost(collection, secure);
+            const bool has_local_replicas = !has_undecidable_addresses_override
+                && namedCollectionAddressesContainLocalHost(
+                    collection, secure, addresses_expr_override, host_override, hostname_override, port_override);
 
             if (target_table_function)
             {
@@ -660,6 +679,48 @@ namespace
                 if (!literal || (literal->value.getType() != Field::Types::String))
                     return {};
                 return literal->value.safeGet<String>();
+            }
+            catch (const Exception &)
+            {
+                return {};
+            }
+        }
+
+        /// Gets an AST node as the text of its literal value, the way `tryGetNamedCollectionWithOverrides`
+        /// stores a literal override into the merged collection (`fieldToString`), so that e.g. a numeric
+        /// `port = 9000` override yields "9000". Restricted to the scalar types that can spell an address.
+        std::optional<String> tryGetFieldStringFromAST(const ASTPtr & arg) const
+        {
+            auto field_to_address_string = [](const Field & field) -> std::optional<String>
+            {
+                switch (field.getType())
+                {
+                    case Field::Types::String:
+                    case Field::Types::UInt64:
+                    case Field::Types::Int64:
+                        return fieldToString(field);
+                    default:
+                        return {};
+                }
+            };
+
+            if (const auto * id = arg->as<ASTIdentifier>())
+                return id->name();
+
+            if (const auto * literal = arg->as<ASTLiteral>())
+                return field_to_address_string(literal->value);
+
+            try
+            {
+                /// We're just searching for dependencies here, it's not safe to execute subqueries now.
+                /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
+                ContextMutablePtr global_context_copy = Context::createCopy(global_context);
+                global_context_copy->setCurrentDatabase(current_database);
+                auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
+                const auto * literal = evaluated->as<ASTLiteral>();
+                if (!literal)
+                    return {};
+                return field_to_address_string(literal->value);
             }
             catch (const Exception &)
             {
@@ -864,18 +925,38 @@ namespace
         }
 
         /// The addresses of the named-collection form of remote() / remoteSecure(), assembled the way
-        /// `parseRemoteFunctionArguments` assembles them: `addresses_expr`, or `host` / `hostname` with an
-        /// optional `port`.
-        bool namedCollectionAddressesContainLocalHost(const NamedCollection & collection, bool secure) const
+        /// `parseRemoteFunctionArguments` assembles them from the merged view of the collection and the
+        /// literal `key = value` override arguments: `addresses_expr`, or `host` / `hostname` (in this
+        /// order) with an optional `port`.
+        bool namedCollectionAddressesContainLocalHost(
+            const NamedCollection & collection,
+            bool secure,
+            const std::optional<String> & addresses_expr_override = {},
+            const std::optional<String> & host_override = {},
+            const std::optional<String> & hostname_override = {},
+            const std::optional<String> & port_override = {}) const
         {
             try
             {
-                String addresses = collection.getOrDefault<String>("addresses_expr", "");
-                if (addresses.empty() && collection.hasAny({"host", "hostname"}))
+                auto merged_get = [&](const char * key, const std::optional<String> & override_value) -> std::optional<String>
                 {
-                    addresses = collection.getAny<String>({"host", "hostname"});
-                    if (collection.has("port"))
-                        addresses += ':' + toString(collection.get<UInt64>("port"));
+                    if (override_value)
+                        return override_value;
+                    if (collection.has(key))
+                        return collection.get<String>(key);
+                    return {};
+                };
+
+                String addresses = merged_get("addresses_expr", addresses_expr_override).value_or("");
+                if (addresses.empty())
+                {
+                    auto host = merged_get("host", host_override);
+                    if (!host)
+                        host = merged_get("hostname", hostname_override);
+                    if (!host)
+                        return false;
+                    auto port = merged_get("port", port_override);
+                    addresses = port ? *host + ':' + *port : *host;
                 }
                 return !addresses.empty() && addressesPatternContainsLocalHost(addresses, secure);
             }
