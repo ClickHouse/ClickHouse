@@ -906,7 +906,9 @@ void LocalServer::cleanup()
             /// `cleanup` can run from `SCOPE_EXIT` in `main` while the stack is unwinding from a
             /// failed query. Force-exiting here bypasses the surrounding `catch`, so preserve a
             /// nonzero status in that case instead of always reporting success.
-            safeExit(std::uncaught_exceptions() ? 1 : 0);
+            /// Reached before `server_pool->joinAll()` below, so connection handlers are still
+            /// running and a leak check would scan their live working sets.
+            safeExit(std::uncaught_exceptions() ? 1 : 0, /*run_leak_check=*/ false);
         }
 
         /// Join the server thread pool to avoid use-after-free of destroyed context in handlers.
