@@ -42,3 +42,6 @@ NO_DATA_TO_INSERT
 SYNTAX_ERROR
 --- exception-before-start log omits the inline INSERT data (expect: 1) ---
 1
+SYNTAX_ERROR
+--- exception-before-start log omits the data of a CTE-wrapped INSERT (expect: 1) ---
+1

@@ -183,5 +183,22 @@ done
 echo "--- exception-before-start log omits the inline INSERT data (expect: 1) ---"
 echo "$exc_leak_check"
 
+# The INSERT keyword does not have to come first: a CTE-wrapped `WITH ... INSERT` carries inline
+# data too, so a failed one must be redacted the same way instead of being logged verbatim.
+# 987654322 is the sentinel that only appears in the data section.
+cte_leak_id="${CLICKHOUSE_DATABASE}_04512_cte_exc_leak"
+${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query_id=${cte_leak_id}" -d 'WITH s AS (SELECT 1) INSERT INTO t FORMAT CSV
+987654322' 2>&1 | grep -om1 "SYNTAX_ERROR"
+cte_leak_check=""
+for _ in {1..100}
+do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    cte_leak_check=$($CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%987654322%' AND query ILIKE 'WITH%' FROM system.query_log WHERE query_id = '$cte_leak_id' AND type = 'ExceptionBeforeStart' AND current_database = currentDatabase()")
+    [ -n "$cte_leak_check" ] && break
+    sleep 0.3
+done
+echo "--- exception-before-start log omits the data of a CTE-wrapped INSERT (expect: 1) ---"
+echo "$cte_leak_check"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"

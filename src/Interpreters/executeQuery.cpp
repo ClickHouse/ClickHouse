@@ -280,9 +280,10 @@ static bool hasTranspiledInlineData(const ASTInsertQuery & insert, const Context
 /// When a polyglot query fails before an AST exists (e.g. the transpiler rejects it), there is
 /// no way to tell the INSERT header apart from the inline data: the boundary is only known after
 /// transpiling and parsing, and the foreign-dialect text cannot be parsed here. Fail close so that
-/// inline row values are never written to `system.query_log` and friends: if the statement looks
-/// like a data-carrying INSERT, keep only the prefix that cannot contain a literal value — cut at
-/// the first character that may start one (an opening parenthesis, a quote, or a number).
+/// inline row values are never written to `system.query_log` and friends: if the statement may
+/// be a data-carrying INSERT (even one wrapped in `WITH` or `EXPLAIN`), keep only the prefix that
+/// cannot contain a literal value — cut at the first character that may start one (an opening
+/// parenthesis, a quote, or a number).
 static String redactPolyglotQueryForLogging(const char * begin, const char * end)
 {
     const char * pos = begin;
@@ -310,15 +311,28 @@ static String redactPolyglotQueryForLogging(const char * begin, const char * end
             break;
     }
 
-    const auto starts_with_keyword = [&](std::string_view keyword)
+    /// Only INSERT-like statements carry inline data, but the INSERT keyword does not have to come
+    /// first: it may be wrapped, e.g. `WITH ... INSERT ... VALUES` or `EXPLAIN INSERT ... VALUES`.
+    /// Telling a wrapper apart from a statement that merely mentions the word would require parsing
+    /// the foreign dialect, so fail close: log verbatim only when the word INSERT/REPLACE occurs
+    /// nowhere in the text (then no inline data can be present), and redact otherwise — even if the
+    /// occurrence is inside a literal of a harmless query.
+    const auto contains_keyword = [&](std::string_view keyword)
     {
-        if (static_cast<size_t>(end - pos) <= keyword.size())
-            return false;
-        return strncasecmp(pos, keyword.data(), keyword.size()) == 0 && !isWordCharASCII(pos[keyword.size()]);
+        for (const char * candidate = pos; candidate + keyword.size() <= end; ++candidate)
+        {
+            if (strncasecmp(candidate, keyword.data(), keyword.size()) != 0)
+                continue;
+            if (candidate > begin && isWordCharASCII(candidate[-1]))
+                continue;
+            if (candidate + keyword.size() < end && isWordCharASCII(candidate[keyword.size()]))
+                continue;
+            return true;
+        }
+        return false;
     };
 
-    /// Only INSERT-like statements carry inline data; log any other failed query as-is.
-    if (!starts_with_keyword("INSERT") && !starts_with_keyword("REPLACE"))
+    if (!contains_keyword("INSERT") && !contains_keyword("REPLACE"))
         return String(begin, end);
 
     const char * cut = pos;
