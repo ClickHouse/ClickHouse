@@ -302,6 +302,13 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
     /// main branch. The last rule feeds itself (pinning an input can strand another default's
     /// expression), so iterate to a fixpoint.
     ///
+    /// A hive partition column is such a format-unread input: it is parsed from the file path and
+    /// appended to the chunk only after the per-file reader pipeline, where `AddingDefaultsTransform`
+    /// runs, so no branch ever sees its real value and a default over one cannot be evaluated at
+    /// all - the single-pass plan fails with `UNKNOWN_IDENTIFIER` just the same (a pre-existing
+    /// limitation of hive partitioning, shared by e.g. the `File` engine). Keeping such a defaulted
+    /// column on the main branch preserves the single-pass behavior exactly.
+    ///
     /// Only the defaults that this query can actually evaluate matter: `AddingDefaultsTransform`
     /// applies a default expression solely for a column present in the block of its own branch
     /// (`res.has(col_name)`), so a defaulted column that the query does not read at all imposes no
