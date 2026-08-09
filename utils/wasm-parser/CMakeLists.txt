@@ -61,6 +61,7 @@ file (GLOB PARSER_SOURCES CONFIGURE_DEPENDS
 
 set (SUPPORT_SOURCES
     "${CH}/src/Access/IAccessStorage.cpp"
+    "${CH}/src/Access/MaskingPolicy.cpp"
     "${CH}/src/Common/Allocator.cpp"
     "${CH}/src/Common/AllocatorWithMemoryTracking.cpp"
     "${CH}/src/Common/CalendarTimeInterval.cpp"
