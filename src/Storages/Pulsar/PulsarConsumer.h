@@ -34,7 +34,9 @@ public:
     String currentTopic() const { return next_message[-1].getTopicName(); }
     String currentOrderingKey() const { return next_message[-1].getOrderingKey(); }
     String currentPartitionKey() const { return next_message[-1].getPartitionKey(); }
-    UInt64 currentTimestamp() const { return next_message[-1].getPublishTimestamp(); }
+    /// The producer-set event timestamp in milliseconds; 0 when the producer did not set it
+    /// (unlike the publish timestamp, which the broker always assigns).
+    UInt64 currentTimestamp() const { return next_message[-1].getEventTimestamp(); }
     String currentPayload() const { return next_message[-1].getDataAsString(); }
 
     bool isStalled() const { return polled_messages.empty(); }

@@ -561,3 +561,72 @@ def test_aborted_select_redelivers_prefetched_messages(pulsar_cluster):
         time.sleep(1)
     expected = {f"{i}\t{i}" for i in range(num_rows)}
     assert seen == expected
+
+
+def test_event_timestamp_virtual_columns(pulsar_cluster):
+    # `_timestamp` / `_timestamp_ms` must expose the producer-set event
+    # timestamp, not the broker publish timestamp, and stay NULL for messages
+    # whose producer did not set it. `pulsar-client produce` cannot set the
+    # event timestamp, so publish through the broker's REST producer, which
+    # accepts an explicit `eventTime` per message.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(pulsar_table("test.pulsar_reader", "event_ts_topic", "event_ts_group"))
+    instance.query(
+        """
+        CREATE TABLE test.view
+        (key UInt64, value UInt64, ts Nullable(DateTime), ts_ms Nullable(DateTime64(3)))
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value, _timestamp AS ts, _timestamp_ms AS ts_ms FROM test.pulsar_reader
+        """
+    )
+
+    # The REST producer does not create the topic on demand.
+    subprocess.check_call(
+        [
+            "docker",
+            "exec",
+            pulsar_cluster.pulsar_docker_id,
+            "bin/pulsar-admin",
+            "topics",
+            "create",
+            "persistent://public/default/event_ts_topic",
+        ]
+    )
+    event_time_ms = 1690000000123
+    body = (
+        '{"valueSchema": "{\\"type\\":\\"STRING\\",\\"schema\\":\\"\\",\\"properties\\":{}}",'
+        ' "messages": ['
+        f'{{"payload": "{{\\"key\\":0,\\"value\\":0}}", "eventTime": {event_time_ms}}},'
+        ' {"payload": "{\\"key\\":1,\\"value\\":1}"}]}'
+    )
+    subprocess.check_call(
+        [
+            "docker",
+            "exec",
+            pulsar_cluster.pulsar_docker_id,
+            "curl",
+            "-sf",
+            "-X",
+            "POST",
+            "http://localhost:8080/topics/persistent/public/default/event_ts_topic",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            body,
+        ]
+    )
+
+    # Delivery is at-least-once, so tolerate duplicate rows.
+    expected = f"0\t0\t1690000000\t{event_time_ms}\n1\t1\t\\N\t\\N"
+    wait_query_result(
+        expected,
+        """
+        SELECT DISTINCT key, value, toUnixTimestamp(ts), toUnixTimestamp64Milli(ts_ms)
+        FROM test.view ORDER BY key
+        """,
+    )

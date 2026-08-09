@@ -842,8 +842,8 @@ ATTACH TABLE consumer;
 - `_topic` – Pulsar topic. Data type: `LowCardinality(String)`.
 - `_ordering_key` – The ordering key of the message. Data type: `String`.
 - `_partition_key` – The partition key of the message. Data type: `String`.
-- `_timestamp` – The event timestamp of the message. Data type: `Nullable(DateTime)`.
-- `_timestamp_ms` – The event timestamp of the message in milliseconds. Data type: `Nullable(DateTime64(3))`.
+- `_timestamp` – The event timestamp of the message; `NULL` when the producer did not set it. Data type: `Nullable(DateTime)`.
+- `_timestamp_ms` – The event timestamp of the message in milliseconds; `NULL` when the producer did not set it. Data type: `Nullable(DateTime64(3))`.
 
 Additional virtual columns when `pulsar_handle_error_mode = 'stream'`:
 
