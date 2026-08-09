@@ -40,6 +40,7 @@ namespace FailPoints
 {
     extern const char write_file_operation_fail_on_read[];
     extern const char unlink_file_operation_fail_on_remove[];
+    extern const char unlink_file_operation_pause_after_counting_links[];
     extern const char remove_recursive_operation_pause_after_traverse[];
 }
 
@@ -158,13 +159,14 @@ void WriteFileOperation::undo()
     // else: file existed but the file content is unchanged, leave it alone.
 }
 
-UnlinkFileOperation::UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
+UnlinkFileOperation::UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_, InodeReleaseVeto & inode_release_allowed_)
     : path(std::move(path_))
     , if_exists(if_exists_)
     , should_remove_objects(should_remove_objects_)
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
     , objects_to_remove(objects_to_remove_)
+    , inode_release_allowed(inode_release_allowed_)
 {
 }
 
@@ -173,6 +175,10 @@ void UnlinkFileOperation::tryUnlinkMetadataFile()
     auto object_metadata = tryReadMetadataFile(compatible_key_prefix, path, disk);
     if (!object_metadata.has_value())
         return;
+
+    /// Taken while the file still has its public name. Only metadata files get an inode recorded,
+    /// so a non-metadata file never contributes a verdict below.
+    inode = disk.stat(path).st_ino;
 
     if (object_metadata->ref_count > 0)
     {
@@ -198,6 +204,15 @@ void UnlinkFileOperation::execute()
     /// Let's update hardlink count written in serialized DiskObjectStorageMetadata before the move
     tryUnlinkMetadataFile();
 
+    /// Every execute() precedes every finalize(), so by the time any of them decides, the map
+    /// already carries the verdict of every link this transaction unlinks.
+    if (inode.has_value())
+    {
+        auto [it, inserted] = inode_release_allowed.try_emplace(*inode, should_remove_objects);
+        if (!inserted)
+            it->second = it->second && should_remove_objects;
+    }
+
     /// We need to move file to the random name for the possible undo and to save the fs hardlink count
     auto tmp_path = getRandomASCIIString(32);
     disk.moveFile(path, tmp_path);
@@ -222,15 +237,25 @@ void UnlinkFileOperation::finalize()
     const auto links = tryGetHardLinkCount(disk, tmp_file_path.value());
     const bool is_last_link = links.has_value() && *links == 1;
 
+    /// A sibling operation unlinking another link of this inode may have been told to keep the
+    /// objects. Being the last link is then not enough, or that instruction would be defeated by
+    /// whichever link happens to go last. A missing entry vetoes nothing.
+    bool release_allowed = true;
+    if (inode.has_value())
+        if (auto it = inode_release_allowed.find(*inode); it != inode_release_allowed.end())
+            release_allowed = it->second;
+
     fiu_do_on(FailPoints::unlink_file_operation_fail_on_remove,
     {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected fault in UnlinkFileOperation remove");
     });
 
+    FailPointInjection::pauseFailPoint(FailPoints::unlink_file_operation_pause_after_counting_links);
+
     disk.removeFile(tmp_file_path.value());
 
     /// Only after the link is really gone: an unlink that throws must not leave blobs enqueued.
-    if (is_last_link)
+    if (is_last_link && release_allowed)
         objects_to_remove.append_range(std::move(removed_objects));
 }
 
@@ -320,10 +345,12 @@ void RemoveRecursiveOperation::traverseFile(const std::string & leaf)
         write_operations.back()->execute();
     }
 
+    const std::string relative_path = fs::relative(leaf, path);
+
     removal_candidates.push_back(RemovalCandidate{
-        .relative_path = fs::relative(leaf, path),
+        .relative_path = relative_path,
         .inode = inode,
-        .should_remove_its_objects = !should_remove_objects || should_remove_objects(fs::relative(leaf, path)),
+        .should_remove_its_objects = !should_remove_objects || should_remove_objects(relative_path),
         .objects = std::move(object_metadata->objects),
     });
 }
@@ -480,12 +507,13 @@ void MoveDirectoryOperation::undo()
     disk.moveDirectory(path_to, path_from);
 }
 
-ReplaceFileOperation::ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
+ReplaceFileOperation::ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_, InodeReleaseVeto & inode_release_allowed_)
     : path_from(path_from_)
     , path_to(path_to_)
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
     , objects_to_remove(objects_to_remove_)
+    , inode_release_allowed(inode_release_allowed_)
 {
 }
 
@@ -493,7 +521,7 @@ void ReplaceFileOperation::execute()
 {
     if (disk.existsFile(path_to))
     {
-        unlink_operation = std::make_unique<UnlinkFileOperation>(path_to, /*if_exists=*/false, /*should_remove_objects=*/true, compatible_key_prefix, disk, objects_to_remove);
+        unlink_operation = std::make_unique<UnlinkFileOperation>(path_to, /*if_exists=*/false, /*should_remove_objects=*/true, compatible_key_prefix, disk, objects_to_remove, inode_release_allowed);
         unlink_operation->execute();
     }
 

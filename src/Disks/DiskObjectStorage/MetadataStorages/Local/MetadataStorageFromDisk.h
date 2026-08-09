@@ -135,6 +135,8 @@ private:
     /// We collect all removed in transaction blobs here. After successful tx commit
     /// these blobs will be scheduled for background removal (into in-memory queue of outdated blobs).
     StoredObjects objects_to_remove;
+    /// Shared by this transaction's unlink operations, each of which sees only its own hard link.
+    InodeReleaseVeto inode_release_allowed;
     MetadataOperationsHolder operations;
 
 public:

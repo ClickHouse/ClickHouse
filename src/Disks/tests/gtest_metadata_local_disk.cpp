@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
+#include <atomic>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <Core/ServerUUID.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
@@ -28,6 +30,7 @@ namespace fs = std::filesystem;
 namespace DB::FailPoints
 {
     extern const char unlink_file_operation_fail_on_remove[];
+    extern const char unlink_file_operation_pause_after_counting_links[];
 }
 
 class MetadataLocalDiskTest : public testing::Test
@@ -1561,6 +1564,16 @@ TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenRefCountIsStrandedByCrash)
     /// "B" still points at the blob, so it must survive despite ref_count reading 0.
     EXPECT_TRUE(metadata->existsFile("B"));
     verifyBlobsToRemove(metadata, {});
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("B", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// Keeping the blob must not become unconditional: the counter is still stranded low, but the
+    /// decision reads st_nlink, so taking the surviving link does release.
+    verifyBlobsToRemove(metadata, {"key1"});
 }
 
 TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenRefCountIsStrandedByCrashRecursive)
@@ -1586,6 +1599,14 @@ TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenRefCountIsStrandedByCrashRecursive
 
     EXPECT_TRUE(metadata->existsFile("outside"));
     verifyBlobsToRemove(metadata, {});
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("outside", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    verifyBlobsToRemove(metadata, {"key1"});
 }
 
 TEST_F(MetadataLocalDiskTest, TestBlobReleasedOnlyByLastOfTwoTransactions)
@@ -1669,9 +1690,16 @@ TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenTheOnlyUnlinkOfTheTransactionFails
     verifyBlobsToRemove(metadata, {});
 }
 
-TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenOneHardlinkIsRetentionListed)
+/// Which of two aliases the recursive walk reaches first is unspecified, so both are covered:
+/// the AND-fold must give the same verdict either way.
+class MetadataLocalDiskRetentionListedAliasTest : public MetadataLocalDiskTest, public testing::WithParamInterface<std::string>
 {
-    auto metadata = getMetadataStorage("/TestBlobKeptWhenOneHardlinkIsRetentionListed");
+};
+
+TEST_P(MetadataLocalDiskRetentionListedAliasTest, TestBlobKeptWhenOneHardlinkIsRetentionListed)
+{
+    const std::string retained = GetParam();
+    auto metadata = getMetadataStorage("/TestBlobKeptWhenOneHardlinkIsRetentionListed." + retained);
 
     {
         auto tx = metadata->createTransaction();
@@ -1684,12 +1712,85 @@ TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenOneHardlinkIsRetentionListed)
 
     {
         auto tx = metadata->createTransaction();
-        tx->removeRecursive("root", [](const std::string & relative_path) { return relative_path != "B"; });
+        tx->removeRecursive("root", [&](const std::string & relative_path) { return relative_path != retained; });
         tx->commit(DB::NoCommitOptions{});
     }
 
-    /// The subtree removes both links to key1, but "B" is retention-listed, so key1 must be kept.
+    /// The subtree removes both links to key1, but one of them is retention-listed, so key1 must be kept.
     verifyBlobsToRemove(metadata, {"key2"});
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    BothAliases,
+    MetadataLocalDiskRetentionListedAliasTest,
+    testing::Values("A", "B"),
+    [](const testing::TestParamInfo<std::string> & param_info) { return "Retaining" + param_info.param; });
+
+/// One transaction removing two links to one inode, where one link is retention-listed. Each
+/// unlink operation sees only its own link, so without a shared veto whichever link goes last
+/// finds a single remaining link and releases the blob the other link asked to keep.
+class MetadataLocalDiskRetentionListedUnlinkTest : public MetadataLocalDiskTest, public testing::WithParamInterface<bool>
+{
+};
+
+TEST_P(MetadataLocalDiskRetentionListedUnlinkTest, TestBlobKeptWhenOneOfTwoUnlinksKeepsObjects)
+{
+    const bool retained_goes_first = GetParam();
+    auto metadata = getMetadataStorage(std::string("/TestBlobKeptWhenOneOfTwoUnlinksKeepsObjects.") + (retained_goes_first ? "first" : "second"));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("A", {blobFor("key1", "A")});
+        tx->createHardLink("A", "B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        if (retained_goes_first)
+        {
+            tx->unlinkFile("A", /*if_exists=*/false, /*should_remove_objects=*/false);
+            tx->unlinkFile("B", /*if_exists=*/false, /*should_remove_objects=*/true);
+        }
+        else
+        {
+            tx->unlinkFile("A", /*if_exists=*/false, /*should_remove_objects=*/true);
+            tx->unlinkFile("B", /*if_exists=*/false, /*should_remove_objects=*/false);
+        }
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_FALSE(metadata->existsFile("A"));
+    EXPECT_FALSE(metadata->existsFile("B"));
+    verifyBlobsToRemove(metadata, {});
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    BothOrders,
+    MetadataLocalDiskRetentionListedUnlinkTest,
+    testing::Bool(),
+    [](const testing::TestParamInfo<bool> & param_info) { return param_info.param ? "RetainedFirst" : "RetainedSecond"; });
+
+TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenBothUnlinksRemoveObjects)
+{
+    auto metadata = getMetadataStorage("/TestBlobReleasedWhenBothUnlinksRemoveObjects");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createMetadataFile("A", {blobFor("key1", "A")});
+        tx->createHardLink("A", "B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->unlinkFile("A", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->unlinkFile("B", /*if_exists=*/false, /*should_remove_objects=*/true);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// The veto must not become a blanket suppression when no link asks to keep the objects.
+    verifyBlobsToRemove(metadata, {"key1"});
 }
 
 TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenHardlinkIsCreatedAfterUnlinkInSameTransaction)
@@ -1714,4 +1815,75 @@ TEST_F(MetadataLocalDiskTest, TestBlobKeptWhenHardlinkIsCreatedAfterUnlinkInSame
     /// "C" outlives the transaction, so the blob must be kept.
     EXPECT_TRUE(metadata->existsFile("C"));
     verifyBlobsToRemove(metadata, {});
+}
+
+/// Two transactions each removing one of an inode's two hard links. The finalization mutex makes
+/// them count and unlink one at a time, so the second one sees a single remaining link and
+/// releases the blob. Without it both can count two links before either unlinks, both decline,
+/// and the blob is leaked with no hard link left that could ever release it.
+///
+/// The mutex makes that interleaving impossible rather than merely unlikely, so every round owes a
+/// release and a single round without one is a real failure. Rounds are repeated because the test
+/// has to HIT the failing interleaving to reject an implementation without the mutex; the pauseable
+/// failpoint widens the window so that hitting it is likely, by parking the first transaction
+/// between counting and unlinking while the second only has to reach its own count.
+TEST_F(MetadataLocalDiskTest, TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLastHardlink)
+{
+    auto metadata = getMetadataStorage("/TestBlobReleasedWhenTwoTransactionsRaceToTakeTheLastHardlink");
+
+    static constexpr size_t rounds = 200;
+    std::set<std::string> expected_released;
+
+    for (size_t round = 0; round < rounds; ++round)
+    {
+        const std::string first_name = "A" + std::to_string(round);
+        const std::string second_name = "B" + std::to_string(round);
+        const std::string key = "key" + std::to_string(round);
+
+        {
+            auto tx = metadata->createTransaction();
+            tx->createMetadataFile(first_name, {blobFor(key, first_name)});
+            tx->createHardLink(first_name, second_name);
+            tx->commit(DB::NoCommitOptions{});
+        }
+
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::unlink_file_operation_pause_after_counting_links);
+
+        /// Parks inside finalize(), after counting this inode's links and before unlinking one.
+        std::thread first([&]
+        {
+            auto tx = metadata->createTransaction();
+            tx->unlinkFile(first_name, /*if_exists=*/false, /*should_remove_objects=*/true);
+            tx->commit(DB::NoCommitOptions{});
+        });
+
+        DB::FailPointInjection::waitForPause(DB::FailPoints::unlink_file_operation_pause_after_counting_links);
+
+        std::atomic<bool> second_is_committing = false;
+        std::thread second([&]
+        {
+            auto tx = metadata->createTransaction();
+            tx->unlinkFile(second_name, /*if_exists=*/false, /*should_remove_objects=*/true);
+            second_is_committing = true;
+            tx->commit(DB::NoCommitOptions{});
+        });
+
+        /// Returns once the second transaction is at the door. Under the mutex it then blocks on
+        /// it, which is the property under test; without the mutex it walks into the same window.
+        while (!second_is_committing)
+            std::this_thread::yield();
+
+        /// Resumes the parked thread and stops the second one from parking as well.
+        DB::FailPointInjection::disableFailPoint(DB::FailPoints::unlink_file_operation_pause_after_counting_links);
+
+        first.join();
+        second.join();
+
+        EXPECT_FALSE(metadata->existsFile(first_name));
+        EXPECT_FALSE(metadata->existsFile(second_name));
+
+        /// Each round takes both links of its own inode, so each round owes exactly one release.
+        expected_released.insert(key);
+        verifyBlobsToRemove(metadata, expected_released);
+    }
 }

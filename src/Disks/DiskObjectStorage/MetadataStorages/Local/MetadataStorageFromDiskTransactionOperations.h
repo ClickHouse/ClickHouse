@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
+#include <unordered_map>
 #include <unordered_set>
 
 namespace DB
@@ -12,6 +13,11 @@ namespace DB
 class MetadataStorageFromDisk;
 class MetadataStorageFromDiskTransaction;
 class IDisk;
+
+/// Per inode, whether the operations of one transaction that remove its hard links agree that its
+/// blobs may be released. False once any of those links is retention-listed. Shared by the unlink
+/// operations of a transaction, because each of them only ever sees its own link.
+using InodeReleaseVeto = std::unordered_map<int64_t, bool>;
 
 /**
  * Implementations for transactional operations with metadata used by MetadataStorageFromDisk.
@@ -70,7 +76,7 @@ private:
 
 struct UnlinkFileOperation final : public IMetadataOperation
 {
-    UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_);
+    UnlinkFileOperation(std::string path_, bool if_exists_, bool should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_, InodeReleaseVeto & inode_release_allowed_);
 
     void tryUnlinkMetadataFile();
 
@@ -85,8 +91,10 @@ private:
     const std::string & compatible_key_prefix;
     IDisk & disk;
     StoredObjects & objects_to_remove;
+    InodeReleaseVeto & inode_release_allowed;
 
     std::optional<std::string> tmp_file_path;
+    std::optional<int64_t> inode;
     std::unique_ptr<WriteFileOperation> write_operation;
     /// Candidates only. Released in finalize() iff this unlink drops the last hard link.
     StoredObjects removed_objects;
@@ -211,7 +219,7 @@ private:
 
 struct ReplaceFileOperation final : public IMetadataOperation
 {
-    ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix, IDisk & disk_, StoredObjects & objects_to_remove_);
+    ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix, IDisk & disk_, StoredObjects & objects_to_remove_, InodeReleaseVeto & inode_release_allowed_);
 
     void execute() override;
     void undo() override;
@@ -223,6 +231,7 @@ private:
     const std::string & compatible_key_prefix;
     IDisk & disk;
     StoredObjects & objects_to_remove;
+    InodeReleaseVeto & inode_release_allowed;
 
     std::unique_ptr<UnlinkFileOperation> unlink_operation;
     bool moved = false;
