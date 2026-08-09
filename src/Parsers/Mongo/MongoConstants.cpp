@@ -165,6 +165,11 @@ std::optional<std::string> tryParseMongoRegularExpression(const rapidjson::Value
     else
         return std::nullopt;
 
+    return applyMongoRegularExpressionOptions(pattern, options);
+}
+
+std::string applyMongoRegularExpressionOptions(std::string_view pattern, std::string_view options)
+{
     /// RE2 spells the Mongo options as inline flags. `x` (extended) and `s` (dot matches newline)
     /// have the same meaning in both; `u` only says the pattern is UTF-8, which RE2 already is.
     std::string flags;

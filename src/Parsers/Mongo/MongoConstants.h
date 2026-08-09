@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <rapidjson/document.h>
@@ -30,6 +31,12 @@ ASTPtr tryParseMongoConstant(const rapidjson::Value & value);
   * expression.
   */
 std::optional<std::string> tryParseMongoRegularExpression(const rapidjson::Value & value);
+
+/** `pattern` with the Mongo regular expression `options` applied to it as the inline flags RE2
+  * understands, e.g. `^a` and `i` become `(?i)^a`. An option RE2 has no counterpart for is an
+  * error rather than a silently different match.
+  */
+std::string applyMongoRegularExpressionOptions(std::string_view pattern, std::string_view options);
 
 }
 

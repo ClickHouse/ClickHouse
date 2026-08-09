@@ -188,14 +188,32 @@ std::string dateIntervalFunction(const rapidjson::Value & unit, std::string_view
     return it->second;
 }
 
-/// The regular expression of `$regexFind` and `$regexMatch`: a bare pattern string, or the
-/// Extended JSON document a driver sends for a regular expression literal.
-std::string parseRegularExpressionField(const rapidjson::Value & value, std::string_view operator_name)
+/** The regular expression of `$regexFind` and `$regexMatch`: the `regex` field - a bare pattern
+  * string, or the Extended JSON document a driver sends for a regular expression literal - with
+  * the sibling `options` field of the operator applied to it. Mongo rejects `options` next to a
+  * regular expression that carries options of its own, and so does this.
+  */
+std::string parseRegularExpressionField(const rapidjson::Value & argument, std::string_view operator_name)
 {
+    const auto & value = requireMember(argument, "regex", operator_name);
+
+    std::string_view options;
+    if (auto it = argument.FindMember("options"); it != argument.MemberEnd())
+    {
+        if (!it->value.IsString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'options' of '{}' must be a string", operator_name);
+        options = stringView(it->value);
+        if (!value.IsString())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'options' of '{}' cannot be set next to a regular expression that carries options of its own",
+                operator_name);
+    }
+
+    if (value.IsString())
+        return applyMongoRegularExpressionOptions(stringView(value), options);
     if (auto pattern = tryParseMongoRegularExpression(value))
         return *pattern;
-    if (value.IsString())
-        return std::string(stringView(value));
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'regex' of '{}' must be a string or a regular expression", operator_name);
 }
 
@@ -402,7 +420,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     if (name == "$regexMatch")
     {
         auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
-        auto pattern = parseRegularExpressionField(requireMember(argument, "regex", name), name);
+        auto pattern = parseRegularExpressionField(argument, name);
         return makeASTFunction("match", input, makeLiteral(Field(pattern)));
     }
 
@@ -712,7 +730,7 @@ void expandMongoProjectedField(const std::string & name, const rapidjson::Value 
         {
             const auto & argument = value.MemberBegin()->value;
             auto input = parseMongoAggregateExpression(requireMember(argument, "input", "$regexFind"));
-            auto pattern = makeLiteral(Field(parseRegularExpressionField(requireMember(argument, "regex", "$regexFind"), "$regexFind")));
+            auto pattern = makeLiteral(Field(parseRegularExpressionField(argument, "$regexFind")));
 
             /// Mongo returns null when the regular expression does not match, and the pipelines rely
             /// on that to fall back to another value, so every field is guarded by the match.
