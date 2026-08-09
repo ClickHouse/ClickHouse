@@ -1,3 +1,9 @@
+-- Tags: no-parallel
+-- no-parallel: CREATE/DROP NAMED COLLECTION mutate global server state shared by concurrent tests
+-- (see 02918_fuzzjson_table_function.sql for the same requirement), and the flaky check runs this very
+-- test concurrently with itself, so one run's DROP NAMED COLLECTION would remove the collection from
+-- under another run.
+
 -- In the named-collection form of `remote` / `remoteSecure` the database is named by a
 -- `database = ...` / `db = ...` override, and `parseRemoteFunctionArguments` resolves it through
 -- `evaluateConstantExpressionForDatabaseName` at read time, falling back to the current database of the
