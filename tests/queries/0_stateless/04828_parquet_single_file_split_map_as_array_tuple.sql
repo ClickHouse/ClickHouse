@@ -42,11 +42,12 @@ SELECT count() FROM (
 -- the `key` element of a map requested as `Array(Tuple(...))` — the format treats `m.key` as a
 -- missing column and fills defaults (see #113976; `m.value` alone is read correctly) — and the
 -- gate checks above only need the names to reach the split estimator, which `EXPLAIN PIPELINE`
--- exercises.
-SELECT sum(length(arrayStringConcat(arrayMap(t -> t.key, m)))), sum(length(arrayStringConcat(m.value)))
+-- exercises. `tupleElement` is used instead of `t.key` because the old analyzer does not resolve
+-- dotted access on a lambda argument.
+SELECT sum(length(arrayStringConcat(arrayMap(t -> tupleElement(t, 'key'), m)))), sum(length(arrayStringConcat(m.value)))
     FROM file(concat(currentDatabase(), '_04828_map.parquet'), Parquet, 'm Array(Tuple(key String, value String))')
     SETTINGS max_threads = 8,
         input_format_parquet_min_bytes_to_split = 1000000, input_format_parquet_bytes_per_split_bucket = 1000000;
-SELECT sum(length(arrayStringConcat(arrayMap(t -> t.key, m)))), sum(length(arrayStringConcat(m.value)))
+SELECT sum(length(arrayStringConcat(arrayMap(t -> tupleElement(t, 'key'), m)))), sum(length(arrayStringConcat(m.value)))
     FROM file(concat(currentDatabase(), '_04828_map.parquet'), Parquet, 'm Array(Tuple(key String, value String))')
     SETTINGS max_threads = 1;
