@@ -524,9 +524,11 @@ def main():
         # (since Emscripten 3.1.58 the pthread worker code is embedded in the main JS
         # file, so there is no `.worker.js` sidecar). Known upstream wart: after `exit(0)`
         # one Web Worker survives the runtime teardown and keeps the Node.js process
-        # alive, so the query runs under `timeout` and an exit status of 124 counts as
-        # success alongside 0 - any other status (a trap, an uncaught exception, an
-        # engine crash) fails the job even when the expected output was produced.
+        # alive, so Node.js runs in the background and is killed as soon as the expected
+        # output appears, instead of paying a fixed `timeout` on every green run. The
+        # 300-second polling loop is only the worst-case deadline for module startup.
+        # If the process dies on its own before producing the output (a trap, an
+        # uncaught exception, an engine crash), its exit status fails the job.
         if res and build_type == BuildTypes.WASM64:
             smoke_dir = f"{temp_dir}/wasm_smoke"
             smoke_query = (
@@ -541,8 +543,13 @@ def main():
                         f"rm -rf {smoke_dir} && mkdir -p {smoke_dir}",
                         f"cp {build_dir}/programs/clickhouse.js {build_dir}/programs/clickhouse.wasm {smoke_dir}/",
                         "node --version",
-                        f'cd {smoke_dir} && timeout 300 node clickhouse.js local --multiquery "{smoke_query}" > smoke.out 2> smoke.err; '
-                        'status=$?; echo "exit status: $status"; cat smoke.err; [ "$status" -eq 0 ] || [ "$status" -eq 124 ]',
+                        f'cd {smoke_dir} || exit 1; node clickhouse.js local --multiquery "{smoke_query}" > smoke.out 2> smoke.err & pid=$!; '
+                        "found=0; for i in $(seq 1 300); do "
+                        "grep -qx 1000-499500-999 smoke.out 2>/dev/null && { found=1; break; }; "
+                        'kill -0 "$pid" 2>/dev/null || break; sleep 1; done; '
+                        'kill -9 "$pid" 2>/dev/null; wait "$pid"; status=$?; '
+                        'echo "output found: $found, exit status: $status"; cat smoke.err; '
+                        '[ "$found" -eq 1 ] || [ "$status" -eq 0 ]',
                         f"grep -x 1000-499500-999 {smoke_dir}/smoke.out",
                     ],
                 )
