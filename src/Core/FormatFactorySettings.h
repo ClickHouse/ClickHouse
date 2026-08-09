@@ -219,6 +219,9 @@ Approximate memory limit for Parquet reader v3. Limits how many row groups or co
     DECLARE(Bool, input_format_parquet_page_filter_push_down, true, R"(
 Skip pages using min/max values from column index.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_spatial_filter_push_down, true, R"(
+When reading GeoParquet files, skip whole row groups and, together with `input_format_parquet_page_filter_push_down`, individual pages based on spatial predicates in the WHERE clause and the geometry bounding box statistics (`geospatial_statistics.bbox` or `covering.bbox` columns) in the Parquet metadata.
+)", 0) \
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
 )", 0) \
@@ -271,6 +274,9 @@ Delimiter between a pair of map key/values in Hive Text File
 )", 0) \
     DECLARE(Bool, input_format_hive_text_allow_variable_number_of_columns, true, R"(
 Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields in Hive Text input as default values
+)", 0) \
+    DECLARE(Char, format_hive_text_rows_delimiter, '\n', R"(
+Delimiter at the end of each row in the Hive Text output format
 )", 0) \
     DECLARE(UInt64, input_format_msgpack_number_of_columns, 0, R"(
 The number of columns in inserted MsgPack data. Used for automatic schema inference from data.
