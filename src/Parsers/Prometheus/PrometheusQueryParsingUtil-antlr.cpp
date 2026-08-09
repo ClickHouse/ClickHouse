@@ -1,6 +1,7 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 
 #include "config.h"
@@ -703,6 +704,7 @@ namespace
                 throwInconsistentSchema("Aggregation", ctx->getText());
 
             auto operator_name = getText(operator_name_ctx);
+            toLowerASCII(operator_name);
             return makeAggregationOperator(operator_name, arguments, ctx->by(), ctx->without());
         }
 

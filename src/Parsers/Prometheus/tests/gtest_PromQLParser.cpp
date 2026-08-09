@@ -21,6 +21,39 @@ namespace
 }
 
 
+TEST(PromQLParser, CaseInsensitiveAggregationOperators)
+{
+    EXPECT_EQ(parse("SuM(up)"), R"(
+sum(up)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(sum)
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("ToPk BY(job) (1, up)"), R"(
+topk by (job) (1, up)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(topk)
+        by job
+        Scalar(1)
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    /// Aggregation operator keywords can also be metric names and must keep their original case.
+    EXPECT_EQ(parse("SUM"), R"(
+SUM
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'SUM'
+)");
+}
+
+
 /// Parse queries from https://github.com/prometheus/compliance/blob/main/promql/promql-test-queries.yml
 TEST(PromQLParser, ComplianceQueries)
 {
