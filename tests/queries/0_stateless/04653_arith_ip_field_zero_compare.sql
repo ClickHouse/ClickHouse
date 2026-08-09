@@ -13,23 +13,23 @@
 -- measured, and each IP shape is paired with a numeric-constant control at the same threshold and
 -- table so a count that merely reflects predicate selectivity cannot pass for preserved pruning.
 
-DROP TABLE IF EXISTS u32g1 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS u32g4 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS ou32 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS ip4g1 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS oip4g1 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS ip4 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS oip4 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS ctl32 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS ip6 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS oip6 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS ip6ovf SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS oip6ovf SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS ip4n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS ip6be SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS oip6be SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS oip4n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS u32g2 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS u32g1;
+DROP TABLE IF EXISTS u32g4;
+DROP TABLE IF EXISTS ou32;
+DROP TABLE IF EXISTS ip4g1;
+DROP TABLE IF EXISTS oip4g1;
+DROP TABLE IF EXISTS ip4;
+DROP TABLE IF EXISTS oip4;
+DROP TABLE IF EXISTS ctl32;
+DROP TABLE IF EXISTS ip6;
+DROP TABLE IF EXISTS oip6;
+DROP TABLE IF EXISTS ip6ovf;
+DROP TABLE IF EXISTS oip6ovf;
+DROP TABLE IF EXISTS ip4n;
+DROP TABLE IF EXISTS ip6be;
+DROP TABLE IF EXISTS oip6be;
+DROP TABLE IF EXISTS oip4n;
+DROP TABLE IF EXISTS u32g2;
 
 -- Numeric key, IP constant. Granularity 1 makes every granule a min == max interval, which is the
 -- only way `plus`/`minus` reach the equal-endpoints fast path.
@@ -234,20 +234,20 @@ SELECT 'oracle_multiply_decimal', (SELECT count() FROM u32g4 WHERE multiply(a, t
 SELECT 'oracle_multiply_bool', (SELECT count() FROM u32g4 WHERE multiply(a, toBool(true)) > 20) = (SELECT count() FROM ou32 WHERE multiply(a, toBool(true)) > 20);
 SELECT 'oracle_multiply_two_g1', (SELECT count() FROM u32g1 WHERE multiply(a, 2) > 40) = (SELECT count() FROM ou32 WHERE multiply(a, 2) > 40);
 
-DROP TABLE u32g1 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE u32g4 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE ou32 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE ip4g1 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE oip4g1 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE ip4 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE oip4 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE ctl32 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE ip6 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE oip6 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE ip6ovf SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE oip6ovf SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE ip4n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE ip6be SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE oip6be SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE oip4n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE u32g2 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE u32g1;
+DROP TABLE u32g4;
+DROP TABLE ou32;
+DROP TABLE ip4g1;
+DROP TABLE oip4g1;
+DROP TABLE ip4;
+DROP TABLE oip4;
+DROP TABLE ctl32;
+DROP TABLE ip6;
+DROP TABLE oip6;
+DROP TABLE ip6ovf;
+DROP TABLE oip6ovf;
+DROP TABLE ip4n;
+DROP TABLE ip6be;
+DROP TABLE oip6be;
+DROP TABLE oip4n;
+DROP TABLE u32g2;
