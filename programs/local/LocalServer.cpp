@@ -6,6 +6,7 @@
 #endif
 #include <exception>
 #include <Common/Config/getLocalConfigPath.h>
+#include <Common/getUserHomePath.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
@@ -342,9 +343,10 @@ void LocalServer::initialize(Poco::Util::Application & self)
 {
     Poco::Util::Application::initialize(self);
 
-    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-    if (home_path_cstr)
-        home_path = home_path_cstr;
+    /// Not the raw `HOME`: on Windows the home directory lives in `USERPROFILE`
+    /// (see getUserHomePath), and without it the `~/.clickhouse-local` config
+    /// auto-discovery below never fires there.
+    home_path = pathFromString(getUserHomePath());
 
     /// Load config files if exists
     std::string config_path;
@@ -545,7 +547,7 @@ void LocalServer::tryInitPath()
             parent_folder = std::filesystem::current_path();
 
             (void)std::filesystem::is_directory(parent_folder); // checks the path is accessible (may throw on I/O error)
-            LOG_DEBUG(log, "Will create working directory inside current directory: {}", parent_folder.string());
+            LOG_DEBUG(log, "Will create working directory inside current directory: {}", pathToString(parent_folder));
         }
 
         /// we can have another clickhouse-local running simultaneously, even with the same PID (for ex. - several dockers mounting the same folder)
@@ -556,12 +558,12 @@ void LocalServer::tryInitPath()
         default_path = parent_folder / fmt::format("clickhouse-local-{}", UUIDHelpers::generateV4());
 
         if (fs::exists(default_path))
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to set up the working directory: {} already exists.", default_path.string());
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Unsuccessful attempt to set up the working directory: {} already exists.", pathToString(default_path));
 
         /// The directory can be created lazily during the runtime.
         temporary_directory_to_delete = default_path;
 
-        path = default_path.string();
+        path = pathToString(default_path);
         LOG_DEBUG(log, "Working directory will be created as needed: {}", path);
     }
 
@@ -1076,7 +1078,7 @@ void LocalServer::setupUsers()
     /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
     if (!loaded_config_path.empty())
     {
-        const auto config_dir = fs::path{loaded_config_path}.remove_filename().string();
+        const auto config_dir = pathToString(pathFromString(loaded_config_path).remove_filename());
         bool has_user_directories = getClientConfiguration().has("user_directories");
         String users_config_path = getClientConfiguration().getString("users_config", "");
 

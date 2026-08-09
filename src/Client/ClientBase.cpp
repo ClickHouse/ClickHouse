@@ -4503,11 +4503,7 @@ void ClientBase::runInteractive()
     }
 
     if (home_path.empty())
-    {
-        const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-        if (home_path_cstr)
-            home_path = home_path_cstr;
-    }
+        home_path = pathFromString(getUserHomePath());
 
     history_max_entries = getClientConfiguration().getUInt("history_max_entries", 1000000);
 
