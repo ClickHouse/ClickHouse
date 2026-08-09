@@ -20,11 +20,14 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0, auto_statistics_types = ''"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_mut SELECT number FROM numbers(1000)"
 
-# Nothing listens on this port, so the read never completes on its own.
+# Nothing listens on this port, so the read never completes on its own. `enable_parallel_replicas = 0`
+# keeps the read under test inside the background mutation: with parallel replicas `s3` resolves to the
+# cluster engine, whose constructor probes the endpoint while `ALTER` is still being analysed, so the
+# statement blocks instead of queueing a mutation.
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_mut DELETE WHERE id IN (
         SELECT * FROM s3('http://localhost:19999/dummy.parquet', 'NOSIGN', 'One')
-    ) SETTINGS mutations_sync = 0"
+    ) SETTINGS mutations_sync = 0, enable_parallel_replicas = 0"
 
 # Wait for the mutation to actually start before killing it, otherwise the kill races the scheduler
 # and the test would pass without ever exercising the cancellation.
@@ -82,7 +85,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_stop SELECT number FROM numbers(1000)"
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_stop DELETE WHERE id IN (
         SELECT * FROM s3('http://localhost:19999/dummy.parquet', 'NOSIGN', 'One')
-    ) SETTINGS mutations_sync = 0"
+    ) SETTINGS mutations_sync = 0, enable_parallel_replicas = 0"
 for _ in {1..150}; do
     started=$($CLICKHOUSE_CLIENT -q "
         SELECT count() FROM system.merges
@@ -124,7 +127,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_toggle SELECT number FROM numbers(1000)"
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_toggle DELETE WHERE id IN (
         SELECT * FROM s3('http://localhost:19999/dummy.parquet', 'NOSIGN', 'One')
-    ) SETTINGS mutations_sync = 0"
+    ) SETTINGS mutations_sync = 0, enable_parallel_replicas = 0"
 for _ in {1..150}; do
     started=$($CLICKHOUSE_CLIENT -q "
         SELECT count() FROM system.merges
