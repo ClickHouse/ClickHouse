@@ -3579,6 +3579,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
         MonotonicFunctionsChain chain;
         std::string func_name = func.getFunctionName();
+        bool key_type_is_integer_represented = false;
 
         if (atom_map.find(func_name) == std::end(atom_map))
             return false;
@@ -3866,6 +3867,8 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else
                 key_expr_type_not_null = key_expr_type;
 
+            key_type_is_integer_represented = key_expr_type_not_null->isValueRepresentedByInteger();
+
             /// Native integers and DateTime/DateTime64 are accurately compared without cast.
             bool cast_not_needed =
                 (isNativeInteger(key_expr_type_not_null) || isDateTimeOrDateTime64(key_expr_type_not_null))
@@ -4018,7 +4021,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        return atom_it->second(out, const_value);
+        const bool atom_created = atom_it->second(out, const_value);
+        if (atom_created && key_type_is_integer_represented)
+            out.range.shrinkToIncludedIfPossible();
+        return atom_created;
     }
     if (node.tryGetConstant(const_value, const_type))
     {
