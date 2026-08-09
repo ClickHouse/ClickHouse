@@ -90,7 +90,7 @@ changed=$($CLICKHOUSE_CLIENT -q "
     FROM system.query_log
     WHERE query_id = '$qid' AND type = 'QueryFinish' AND current_database = currentDatabase()
     ORDER BY event_time_microseconds DESC LIMIT 1")
-[ -n "$changed" ] && [ "$changed" -ge 1 ] && echo "replacement was put in flight" \
-    || echo "replacement never started (coverage lost): $changed"
+[ -n "$changed" ] && [ "$changed" -ge 1 ] && echo "hedged change-replica timeout observed" \
+    || echo "no hedged change-replica timeout (coverage lost): $changed"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_hedged_pending;"

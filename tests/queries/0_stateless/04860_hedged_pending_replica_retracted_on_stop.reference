@@ -6,4 +6,4 @@ limited: 5
 count: 100
 sum: 4950
 limited: 5
-replacement was put in flight
+hedged change-replica timeout observed
