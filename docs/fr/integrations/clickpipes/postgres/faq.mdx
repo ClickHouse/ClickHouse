@@ -199,10 +199,15 @@ ClickPipes for Postgres vise à mapper les types de données de Postgres aussi n
 Actuellement, nous ne prenons pas en charge la définition de mappings personnalisés de types de données dans le pipe. Notez toutefois que le mapping de types de données par défaut utilisé par ClickPipes est très fidèle aux types natifs. La plupart des types de colonnes de Postgres sont répliqués dans ClickHouse de la manière la plus proche possible de leurs équivalents natifs. Les types de tableaux d’entiers dans Postgres, par exemple, sont répliqués en types de tableaux d’entiers dans ClickHouse.
 
 <div id="how-are-json-and-jsonb-columns-replicated-from-postgres">
-  ### Comment les colonnes JSON et JSONB sont-elles répliquées depuis Postgres ?
+  ### Comment les colonnes `json` et `jsonb` sont-elles répliquées depuis Postgres ?
 </div>
 
-Les colonnes JSON et JSONB sont répliquées dans ClickHouse sous forme de type String. Comme ClickHouse prend en charge nativement un [type JSON](/fr/reference/data-types/newjson), vous pouvez créer une vue matérialisée sur les tables de ClickPipes pour effectuer la conversion si nécessaire. Vous pouvez aussi utiliser directement les [fonctions JSON](/fr/reference/functions/regular-functions/json-functions) sur les colonnes String. Nous travaillons activement sur une fonctionnalité qui répliquera directement les colonnes JSON et JSONB vers le type JSON dans ClickHouse. Cette fonctionnalité devrait être disponible d’ici quelques mois.
+Les colonnes `json` et `jsonb` sont répliquées dans ClickHouse en tant que type String, en raison d&#39;incompatibilités avec le [type JSON natif](/fr/reference/data-types/newjson). Par exemple :
+
+* PostgreSQL autorise toute valeur JSON valide au niveau supérieur (chaînes, nombres, tableaux), tandis que le type JSON de ClickHouse ne prend en charge que les objets.
+* Les clés contenant des points (par ex. &quot;app.kubernetes.io/name&quot;) sont également interprétées comme des chemins imbriqués par le type JSON de ClickHouse, ce qui peut modifier la structure des données.
+
+Pour traiter les chaînes JSON en aval d&#39;un ClickPipe Postgres CDC, vous pouvez utiliser directement les [fonctions JSON](/fr/reference/functions/regular-functions/json-functions) sur les colonnes afin d&#39;extraire et de manipuler les données. Pour de meilleures performances de requête, vous pouvez également utiliser une vue matérialisée pour extraire des champs spécifiques dans des colonnes typées, ou pour convertir la colonne vers le type JSON natif (en gardant à l&#39;esprit que la conversion peut échouer en cas d&#39;incompatibilité de types entre plateformes).
 
 <div id="what-happens-to-inserts-when-a-mirror-is-paused">
   ### Que se passe-t-il pour les insertions lorsqu’un mirror est en pause ?
@@ -221,7 +226,7 @@ En résumé, même si les processus sync et normalize sont arrêtés pendant une
   ### La création d’un ClickPipe peut-elle être automatisée ou effectuée via l’API ou la CLI ?
 </div>
 
-Un Postgres ClickPipe peut également être créé et géré via des endpoints [OpenAPI](/fr/products/cloud/features/admin-features/api/openapi). Cette fonctionnalité est en bêta, et la référence de l’API est disponible [ici](/fr/api-reference/organization/get-list-of-available-organizations#tag/beta). Nous travaillons activement à la prise en charge de Terraform pour permettre également la création de Postgres ClickPipes.
+Un Postgres ClickPipe peut également être créé et géré via des endpoints [OpenAPI](/fr/products/cloud/features/admin-features/api/openapi). Cette fonctionnalité est en bêta, et la référence de l’API est disponible [ici](/fr/products/cloud/api-reference/clickpipes/list-clickpipes). Nous travaillons activement à la prise en charge de Terraform pour permettre également la création de Postgres ClickPipes.
 
 <div id="how-do-i-speed-up-my-initial-load">
   ### Comment accélérer mon chargement initial ?
@@ -436,7 +441,7 @@ Si votre chargement initial s’est terminé sans erreur, mais qu’il manque de
 * Qu’il n’existe pas de politiques de lignes côté ClickHouse susceptibles de filtrer certaines lignes.
 
 <div id="failover-slot">
-  ### ClickPipe peut-il créer un slot de réplication avec le basculement activé ?
+  ### ClickPipe peut-il créer un slot de réplication avec le basculement activé ?
 </div>
 
 Oui. Pour un Postgres ClickPipe dont le mode de réplication est défini sur CDC ou Snapshot + CDC, vous pouvez demander à ClickPipes de créer un slot de réplication avec le basculement activé en activant le commutateur ci-dessous dans la section `Advanced Settings` lors de la création du ClickPipe. Notez que votre version de Postgres doit être 17 ou supérieure pour utiliser cette fonctionnalité.

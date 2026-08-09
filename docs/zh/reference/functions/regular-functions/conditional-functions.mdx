@@ -329,10 +329,10 @@ SELECT clamp(15, 0, 7) AS result;
 * 对于 `DateTime` 类型，结果类型会提升为最大的类型 (例如，与 `DateTime32` 混用时，结果为 `DateTime64`) 。
 
 <Info>
-  **使用 setting `least_greatest_legacy_null_behavior` 更改 `NULL` 的行为**
+  **使用设置 `least_greatest_legacy_null_behavior` 可更改 `NULL` 的行为**
 
-  版本 [24.12](/zh/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) 引入了一项向后不兼容的变更：`NULL` 值会被忽略；而在此前，只要参数中有一个是 `NULL`，就会返回 `NULL`。
-  如需保留之前的行为，请将 setting `least_greatest_legacy_null_behavior` (默认值：`false`) 设置为 `true`。
+  [24.12](/zh/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) 版本引入了一项不向后兼容的变更：`NULL` 值会被忽略，而此前只要参数中有一个为 `NULL`，就会返回 `NULL`。
+  若要保留之前的行为，请将设置 `least_greatest_legacy_null_behavior` (默认值：`false`) 设为 `true`。
 </Info>
 
 **语法**
@@ -347,15 +347,15 @@ greatest(x1[, x2, ...])
 
 **返回值**
 
-返回参数中的最大值，结果会提升为最大的兼容类型。[`Any`](/zh/reference/data-types/index)
+返回参数中的最大值，并提升到最大的兼容类型。[`Any`](/zh/reference/data-types/index)
 
 **示例**
 
 **数值类型**
 
 ```sql title=Query
-SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 ```
 
 ```response title=Response
@@ -379,13 +379,13 @@ SELECT greatest(['hello'], ['there'], ['world']);
 **DateTime 类型**
 
 ```sql title=Query
-SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─greatest(toD⋯(now(), 3))─┐
-│  2025-05-28 15:50:53.000 │
+┌─greatest(toD⋯0.000', 3))─┐
+│  2025-01-02 12:00:00.000 │
 └──────────────────────────┘
 ```
 
@@ -456,7 +456,7 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
 <Info>
   **使用设置 `least_greatest_legacy_null_behavior` 更改 `NULL` 行为**
 
-  版本 [24.12](/zh/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) 引入了一项向后不兼容的更改：现在会忽略 `NULL` 值；而此前只要有一个参数为 `NULL`，就会返回 `NULL`。
+  版本 [24.12](/zh/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) 引入了一项不向后兼容的变更：现在会忽略 `NULL` 值；而此前只要有一个参数为 `NULL`，就会返回 `NULL`。
   若要保留之前的行为，请将设置 `least_greatest_legacy_null_behavior` (默认值：`false`) 设为 `true`。
 </Info>
 
@@ -479,8 +479,8 @@ least(x1[, x2, ...])
 **数值类型**
 
 ```sql title=Query
-SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 ```
 
 ```response title=Response
@@ -504,13 +504,13 @@ SELECT least(['hello'], ['there'], ['world']);
 **DateTime 类型**
 
 ```sql title=Query
-SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─least(toDate⋯(now(), 3))─┐
-│  2025-05-27 15:55:20.000 │
+┌─least(toDate⋯0.000', 3))─┐
+│  2025-01-01 12:00:00.000 │
 └──────────────────────────┘
 ```
 

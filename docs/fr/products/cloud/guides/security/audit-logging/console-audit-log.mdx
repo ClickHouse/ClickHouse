@@ -16,9 +16,7 @@ Les activités de la Console sont consignées dans le journal d’audit. Si vous
 </div>
 
 <Steps>
-  <Step>
-    ## Sélectionnez l’organisation
-
+  <Step title="Sélectionnez l’organisation" id="select-org">
     Dans ClickHouse Cloud, accédez aux détails de votre organisation.
 
     <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="Onglet Activity de ClickHouse Cloud" border />
@@ -26,9 +24,7 @@ Les activités de la Console sont consignées dans le journal d’audit. Si vous
     <br />
   </Step>
 
-  <Step>
-    ## Sélectionnez Audit
-
+  <Step title="Sélectionnez Audit" id="select-audit">
     Sélectionnez l’onglet **Audit** dans le menu de gauche pour voir les modifications apportées à votre organisation ClickHouse Cloud, notamment qui les a effectuées et à quel moment.
 
     La page **Activity** affiche un tableau contenant la liste des événements enregistrés pour votre organisation. Par défaut, cette liste est triée en ordre chronologique inverse (l’événement le plus récent en haut). Modifiez l’ordre du tableau en cliquant sur les en-têtes de colonnes. Chaque élément du tableau contient les champs suivants :
@@ -43,9 +39,7 @@ Les activités de la Console sont consignées dans le journal d’audit. Si vous
     <br />
   </Step>
 
-  <Step>
-    ## Utilisez la barre de recherche
-
+  <Step title="Utilisez la barre de recherche" id="use-search-bar">
     Vous pouvez utiliser la barre de recherche pour filtrer les événements selon certains critères, comme le nom du service ou l’adresse IP. Vous pouvez également exporter ces informations au format CSV pour les exploiter ou les analyser dans un outil externe.
   </Step>
 </Steps>
@@ -59,12 +53,12 @@ Les activités de la Console sont consignées dans le journal d’audit. Si vous
 </div>
 
 Vous pouvez utiliser le endpoint `activity` de la ClickHouse Cloud API pour obtenir une exportation
-des événements d’audit. Vous trouverez plus d’informations dans la [référence de l’API](/fr/api-reference/organization/get-list-of-available-organizations).
+des événements d’audit. Vous trouverez plus d’informations dans la [référence de l’API](/fr/products/cloud/api-reference/organization/get-list-of-available-organizations).
 
 <div id="log-integrations">
   ## Intégrations de logs
 </div>
 
-Vous pouvez utiliser l’API pour l’intégrer à la plateforme de journalisation de votre choix. Les connecteurs prêts à l’emploi suivants sont pris en charge :
+Vous pouvez utiliser l’API pour vous connecter à la plateforme de journalisation de votre choix. Les solutions suivantes disposent de connecteurs prêts à l’emploi pris en charge :
 
-* [module d’audit ClickHouse Cloud pour Splunk](/fr/integrations/connectors/data-integrations/integrations/splunk)
+* [Add-on ClickHouse Cloud Audit pour Splunk](/fr/integrations/connectors/data-integrations/integrations/splunk)

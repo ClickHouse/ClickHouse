@@ -175,7 +175,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int64 added_delete_files,
     Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
-    std::optional<Int64> user_defined_timestamp)
+    std::optional<Int64> user_defined_timestamp,
+    SnapshotOperation operation)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
@@ -219,7 +220,14 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
-    summary->set(Iceberg::f_operation, num_deleted_rows == 0 ? Iceberg::f_append : Iceberg::f_overwrite);
+    /// A merge-on-read DELETE writes position-delete files (num_deleted_rows != 0): per the Iceberg
+    /// spec that snapshot is an `overwrite`, not an `append`. Compaction passes `Replace` explicitly.
+    const char * operation_name = Iceberg::f_append;
+    if (operation == SnapshotOperation::Replace)
+        operation_name = Iceberg::f_replace;
+    else if (num_deleted_rows != 0)
+        operation_name = Iceberg::f_overwrite;
+    summary->set(Iceberg::f_operation, operation_name);
     summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
     summary->set(Iceberg::f_added_records, std::to_string(added_records));
     summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
@@ -259,7 +267,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
 
     if (!metadata_object->has(Iceberg::f_refs))
-        metadata_object->set(Iceberg::f_refs, new Poco::JSON::Object);
+        metadata_object->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
 
     if (!metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
     {
@@ -468,11 +476,17 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     }
 
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
-    metadata_object->set(Iceberg::f_last_column_id, last_column_id + 1);
+    /// The new top-level field takes the next id; nested tuple/array/map
+    /// children (when `type` is complex) take the ids after it via the shared
+    /// `iter`. After getIcebergType `iter` is the max assigned id, which is what
+    /// last-column-id must record so every added child gets a globally unique id.
+    Int32 new_field_id = last_column_id + 1;
+    Int32 iter = new_field_id;
+    auto new_type = Iceberg::getIcebergType(type, iter);
+    metadata_object->set(Iceberg::f_last_column_id, iter);
 
-    auto new_type = Iceberg::getIcebergType(type, last_column_id);
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
-    new_field->set(Iceberg::f_id, last_column_id + 1);
+    new_field->set(Iceberg::f_id, new_field_id);
     new_field->set(Iceberg::f_name, column_name);
     new_field->set(Iceberg::f_required, new_type.second);
     new_field->set(Iceberg::f_type, new_type.first);

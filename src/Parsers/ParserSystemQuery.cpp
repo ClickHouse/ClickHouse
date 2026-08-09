@@ -14,10 +14,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Common/Exception.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 
 #include <base/EnumReflection.h>
 
+#include <algorithm>
 #include <limits>
 
 
@@ -275,8 +276,19 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
     bool found = false;
 
+    static constexpr Type background_verbs[] = {
+        Type::STOP,
+        Type::START,
+        Type::PAUSE,
+        Type::CANCEL,
+        Type::REFRESH,
+    };
+
     for (const auto & type : magic_enum::enum_values<Type>())
     {
+        /// STOP matches also STOP [...], check the more specific forms first.
+        if (std::ranges::contains(background_verbs, type))
+            continue;
         if (ParserKeyword::createDeprecated(ASTSystemQuery::typeToString(type)).ignore(pos, expected))
         {
             res->type = type;
@@ -333,6 +345,22 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     }
 
     if (!found)
+    {
+        for (const auto & type : background_verbs)
+        {
+            if (ParserKeyword::createDeprecated(ASTSystemQuery::typeToString(type)).ignore(pos, expected))
+            {
+                res->type = type;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found)
+        return false;
+
+    if (res->type == Type::UNKNOWN || res->type == Type::END)
         return false;
 
 
@@ -639,6 +667,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::STOP_REPLICATED_VIEW:
         case Type::PAUSE_VIEW:
         case Type::CANCEL_VIEW:
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
             break;
@@ -647,6 +680,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::STOP_VIEWS:
         case Type::PAUSE_VIEWS:
         case Type::FREE_MEMORY:
+        case Type::STOP_ALL_BACKGROUND:
+        case Type::START_ALL_BACKGROUND:
+        case Type::PAUSE_ALL_BACKGROUND:
+        case Type::CANCEL_ALL_BACKGROUND:
+        case Type::REFRESH_ALL_BACKGROUND:
             break;
 
         case Type::TEST_VIEW:
@@ -662,11 +700,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
                 return false;
-            String time_str = ast->as<ASTLiteral &>().value.safeGet<String>();
-            ReadBufferFromString buf(time_str);
-            time_t time = 0;
-            readDateTimeText(time, buf);
-            res->fake_time_for_view = Int64(time);
+            res->fake_time_for_view = ast->as<ASTLiteral &>().value.safeGet<String>();
 
             break;
         }

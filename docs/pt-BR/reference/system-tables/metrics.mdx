@@ -720,6 +720,18 @@ Número de operações de descompressão usando codecs de compressão internos
 
 Número de consultas INSERT que são limitadas devido ao grande número de partes de dados ativas em uma partição de uma tabela MergeTree.
 
+<div id="deletebitmapcachebytes">
+  ### DeleteBitmapCacheBytes
+</div>
+
+Tamanho total, em bytes, do cache de bitmap de exclusão da UNIQUE KEY
+
+<div id="deletebitmapcacheentries">
+  ### DeleteBitmapCacheEntries
+</div>
+
+Número total de bitmaps de exclusão de UNIQUE KEY em cache
+
 <div id="deltalakesnapshotcachesizeelements">
   ### DeltaLakeSnapshotCacheSizeElements
 </div>
@@ -1037,6 +1049,24 @@ Elementos do cache do sistema de arquivos na fila de download
 </div>
 
 Elementos do cache do sistema de arquivos (segmentos de arquivo)
+
+<div id="filesystemcacheevictionthreads">
+  ### FilesystemCacheEvictionThreads
+</div>
+
+Número de threads no pool de remoção (eviction) em segundo plano do cache do sistema de arquivos
+
+<div id="filesystemcacheevictionthreadsactive">
+  ### FilesystemCacheEvictionThreadsActive
+</div>
+
+Número de threads no pool de remoção em segundo plano do cache do sistema de arquivos executando uma tarefa
+
+<div id="filesystemcacheevictionthreadsscheduled">
+  ### FilesystemCacheEvictionThreadsScheduled
+</div>
+
+Número de jobs enfileirados ou em execução no pool em segundo plano de remoção do cache do sistema de arquivos
 
 <div id="filesystemcacheholdfilesegments">
   ### FilesystemCacheHoldFileSegments
@@ -1482,6 +1512,12 @@ Número de threads ativas no pool de threads de leituras do servidor Keeper.
 
 Número de jobs enfileirados ou ativos no pool de threads para leituras do servidor Keeper. Métrica sem utilidade; as tarefas reais de leitura nesse pool de threads são agendadas por um mecanismo diferente.
 
+<div id="keeperttlnodes">
+  ### KeeperTTLNodes
+</div>
+
+Número de nós com TTL definido atualmente armazenados no Keeper.
+
 <div id="licenseremainingseconds">
   ### LicenseRemainingSeconds
 </div>
@@ -1571,6 +1607,18 @@ Maior entrada DDL processada pelo DDLWorker.
 </div>
 
 Maior entrada DDL do DDLWorker enviada ao ZooKeeper.
+
+<div id="memoryreservationapproved">
+  ### MemoryReservationApproved
+</div>
+
+Número total de bytes atualmente alocados (aprovados) em reservas de memória
+
+<div id="memoryreservationdemand">
+  ### MemoryReservationDemand
+</div>
+
+Número total de bytes referentes a solicitações pendentes de aumento de reservas de memória
 
 <div id="memorytracking">
   ### MemoryTracking
@@ -2087,6 +2135,24 @@ Partes no layout wide.
 </div>
 
 Número de inserções assíncronas que estão aguardando o flush.
+
+<div id="pointinpolygoncachebytes">
+  ### PointInPolygonCacheBytes
+</div>
+
+Tamanho em bytes do cache de polígonos constantes pré-processados para a função `pointInPolygon`
+
+<div id="pointinpolygoncachecells">
+  ### PointInPolygonCacheCells
+</div>
+
+Número de polígonos constantes pré-processados em cache para a função `pointInPolygon`
+
+<div id="pointinpolygoncachesizelimit">
+  ### PointInPolygonCacheSizeLimit
+</div>
+
+Tamanho máximo, em bytes, do cache de polígonos constantes pré-processados para a função `pointInPolygon` (o valor efetivamente aplicado da configuração de servidor `point_in_polygon_cache_size`)
 
 <div id="polygondictionarythreads">
   ### PolygonDictionaryThreads
@@ -2927,6 +2993,24 @@ Número de threads em espera no OvercommitTracker
 </div>
 
 Número de arquivos temporários criados
+
+<div id="udfdriverinvokerthreads">
+  ### UDFDriverInvokerThreads
+</div>
+
+Número de threads nos pools de threads que atendem aos pipes de comandos de driver de UDF executável.
+
+<div id="udfdriverinvokerthreadsactive">
+  ### UDFDriverInvokerThreadsActive
+</div>
+
+Número de threads ativas nos pools de threads que atendem aos pipes de comando de driver de UDF executável.
+
+<div id="udfdriverinvokerthreadsscheduled">
+  ### UDFDriverInvokerThreadsScheduled
+</div>
+
+Número de jobs enfileirados ou ativos em pools de threads que atendem aos pipes de comandos de driver de UDF executáveis.
 
 <div id="uncompressedcachebytes">
   ### UncompressedCacheBytes

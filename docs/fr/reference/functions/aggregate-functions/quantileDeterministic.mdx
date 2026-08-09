@@ -36,8 +36,8 @@ quantileDeterministic(level)(expr, determinator)
 
 **Arguments**
 
-* `expr` — Expression appliquée aux valeurs de la colonne, produisant des types de données numériques, Date ou DateTime. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal*`](/fr/reference/data-types/decimal) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
-* `determinator` — Nombre dont le hash est utilisé à la place d&#39;un générateur de nombres aléatoires dans l&#39;algorithme d&#39;échantillonnage par réservoir afin de rendre le résultat de l&#39;échantillonnage déterministe. Comme déterminateur, vous pouvez utiliser n&#39;importe quel nombre positif déterministe, par exemple un identifiant utilisateur ou un identifiant d&#39;événement. Si la même valeur de déterminateur apparaît trop souvent, la fonction ne fonctionne pas correctement. [`(U)Int*`](/fr/reference/data-types/int-uint)
+* `expr` — Expression appliquée aux valeurs de la colonne, produisant des types de données numériques, `Date` ou `DateTime`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Int128`](/fr/reference/data-types/int-uint) ou [`UInt128`](/fr/reference/data-types/int-uint) ou [`Int256`](/fr/reference/data-types/int-uint) ou [`UInt256`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime)
+* `determinator` — Nombre dont le hash est utilisé à la place d&#39;un générateur de nombres aléatoires dans l&#39;algorithme d&#39;échantillonnage par réservoir afin de rendre le résultat de l&#39;échantillonnage déterministe. Comme déterminateur, vous pouvez utiliser n&#39;importe quel nombre positif déterministe, par exemple un identifiant utilisateur ou un identifiant d&#39;événement. Si la même valeur de déterminateur apparaît trop souvent, la fonction ne fonctionne pas correctement. [`UInt*`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 

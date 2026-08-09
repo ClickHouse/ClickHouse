@@ -121,6 +121,19 @@ def collect_snippet_anchors(text, docs_root, page_dir, seen):
     return ids
 
 
+def collect_generated_setting_anchors(page_path):
+    """Expose client-side setting redirects as fragment aliases to lychee."""
+    manifest = os.path.splitext(page_path)[0] + "/manifest.json"
+    if not os.path.isfile(manifest):
+        return set()
+    try:
+        with open(manifest, encoding="utf-8") as f:
+            anchor_routes = json.load(f).get("anchorRoutes", {})
+    except (OSError, ValueError, TypeError):
+        return set()
+    return set(anchor_routes) if isinstance(anchor_routes, dict) else set()
+
+
 def dump_inputs(docs_root):
     # Ask lychee itself which files it would check, so the copy honours the
     # exclude_path scoping in lychee.toml without duplicating it here.
@@ -224,6 +237,11 @@ def materialize_redirects(docs_root, dest):
                         # Anchors inherited from imported snippets.
                         anchors |= collect_snippet_anchors(
                             text, docs_root, os.path.dirname(cand), set())
+                        # Generated settings overview pages also expose the
+                        # moved fragments through a client-side redirect map.
+                        # A legacy path redirecting to an overview inherits
+                        # those aliases just as it inherits rendered anchors.
+                        anchors |= collect_generated_setting_anchors(cand)
                         break
         p = os.path.join(dest, src + ".mdx")
         os.makedirs(os.path.dirname(p) or ".", exist_ok=True)
@@ -258,6 +276,12 @@ def build_tree(docs_root, dest):
                 # Append anchors the page inherits from imported snippets, which
                 # Mintlify renders inline but lychee cannot see across the import.
                 anchors = collect_snippet_anchors(raw, docs_root, root, set())
+                # Split settings overview pages redirect their historical
+                # fragments client-side. Their generated manifest is the
+                # canonical alias registry; append its keys only in this
+                # throwaway tree so static fragment validation matches runtime.
+                anchors |= collect_generated_setting_anchors(
+                    os.path.join(root, name))
                 # Non-<a> element ids (e.g. <div id="...">) are valid fragment
                 # targets too, but lychee doesn't extract them -- add them here.
                 # Scan with code samples and MDX comments stripped (same

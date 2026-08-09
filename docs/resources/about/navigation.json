@@ -3,10 +3,10 @@
     {
       "group": "About ClickHouse",
       "pages": [
+        "resources/about/index",
         "resources/about/adopters",
         "resources/about/support"
-      ],
-      "root": "resources/about/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-about.svg",

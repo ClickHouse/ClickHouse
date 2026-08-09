@@ -52,6 +52,8 @@ namespace ProfileEvents
     extern const Event TextIndexUsedEmbeddedPostings;
     extern const Event TextIndexTokensCacheHits;
     extern const Event TextIndexTokensCacheMisses;
+    extern const Event TextIndexTokensCacheNegativeHits;
+    extern const Event TextIndexTokensCacheNegativeMisses;
     extern const Event TextIndexDiscardPatternScan;
 }
 
@@ -80,6 +82,7 @@ namespace Setting
 {
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
     extern const SettingsFloat text_index_hint_max_selectivity;
+    extern const SettingsBool use_text_index_negative_tokens_cache;
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
@@ -528,6 +531,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
     }
 
     auto tokens_cache = condition_text.tokensCache();
+    const bool use_negative_tokens_cache
+        = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_negative_tokens_cache];
     cardinalities_cache->sortTokens(tokens_to_read);
 
     LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}", toString(tokens_to_read), state.part.getDataPartStorage().getFullPath());
@@ -573,6 +578,11 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
 
         for (const auto & token : missing_tokens)
         {
+            if (use_negative_tokens_cache)
+            {
+                tokens_cache->setNotFound(TextIndexTokensCache::hash(index_id_for_caches, token));
+                ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheNegativeMisses);
+            }
             analyzer->addMissingToken(token);
         }
 
@@ -677,6 +687,8 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     const auto & all_search_tokens = condition_text.getAllSearchTokens();
     auto tokens_cache = condition_text.tokensCache();
+    const bool use_negative_tokens_cache
+        = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_negative_tokens_cache];
 
     std::vector<TextIndexTokensCache::Key> keys;
     keys.reserve(all_search_tokens.size());
@@ -691,14 +703,25 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     {
         if (cached_infos[i])
         {
-            analyzer->addTokenInfo(all_search_tokens[i], cached_infos[i]);
-            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
+            if (TextIndexTokensCache::isNotFound(cached_infos[i]))
+            {
+                if (use_negative_tokens_cache)
+                {
+                    analyzer->addMissingToken(all_search_tokens[i]);
+                    ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheNegativeHits);
+                    continue;
+                }
+            }
+            else
+            {
+                analyzer->addTokenInfo(all_search_tokens[i], cached_infos[i]);
+                ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
+                continue;
+            }
         }
-        else
-        {
-            tokens_to_read.emplace_back(all_search_tokens[i]);
-            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheMisses);
-        }
+
+        tokens_to_read.emplace_back(all_search_tokens[i]);
+        ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheMisses);
     }
 
     return tokens_to_read;
@@ -789,10 +812,26 @@ void MergeTreeIndexGranuleText::analyzePostings(PostingsSerialization & postings
     using enum PostingsSerialization::Flags;
     const auto & token_infos = analyzer->getAllTokenInfos();
 
-    /// Process regular tokens.
+    std::vector<std::pair<std::string_view, TokenPostingsInfoPtr>> tokens_to_read;
+    tokens_to_read.reserve(token_infos.size());
+
     for (const auto & [token, token_info] : token_infos)
     {
         if (token_info->offsets.size() == 1 && analyzer->isTokenNeeded(token) && !analyzer->hasReadPostings(token))
+            tokens_to_read.emplace_back(token, token_info);
+    }
+
+    /// Sort tokens by cardinality to read the most rare ones first.
+    std::ranges::sort(tokens_to_read, [](const auto & lhs, const auto & rhs)
+    {
+        return lhs.second->cardinality < rhs.second->cardinality;
+    });
+
+    for (const auto & [token, token_info] : tokens_to_read)
+    {
+        /// Check one more time, because query with this token may have been
+        /// discarded by the analyzer after reading postings for previous tokens.
+        if (analyzer->isTokenNeeded(token))
         {
             auto block = readPostingsBlock(stream, state, *token_info, 0, postings_serialization, index_id_for_caches);
             analyzer->addPostings(token, std::move(block));
@@ -1184,7 +1223,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         else
         {
             auto postings = postings_serialization->deserialize(istr, info.header, info.cardinality);
-            if (postings && postings->cardinality() > 0)
+            if (postings && !postings->isEmpty())
             {
                 info.offsets.emplace_back(0);
                 info.ranges.emplace_back(postings->minimum(), postings->maximum());
@@ -1540,6 +1579,9 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 
 void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
 {
+    if (postprocessor_drop_filter && postprocessor_drop_filter->shouldDrop(token))
+        return;
+
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it;
     ArenaKeyHolder key_holder(token, *arena);
@@ -1572,22 +1614,35 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_tokens.push_back(SortedToken{key, &mapped, nullptr});
+        std::string_view token = key;
+        sorted_tokens.push_back(SortedToken{token, &mapped, nullptr});
     });
 
     std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
 
-    /// Join each token's position builder so one entry carries both; no parallel arrays to keep aligned.
+    /// Attach each token's position builder by binary search over the already-sorted sorted_tokens.
+    /// tokens_map and position_map are filled in lockstep in addDocument(), so the key sets are identical.
     if (position_map)
     {
-        for (auto & entry : sorted_tokens)
+        size_t attached = 0;
+        position_map->forEachValue([&](const auto & key, auto & mapped)
         {
-            auto positions = position_map->find(entry.token);
-            if (!positions)
+            const std::string_view token(key);
+            auto it = std::ranges::lower_bound(
+                sorted_tokens, token,
+                [](std::string_view lhs, std::string_view rhs) { return lhs < rhs; },
+                &SortedToken::token);
+            if (it == sorted_tokens.end() || it->token != token)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Text index: token '{}' has postings but no positions slot", entry.token);
-            entry.positions = &positions->getMapped();
-        }
+                    "Text index: positions token '{}' has no postings slot", token);
+            it->positions = &mapped;
+            ++attached;
+        });
+
+        if (attached != sorted_tokens.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index: postings map has {} tokens but positions map attached {}",
+                sorted_tokens.size(), attached);
     }
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
@@ -1624,11 +1679,23 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     MergeTreeIndexTextPostprocessorPtr postprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
-    , tokenizer(tokenizer_)
-    , granule_builder(params, tokenizer_, posting_list_codec_)
+    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
+    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
+    , granule_builder(params, tokenizer, posting_list_codec_)
     , preprocessor(preprocessor_)
     , postprocessor(postprocessor_)
 {
+    /// Fast path for IN/NOT IN filter-only postprocessors only: drops are decided per distinct token in
+    /// addToken so dropped tokens never build postings. Positions must be disabled (phrase search needs
+    /// dense position renumbering after drops). Any other postprocessor uses the general per-batch path.
+    if (postprocessor->hasActions() && !params.positions)
+    {
+        if (const auto * inline_filter = postprocessor->getInlineFilter())
+        {
+            granule_builder.postprocessor_drop_filter = inline_filter;
+            use_postprocessor_drop_fast_path = true;
+        }
+    }
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
@@ -1661,7 +1728,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    if (postprocessor->hasActions())
+    if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
     {
         ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
         ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
@@ -1722,6 +1789,60 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
     }
 }
 
+namespace
+{
+
+/// Rewrites `x = ''` / `x != ''` to `empty(x)` / `notEmpty(x)`, like `optimize_empty_string_comparisons` does in queries.
+void normalizeColumnExpression(ASTPtr & ast)
+{
+    for (auto & child : ast->children)
+        normalizeColumnExpression(child);
+
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || (function->name != "equals" && function->name != "notEquals")
+        || !function->arguments || function->arguments->children.size() != 2)
+        return;
+
+    auto is_empty_string_literal = [](const ASTPtr & node)
+    {
+        const auto * literal = node->as<ASTLiteral>();
+        return literal && literal->value.getType() == Field::Types::String && literal->value.safeGet<String>().empty();
+    };
+
+    const auto & arguments = function->arguments->children;
+    ASTPtr expression;
+
+    if (is_empty_string_literal(arguments[1]))
+        expression = arguments[0];
+    else if (is_empty_string_literal(arguments[0]))
+        expression = arguments[1];
+    else
+        return;
+
+    ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
+}
+
+/// Queries are analyzed with `optimize_empty_string_comparisons`, index expressions are not, so an index such as
+/// `arrayFilter(s -> s != '', arr)` is never matched by name (issue #111788). Returns the name of the index
+/// expression after the same rewrite, or `std::nullopt` if it does not change.
+std::optional<String> getNormalizedIndexColumnName(const IndexDescription & index)
+{
+    /// A text index is always defined on a single expression.
+    if (!index.expression_list_ast || index.expression_list_ast->children.size() != 1)
+        return {};
+
+    ASTPtr normalized = index.expression_list_ast->children.front()->clone();
+    normalizeColumnExpression(normalized);
+
+    String name = normalized->getColumnName();
+    if (index.sample_block.has(name))
+        return {};
+
+    return name;
+}
+
+}
+
 MergeTreeIndexText::MergeTreeIndexText(
     StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
@@ -1734,6 +1855,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     , posting_list_codec(std::move(posting_list_codec_))
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
     , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
+    , normalized_index_column_name(getNormalizedIndexColumnName(index_))
 {
 }
 
@@ -1752,12 +1874,13 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     return substreams;
 }
 
-MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & path_prefix,
-    const IDataPartStorage * storage) const
+MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
-    if (!indexFileExistsInChecksums(checksums, path_prefix, ".idx", storage))
+    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
+        if (part.isSystemColumnInvalidated(column))
+            return {0, {}};
+
+    if (!indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
         return {0, {}};
 
     MergeTreeIndexSubstreams substreams =
@@ -1768,7 +1891,7 @@ MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(
     };
 
     /// V2: positions file exists on disk.
-    if (indexFileExistsInChecksums(checksums, path_prefix + ".pos", ".idx", storage))
+    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix + ".pos", ".idx", part.getDataPartStoragePtr().get()))
     {
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
         return {2, std::move(substreams)};
@@ -1789,7 +1912,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, tokenizer.get(), preprocessor, postprocessor, params.positions);
+    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)

@@ -28,9 +28,7 @@ Neste guia, você aprenderá a criar um agente de IA com o [framework Microsoft 
 Você pode executar as etapas a seguir no REPL do Python ou por meio de um script.
 
 <Steps>
-  <Step>
-    ## Instalar bibliotecas
-
+  <Step title="Instalar bibliotecas" id="install-libraries">
     Instale a biblioteca do framework Microsoft Agent executando os comandos a seguir:
 
     ```python
@@ -40,9 +38,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Configurar credenciais
-
+  <Step title="Configurar credenciais" id="setup-credentials">
     Em seguida, você precisará fornecer sua chave de API da OpenAI:
 
     ```python
@@ -67,9 +63,7 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     ```
   </Step>
 
-  <Step>
-    ## Inicialize o ClickHouse MCP server e o agente do framework Microsoft Agent
-
+  <Step title="Inicialize o ClickHouse MCP server e o agente do framework Microsoft Agent" id="initialize-mcp-and-agent">
     Agora configure o ClickHouse MCP server para apontar para o Playground do ClickHouse SQL
     e também inicialize nosso agente e faça uma pergunta a ele:
 
@@ -109,44 +103,44 @@ Você pode executar as etapas a seguir no REPL do Python ou por meio de um scrip
     A saída da execução deste script é mostrada abaixo:
 
     ```response title="Response"
-    Usuário: Conte-me sobre os preços de imóveis no Reino Unido nos últimos cinco anos
-    Analisei os registros mensais de preços de venda de imóveis no Reino Unido na tabela uk.uk_price_paid_simple_partitioned para os últimos cinco anos (toStartOfMonth(date), de out/2020 → ago/2025). Resumo e pontos principais:
+    User: Tell me about UK property prices over the last five years
+    I looked at monthly UK sold-price records in the uk.uk_price_paid_simple_partitioned table for the last five years (toStartOfMonth(date), from Oct 2020 → Aug 2025). Summary and key points:
 
-    O que foi medido
-    - Métricas: preço mediano mensal, preço médio e contagem de transações (registros de preço pago).
-    - Período coberto: meses de 2020-10-01 a 2025-08-01 (últimos cinco anos a partir de hoje).
+    What I measured
+    - Metrics: monthly median price, mean price, and transaction count (price paid records).
+    - Period covered: months starting 2020-10-01 through 2025-08-01 (last five years from today).
 
-    Conclusões gerais
-    - O preço mediano subiu de £255.000 (2020-10) para £294.500 (2025-08) — um aumento de aproximadamente +15,4% em cinco anos.
-      - Taxa de crescimento anual composta (CAGR) equivalente para a mediana ≈ +2,9% ao ano.
-    - O preço médio caiu levemente, de cerca de £376.538 (2020-10) para £364.653 (2025-08) — uma queda de ≈ −3,2% em cinco anos.
-      - CAGR do preço médio ≈ −0,6% ao ano.
-    - A divergência (mediana em alta, média levemente em queda) sugere mudanças na composição das transações (menos vendas de alto valor ou outros efeitos composicionais), já que a média é sensível a valores discrepantes, enquanto a mediana não é.
+    High-level findings
+    - Median price rose from £255,000 (2020-10) to £294,500 (2025-08) — an increase of about +15.4% over five years.
+      - Equivalent compound annual growth rate (CAGR) for the median ≈ +2.9% per year.
+    - Mean price fell slightly from about £376,538 (2020-10) to £364,653 (2025-08) — a decline of ≈ −3.2% over five years.
+      - Mean-price CAGR ≈ −0.6% per year.
+    - The divergence (median up, mean slightly down) suggests changes in the mix of transactions (fewer very-high-value sales or other compositional effects), since the mean is sensitive to outliers while the median is not.
 
-    Padrões e eventos notáveis nos dados
-    - Fortes altas em 2020–2021 (visíveis tanto na mediana quanto na média), consistentes com a valorização do mercado impulsionada pelo pós-pandemia, isenção de imposto de transferência e aumento da demanda observados naquele período.
-    - Picos nos preços médios por volta de meados de 2022 (valores médios ~£440k), seguidos de um arrefecimento geral ao longo de 2022–2023 e estabilização em torno de 2023–2024.
-    - Alguns meses apresentam grande volatilidade ou contagens incomuns (por exemplo, junho de 2021 registrou contagens de transações muito elevadas; março de 2025 apresenta mediana alta, mas abril–maio de 2025 mostram contagens menores). Meses recentes (meados de 2025) têm contagens de transações muito menores na tabela — isso geralmente indica registros incompletos para os meses mais recentes, e os valores mensais recentes devem ser interpretados com cautela.
+    Notable patterns and events in the data
+    - Strong rises in 2020–2021 (visible in both median and mean), consistent with the post‑pandemic / stamp‑duty / demand-driven market surge seen in that period.
+    - Peaks in mean prices around mid‑2022 (mean values ~£440k), then a general softening through 2022–2023 and stabilisation around 2023–2024.
+    - Some months show large volatility or unusual counts (e.g., June 2021 and June 2021 had very high transaction counts; March 2025 shows a high median but April–May 2025 show lower counts). Recent months (mid‑2025) have much lower transaction counts in the table — this often indicates incomplete reporting for the most recent months and means recent monthly figures should be treated cautiously.
 
-    Exemplos de pontos de dados (da consulta)
-    - 2020-10: mediana £255.000, média £376.538, transações 89.125
-    - 2022-08: pico da média ~£441.209 (mediana ~£295.000)
-    - 2025-03: mediana ~£314.750 (uma das medianas mais altas)
-    - 2025-08: mediana £294.500, média £364.653, transações 18.815 (contagem baixa — provavelmente incompleta)
+    Example datapoints (from the query)
+    - 2020-10: median £255,000, mean £376,538, transactions 89,125
+    - 2022-08: mean peak ~£441,209 (median ~£295,000)
+    - 2025-03: median ~£314,750 (one of the highest medians)
+    - 2025-08: median £294,500, mean £364,653, transactions 18,815 (low count — likely incomplete)
 
-    Ressalvas
-    - Estes são preços de transação (conjunto de dados Price Paid) — os "valores" reais dos imóveis podem ser diferentes.
-    - A média é sensível à composição e a valores discrepantes. Mudanças nos tipos de imóveis vendidos (por exemplo, proporção de apartamentos vs. casas isoladas, composição regional) afetarão a média e a mediana de formas distintas.
-    - Meses recentes podem estar incompletos; meses com contagens de transações incomumente baixas devem ser tratados com cautela.
-    - Este é um agregado nacional — as diferenças regionais podem ser substanciais.
+    Caveats
+    - These are transaction prices (Price Paid dataset) — actual house “values” may differ.
+    - Mean is sensitive to composition and outliers. Changes in the types of properties sold (e.g., mix of flats vs detached houses, regional mix) will affect mean and median differently.
+    - Recent months can be incomplete; months with unusually low transaction counts should be treated with caution.
+    - This is a national aggregate — regional differences can be substantial.
 
-    Se desejar, posso:
-    - Gerar um gráfico da mediana e da média ao longo do tempo.
-    - Comparar ano a ano ou calcular o CAGR para um mês de início/fim diferente.
-    - Detalhar a análise por região/condado/cidade, tipo de imóvel (apartamento, casa em fila, semigeminada, isolada) ou por faixas de preço.
-    - Exibir uma tabela com as regiões de maior e menor crescimento de preços nos últimos 5 anos.
+    If you want I can:
+    - Produce a chart of median and mean over time.
+    - Compare year-on-year or compute CAGR for a different start/end month.
+    - Break the analysis down by region/county/town, property type (flat, terraced, semi, detached), or by price bands.
+    - Show a table of top/bottom regions for price growth over the last 5 years.
 
-    Qual dessas análises você gostaria de explorar?
+    Which follow-up would you like?
 
     ```
   </Step>
