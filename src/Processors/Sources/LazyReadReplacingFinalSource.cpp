@@ -348,7 +348,10 @@ IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
     inputs.emplace_back(pipeline_output->getHeader(), this);
     connect(*pipeline_output, inputs.back());
     inputs.back().setNeeded();
-    shareQueryPlanStepWithSubPipeline(processors, getQueryPlanStepGroup());
+
+    /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
+    for (auto & processor : processors)
+        processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 

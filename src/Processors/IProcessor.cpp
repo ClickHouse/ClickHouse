@@ -59,12 +59,6 @@ void IProcessor::inheritQueryPlanStepFromParent(const IProcessor & parent, size_
     step_uniq_id = parent.step_uniq_id;
 }
 
-void IProcessor::shareQueryPlanStepWithSubPipeline(Processors & sub_pipeline, size_t group) const
-{
-    for (auto & processor : sub_pipeline)
-        processor->inheritQueryPlanStepFromParent(*this, group);
-}
-
 IProcessor::Status IProcessor::prepare()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'prepare' is not implemented for {} processor", getName());

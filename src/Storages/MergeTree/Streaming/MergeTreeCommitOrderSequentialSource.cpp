@@ -497,7 +497,10 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
 
         auto * sub_output = sub_pipe->getOutputPort(0);
         auto sub_processors = Pipe::detachProcessors(std::move(sub_pipe.value()));
-        shareQueryPlanStepWithSubPipeline(sub_processors, getQueryPlanStepGroup());
+
+        /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
+        for (auto & processor : sub_processors)
+            processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 
         auto & input = inputs.front();
         connect(*sub_output, input);

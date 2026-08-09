@@ -316,11 +316,6 @@ public:
     /// coming from the same step, they can belong to different groups (stages)
     void inheritQueryPlanStepFromParent(const IProcessor & parent, size_t group);
 
-    /// Attribute processors of a sub-pipeline created at run time to this processor's step and `group`.
-    /// `LazyReadReplacingFinalSource` and `MergeTreeCommitOrderSequentialSource` build theirs from a
-    /// `QueryPlan` that dies right away, so its steps must not escape into the running pipeline.
-    void shareQueryPlanStepWithSubPipeline(Processors & sub_pipeline, size_t group) const;
-
     const IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
     const String & getStepUniqID() const { return step_uniq_id; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
