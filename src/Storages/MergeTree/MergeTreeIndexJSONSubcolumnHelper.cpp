@@ -157,6 +157,12 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
             if (is_string_cast && removeNullable(node_dag->result_type)->getTypeId() != TypeIndex::String)
                 return std::nullopt;
 
+            /// Casting a nullable typed path to non-nullable `String` throws on `NULL`. Do not let
+            /// granule pruning suppress `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`.
+            if (is_string_cast && isNullableOrLowCardinalityNullable(argument_dag->result_type)
+                && !isNullableOrLowCardinalityNullable(node_dag->result_type))
+                return std::nullopt;
+
             if (!isJSONAllValuesMatchSafe(node, is_string_cast))
                 return std::nullopt;
 
