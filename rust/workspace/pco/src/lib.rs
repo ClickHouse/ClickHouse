@@ -64,6 +64,23 @@ unsafe fn read_unaligned_vec<T: Copy>(src: *const u8, n: usize) -> Vec<T> {
     v
 }
 
+/// ClickHouse serializes numbers as little-endian bytes regardless of the host
+/// architecture (see `SerializationNumber`), while `pco` operates on
+/// native-endian values, so on a big-endian host every element's bytes must be
+/// reversed when crossing this boundary — in both directions, which one helper
+/// covers because byte reversal is its own inverse. On little-endian hosts it
+/// is a no-op the compiler removes.
+fn convert_le_bytes_in_place<T>(values: &mut [T]) {
+    if cfg!(target_endian = "big") {
+        let bytes = unsafe {
+            slice::from_raw_parts_mut(values.as_mut_ptr() as *mut u8, values.len() * size_of::<T>())
+        };
+        for element in bytes.chunks_exact_mut(size_of::<T>()) {
+            element.reverse();
+        }
+    }
+}
+
 unsafe fn compress_typed<T: Number>(
     src: *const u8,
     n_values: usize,
@@ -73,7 +90,19 @@ unsafe fn compress_typed<T: Number>(
     dst_capacity: usize,
     out_size: *mut u64,
 ) -> i32 {
-    let nums = read_unaligned_vec::<T>(src, n_values);
+    // On a little-endian host an aligned source is borrowed in place; an
+    // unaligned source, or any source on a big-endian host (which must
+    // byte-swap the little-endian input), is copied into an owned aligned
+    // buffer first.
+    let owned: Vec<T>;
+    let nums: &[T] = if cfg!(target_endian = "little") && (src as usize) % align_of::<T>() == 0 {
+        slice::from_raw_parts(src as *const T, n_values)
+    } else {
+        let mut copied = read_unaligned_vec::<T>(src, n_values);
+        convert_le_bytes_in_place(&mut copied);
+        owned = copied;
+        &owned
+    };
 
     let config = ChunkConfig::default()
         .with_compression_level(level)
@@ -86,7 +115,7 @@ unsafe fn compress_typed<T: Number>(
         overflowed: &overflowed,
     };
 
-    match pco::standalone::simple_compress_into(&nums, &config, writer) {
+    match pco::standalone::simple_compress_into(nums, &config, writer) {
         Ok(writer) => {
             *out_size = writer.pos as u64;
             PCO_OK
@@ -96,15 +125,22 @@ unsafe fn compress_typed<T: Number>(
     }
 }
 
-/// Decodes an entire standalone stream into `dst`, requiring that the stream
-/// carries exactly `dst.len()` values and that nothing follows the termination
-/// marker. `pco::standalone::simple_decompress_into` cannot prove the latter:
-/// it stops at `DecompressorItem::EndOfData(rest)` and discards `rest`, so a
-/// valid stream with trailing garbage appended would still decode. Driving
+/// Decodes the chunks of an already-opened standalone stream into `dst`,
+/// requiring that the stream carries exactly `dst.len()` values and that
+/// nothing follows the termination marker.
+/// `pco::standalone::simple_decompress_into` cannot prove the latter: it stops
+/// at `DecompressorItem::EndOfData(rest)` and discards `rest`, so a valid
+/// stream with trailing garbage appended would still decode. Driving
 /// `FileDecompressor` directly keeps `rest` in hand and lets us fail closed on
-/// trailing bytes, on a short stream, and on excess values alike.
-fn decompress_exact<T: Number>(source: &[u8], mut dst: &mut [T]) -> Result<(), ()> {
-    let (file_decompressor, mut src) = pco::standalone::FileDecompressor::new(source).map_err(|_| ())?;
+/// trailing bytes, on a short stream, and on excess values alike. The caller
+/// passes the `FileDecompressor` in (with `src` positioned right after the
+/// header) so the stream header is parsed once, shared with the number-type
+/// peek, instead of reparsed per decode.
+fn decompress_exact<T: Number>(
+    file_decompressor: &pco::standalone::FileDecompressor,
+    mut src: &[u8],
+    mut dst: &mut [T],
+) -> Result<(), ()> {
     loop {
         match file_decompressor.chunk_decompressor::<T, _>(src).map_err(|_| ())? {
             pco::standalone::DecompressorItem::Chunk(mut chunk_decompressor) => {
@@ -133,7 +169,8 @@ fn decompress_exact<T: Number>(source: &[u8], mut dst: &mut [T]) -> Result<(), (
 }
 
 unsafe fn decompress_typed<T: Number>(
-    source: &[u8],
+    file_decompressor: &pco::standalone::FileDecompressor,
+    src: &[u8],
     dst: *mut u8,
     n_values: usize,
     dst_capacity: usize,
@@ -147,15 +184,17 @@ unsafe fn decompress_typed<T: Number>(
     if dst as usize % align_of::<T>() == 0 {
         // Aligned: decode straight into the destination.
         let out = slice::from_raw_parts_mut(dst as *mut T, n_values);
-        if decompress_exact(source, out).is_err() {
+        if decompress_exact(file_decompressor, src, out).is_err() {
             return PCO_ERROR;
         }
+        convert_le_bytes_in_place(out);
     } else {
         // Unaligned destination: decode into an aligned scratch, then copy back.
         let mut scratch = vec![T::default(); n_values];
-        if decompress_exact(source, &mut scratch).is_err() {
+        if decompress_exact(file_decompressor, src, &mut scratch).is_err() {
             return PCO_ERROR;
         }
+        convert_le_bytes_in_place(&mut scratch);
         ptr::copy_nonoverlapping(scratch.as_ptr() as *const u8, dst, needed);
     }
 
@@ -202,24 +241,6 @@ pub unsafe extern "C" fn pco_compress(
     result.unwrap_or(PCO_ERROR)
 }
 
-/// Reads the number type declared by a standalone pco stream without decoding
-/// its body. Returns `Ok(Some(type_byte))` for a stream with chunks,
-/// `Ok(None)` for a well-formed empty stream (a header immediately followed by
-/// the termination byte and nothing else), and `Err(())` for a malformed or
-/// truncated header, or for trailing bytes after the termination. Parse errors
-/// are kept distinct from the genuine empty-stream case so the caller can fail
-/// closed on corrupt input even when no values are expected.
-fn peek_number_type(source: &[u8]) -> Result<Option<u8>, ()> {
-    let (file_decompressor, rest) = pco::standalone::FileDecompressor::new(source).map_err(|_| ())?;
-    match file_decompressor.peek_number_type_or_termination(rest).map_err(|_| ())? {
-        Some(number_type) => Ok(Some(number_type as u8)),
-        // A well-formed empty stream ends right at the termination byte; any
-        // trailing payload bytes mean corruption rather than emptiness.
-        None if rest.len() == 1 => Ok(None),
-        None => Err(()),
-    }
-}
-
 /// See include/pco.h.
 #[no_mangle]
 pub unsafe extern "C" fn pco_decompress(
@@ -242,18 +263,27 @@ pub unsafe extern "C" fn pco_decompress(
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         let source = slice::from_raw_parts(src, src_size as usize);
 
+        // Parse the stream header exactly once: the same `FileDecompressor`
+        // (with `rest` positioned right after the header) serves both the
+        // number-type peek here and the chunk decode below.
+        let Ok((file_decompressor, rest)) = pco::standalone::FileDecompressor::new(source) else {
+            return PCO_ERROR;
+        };
+
         // Decode using the stream's own number type, and require its element
         // width to match the width declared by the codec block. This is the
         // only type information available on the untyped method-byte decode
         // path (e.g. HTTP decompress=1), and it makes a malformed block whose
         // declared width disagrees with the embedded stream fail closed.
-        let number_type = match peek_number_type(source) {
-            Ok(Some(byte)) => byte,
-            // A well-formed empty stream: only valid when nothing was expected.
-            Ok(None) => return if n == 0 { PCO_OK } else { PCO_ERROR },
-            // Malformed or truncated header, or trailing garbage: fail closed
-            // even when n == 0.
-            Err(()) => return PCO_ERROR,
+        let number_type = match file_decompressor.peek_number_type_or_termination(rest) {
+            Ok(Some(number_type)) => number_type as u8,
+            // A well-formed empty stream ends right at the termination byte —
+            // only valid when nothing was expected. Any trailing payload bytes
+            // mean corruption rather than emptiness: fail closed even when
+            // n == 0.
+            Ok(None) if rest.len() == 1 => return if n == 0 { PCO_OK } else { PCO_ERROR },
+            // Malformed or truncated header, or trailing garbage.
+            _ => return PCO_ERROR,
         };
 
         // When the caller knows the exact number type the stream must carry (a
@@ -265,18 +295,19 @@ pub unsafe extern "C" fn pco_decompress(
             return PCO_ERROR;
         }
 
+        let fd = &file_decompressor;
         match number_type {
-            1 if width == 4 => decompress_typed::<u32>(source, dst, n, cap),
-            2 if width == 8 => decompress_typed::<u64>(source, dst, n, cap),
-            3 if width == 4 => decompress_typed::<i32>(source, dst, n, cap),
-            4 if width == 8 => decompress_typed::<i64>(source, dst, n, cap),
-            5 if width == 4 => decompress_typed::<f32>(source, dst, n, cap),
-            6 if width == 8 => decompress_typed::<f64>(source, dst, n, cap),
-            7 if width == 2 => decompress_typed::<u16>(source, dst, n, cap),
-            8 if width == 2 => decompress_typed::<i16>(source, dst, n, cap),
-            9 if width == 2 => decompress_typed::<half::f16>(source, dst, n, cap),
-            10 if width == 1 => decompress_typed::<u8>(source, dst, n, cap),
-            11 if width == 1 => decompress_typed::<i8>(source, dst, n, cap),
+            1 if width == 4 => decompress_typed::<u32>(fd, rest, dst, n, cap),
+            2 if width == 8 => decompress_typed::<u64>(fd, rest, dst, n, cap),
+            3 if width == 4 => decompress_typed::<i32>(fd, rest, dst, n, cap),
+            4 if width == 8 => decompress_typed::<i64>(fd, rest, dst, n, cap),
+            5 if width == 4 => decompress_typed::<f32>(fd, rest, dst, n, cap),
+            6 if width == 8 => decompress_typed::<f64>(fd, rest, dst, n, cap),
+            7 if width == 2 => decompress_typed::<u16>(fd, rest, dst, n, cap),
+            8 if width == 2 => decompress_typed::<i16>(fd, rest, dst, n, cap),
+            9 if width == 2 => decompress_typed::<half::f16>(fd, rest, dst, n, cap),
+            10 if width == 1 => decompress_typed::<u8>(fd, rest, dst, n, cap),
+            11 if width == 1 => decompress_typed::<i8>(fd, rest, dst, n, cap),
             _ => PCO_ERROR,
         }
     }));
@@ -348,6 +379,40 @@ mod tests {
             roundtrip(10, 1, &u8s);
             let i8s: Vec<u8> = (0..5000u32).map(|i| ((i % 251) as i32 - 125) as u8).collect();
             roundtrip(11, 1, &i8s);
+        }
+    }
+
+    #[test]
+    fn unaligned_source_compresses_identically() {
+        // The aligned fast path borrows the source in place while the
+        // unaligned path copies into an aligned buffer; both must produce
+        // identical streams.
+        unsafe {
+            let u32s: Vec<u8> = (0..2000u32).flat_map(|i| i.wrapping_mul(2_654_435_761).to_le_bytes()).collect();
+            let mut shifted = vec![0u8; u32s.len() + 1];
+            shifted[1..].copy_from_slice(&u32s);
+
+            let mut aligned_out = vec![0u8; u32s.len() + 64];
+            let mut shifted_out = vec![0u8; u32s.len() + 64];
+            let mut aligned_size = 0u64;
+            let mut shifted_size = 0u64;
+            assert_eq!(
+                pco_compress(1, u32s.as_ptr(), 2000, 8, aligned_out.as_mut_ptr(), aligned_out.len() as u64, &mut aligned_size),
+                PCO_OK
+            );
+            assert_eq!(
+                pco_compress(1, shifted.as_ptr().add(1), 2000, 8, shifted_out.as_mut_ptr(), shifted_out.len() as u64, &mut shifted_size),
+                PCO_OK
+            );
+            assert_eq!(aligned_size, shifted_size);
+            assert_eq!(&aligned_out[..aligned_size as usize], &shifted_out[..shifted_size as usize]);
+
+            let mut restored = vec![0u8; u32s.len()];
+            assert_eq!(
+                pco_decompress(4, 1, aligned_out.as_ptr(), aligned_size, restored.as_mut_ptr(), 2000, restored.len() as u64),
+                PCO_OK
+            );
+            assert_eq!(&restored, &u32s);
         }
     }
 
