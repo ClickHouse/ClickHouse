@@ -519,6 +519,11 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /* no_squash= */ false,
                     /* no_destination= */ false,
                     /* async_insert_= */ false);
+                /// Every local replica job runs its own nested INSERT, and the outer query may also
+                /// fan out into several `DistributedSink`s. Share the outer query's gates with the
+                /// nested INSERT, so its `Too many parts` check does not count the parts a sibling
+                /// job or sink of the same query has already committed on the local target.
+                interp.setInsertStartGates(insert_start_gates);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -830,6 +835,10 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
             /* no_squash= */ false,
             /* no_destination= */ false,
             /* async_insert_= */ false);
+        /// This nested INSERT runs once per incoming block of the outer query. Share the outer
+        /// query's gates with it, so its `Too many parts` check does not count the parts the
+        /// earlier blocks of the same query have already committed on the local target.
+        interp.setInsertStartGates(insert_start_gates);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);

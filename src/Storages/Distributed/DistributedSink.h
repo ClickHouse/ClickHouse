@@ -52,6 +52,13 @@ public:
     void consume(Chunk & chunk) override;
     void onFinish() override;
 
+    /// The local writes run through nested INSERTs into the underlying table: one per block on the
+    /// `writeToLocal` path and one per local replica job on the synchronous path. Keep the registry
+    /// to thread it into those nested INSERTs, so their pre-write checks (the `Too many parts`
+    /// check) run once per query per destination table - a later block or a sibling job must not
+    /// count a part committed on behalf of the same outer query.
+    void setInsertStartGateRegistry(InsertStartGatesPtr gates) override { insert_start_gates = std::move(gates); }
+
 private:
     void onCancel() noexcept override;
 
@@ -105,6 +112,8 @@ private:
     bool insert_sync;
     bool random_shard_insert;
     bool allow_materialized;
+
+    InsertStartGatesPtr insert_start_gates;
 
     bool is_first_chunk = true;
 
