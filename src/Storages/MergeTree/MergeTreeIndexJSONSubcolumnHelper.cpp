@@ -228,7 +228,8 @@ std::optional<String> tryConvertAndSerializeJSONValueAsText(
     const Field & value,
     const DataTypePtr & source_type,
     const DataTypePtr & target_type,
-    const DataTypePtr & default_type)
+    const DataTypePtr & default_type,
+    bool serialize_quoted)
 {
     Field converted_value = value;
     DataTypePtr serialization_type = source_type;
@@ -247,7 +248,11 @@ std::optional<String> tryConvertAndSerializeJSONValueAsText(
     auto column = serialization_type->createColumn();
     column->insert(converted_value);
     WriteBufferFromOwnString buf;
-    serialization_type->getDefaultSerialization()->serializeText(*column, 0, buf, {});
+    const auto & serialization = serialization_type->getDefaultSerialization();
+    if (serialize_quoted)
+        serialization->serializeTextQuoted(*column, 0, buf, {});
+    else
+        serialization->serializeText(*column, 0, buf, {});
     return buf.str();
 }
 

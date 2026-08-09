@@ -509,6 +509,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             return false;
 
         DataTypePtr target_type;
+        bool serialize_quoted = false;
         if (!json_info->is_string_cast)
         {
             if (function_name == "equals" || function_name == "notEquals")
@@ -518,7 +519,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             else if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll")
             {
                 if (const auto * key_array = typeid_cast<const DataTypeArray *>(key_type.get()))
+                {
                     target_type = key_array->getNestedType();
+                    serialize_quoted = true;
+                }
             }
         }
 
@@ -534,7 +538,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             for (const auto & value : values)
             {
                 auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-                    value, array_type->getNestedType(), target_type, nullptr);
+                    value, array_type->getNestedType(), target_type, nullptr, serialize_quoted);
                 if (!serialized_value)
                     return false;
 
@@ -550,7 +554,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 const_value,
                 serialized_value_type,
                 target_type,
-                function_name == "equals" && json_info->missing_value_is_not_indexed ? key_type : nullptr);
+                function_name == "equals" && json_info->missing_value_is_not_indexed ? key_type : nullptr,
+                serialize_quoted);
             if (!serialized_value)
                 return false;
 

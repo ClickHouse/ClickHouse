@@ -99,6 +99,7 @@ std::optional<String> tryConvertAndSerializeJSONValueAsText(
     const Field & value,
     const DataTypePtr & source_type,
     const DataTypePtr & target_type,
-    const DataTypePtr & default_type);
+    const DataTypePtr & default_type,
+    bool serialize_quoted = false);
 
 }
