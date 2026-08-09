@@ -3811,7 +3811,7 @@ bool httpHandlersConsumeDefaultSessionUser(const Poco::Util::AbstractConfigurati
 /// (mirrors `buildProtocolStackFromConfig`). Returns an empty optional when the chain does
 /// not reach an `http` module in this configuration (e.g. the endpoint did not exist or had
 /// a different type before a reload).
-std::optional<String> resolveHttpHandlersKey(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+std::optional<String> resolveHTTPHandlersKey(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
 {
     std::string conf_name = protocol;
     std::string prefix = protocol + ".";
@@ -4494,7 +4494,7 @@ void Server::updateServers(
                             /// reference switch itself — comparing only the new section on both sides of
                             /// the reload would miss a switch between two sections that are themselves
                             /// unchanged.
-                            previous_handlers_key = resolveHttpHandlersKey(previous_config, protocol).value_or(handlers_key);
+                            previous_handlers_key = resolveHTTPHandlersKey(previous_config, protocol).value_or(handlers_key);
                             consumes_default_session_user = consumes_default_session_user
                                 || httpHandlersConsumeDefaultSessionUser(config, handlers_key)
                                 || httpHandlersConsumeDefaultSessionUser(previous_config, previous_handlers_key);
