@@ -1,13 +1,18 @@
 -- Every filesystem cache metric must be plotted on the `Filesystem cache` dashboard.
 -- If this test fails, add the metric it prints to the `Filesystem cache` dashboard
--- in `src/Storages/System/StorageSystemDashboards.cpp` (or remove the stale reference from it).
+-- in `src/Storages/System/StorageSystemDashboardsFilesystemCache.cpp`
+-- (or remove the stale reference from it).
 
 SET system_events_show_zero_values = 1;
 
 SELECT 'Filesystem cache metrics missing from the dashboard:';
 
 WITH
-    '^(FileCache|FilesystemCache|FileSegment|CachedReadBuffer|CachedWriteBuffer)' AS pattern,
+    -- Filesystem cache metrics are recognized by their name prefix. The two metrics below
+    -- are the only filesystem cache ones which do not follow any of these prefixes, so they
+    -- are listed explicitly.
+    '^(FileCache|FilesystemCache|FileSegment|CachedReadBuffer|CachedWriteBuffer|CacheWarmer)' AS pattern,
+    ['CacheFileSegments', 'CacheDetachedFileSegments'] AS exceptions,
     plotted AS
     (
         SELECT arrayJoin(extractAll(query, '(?:ProfileEvent|CurrentMetric)_\\w+')) AS name
@@ -16,9 +21,11 @@ WITH
     ),
     defined AS
     (
-        SELECT 'ProfileEvent_' || event AS name FROM system.events WHERE match(event, pattern)
+        SELECT 'ProfileEvent_' || event AS name FROM system.events
+        WHERE match(event, pattern) OR has(exceptions, event)
         UNION ALL
-        SELECT 'CurrentMetric_' || metric AS name FROM system.metrics WHERE match(metric, pattern)
+        SELECT 'CurrentMetric_' || metric AS name FROM system.metrics
+        WHERE match(metric, pattern) OR has(exceptions, metric)
     )
 SELECT name FROM defined WHERE name NOT IN (SELECT name FROM plotted) ORDER BY name;
 

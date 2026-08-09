@@ -40,7 +40,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheHoldFileSegments;
-    extern const Metric FilesystemCacheFileSegments;
+    extern const Metric CacheFileSegments;
 }
 
 namespace DB
@@ -132,7 +132,7 @@ FileSegment::FileSegment(
         }
     }
 
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheFileSegments);
+    CurrentMetrics::add(CurrentMetrics::CacheFileSegments);
 }
 
 FileSegment::Range::Range(size_t left_, size_t right_) : left(left_), right(right_)
@@ -1496,7 +1496,7 @@ FileSegment::~FileSegment()
         tryLogCurrentException(getLog());
     }
 
-    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheFileSegments);
+    CurrentMetrics::sub(CurrentMetrics::CacheFileSegments);
 }
 
 FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)

@@ -160,8 +160,8 @@ WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
     avg(CurrentMetric_FilesystemCacheElements) AS Elements,
     avg(CurrentMetric_FilesystemCacheKeys) AS Keys,
-    avg(CurrentMetric_FilesystemCacheFileSegments) AS FileSegments,
-    avg(CurrentMetric_FilesystemCacheDetachedFileSegments) AS DetachedFileSegments
+    avg(CurrentMetric_CacheFileSegments) AS FileSegments,
+    avg(CurrentMetric_CacheDetachedFileSegments) AS DetachedFileSegments
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
@@ -526,9 +526,9 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
 WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
     toDateTimeOrDefault({to:String}, '', now()) AS to
 SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
-    avg(ProfileEvent_FilesystemCacheWarmerBytesDownloaded) AS BytesDownloaded,
-    avg(ProfileEvent_FilesystemCacheWarmerDataPartsDownloaded) AS DataPartsDownloaded,
-    avg(CurrentMetric_FilesystemCacheWarmerBytesInProgress) AS BytesInProgress
+    avg(ProfileEvent_CacheWarmerBytesDownloaded) AS BytesDownloaded,
+    avg(ProfileEvent_CacheWarmerDataPartsDownloaded) AS DataPartsDownloaded,
+    avg(CurrentMetric_CacheWarmerBytesInProgress) AS BytesInProgress
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
