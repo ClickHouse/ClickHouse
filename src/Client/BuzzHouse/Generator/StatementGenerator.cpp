@@ -165,10 +165,11 @@ StatementGenerator::StatementGenerator(
               {0.02, 0.10}, /// URLEncodedTable
               {0.10, 0.50}, /// TableEngineUDF
               {0.01, 0.05}, /// RandomTableUDF
-              {0.02, 0.05}, /// MergeIndexUDF
-              {0.01, 0.10}, /// MergeProjectionUDF
-              {0.01, 0.10}, /// MergeTextIndexUDF
-              {0.01, 0.05}, /// MergeIndexAnalyzeUDF
+              {0.01, 0.03}, /// MergeIndexUDF
+              {0.01, 0.03}, /// MergeProjectionUDF
+              {0.01, 0.03}, /// MergeTextIndexUDF
+              {0.01, 0.03}, /// MergeIndexAnalyzeUDF
+              {0.01, 0.03}, /// MergeCodecBlockCountsUDF
               {0.005, 0.02} /// FilesystemUDF (filesystem reads files, gate behind allow_not_deterministic)
           }},
           "SQL queries"))
@@ -911,17 +912,25 @@ void StatementGenerator::generateNextTablePartition(
 
 void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot)
 {
-    const bool has_final = t.can_run_merges && (t.supportsFinal(true) || t.isMergeTreeFamily(true) || rg.nextMediumNumber() < 21)
-        && (strict || rg.nextSmallNumber() < 4);
-    const bool has_partition = rg.nextBool();
+    /// MANIFEST is manifest-only compaction for Iceberg tables. It is incompatible with
+    /// FINAL/PARTITION/DEDUPLICATE/CLEANUP/DRY RUN, so when chosen it is emitted on its own.
+    const bool manifest = rg.nextMediumNumber() < (t.isAnyLakeEngine() ? 31 : 6);
+    const bool has_final = !manifest && t.can_run_merges
+        && (t.supportsFinal(true) || t.isMergeTreeFamily(true) || rg.nextMediumNumber() < 21) && (strict || rg.nextSmallNumber() < 4);
+    const bool has_partition = !manifest && rg.nextBool();
 
     t.setName(ot->mutable_est(), false);
     if (has_partition)
     {
         generateNextTablePartition(rg, 0, rg.nextSmallNumber() < 3, false, t, ot->mutable_single_partition()->mutable_partition());
     }
-    ot->set_cleanup(rg.nextSmallNumber() < 3);
-    if (!strict && rg.nextSmallNumber() < 4)
+    if (manifest)
+    {
+        ot->set_manifest(true);
+    }
+    else
+        ot->set_cleanup(rg.nextSmallNumber() < 3);
+    if (!manifest && !strict && rg.nextSmallNumber() < 4)
     {
         const uint32_t noption = rg.nextMediumNumber();
         DeduplicateExpr * dde = ot->mutable_dedup();
@@ -944,7 +953,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
             dde->set_ded_star(true);
         }
     }
-    if (!strict && ((!has_final && !has_partition) || rg.nextLargeNumber() < 6) && rg.nextSmallNumber() < 4)
+    if (!manifest && !strict && ((!has_final && !has_partition) || rg.nextLargeNumber() < 6) && rg.nextSmallNumber() < 4)
     {
         const bool detached = rg.nextSmallNumber() < 3;
         const String dname = t.getDatabaseName();
@@ -2574,6 +2583,9 @@ static const std::function<bool(const SQLTable &)> table_has_replicas
 
 static const auto has_queue_func = [](const SQLTable & t) { return t.isAttached() && t.isAnyQueueEngine(); };
 
+static const auto has_streaming_table_func
+    = [](const SQLTable & t) { return t.isAttached() && (t.isAnyQueueEngine() || t.isKafkaEngine()); };
+
 void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const bool allow_table_statements, SystemCommand * sc)
 {
     const uint32_t has_merge_tree = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_merge_tree_func));
@@ -2585,12 +2597,28 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t has_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(attached_tables));
     const uint32_t has_replicated_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(table_has_replicas));
     const uint32_t has_queue_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_queue_func));
+    const uint32_t has_streaming_table = static_cast<uint32_t>(allow_table_statements && collectionHas<SQLTable>(has_streaming_table_func));
+    /// The background controls accept a streaming table or a refreshable view interchangeably
+    const uint32_t has_background_target = has_streaming_table | has_refreshable_view;
     const uint32_t has_replicated_database
         = static_cast<uint32_t>(allow_table_statements && collectionHas<std::shared_ptr<SQLDatabase>>(db_has_replicas));
     const uint32_t has_database
         = static_cast<uint32_t>(allow_table_statements && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
 
     std::optional<String> cluster;
+
+    /// Leaves `cluster` unset on purpose, these commands don't support `ON CLUSTER`
+    const auto set_background_target = [&](ExprSchemaTable * est)
+    {
+        if (has_streaming_table && (!has_refreshable_view || rg.nextBool()))
+        {
+            rg.pickRandomly(filterCollection<SQLTable>(has_streaming_table_func)).get().setName(est, false);
+        }
+        else
+        {
+            rg.pickRandomly(filterCollection<SQLView>(has_refreshable_view_func)).get().setName(est, false);
+        }
+    };
 
     rg.pickWeighted({
         {0, [&] { sc->set_reload_embedded_dictionaries(true); }},
@@ -2701,6 +2729,17 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
          [&] { cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_cancel_view()); }},
         {8 * has_refreshable_view,
          [&] { cluster = setTableSystemStatement<SQLView>(rg, has_refreshable_view_func, sc->mutable_wait_view()); }},
+        /// Background controls, shared by streaming engines and refreshable views
+        {8 * has_background_target, [&] { set_background_target(sc->mutable_stop_background()); }},
+        {8 * has_background_target, [&] { set_background_target(sc->mutable_start_background()); }},
+        {8 * has_background_target, [&] { set_background_target(sc->mutable_pause_background()); }},
+        {8 * has_background_target, [&] { set_background_target(sc->mutable_cancel_background()); }},
+        {8 * has_background_target, [&] { set_background_target(sc->mutable_refresh_background()); }},
+        {3, [&] { sc->set_stop_all_background(true); }},
+        {3, [&] { sc->set_start_all_background(true); }},
+        {3, [&] { sc->set_pause_all_background(true); }},
+        {3, [&] { sc->set_cancel_all_background(true); }},
+        {3, [&] { sc->set_refresh_all_background(true); }},
         {8 * has_table, [&] { cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_prewarm_cache()); }},
         {8 * has_table,
          [&] { cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_prewarm_primary_index_cache()); }},
@@ -2719,6 +2758,9 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         /// Dictionaries
         {1 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries)),
          [&] { cluster = setTableSystemStatement<SQLDictionary>(rg, attached_dictionaries, sc->mutable_reload_dictionary()); }},
+        {1 * static_cast<uint32_t>(collectionHas<SQLDictionary>(attached_dictionaries)),
+         [&] { cluster = setTableSystemStatement<SQLDictionary>(rg, attached_dictionaries, sc->mutable_unload_dictionary()); }},
+        {1, [&] { sc->set_unload_dictionaries(true); }},
         /// Distributed
         {3 * has_table, [&] { cluster = setTableSystemStatement<SQLTable>(rg, attached_tables, sc->mutable_flush_distributed()); }},
         /// Object storage queue
@@ -3480,7 +3522,8 @@ static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_column_structure, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_pretty, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_empirical, trueOrFalseInt),
-    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact_repeated_processor_chains, trueOrFalseInt)};
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact_repeated_processor_chains, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_processors, trueOrFalseInt)};
 
 void StatementGenerator::generateNextCreateHypotheticalIndex(RandomGenerator & rg, CreateHypotheticalIndex * hi)
 {
@@ -3524,6 +3567,9 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
                     this->ids.insert(this->ids.end(), {0, 8, 15, 16, 24});
                     break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_ANALYZE:
+                    this->ids.insert(this->ids.end(), {9, 11, 12, 14, 15, 16, 19, 20, 21, 22, 25});
+                    break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_WHATIF:
                     /// `empirical` is the only supported setting for EXPLAIN WHATIF
                     this->ids.insert(this->ids.end(), {23});
@@ -3552,9 +3598,11 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
             this->ids.clear();
         }
     }
-    if (val.has_value() && val.value() == ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_WHATIF)
+    if (val.has_value()
+        && (val.value() == ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_WHATIF
+            || val.value() == ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_ANALYZE))
     {
-        /// Only SELECT is supported for EXPLAIN WHATIF
+        /// Only SELECT is supported for EXPLAIN WHATIF. EXPLAIN ANALYZE executes the query do the same
         generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), eq->mutable_inner_query()->mutable_select());
     }
     else

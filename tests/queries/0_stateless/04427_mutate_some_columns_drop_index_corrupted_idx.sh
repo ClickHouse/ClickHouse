@@ -19,7 +19,9 @@
 # no-fasttest: local-disk part-file surgery (see 04402/04404/04426).
 # no-object-storage/-shared/-replicated: relies on local on-disk file layout.
 # no-random-merge-tree-settings: depends on a fixed granule count and the
-# standalone (non-packed) index file that the surgery injects.
+# standalone (non-packed) index file that the surgery injects; both CREATEs below
+# pin `packed_skip_index_max_bytes` = 0 because the tag does not cover a non-zero
+# server default.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
@@ -43,6 +45,7 @@ make_corrupted_part () {
     ENGINE = MergeTree ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
              index_granularity = 100, replace_long_file_name_to_hash = 0,
+             packed_skip_index_max_bytes = 0,
              columns_and_secondary_indices_sizes_lazy_calculation = 0"
 
     ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${tbl} (k, v, w) SELECT number, number, number FROM numbers(2000)"
@@ -94,12 +97,16 @@ ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_drop SETTINGS check_query_single_value_re
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_drop SYNC"
 
 # --- Path C (no regression): a healthy part keeps its index through a some-columns mutation ---
+# `packed_skip_index_max_bytes` = 0 keeps this control on the standalone
+# (non-packed) preserve path that paths A and B exercise; without it the control
+# would assert over packed-archive preservation instead (covered by 04403).
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_ok SYNC"
 ${CLICKHOUSE_CLIENT} -q "
 CREATE TABLE t_ok (k UInt64, v UInt64, w UInt64, INDEX mm_v v TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         index_granularity = 100, replace_long_file_name_to_hash = 0"
+         index_granularity = 100, replace_long_file_name_to_hash = 0,
+         packed_skip_index_max_bytes = 0"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_ok (k, v, w) SELECT number, number, number FROM numbers(2000)"
 ${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_ok UPDATE w = w + 1 WHERE 1 SETTINGS mutations_sync = 2"
 echo "C_healthy_prunes_after_update:"
