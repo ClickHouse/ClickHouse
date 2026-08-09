@@ -102,5 +102,9 @@ expect ":) "
 send -- "exit\r"
 expect eof
 EOF
+EXPECT_STATUS=$?
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER_NAME}"
+
+# The teardown must not mask a failure of the expect script above.
+exit $EXPECT_STATUS
