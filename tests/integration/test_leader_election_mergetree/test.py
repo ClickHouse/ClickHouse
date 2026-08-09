@@ -2997,3 +2997,157 @@ def test_follower_drop_table_keeps_shared_data(started_cluster):
                 node.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_LEADER_DROP = "12345678-abcd-abcd-abcd-12345678ab33"
+
+
+def test_leader_drop_table_keeps_shared_data(started_cluster):
+    """
+    Mirror of `test_follower_drop_table_keeps_shared_data` for the leader side: the documented
+    contract is that `DROP TABLE` is a local-metadata-only operation on the leader too — the
+    shared prefix may still be attached on other nodes, and there is no shared refcount to
+    prove otherwise. This PR rewires both `DatabaseOnDisk::dropTable` and
+    `DatabaseCatalog::dropTableFinally` for that behavior, so a leader-side cleanup regression
+    must not merge green: the elected leader drops the table, the shared `S3` prefix must
+    survive, the surviving follower must take over leadership and read/write the data, and a
+    freshly re-attached peer must see the original rows.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    table = "test_leader_drop"
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_LEADER_DROP)
+        attach_table_on_second_node(node2, table, SHARED_UUID_LEADER_DROP)
+
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        follower = followers[0]
+
+        leader.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+
+        # Pick a real committed part and locate its S3 prefix so the check below is
+        # anchored to the shared data, not only to query results served from caches.
+        part_name = leader.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+            f" AND table = '{table}' AND active AND rows > 1 LIMIT 1"
+        ).strip()
+        assert part_name
+        part_prefix = find_part_object_key_prefix(SHARED_UUID_LEADER_DROP, part_name)
+        assert part_prefix, "Could not locate the part's S3 prefix before the drop"
+
+        leader.query(f"DROP TABLE {table} SYNC")
+
+        # The shared part objects must still be in the bucket after the leader's drop.
+        objects_after_drop = list(
+            cluster.minio_client.list_objects(
+                cluster.minio_bucket, part_prefix, recursive=True
+            )
+        )
+        assert objects_after_drop, (
+            "DROP TABLE on the leader removed shared S3 data still attached on a follower"
+        )
+
+        # The follower takes over leadership once the dropped leader's lease expires,
+        # then it must read the shared data and accept writes.
+        new_leader, _ = wait_for_leader([follower], table_name=table)
+        rows = new_leader.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+        assert rows == "1\n2\n3", (
+            f"Follower lost data after a leader-side DROP TABLE, got: {rows!r}"
+        )
+        new_leader.query(f"INSERT INTO {table} VALUES (10)")
+
+        # A freshly attached peer (the former leader) sees the same (and the new) rows.
+        attach_table_on_second_node(leader, table, SHARED_UUID_LEADER_DROP)
+        expected = "1\n2\n3\n10"
+        deadline = time.monotonic() + 60
+        rows = ""
+        while time.monotonic() < deadline:
+            rows = leader.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+            if rows == expected:
+                break
+            time.sleep(1)
+        assert rows == expected, (
+            f"Re-attached peer does not see the shared data after a leader-side drop, got: {rows!r}"
+        )
+    finally:
+        for node in (node1, node2):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+
+
+SHARED_UUID_DEDUP_MID_BATCH = "12345678-abcd-abcd-abcd-12345678ab34"
+
+
+def test_dedup_log_write_fenced_per_record_mid_batch(started_cluster):
+    """
+    Regression for the per-record lease fence in `MergeTreeDeduplicationLog::dropPart`: the
+    lease used to be checked only once per call, but on the `S3` path (no append support)
+    `rotateAndDropIfNeeded` finalizes/rotates a whole log file after every record, so dropping
+    a covering part with many covered block ids can run past `leader_election_session_timeout`
+    and keep rewriting the shared log after another node has taken over.
+
+    The `merge_tree_leader_election_stale_lease_dedup_log_mid_batch` failpoint fails the lease
+    re-check only once at least one record of the batch has been written: with the old
+    once-per-call fence the `TRUNCATE` below would succeed, with the per-record fence it must
+    stop mid-batch. The takeover reload then reconciles the partially written log against the
+    part set, so re-inserting the truncated data is accepted.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_dedup_log_mid_batch"
+    table = "test_dedup_mid_batch"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DEDUP_MID_BATCH}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, non_replicated_deduplication_window = 100
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        # Three separate inserts produce three distinct block ids in the deduplication log
+        # (plus the leader probe's block); merging them into one covering part makes the
+        # later `dropPart` call write several records in a single batch.
+        node1.query(f"INSERT INTO {table} VALUES (1)")
+        node1.query(f"INSERT INTO {table} VALUES (2)")
+        node1.query(f"INSERT INTO {table} VALUES (3)")
+        node1.query(f"OPTIMIZE TABLE {table} FINAL")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
+
+        # The retirement itself (covering empty parts) commits, then the deduplication-log
+        # batch stops on the simulated mid-batch stale lease: the client gets an error while
+        # the data is dropped and some block ids survive in the shared log.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="Refusing to write the deduplication log"):
+                node1.query(f"TRUNCATE TABLE {table}")
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0, (
+            "TRUNCATE did not retire the partition"
+        )
+
+        # Reload from shared storage, as the next leader would after a failover. The takeover
+        # reconciliation must drop the block ids of the partially processed batch, so
+        # re-inserting the truncated data is accepted instead of being silently deduplicated.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3, (
+            "Re-inserting truncated data was silently deduplicated: the shared deduplication "
+            "log still held block ids of dropped data after the mid-batch fence stop"
+        )
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
