@@ -598,6 +598,13 @@ executeSelectIntoCursor(const String & sql_query, const CollectionRef & collecti
     return result;
 }
 
+std::vector<Document> makeEmptyCursorReply(const CollectionRef & collection)
+{
+    std::vector<Document> result;
+    result.emplace_back(buildCursorReply({}, collection));
+    return result;
+}
+
 String modifyFilter(const String & json)
 {
     rapidjson::Document doc;

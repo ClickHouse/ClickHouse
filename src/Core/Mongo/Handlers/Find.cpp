@@ -118,6 +118,11 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     sql_query += " FORMAT JSON";
     sql_query += " SETTINGS allow_suspicious_types_in_order_by = 1";
 
+    /// Mongo reads a collection that does not exist as empty rather than raising an error.
+    /// The query is translated first, so that a malformed query is still an error.
+    if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
+        return makeEmptyCursorReply(collection);
+
     return executeSelectIntoCursor(sql_query, collection, executor);
 }
 

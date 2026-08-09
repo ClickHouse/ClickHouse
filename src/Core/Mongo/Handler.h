@@ -63,6 +63,12 @@ std::vector<std::pair<String, DataTypePtr>> extractResultColumns(const rapidjson
 std::vector<Document>
 executeSelectIntoCursor(const String & sql_query, const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor);
 
+/** The reply of a document-returning command whose result is empty: a cursor with no rows in
+  * its first batch. Mongo reads a collection that does not exist as empty rather than raising
+  * an error, so the read commands reply with this when the table is absent.
+  */
+std::vector<Document> makeEmptyCursorReply(const CollectionRef & collection);
+
 /** Whether an object exists, e.g. `object_kind` = `TABLE` and `name` = `` `db`.`users` ``.
   * Mongo treats operations on a namespace that does not exist as a no-op rather than an error,
   * so the handlers have to be able to tell it apart.

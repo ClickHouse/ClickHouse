@@ -88,10 +88,17 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
         ast->format(sql_buffer, IAST::FormatSettings(true));
     }
 
-    auto output = executor->execute(fmt::format("SELECT count() FROM ({}) FORMAT TSV", sql_query));
+    /// Mongo reads a collection that does not exist as empty rather than raising an error, so
+    /// its `count` is 0. The query is translated first, so that a malformed query is still an
+    /// error.
+    Int64 count = 0;
+    if (objectExists(executor, "TABLE", collection.getQualifiedName()))
+    {
+        auto output = executor->execute(fmt::format("SELECT count() FROM ({}) FORMAT TSV", sql_query));
 
-    /// A ClickHouse table is free to hold more rows than an `int32` can count.
-    Int64 count = std::stoll(output);
+        /// A ClickHouse table is free to hold more rows than an `int32` can count.
+        count = std::stoll(output);
+    }
 
     bson_t * bson_doc = bson_new();
 
