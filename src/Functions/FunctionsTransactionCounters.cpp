@@ -30,7 +30,11 @@ public:
         return res;
     }
 
-    String getSignatureString() const override { return "() -> Tuple(UInt64, UInt64, UUID)"; }
+    /// Derive the return type from getTransactionIDDataType instead of hardcoding it:
+    /// downstream forks may extend TransactionID with extra components, and a hardcoded
+    /// 3-element tuple would then reject the constant value produced by getValue
+    /// (CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE).
+    String getSignatureString() const override { return "() -> " + getTransactionIDDataType()->getName(); }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionID>(context); }
     explicit FunctionTransactionID(ContextPtr context) : FunctionConstantBase(getValue(context->getCurrentTransaction()), context->isDistributed()) {}
