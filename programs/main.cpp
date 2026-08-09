@@ -19,6 +19,8 @@
 #include <Poco/Net/Net.h>
 #endif
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <iostream>
 #include <new>
@@ -259,11 +261,40 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 
 }
 
+/// `argv[0]` reduced to a program name: the basename, with the Windows executable suffix
+/// stripped, so that "/usr/bin/clickhouse-local", "clickhouse-local.exe" and
+/// "C:\Programs\clickhouse-local.exe" all compare equal to "clickhouse-local".
+static std::string_view programNameFromArgv0(std::string_view argv0)
+{
+#if defined(OS_WINDOWS)
+    /// Windows path components are separated by either slash; a backslash is a legal (if
+    /// unusual) file-name character on POSIX, so it is a separator only here.
+    static constexpr std::string_view separators = "/\\";
+#else
+    static constexpr std::string_view separators = "/";
+#endif
+    if (const auto pos = argv0.find_last_of(separators); pos != std::string_view::npos)
+        argv0.remove_prefix(pos + 1);
+
+#if defined(OS_WINDOWS)
+    /// Windows file names are case-insensitive, so ".EXE" spells the same suffix.
+    static constexpr std::string_view suffix = ".exe";
+    if (argv0.size() > suffix.size())
+    {
+        const auto tail = argv0.substr(argv0.size() - suffix.size());
+        if (std::equal(tail.begin(), tail.end(), suffix.begin(), [](char a, char b) { return std::tolower(a) == b; }))
+            argv0.remove_suffix(suffix.size());
+    }
+#endif
+
+    return argv0;
+}
+
 static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     for (const auto & [alias, name] : clickhouse_short_names)
         if (app_suffix == name
-            && !argv.empty() && (alias == argv[0] || endsWith(argv[0], "/" + std::string(alias))))
+            && !argv.empty() && programNameFromArgv0(argv[0]) == alias)
             return true;
 
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
@@ -282,7 +313,7 @@ static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & a
 
     /// Use app if clickhouse binary is run through symbolic link with name clickhouse-app
     std::string app_name = "clickhouse-" + std::string(app_suffix);
-    return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
+    return !argv.empty() && programNameFromArgv0(argv[0]) == app_name;
 }
 
 /// Don't allow dlopen in the main ClickHouse binary, because it is harmful and insecure.
