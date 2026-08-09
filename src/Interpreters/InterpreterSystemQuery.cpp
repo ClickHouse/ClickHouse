@@ -1493,6 +1493,11 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
+    /// The definition re-attached below was read back from this server's own metadata, so it must be
+    /// accepted as it is. `system_context` is shared by every branch of `execute`, hence the copy.
+    auto attach_context = Context::createCopy(system_context);
+    attach_context->setRecoveryFromStoredMetadata(true);
+
     /// After the table is detached, we must re-create and re-attach it.
     /// If table creation fails (e.g. due to memory allocation failure from fault injection),
     /// the table is left permanently detached from the database while still existing in ZooKeeper
@@ -1519,7 +1524,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
                 new_table = StorageFactory::instance().get(create,
                     data_path,
-                    system_context,
+                    attach_context,
                     system_context->getGlobalContext(),
                     columns,
                     constraints,

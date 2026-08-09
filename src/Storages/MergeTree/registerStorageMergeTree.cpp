@@ -576,13 +576,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        /// Validate the {database}/{table} substitutions only for a freshly supplied definition, which
-        /// includes a full-definition ATTACH and DDL replay in a Replicated database. A definition read
-        /// back from metadata (short ATTACH, server restart), replayed by a Replicated database from the
-        /// metadata it stored, or restored from a backup must keep loading even if the path it already
-        /// uses would not be accepted today. Note such a replay arrives below ATTACH, so `mode` alone
-        /// cannot tell it apart from a fresh CREATE.
-        const bool validate_substitutions = (args.mode < LoadingStrictnessLevel::ATTACH
+        /// Only a freshly supplied definition is validated: a CREATE, or a full-definition ATTACH.
+        /// Every other route re-derives a table that already exists and must keep loading. Such a
+        /// replay can arrive at CREATE, so `mode` cannot tell it apart and the context carries it.
+        const bool validate_substitutions = (args.mode <= LoadingStrictnessLevel::CREATE
                 || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
             && !args.is_restore_from_backup
             && !args.getLocalContext()->isRecoveryFromStoredMetadata();

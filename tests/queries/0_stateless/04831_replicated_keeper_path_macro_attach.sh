@@ -64,3 +64,21 @@ ${CLIENT} -q "RENAME DATABASE \`${LEGACY_DB}/d\` TO \`${LEGACY_DB}\`"
 ${CLIENT} -q "DETACH TABLE \`${LEGACY_DB}\`.t"
 ${CLIENT} -q "ATTACH TABLE \`${LEGACY_DB}\`.t"
 ${CLIENT} -q "DROP DATABASE \`${LEGACY_DB}\` SYNC"
+
+# SYSTEM RESTART REPLICA re-attaches from stored metadata, so it must not re-judge the path either.
+# On a rejection the table is left permanently detached, so the count below is the real assertion.
+RESTART_DB="${CLICKHOUSE_DATABASE}_restart"
+${CLIENT} -q "DROP DATABASE IF EXISTS \`${RESTART_DB}/d\` SYNC"
+${CLIENT} -q "DROP DATABASE IF EXISTS \`${RESTART_DB}\` SYNC"
+${CLIENT} -q "CREATE DATABASE \`${RESTART_DB}\`"
+${CLIENT} -q "CREATE TABLE \`${RESTART_DB}\`.t (c0 Int) ENGINE = ReplicatedMergeTree('{default_path_test}04831restart', 'r5') ORDER BY c0"
+# A direct {database} is unfolded before the definition is stored, leaving nothing to re-substitute,
+# so assert the retention this row depends on instead of assuming it.
+${CLIENT} -q "SELECT create_table_query LIKE '%{default_path_test}%' FROM system.tables WHERE database = '${RESTART_DB}' AND name = 't'"
+${CLIENT} -q "RENAME DATABASE \`${RESTART_DB}\` TO \`${RESTART_DB}/d\`"
+${CLIENT} -q "SYSTEM RESTART REPLICA \`${RESTART_DB}/d\`.t" 2>&1 | grep -q -F 'BAD_ARGUMENTS' && echo REJECTED || echo RESTARTED
+${CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${RESTART_DB}/d' AND name = 't'"
+${CLIENT} -q "RENAME DATABASE \`${RESTART_DB}/d\` TO \`${RESTART_DB}\`"
+${CLIENT} -q "DETACH TABLE \`${RESTART_DB}\`.t"
+${CLIENT} -q "ATTACH TABLE \`${RESTART_DB}\`.t"
+${CLIENT} -q "DROP DATABASE \`${RESTART_DB}\` SYNC"
