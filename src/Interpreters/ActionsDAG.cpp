@@ -970,6 +970,9 @@ struct FoldResult
 {
     ColumnConstPtr column;
     bool deterministic;
+    /// The fold result must render as `[HIDDEN]` when any folded constant is a masked secret,
+    /// so the flag survives into the rebuilt COLUMN node (see `formatConstant`)
+    bool masked_secret;
 };
 
 /// Fold a predicate: const COLUMN leaves, walk past alias/materialize, recurse into
@@ -1008,7 +1011,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         return std::nullopt;
 
     if (node->type == ActionsDAG::ActionType::COLUMN && node->column && !hasDummyInside(node->column))
-        return FoldResult{node->column, node->is_deterministic_constant};
+        return FoldResult{node->column, node->is_deterministic_constant, node->is_masked_secret};
 
     if (node->type != ActionsDAG::ActionType::FUNCTION
         || !node->function_base
@@ -1031,12 +1034,14 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
         ColumnsWithTypeAndName args;
         args.reserve(node->children.size());
         bool all_det = true;
+        bool any_masked = false;
         for (const auto * child : node->children)
         {
             auto folded = tryFoldPredicate(child);
             if (!folded)
                 return std::nullopt;
             all_det = all_det && folded->deterministic;
+            any_masked = any_masked || folded->masked_secret;
 
             ColumnConstPtr col = folded->column;
             /// DAG consts are size 0, resize to 1 for `execute` (matches `getFunctionArguments`)
@@ -1056,7 +1061,7 @@ std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node)
             canonical = column_const->getPtr();
         else
             canonical = ColumnConst::create(column_const->getDataColumnPtr(), 0);
-        return FoldResult{std::move(canonical), all_det};
+        return FoldResult{std::move(canonical), all_det, any_masked};
     }
     catch (...)
     {
@@ -1298,7 +1303,7 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
     /// `removeUnusedActions` prunes the now-orphan subtree later
     const Node & new_const = addColumn(
         std::move(folded->column), filter_node->result_type,
-        std::string(filter_column_name), folded->deterministic);
+        std::string(filter_column_name), folded->deterministic, folded->masked_secret);
     for (auto & out : outputs)
     {
         if (out == filter_node)
