@@ -387,6 +387,11 @@ void SerializationString::deserializeBinaryBulkWithoutSizeStream(
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
 }
 
+void SerializationString::serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+}
+
 void SerializationString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
