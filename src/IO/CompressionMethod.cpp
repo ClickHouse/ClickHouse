@@ -287,7 +287,10 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
         /// Gzip output can be produced in parallel; the result is an ordinary gzip stream.
         /// The parallel deflater writes the gzip wrapper lazily, so it honours compress_empty=false the
         /// same way the serial buffers do and can be used on every path, including HTTP responses.
-        if (method == CompressionMethod::Gzip && compression_threads > 1)
+        /// It deflates with zlib, which supports levels only up to 9; the libdeflate-only levels 10..12
+        /// stay on the serial libdeflate writer below, so enabling the setting never rejects a level
+        /// that `getCompressionLevelRange` allows.
+        if (method == CompressionMethod::Gzip && compression_threads > 1 && level <= 9)
             return std::make_unique<ParallelGzipDeflatingWriteBuffer>(
                 std::forward<WriteBufferT>(nested), level, compression_threads, compress_empty);
 #if USE_LIBDEFLATE
