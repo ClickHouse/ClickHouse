@@ -965,12 +965,18 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
 {
     chassert(table_path != new_path_to_table_data);
     {
-        /// Create only the parent of the destination and let `moveDirectory` create the
-        /// destination itself: metadata storages of `DiskObjectStorage` reject a move onto an
-        /// already-existing directory (`rename` semantics), so pre-creating the destination
-        /// would make the move fail there.
-        disk->createDirectories(parentPath(new_path_to_table_data));
-        disk->moveDirectory(table_path, new_path_to_table_data);
+        /// If the table was attached while the disk was read-only, its directory does not exist
+        /// (see `createTableDirectoryIfNeeded`), so there is nothing to move; just adopt the new
+        /// path, and the directory will be created there before the first write.
+        if (!table_directory_is_missing)
+        {
+            /// Create only the parent of the destination and let `moveDirectory` create the
+            /// destination itself: metadata storages of `DiskObjectStorage` reject a move onto an
+            /// already-existing directory (`rename` semantics), so pre-creating the destination
+            /// would make the move fail there.
+            disk->createDirectories(parentPath(new_path_to_table_data));
+            disk->moveDirectory(table_path, new_path_to_table_data);
+        }
 
         table_path = new_path_to_table_data;
         file_checker.setPath(table_path + "sizes.json");

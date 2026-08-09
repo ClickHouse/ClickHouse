@@ -433,6 +433,80 @@ def test_borrow_from_cache_restore_into_table_attached_while_cache_was_absent(
         node.query(f"DROP TABLE {table} SYNC")
 
 
+def test_borrow_from_cache_rename_of_table_attached_while_cache_was_absent(
+    started_cluster,
+):
+    # Regression: `write()` and `RESTORE` recreate a missing table directory lazily (see
+    # `createTableDirectoryIfNeeded`), but `RENAME TABLE` went straight to `moveDirectory`. For a
+    # `Log` / `TinyLog` / `StripeLog` table that attached while its `borrow_from_cache` disk was
+    # read-only, the first rename after the cache reappeared -- before any write had recreated the
+    # directory -- failed with `DIRECTORY_DOESNT_EXIST`. A missing directory means an empty table,
+    # so there is nothing to move: the rename just adopts the new path, and the directory is
+    # created there before the first write.
+    #
+    # Only an `Ordinary` database moves data on `RENAME TABLE` (`Atomic` keeps UUID-based paths
+    # that a rename does not change), so the tables live in a dedicated `Ordinary` database.
+    node.copy_file_to_container(CACHE_DISK_CONFIG, CACHE_DISK_CONFIG_IN_CONTAINER)
+    node.restart_clickhouse()
+
+    node.query("DROP DATABASE IF EXISTS borrow_rename_ord")
+    node.query(
+        "CREATE DATABASE borrow_rename_ord ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    node.query(
+        "CREATE TABLE borrow_rename_ord.renamed_log (key UInt64) ENGINE = Log "
+        "SETTINGS disk = 'borrowed_cfg'"
+    )
+    node.query(
+        "CREATE TABLE borrow_rename_ord.renamed_stripelog (key UInt64) ENGINE = StripeLog "
+        "SETTINGS disk = 'borrowed_cfg'"
+    )
+    node.query("INSERT INTO borrow_rename_ord.renamed_log VALUES (1)")
+    node.query("INSERT INTO borrow_rename_ord.renamed_stripelog VALUES (1)")
+
+    # Remove the cache and restart: the tables reattach (empty) while the disk is read-only, so
+    # their directories cannot be recreated at attach time.
+    node.exec_in_container(["bash", "-c", f"rm {CACHE_DISK_CONFIG_IN_CONTAINER}"])
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            "SELECT is_read_only FROM system.disks WHERE name = 'borrowed_cfg'"
+        ).strip()
+        == "1"
+    )
+
+    # Bring the cache back at runtime: the disk becomes writable again, but the table directories
+    # are still missing because no write has happened yet.
+    node.copy_file_to_container(CACHE_DISK_CONFIG, CACHE_DISK_CONFIG_IN_CONTAINER)
+    node.query("SYSTEM RELOAD CONFIG")
+    assert (
+        node.query(
+            "SELECT is_read_only FROM system.disks WHERE name = 'borrowed_cfg'"
+        ).strip()
+        == "0"
+    )
+
+    # Rename before the first post-restart INSERT; the renamed tables must then accept writes.
+    node.query(
+        "RENAME TABLE borrow_rename_ord.renamed_log TO borrow_rename_ord.renamed_log2"
+    )
+    node.query(
+        "RENAME TABLE borrow_rename_ord.renamed_stripelog TO borrow_rename_ord.renamed_stripelog2"
+    )
+    node.query("INSERT INTO borrow_rename_ord.renamed_log2 VALUES (10), (20)")
+    node.query("INSERT INTO borrow_rename_ord.renamed_stripelog2 VALUES (10), (20)")
+    assert (
+        node.query("SELECT count() FROM borrow_rename_ord.renamed_log2").strip() == "2"
+    )
+    assert (
+        node.query("SELECT count() FROM borrow_rename_ord.renamed_stripelog2").strip()
+        == "2"
+    )
+
+    node.query("DROP DATABASE borrow_rename_ord")
+
+
 def test_borrow_from_cache_set_join_failed_insert_leaves_no_rows_in_memory(
     started_cluster,
 ):
