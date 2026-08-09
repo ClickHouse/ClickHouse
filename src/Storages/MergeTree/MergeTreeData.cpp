@@ -4724,16 +4724,20 @@ size_t MergeTreeData::clearEmptyParts()
             break;
         }
 
+        if (is_leader_election)
         {
-            /// First remove all covered parts, then remove the covering empty part. The empty
-            /// covering part is the only durable tombstone for the outdated parts it covers:
-            /// if some covered part is still on disk (for example, a reader still holds it, or
-            /// its delete rolled back after an I/O error, or `old_parts_lifetime` has not
-            /// elapsed yet), dropping the covering part now would let the old part be loaded
-            /// again on the next ATTACH, server restart, or leader takeover — undoing the
-            /// TRUNCATE / DROP PARTITION / REPLACE PARTITION that produced the empty part.
-            /// This mirrors the `EMPTY_PART_COVERS_OTHER_PARTS` invariant in `grabOldParts`;
-            /// the skipped parts are retried on the next cleanup round.
+            /// First remove all covered parts, then remove the covering empty part. Under
+            /// `leader_election` the active empty covering part is the only durable tombstone
+            /// for the outdated parts it covers: if some covered part is still on the shared
+            /// storage (for example, a reader still holds it, or its delete rolled back after
+            /// an I/O error), dropping the covering part now would let the old part be loaded
+            /// again on the next ATTACH or leader takeover — undoing the TRUNCATE /
+            /// DROP PARTITION / REPLACE PARTITION that produced the empty part. This mirrors
+            /// the `EMPTY_PART_COVERS_OTHER_PARTS` invariant in `grabOldParts`; the skipped
+            /// parts are retried on the next cleanup round. Without `leader_election` the
+            /// empty part is dropped right away, as before: keeping it active until the
+            /// covered parts are gone would change the long-standing visible behavior of
+            /// ordinary tables (an extra active part lingering after TRUNCATE or DETACH).
             auto parts_lock = lockParts();
             auto part = getPartIfExistsUnlocked(name, {DataPartState::Active}, parts_lock);
             if (!part)
