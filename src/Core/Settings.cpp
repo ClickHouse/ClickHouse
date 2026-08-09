@@ -2420,7 +2420,7 @@ Possible values:
     DECLARE(Int64, http_zlib_compression_level, 3, R"(
 Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
 
-Possible values: Numbers from 1 to 12. Levels above `9` require the default build with `libdeflate`; a build without `libdeflate` supports levels 1 to 9.
+Possible values: Numbers from 1 to 9.
 )", 0) \
     DECLARE(SnappyMode, snappy_mode, SnappyMode::Basic, R"(
 Controls the wire format used for snappy compression for generic file I/O paths such as `file` and `url`. HTTP `Content-Encoding: snappy` always uses the framing format and ignores this setting.
