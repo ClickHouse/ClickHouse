@@ -223,7 +223,7 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                 return;
             }
 
-            /// We create a new state for the new key and update res_key_columns
+            /// Record the new key in res_key_columns; only full-key mode also creates its state
             if (group_by_key)
                 params->aggregator.fillKeyColumnsWithSingleKey(key_columns, key_end, res_key_columns);
             else
