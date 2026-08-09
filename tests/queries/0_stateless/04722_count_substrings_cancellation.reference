@@ -1,0 +1,17 @@
+constant_vector: stopped within bound
+vector_vector: stopped within bound
+vector_vector_inner: stopped within bound
+vector_constant: stopped within bound
+no_match_rows: stopped within bound
+case_sensitive: stopped within bound
+case_insensitive: stopped within bound
+constant_vector_break: stopped within bound
+kill query returned promptly
+3	2	2
+2	2	2
+3	2	2
+2	2	2
+2	2	1
+0	0	0	0
+5	5
+3000000
