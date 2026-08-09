@@ -58,7 +58,10 @@ namespace DB
  * base + unpacked[i] for FOR, or the running sum of un-zigzagged deltas starting at first_q
  * for DELTA. The encoder verifies the round trip of every value bitwise and stores values that
  * do not survive it as exceptions, patched after reconstruction, so the compression is lossless
- * independently of any floating-point subtleties. Partial vectors are padded during packing;
+ * independently of any floating-point subtleties. exception_count is bounded only by count:
+ * the encoder trades exceptions against packed width purely by measured payload size, so on
+ * mixed-precision data a scale that stores a large minority raw can legitimately win.
+ * Partial vectors are padded during packing;
  * the decoder unpacks all 1024 lanes and uses the first count of them.
  *
  * XOR bitstream for count values:
@@ -134,8 +137,9 @@ static_assert((1u << WALLABY_RUN_LENGTH_BITS) == WALLABY_VECTOR_VALUES);
 constexpr UInt8 WALLABY_LEAD_CLASS_BITS = 3;
 constexpr UInt8 WALLABY_LEAD_CLASSES = 1 << WALLABY_LEAD_CLASS_BITS;
 
-/// More exceptions than this per vector means the decimal modes do not fit the data.
-constexpr UInt32 WALLABY_MAX_EXCEPTIONS = 96;
+/// The cost of one stored exception: its position plus the raw value.
+template <typename T>
+constexpr UInt32 exceptionCost() { return sizeof(UInt16) + sizeof(T); }
 
 enum class VectorMode : UInt8
 {
@@ -250,13 +254,14 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     using Traits = WallabyTraits<T>;
     using SignedType = typename Traits::SignedType;
 
+    constexpr UInt32 header_size = 2 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16);
+
     /// Determine the number of decimal places from a sample. The sample positions follow an odd
     /// multiplicative sequence rather than a fixed stride, so that a periodic pattern of
     /// non-quantizable values (e.g. a NaN in every 32nd slot) cannot alias with the sampling
     /// and knock out the decimal modes while the full vector is within the exception budget.
-    /// Sampled failures are tolerated up to a fraction with the same order of magnitude as
-    /// that budget; the exact rejection of a candidate alpha is decided by the full-vector
-    /// exception count in quantize_all below.
+    /// Sampled failures are tolerated up to a bounded fraction; the exact rejection of a
+    /// candidate alpha is decided by the measured full-vector payload below.
     std::array<UInt8, 32> sampled_alphas{};
     UInt32 sampled_alpha_count = 0;
     {
@@ -275,18 +280,30 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         }
         if (sampled_alpha_count == 0)
             return std::nullopt;
-        std::sort(sampled_alphas.begin(), sampled_alphas.begin() + sampled_alpha_count);
     }
 
     /// Filled before use; zeroing per vector is a measurable cost on the compression path.
     alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> quantized; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
-    std::array<UInt16, WALLABY_MAX_EXCEPTIONS> exception_positions{};
+    std::array<UInt16, WALLABY_VECTOR_VALUES> exception_positions; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     UInt32 exception_count = 0;
+
+    /// The raw mode is always available, so no candidate may spend more than that on exceptions
+    /// alone. The budget tightens as better candidates are measured, turning the exception cap
+    /// into a size-based break-even instead of a fixed count: a candidate is abandoned exactly
+    /// when its exceptions alone already make it larger than the best encoding known so far.
+    UInt32 best_total_size = count * sizeof(T);
+
+    const auto exception_budget = [&]() -> UInt32
+    {
+        return best_total_size <= header_size ? 0 : (best_total_size - header_size) / exceptionCost<T>();
+    };
 
     const auto quantize_all = [&](UInt8 candidate_alpha) -> bool
     {
+        const UInt32 budget = exception_budget();
         exception_count = 0;
         SignedType previous_good = 0;
+        Int32 first_good = -1;
         for (UInt32 i = 0; i < count; ++i)
         {
             SignedType q;
@@ -294,10 +311,12 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             {
                 quantized[i] = q;
                 previous_good = q;
+                if (first_good < 0)
+                    first_good = static_cast<Int32>(i);
             }
             else
             {
-                if (exception_count == WALLABY_MAX_EXCEPTIONS)
+                if (exception_count == budget)
                     return false;
                 exception_positions[exception_count] = static_cast<UInt16>(i);
                 ++exception_count;
@@ -306,12 +325,18 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 quantized[i] = previous_good;
             }
         }
+        /// Leading exceptions were filled with zero placeholders before any good value was
+        /// seen; a zero can inflate the Frame-of-Reference range by the whole magnitude of
+        /// the data, so backfill them with the first good value instead.
+        for (Int32 i = 0; i < first_good; ++i)
+            quantized[i] = quantized[first_good];
         return true;
     };
 
     struct Packing
     {
         UInt8 bits = 0;
+        UInt8 bits_for = 0;
         bool use_delta = false;
         SignedType base = 0;
         UInt32 payload_size = 0;
@@ -350,42 +375,192 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             return std::nullopt;
 
         const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
-        const UInt32 payload_size = 2 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16)
-            + packed_bytes + exception_count * (sizeof(UInt16) + sizeof(T));
-        return Packing{bits, use_delta, use_delta ? quantized[0] : min_q, payload_size};
+        const UInt32 payload_size = header_size + packed_bytes + exception_count * exceptionCost<T>();
+        return Packing{bits, bits_for, use_delta, use_delta ? quantized[0] : min_q, payload_size};
     };
 
-    /// A single sampled high-precision value must not force a needlessly wide scale onto the
-    /// whole vector: it would overflow the quantization of large values, and even when it fits,
-    /// it can inflate every packed delta while a smaller alpha with a few exceptions is much
-    /// cheaper. And with mixed-precision data the cheapest legal scale can be any of the
-    /// sampled alphas, not just an extreme one (e.g. when the scales below it lose too many
-    /// values to exceptions while the scales above it widen every packed delta). So every
-    /// distinct sampled alpha is evaluated against the full vector and the smallest payload
-    /// wins; values that do not quantize with the winning alpha become exceptions. Typical
-    /// vectors sample only one or two distinct alphas, so the exhaustive evaluation does not
-    /// add full-vector passes in the common case.
+    /** Candidate scales and their evaluation. A single sampled high-precision value must not
+      * force a needlessly wide scale onto the whole vector, and with mixed-precision data the
+      * cheapest legal scale is often one that the 32 samples never see at all. The candidate
+      * set is therefore grown from three sources, each of which costs almost nothing on top
+      * of work already done:
+      *   - every distinct sampled alpha;
+      *   - the trailing-decimal-zero counts of the quantized values at the reference alpha A:
+      *     a value whose q ends in k decimal zeros is also exactly representable at A - k, so
+      *     the distinct values of A - k enumerate the scales at which some subset of the vector
+      *     becomes exactly representable — including scales sampling missed (the property can
+      *     fail near the precision limit, but a wrong candidate merely measures worse below);
+      *   - the minimal alphas of a few exception values of each evaluated candidate: when the
+      *     samples only saw a low-precision majority, this discovers the higher scale that
+      *     would absorb a high-precision minority into the packed lanes.
+      * Every candidate is evaluated against the full vector and the smallest measured payload
+      * wins; values that do not quantize with the winning alpha become exceptions. The most
+      * frequent sampled alpha is evaluated first: it is the best single guess for the data's
+      * true scale, so the pruning estimates below start from a tight baseline and the common
+      * case (one homogeneous scale) stays at a single full-vector pass — in particular, a rare
+      * sampled high-precision outlier no longer costs a wasted pass at its needlessly wide
+      * scale before the majority scale wins.
+      */
     UInt8 alpha = 0;
     /// The alpha whose quantization the scratch arrays currently hold; a failed quantize_all
     /// leaves them clobbered halfway, so it resets this tracker.
     std::optional<UInt8> scratch_alpha;
     std::optional<Packing> best;
-    for (UInt32 candidate_index = sampled_alpha_count; candidate_index > 0; --candidate_index)
+
+    bool considered[Traits::max_alpha + 1] = {};
+    bool evaluated[Traits::max_alpha + 1] = {};
+    UInt32 sampled_frequency[Traits::max_alpha + 1] = {};
+    for (UInt32 i = 0; i < sampled_alpha_count; ++i)
     {
-        const UInt8 candidate = sampled_alphas[candidate_index - 1];
-        /// The array is sorted, so all duplicates of the previously evaluated candidate are adjacent.
-        if (candidate_index < sampled_alpha_count && sampled_alphas[candidate_index] == candidate)
-            continue;
+        considered[sampled_alphas[i]] = true;
+        ++sampled_frequency[sampled_alphas[i]];
+    }
+    UInt8 mode_alpha = 0;
+    for (UInt8 a = 1; a <= Traits::max_alpha; ++a)
+        if (sampled_frequency[a] > sampled_frequency[mode_alpha])
+            mode_alpha = a;
+
+    /// The first successfully evaluated alpha (normally the most frequent sampled one) and its
+    /// measured packed widths; the pruning estimates scale the widths from there.
+    UInt8 reference_alpha = 0;
+    bool reference_filled = false;
+    std::optional<UInt8> reference_packed_bits;
+    std::optional<UInt8> reference_for_bits;
+
+    /** Cheap lower-bound estimate deciding whether a candidate scale can still beat the best
+      * measured payload. Exceptions are estimated from the sampled minimal alphas: a sample
+      * that needs more decimal places than the candidate offers becomes an exception. The count
+      * is extrapolated from the sample with a two-failure allowance subtracted, so sampling
+      * variance biases the estimate down and a viable candidate is never skipped merely because
+      * the sample overrepresented high-precision values. (The trailing-zero structure of the
+      * quantized values is deliberately not used here: for Float32 promoted to Float64 the
+      * quantized integers at scales beyond the type's decimal precision carry junk low digits,
+      * which would wildly overestimate the exception count.) The packed width scales by
+      * log2(10) bits per scale step, always rounded in the candidate's favor: downward from the
+      * cheaper of the reference packings, upward from its Frame-of-Reference width (the range
+      * of the quantized values grows by exactly a factor of ten per step, while no such bound
+      * holds for the delta packing, whose exception placeholders differ between scales), with
+      * two extra bits of slack for values entering the lanes.
+      */
+    const auto estimate_allows = [&](UInt8 candidate) -> bool
+    {
+        if (!reference_filled || candidate == reference_alpha || !best)
+            return true;
+        UInt32 sampled_failures = 0;
+        for (UInt32 i = 0; i < sampled_alpha_count; ++i)
+            sampled_failures += sampled_alphas[i] > candidate ? 1 : 0;
+        const UInt32 discounted_failures = sampled_failures > 2 ? sampled_failures - 2 : 0;
+        const UInt32 exceptions_estimate = static_cast<UInt32>(
+            static_cast<UInt64>(discounted_failures) * count / std::max<UInt32>(sampled_alpha_count, 1));
+        UInt32 bits_estimate;
+        if (candidate < reference_alpha)
+        {
+            if (!reference_packed_bits)
+                return true;
+            const UInt32 bits_shrink = static_cast<UInt32>(reference_alpha - candidate) * 3322 / 1000;
+            bits_estimate = reference_packed_bits.value() > bits_shrink ? reference_packed_bits.value() - bits_shrink : 0;
+        }
+        else
+        {
+            if (!reference_for_bits)
+                return true;
+            const UInt32 bits_grow = static_cast<UInt32>(candidate - reference_alpha) * 3322 / 1000;
+            bits_estimate = reference_for_bits.value() + bits_grow;
+            bits_estimate = bits_estimate > 2 ? bits_estimate - 2 : 0;
+            if (bits_estimate >= Traits::width_bits)
+                return false;
+        }
+        const UInt32 size_estimate = header_size + Compression::FFOR::calculateBitpackedBytes(static_cast<UInt8>(bits_estimate))
+            + exceptions_estimate * exceptionCost<T>();
+        return size_estimate < best->payload_size;
+    };
+
+    bool candidates_pending = false;
+
+    const auto evaluate_candidate = [&](UInt8 candidate)
+    {
+        evaluated[candidate] = true;
+
+        if (!estimate_allows(candidate))
+            return;
+
         if (!quantize_all(candidate))
         {
             scratch_alpha.reset();
-            continue;
+            return;
         }
         scratch_alpha = candidate;
-        if (const auto packing = measure_packing(); packing && (!best || packing->payload_size < best->payload_size))
+
+        if (!reference_filled)
+        {
+            reference_filled = true;
+            reference_alpha = candidate;
+            /// Candidate generation from trailing decimal zeros: a value whose quantized
+            /// integer ends in k decimal zeros is also exactly representable at
+            /// candidate - k, so those scales are worth measuring even when the samples
+            /// never saw them. (This can miss structure for Float32 at scales beyond the
+            /// type's decimal precision, where the quantized integers carry junk low
+            /// digits; the sampled alphas and the exception probes below still stand.)
+            for (UInt32 i = 0; i < count; ++i)
+            {
+                SignedType q = quantized[i];
+                UInt32 trailing_zeros = 0;
+                if (q == 0)
+                    trailing_zeros = candidate;
+                else
+                    while (q % 10 == 0 && trailing_zeros < candidate)
+                    {
+                        q /= 10;
+                        ++trailing_zeros;
+                    }
+                considered[candidate - trailing_zeros] = true;
+            }
+        }
+
+        /// Probe a few exception values for the scale they would need: when sampling only
+        /// saw a low-precision majority, this is what discovers the higher-precision scale.
+        const UInt32 probe_limit = std::min<UInt32>(exception_count, 8);
+        for (UInt32 e = 0; e < probe_limit; ++e)
+        {
+            if (auto exception_alpha = findAlpha<T>(values[exception_positions[e]]))
+            {
+                if (!considered[*exception_alpha])
+                {
+                    considered[*exception_alpha] = true;
+                    candidates_pending = true;
+                }
+            }
+        }
+
+        const auto packing = measure_packing();
+        if (packing && candidate == reference_alpha)
+        {
+            reference_packed_bits = packing->bits;
+            reference_for_bits = packing->bits_for;
+        }
+        if (packing && (!best || packing->payload_size < best->payload_size))
         {
             best = *packing;
             alpha = candidate;
+            best_total_size = std::min(best_total_size, packing->payload_size);
+        }
+    };
+
+    evaluate_candidate(mode_alpha);
+
+    /// Fixed-point loop: evaluating a candidate can add new candidates (from exception probing),
+    /// so sweep the domain until no unevaluated candidate remains. The domain has at most
+    /// max_alpha + 1 scales, and each is evaluated at most once.
+    candidates_pending = true;
+    while (candidates_pending)
+    {
+        candidates_pending = false;
+        for (Int32 candidate_signed = Traits::max_alpha; candidate_signed >= 0; --candidate_signed)
+        {
+            const UInt8 candidate = static_cast<UInt8>(candidate_signed);
+            if (!considered[candidate] || evaluated[candidate])
+                continue;
+            evaluate_candidate(candidate);
         }
     }
     if (!best)
@@ -904,7 +1079,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 const UInt16 exception_count = unalignedLoadLittleEndian<UInt16>(src);
                 src += sizeof(UInt16);
 
-                if (alpha > Traits::max_alpha || bits >= Traits::width_bits || exception_count > WALLABY_MAX_EXCEPTIONS)
+                if (alpha > Traits::max_alpha || bits >= Traits::width_bits || exception_count > count)
                     throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt decimal header");
 
                 const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);

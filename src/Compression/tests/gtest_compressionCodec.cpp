@@ -3161,12 +3161,12 @@ TEST_F(WallabyTest, ChoosesInteriorAlphaOnMixedPrecisionData)
     /// in [100.0000, 100.9999] with four decimal places (ten thousand distinct values
     /// with random mantissas make both the XOR residues and the XOR ring's EQUAL branch
     /// expensive), 128 values in the same range need alpha = 7, and 64 sparse values
-    /// around 1e-13 need alpha = 13 and flip the exponent under XOR. alpha <= 4 loses
-    /// 192 values to exceptions (over the budget of 96); alpha = 13 packs 50-bit lanes
-    /// (~6.4 KiB, and XOR costs ~5 KiB); alpha = 7 keeps every quantized value within a
-    /// span of 1e7, packing 24-bit lanes with 64 exceptions (~3.7 KiB). An earlier encoder
-    /// revision evaluated only the {min, median, max} sampled alphas, missing the
-    /// interior alpha = 7.
+    /// around 1e-13 need alpha = 13 and flip the exponent under XOR. alpha <= 4 stores
+    /// at least 192 values as exceptions (~2 KiB of exceptions on top of the lanes);
+    /// alpha = 13 packs 50-bit lanes (~6.4 KiB, and XOR costs ~5 KiB); alpha = 7 keeps
+    /// every quantized value within a span of 1e7, packing 24-bit lanes with 64 exceptions
+    /// (~3.7 KiB). An earlier encoder revision evaluated only the {min, median, max}
+    /// sampled alphas, missing the interior alpha = 7.
     std::vector<Float64> values(1024);
     UInt64 state = 42;
     const auto next = [&state]
@@ -3189,6 +3189,55 @@ TEST_F(WallabyTest, ChoosesInteriorAlphaOnMixedPrecisionData)
     }
 
     EXPECT_LT(wallabyCompressedSize(values), 4300u);
+}
+
+TEST_F(WallabyTest, KeepsDecimalModeBeyondAFixedExceptionCount)
+{
+    /// A 3-decimal ramp with a 7-decimal value in every 8th slot. alpha = 3 stores the
+    /// 128 high-precision values as exceptions (~1.3 KiB) next to 17-bit delta lanes and
+    /// stays clearly cheaper than both alpha = 7 (~24-bit lanes for every value) and the
+    /// XOR mode (~6 KiB: the mixed-precision values break the XOR residue structure).
+    /// An earlier encoder revision abandoned any decimal candidate at a fixed count of
+    /// 96 exceptions, so this vector fell through to the XOR mode; the exception budget
+    /// is size-based now.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (i % 8 == 0)
+            values[i] = 100.0 + static_cast<Float64>(10 * (i / 8) + 1) / 1e7;
+        else
+            values[i] = 100.0 + static_cast<Float64>(i) / 1000;
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 3500u);
+}
+
+TEST_F(WallabyTest, AbsorbsHighPrecisionMinorityMissedBySampling)
+{
+    /// A 1-decimal bulk with a 7-decimal minority of 384 values placed only at positions
+    /// the 32-position multiplicative sample never visits, so the sampled alphas are {1}
+    /// and no sampled candidate can absorb the minority into the packed lanes. The encoder
+    /// must discover alpha = 7 from the exception values of the alpha = 1 evaluation:
+    /// alpha = 7 packs every value into ~29-bit lanes (~3.7 KiB), while alpha = 1 pays
+    /// ~3.8 KiB for the exceptions alone and the XOR mode needs ~5 KiB on this mixture.
+    std::array<bool, 1024> is_sampled_position{};
+    for (UInt32 i = 0; i < 32; ++i)
+        is_sampled_position[static_cast<UInt32>((static_cast<UInt64>(i) * 2654435761u) % 1024)] = true;
+
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = 100.0 + static_cast<Float64>((i * 7) % 400) / 10;
+    size_t placed = 0;
+    for (size_t i = 0; i < values.size() && placed < 384; ++i)
+    {
+        if (!is_sampled_position[i] && i % 2 == 0)
+        {
+            ++placed;
+            values[i] = 100.0 + static_cast<Float64>(10 * placed + 1) / 1e7;
+        }
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 4200u);
 }
 
 }
