@@ -32,11 +32,13 @@ SELECT 'after reinsert r2', count() FROM t_04901_r2;
 SELECT 'after reinsert r1', count() FROM t_04901_r1;
 
 -- The row counts above only test the bug if the last insert really was prefiltered by the stale
--- cache, and the cache refresh that arms it is asynchronous. Assert the hit happened.
+-- cache, and the cache refresh that arms it is asynchronous. Assert the hit happened on the insert
+-- that landed (error = 0), so an earlier deduplicated insert cannot satisfy this on its behalf.
 SYSTEM FLUSH LOGS part_log;
 SELECT 'cache hit observed', sum(ProfileEvents['AsyncInsertCacheHits']) > 0
 FROM system.part_log
-WHERE database = currentDatabase() AND table = 't_04901_r2';
+WHERE database = currentDatabase() AND table = 't_04901_r2'
+  AND event_type = 'NewPart' AND error = 0;
 
 DROP TABLE t_04901_r1 SYNC;
 DROP TABLE t_04901_r2 SYNC;

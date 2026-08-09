@@ -521,8 +521,8 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     {
                         chassert(conflicts.size() == 1);
                         auto block_id = conflicts.front().getBlockId();
-                        /// The conflicting part name may be unresolved (see ZNONODE skip in
-                        /// resolve_duplicate_stage), same guard as the quorum collection above.
+                        /// Every surviving conflict carries a part name; only the test failpoint in
+                        /// resolve_duplicate_stage leaves it unresolved.
                         if (conflicts.front().hasConflictPartName())
                         {
                             auto actual_part_name = conflicts.front().getConflictPartName();
