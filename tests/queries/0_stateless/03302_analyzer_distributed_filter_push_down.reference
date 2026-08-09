@@ -501,15 +501,6 @@ CreatingSets (Create sets before main query execution)
     Expression ((Project names + Projection))
       Expression ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
         ReadFromMergeTree (default.tab1)
-        Indexes:
-          PrimaryKey
-            Keys:
-              recordTimestamp
-            Condition: (recordTimestamp in 0-element set)
-            Parts: 0/1
-            Granules: 0/1
-            Search Algorithm: generic exclusion search
-          Ranges: 0
     Expression ((Project names + Projection))
       Filter (( + Change column names to column identifiers))
         ReadFromRemote (Read from remote replica)
@@ -517,15 +508,6 @@ CreatingSets (Create sets before main query execution)
             Expression ((Project names + Projection))
               Expression ((WHERE + Change column names to column identifiers))
                 ReadFromMergeTree (default.tab1)
-                Indexes:
-                  PrimaryKey
-                    Keys:
-                      recordTimestamp
-                    Condition: (recordTimestamp in 0-element set)
-                    Parts: 0/1
-                    Granules: 0/1
-                    Search Algorithm: generic exclusion search
-                  Ranges: 0
 ============ #68030
 Union
   Expression ((Project names + Projection))
