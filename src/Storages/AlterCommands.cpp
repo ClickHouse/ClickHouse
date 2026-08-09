@@ -40,6 +40,7 @@
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -1527,9 +1528,12 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     /// A TTL the commands did not touch is rebuilt from stored metadata here, not created as fresh DDL,
     /// so, like the metadata-load path, it is exempt from the experimental-codec gate: otherwise a table
     /// whose `TTL ... RECOMPRESS` codec was created under `allow_experimental_codecs = 1` and then reloaded
-    /// would reject every unrelated `ALTER` (e.g. `ADD COLUMN`) in sessions without the opt-in. A TTL the
-    /// commands actually change keeps the strict fresh-DDL gate (`MODIFY TTL` is additionally validated
-    /// against the session setting when the command itself is applied above).
+    /// would reject every unrelated `ALTER` (e.g. `ADD COLUMN`) in sessions without the opt-in. The gate
+    /// applies only to `RECOMPRESS` codecs, so the exemption is keyed off the codecs themselves rather than
+    /// the whole TTL AST: a command like `RENAME COLUMN` rewrites the stored TTL AST (renaming the columns
+    /// it references) without touching any codec and must stay exempt. A command that actually changes the
+    /// TTL keeps the strict fresh-DDL gate for its codecs (`MODIFY TTL` is additionally validated against
+    /// the session setting when the command itself is applied above).
     const auto ttl_ast_to_str = [](const ASTPtr & ast) -> String { return ast ? ast->formatWithSecretsOneLine() : String(); };
     const bool session_allow_experimental_codecs = context->getSettingsRef()[Setting::allow_experimental_codecs];
     const auto old_column_ttl_asts = metadata.columns.getColumnTTLs();
@@ -1548,15 +1552,26 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
     {
-        const bool table_ttl_unchanged
-            = ttl_ast_to_str(metadata.table_ttl.definition_ast) == ttl_ast_to_str(metadata_copy.table_ttl.definition_ast);
+        const auto recompression_codecs_of_ttl = [](const ASTPtr & definition_ast) -> Strings
+        {
+            Strings codecs;
+            if (!definition_ast)
+                return codecs;
+            for (const auto & child : definition_ast->children)
+                if (const auto * ttl_element = child->as<ASTTTLElement>())
+                    if (ttl_element->recompression_codec)
+                        codecs.push_back(ttl_element->recompression_codec->formatWithSecretsOneLine());
+            return codecs;
+        };
+        const bool recompression_codecs_unchanged
+            = recompression_codecs_of_ttl(metadata.table_ttl.definition_ast) == recompression_codecs_of_ttl(metadata_copy.table_ttl.definition_ast);
         metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
             metadata_copy.table_ttl.definition_ast,
             metadata_copy.columns,
             context,
             metadata_copy.primary_key,
             /* is_metadata_load */ false, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions],
-            /* allow_experimental_codecs */ table_ttl_unchanged || session_allow_experimental_codecs);
+            /* allow_experimental_codecs */ recompression_codecs_unchanged || session_allow_experimental_codecs);
     }
 
     metadata = std::move(metadata_copy);
