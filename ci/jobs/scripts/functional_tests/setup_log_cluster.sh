@@ -18,8 +18,15 @@ CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 # to keep the server-side AST fuzzer profile away from the harness's own queries. Every
 # query against the local server must carry it; the queries against the remote CI logs
 # cluster (the ones using `CONNECTION_ARGS`) must not, because the remote server has no
-# fuzzer profile and may be of a version that predates the setting. Referenced as
-# `${NO_AST_FUZZER:-}` because this script also runs outside of the stress harness.
+# fuzzer profile and may be of a version that predates the setting.
+# Default to the opt-out here so this shared helper is safe by default in every
+# fuzzer-profile job: the dedicated AST fuzzer's `run-fuzzer.sh` installs
+# `query-fuzzer-tweaks-users.xml` (`ast_fuzzer_runs=5`, `ast_fuzzer_any_query=true`) and
+# then calls `clickhouse_proc.py logs_export_start` without exporting the variable.
+# Plain `-` (not `:-`) matters: `install_packages` in `stress_tests.lib` deliberately
+# sets `NO_AST_FUZZER=""` for a client that predates the `ast_fuzzer_runs` setting and
+# would reject the unknown option, and that empty opt-out must be preserved.
+NO_AST_FUZZER=${NO_AST_FUZZER-"--ast_fuzzer_runs=0"}
 
 EXTRA_COLUMNS=${EXTRA_COLUMNS:-"repo LowCardinality(String), pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_repo (repo) TYPE set(100), INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
 echo "EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:?}"
