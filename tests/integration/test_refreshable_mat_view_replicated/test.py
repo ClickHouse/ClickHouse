@@ -536,14 +536,26 @@ def _drop_circular_objects():
     # three views are coordinated (Replicated database, no all_replicas setting), so issuing
     # it from any one replica that has the view attached pauses the whole cycle. The views may
     # not exist yet (the first call precedes creation) or may not be attached on a given
-    # replica yet, hence the try/except and the fallback to the other replica.
+    # replica yet, hence the fallback to the other replica. Only that absence error is
+    # tolerated - SYSTEM STOP REPLICATED VIEW on a replica whose RefreshSet has no such view
+    # throws BAD_ARGUMENTS "Refreshable view ... doesn't exist" (there is no table lookup
+    # before the RefreshSet lookup, so no UNKNOWN_TABLE). Any other failure to pause a live
+    # view would leak the running cycle into the rest of the module, so it is re-raised
+    # instead of letting cleanup continue and mask the root cause behind later DDL failures.
     for v in ("current_batch_v", "batch_log_v", "stats_v"):
+        unexpected_error = None
         for n in nodes:
             try:
                 n.query(f"SYSTEM STOP REPLICATED VIEW {v}")
+                unexpected_error = None
                 break
-            except helpers.client.QueryRuntimeException:
-                continue
+            except helpers.client.QueryRuntimeException as e:
+                # 36 = BAD_ARGUMENTS, thrown by InterpreterSystemQuery::getRefreshTasks
+                if e.returncode == 36 and "doesn't exist" in str(e):
+                    continue
+                unexpected_error = e
+        if unexpected_error is not None:
+            raise unexpected_error
     for n in nodes:
         n.query("SYSTEM SYNC DATABASE REPLICA default")
 
