@@ -1,12 +1,5 @@
 -- Tags: distributed
 
--- A Distributed table with an empty remote database name, joined under
--- distributed_product_mode = 'local', is rewritten to the corresponding
--- local table. ASTTableIdentifier(database, table) used to build an
--- identifier with an empty leading name-part when the database was empty,
--- tripping chassert(!part.empty()) in the ASTIdentifier constructor and
--- aborting the server in debug/sanitizer builds.
-
 DROP TABLE IF EXISTS larger_table;
 DROP TABLE IF EXISTS smaller_table;
 DROP TABLE IF EXISTS dist_larger;

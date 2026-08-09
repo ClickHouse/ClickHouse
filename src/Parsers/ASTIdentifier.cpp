@@ -196,11 +196,7 @@ ASTTableIdentifier::ASTTableIdentifier(const StorageID & table_id, ASTs && name_
 }
 
 ASTTableIdentifier::ASTTableIdentifier(const String & database_name, const String & table_name, ASTs && name_params)
-    : ASTIdentifier(
-        (database_name.empty() && name_params.empty())
-            ? std::vector<String>{table_name}
-            : std::vector<String>{database_name, table_name},
-        true, std::move(name_params))
+    : ASTIdentifier({database_name, table_name}, true, std::move(name_params))
 {
 }
 
@@ -257,7 +253,7 @@ ASTPtr ASTTableIdentifier::getDatabase() const
 
 void ASTTableIdentifier::resetTable(const String & database_name, const String & table_name)
 {
-    auto identifier = make_intrusive<ASTTableIdentifier>(database_name, table_name);
+    auto identifier = make_intrusive<ASTTableIdentifier>(StorageID{database_name, table_name});
     full_name.swap(identifier->full_name);
     name_parts.swap(identifier->name_parts);
     uuid = identifier->uuid;
