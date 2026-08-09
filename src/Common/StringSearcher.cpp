@@ -240,7 +240,9 @@ bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const 
     return false;
 }
 
-const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+template <typename Batch>
+const UInt8 * UTF8CaseInsensitiveSearcherImpl::searchImpl(
+    const UInt8 * haystack, const UInt8 * const haystack_end, Batch batch) const
 {
     if (needle_size == 0)
         return haystack;
@@ -270,7 +272,11 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
                 /// lead or ASCII byte, so it never equals a continuation byte; skip the whole
                 /// window and realign to the next sequence boundary for the scalar tail.
                 haystack += N;
-                UTF8::syncForward(haystack, haystack_end);
+                /// Realigning is itself a loop over a continuation run, which can span the haystack, so it
+                /// is bounded per iteration. Stopping mid-run is safe: a continuation byte begins no match.
+                const auto * sync_end = static_cast<size_t>(haystack_end - haystack) > N ? haystack + N : haystack_end;
+                UTF8::syncForward(haystack, sync_end);
+                batch.add(N);
                 continue;
             }
 
@@ -286,31 +292,40 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, co
 
                 if ((mask_offset_both & cachemask) == cachemask)
                 {
+                    /// A candidate can traverse the whole needle and fail at its last code point, so charge the
+                    /// needle rather than the one code point the cursor then advances by.
+                    batch.add(needle_size);
                     if (compareTrivial(haystack, haystack_end, needle))
-                        return haystack;
+                        return batch.finish(haystack);
                 }
 
-                haystack += UTF8::seqLength(*haystack);
+                /// A candidate rejected by the cache above pays nothing for the comparison it skipped, so
+                /// charge the cursor here: `offset` is zero whenever the first candidate sits at index 0.
+                const size_t consumed = UTF8::seqLength(*haystack);
+                haystack += consumed;
+                batch.add(offset + consumed);
                 continue;
             }
         }
 
         if (haystack == haystack_end)
-            return haystack_end;
+            return batch.finish(haystack_end);
 
         if (*haystack == l || *haystack == u)
         {
             const auto * haystack_pos = haystack + first_needle_symbol_is_ascii;
             const auto * needle_pos = needle + first_needle_symbol_is_ascii;
 
+            batch.add(needle_size);
             if (compareTrivial(haystack_pos, haystack_end, needle_pos))
-                return haystack;
+                return batch.finish(haystack);
         }
 
         haystack += UTF8::seqLength(*haystack);
+        batch.add(1);
     }
 
-    return haystack_end;
+    return batch.finish(haystack_end);
 
 scalar:
 #endif
@@ -321,14 +336,27 @@ scalar:
             const auto * haystack_pos = haystack + first_needle_symbol_is_ascii;
             const auto * needle_pos = needle + first_needle_symbol_is_ascii;
 
+            batch.add(needle_size);
             if (compareTrivial(haystack_pos, haystack_end, needle_pos))
-                return haystack;
+                return batch.finish(haystack);
         }
 
         haystack += UTF8::seqLength(*haystack);
+        batch.add(1);
     }
 
-    return haystack_end;
+    return batch.finish(haystack_end);
+}
+
+const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, const UInt8 * const haystack_end) const
+{
+    return searchImpl(haystack, haystack_end, NoSearchWorkBatch{});
+}
+
+const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(
+    const UInt8 * haystack, const UInt8 * const haystack_end, const SearchWorkCharger & charger) const
+{
+    return searchImpl(haystack, haystack_end, SearchWorkBatch(charger));
 }
 
 }

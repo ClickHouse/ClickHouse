@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
 
 #include <Common/TargetSpecific.h>
@@ -30,6 +31,83 @@ namespace DB
 /** Variants for searching a substring in a string.
   * In most cases, performance is less than Volnitsky (see Volnitsky.h).
   */
+
+/// A scan that a query can wait on takes this optional callback, invoked with the work it has done; it is
+/// expected to throw if the query has been cancelled or exceeded its time limit. Work is counted in
+/// byte-equivalents: haystack bytes passed, plus the needle size per candidate compared.
+using SearchWorkCharger = std::function<void(size_t)>;
+
+/// Charges only searchers whose scan can outrun a deadline; the rest keep their uncharged `search` unchanged.
+template <typename Searcher, typename HaystackEnd>
+ALWAYS_INLINE const UInt8 * searchCharged(
+    const Searcher & searcher, const UInt8 * haystack, HaystackEnd haystack_end, const SearchWorkCharger & charger)
+{
+    if constexpr (requires { searcher.search(haystack, haystack_end, charger); })
+        return searcher.search(haystack, haystack_end, charger);
+    else
+        return searcher.search(haystack, haystack_end);
+}
+
+/// Accumulates one scan's work and reports it in batches. Every `return` of a charged scan goes through
+/// `finish`, because the charger accumulates across calls and a scan shorter than one batch must still
+/// contribute its work.
+class SearchWorkBatch
+{
+public:
+    explicit SearchWorkBatch(const SearchWorkCharger & charger_) : charger(charger_ ? &charger_ : nullptr) { }
+
+    ALWAYS_INLINE void add(size_t work_done)
+    {
+        work += work_done;
+        if (work >= batch)
+            flush();
+    }
+
+    void flush()
+    {
+        if (work && charger)
+            (*charger)(work);
+        work = 0;
+    }
+
+    /// Passes a result through the remainder report, so that no `return` can skip it.
+    ALWAYS_INLINE const UInt8 * finish(const UInt8 * result)
+    {
+        flush();
+        return result;
+    }
+
+    /// Hands the rest of a haystack to another searcher, which reports to the same charger.
+    template <typename Searcher, typename HaystackEnd>
+    const UInt8 * delegate(const Searcher & searcher, const UInt8 * haystack, HaystackEnd haystack_end) const
+    {
+        if (charger)
+            return searchCharged(searcher, haystack, haystack_end, *charger);
+        return searcher.search(haystack, haystack_end);
+    }
+
+private:
+    /// One indirect call per this much work, which the charger throttles further before reading the deadline.
+    static constexpr size_t batch = 64 * 1024;
+
+    const SearchWorkCharger * charger;
+    size_t work = 0;
+};
+
+/// Selected by a scan that has no charger, so that the bookkeeping above is removed at compile time rather
+/// than left as a null check inside the loop.
+struct NoSearchWorkBatch
+{
+    ALWAYS_INLINE void add(size_t) { }
+    ALWAYS_INLINE void flush() { }
+    ALWAYS_INLINE const UInt8 * finish(const UInt8 * result) { return result; }
+
+    template <typename Searcher, typename HaystackEnd>
+    ALWAYS_INLINE const UInt8 * delegate(const Searcher & searcher, const UInt8 * haystack, HaystackEnd haystack_end) const
+    {
+        return searcher.search(haystack, haystack_end);
+    }
+};
 
 /// Case-sensitive searcher (delegates to StringZilla)
 class CaseSensitiveStringSearcher final
@@ -425,7 +503,15 @@ public:
 
     bool compareTrivial(const UInt8 * haystack_pos, const UInt8 * haystack_end, const uint8_t * needle_pos) const;
     bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const;
+
+    /// Two overloads rather than a defaulted charger, so that the uncharged scan is a distinct instantiation
+    /// of the loop below and pays nothing for the bookkeeping it does not use.
     const UInt8 * search(const UInt8 * haystack, const UInt8 * haystack_end) const;
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * haystack_end, const SearchWorkCharger & charger) const;
+
+private:
+    template <typename Batch>
+    const UInt8 * searchImpl(const UInt8 * haystack, const UInt8 * haystack_end, Batch batch) const;
 };
 
 }
@@ -456,7 +542,17 @@ public:
         return impl.search(haystack, haystack_end);
     }
 
+    const UInt8 * search(const UInt8 * haystack, const UInt8 * const haystack_end, const SearchWorkCharger & charger) const
+    {
+        return impl.search(haystack, haystack_end, charger);
+    }
+
     const UInt8 * search(const UInt8 * haystack, size_t haystack_size) const { return search(haystack, haystack + haystack_size); }
+
+    const UInt8 * search(const UInt8 * haystack, size_t haystack_size, const SearchWorkCharger & charger) const
+    {
+        return search(haystack, haystack + haystack_size, charger);
+    }
 };
 
 }

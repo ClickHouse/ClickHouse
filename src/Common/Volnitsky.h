@@ -449,17 +449,36 @@ public:
     /// If not found, the end of the haystack is returned.
     const UInt8 * search(const UInt8 * const haystack, const size_t haystack_size) const
     {
+        return searchImpl(haystack, haystack_size, NoSearchWorkBatch{});
+    }
+
+    /// `charger` reports the work done, so that a scan long enough to outrun a deadline can be interrupted:
+    /// see `SearchWorkCharger`.
+    const UInt8 * search(const UInt8 * const haystack, const size_t haystack_size, const SearchWorkCharger & charger) const
+    {
+        return searchImpl(haystack, haystack_size, SearchWorkBatch(charger));
+    }
+
+    const char * search(const char * haystack, size_t haystack_size) const
+    {
+        return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
+    }
+
+private:
+    template <typename Batch>
+    const UInt8 * searchImpl(const UInt8 * const haystack, const size_t haystack_size, Batch batch) const
+    {
         if (needle_size == 0)
             return haystack;
 
         const auto * haystack_end = haystack + haystack_size;
 
         if constexpr (use_fallback_searcher)
-            return fallback_searcher.search(haystack, haystack_end);
+            return batch.delegate(fallback_searcher, haystack, haystack_end);
         else
         {
             if (fallback || haystack_size <= needle_size)
-                return fallback_searcher.search(haystack, haystack_end);
+                return batch.delegate(fallback_searcher, haystack, haystack_end);
 
             /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
             const auto * pos = haystack + needle_size - sizeof(VolnitskyTraits::Ngram);
@@ -472,19 +491,20 @@ public:
                     /// When found - compare bytewise, using the offset from the hash table.
                     const auto * res = pos - (hash[cell_num] - 1);
 
+                    /// One comparison walks up to the whole needle while a step advances only `step` bytes.
+                    batch.add(needle_size);
+
                     /// pointer in the code is always padded array so we can use pagesafe semantics
                     if (fallback_searcher.compare(haystack, haystack_end, res))
-                        return res;
+                        return batch.finish(res);
                 }
+
+                batch.add(step);
             }
 
-            return fallback_searcher.search(pos - step + 1, haystack_end);
+            batch.flush();
+            return batch.delegate(fallback_searcher, pos - step + 1, haystack_end);
         }
-    }
-
-    const char * search(const char * haystack, size_t haystack_size) const
-    {
-        return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
     }
 
 protected:

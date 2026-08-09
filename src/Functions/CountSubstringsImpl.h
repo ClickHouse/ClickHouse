@@ -51,6 +51,9 @@ struct CountSubstringsImpl
         if (check_cancellation)
             check_cancellation();
         CancellationBudget budget(check_cancellation);
+        /// One `search` call can scan the whole block, so the deadline has to be observed from inside it too.
+        /// The budget outlives every call below, so the work of all of them accumulates in one place.
+        const SearchWorkCharger charge_search = [&budget](size_t work) { budget.charge(work); };
 
         const UInt8 * const begin = haystack_data.data();
         const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -80,7 +83,7 @@ struct CountSubstringsImpl
         const UInt8 * charged_up_to = pos;
 
         /// We will search for the next occurrence in all strings at once.
-        while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+        while (pos < end && end != (pos = searchCharged(searcher, pos, end - pos, charge_search)))
         {
             budget.charge(pos - charged_up_to);
             charged_up_to = pos;
@@ -152,6 +155,8 @@ struct CountSubstringsImpl
         if (check_cancellation)
             check_cancellation();
         CancellationBudget budget(check_cancellation);
+        /// Shared by every row's searcher, so rows that are each individually cheap still add up to a check.
+        const SearchWorkCharger charge_search = [&budget](size_t work) { budget.charge(work); };
 
         ColumnString::Offset prev_haystack_offset = 0;
         ColumnString::Offset prev_needle_offset = 0;
@@ -196,7 +201,7 @@ struct CountSubstringsImpl
 
                 const UInt8 * pos = nullptr;
                 /// searcher returns a pointer to the found substring or to the end of `haystack`.
-                while ((pos = searcher.search(beg, end)) < end)
+                while ((pos = searchCharged(searcher, beg, end, charge_search)) < end)
                 {
                     budget.charge(pos - beg);
                     ++res[i];
@@ -228,6 +233,8 @@ struct CountSubstringsImpl
         if (check_cancellation)
             check_cancellation();
         CancellationBudget budget(check_cancellation);
+        /// Shared by every row's searcher, so rows that are each individually cheap still add up to a check.
+        const SearchWorkCharger charge_search = [&budget](size_t work) { budget.charge(work); };
 
         /// NOTE You could use haystack indexing. But this is a rare case.
         ColumnString::Offset prev_needle_offset = 0;
@@ -258,7 +265,7 @@ struct CountSubstringsImpl
                     const UInt8 * beg = reinterpret_cast<const UInt8 *>(Impl::advancePos(haystack.data(), reinterpret_cast<const char *>(end), start));
 
                     const UInt8 * pos = nullptr;
-                    while ((pos = searcher.search(beg, end)) < end)
+                    while ((pos = searchCharged(searcher, beg, end, charge_search)) < end)
                     {
                         budget.charge(pos - beg);
                         ++res[i];
