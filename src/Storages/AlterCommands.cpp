@@ -1806,7 +1806,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                if (all_columns.hasAlias(column_name))
+                /// `default_kind` is what the parser set: `validate` runs before `prepare`, which back-fills it from the table.
+                const bool becomes_physical = command.default_expression
+                    && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
+                if (all_columns.hasAlias(column_name) && !becomes_physical)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
