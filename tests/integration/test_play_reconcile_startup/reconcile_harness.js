@@ -374,7 +374,7 @@ function makeHistory(initialState, location) {
 
 /// ----- Context assembly -------------------------------------------------------------------
 
-function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs }) {
+function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs, disableWasm }) {
     const document = makeDocument();
     const location = makeLocation(href);
     const history = makeHistory(historyState, location);
@@ -434,11 +434,16 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasm
         /// `wasmInstantiateDelayMs` keeps the WASM lexer "still loading" past startup settlement
         /// (`wasmAvailable()` only checks the shape, so the wrapper still counts as available):
         /// the window where a history write can race the first `WebAssembly.instantiate`.
-        WebAssembly: wasmInstantiateDelayMs
-            ? { instantiate: (...args) => new Promise((resolve, reject) =>
-                  setTimeout(() => WebAssembly.instantiate(...args).then(resolve, reject),
-                             wasmInstantiateDelayMs)) }
-            : WebAssembly,
+        /// `disableWasm` removes `WebAssembly` outright (`wasmAvailable()` is false), so the
+        /// lexer NEVER becomes available — the window where even the debounced persist and a
+        /// later reload cannot rebuild the parameter snapshot.
+        WebAssembly: disableWasm
+            ? undefined
+            : wasmInstantiateDelayMs
+                ? { instantiate: (...args) => new Promise((resolve, reject) =>
+                      setTimeout(() => WebAssembly.instantiate(...args).then(resolve, reject),
+                                 wasmInstantiateDelayMs)) }
+                : WebAssembly,
     };
     sandbox.window = sandbox;
     sandbox.self = sandbox;
@@ -1206,6 +1211,88 @@ async function main() {
                 closed_entry && closed_entry.query === 'SELECT {x:Int32} + 1'
                     && closed_entry.params && closed_entry.params.x === '42',
                 closed_entry);
+        }
+    }
+
+    /// Contract (a draft persisted while the lexer NEVER loads does not launder its stale snapshot
+    /// through a reload): with `WebAssembly` unavailable, an edit only advances `tab.query` before
+    /// the debounced persist, so `IndexedDB` records the new text with the old parameter snapshot.
+    /// The record carries the snapshot's provenance (`paramsSyncedQuery`), and the reload's
+    /// `restoreEditor` — which cannot rebuild the inputs either — must NOT stamp that never-rebuilt
+    /// pair as coherent for the new text: the startup history write publishes it pruned textually
+    /// instead, exactly like the same-session lexer-load window above. Without the provenance, the
+    /// reload came back with `history.state.params = {x: '42'}` and `?param_x=42` under a
+    /// `SELECT 1` that no longer has the placeholder.
+    {
+        const param_query = 'SELECT {x:Int32}';
+        const seed = () => ({
+            href: base,
+            historyState: null,
+            disableWasm: true,
+            seedTabs: [
+                { id: 't7', title: 'Report', query: param_query, params: { x: '42' }, result: null,
+                  lastSavedQuery: param_query },
+            ],
+            seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7'], tabSeq: 7, tabTitleSeq: 1 },
+        });
+
+        const editThenReload = async (draft) => {
+            const r = await runScenario(js, seed());
+            /// Sanity: the lexer is genuinely unavailable, and the startup sync still published
+            /// the seeded pair — it IS coherent, so the textual prune must be a no-op for it.
+            check('persisted-draft-stale-params', 'the lexer is unavailable and the coherent seeded pair is still published',
+                vm.runInContext('wasmAvailable()', r.sandbox) === false
+                    && new URL(r.sandbox.location.href).searchParams.get('param_x') === '42',
+                r.sandbox.location.href);
+            /// Edit the parameterized tab; the rebuild cannot run, only the debounced save does.
+            vm.runInContext(
+                'query_area.value = ' + JSON.stringify(draft) + ';' +
+                "onQueryInput({ type: 'input', isTrusted: true });",
+                r.sandbox);
+            const persisted = await waitForNextPersist(r);
+            check('persisted-draft-stale-params', 'the debounced save persisted the draft',
+                persisted.length === 1 && persisted[0].query === draft,
+                persisted.map(p => p.query));
+            /// Reload exactly as the browser would: same URL and `history.state` the session left
+            /// behind, workspace seeded from what it persisted, lexer still unavailable.
+            return runScenario(js, {
+                href: r.sandbox.location.href,
+                historyState: JSON.parse(JSON.stringify(r.sandbox.history.state)),
+                seedTabs: persisted,
+                seedMeta: r.persistedMeta,
+                disableWasm: true,
+            });
+        };
+
+        /// The edit REMOVES the placeholder: the reloaded history entry / URL must not carry its
+        /// binding, while the draft itself is restored (unrun).
+        {
+            const r2 = await editThenReload('SELECT 1');
+            const reloaded_url = new URL(r2.sandbox.location.href);
+            check('persisted-draft-stale-params', 'the reload restores the unrun draft',
+                r2.live.tabs.length === 1 && r2.live.tabs[0].query === 'SELECT 1' && !r2.live.tabs[0].ran,
+                r2.live);
+            check('persisted-draft-stale-params', 'the reloaded entry does not carry the removed placeholder binding',
+                r2.sandbox.history.state && !(r2.sandbox.history.state.params && 'x' in r2.sandbox.history.state.params),
+                r2.sandbox.history.state);
+            check('persisted-draft-stale-params', 'the reloaded URL carries no stale `param_x`',
+                reloaded_url.searchParams.get('param_x') === null,
+                r2.sandbox.location.href);
+        }
+
+        /// The edit KEEPS the placeholder: the textual prune must preserve its still-valid value
+        /// across the reload rather than degrade to an empty map.
+        {
+            const r2 = await editThenReload('SELECT {x:Int32} + 1');
+            const reloaded_url = new URL(r2.sandbox.location.href);
+            check('persisted-draft-stale-params', 'the reload restores the surviving-placeholder draft',
+                r2.live.tabs.length === 1 && r2.live.tabs[0].query === 'SELECT {x:Int32} + 1',
+                r2.live);
+            check('persisted-draft-stale-params', 'a surviving placeholder keeps its value through the reload',
+                reloaded_url.searchParams.get('param_x') === '42'
+                    && r2.sandbox.history.state && r2.sandbox.history.state.params
+                    && r2.sandbox.history.state.params.x === '42',
+                { url: r2.sandbox.location.href, state: r2.sandbox.history.state });
         }
     }
 

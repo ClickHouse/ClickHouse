@@ -7797,12 +7797,21 @@ async function restoreEditor(state, token) {
         Object.assign(restored_params, state.params || {});
     }
     const active_tab_for_params = getActiveTab();
-    /// Both branches commit values that describe `state.query` (the rebuilt inputs, or the state's
-    /// own saved pair), so stamp that text — NOT `tab.query`, which a trusted edit during the
-    /// await above may have moved on (the edit's own rebuild superseded ours, `params_ok` false).
+    /// Stamp the text the committed values PROVABLY describe — NOT `tab.query`, which a trusted
+    /// edit during the await above may have moved on (the edit's own rebuild superseded ours,
+    /// `params_ok` false). Rebuilt inputs (`params_ok`) describe `state.query`. Adopted saved
+    /// values (`!params_ok`) only describe it if the state's own pair was coherent: a snapshot
+    /// persisted while the lexer never became available still describes the text it was last
+    /// committed for — carried in `state.paramsSyncedQuery` — and stamping `state.query` over it
+    /// would launder that never-rebuilt pair into a coherent one, so a reload (or a switch back
+    /// to the tab) would republish `param_x=42` under a `SELECT 1` that no longer has
+    /// `{x:Int32}` — the very pair `writeHistoryEntry` prunes for. A caller restoring a pair
+    /// that is coherent by construction omits the field.
     if (active_tab_for_params) {
         active_tab_for_params.params = restored_params;
-        active_tab_for_params.paramsSyncedQuery = state.query;
+        active_tab_for_params.paramsSyncedQuery =
+            (params_ok || state.paramsSyncedQuery === undefined) ? state.query
+                                                                 : state.paramsSyncedQuery;
     }
     /// Parameters are now committed to both the DOM inputs and the tab; capture is safe again.
     params_restore_pending_token = null;
@@ -8254,8 +8263,10 @@ function makeTab(title, query) {
         /// still describe an OLDER text (a history write raced the asynchronous parameter
         /// rebuild AND the synchronous re-derivation was unavailable — e.g. the first
         /// `WebAssembly.instantiate` still in flight) and publishing it would pair the new draft
-        /// with a removed placeholder's binding. In-page state only: deliberately not persisted —
-        /// a restore re-stamps it when it commits the saved (query, params) pair.
+        /// with a removed placeholder's binding. Persisted with the tab (see `persist`): when the
+        /// lexer never becomes available, an edit's debounced save records the new text with the
+        /// old snapshot, and only this provenance lets the reload's restore know that pair was
+        /// never rebuilt — re-stamping it as coherent would republish the stale bindings.
         paramsSyncedQuery: null,
         result: null,          /// last result snapshot (history-state shape) or null
         lastSavedQuery: undefined,
@@ -8435,7 +8446,10 @@ async function activateTab(id, guard_paste = false) {
     setActivePanel(tab);
 
     /// Restore the shared editor (query text + params) from the tab; the result DOM stays put.
-    await restoreEditor({ query: tab.query, params: tab.params }, token);
+    /// The tab's pair may be incoherent (edited while the lexer was unavailable — possibly in a
+    /// previous session, via the persisted record), so pass its provenance along: the restore
+    /// must not stamp such a pair as describing `tab.query` (see `restoreEditor`).
+    await restoreEditor({ query: tab.query, params: tab.params, paramsSyncedQuery: tab.paramsSyncedQuery }, token);
     if (token !== activation_num) return; /// a newer activation/run superseded this one
 
     /// Lazily materialize the stored result into this tab's element the first time it is opened,
@@ -8897,6 +8911,12 @@ async function persist() {
                 title: tab.title,
                 query: tab.query,
                 params: tab.params,
+                /// The provenance of `params` — the query text it was last coherently committed
+                /// for. An edit made while the lexer is unavailable advances `query` but cannot
+                /// rebuild `params`, so this record can hold an incoherent pair; persisting the
+                /// provenance lets the reload's restore refuse to stamp that pair as coherent
+                /// (`restoreEditor`), keeping the stale binding out of the rebuilt history/URL.
+                paramsSyncedQuery: tab.paramsSyncedQuery,
                 result: tab.result,
                 /// The query as of the last URL/history sync. Persisting it lets startup
                 /// reconciliation tell a stale reload (the URL hash is this tab's own last
@@ -12396,6 +12416,11 @@ async function reconcileStartup() {
                 savedTabs.push({
                     id: r.id, title: r.title, query: r.query || '',
                     params: r.params || {}, result: r.result || null, lastSavedQuery: r.lastSavedQuery,
+                    /// `null` (also for legacy records that predate the field) means "never
+                    /// coherently committed": fail-closed, the restore keeps the pair unstamped
+                    /// and a history write prunes it textually — a no-op for a genuinely
+                    /// coherent pair, whose every binding has its placeholder in the text.
+                    paramsSyncedQuery: r.paramsSyncedQuery ?? null,
                     /// Attach fresh transient runtime state (panels/queries are materialized lazily on
                     /// first activation), seeding color modes and pinned columns from the persisted
                     /// result snapshot.
