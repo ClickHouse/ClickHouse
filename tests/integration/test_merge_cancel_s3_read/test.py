@@ -26,6 +26,9 @@ def cluster():
             "node",
             main_configs=["configs/storage_conf.xml"],
             with_minio=True,
+            # The oracles count S3 events, which are server-global: a metadata disk would add
+            # its own requests to them.
+            with_remote_database_disk=False,
             with_zookeeper=True,
             stay_alive=True,
         )
