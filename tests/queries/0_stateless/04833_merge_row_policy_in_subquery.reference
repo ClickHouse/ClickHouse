@@ -19,6 +19,9 @@ nullable, nullIn
 two children, two policies
 1	10
 3	30
+read in order, table-backed policy subquery
+1	10
+3	30
 no subquery in policy
 5	10
 6	20

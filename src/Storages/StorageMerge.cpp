@@ -1289,8 +1289,18 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
 static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
 {
     bool ok = true;
-    for (auto * child : node->children)
-        ok &= recursivelyApplyToReadingSteps(child, func);
+    /// Only the first child of a set-creating step is the main pipeline; the rest read unrelated
+    /// tables to build the sets, and their sorting keys need not match this read's order prefix.
+    if (typeid_cast<CreatingSetsStep *>(node->step.get()) || typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+    {
+        if (!node->children.empty())
+            ok &= recursivelyApplyToReadingSteps(node->children.front(), func);
+    }
+    else
+    {
+        for (auto * child : node->children)
+            ok &= recursivelyApplyToReadingSteps(child, func);
+    }
 
     // This code is mainly meant to be used to call `requestReadingInOrder` on child steps.
     // In this case it is ok if one child will read in order and other will not (though I don't know when it is possible),

@@ -3,6 +3,8 @@ DROP TABLE IF EXISTS mrp_pk;
 DROP TABLE IF EXISTS mrp_log;
 DROP TABLE IF EXISTS mrp_a;
 DROP TABLE IF EXISTS mrp_b;
+DROP TABLE IF EXISTS mrp_ord;
+DROP TABLE IF EXISTS mrp_allow;
 
 CREATE TABLE mrp_mt (id UInt32, value UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO mrp_mt VALUES (5, 10), (6, 20);
@@ -65,6 +67,16 @@ SELECT * FROM merge(currentDatabase(), '^mrp_(a|b)$') FINAL ORDER BY id;
 DROP ROW POLICY 04833_a ON mrp_a;
 DROP ROW POLICY 04833_b ON mrp_b;
 
+SELECT 'read in order, table-backed policy subquery';
+CREATE TABLE mrp_ord (id UInt32, tag UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO mrp_ord VALUES (1, 10), (2, 20), (3, 30);
+CREATE TABLE mrp_allow (v UInt32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO mrp_allow VALUES (10), (30);
+CREATE ROW POLICY 04833_ord ON mrp_ord FOR SELECT USING tag IN (SELECT v FROM mrp_allow) TO ALL;
+SELECT * FROM merge(currentDatabase(), '^mrp_ord$') ORDER BY id
+SETTINGS read_in_order_two_level_merge_threshold = 0, optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0;
+DROP ROW POLICY 04833_ord ON mrp_ord;
+
 SELECT 'no subquery in policy';
 CREATE ROW POLICY 04833_plain ON mrp_mt FOR SELECT USING value > 0 TO ALL;
 SELECT * FROM merge(currentDatabase(), '^mrp_mt$') FINAL ORDER BY id;
@@ -75,3 +87,5 @@ DROP TABLE mrp_pk;
 DROP TABLE mrp_log;
 DROP TABLE mrp_a;
 DROP TABLE mrp_b;
+DROP TABLE mrp_ord;
+DROP TABLE mrp_allow;
