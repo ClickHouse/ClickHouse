@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-replicated-database, no-distributed-cache, no-parallel-replicas
+# Tags: no-fasttest, no-random-settings, no-replicated-database, no-distributed-cache, no-parallel-replicas, no-parallel
 #
 # no-fasttest -- needs an S3-backed disk
 # no-distributed-cache -- the executor falls back to legacy with distributed cache, so the
 #                         connection-pool path under test is not exercised
+# no-parallel -- `SYSTEM DROP FILESYSTEM CACHE` is server-wide: a concurrent test dropping
+#                the cache (or filling the shared connection pool) breaks the cold/warm
+#                staging this measurement relies on
 
 # When the ReaderExecutor reads a column object from S3 it borrows an HTTP connection from
 # the DiskConnections pool. Its source reads are bounded (read to their advertised end),
