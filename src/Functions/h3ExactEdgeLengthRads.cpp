@@ -108,9 +108,9 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
             "Get exact edge length in radians",
             "SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads",
             R"(
-┌─exactEdgeLengthRads─┐
-│      0.030677980119 │
-└─────────────────────┘
+┌──exactEdgeLengthRads─┐
+│       0.030677980119 │
+└──────────────────────┘
             )"
         }
     };
