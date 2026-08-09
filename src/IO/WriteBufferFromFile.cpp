@@ -6,6 +6,7 @@
 #include <Common/ErrnoException.h>
 #include <base/defines.h>
 
+#include <IO/PlatformFileIO.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
@@ -46,7 +47,7 @@ WriteBufferFromFile::WriteBufferFromFile(
         flags = flags & ~O_DIRECT;
 #endif
 
-    fd = ::open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC, mode);
+    fd = platformOpenFile(file_name, flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC, mode);
 
     if (-1 == fd)
         ErrnoException::throwFromPath(

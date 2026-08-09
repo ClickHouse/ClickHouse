@@ -500,14 +500,14 @@ void DiskLocal::writeFileUsingBlobWritingFunction(const String & path, WriteMode
 void DiskLocal::removeFile(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (0 != unlink(pathToGenericString(fs_path).c_str()))
+    if (0 != platformUnlink(pathToString(fs_path)))
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, pathToGenericString(fs_path), "Cannot unlink file {}", fs_path);
 }
 
 void DiskLocal::removeFileIfExists(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (0 != unlink(pathToGenericString(fs_path).c_str()))
+    if (0 != platformUnlink(pathToString(fs_path)))
     {
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, pathToGenericString(fs_path), "Cannot unlink file {}", fs_path);
@@ -517,7 +517,7 @@ void DiskLocal::removeFileIfExists(const String & path)
 void DiskLocal::removeDirectory(const String & path)
 {
     auto fs_path = fs::path(disk_path) / path;
-    if (0 != rmdir(pathToGenericString(fs_path).c_str()))
+    if (0 != platformRmdir(pathToString(fs_path)))
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, pathToGenericString(fs_path), "Cannot remove directory {}", fs_path);
 }
 
@@ -526,7 +526,7 @@ void DiskLocal::removeDirectoryIfExists(const String & path)
     auto fs_path = fs::path(disk_path) / path;
     if (!existsDirectory(pathToGenericString(fs_path)))
         return;
-    if (0 != rmdir(pathToGenericString(fs_path).c_str()))
+    if (0 != platformRmdir(pathToString(fs_path)))
         if (errno != ENOENT)
             ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, pathToGenericString(fs_path), "Cannot remove directory {}", fs_path);
 }
@@ -783,7 +783,7 @@ struct stat DiskLocal::stat(const String & path) const
 {
     struct stat st{};
     auto full_path = fs::path(disk_path) / path;
-    if (::stat(full_path.string().c_str(), &st) == 0)
+    if (platformStat(pathToString(full_path), st) == 0)
         return st;
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot stat file: {}", path);
 }

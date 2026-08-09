@@ -16,7 +16,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <utime.h>
+#include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -369,7 +369,7 @@ namespace FS
 
 bool createFile(const std::string & path)
 {
-    int n = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+    int n = DB::platformOpenFile(path, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
     if (n != -1)
     {
         close(n);
@@ -464,7 +464,7 @@ bool canExecute(const std::string & path, bool allow_throw)
 time_t getModificationTime(const std::string & path)
 {
     struct stat st{};
-    if (stat(path.c_str(), &st) == 0)
+    if (DB::platformStat(path, st) == 0)
         return st.st_mtime;
     std::error_code m_ec(errno, std::generic_category());
     throw fs::filesystem_error("Cannot check modification time for file", path, m_ec);
@@ -473,7 +473,7 @@ time_t getModificationTime(const std::string & path)
 time_t getChangeTime(const std::string & path)
 {
     struct stat st{};
-    if (stat(path.c_str(), &st) == 0)
+    if (DB::platformStat(path, st) == 0)
         return st.st_ctime;
     std::error_code m_ec(errno, std::generic_category());
     throw fs::filesystem_error("Cannot check change time for file", path, m_ec);
@@ -486,10 +486,7 @@ Poco::Timestamp getModificationTimestamp(const std::string & path)
 
 void setModificationTime(const std::string & path, time_t time)
 {
-    struct utimbuf tb{};
-    tb.actime  = time;
-    tb.modtime = time;
-    if (utime(path.c_str(), &tb) != 0)
+    if (DB::platformSetFileTimes(path, time, time) != 0)
         DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot set modification time to file: {}", path);
 }
 
