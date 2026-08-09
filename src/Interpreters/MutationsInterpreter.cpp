@@ -834,21 +834,21 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
+    /// Collect ephemeral columns and include them in the analysis set so
+    /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
+    NamesAndTypesList all_columns_with_ephemeral = all_columns;
+    NameSet ephemeral_columns;
+    for (const auto & col : columns_desc.getEphemeral())
+    {
+        ephemeral_columns.insert(col.name);
+        all_columns_with_ephemeral.push_back(col);
+    }
+
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
     std::unordered_map<String, Names> column_to_affected_materialized;
     if (!updated_columns.empty())
     {
-        /// Collect ephemeral columns and include them in the analysis set so
-        /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
-        NamesAndTypesList all_columns_with_ephemeral = all_columns;
-        std::unordered_set<String> ephemeral_columns;
-        for (const auto & col : columns_desc.getEphemeral())
-        {
-            ephemeral_columns.insert(col.name);
-            all_columns_with_ephemeral.push_back(col);
-        }
-
         for (const auto & column : columns_desc)
         {
             if (column.default_desc.kind == ColumnDefaultKind::Materialized
@@ -1481,18 +1481,27 @@ void MutationsInterpreter::prepare(bool dry_run)
                     continue;
 
                 auto query = cloneAndValidateExpandedDefaultExpression(column, columns_desc, context);
-                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
-                for (const auto & dep : syntax_result->requiredSourceColumns())
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
+                const auto & required_columns = syntax_result->requiredSourceColumns();
+                if (std::ranges::find(required_columns, command.column_name) == required_columns.end())
+                    continue;
+
+                /// The recalculation reads the MATERIALIZED expression's inputs from the
+                /// existing part, but EPHEMERAL values exist only during INSERT and are
+                /// not stored. Reject the mutation up front instead of queueing one that
+                /// can never succeed.
+                for (const auto & dep : required_columns)
                 {
-                    if (dep == command.column_name)
-                    {
-                        has_dependent_materialized = true;
-                        break;
-                    }
+                    if (ephemeral_columns.contains(dep))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot clear column {}: the MATERIALIZED column {} depends on it and on the "
+                            "EPHEMERAL column {}, whose values cannot be read from existing parts to "
+                            "recalculate the MATERIALIZED column",
+                            backQuote(command.column_name), backQuote(column.name), backQuote(dep));
                 }
-                if (has_dependent_materialized)
-                    break;
+
+                has_dependent_materialized = true;
             }
 
             if (has_dependent_materialized)
@@ -1524,6 +1533,45 @@ void MutationsInterpreter::prepare(bool dry_run)
                 "Unknown mutation command: {}",
                 description);
         }
+    }
+
+    /// Clear-triggered recalculation rewrites the stored values of MATERIALIZED columns,
+    /// so skip indices, projections, TTL expressions and statistics that depend on them
+    /// must be rebuilt, just like for `MATERIALIZE COLUMN`. Collect the columns the
+    /// recalculation stage below will write and register their dependencies before the
+    /// dependency sets are consumed.
+    NameSet clear_rematerialized_columns;
+    if (need_recalculate_materialized_for_clear)
+    {
+        for (const auto & column : columns_desc)
+        {
+            if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
+                continue;
+
+            auto query = cloneAndValidateExpandedDefaultExpression(column, columns_desc, context);
+            replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
+            auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
+            const auto & required_columns = syntax_result->requiredSourceColumns();
+
+            /// A MATERIALIZED column that reads an EPHEMERAL column cannot be recalculated
+            /// from existing parts. It cannot depend on a cleared column (that is rejected
+            /// above), so keep its stored values; they may only become stale transitively,
+            /// through another recalculated MATERIALIZED column.
+            if (std::ranges::any_of(required_columns, [&](const auto & dep) { return ephemeral_columns.contains(dep); }))
+            {
+                LOG_WARNING(logger,
+                    "MATERIALIZED column '{}' depends on an EPHEMERAL column and will NOT be "
+                    "recalculated after CLEAR COLUMN. If it also reads other MATERIALIZED columns, "
+                    "its on-disk value may become inconsistent. To fix this, re-INSERT the affected rows.",
+                    column.name);
+                continue;
+            }
+
+            clear_rematerialized_columns.insert(column.name);
+        }
+
+        for (const auto & dependency : getAllColumnDependencies(metadata_snapshot, clear_rematerialized_columns, has_dependency))
+            dependencies.insert(dependency);
     }
 
     if (!read_columns.empty())
@@ -1607,17 +1655,17 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
-    /// Recalculate all MATERIALIZED columns when at least one of them depends
-    /// on a cleared column.  This mirrors the logic used for UPDATE (see the
-    /// `affected_materialized` block above): we re-evaluate *every*
-    /// MATERIALIZED expression so that transitive dependencies are covered.
-    if (need_recalculate_materialized_for_clear)
+    /// Recalculate all MATERIALIZED columns (except the ones reading EPHEMERAL columns,
+    /// excluded above) when at least one of them depends on a cleared column.  This
+    /// mirrors the logic used for UPDATE (see the `affected_materialized` block above):
+    /// we re-evaluate *every* MATERIALIZED expression so that transitive dependencies
+    /// are covered.
+    if (!clear_rematerialized_columns.empty())
     {
         stages.emplace_back(context);
         for (const auto & column : columns_desc)
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized
-                && column.default_desc.expression)
+            if (clear_rematerialized_columns.contains(column.name))
             {
                 auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
@@ -1655,7 +1703,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col) || rematerialized_columns.contains(col);
+                    || patch_updated_columns.contains(col) || rematerialized_columns.contains(col)
+                    || clear_rematerialized_columns.contains(col);
             });
 
         if (changed)
@@ -1701,7 +1750,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col)
             {
                 return updated_columns.contains(col) || changed_columns.contains(col)
-                    || patch_updated_columns.contains(col) || rematerialized_columns.contains(col);
+                    || patch_updated_columns.contains(col) || rematerialized_columns.contains(col)
+                    || clear_rematerialized_columns.contains(col);
             });
 
         if (changed)
