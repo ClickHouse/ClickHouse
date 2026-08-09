@@ -1,0 +1,44 @@
+no hint	3
+truthy	3
+truthy	3
+truthy	3
+truthy	3
+truthy	3
+truthy	3
+truthy	3
+truthy	3
+truthy	3
+truthy	3
+truthy	3
+no boolean	3
+no boolean	3
+no boolean	3
+no boolean	3
+no boolean	3
+no boolean	3
+no boolean	3
+no boolean	3
+null	0
+null	0
+null	0
+falsy	0
+falsy	0
+falsy	0
+falsy	0
+falsy	0
+falsy	0
+grouping	0	3	1
+grouping	1	1	0
+grouping	2	1	0
+grouping	3	1	0
+granules pruned	1
+parts pruned	100
+parts pruned	100
+parts pruned	100
+parts kept	400
+parts kept	400
+and branch	3
+and branch	3
+and branch	3
+and branch	3
+and branch falsy	0
