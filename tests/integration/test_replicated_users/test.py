@@ -160,28 +160,36 @@ def test_grant_revoke_replicated(started_cluster, use_on_cluster: bool):
     node1.query("SYSTEM RELOAD CONFIG")
     on_cluster = "ON CLUSTER default" if use_on_cluster else ""
 
-    node1.query(f"CREATE USER theuser2 {on_cluster}")
+    try:
+        node1.query(f"CREATE USER theuser2 {on_cluster}")
 
-    assert node1.query(f"GRANT {on_cluster} SELECT ON *.* to theuser2") == ""
+        assert node1.query(f"GRANT {on_cluster} SELECT ON *.* to theuser2") == ""
 
-    assert node2.query("SHOW GRANTS FOR theuser2") == "GRANT SELECT ON *.* TO theuser2\n"
+        # The grant is replicated to node2 asynchronously, so read it back with a
+        # retry: a bare read here races the replication and can observe empty grants.
+        assert_eq_with_retry(
+            node2, "SHOW GRANTS FOR theuser2", "GRANT SELECT ON *.* TO theuser2"
+        )
 
-    assert node1.query(f"REVOKE {on_cluster} SELECT ON *.* from theuser2") == ""
-    node1.query(f"DROP USER theuser2 {on_cluster}")
+        assert node1.query(f"REVOKE {on_cluster} SELECT ON *.* from theuser2") == ""
+    finally:
+        # Always drop theuser2 and restore the default profile, even if an assert
+        # above fails, so the leftover user/config cannot leak into later tests.
+        node1.query(f"DROP USER IF EXISTS theuser2 {on_cluster}")
 
-    node1.replace_config(
-        "/etc/clickhouse-server/users.d/users.xml",
-        inspect.cleandoc(
-            """
-            <clickhouse>
-                <profiles>
-                    <default/>
-                </profiles>
-            </clickhouse>
-            """
-        ),
-    )
-    node1.query("SYSTEM RELOAD CONFIG")
+        node1.replace_config(
+            "/etc/clickhouse-server/users.d/users.xml",
+            inspect.cleandoc(
+                """
+                <clickhouse>
+                    <profiles>
+                        <default/>
+                    </profiles>
+                </clickhouse>
+                """
+            ),
+        )
+        node1.query("SYSTEM RELOAD CONFIG")
 
 
 

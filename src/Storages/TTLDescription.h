@@ -37,6 +37,32 @@ struct TTLAggregateDescription
 
 using TTLAggregateDescriptions = std::vector<TTLAggregateDescription>;
 
+/// How a TTL expression parsed from an AST is validated, and which `variant_throw_on_type_mismatch` /
+/// `dynamic_throw_on_type_mismatch` strictness the `Variant`/`Dynamic` function adaptors see while the
+/// expression is *built* (with no compatible alternative at all, a strict build throws and a lenient one
+/// resolves the result to constant NULL). The strictness is pinned per mode rather than taken from the
+/// query context of the current thread, so the verdict on the stored metadata does not depend on which
+/// caller happens to rebuild it.
+enum class TTLValidationMode
+{
+    /// User DDL: full validation, and the expression builds strict - a lenient build produces a TTL whose
+    /// result is a constant NULL and which therefore does nothing useful, and letting it through would only
+    /// postpone the failure to the first strict rebuild (a default-settings INSERT, or a TTL merge under
+    /// the background profile).
+    Validate,
+
+    /// User DDL with `allow_suspicious_ttl_expressions`: the validation is skipped and nothing is pinned -
+    /// the escape hatch skips the TTL validator but does not override the session's mismatch policy, so the
+    /// build reads the ambient settings exactly as any other expression build does.
+    SkipValidation,
+
+    /// Loading existing metadata (server start, ATTACH, metadata replicated from another replica): no
+    /// validation, and the expression builds lenient, which is the superset - whatever a session managed
+    /// to create must load again. Loading has no query context, so it would otherwise see the strict
+    /// default and refuse to attach a table that was created leniently - i.e. the server would not start.
+    Attach,
+};
+
 class PreparedSets;
 using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 
@@ -55,7 +81,17 @@ struct TTLDescription
     /// TTL d + INTERVAL 1 DAY
     ///    ^~~~~~~~~~~~~~~~~~~^
     ASTPtr expression_ast;
+
+    /// The columns the *built* expression reads at execution time. Constant folding can prune a column the
+    /// AST refers to (`WHERE isNull(x)` over a non-`Nullable` `x` folds to `0`), so this list can be smaller
+    /// than `expression_source_columns`. It is what the read planners (`MergeTask`, `getColumnDependencies`)
+    /// must consume - reading the folded-out columns there would be wasted I/O.
     NamesAndTypesList expression_columns;
+
+    /// The columns the stored AST refers to, taken from the syntax analysis *before* constant folding.
+    /// Rebuilding the expression from the AST needs all of them to be available as source columns, even the
+    /// ones the built expression no longer reads - so the rebuild must not use `expression_columns`.
+    NamesAndTypesList expression_source_columns;
 
     /// Expression actions evaluated from AST
     ExpressionAndSets buildExpression(const ContextPtr & context) const;
@@ -67,7 +103,11 @@ struct TTLDescription
     /// TTL ... WHERE x % 10 == 0 and y > 5
     ///              ^~~~~~~~~~~~~~~~~~~~~~^
     ASTPtr where_expression_ast;
+
+    /// Same split as `expression_columns` / `expression_source_columns`, for the WHERE part.
     NamesAndTypesList where_expression_columns;
+    NamesAndTypesList where_expression_source_columns;
+
     ExpressionAndSets buildWhereExpression(const ContextPtr & context) const;
 
     /// Name of result column from WHERE expression
@@ -99,7 +139,12 @@ struct TTLDescription
     ASTPtr recompression_codec;
 
     /// Parse TTL structure from definition. Able to parse both column and table TTLs.
-    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
+    static TTLDescription getTTLFromAST(
+        const ASTPtr & definition_ast,
+        const ColumnsDescription & columns,
+        ContextPtr context,
+        const KeyDescription & primary_key,
+        TTLValidationMode validation_mode);
 
     TTLDescription() = default;
     TTLDescription(const TTLDescription & other);
@@ -136,10 +181,19 @@ struct TTLTableDescription
     TTLTableDescription & operator=(const TTLTableDescription & other);
 
     static TTLTableDescription getTTLForTableFromAST(
-        const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
+        const ASTPtr & definition_ast,
+        const ColumnsDescription & columns,
+        ContextPtr context,
+        const KeyDescription & primary_key,
+        TTLValidationMode validation_mode);
 
     /// Parse description from string
-    static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
+    static TTLTableDescription parse(
+        const String & str,
+        const ColumnsDescription & columns,
+        ContextPtr context,
+        const KeyDescription & primary_key,
+        TTLValidationMode validation_mode);
 };
 
 /// Used by the fast `MODIFY TTL` optimization to decide whether a rows-TTL change can be applied by

@@ -987,7 +987,12 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
     else if (type == MODIFY_TTL)
     {
         metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+            ttl,
+            metadata.columns,
+            context,
+            metadata.primary_key,
+            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
+                                                                                 : TTLValidationMode::Validate);
     }
     else if (type == REMOVE_TTL)
     {
@@ -1527,7 +1532,12 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     for (const auto & [name, ast] : column_ttl_asts)
     {
         auto new_ttl_entry = TTLDescription::getTTLFromAST(
-            ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+            ast,
+            metadata_copy.columns,
+            context,
+            metadata_copy.primary_key,
+            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
+                                                                                 : TTLValidationMode::Validate);
         metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
     }
 
@@ -1537,7 +1547,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             metadata_copy.columns,
             context,
             metadata_copy.primary_key,
-            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
+                                                                                 : TTLValidationMode::Validate);
 
     metadata = std::move(metadata_copy);
 }
@@ -1807,7 +1818,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                if (all_columns.hasAlias(column_name))
+                /// `default_kind` is what the parser set: `validate` runs before `prepare`, which back-fills it from the table.
+                const bool becomes_physical = command.default_expression
+                    && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized);
+                if (all_columns.hasAlias(column_name) && !becomes_physical)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
