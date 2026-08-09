@@ -244,10 +244,10 @@ public:
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
-    /// If the commands change the effective expression of an explicit skip index
-    /// (directly, through the body of a referenced `ALIAS` column, or through
-    /// matcher re-expansion inside such a body), additional mutation commands
-    /// rebuilding (or, in DROP mode, clearing) the affected indices are returned,
+    /// If the commands change the effective expression of a skip index,
+    /// or the normalized `preprocessor` / `postprocessor` arguments of a text index,
+    /// additional mutation commands
+    /// rebuilding (or, in `DROP` mode, clearing) the affected indices are returned,
     /// because index files on disk were built from the old expression and would
     /// prune incorrectly. Similarly, if the matcher expansion of an existing
     /// `MATERIALIZED` column changes, a MATERIALIZE_COLUMN command is returned
@@ -269,13 +269,13 @@ public:
         bool storage_has_active_parts = true,
         bool share_nested_offsets = true) const;
 
-    /// Names of explicit skip indices whose effective (normalized) expression
-    /// changes when these commands are applied, paired with a human-readable
-    /// description of the change. This catches both explicit edits of an `ALIAS`
-    /// column referenced by an index and implicit changes, where an unrelated
-    /// command (e.g. `ADD COLUMN`) changes the expansion of a column matcher
-    /// inside a referenced alias body. `new_metadata` must already have the
-    /// commands applied to its columns. Pure column renames are not reported.
+    /// Names of skip indices whose effective normalized expression or text-index
+    /// transform arguments change when these commands are applied, paired with a
+    /// human-readable description of the change. This catches both explicit edits
+    /// of an `ALIAS` column referenced by an index and implicit changes, where an
+    /// unrelated command (e.g. `ADD COLUMN`) changes the expansion of a column
+    /// matcher inside a referenced alias body. `new_metadata` must already have
+    /// the commands applied to its columns. Pure column renames are not reported.
     std::vector<std::pair<String, String>> getSkipIndicesWithChangedExpression(
         const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, ContextPtr context) const;
 

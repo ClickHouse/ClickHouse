@@ -5235,11 +5235,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// take the guards: the local part state cannot prove that the table is empty on all replicas.
     const bool alter_affects_existing_parts = supportsReplication() || getActivePartsCount() > 0;
 
-    /// Changing the effective expression of an explicit skip index — by editing the body of a
-    /// referenced ALIAS column, or implicitly through matcher re-expansion inside such a body on
-    /// an unrelated schema change — invalidates index files built from the old expression. In
-    /// REBUILD and DROP modes `AlterCommands::getMutationCommands` handles this with an
-    /// additional mutation; THROW and COMPATIBILITY modes forbid such alters.
+    /// Changing the effective expression of a skip index, or the normalized `preprocessor` /
+    /// `postprocessor` arguments of a text index, invalidates index files built from the old
+    /// definition. In `REBUILD` and `DROP` modes `AlterCommands::getMutationCommands` handles this
+    /// with an additional mutation; `THROW` and `COMPATIBILITY` modes forbid such alters.
     /// `new_metadata` already has the commands applied (see above).
     if (alter_affects_existing_parts
         && (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY))
@@ -5249,7 +5248,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         {
             throw Exception(
                 ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "The ALTER changes the expression of the skip index '{}' ({}) and would leave stale index files on existing "
+                "The ALTER changes the effective definition of the skip index '{}' ({}) and would leave stale index files on existing "
                 "parts. Check the MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
                 affected_indices.front().first,
                 affected_indices.front().second);

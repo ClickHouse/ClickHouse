@@ -34,6 +34,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -1487,6 +1488,24 @@ static bool isImplicitIndexOverVirtualColumn(const IndexDescription & index, con
     return index.isImplicitlyCreated() && index.column_names.size() == 1 && metadata.isVirtualColumn(index.column_names.front());
 }
 
+static void renameColumnsInTextIndexTransformArguments(const ASTPtr & arguments, RenameColumnVisitor & rename_visitor)
+{
+    if (!arguments)
+        return;
+
+    for (const auto & child : arguments->children)
+    {
+        const auto * function = child->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2)
+            continue;
+
+        /// The option name on the left is not a column reference; only rename the transform body.
+        const auto * key = function->arguments->children[0]->as<ASTIdentifier>();
+        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
+            rename_visitor.visit(function->arguments->children[1]);
+    }
+}
+
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     if (!prepared)
@@ -2379,12 +2398,15 @@ std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesWithChangedE
         /// too: a pure rename must not register as an expression change.
         ASTPtr old_definition = index.definition_ast->clone();
         ASTPtr old_expression_list = index.expression_list_ast->clone();
+        ASTPtr old_arguments = index.arguments ? index.arguments->clone() : nullptr;
         for (const auto & [from, to] : renames)
         {
             RenameColumnData rename_data{from, to};
             RenameColumnVisitor rename_visitor(rename_data);
             rename_visitor.visit(old_definition);
             rename_visitor.visit(old_expression_list);
+            if (index.type == TEXT_INDEX_NAME)
+                renameColumnsInTextIndexTransformArguments(old_arguments, rename_visitor);
         }
 
         /// The effective index expression under the post-ALTER schema. `ALIAS` columns referenced
@@ -2416,10 +2438,33 @@ std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesWithChangedE
             throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
         }
 
-        String old_formatted = old_expression_list->formatWithSecretsOneLine();
-        String new_formatted = new_index.expression_list_ast->formatWithSecretsOneLine();
-        if (old_formatted != new_formatted)
-            res.emplace_back(new_index_name, fmt::format("from '{}' to '{}'", old_formatted, new_formatted));
+        const String old_expression_formatted = old_expression_list->formatWithSecretsOneLine();
+        const String new_expression_formatted = new_index.expression_list_ast->formatWithSecretsOneLine();
+        const bool expression_changed = old_expression_formatted != new_expression_formatted;
+
+        String old_arguments_formatted;
+        String new_arguments_formatted;
+        bool arguments_changed = false;
+        if (index.type == TEXT_INDEX_NAME)
+        {
+            old_arguments_formatted = old_arguments ? old_arguments->formatWithSecretsOneLine() : String{};
+            new_arguments_formatted = new_index.arguments ? new_index.arguments->formatWithSecretsOneLine() : String{};
+            arguments_changed = old_arguments_formatted != new_arguments_formatted;
+        }
+
+        if (!expression_changed && !arguments_changed)
+            continue;
+
+        String change_description;
+        if (expression_changed)
+            change_description = fmt::format("expression from '{}' to '{}'", old_expression_formatted, new_expression_formatted);
+        if (arguments_changed)
+        {
+            if (!change_description.empty())
+                change_description += "; ";
+            change_description += fmt::format("arguments from '{}' to '{}'", old_arguments_formatted, new_arguments_formatted);
+        }
+        res.emplace_back(new_index_name, std::move(change_description));
     }
     return res;
 }
@@ -2690,12 +2735,11 @@ MutationCommands AlterCommands::getMutationCommands(
         }
     }
 
-    /// A skip index becomes stale when its effective expression changes — through an edit of a
-    /// referenced `ALIAS` column's body, or through matcher re-expansion inside such a body on
-    /// an unrelated schema change: metadata and query analysis switch to the new expression
-    /// while parts keep index files built from the old one, and stale index files can
-    /// incorrectly prune granules. Rebuild (or, in DROP mode, clear) such indices. THROW and
-    /// COMPATIBILITY modes reject these alters in `MergeTreeData::checkAlterIsPossible`.
+    /// A skip index becomes stale when its effective expression or normalized text-index transform
+    /// arguments change. Metadata and query analysis switch to the new definition while parts keep
+    /// index files built from the old one, and stale index files can incorrectly prune granules.
+    /// Rebuild (or, in `DROP` mode, clear) such indices. `THROW` and `COMPATIBILITY` modes reject these
+    /// alters in `MergeTreeData::checkAlterIsPossible`.
     /// After the loop above, `metadata` has all commands applied, so it describes the
     /// post-ALTER schema, while `original_metadata` describes the pre-ALTER one.
     /// When the storage has no active parts there are no index files to go stale, so the ALTER
