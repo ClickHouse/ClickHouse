@@ -726,6 +726,38 @@ def test_drop_of_individual_table_is_rejected(started_cluster):
     pg_manager.drop_materialized_db()
 
 
+def test_count_does_not_include_deleted_rows(started_cluster):
+    # A `SELECT count()` needs no particular column, so the planner reads the cheapest column of the
+    # nested table - which is the one-byte `_sign` column itself. The `_sign = 1` filter of the wrapped
+    # read must be applied even when the sign column is among the requested columns; otherwise the count
+    # includes the durable `_sign = -1` tombstones a PostgreSQL DELETE leaves in the nested
+    # `ReplacingMergeTree` table, and `SELECT count()` disagrees with what `SELECT *` returns.
+    table_name = "postgresql_replica_count_deleted"
+    pg_manager.create_postgres_table(table_name)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50)"
+    )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    pg_manager.execute(f"DELETE FROM {table_name} WHERE key >= 25")
+    check_tables_are_synchronized(instance, table_name)
+
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 25
+    # An explicit read of the sign column is filtered the same way: the deleted rows stay invisible.
+    assert (
+        instance.query(f"SELECT DISTINCT _sign FROM test_database.{table_name}").strip()
+        == "1"
+    )
+
+    pg_manager.drop_materialized_db()
+
+
 def test_merge_table_over_materialized_postgresql_database(started_cluster):
     """
     Reading a MaterializedPostgreSQL database through Merge forces FINAL on the child read:
