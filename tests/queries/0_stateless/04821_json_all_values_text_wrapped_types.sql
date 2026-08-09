@@ -54,3 +54,21 @@ SELECT count() FROM
 WHERE explain LIKE '%Granules: 1/3%';
 
 DROP TABLE t_json_all_values_wrapped_types;
+
+CREATE TABLE t_json_all_values_has_array_tokenizer
+(
+    data JSON(tags Array(String)),
+    INDEX idx_values JSONAllValues(data) TYPE text(tokenizer = array) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 4;
+
+INSERT INTO t_json_all_values_has_array_tokenizer
+SELECT if(number < 4, '{"tags":["bug","x"]}', '{"tags":["other"]}')
+FROM numbers(8);
+
+SELECT count() FROM t_json_all_values_has_array_tokenizer WHERE has(data.tags, 'bug');
+SELECT count() FROM t_json_all_values_has_array_tokenizer WHERE has(data.tags, 'bug') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_json_all_values_has_array_tokenizer;

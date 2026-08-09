@@ -1012,14 +1012,42 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             }
             else if (function_name == "has")
             {
-                if (const auto * key_array = typeid_cast<const DataTypeArray *>(key_type.get()))
-                    target_type = key_array->getNestedType();
+                const auto * key_array = typeid_cast<const DataTypeArray *>(key_type.get());
+                if (!key_array)
+                    return false;
+                target_type = key_array->getNestedType();
             }
 
             if (target_type
                 && removeLowCardinalityAndNullable(target_type)->getName()
                     != removeLowCardinalityAndNullable(value_type)->getName())
                 return false;
+
+            if (function_name == "has")
+            {
+                switch (tokenizer->getType())
+                {
+                    case ITokenizer::Type::SplitByNonAlpha:
+                    case ITokenizer::Type::Ngrams:
+                    case ITokenizer::Type::SplitByString:
+                        break;
+                    default:
+                        return false;
+                }
+
+                Field serialized_value = value_field;
+                if (!WhichDataType(value_type).isStringOrFixedString())
+                    serialized_value = serializeFieldAsText(value_field, value_type);
+
+                const auto value_tokens = stringToTokens(serialized_value);
+                const auto array_tokens = stringToTokens(Field(serializeFieldAsText(
+                    Field(Array{value_field}), std::make_shared<DataTypeArray>(value_type))));
+                /// `JSONAllValues` stores the serialized array, not each element separately.
+                /// For context-free tokenizers, every element probe token must survive that serialization.
+                if (!std::ranges::all_of(value_tokens, [&](const auto & token)
+                    { return std::ranges::find(array_tokens, token) != array_tokens.end(); }))
+                    return false;
+            }
 
             if (!WhichDataType(value_type).isStringOrFixedString())
             {
