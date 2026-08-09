@@ -577,7 +577,25 @@ void FileCache::initialize()
         {
             if (load_metadata_asynchronously)
             {
-                load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>([this, need_to_load_metadata] { initializeImpl(need_to_load_metadata); });
+                load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>([this, need_to_load_metadata]
+                {
+                    try
+                    {
+                        initializeImpl(need_to_load_metadata);
+                    }
+                    catch (...)
+                    {
+                        /// `callOnce` has already latched, so no caller will retry `initialize`
+                        /// and reach the unwind below: without this catch the permanent threads
+                        /// started by `metadata.startup()` would keep running until process
+                        /// shutdown next to a permanently broken cache (`initializeImpl` has
+                        /// already stored `init_exception`). `deactivateBackgroundOperations`
+                        /// joins this thread before `metadata.shutdown()`, so stopping the
+                        /// threads here cannot race it.
+                        metadata.stopThreads();
+                        throw;
+                    }
+                });
             }
             else
             {
