@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/IColumn.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Interpreters/ExpressionActions.h>
@@ -806,21 +807,31 @@ static ColumnPtr buildAdditionalFilter(
                 /// converts the right columns of the outer join to Nullable in place, without keeping
                 /// the raw input column the mixed condition was built against. The stored rows are
                 /// real right-side rows, never NULL-extended, so unwrapping the Nullable is exact.
-                const bool col_is_nullable = col->isNullable();
+                /// The same wrapping turns `LowCardinality(T)` into `LowCardinality(Nullable(T))`,
+                /// which reports `isNullable() == false` and exposes the nullability only through
+                /// the nested dictionary, so it needs the same unwrapping.
+                const auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(col.get());
+                const bool col_stores_nulls = col->isNullable() || (col_low_cardinality && col_low_cardinality->nestedIsNullable());
                 for (const UInt64 selected_row : selected_rows)
                 {
                     const auto * block = added_columns.lazy_output.stored_columns[refWordBlockNo(selected_row)];
                     const auto [src_col, row_pos] = getBlockColumnAndRow(block, refWordRowNo(selected_row), rhs_pos_it->second);
-                    if (!col_is_nullable && src_col->isNullable())
+                    const auto * src_low_cardinality = typeid_cast<const ColumnLowCardinality *>(src_col);
+                    const bool src_stores_nulls = src_col->isNullable() || (src_low_cardinality && src_low_cardinality->nestedIsNullable());
+                    if (!col_stores_nulls && src_stores_nulls)
                     {
-                        const auto & src_nullable = assert_cast<const ColumnNullable &>(*src_col);
-                        if (src_nullable.isNullAt(row_pos))
+                        if (src_col->isNullAt(row_pos))
                             throw Exception(
                                 ErrorCodes::LOGICAL_ERROR,
                                 "Stored right column {} contains a NULL, but the additional join filter requires the non-Nullable type {}",
                                 req_col.name,
                                 req_col.type->getName());
-                        col->insertFrom(src_nullable.getNestedColumn(), row_pos);
+                        if (const auto * src_nullable = typeid_cast<const ColumnNullable *>(src_col))
+                            col->insertFrom(src_nullable->getNestedColumn(), row_pos);
+                        else
+                            /// `LowCardinality(Nullable(T))`: a `Field` round-trip inserts the non-NULL
+                            /// value regardless of how the target wraps `T`; this path is cold.
+                            col->insert((*src_col)[row_pos]);
                     }
                     else
                         col->insertFrom(*src_col, row_pos);
