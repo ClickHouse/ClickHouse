@@ -1,5 +1,7 @@
--- Tags: no-ordinary-database, no-fasttest, need-query-parameters
+-- Tags: no-ordinary-database, no-fasttest, no-parallel-replicas, need-query-parameters
 -- no-ordinary-database, no-fasttest: the test uses experimental transactions.
+-- no-parallel-replicas: reads inside a transaction return wrong (multiplied) counts with parallel
+-- replicas, which are not transaction-aware (same as other transaction tests, e.g. 04060).
 
 -- Tests that the consistent query cache (`query_cache_use_only_when_data_was_not_changed`) fails
 -- closed inside a transaction. The referenced-tables modification hash samples each table's live
