@@ -119,6 +119,20 @@ echo "$page" | grep -q -F 'const format_clause = await detectExplicitFormatClaus
 # framing, and the download does not strip the real clause.
 echo "$page" | grep -q -F 'tokens[i + 1].type === TT.QuotedIdentifier' && echo 'lexer walk accepts a quoted format name: OK'
 echo "$page" | grep -q -F 'query.match(/\bFORMAT\s+(?:`([^`]+)`|"([^"]+)"|(\w+))(?=\s*(?:;|\bSETTINGS\b|$))/i)' && echo 'fallback regex accepts a quoted format name: OK'
+# The embedded SQL lexer must not hang or truncate on a large query: its buffers live at the
+# module's `__heap_base` (below it, the module's own shadow stack overwrote them - the cause of an
+# infinite tokenize loop on a ~64 KiB query), the memory grows to fit the text, the lexer is
+# created without the old 64 KiB `max_query_size` cap (which flagged every token crossing that
+# boundary as an error, silently truncating the token stream), and a token stream that stops
+# advancing throws instead of looping. The request-path detectors (`detectFramingSetting`,
+# `detectExplicitFormatClause`, `queryIsReadOnly`, `splitAllQueries`, `getQueryUnderCursor`)
+# translate such a failure into their text-match fallbacks via `tokenizeOrNull`, so a query the
+# lexer cannot handle still runs instead of hanging the tab before any request is sent.
+echo "$page" | grep -q -F 'exports.__heap_base.value' && echo 'lexer buffers at heap base: OK'
+echo "$page" | grep -q -F 'exports.memory.grow(' && echo 'lexer memory grows to fit: OK'
+echo "$page" | grep -q -F 'clickhouse_lexer_create(lexer_offset, query_begin, query_end, 0)' && echo 'lexer created without size cap: OK'
+echo "$page" | grep -q -F 'SQL lexer stopped advancing' && echo 'lexer forward-progress guard: OK'
+[ "$(echo "$page" | grep -c 'await tokenizeOrNull(')" -ge 5 ] && echo 'request-path detectors fall back on lexer failure: OK'
 # The single-result restore (`restoreFromHistory`) dispatches an `ndjson_packets` snapshot at the
 # top level of its chain (`else if (kind === 'ndjson_packets')`), before the `!ok` and format
 # branches, so a successful packet stream whose format has a special restore path is replayed raw

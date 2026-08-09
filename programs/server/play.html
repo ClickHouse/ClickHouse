@@ -12860,35 +12860,54 @@ async function loadLexer() {
 async function tokenize(query) {
     await loadLexer();
 
-    let exports = lexer_module.instance.exports;
-    let buffer = exports.memory.buffer;
-    let memory_offset = 0;
+    const exports = lexer_module.instance.exports;
 
-    /// Allocate memory for the lexer object
-    const lexer = new Uint8Array(buffer, memory_offset, exports.clickhouse_lexer_size);
+    /// Lay out the buffers this function owns (the lexer object, the query bytes and the two token
+    /// out-pointers) starting at `__heap_base`, NOT at offset 0: the module's own shadow stack
+    /// occupies the low memory up to `__heap_base` and its call frames grow DOWN from there, so a
+    /// buffer placed below that boundary is silently overwritten by the lexer's own calls once the
+    /// query is large enough to reach the frame region (~64 KiB). The corrupted token stream then
+    /// came back with garbage types - never end-of-stream, never an error - so the loop below
+    /// never terminated and the page hung before any request was sent.
+    const bytes = new TextEncoder().encode(query);
+    let memory_offset = exports.__heap_base.value;
+
+    const lexer_offset = memory_offset;
     memory_offset += exports.clickhouse_lexer_size;
 
-    /// Allocate the query
-    const bytes = new TextEncoder().encode(query);
-    const query_array = new Uint8Array(buffer, memory_offset, bytes.length);
-    query_array.set(bytes);
     const query_begin = memory_offset;
     memory_offset += bytes.length;
     const query_end = memory_offset;
 
-    /// Initialize the lexer
-    exports.clickhouse_lexer_create(lexer, query_begin, query_end, 65536);
-
-    /// Allocate the out ptrs
     const token_begin = memory_offset;
     memory_offset += 4;
     const token_end = memory_offset;
     memory_offset += 4;
 
+    /// Grow the memory when the query does not fit above `__heap_base` (the initial heap is
+    /// smaller than the 64 KiB stack region). Growth detaches the previous `ArrayBuffer`, so the
+    /// buffer is read only after this point; it persists for the module's lifetime, so subsequent
+    /// calls reuse it without growing again.
+    if (memory_offset > exports.memory.buffer.byteLength) {
+        exports.memory.grow(Math.ceil((memory_offset - exports.memory.buffer.byteLength) / 65536));
+    }
+    const buffer = exports.memory.buffer;
+
+    /// Copy the query
+    new Uint8Array(buffer, query_begin, bytes.length).set(bytes);
+
+    /// Initialize the lexer. `max_query_size = 0` means no limit: the previous 64 KiB cap made the
+    /// lexer flag every token crossing that boundary as an error, silently truncating the token
+    /// stream of a big query - and the analyses built on it (the framing/format detection, the
+    /// read-only classification, the `Run all` splitting) would then reason about a prefix of the
+    /// query. The page lexes whatever the editor holds; the server applies its own limits.
+    exports.clickhouse_lexer_create(lexer_offset, query_begin, query_end, 0);
+
     let result = [];
+    let previous_end = query_begin;
 
     while (true) {
-        const token_type = exports.clickhouse_lexer_next_token(lexer, token_begin, token_end);
+        const token_type = exports.clickhouse_lexer_next_token(lexer_offset, token_begin, token_end);
         if (exports.clickhouse_lexer_token_is_error(token_type) || exports.clickhouse_lexer_token_is_end(token_type)) {
             break;
         }
@@ -12897,6 +12916,14 @@ async function tokenize(query) {
         const begin = view.getUint32(token_begin, true);
         const end = view.getUint32(token_end, true);
 
+        /// The tokens of a query are contiguous, so every token past the guard above must advance.
+        /// A token that does not says the lexer state is corrupted; throwing turns a would-be
+        /// page hang into an exception the callers translate into their text-match fallbacks.
+        if (end <= previous_end) {
+            throw new Error('SQL lexer stopped advancing at offset ' + (end - query_begin) + ' of ' + bytes.length);
+        }
+        previous_end = end;
+
         const token_bytes = new Uint8Array(buffer, begin, end - begin);
         let token = new TextDecoder().decode(token_bytes);
 
@@ -12904,6 +12931,26 @@ async function tokenize(query) {
     }
 
     return result;
+}
+
+/// `tokenize` for the callers that stand on the mandatory request path (`detectFramingSetting`,
+/// `detectExplicitFormatClause`, `queryIsReadOnly`, `splitAllQueries`, `getQueryUnderCursor`):
+/// returns the token list, or null when the lexer cannot produce one - WebAssembly is unavailable,
+/// or tokenization failed (e.g. the memory could not grow to fit the text, or the forward-progress
+/// guard fired). A null tells the caller to use its best-effort text-match fallback, so a query the
+/// lexer cannot handle still runs instead of failing or hanging the tab before any request is sent.
+async function tokenizeOrNull(text)
+{
+    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') return null;
+    try
+    {
+        return await tokenize(text);
+    }
+    catch (e)
+    {
+        console.error('Tokenization failed, falling back to a text match:', e);
+        return null;
+    }
 }
 
 /// Decide whether the query carries its own `framing_output_format` setting and, if so, whether that
@@ -12936,11 +12983,12 @@ async function tokenize(query) {
 /// clause (`SELECT 1 FORMAT TSV SETTINGS framing_output_format = 'None'` is valid). A standalone
 /// `SET framing_output_format = ...` is distinguished from a query-level `SETTINGS` clause because the
 /// former persists in the session (when the connection uses a `session_id`), which this page cannot
-/// honor. Falls back to a best-effort text match only when WebAssembly - hence the lexer - is
-/// unavailable, mirroring `getQueryUnderCursor`.
+/// honor. Falls back to a best-effort text match only when the lexer cannot produce a token list -
+/// WebAssembly is unavailable, or tokenization failed - mirroring `getQueryUnderCursor`.
 async function detectFramingSetting(query)
 {
-    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+    const raw_tokens = await tokenizeOrNull(query);
+    if (raw_tokens === null) {
         /// Without the lexer, require a `SETTINGS`/`SET` keyword before the assignment so that a bare
         /// comparison in the query body is not mistaken for a setting. The name may be spelled as a
         /// quoted identifier, so an optional closing quote is allowed between the name and the `=`.
@@ -12964,7 +13012,7 @@ async function detectFramingSetting(query)
         };
     }
 
-    const tokens = (await tokenize(query)).filter(t => t.significant);
+    const tokens = raw_tokens.filter(t => t.significant);
     /// `ParserSetQuery` parses the setting name with a full identifier parser, so the name may also
     /// be spelled as a quoted identifier: a backquoted `framing_output_format` in `SETTINGS` or `SET`
     /// is the same real setting. Accept both spellings and compare by the unquoted, lowercased name;
@@ -13098,10 +13146,12 @@ async function detectFramingSetting(query)
 /// own `EventStream` request, or (for the download) rewrite the query into a different statement.
 /// The clause span is derived by summing token lengths, which are JS-string offsets into `query`
 /// (the same contiguous token stream `getQueryUnderCursor` relies on). Falls back to a best-effort
-/// text match only when WebAssembly - hence the lexer - is unavailable, mirroring `getQueryUnderCursor`.
+/// text match only when the lexer cannot produce a token list - WebAssembly is unavailable, or
+/// tokenization failed - mirroring `getQueryUnderCursor`.
 async function detectExplicitFormatClause(query)
 {
-    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+    const raw_tokens = await tokenizeOrNull(query);
+    if (raw_tokens === null) {
         /// Anchor the match to a real trailing clause (only `;` or `SETTINGS` may follow the name),
         /// and capture just the `FORMAT <name>` span so the caller strips nothing else. The name is
         /// parsed by an identifier parser on the server, so a backquoted or double-quoted spelling is
@@ -13117,7 +13167,7 @@ async function detectExplicitFormatClause(query)
     /// length of every token (significant or not) so the offsets track the original string exactly.
     const tokens = [];
     let offset = 0;
-    for (const t of await tokenize(query)) {
+    for (const t of raw_tokens) {
         if (t.significant) tokens.push({ type: t.type, token: t.token, start: offset, end: offset + t.token.length });
         offset += t.token.length;
     }
@@ -13204,11 +13254,11 @@ async function detectExplicitFormat(query)
 /// same query text appears more than once. The caller applies the selection/focus, and only when its
 /// tab is still active — so a background run cannot move the foreground editor.
 async function getQueryUnderCursor(all_queries, cursor_position) {
-    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+    const tokens = await tokenizeOrNull(all_queries);
+    if (tokens === null) {
         return { query: all_queries, selStart: null, selEnd: null, queryStart: 0, isMulti: false };
     }
 
-    const tokens = await tokenize(all_queries);
     const should_select_query = getQueryBoundaries(tokens, all_queries).length > 1;
 
     let current_query_start = 0;
@@ -13391,9 +13441,10 @@ function leadingKeywordIsReadOnly(query)
 /// plain-HTTP error, so resubmitting it could duplicate its effect.
 async function queryIsReadOnly(query)
 {
-    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function')
+    const tokens = await tokenizeOrNull(query);
+    if (tokens === null)
         return leadingKeywordIsReadOnly(query);
-    return statementIsReadOnly((await tokenize(query)).filter(t => t.significant));
+    return statementIsReadOnly(tokens.filter(t => t.significant));
 }
 
 /// Split the textarea content into individual queries using the lexer.
@@ -13403,11 +13454,11 @@ async function queryIsReadOnly(query)
 /// - e.g. `WITH y AS (SELECT 1) INSERT INTO t SELECT * FROM y` - stays a barrier in `Run all` and is
 /// never launched in parallel with the reads that follow it.
 async function splitAllQueries(text) {
-    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+    const tokens = await tokenizeOrNull(text);
+    if (tokens === null) {
         return [{ query: text, is_select: leadingKeywordIsReadOnly(text), start: 0, end: text.length, queryStart: 0 }];
     }
 
-    const tokens = await tokenize(text);
     const queries = [];
     let current_query_start = 0;
     let current_offset = 0;
