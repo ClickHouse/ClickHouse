@@ -474,16 +474,19 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         /// group, so its entry group is never attached and its cancellation is already the query's.
         if (entry_context->isBackgroundContext())
         {
-            /// Same latch as `MergeTask::GlobalRuntimeContext::isCancelled`: the IO layer and the merge's
-            /// own checks poll independently, so a blocker released in between must not resurrect the read.
-            /// `ttl_merges_blocker` is not a source here, see the commit message.
-            auto is_cancelled
-                = [&blocker = merges_blocker, merge_entry, partition_id = future_part->part_info.getPartitionId()]
+            /// Same latch as `MergeTask::GlobalRuntimeContext::isCancelled`: the IO layer and the merge's own
+            /// checks poll independently, so a blocker released in between must not resurrect the read.
+            /// `ttl_merges_blocker` cancels an assigned TTL merge only, never a regular one.
+            auto is_cancelled = [&blocker = merges_blocker,
+                                 &ttl_blocker = ttl_merges_blocker,
+                                 is_ttl_merge = isTTLMergeType(future_part->merge_type),
+                                 merge_entry,
+                                 partition_id = future_part->part_info.getPartitionId()]
             {
                 if ((*merge_entry)->is_cancelled.load(std::memory_order_relaxed))
                     return true;
 
-                if (blocker.isCancelledForPartition(partition_id))
+                if (blocker.isCancelledForPartition(partition_id) || (is_ttl_merge && ttl_blocker.isCancelled()))
                 {
                     (*merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
                     return true;
