@@ -147,5 +147,13 @@
             <profile>default</profile>
             <quota>default</quota>
         </reload_shadow_endpoint_user>
+        <reload_switch_user>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </reload_switch_user>
     </users>
 </clickhouse>

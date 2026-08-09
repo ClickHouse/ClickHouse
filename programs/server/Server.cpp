@@ -3806,6 +3806,33 @@ bool httpHandlersConsumeDefaultSessionUser(const Poco::Util::AbstractConfigurati
     return false;
 }
 
+/// Resolve the `http_handlers`-style section a composable `http` endpoint serves: the
+/// `handlers` key of the module carrying `type = http`, found by walking the `impl` chain
+/// (mirrors `buildProtocolStackFromConfig`). Returns an empty optional when the chain does
+/// not reach an `http` module in this configuration (e.g. the endpoint did not exist or had
+/// a different type before a reload).
+std::optional<String> resolveHttpHandlersKey(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+{
+    std::string conf_name = protocol;
+    std::string prefix = protocol + ".";
+    std::unordered_set<std::string> pset {conf_name};
+    while (true)
+    {
+        if (config.getString(prefix + "type", "") == "http")
+            return config.getString(conf_name + ".handlers", "http_handlers");
+
+        if (!config.has(prefix + "impl"))
+            return {};
+
+        conf_name = "protocols." + config.getString(prefix + "impl");
+        prefix = conf_name + ".";
+
+        /// A malformed loop is rejected when the stack is built; here we just stop to avoid spinning.
+        if (!pset.insert(conf_name).second)
+            return {};
+    }
+}
+
 /// Whether a non-keeper `prometheus` endpoint (serving the global `prometheus` section)
 /// consults the default session user. Only the time-series handlers without a fixed `user`
 /// authenticate; the plain metrics exposition served without a `handlers` section does not.
@@ -4431,6 +4458,7 @@ void Server::updateServers(
             bool is_http = false;
             bool default_session_user_changed = false;
             String handlers_key = "http_handlers";
+            String previous_handlers_key = handlers_key;
             if (port_name.starts_with("protocols."))
             {
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
@@ -4457,8 +4485,18 @@ void Server::updateServers(
                             is_http = true;
                             if (config.has(conf_name + ".handlers"))
                                 handlers_key = config.getString(conf_name + ".handlers");
+                            /// This reload may re-point the endpoint at a different `<handlers>` section
+                            /// (through the endpoint's `handlers` reference or its `impl` chain), while
+                            /// the running factory still serves the previously referenced section. Resolve
+                            /// the old reference too: the consumer check must consider the old *or* the
+                            /// new handler set, and the changed-configuration check below must notice the
+                            /// reference switch itself — comparing only the new section on both sides of
+                            /// the reload would miss a switch between two sections that are themselves
+                            /// unchanged.
+                            previous_handlers_key = resolveHttpHandlersKey(previous_config, protocol).value_or(handlers_key);
                             consumes_default_session_user = consumes_default_session_user
-                                || httpHandlersConsumeDefaultSessionUser(config, handlers_key);
+                                || httpHandlersConsumeDefaultSessionUser(config, handlers_key)
+                                || httpHandlersConsumeDefaultSessionUser(previous_config, previous_handlers_key);
                             break;
                         }
                         if (type == "tcp" || type == "mysql" || type == "postgres")
@@ -4506,9 +4544,18 @@ void Server::updateServers(
             if (!has_host)
                 has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
             bool has_port = !config.getString(port_name, "").empty();
-            bool force_restart = is_http && !isSameConfiguration(previous_config, config, handlers_key);
-            if (force_restart)
+            bool force_restart = false;
+            if (is_http && previous_handlers_key != handlers_key)
+            {
+                force_restart = true;
+                LOG_TRACE(log, "The handlers reference had been changed from <{}> to <{}>, will reload {}",
+                    previous_handlers_key, handlers_key, server->getDescription());
+            }
+            else if (is_http && !isSameConfiguration(previous_config, config, handlers_key))
+            {
+                force_restart = true;
                 LOG_TRACE(log, "<{}> had been changed, will reload {}", handlers_key, server->getDescription());
+            }
             if (default_session_user_changed)
             {
                 force_restart = true;

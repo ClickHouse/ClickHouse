@@ -57,6 +57,22 @@
         </rule>
     </http_handlers_fixed_user_only>
 
+    <!-- An anonymous counterpart of `http_handlers_fixed_user_only`: the same URL, but the
+         handler authenticates through the default session user. An endpoint is re-pointed
+         from this section to `http_handlers_fixed_user_only` on reload to check that
+         switching the `handlers` reference between two unchanged sections restarts the
+         listener (the restart decision must resolve the previously referenced section). -->
+    <http_handlers_anonymous_only>
+        <rule>
+            <url>/fixed</url>
+            <methods>GET</methods>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT currentUser()</query>
+            </handler>
+        </rule>
+    </http_handlers_anonymous_only>
+
     <!-- A prometheus `remote_write` handler with a fixed user (`handler.user`): like the
          other authenticating prometheus handlers (`read`/`query`/`api_v1`), it authenticates
          as the configured user regardless of the request, so it must keep working on an
@@ -248,6 +264,14 @@
             <handlers>http_handlers_fixed_user_only</handlers>
             <description>http-fixed-user-only-reload</description>
         </http_fixed_user_only_reload>
+        <http_handlers_switch_reload>
+            <type>http</type>
+            <host>0.0.0.0</host>
+            <port>8133</port>
+            <default_session_user>reload_switch_user</default_session_user>
+            <handlers>http_handlers_anonymous_only</handlers>
+            <description>http-handlers-switch-reload</description>
+        </http_handlers_switch_reload>
         <prometheus_no_anonymous>
             <type>prometheus</type>
             <host>0.0.0.0</host>

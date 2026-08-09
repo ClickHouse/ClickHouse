@@ -775,3 +775,51 @@ def test_config_reload_prometheus_handlers_switch_to_fixed_user():
             break
         time.sleep(1)
     assert session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before
+
+
+def test_config_reload_http_handlers_reference_switch():
+    # Re-pointing an `http` endpoint's `handlers` reference to a different, already-defined
+    # section must restart the listener, even when the newly referenced section is itself
+    # unchanged and does not consume `default_session_user`. The restart decision has to
+    # resolve the *previously* referenced section: comparing only the new section on both
+    # sides of the reload would miss the switch, and the old anonymous handler factory
+    # would keep serving on the port. The reload also empties the endpoint's
+    # `default_session_user` at the same time, so the consumer check must consider the old
+    # (anonymous) handler set as well.
+    config_path = "/etc/clickhouse-server/config.d/config.xml"
+    url = f"http://{node1.ip_address}:8133/fixed"
+
+    # The live listener serves the anonymous section: the handler authenticates through
+    # the endpoint's default session user.
+    assert urllib.request.urlopen(url, timeout=10).read() == b"reload_switch_user\n"
+
+    node1.replace_in_config(
+        config_path,
+        "<handlers>http_handlers_anonymous_only</handlers>",
+        "<handlers>http_handlers_fixed_user_only</handlers>",
+    )
+    node1.replace_in_config(
+        config_path,
+        "<default_session_user>reload_switch_user</default_session_user>",
+        "<default_session_user></default_session_user>",
+    )
+    node1.query("SYSTEM RELOAD CONFIG")
+
+    # `updateServers` runs within `SYSTEM RELOAD CONFIG`, so by now the decision to
+    # restart has been made and logged.
+    assert node1.contains_in_log("will reload http-handlers-switch-reload")
+
+    # The restarted listener serves the newly referenced section: the same URL now
+    # authenticates as the fixed user (the empty `default_session_user` does not matter,
+    # because no handler in the new section consults it). The listener comes back
+    # asynchronously after the reload, so poll.
+    response = None
+    for _ in range(30):
+        try:
+            response = urllib.request.urlopen(url, timeout=10).read()
+            if response == b"fixed_handler_user\n":
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+    assert response == b"fixed_handler_user\n"
