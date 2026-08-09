@@ -1,0 +1,14 @@
+-- Preprocessor referencing an ALIAS with a single-column matcher
+1
+1
+1
+0
+1
+1
+-- Postprocessor referencing an ALIAS with a matcher
+1
+1
+0
+-- Preprocessor referencing a chained ALIAS with matchers
+1
+0

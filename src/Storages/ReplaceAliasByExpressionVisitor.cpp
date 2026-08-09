@@ -86,7 +86,9 @@ void ReplaceAliasByExpressionMatcher::visit(const ASTIdentifier & column, ASTPtr
             /// Expand the ALIAS chain (a -> b -> c) before deciding on capture. The inserted expression was
             /// written at table scope, so its identifiers refer to table columns even when they match a
             /// lambda parameter name, and only the fully expanded result can be captured.
-            ASTPtr expanded = col_default->expression->clone();
+            /// The ALIAS body may contain column matchers (e.g. `COLUMNS('^msg$')`), which downstream
+            /// consumers such as text-index transforms pass to TreeRewriter as-is, so expand them here.
+            ASTPtr expanded = cloneAndExpandColumnDefaultExpression(*col_default, data.columns);
             Data table_scope{data.columns, {}, data.reject_lambda_capture};
             Visitor(table_scope).visit(expanded);
 
