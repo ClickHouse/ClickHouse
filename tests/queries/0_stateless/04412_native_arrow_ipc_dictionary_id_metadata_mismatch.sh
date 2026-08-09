@@ -80,6 +80,6 @@ open(path, 'wb').write(bytes(data))
 EOF
 
 echo "--- shared dictionary id with differing field metadata is rejected ---"
-${CLICKHOUSE_LOCAL} --input_format_arrow_use_native_reader=1 \
+${CLICKHOUSE_LOCAL} \
     --query "SELECT a, b FROM file('${DATA_FILE}', 'ArrowStream') FORMAT Null" 2>&1 \
     | grep -oF 'different value types' | head -1 || echo 'FAIL: expected the reused dictionary id to be rejected'
