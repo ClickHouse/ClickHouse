@@ -865,7 +865,6 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
                 ostr << "VOLUME ";
                 break;
             case DataDestinationType::SHARD:
-                /// The parser requires the keyword, so omitting it makes the output unparsable.
                 ostr << "SHARD ";
                 break;
             case DataDestinationType::TABLE:
