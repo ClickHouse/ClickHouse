@@ -134,8 +134,32 @@ SELECT 'The stored key is not the common subtype: the prebuilt hash table cannot
 SELECT * FROM (SELECT CAST(1, 'UInt64') AS x) AS t SEMI LEFT JOIN t_join_signed USING (x); -- { serverError NO_COMMON_TYPE }
 SELECT * FROM (SELECT CAST(1, 'UInt64') AS x) AS t SEMI LEFT JOIN t_join_signed AS j ON t.x = j.x; -- { serverError NO_COMMON_TYPE }
 
+SELECT 'A stored key wrapped in LowCardinality or Nullable is served by the prebuilt hash table as is, so only the probe side is converted';
+SET allow_suspicious_low_cardinality_types = 1;
+DROP TABLE IF EXISTS t_join_unsigned_lc;
+DROP TABLE IF EXISTS t_join_unsigned_nullable;
+CREATE TABLE t_join_unsigned_lc (x LowCardinality(UInt64), v String) ENGINE = Join(SEMI, LEFT, x);
+CREATE TABLE t_join_unsigned_nullable (x Nullable(UInt64), v String) ENGINE = Join(SEMI, LEFT, x);
+INSERT INTO t_join_unsigned_lc VALUES (1, 'a'), (18446744073709551615, 'b');
+INSERT INTO t_join_unsigned_nullable VALUES (1, 'a'), (NULL, 'n');
+SELECT * FROM (SELECT CAST(1, 'Int64') AS x) AS t SEMI LEFT JOIN t_join_unsigned_lc USING (x);
+SELECT * FROM (SELECT CAST(-1, 'Int64') AS x) AS t SEMI LEFT JOIN t_join_unsigned_lc USING (x);
+SELECT * FROM (SELECT CAST(1, 'Int64') AS x) AS t SEMI LEFT JOIN t_join_unsigned_lc AS j ON t.x = j.x;
+SELECT 'A probe value converted to NULL does not match the NULL of the stored key';
+SELECT * FROM (SELECT CAST(1, 'Int64') AS x) AS t SEMI LEFT JOIN t_join_unsigned_nullable USING (x);
+SELECT * FROM (SELECT CAST(-1, 'Int64') AS x) AS t SEMI LEFT JOIN t_join_unsigned_nullable USING (x);
+
+SELECT 'The wrappers of the stored key do not relax the unsupported direction';
+DROP TABLE IF EXISTS t_join_signed_lc;
+CREATE TABLE t_join_signed_lc (x LowCardinality(Int64), v String) ENGINE = Join(SEMI, LEFT, x);
+INSERT INTO t_join_signed_lc VALUES (1, 'a'), (-1, 'b');
+SELECT * FROM (SELECT CAST(1, 'UInt64') AS x) AS t SEMI LEFT JOIN t_join_signed_lc USING (x); -- { serverError NO_COMMON_TYPE }
+
 DROP TABLE t_join_unsigned;
 DROP TABLE t_join_signed;
+DROP TABLE t_join_unsigned_lc;
+DROP TABLE t_join_unsigned_nullable;
+DROP TABLE t_join_signed_lc;
 
 DROP TABLE t_unsigned;
 DROP TABLE t_signed;

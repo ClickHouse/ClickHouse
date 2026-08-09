@@ -85,3 +85,9 @@ The Join table engine holds a hash table prebuilt over the original key, so only
 The stored key is the common subtype: the probe key is converted, and an out-of-range value does not match anything
 1	a
 The stored key is not the common subtype: the prebuilt hash table cannot be converted
+A stored key wrapped in LowCardinality or Nullable is served by the prebuilt hash table as is, so only the probe side is converted
+1	a
+1	1	a
+A probe value converted to NULL does not match the NULL of the stored key
+1	a
+The wrappers of the stored key do not relax the unsupported direction

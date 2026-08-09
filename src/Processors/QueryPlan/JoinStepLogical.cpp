@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -761,7 +762,9 @@ static void predicateOperandsToCommonType(
                 /// The `Join` table engine holds a hash table prebuilt over the original key columns, and its reuse
                 /// path cannot remap a key rewritten to a derived expression (see `chooseJoinAlgorithm`). The fallback
                 /// applies only when the storage key itself is the subtype, so that only the probe side is converted.
-                if (!planning_context.is_storage_join || right_type->equals(*subtype))
+                /// The comparison ignores the `LowCardinality` and `Nullable` wrappers, same as `JoinCommon::checkTypesOfKeys`:
+                /// the hash table serves a probe key that differs from the build key only in these wrappers as is.
+                if (!planning_context.is_storage_join || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*subtype))
                     common_type = makeNullable(subtype);
             }
         }
@@ -794,7 +797,10 @@ static void predicateOperandsToCommonType(
 
     if (planning_context.is_storage_join)
     {
-        if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
+        /// Under the subtype fallback the check above guarantees that the storage key is the subtype
+        /// modulo the `LowCardinality` and `Nullable` wrappers, which the prebuilt hash table serves
+        /// without conversion, so the storage key must not be rewritten at all.
+        if (!cast_to_subtype && !right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
             right_node = JoinActionRef::transform({right_node}, cast_transform);
     }
     else
