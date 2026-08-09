@@ -49,11 +49,27 @@ SELECT 'grouping', g, count(), grouping(g) FROM t_index_hint
 WHERE (id >= 1 AND id <= 3) AND indexHint(toNullable(256))
 GROUP BY GROUPING SETS ((g), ()) ORDER BY g;
 
--- Granule pruning is still applied for a hint that carries a usable condition.
-SELECT 'granules pruned', count() > 0 FROM (
-    EXPLAIN indexes = 1 SELECT count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND indexHint(1)
-) WHERE explain LIKE '%Granules: %/%'
-  AND toUInt64(extract(explain, 'Granules: (\d+)/')) < toUInt64(extract(explain, 'Granules: \d+/(\d+)'));
+-- Granule pruning is still applied for a hint that carries a usable condition. The range sits
+-- INSIDE the hint so the hint is the only possible source of pruning; the second statement is the
+-- negative control, where a hint carrying no usable condition must leave every granule.
+-- optimize_use_implicit_projections = 0 as in 01739_index_hint and 02880_indexHint__partition_id,
+-- and optimize_trivial_count_query = 0 as well: either one lets count() be answered without
+-- consulting the index, and then EXPLAIN prints no Granules line at all.
+-- countIf, not a WHERE over the subquery: without the analyzer the extract() is evaluated before
+-- the LIKE, so a non-matching row reaches toUInt64 and throws.
+SELECT 'granules pruned', countIf(
+    toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'))) > 0
+FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_index_hint WHERE indexHint(id >= 1 AND id <= 3)
+    SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0
+);
+
+SELECT 'granules kept', countIf(explain LIKE '%Granules: %/%'
+    AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) = toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'))) > 0
+FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_index_hint WHERE indexHint(1)
+    SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0
+);
 
 -- Part pruning by a virtual column is still applied. indexHint is row-level TRUE, so a count below
 -- the table total can only come from parts being dropped during analysis.
@@ -65,6 +81,26 @@ SELECT 'parts pruned', count() FROM t_index_hint_part WHERE id < 1000 AND indexH
 SELECT 'parts pruned', count() FROM t_index_hint_part WHERE id < 1000 AND indexHint(_partition_id = '0', 'x');
 SELECT 'parts kept', count() FROM t_index_hint_part WHERE id < 1000 AND indexHint(256);
 SELECT 'parts kept', count() FROM t_index_hint_part WHERE id < 1000 AND indexHint('x');
+
+-- Two hints on an allowed input keep two rewritten children under the enclosing `and`, which reuses
+-- its parent node and so its UInt8 result type. Answering 200 rather than 300 or 400 is what proves
+-- both children survived, so these also cover the case where one of them is Nullable.
+SELECT 'two hints', count() FROM t_index_hint_part
+WHERE id < 1000 AND indexHint(_partition_id != '0') AND indexHint(_partition_id != '1');
+SELECT 'two hints', count() FROM t_index_hint_part
+WHERE id < 1000 AND indexHint(_partition_id != '0') AND indexHint(toNullable(_partition_id) != '1');
+SELECT 'two hints', count() FROM t_index_hint_part
+WHERE id < 1000 AND indexHint(_partition_id != '0') AND indexHint(toLowCardinality(toNullable(_partition_id)) != '1');
+SELECT 'two hints', count() FROM t_index_hint_part
+WHERE id < 1000 AND indexHint(_partition_id != '0') AND indexHint(toNullable(_partition_id) != '1', 256);
+SELECT 'three hints', count() FROM t_index_hint_part
+WHERE id < 1000 AND indexHint(_partition_id != '0') AND indexHint(toNullable(_partition_id) != '1')
+  AND indexHint(_partition_id != '2');
+
+-- A hint over a Nullable column whose value really is NULL for some parts: NULL is not true, so
+-- those parts are pruned, and converting must not throw on the NULL.
+SELECT 'nullable column', count() FROM t_index_hint_part
+WHERE id < 1000 AND indexHint(if(_partition_id = '0', NULL, 1));
 
 -- The sibling `and` branch of the same code path must be unaffected.
 SELECT 'and branch', count() FROM t_index_hint WHERE (id >= 1 AND id <= 3) AND 256;

@@ -32,11 +32,18 @@ grouping	1	1	0
 grouping	2	1	0
 grouping	3	1	0
 granules pruned	1
+granules kept	1
 parts pruned	100
 parts pruned	100
 parts pruned	100
 parts kept	400
 parts kept	400
+two hints	200
+two hints	200
+two hints	200
+two hints	200
+three hints	100
+nullable column	300
 and branch	3
 and branch	3
 and branch	3
