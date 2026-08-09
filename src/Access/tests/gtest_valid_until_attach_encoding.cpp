@@ -12,6 +12,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 
+#include <fmt/format.h>
+
 #include <vector>
 
 using namespace DB;
@@ -184,6 +186,53 @@ TEST(ValidUntilAttachEncoding, HandEditedNumericEpochZeroIsNotConfusedWithNoExpi
         ASSERT_EQ(user->authentication_methods.size(), 1u) << definition;
         EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 1) << definition;
     }
+}
+
+TEST(ValidUntilAttachEncoding, HandEditedNumericOverflowFailsToLoad)
+{
+    /// An all-digit stored deadline that exceeds the 64-bit signed range must fail to load. An
+    /// unchecked read would wrap it modulo 2^64 - e.g. `'18446744327111802015'` (2^64 plus
+    /// `MAX_VALID_UNTIL_TIME`) would wrap to `MAX_VALID_UNTIL_TIME` and be accepted as a live
+    /// year-9999 deadline - and a checked read alone would stop before the overflowing digit and
+    /// accept the parsed prefix, which is another live deadline. The server never writes such a
+    /// value (the stored form is at most `MAX_VALID_UNTIL_TIME`, 12 digits), so it can only come
+    /// from a hand-edited or corrupted definition, and it must be rejected rather than silently
+    /// converted into a different valid instant.
+    for (const char * literal_value :
+         {"18446744327111802015", /// 2^64 + MAX_VALID_UNTIL_TIME: wraps to a live year-9999 deadline if unchecked
+          "9223372036854775808", /// 2^63: the smallest value that does not fit into Int64
+          "99999999999999999999999999"}) /// far beyond any integer width in use
+    {
+        ASTPtr literal = make_intrusive<ASTLiteral>(Field(String(literal_value)));
+        try
+        {
+            getValidUntilFromAST(literal, /* context= */ nullptr, /* is_interval= */ false);
+            FAIL() << "expected the deadline to be rejected: " << literal_value;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_TRUE(e.message().contains("cannot be read as a 64-bit signed Unix timestamp")) << e.message();
+        }
+
+        const auto definition = fmt::format("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '{}';", literal_value);
+        try
+        {
+            deserializeAccessEntity(definition);
+            FAIL() << "expected the definition to be rejected: " << definition;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_TRUE(e.message().contains("cannot be read as a 64-bit signed Unix timestamp")) << e.message();
+        }
+    }
+
+    /// The largest all-digit deadline that does fit into the 64-bit signed range still loads (clamped
+    /// down to `MAX_VALID_UNTIL_TIME` by the upper-bound check, like any other stored deadline beyond it).
+    const auto entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '9223372036854775807';");
+    const auto * user = typeid_cast<const User *>(entity.get());
+    ASSERT_NE(user, nullptr);
+    ASSERT_EQ(user->authentication_methods.size(), 1u);
+    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 253402250399); /// MAX_VALID_UNTIL_TIME
 }
 
 TEST(ValidUntilAttachEncoding, HandEditedSpacedYearZeroFailsToLoad)
