@@ -160,10 +160,11 @@ private:
         bool isComplete(bool at_eof) const { return at_eof || atBound(); }
         /// Whether any bytes have been consumed from the stream (read or skipped) since it opened.
         bool consumedAnyBytes() const { return current_position > opened_at; }
-        /// Forward, within `bridgeable_gap`, and `[off, off+want)` stays inside the bound.
-        bool canContinue(size_t off, size_t want, size_t bridgeable_gap) const
+        /// Forward, within `bridgeable_gap`, and still below the bound (a crossing window is served
+        /// short, not rejected).
+        bool canServeAt(size_t off, size_t bridgeable_gap) const
         {
-            return off >= current_position && off - current_position <= bridgeable_gap && off + want <= read_until;
+            return off >= current_position && off - current_position <= bridgeable_gap && off < read_until;
         }
 
         /// Read up to `want` bytes from the open stream into `dst`; advances the frontier.
@@ -193,8 +194,8 @@ private:
         return !offset_map.hasUnknownSize() && position >= totalSize();
     }
 
-    /// Predicted forward reach as a logical end position, clamped to the file end.
-    size_t clampReach(size_t reach, size_t logical_pos) const;
+    /// Clamp the estimator's run-anchored predicted end to `[logical_pos, file end]`.
+    size_t clampReach(size_t predicted_end, size_t logical_pos) const;
     /// Open a long connection now? True when a slot budget is configured, none is held,
     /// and the estimator predicts the read continues past this window.
     bool shouldOpenLongConnection() const;
@@ -202,12 +203,17 @@ private:
     /// no slot was available (caller falls back to a one-shot read).
     bool tryOpenLongConnection(const StoredObject & object, size_t object_offset);
     /// Serve one window (<= `want`) from the held connection, bridging a small leading gap;
-    /// releases the connection if it reaches its bound. Precondition: `canContinue`.
+    /// releases the connection if it reaches its bound. Precondition: `canServeAt`.
     size_t serveFromLongConnection(size_t object_offset, size_t want, char * dst);
     /// One-shot bounded read (the stateless path): open, seek, read `want` into `dst`.
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
+
+    /// The only logical<->physical converters (physical = header-inclusive file coords, logical =
+    /// payload coords); a raw `+/- data_start_offset` elsewhere is a bug.
+    size_t toPhysical(size_t logical) const { return logical + data_start_offset; }
+    size_t toLogical(size_t physical) const { chassert(physical >= data_start_offset); return physical - data_start_offset; }
 
     /// Whether served payload is encrypted (`data_start_offset` is the header size,
     /// 0 when there is no encryption / no SSL).
@@ -228,7 +234,7 @@ private:
     /// Held source connection reused across sequential windows; empty when none is open.
     std::optional<LongConnection> long_conn;
     /// Forward-reach estimator, fed `recordReadRange`/`recordSeek`; drives the open-long decision.
-    ReadContinuityTracker continuity_tracker;
+    ReadContinuityTracker fetch_tracker;
     /// Connection-reuse budget; null disables long connections (the stateless path).
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
     /// Global encryption-header cache; null disables caching (url / non-disk reads).

@@ -56,15 +56,15 @@ ORDER BY
   ## Tableau de bord avancé d’observabilité intégré
 </div>
 
-ClickHouse inclut une fonctionnalité intégrée de tableau de bord avancé d’observabilité, accessible à l’adresse `$HOST:$PORT/dashboard` (nécessite un nom d’utilisateur et un mot de passe), qui affiche les métriques de Cloud Overview contenues dans `system.dashboards`.
+ClickHouse inclut un tableau de bord avancé d’observabilité intégré, accessible à l’adresse `$HOST:$PORT/dashboard` (nécessite un nom d’utilisateur et un mot de passe), qui affiche les métriques Cloud Overview contenues dans `system.dashboards`.
 
 <Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Tableau de bord avancé natif d’observabilité" border />
 
 <Note>
-  Ce tableau de bord nécessite une authentification directe auprès de l’instance ClickHouse et est distinct du [tableau de bord avancé de la Cloud Console](/fr/products/cloud/features/monitoring/cloud-console#advanced-dashboard), accessible depuis l’UI de Cloud Console sans authentification supplémentaire.
+  Ce tableau de bord nécessite une authentification directe auprès de l’instance ClickHouse et est distinct du [tableau de bord avancé de la Cloud Console](/fr/products/cloud/features/monitoring/cloud-console#advanced-dashboard), accessible depuis l’UI de la Cloud Console sans authentification supplémentaire.
 </Note>
 
-Pour en savoir plus sur les visualisations disponibles et sur leur utilisation pour le troubleshooting, consultez la [documentation du tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard).
+Pour en savoir plus sur les visualisations disponibles et sur leur utilisation pour le dépannage, consultez la [documentation du tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard).
 
 <div id="querying-across-nodes">
   ## Interroger l’ensemble des nœuds et des versions
@@ -104,10 +104,10 @@ Pour plus de détails, consultez [l’interrogation sur plusieurs nœuds](/fr/re
 Pour le monitoring de production en temps réel avec une séparation opérationnelle, envisagez d’utiliser l’[endpoint de métriques compatible Prometheus](/fr/products/cloud/features/monitoring/prometheus) ou les [Cloud Console dashboards](/fr/products/cloud/features/monitoring/cloud-console), qui s’appuient tous deux sur des métriques pré-collectées et n’émettent pas de requêtes vers le service sous-jacent.
 
 <div id="related">
-  ## Pages associées
+  ## Pages connexes
 </div>
 
 * [Référence des tables système](/fr/reference/system-tables/overview) — Référence complète de toutes les tables système disponibles
-* [Monitoring de Cloud Console](/fr/products/cloud/features/monitoring/cloud-console) — Des dashboards sans configuration qui n’affectent pas les performances du service
-* [Endpoint Prometheus](/fr/products/cloud/features/monitoring/prometheus) — Exportez des metrics vers des outils de monitoring externes
-* [tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard) — Référence détaillée des visualisations du dashboard
+* [Monitoring de Cloud Console](/fr/products/cloud/features/monitoring/cloud-console) — Des tableaux de bord prêts à l&#39;emploi, sans impact sur les performances du service
+* [Endpoint Prometheus](/fr/products/cloud/features/monitoring/prometheus) — Exportez les métriques vers des outils de monitoring externes
+* [tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard) — Référence détaillée des visualisations du tableau de bord

@@ -206,6 +206,12 @@ struct SubstreamsCacheSparseOffsetsElement : public ISerialization::ISubstreamsC
     {
     }
 
+    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
+    {
+        if (offsets)
+            callback(offsets);
+    }
+
     ColumnPtr offsets;
     size_t old_size = 0;
     size_t read_rows = 0;

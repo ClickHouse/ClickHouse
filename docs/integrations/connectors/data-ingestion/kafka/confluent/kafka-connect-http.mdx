@@ -21,10 +21,12 @@ Below we describe a simple installation, pulling messages from a single Kafka to
 
 ### Quick start steps {#quick-start-steps}
 
-#### 1. Gather your connection details {#1-gather-your-connection-details}
+<Steps>
+<Step title="Gather your connection details" id="1-gather-your-connection-details">
 <ConnectionDetails />
 
-#### 2. Run Kafka Connect and the HTTP sink connector {#2-run-kafka-connect-and-the-http-sink-connector}
+</Step>
+<Step title="Run Kafka Connect and the HTTP sink connector" id="2-run-kafka-connect-and-the-http-sink-connector">
 
 You have two options:
 
@@ -37,7 +39,8 @@ If you use the confluent-hub installation method, your local configuration files
   The following examples are using Confluent Cloud.
 </Note>
 
-#### 3. Create destination table in ClickHouse {#3-create-destination-table-in-clickhouse}
+</Step>
+<Step title="Create destination table in ClickHouse" id="3-create-destination-table-in-clickhouse">
 
 Before the connectivity test, let's start by creating a test table in ClickHouse Cloud, this table will receive the data from Kafka:
 
@@ -54,7 +57,8 @@ CREATE TABLE default.my_table
 ORDER BY tuple()
 ```
 
-#### 4. Configure HTTP Sink {#4-configure-http-sink}
+</Step>
+<Step title="Configure HTTP Sink" id="4-configure-http-sink">
 Create a Kafka topic and an instance of HTTP Sink Connector:
 <Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="Confluent Cloud interface showing how to create an HTTP Sink connector" border/>
 
@@ -87,13 +91,17 @@ Configure HTTP Sink Connector:
 
 <Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="Confluent Cloud interface showing advanced configuration options for the HTTP Sink connector" border/>
 
-#### 5. Testing the connectivity {#5-testing-the-connectivity}
+</Step>
+<Step title="Testing the connectivity" id="5-testing-the-connectivity">
 Create an message in a topic configured by your HTTP Sink
 <Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="Confluent Cloud interface showing how to create a test message in a Kafka topic" border/>
 
 <br/>
 
 and verify the created message's been written to your ClickHouse instance.
+
+</Step>
+</Steps>
 
 ### Troubleshooting {#troubleshooting}
 #### HTTP Sink doesn't batch messages {#http-sink-doesnt-batch-messages}
@@ -118,7 +126,8 @@ Set `input_format_json_read_objects_as_strings=1` setting in URL as encoded stri
 
 Note that this example preserves the Array fields of the Github dataset. We assume you have an empty github topic in the examples and use [kcat](https://github.com/edenhill/kcat) for message insertion to Kafka.
 
-##### 1. Prepare configuration {#1-prepare-configuration}
+<Steps>
+<Step title="Prepare configuration" id="1-prepare-configuration">
 
 Follow [these instructions](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#set-up-a-local-connect-worker-with-cp-install) for setting up Connect relevant to your installation type, noting the differences between a standalone and distributed cluster. If using Confluent Cloud, the distributed setup is relevant.
 
@@ -148,7 +157,8 @@ A full list of settings, including how to configure a proxy, retries, and advanc
 
 Example configuration files for the Github sample data can be found [here](https://github.com/ClickHouse/clickhouse-docs/tree/main/docs/integrations/data-ingestion/kafka/code/connectors/http_sink), assuming Connect is run in standalone mode and Kafka is hosted in Confluent Cloud.
 
-##### 2. Create the ClickHouse table {#2-create-the-clickhouse-table}
+</Step>
+<Step title="Create the ClickHouse table" id="2-create-the-clickhouse-table">
 
 Ensure the table has been created. An example for a minimal github dataset using a standard MergeTree is shown below.
 
@@ -184,7 +194,8 @@ CREATE TABLE github
 
 ```
 
-##### 3. Add data to Kafka {#3-add-data-to-kafka}
+</Step>
+<Step title="Add data to Kafka" id="3-add-data-to-kafka">
 
 Insert messages to Kafka. Below we use [kcat](https://github.com/edenhill/kcat) to insert 10k messages.
 
@@ -202,3 +213,5 @@ SELECT count() FROM default.github;
 | 10000 |
 
 ```
+</Step>
+</Steps>

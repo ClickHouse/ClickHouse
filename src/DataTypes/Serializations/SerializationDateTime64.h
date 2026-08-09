@@ -34,6 +34,7 @@ public:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool textCSVMayNeedQuotes(const FormatSettings & settings) const override;
     bool textCSVNeedsQuotes(const IColumn & column, size_t row_num, const FormatSettings & settings) const override;
+    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 };
 
 }

@@ -318,3 +318,36 @@ def test_table_function_remote(start_cluster):
             "SELECT * FROM remote('localhost:800', system, metrics)"
         )
     )
+
+
+def test_storage_engine_remote(start_cluster):
+    # The persistent Remote/RemoteSecure engines must enforce remote_url_allow_hosts, like the
+    # remote/remoteSecure table functions: the check runs at CREATE time, before any connection.
+    for engine in ["Remote", "RemoteSecure"]:
+        # Disallowed host: rejected with UNACCEPTABLE_URL.
+        assert "not allowed in configuration file" in node6.query_and_get_error(
+            f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('example01-01-3', system, one)"
+        )
+        # A glob that expands to an allowed and a disallowed host is rejected: every expanded host
+        # is checked, not only the first one.
+        assert "not allowed in configuration file" in node6.query_and_get_error(
+            f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('example01-01-{{1,3}}', system, one)"
+        )
+        # Allowed host, but a disallowed explicit port is still rejected.
+        assert (
+            'URL "localhost:800" is not allowed in configuration file'
+            in node6.query_and_get_error(
+                f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('localhost:800', system, one)"
+            )
+        )
+        # Allowed host: the table is created (system.tables reports it as Distributed).
+        node6.query(
+            f"CREATE TABLE test_remote_engine (dummy UInt8) ENGINE = {engine}('example01-01-1', system, one)"
+        )
+        assert (
+            node6.query(
+                "SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'test_remote_engine'"
+            ).strip()
+            == "Distributed"
+        )
+        node6.query("DROP TABLE test_remote_engine")

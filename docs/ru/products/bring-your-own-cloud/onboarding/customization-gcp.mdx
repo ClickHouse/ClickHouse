@@ -16,9 +16,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Если вы предпочитаете использовать существующую VPC для развертывания ClickHouse BYOC вместо того, чтобы ClickHouse Cloud создавал новую VPC, выполните приведенные ниже шаги. Такой подход дает больше контроля над конфигурацией сети и позволяет интегрировать ClickHouse BYOC в существующую сетевую инфраструктуру.
 
 <Steps>
-  <Step>
-    ### Настройте существующую VPC
-
+  <Step title="Настройте существующую VPC" id="configure-existing-vpc">
     1. Выделите как минимум 1 приватную подсеть в [регионе, поддерживаемом ClickHouse BYOC](/ru/products/cloud/reference/supported-regions) для кластера ClickHouse Kubernetes (GKE). Убедитесь, что подсеть имеет диапазон CIDR не менее `/24` (например, 10.0.0.0/24), чтобы обеспечить достаточное количество IP-адресов для узлов кластера GKE.
     2. В пределах приватной подсети выделите как минимум 1 вторичный диапазон IPv4, который будет использоваться для подов кластера GKE. Вторичный диапазон должен быть не менее `/23`, чтобы обеспечить достаточное количество IP-адресов для подов кластера GKE.
     3. Включите **Private Google Access** для подсети. Это позволит узлам GKE обращаться к API и сервисам Google без внешних IP-адресов.
@@ -26,9 +24,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Сведения о подсети BYOC в GCP с основным и вторичным диапазонами IPv4 и включенным Private Google Access" />
   </Step>
 
-  <Step>
-    ### Обеспечьте сетевую связность
-
+  <Step title="Обеспечьте сетевую связность" id="ensure-network-connectivity">
     **Cloud NAT Gateway**
     Убедитесь, что для VPC развернут [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview). Компонентам ClickHouse BYOC требуется исходящий доступ в интернет для связи с control plane Tailscale. Tailscale используется для организации безопасной сети с нулевым доверием для закрытых операций управления. Cloud NAT gateway обеспечивает такую исходящую связность для инстансов без внешних IP-адресов.
 
@@ -36,9 +32,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Убедитесь, что в вашей VPC корректно работает DNS-разрешение и что стандартные DNS-имена не блокируются, не изменяются и не подменяются. ClickHouse BYOC использует DNS для разрешения серверов control plane Tailscale и конечных точек сервиса ClickHouse. Если DNS недоступен или настроен неправильно, сервисы BYOC могут не подключаться или работать некорректно.
   </Step>
 
-  <Step>
-    ### Настройте инфраструктуру BYOC
-
+  <Step title="Настройте инфраструктуру BYOC" id="set-up-byoc-infrastructure">
     В консоли ClickHouse Cloud при настройке новой инфраструктуры укажите следующее:
 
     1. В разделе **VPC configuration** выберите **Use existing VPC**.

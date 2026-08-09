@@ -39,6 +39,9 @@ public:
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool textCSVMayNeedQuotes(const FormatSettings & settings) const override;
+
+    /// Hive has no Time type, so the HiveText output format does not support it (throws NOT_IMPLEMENTED).
+    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 };
 
 }

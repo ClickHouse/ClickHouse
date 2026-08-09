@@ -36,21 +36,24 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
 Все секции необязательны, за исключением обязательного списка выражений сразу после `SELECT`, о котором подробнее говорится [ниже](#select-clause).
 
-Особенности каждой необязательной секции описаны в отдельных разделах, перечисленных в том порядке, в котором они выполняются:
+Особенности каждой необязательной секции описаны в отдельных разделах, перечисленных в том же порядке, в котором они выполняются (за исключением `SELECT` и `DISTINCT`, которые для удобства указаны первыми: их выражения вычисляются только после завершения предыдущих секций, как описано [ниже](#select-clause)):
 
 * [конструкция WITH](/ru/reference/statements/select/with)
 * [секция SELECT](#select-clause)
+* [секция ALL](/ru/reference/statements/select/all)
 * [секция DISTINCT](/ru/reference/statements/select/distinct)
 * [секция FROM](/ru/reference/statements/select/from)
 * [предложение SAMPLE](/ru/reference/statements/select/sample)
+* [секция ARRAY JOIN](/ru/reference/statements/select/array-join)
 * [секция JOIN](/ru/reference/statements/select/join)
 * [секция PREWHERE](/ru/reference/statements/select/prewhere)
 * [предложение WHERE](/ru/reference/statements/select/where)
-* [секция WINDOW](/ru/reference/functions/window-functions/index)
 * [секция GROUP BY](/ru/reference/statements/select/group-by)
-* [предложение LIMIT BY](/ru/reference/statements/select/limit-by)
 * [секция HAVING](/ru/reference/statements/select/having)
+* [секция WINDOW](/ru/reference/functions/window-functions/index)
 * [предложение QUALIFY](/ru/reference/statements/select/qualify)
+* [предложение ORDER BY](/ru/reference/statements/select/order-by)
+* [предложение LIMIT BY](/ru/reference/statements/select/limit-by)
 * [секция LIMIT](/ru/reference/statements/select/limit)
 * [секция OFFSET](/ru/reference/statements/select/offset)
 * [секция UNION](/ru/reference/statements/select/union)

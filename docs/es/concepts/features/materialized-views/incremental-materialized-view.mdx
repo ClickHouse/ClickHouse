@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-En este caso, la CTE `users` se vuelve a evaluar con cada inserción en `posts`, y la vista materializada no se actualizará cuando se inserten nuevos `users`, sino solo cuando se inserten `posts`.
+En este caso, la CTE users se vuelve a evaluar en cada inserción en posts, y la vista materializada no se actualizará cuando se inserten nuevos registros en users, sino solo cuando se inserten en posts.
 
-En general, use las CTE para la lógica que opera sobre la misma tabla de origen a la que está asociada la vista materializada, o asegúrese de que las tablas a las que se hace referencia sean pequeñas y sea poco probable que provoquen cuellos de botella de rendimiento. Como alternativa, considere [las mismas optimizaciones que para los JOIN con vistas materializadas](/es/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
+En general, use CTE para la lógica que opera sobre la misma tabla de origen a la que está asociada la vista materializada, o asegúrese de que las tablas referenciadas sean pequeñas y no vayan a provocar cuellos de botella de rendimiento. Como alternativa, considere [las mismas optimizaciones que para los JOINs con vistas materializadas](/es/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
