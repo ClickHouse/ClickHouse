@@ -2188,7 +2188,7 @@ For example, the following index can skip granules that do not contain the seria
 ```sql title="Query"
 CREATE TABLE events
 (
-    data JSON,
+    data JSON(user_id UInt64),
     INDEX values_idx JSONAllValues(data) TYPE bloom_filter GRANULARITY 1
 )
 ENGINE = MergeTree
