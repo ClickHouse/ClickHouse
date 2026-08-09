@@ -18,3 +18,14 @@ SELECT arrayCount(x -> (x % 2), materialize([1, 2, 3])) AS count, toTypeName(cou
 -- The rewrite of `length(arrayFilter(...))` requires the types to match, so it does not fire in legacy mode.
 SELECT length(arrayFilter(x -> (x % 2), [1, 2, 3])) AS count, toTypeName(count)
 SETTINGS array_count_legacy_uint32_result = 1, optimize_rewrite_array_filter_length_to_array_count = 1;
+
+-- And the query tree proves it: `arrayFilter` stays and no `arrayCount` appears in legacy mode.
+SELECT
+    countIf(explain LIKE '%function_name: arrayCount%') AS array_count,
+    countIf(explain LIKE '%function_name: arrayFilter%') AS array_filter
+FROM
+(
+    EXPLAIN QUERY TREE SELECT length(arrayFilter(x -> (x % 2), materialize([1, 2, 3])))
+    SETTINGS array_count_legacy_uint32_result = 1, optimize_rewrite_array_filter_length_to_array_count = 1
+)
+SETTINGS enable_analyzer = 1;
