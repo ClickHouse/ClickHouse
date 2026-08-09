@@ -503,11 +503,11 @@ public:
         try
         {
             /// The standard Prometheus HTTP API also defines the optional `timeout` and `stats`
-            /// parameters on the query endpoints (and `lookback_delta` as a per-query override of the
-            /// lookback period). They are reserved by `isSettingLikeParameter`, so they cannot be
-            /// misapplied as ClickHouse settings before this handler runs, but they are not
-            /// implemented yet - reject them explicitly instead of silently ignoring them.
-            for (const auto * unsupported_param : {"timeout", "lookback_delta", "stats"})
+            /// parameters on the query endpoints. They are reserved by `isSettingLikeParameter`,
+            /// so they cannot be misapplied as ClickHouse settings before this handler runs, but
+            /// they are not implemented yet - reject them explicitly instead of silently ignoring
+            /// them.
+            for (const auto * unsupported_param : {"timeout", "stats"})
             {
                 if (params->has(unsupported_param))
                     throw Exception(

@@ -320,13 +320,13 @@ def test_generic_http_params_are_not_settings():
 
 
 # The standard Prometheus HTTP API parameters that are not implemented yet (`timeout`,
-# `lookback_delta`, `stats`) are reserved by the handler, so a valid Prometheus request
-# such as `/api/v1/query?query=up&timeout=5s` must fail with an explicit "not supported"
+# `stats`) are reserved by the handler, so a valid Prometheus request such as
+# `/api/v1/query?query=up&timeout=5s` must fail with an explicit "not supported"
 # error from the Prometheus handler instead of an "Unknown setting" error from the
 # generic HTTP settings parser.
 def test_unsupported_prometheus_params_rejected_explicitly():
     for endpoint in ["/api/v1/query", "/api/v1/query_range"]:
-        for param in ["timeout=5s", "lookback_delta=5m", "stats=all"]:
+        for param in ["timeout=5s", "stats=all"]:
             url = (
                 f"http://{node.ip_address}:9093{endpoint}"
                 f"?query=post_body_metric&time=1000&start=1000&end=1001&step=1&{param}"
