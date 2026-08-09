@@ -182,9 +182,13 @@ def test_stop_merges_cancels_s3_read(cluster, broken_s3, replicated):
 def test_stop_ttl_merges_does_not_cancel_regular_merge(cluster, broken_s3):
     """`SYSTEM STOP TTL MERGES` must not abort a merge that only happens to drop TTL values.
 
-    The installed predicate deliberately excludes `ttl_merges_blocker`, which is state-aware
-    on the merge path: it aborts an assigned TTL merge but only disables opportunistic TTL
-    removal in a regular one.
+    The predicate keys on `ttl_merges_blocker` only for an assigned TTL merge. That blocker is
+    state-aware on the merge path: for a regular merge it merely disables opportunistic TTL
+    removal, so an unguarded condition would abort a merge that is supposed to complete.
+
+    The merge runs through the broken mock, so it is parked in the retry loop polling the
+    predicate. Without that the arm would never reach the code it exists to constrain, and the
+    unguarded form -- the single mutant it targets -- would leave it green.
     """
     node = cluster.instances["node"]
     node.query("DROP TABLE IF EXISTS t_ttl SYNC")
@@ -192,7 +196,8 @@ def test_stop_ttl_merges_does_not_cancel_regular_merge(cluster, broken_s3):
         """
         CREATE TABLE t_ttl (d DateTime, x UInt64) ENGINE = MergeTree ORDER BY x
         TTL d + INTERVAL 1 SECOND
-        SETTINGS merge_with_ttl_timeout = 0
+        SETTINGS storage_policy = 'broken_s3', min_bytes_for_wide_part = 0,
+                 merge_with_ttl_timeout = 0
         """
     )
     node.query("SYSTEM STOP MERGES t_ttl")
@@ -201,9 +206,70 @@ def test_stop_ttl_merges_does_not_cancel_regular_merge(cluster, broken_s3):
         "INSERT INTO t_ttl SELECT now() - 3600, number + 20000 FROM numbers(20000)"
     )
 
+    node.query("SYSTEM DROP MARK CACHE")
+    node.query("SYSTEM DROP UNCOMPRESSED CACHE")
+
     node.query("SYSTEM STOP TTL MERGES t_ttl")
+    broken_s3.setup_at_object_get(count=1000000, action="slow_down")
+
+    before = get_attempts(node)
     node.query("SYSTEM START MERGES t_ttl")
-    node.query("OPTIMIZE TABLE t_ttl PARTITION tuple() FINAL SETTINGS optimize_throw_if_noop = 1")
+    # Not `node.query`, for the same reason as the sibling arm: on a plain table OPTIMIZE runs
+    # the merge in this thread, so awaiting it would block until the mock is reset.
+    optimize = node.get_query_request(
+        "OPTIMIZE TABLE t_ttl PARTITION tuple() FINAL "
+        "SETTINGS alter_sync = 0, optimize_throw_if_noop = 0"
+    )
+
+    # The oracle is "the merge is still alive", so every wait below must fail the moment it dies:
+    # otherwise an abort looks like a merge that is merely slow to get going, and the mutant this
+    # arm targets gets reported as a vacuous arm instead of as the bug it is.
+    # Keyed on our own OPTIMIZE still running: it drives the merge inline, so it survives exactly
+    # as long as the merge does. `system.merges` cannot tell "aborted" from "not started yet",
+    # and the server log is shared with the sibling arm, which cancels merges by design.
+    # `NOT LIKE '%system.processes%'` so this query does not match its own text.
+    optimize_running_query = (
+        "SELECT count() FROM system.processes "
+        "WHERE query LIKE '%OPTIMIZE TABLE t_ttl%' AND query NOT LIKE '%system.processes%'"
+    )
+
+    def assert_not_aborted():
+        assert (
+            int(node.query(optimize_running_query)) >= 1
+        ), "SYSTEM STOP TTL MERGES aborted a regular merge"
+
+    # Vacuity guard: the merge reaches the retry loop, so it does poll the predicate and the
+    # window below is an observation rather than an idle wait.
+    accrued = False
+    for _ in range(300):
+        assert_not_aborted()
+        if get_attempts(node) - before >= ATTEMPTS_TO_ACCRUE:
+            accrued = True
+            break
+        time.sleep(0.2)
+    assert accrued, "the merge is not retrying the read, so it never polls the predicate"
+
+    # The oracle: with TTL merges stopped, this merge must NOT be cancelled. It stays alive across
+    # a window many times longer than the abort it guards against takes.
+    settled = get_attempts(node)
+    for _ in range(SETTLED_WINDOW_SECONDS):
+        time.sleep(1)
+        assert_not_aborted()
+    assert (
+        get_attempts(node) - settled >= 1
+    ), "the merge stopped reading, so it is no longer in the retry loop"
+
+    broken_s3.reset()
+    optimize.get_answer_and_error()
+
+    # A background merge may have claimed the parts first, in which case OPTIMIZE was a noop and
+    # returned before that merge finished, so wait for the merge list to drain either way.
+    assert wait_for(
+        node,
+        "SELECT count() FROM system.merges "
+        "WHERE database = currentDatabase() AND table = 't_ttl'",
+        lambda v: int(v) == 0,
+    ), "the merge did not finish after the mock stopped failing"
 
     assert (
         int(
