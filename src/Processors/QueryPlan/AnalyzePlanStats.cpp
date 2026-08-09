@@ -86,7 +86,7 @@ void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const
     out << "\n";
 }
 
-/// The group is built by `makeIOGroup`, so a missing metric means the two went out of sync.
+/// The group is built by makeIOGroup, so a missing metric means the two went out of sync
 UInt64 getQuantity(const MetricGroup & metric_group, MetricKey key)
 {
     const auto quantity = findQuantity(metric_group, key);

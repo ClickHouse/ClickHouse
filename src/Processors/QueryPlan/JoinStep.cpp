@@ -263,8 +263,8 @@ JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_proc
 
 StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
 {
-    /// Only `EXPLAIN ANALYZE` asks for a report, and it turns the analyze mode on for the whole query,
-    /// so every join it reaches must have been told to collect statistics.
+    /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,
+    /// so every join it reaches must have been told to collect statistics
     chassert(join->getTableJoin().collectAnalyzeStats(), "JoinStep analyzed without the analyze mode");
 
     if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))

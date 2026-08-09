@@ -359,8 +359,8 @@ bool SpillingHashJoin::alwaysReturnsEmptySet() const
 
 StepAnalysisReport SpillingHashJoin::getAnalysisReport() const
 {
-    /// This method always runs after `onBuildPhaseFinish`, so in practice we have already left
-    /// `COLLECTING` and `chosen_join` is set - the branch below is not strictly needed. We keep it
+    /// This method always runs after the built phase, so in principal we could have
+    /// written it without this if statement. However, we keep it
     /// for canonicity with the other accessors and safety in case the call order ever changes.
     if (state.load(std::memory_order_acquire) == State::COLLECTING)
     {

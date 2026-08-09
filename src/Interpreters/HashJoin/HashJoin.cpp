@@ -183,6 +183,9 @@ HashJoin::HashJoin(
 
     used_flags = std::make_unique<JoinStuff::JoinUsedFlags>();
 
+    if (table_join->collectAnalyzeStats())
+        matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, table_join->analyzeMode());
+
     if (table_join->getClauses().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin cannot execute JOIN without keys");
 
@@ -566,11 +569,12 @@ StepAnalysisReport HashJoin::getAnalysisReport() const
 
     if (matched_rows_stats)
     {
+        UInt64 right_rows_total = getRightTableRowCount();
         report = buildMatchedRowsReport({
             .left_rows = matched_rows_stats->getInputLeft(),
             .matched_left = matched_rows_stats->getMatchedLeft(),
-            .right_rows = matched_rows_stats->getInputRight(),
-            .matched_right = matched_rows_stats->getMatchedRight()});
+            .right_rows = right_rows_total,
+            .matched_right = matched_rows_stats->getMatchedRight(right_rows_total)});
     }
     else
     {
@@ -887,7 +891,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             /// TODO: Do not calculate them every time
             total_rows = getTotalRowCount();
             total_bytes = getTotalByteCount();
-            /// `total_bytes` here is the pre-shrink size (shrink happens below), so this captures the
+            /// total_bytes here is the pre-shrink size (shrink happens below), so this captures the
             /// build high-water mark for free on the path where a shrink can lower it.
             peak_build_bytes = std::max(peak_build_bytes, total_bytes);
         }
@@ -1578,17 +1582,8 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
             });
     }
 
-    /// A filled join skips the build pipeline, so `onBuildPhaseFinish` never runs and would leave
-    /// this clone without statistics. The flags are owned per clone, while `data` stays read-only
-    /// and shared, so concurrent queries over the same table do not interfere.
-    if (table_join->collectAnalyzeStats())
-    {
-        matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, getRightTableRowCount());
-
-        if (table_join->collectExactMatches()
-            && rightMatchedSource(kind, strictness) == RightMatchedSource::RefsFlags)
-            matched_rows_stats->prepareRightFlags(data->columns);
-    }
+    if (matched_rows_stats)
+        matched_rows_stats->prepareRightFlagsIfNeeded(data->columns);
 }
 
 BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
@@ -1821,7 +1816,7 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
         }
         data->allocated_size = new_blocks_allocated_size;
 
-        /// Every stored block was replaced by a merged one with a fresh `block_no`, so the flags
+        /// Every stored block was replaced by a merged one with a fresh block_no, so the flags
         /// keyed by the old numbers are stale. Nothing has been marked yet - the probe runs later.
         if (matched_rows_stats && matched_rows_stats->hasRightFlags())
             matched_rows_stats->prepareRightFlags(data->columns);
@@ -2415,19 +2410,8 @@ void HashJoin::onBuildPhaseFinish()
     size_t total_bytes = getTotalByteCount();
     peak_build_bytes = std::max(peak_build_bytes, total_bytes);
 
-    if (table_join->collectAnalyzeStats())
-    {
-        /// The promotion to `RightAny` keeps the `MapsAll` maps, so for statistics the join still
-        /// behaves as `ALL`.
-        const JoinStrictness strictness_for_stats
-            = all_join_was_promoted_to_right_any ? JoinStrictness::All : strictness;
-
-        matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness_for_stats, getRightTableRowCount());
-
-        if (table_join->collectExactMatches()
-            && rightMatchedSource(kind, strictness_for_stats) == RightMatchedSource::RefsFlags)
-            matched_rows_stats->prepareRightFlags(data->columns);
-    }
+    if (matched_rows_stats)
+        matched_rows_stats->prepareRightFlagsIfNeeded(data->columns);
 
     build_phase_finished = true;
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(total_bytes), getTotalRowCount());

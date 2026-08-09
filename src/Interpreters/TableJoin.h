@@ -228,8 +228,7 @@ private:
 
     bool enable_analyzer = false;
 
-    /// Which statistics `EXPLAIN ANALYZE` needs from this join. Comes from the query context through
-    /// the constructor, so every join of the query gets it.
+    /// Which statistics EXPLAIN ANALYZ` needs from this join
     JoinAnalyzeMode analyze_mode = JoinAnalyzeMode::None;
 
     Names requiredJoinedNames() const;

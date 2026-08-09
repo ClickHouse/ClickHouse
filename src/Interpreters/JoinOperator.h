@@ -116,8 +116,7 @@ struct JoinSettings
     bool enable_join_fixed_hash_table_conversion;
     bool join_runtime_filter_from_fixed_hash_table;
 
-    /// Which statistics the join must collect for `EXPLAIN ANALYZE`. Comes from the query context, not
-    /// from the settings, so that only `InterpreterExplainQuery` can turn it on.
+    /// Which statistics the join must collect for EXPLAIN ANALYZE
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
 
     explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);

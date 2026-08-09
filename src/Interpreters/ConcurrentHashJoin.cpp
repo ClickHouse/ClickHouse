@@ -480,7 +480,7 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
 size_t ConcurrentHashJoin::getRightTableRowCount() const
 {
     /// We don't check for two level map, because in case of two level in
-    /// onBuildPhaseFinish we add all the right table rows to 0th hash table
+    /// the end of the build we add all the right table rows to 0th hash table
     /// and zero the rows_to_join in other hash tables
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
@@ -490,7 +490,7 @@ size_t ConcurrentHashJoin::getRightTableRowCount() const
 
 size_t ConcurrentHashJoin::getUniqueKeys() const
 {
-    /// A two-level map needs a special case: `onBuildPhaseFinish` first moves all buckets into
+    /// A two-level map needs a special case: in the end of the build we move all buckets into
     /// slot 0 and then hands that map back to every slot, so each one reports the full key count
     /// and summing would multiply it by `slots`. One-level maps stay disjoint per slot.
     if (hash_joins[0]->data->twoLevelMapIsUsed())
@@ -512,17 +512,11 @@ JoinAnalysisCounters ConcurrentHashJoin::collectMatchedRowsCounters() const
     for (const auto & hash_join : hash_joins)
     {
         const auto * stats = hash_join->data->getMatchStats();
-        chassert(stats, "ConcurrentHashJoin slot has no MatchedRowsStats");
-        if (!stats)
-        {
-            matched_left.add(std::nullopt);
-            matched_right.add(std::nullopt);
-            continue;
-        }
 
+        UInt64 right_table_rows = hash_join->data->getRightTableRowCount();
         counters.left_rows += stats->getInputLeft();
         matched_left.add(stats->getMatchedLeft());
-        matched_right.add(stats->getMatchedRight());
+        matched_right.add(stats->getMatchedRight(right_table_rows));
     }
     counters.matched_left = matched_left.get();
     counters.matched_right = matched_right.get();

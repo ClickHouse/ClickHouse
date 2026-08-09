@@ -130,7 +130,7 @@ struct JoinAnalysisCounters
     std::optional<UInt64> matched_right;
 };
 
-/// Sums a per-side `matched` counter over the parts a join is split into. A part that cannot
+/// Sums a per-side matched counter over the parts a join is split into. A part that cannot
 /// report the metric makes the whole sum unavailable, since summing the rest would understate it.
 class MatchedRowsAccumulator
 {

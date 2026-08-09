@@ -592,7 +592,7 @@ protected:
     /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
-    /// Which join statistics `EXPLAIN ANALYZE` needs. It is a context field rather than a setting on
+    /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
     /// purpose: only Interpreter may turn it on, but it must reach every join of the
     /// query, including joins in nested plans, which EXPLAIN also prints.
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;

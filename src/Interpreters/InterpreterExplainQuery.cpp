@@ -872,9 +872,7 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     result->query_plan_options = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings()).query_plan_options;
 
     /// This is the only place that turns join statistics on, and it must happen before any interpreter
-    /// is built: the old analyzer creates the `IJoin` inside `ExpressionAnalyzer`, long before a plan
-    /// exists. Every join of the query reads the mode from the context, so joins in nested plans - for
-    /// example the child plans of `ReadFromMerge`, which `explainPlan` also prints - get it as well.
+    /// is built. Every join of the query reads the mode from the context, so joins in nested plans get it as well.
     planning_context->setJoinAnalyzeMode(
         result->query_plan_options.matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
 

@@ -146,7 +146,7 @@ Columns indexColumns(const Columns & columns, const DataTypes & types, const Pad
     return new_columns;
 }
 
-size_t equalRangeLength(const FullMergeJoinCursor & impl)
+size_t nextDistinct(FullMergeJoinCursor & impl)
 {
     chassert(impl.isValid());
     const size_t start_pos = impl.getRow();
@@ -167,14 +167,8 @@ size_t equalRangeLength(const FullMergeJoinCursor & impl)
         if (run_end <= start_pos + 1)
             break;
     }
-
-    return run_end - start_pos;
-}
-
-size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
-{
-    const size_t length = equalRangeLength(impl);
-    impl.pos = impl.getRow() + length;
+    const size_t length = run_end - start_pos;
+    impl.pos = start_pos + length;
     return length;
 }
 
@@ -1037,7 +1031,7 @@ JoinAnalysisCounters MergeJoinAlgorithm::getJoinAnalysisCounters() const
     counters.right_rows = stat.num_rows[1];
     counters.matched_left = stat.matched_rows.left;
 
-    /// `ASOF` visits only the nearest right row of a key group, not every right row that satisfies
+    /// ASOF visits only the nearest right row of a key group, not every right row that satisfies
     /// the `ON` condition, so the right side cannot be counted.
     if (strictness != JoinStrictness::Asof)
         counters.matched_right = stat.matched_rows.right;

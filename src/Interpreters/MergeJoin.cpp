@@ -213,8 +213,9 @@ void addElapsed(std::atomic<UInt64> & target, UInt64 elapsed_ns)
     target.fetch_add(elapsed_ns, std::memory_order_relaxed);
 }
 
-/// Adds the time spent in the enclosing scope to `target`. Reads no clock when `enabled` is false.
-/// Like `std::lock_guard`, it holds a reference and must not outlive `target`, so it is not copyable.
+/// Adds the time spent in the enclosing scope to target
+// Reads no clock when enabled is false.
+/// Like std::lock_guard, it holds a reference and must not outlive target, so it is not copyable.
 template <typename Counter>
 class ScopedSortTimer
 {

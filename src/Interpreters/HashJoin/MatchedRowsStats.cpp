@@ -1,3 +1,4 @@
+#include <Core/Joins.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
@@ -7,11 +8,17 @@
 namespace DB
 {
 
-MatchedRowsStats::MatchedRowsStats(JoinKind kind, JoinStrictness strictness, UInt64 right_total_)
-: right_rows_total(right_total_)
-, join_kind(kind)
+MatchedRowsStats::MatchedRowsStats(JoinKind kind, JoinStrictness strictness, JoinAnalyzeMode analyze_mode_)
+: join_kind(kind)
 , join_strictness(strictness)
+, analyze_mode(analyze_mode_)
 {
+}
+
+void MatchedRowsStats::prepareRightFlagsIfNeeded(const HashJoin::StoredBlocksList & stored_blocks)
+{
+    if (collectsExactMatches(analyze_mode) && rightMatchedSource(join_kind, join_strictness) == RightMatchedSource::RefsFlags)
+        prepareRightFlags(stored_blocks);
 }
 
 void MatchedRowsStats::collectProbeBlock(UInt64 probed_block_size, std::optional<UInt64> matched_left)
@@ -21,7 +28,7 @@ void MatchedRowsStats::collectProbeBlock(UInt64 probed_block_size, std::optional
     if (matched_left)
         left_rows_matched.fetch_add(*matched_left, std::memory_order_relaxed);
     else
-        left_matched_unavailable.store(true, std::memory_order_relaxed);
+        left_matched_available.store(false, std::memory_order_relaxed);
 }
 
 static size_t rowsAddressableBySelector(const ScatteredBlock::Selector & selector)
@@ -55,13 +62,13 @@ void MatchedRowsStats::markRightMatched(UInt64 ref_word)
 
 std::optional<UInt64> MatchedRowsStats::getMatchedLeft() const
 {
-    if (left_matched_unavailable.load(std::memory_order_relaxed))
+    if (!left_matched_available.load(std::memory_order_relaxed))
         return std::nullopt;
 
     return left_rows_matched.load(std::memory_order_relaxed);
 }
 
-std::optional<UInt64> MatchedRowsStats::getMatchedRight() const
+std::optional<UInt64> MatchedRowsStats::getMatchedRight(UInt64 right_rows_total) const
 {
     switch (rightMatchedSource(join_kind, join_strictness))
     {

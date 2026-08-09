@@ -123,7 +123,7 @@ void enrichJoinSides(StepAnalysisReport & report, UInt64 output_rows, JoinKind k
         appendSideMetrics(*right_group, right_side, matched_output_rows);
 }
 
-/// `sort time` is the time a merge join spent sorting the blocks of one side. Relate it to the
+/// sort time is the time a merge join spent sorting the blocks of one side. Relate it to the
 /// processor time of the corresponding stage to show whether sorting dominated that stage.
 void appendSortShare(StepAnalysisReport & report, const StepStatsContext & context, MetricGroupKey group_key, JoinStep::JoinStage stage)
 {
@@ -196,7 +196,7 @@ AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisR
     if (!join_step && !filled_join_step)
         return buildAnalyzedStepData(context, std::move(report));
 
-    /// Only `JoinStep` can swap its inputs; a filled join always keeps the storage on the right.
+    /// Only JoinStep can swap its inputs; a filled join always keeps the storage on the right.
     if (join_step && join_step->swap_streams)
         swapReportSides(report);
 

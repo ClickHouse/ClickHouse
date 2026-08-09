@@ -134,8 +134,7 @@ private:
     StatsCollectingParams stats_collecting_params;
     const size_t external_join_threshold;
 
-    /// Sum of per-slot build peaks, captured at the start of `onBuildPhaseFinish` (before the
-    /// two-level merge moves all buckets into slot 0, which would otherwise double-count).
+    /// Sum of per-slot build peaks captured right before the build finishes
     size_t peak_build_bytes = 0;
 
     std::mutex totals_mutex;
@@ -149,7 +148,6 @@ private:
     size_t getRightTableRowCount() const;
     size_t getUniqueKeys() const;
 
-    /// Sum of the per-slot build peaks, snapshotted before the two-level merge (see onBuildPhaseFinish).
     size_t getPeakBuildBytes() const { return peak_build_bytes; }
 
     JoinAnalysisCounters collectMatchedRowsCounters() const;

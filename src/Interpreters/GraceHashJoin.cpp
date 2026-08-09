@@ -510,7 +510,8 @@ size_t GraceHashJoin::getTotalByteCount() const
 
 void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
 {
-    right_rows += in_memory_join.getRightTableRowCount();
+    UInt64 right_table_rows = in_memory_join.getRightTableRowCount();
+    right_rows += right_table_rows;
     unique_keys += in_memory_join.getTotalRowCount();
     peak_in_memory_bytes = std::max(peak_in_memory_bytes, in_memory_join.getPeakBuildBytes());
 
@@ -518,10 +519,8 @@ void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
     {
         left_rows_total += match_stats->getInputLeft();
 
-        /// A bucket whose right keys happen to be unique promotes ALL to RightAny on its own, which
-        /// can make a metric unavailable for that bucket alone.
         matched_left.add(match_stats->getMatchedLeft());
-        matched_right.add(match_stats->getMatchedRight());
+        matched_right.add(match_stats->getMatchedRight(right_table_rows));
     }
 }
 

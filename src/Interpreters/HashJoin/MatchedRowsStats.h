@@ -36,7 +36,7 @@ constexpr LeftMatchedSource leftMatchedSource(JoinKind kind, JoinStrictness stri
     if (strictness == JoinStrictness::All && isLeftOrFull(kind))
         return LeftMatchedSource::DefaultRowMarkers;
 
-    /// `RightAny` emits one row per left row just like `ALL`, so the markers mean the same.
+    /// RightAny emits one row per left row just like ALL, so the markers mean the same
     if (strictness == JoinStrictness::RightAny && isLeftOrFull(kind))
         return LeftMatchedSource::DefaultRowMarkers;
 
@@ -105,7 +105,7 @@ public:
     }
 
 private:
-    /// Keyed by RowRef::block_no (globally unique across ConcurrentHashJoin slots).
+    /// Keyed by RowRef::block_no
     std::unordered_map<UInt32, std::vector<std::atomic_bool>> per_row_flags;
 };
 
@@ -113,7 +113,7 @@ class MatchedRowsStats
 {
 public:
 
-    MatchedRowsStats(JoinKind, JoinStrictness, UInt64 right_total_);
+    MatchedRowsStats(JoinKind, JoinStrictness, JoinAnalyzeMode);
 
     void collectProbeBlock(UInt64 probed_block_size, std::optional<UInt64> matched_left);
 
@@ -121,25 +121,82 @@ public:
 
     void collectNonJoined(UInt64 non_joined_rows);
 
+    void prepareRightFlagsIfNeeded(const HashJoin::StoredBlocksList & stored_blocks);
     void prepareRightFlags(const HashJoin::StoredBlocksList & stored_blocks);
     bool hasRightFlags() const { return right_rows_flags != nullptr; }
 
     UInt64 getInputLeft() const { return left_rows_total.load(std::memory_order_relaxed); }
-    UInt64 getInputRight() const { return right_rows_total; }
     std::optional<UInt64> getMatchedLeft() const;
-    std::optional<UInt64> getMatchedRight() const;
+    std::optional<UInt64> getMatchedRight(UInt64 right_rows_total) const;
 
 private:
 
     std::unique_ptr<MatchedRightFlags> right_rows_flags;
-    UInt64 right_rows_total = 0;
     std::atomic<UInt64> left_rows_total = 0;
     std::atomic<UInt64> left_rows_matched = 0;
-    std::atomic<bool> left_matched_unavailable = false;
+    std::atomic<bool> left_matched_available = true;
     std::atomic<UInt64> non_joined_right_rows = 0;
 
     JoinKind join_kind;
     JoinStrictness join_strictness;
+    JoinAnalyzeMode analyze_mode;
 };
 
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename AddedColumns>
+static std::optional<UInt64> countMatchedLeftRows(const AddedColumns & added_columns, size_t probed_rows)
+{
+    constexpr auto source = leftMatchedSource(KIND, STRICTNESS);
+
+    if constexpr (source == LeftMatchedSource::ReplicationOffsets)
+    {
+        const auto & offsets = added_columns.offsets_to_replicate;
+        UInt64 matched = 0;
+        for (size_t i = 0; i < probed_rows; ++i)
+            matched += offsets[i] > offsets[i - 1];
+        return matched;
+    }
+    else if constexpr (source == LeftMatchedSource::DefaultRowMarkers)
+    {
+        if (added_columns.additional_filter_expression)
+            return added_columns.matched_left_rows;
+
+        /// The markers live in LazyOutput::row_refs, which gets allocated and filled only
+        /// when a flag gets turned on
+        if (!added_columns.record_row_refs)
+            return std::nullopt;
+
+        UInt64 not_matched = 0;
+        for (const UInt64 ref_word : added_columns.lazy_output.getRowRefs())
+            not_matched += ref_word == 0;
+        return probed_rows - not_matched;
+    }
+    else if constexpr (source == LeftMatchedSource::OutputFilter)
+    {
+        chassert(added_columns.need_filter);
+        return countBytesInFilter(added_columns.filter);
+    }
+    else if constexpr (source == LeftMatchedSource::OutputFilterComplement)
+    {
+        chassert(added_columns.need_filter);
+        return probed_rows - countBytesInFilter(added_columns.filter);
+    }
+    else
+    {
+        return std::nullopt;
+    }
+}
+
+template <typename AddedColumns>
+static void markRightMatchedFromRowRefs(MatchedRowsStats & stats, const AddedColumns & added_columns)
+{
+    UInt64 prev = 0;
+    for (const UInt64 ref_word : added_columns.lazy_output.getRowRefs())
+    {
+        if (ref_word == 0 || ref_word == prev)
+            continue;
+
+        stats.markRightMatched(ref_word);
+        prev = ref_word;
+    }
+}
 }

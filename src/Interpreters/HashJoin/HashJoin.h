@@ -199,7 +199,7 @@ public:
     size_t getTotalByteCount() const final;
     /// Number of right-side rows ingested into the build.
     size_t getRightTableRowCount() const { return getJoinedData()->rows_to_join; }
-    /// Peak bytes the build occupied, captured during the build phase so it survives `data` release.
+    /// Peak bytes the build occupied
     size_t getPeakBuildBytes() const { return peak_build_bytes; }
 
     StepAnalysisReport getAnalysisReport() const override;
@@ -592,9 +592,7 @@ private:
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
 
-    /// Peak of `getTotalByteCount()` observed during the build phase. Stored separately so it
-    /// survives `data.reset()` (the maps are released after the query, before EXPLAIN ANALYZE reads
-    /// stats). Updated only during build, which is serialized per `HashJoin`, so no atomic is needed.
+    /// Peak of bytes observed in the hash table during the build phase
     size_t peak_build_bytes = 0;
 
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
@@ -620,8 +618,6 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
-    /// Shared probe path for `joinBlock` and `joinScatteredBlock`: runs the join dispatch on an
-    /// already-prepared block
     JoinResultPtr runJoinDispatch(ScatteredBlock block);
 
     bool preferUseMapsAll() const;

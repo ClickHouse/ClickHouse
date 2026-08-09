@@ -278,8 +278,7 @@ public:
     LazyOutput lazy_output;
     bool record_row_refs = false;
 
-    /// Non-owning; set only under EXPLAIN ANALYZE for RefsFlags join kinds. When non-null,
-    /// appendFromBlock marks matched right rows in the participation flags.
+    /// Non-owning; set only under EXPLAIN ANALYZE
     MatchedRowsStats * match_stats = nullptr;
 
     size_t matched_left_rows = 0;

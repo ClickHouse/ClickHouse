@@ -266,7 +266,7 @@ public:
     void logElapsed(double seconds);
     MergedStats getMergedStats() const override;
 
-    /// Participation counters for EXPLAIN ANALYZE (total and matched rows per side).
+    /// Participation counters for EXPLAIN ANALYZE -- total and matched rows per side
     JoinAnalysisCounters getJoinAnalysisCounters() const;
 
 private:
