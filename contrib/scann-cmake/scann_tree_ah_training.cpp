@@ -26,6 +26,7 @@ namespace
 
 constexpr size_t min_residual_sample_size = 100000;
 constexpr size_t max_residual_sample_size = 2000000;
+constexpr size_t residual_blocks_per_batch = 64;
 constexpr uint32_t residual_sample_seed = 2023;
 
 Status validateConfig(const AsymmetricHasherConfig & config)
@@ -133,23 +134,34 @@ std::vector<DatapointIndex> selectAHTrainingSample(
     return sample;
 }
 
-StatusOr<std::vector<DenseDataset<float>>> buildBlockMajorResiduals(
-    const DenseDataset<float> & dataset,
-    const KMeansTreeLikePartitioner<float> & partitioner,
-    ConstSpan<std::vector<DatapointIndex>> datapoints_by_token,
-    const ChunkingProjection<float> & projector,
-    ConstSpan<DatapointIndex> sampled_datapoints,
-    ThreadPool * parallelization_pool)
+StatusOr<std::vector<uint32_t>> buildTokensByDatapoint(
+    size_t dataset_size,
+    ConstSpan<std::vector<DatapointIndex>> datapoints_by_token)
 {
-    std::vector<uint32_t> tokens_by_datapoint(dataset.size());
+    std::vector<uint32_t> tokens_by_datapoint(dataset_size);
     for (uint32_t token : Seq(datapoints_by_token.size()))
     {
         for (DatapointIndex datapoint : datapoints_by_token[token])
         {
-            SCANN_RET_CHECK_LT(datapoint, dataset.size());
+            SCANN_RET_CHECK_LT(datapoint, dataset_size);
             tokens_by_datapoint[datapoint] = token;
         }
     }
+    return tokens_by_datapoint;
+}
+
+StatusOr<std::vector<DenseDataset<float>>> buildBlockMajorResidualBatch(
+    const DenseDataset<float> & dataset,
+    const KMeansTreeLikePartitioner<float> & partitioner,
+    ConstSpan<uint32_t> tokens_by_datapoint,
+    const ChunkingProjection<float> & projector,
+    ConstSpan<DatapointIndex> sampled_datapoints,
+    size_t first_block,
+    size_t block_end,
+    ThreadPool * parallelization_pool)
+{
+    SCANN_RET_CHECK_EQ(tokens_by_datapoint.size(), dataset.size());
+    SCANN_RET_CHECK_LT(first_block, block_end);
 
     auto project_residual = [&](size_t sample_position, std::vector<std::vector<float>> * storage) -> Status
     {
@@ -161,11 +173,12 @@ StatusOr<std::vector<DenseDataset<float>>> buildBlockMajorResiduals(
 
         ChunkedDatapoint<float> chunked;
         SCANN_RETURN_IF_ERROR(projector.ProjectInput(residual.ToPtr(), &chunked));
-        SCANN_RET_CHECK_EQ(chunked.size(), storage->size());
-        for (size_t block : Seq(chunked.size()))
+        SCANN_RET_CHECK_LE(block_end, chunked.size());
+        SCANN_RET_CHECK_EQ(block_end - first_block, storage->size());
+        for (size_t local_block : Seq(storage->size()))
         {
-            const auto projected = chunked[block].values_span();
-            auto & block_storage = (*storage)[block];
+            const auto projected = chunked[first_block + local_block].values_span();
+            auto & block_storage = (*storage)[local_block];
             SCANN_RET_CHECK_EQ(block_storage.size(), sampled_datapoints.size() * projected.size());
             std::copy(
                 projected.begin(),
@@ -184,13 +197,14 @@ StatusOr<std::vector<DenseDataset<float>>> buildBlockMajorResiduals(
     SCANN_RETURN_IF_ERROR(VerifyAllFinite(first_residual.values()));
     ChunkedDatapoint<float> first_chunked;
     SCANN_RETURN_IF_ERROR(projector.ProjectInput(first_residual.ToPtr(), &first_chunked));
+    SCANN_RET_CHECK_LE(block_end, first_chunked.size());
 
-    std::vector<std::vector<float>> block_storage(first_chunked.size());
-    for (size_t block : Seq(first_chunked.size()))
+    std::vector<std::vector<float>> block_storage(block_end - first_block);
+    for (size_t local_block : Seq(block_storage.size()))
     {
-        const auto projected = first_chunked[block].values_span();
-        block_storage[block].resize(sampled_datapoints.size() * projected.size());
-        std::copy(projected.begin(), projected.end(), block_storage[block].begin());
+        const auto projected = first_chunked[first_block + local_block].values_span();
+        block_storage[local_block].resize(sampled_datapoints.size() * projected.size());
+        std::copy(projected.begin(), projected.end(), block_storage[local_block].begin());
     }
 
     /// All vectors have their final sizes before parallel work starts. Each
@@ -207,29 +221,23 @@ StatusOr<std::vector<DenseDataset<float>>> buildBlockMajorResiduals(
     return std::move(result);
 }
 
-StatusOr<std::vector<DenseDataset<double>>> trainBlockCodebooks(
+Status trainBlockCodebooks(
     std::vector<DenseDataset<float>> block_datasets,
     const AsymmetricHasherConfig & config,
-    shared_ptr<const DistanceMeasure> quantization_distance,
-    shared_ptr<ThreadPool> parallelization_pool)
+    GmmUtils & gmm,
+    size_t first_block,
+    std::vector<DenseDataset<double>> & all_centers)
 {
-    GmmUtils::Options gmm_options;
-    gmm_options.seed = config.clustering_seed();
-    gmm_options.max_iterations = config.max_clustering_iterations();
-    gmm_options.epsilon = config.clustering_convergence_tolerance();
-    gmm_options.parallelization_pool = std::move(parallelization_pool);
-    gmm_options.partition_assignment_type = GmmUtils::Options::UNBALANCED_FLOAT32;
-    GmmUtils gmm(std::move(quantization_distance), std::move(gmm_options));
-
-    std::vector<DenseDataset<double>> all_centers(block_datasets.size());
-    for (size_t block : Seq(block_datasets.size()))
+    SCANN_RET_CHECK_LE(first_block + block_datasets.size(), all_centers.size());
+    for (size_t local_block : Seq(block_datasets.size()))
     {
+        const size_t block = first_block + local_block;
         /// Keep every future block in Float32 and materialize only the current
         /// block in the double representation required by k-means.
         DenseDataset<double> training_dataset;
-        block_datasets[block].ConvertType(&training_dataset);
-        block_datasets[block].clear();
-        block_datasets[block].ShrinkToFit();
+        block_datasets[local_block].ConvertType(&training_dataset);
+        block_datasets[local_block].clear();
+        block_datasets[local_block].ShrinkToFit();
 
         DenseDataset<double> centers;
         std::vector<std::vector<DatapointIndex>> subpartitions;
@@ -279,7 +287,7 @@ StatusOr<std::vector<DenseDataset<double>>> trainBlockCodebooks(
         for (uint32_t center : centers_permutation)
             all_centers[block].AppendOrDie(centers[center], "");
     }
-    return std::move(all_centers);
+    return OkStatus();
 }
 
 }
@@ -319,25 +327,41 @@ StatusOr<shared_ptr<const asymmetric_hashing2::Model<float>>> TrainTreeAHResidua
 
     SCANN_ASSIGN_OR_RETURN(auto projector, ChunkingProjectionFactory<float>(config.projection()));
     auto shared_projector = shared_ptr<const ChunkingProjection<float>>(std::move(projector));
-    SCANN_ASSIGN_OR_RETURN(
-        auto block_datasets,
-        buildBlockMajorResiduals(
-            dataset,
-            partitioner,
-            datapoints_by_token,
-            *shared_projector,
-            sampled_datapoints,
-            parallelization_pool.get()));
+    SCANN_ASSIGN_OR_RETURN(auto tokens_by_datapoint, buildTokensByDatapoint(dataset.size(), datapoints_by_token));
+
+    GmmUtils::Options gmm_options;
+    gmm_options.seed = config.clustering_seed();
+    gmm_options.max_iterations = config.max_clustering_iterations();
+    gmm_options.epsilon = config.clustering_convergence_tolerance();
+    gmm_options.parallelization_pool = parallelization_pool;
+    gmm_options.partition_assignment_type = GmmUtils::Options::UNBALANCED_FLOAT32;
+    GmmUtils gmm(std::move(quantization_distance), std::move(gmm_options));
+
+    const size_t num_blocks = shared_projector->num_blocks();
+    std::vector<DenseDataset<double>> double_centers(num_blocks);
+    for (size_t first_block = 0; first_block < num_blocks; first_block += residual_blocks_per_batch)
+    {
+        const size_t block_end = std::min(first_block + residual_blocks_per_batch, num_blocks);
+        SCANN_ASSIGN_OR_RETURN(
+            auto block_datasets,
+            buildBlockMajorResidualBatch(
+                dataset,
+                partitioner,
+                tokens_by_datapoint,
+                *shared_projector,
+                sampled_datapoints,
+                first_block,
+                block_end,
+                parallelization_pool.get()));
+        SCANN_RETURN_IF_ERROR(
+            trainBlockCodebooks(std::move(block_datasets), config, gmm, first_block, double_centers));
+    }
+
+    tokens_by_datapoint.clear();
+    tokens_by_datapoint.shrink_to_fit();
     sampled_datapoints.clear();
     sampled_datapoints.shrink_to_fit();
 
-    SCANN_ASSIGN_OR_RETURN(
-        auto double_centers,
-        trainBlockCodebooks(
-            std::move(block_datasets),
-            config,
-            std::move(quantization_distance),
-            std::move(parallelization_pool)));
     auto centers = asymmetric_hashing_internal::ConvertCentersIfNecessary<float>(std::move(double_centers));
     SCANN_ASSIGN_OR_RETURN(
         auto model,
