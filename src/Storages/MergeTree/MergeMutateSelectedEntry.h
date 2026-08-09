@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/MemoryTracker.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MutationCommands.h>
 
@@ -57,6 +58,13 @@ struct MergeMutateSelectedEntry
     /// queue while a TTL boundary passes must not turn into a row-reducing TTL merge its reservation did
     /// not price. Unused (0) for a mutation entry.
     time_t time_of_merge{0};
+    /// For a merge entry: the query context the merge runs under, created at selection time
+    /// (a copy of the background context with the merge query settings applied). The up-front memory
+    /// reservation is estimated against this exact context, and MergePlainMergeTreeTask must run the
+    /// merge with the same one: rebuilding a fresh context when the queued merge finally starts would
+    /// let it pick up a different background_profile / read buffer sizes / max_compress_block_size
+    /// than the reservation was priced with. Unset for a mutation entry.
+    ContextMutablePtr merge_context;
     bool finalized{false};
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,

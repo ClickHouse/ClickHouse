@@ -237,10 +237,15 @@ void MergePlainMergeTreeTask::cancel() noexcept
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
-    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
-    context->makeQueryContextForMerge(*storage.getSettings());
-    auto query_id = getQueryId();
-    context->setCurrentQueryId(query_id);
+    /// The merge runs under the context created at SELECTION time (StorageMergeTree::selectPartsToMerge),
+    /// not under a freshly built one: the up-front memory reservation was estimated against that exact
+    /// context, and MergeTask snapshots its reader/writer settings from the context it is given. Building
+    /// a fresh copy of the background context here would let a merge that waited in the background queue
+    /// pick up a different background_profile / read buffer sizes / max_compress_block_size than the
+    /// reservation was priced with. The replicated path pins the context the same way, by estimating and
+    /// merging with the same task_context in MergeFromLogEntryTask.
+    auto context = merge_mutate_entry->merge_context;
+    context->setCurrentQueryId(getQueryId());
     return context;
 }
 

@@ -1773,9 +1773,12 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             }
 
             /// Estimate the reservation against the same context the merge will actually run under: a copy of
-            /// the background context with the merge query settings applied (MergePlainMergeTreeTask builds the
-            /// same before executing). A non-default background_profile can raise the read/upload buffer sizes
-            /// above the storage/global settings, and the reservation must reflect what the merge will use.
+            /// the background context with the merge query settings applied. A non-default background_profile
+            /// can raise the read/upload buffer sizes above the storage/global settings, and the reservation
+            /// must reflect what the merge will use. The context is carried to the task through the selected
+            /// entry (MergePlainMergeTreeTask runs the merge with it), so a merge that waits in the background
+            /// queue cannot pick up different settings than this estimate priced - the same
+            /// selection-vs-execution pinning as time_of_merge below.
             auto merge_context = Context::createCopy(getContext()->getBackgroundContext());
             merge_context->makeQueryContextForMerge(*getSettings());
 
@@ -1867,6 +1870,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
             auto selected_entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
             selected_entry->time_of_merge = time_of_merge;
+            selected_entry->merge_context = merge_context;
             return selected_entry;
         }
         catch (...)
