@@ -816,7 +816,7 @@ def test_function_over_time():
         eps=1e-9,
     )
 
-    # deriv: per-second OLS slope of `test`'s samples in each window (120/165/195 are dropped for lack of
+    # deriv: per-second OLS slope of `test`'s samples in each window (180/195 are dropped for lack of
     # samples the same way rate/idelta drop them: only a single sample falls in the window).
     do_query_test(
         "deriv(test[45s])[120s:15s]",
@@ -1997,6 +1997,46 @@ def test_math_binary_operators():
         100,
         '{"resultType": "scalar", "result": [100, "1"]}',
         [["1970-01-01 00:01:40.000", 1]],
+    )
+
+    do_query_test(
+        "5 % +Inf",
+        100,
+        '{"resultType": "scalar", "result": [100, "5"]}',
+        [["1970-01-01 00:01:40.000", 5]],
+    )
+
+    do_query_test(
+        "vector(-5) % vector(-Inf)",
+        100,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [100, "-5"]}]}',
+        [["[]", "1970-01-01 00:01:40.000", -5]],
+    )
+
+    do_query_test(
+        "+Inf % 5",
+        100,
+        '{"resultType": "scalar", "result": [100, "NaN"]}',
+        [["1970-01-01 00:01:40.000", "nan"]],
+    )
+
+    do_query_test(
+        "5 % NaN",
+        100,
+        '{"resultType": "scalar", "result": [100, "NaN"]}',
+        [["1970-01-01 00:01:40.000", "nan"]],
+    )
+
+    do_query_test(
+        "(5 % (last_over_time(test[10s]) + +Inf))[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "5"], [135, "5"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:15.000',5),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
     )
 
     do_query_test(
