@@ -1,3 +1,6 @@
-insert contending: 1
+t_hints_rep insert contending: 1
+1010
+1010	0	['1']	['0']
+t_hints insert contending: 1
 1010
 1010	0	['1']	['0']
