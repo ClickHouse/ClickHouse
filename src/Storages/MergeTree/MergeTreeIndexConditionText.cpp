@@ -8,6 +8,8 @@
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
@@ -859,9 +861,39 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     return buf.str();
 }
 
+static bool hasStableJSONAllValuesSerialization(const DataTypePtr & type)
+{
+    /// Implicit `DateTime` time zones use `session_timezone`, which can differ between index creation and query execution.
+    bool result = true;
+    auto check = [&](const IDataType & current_type)
+    {
+        if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&current_type))
+            result &= date_time->hasExplicitTimeZone();
+        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&current_type))
+            result &= date_time64->hasExplicitTimeZone();
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
+static bool hasKnownJSONAllValuesSerialization(const DataTypePtr & type)
+{
+    bool result = true;
+    auto check = [&](const IDataType & current_type)
+    {
+        result &= !isDynamic(current_type) && !isObject(current_type);
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
 /// Match a JSON subcolumn against a `JSONAllValues` index without accepting casts that can change
-/// the indexed representation. A cast to `String` is safe because `JSONAllValues` uses the same
-/// `serializeText` representation for JSON values.
+/// the indexed representation. A cast from a statically typed value to `String` is safe when its
+/// serialization is stable because `JSONAllValues` uses the same `serializeText` representation.
 static bool matchesNodeToJSONAllValuesIndex(
     const RPNBuilderTreeNode & node,
     const Block & header)
@@ -884,16 +916,24 @@ static bool matchesNodeToJSONAllValuesIndex(
             const auto & result_type = node_dag->result_type;
             const auto & argument_type = argument_dag->result_type;
 
+            if (!hasKnownJSONAllValuesSerialization(argument_type) || !hasStableJSONAllValuesSerialization(argument_type))
+                return false;
+
             /// Removing `Nullable` can throw on NULL rows that the index would otherwise skip.
             if (isNullableOrLowCardinalityNullable(argument_type) && !isNullableOrLowCardinalityNullable(result_type))
                 return false;
 
-            return result_type->getTypeId() == TypeIndex::String
-                || removeLowCardinalityAndNullable(result_type)->equals(*removeLowCardinalityAndNullable(argument_type));
+            const auto result_type_without_wrappers = removeLowCardinalityAndNullable(result_type);
+            const auto argument_type_without_wrappers = removeLowCardinalityAndNullable(argument_type);
+            return result_type_without_wrappers->getTypeId() == TypeIndex::String
+                || result_type_without_wrappers->getName() == argument_type_without_wrappers->getName();
         }
     }
 
-    return tryMatchJSONSubcolumnToIndex(node.getColumnName(), header, "JSONAllValues").has_value();
+    const auto * node_dag = node.getDAGNode();
+    return node_dag
+        && hasStableJSONAllValuesSerialization(node_dag->result_type)
+        && tryMatchJSONSubcolumnToIndex(node.getColumnName(), header, "JSONAllValues").has_value();
 }
 
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
@@ -958,24 +998,28 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         {
             const auto * key_dag = index_column_node.getDAGNode();
 
-            if (key_dag)
+            if (!key_dag)
+                return false;
+
+            const auto & key_type = key_dag->result_type;
+            DataTypePtr target_type;
+
+            if (function_name == "equals")
             {
-                const auto & key_type = key_dag->result_type;
-                const auto key_data_type = WhichDataType(key_type);
-                DataTypePtr target_type;
-
-                if (function_name == "equals" && !key_data_type.isDynamic() && !key_data_type.isVariant())
-                    target_type = key_type;
-                else if (function_name == "has")
-                {
-                    if (const auto * key_array = typeid_cast<const DataTypeArray *>(key_type.get()))
-                        target_type = key_array->getNestedType();
-                }
-
-                if (target_type
-                    && !removeLowCardinalityAndNullable(target_type)->equals(*removeLowCardinalityAndNullable(value_type)))
+                if (!hasKnownJSONAllValuesSerialization(key_type))
                     return false;
+                target_type = key_type;
             }
+            else if (function_name == "has")
+            {
+                if (const auto * key_array = typeid_cast<const DataTypeArray *>(key_type.get()))
+                    target_type = key_array->getNestedType();
+            }
+
+            if (target_type
+                && removeLowCardinalityAndNullable(target_type)->getName()
+                    != removeLowCardinalityAndNullable(value_type)->getName())
+                return false;
 
             if (!WhichDataType(value_type).isStringOrFixedString())
             {
@@ -1720,9 +1764,17 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
-        return hasIndexForColumn(node.getColumnName())
-            || hasIndexForMapElementValue(node)
-            || matchesNodeToJSONAllValuesIndex(node, header);
+        if (hasIndexForColumn(node.getColumnName()) || hasIndexForMapElementValue(node))
+            return true;
+
+        if (!matchesNodeToJSONAllValuesIndex(node, header))
+            return false;
+
+        const auto * node_dag = node.getDAGNode();
+        if (!node_dag)
+            return false;
+
+        return hasKnownJSONAllValuesSerialization(node_dag->result_type);
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
