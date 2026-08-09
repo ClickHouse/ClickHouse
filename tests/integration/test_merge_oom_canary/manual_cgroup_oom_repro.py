@@ -185,6 +185,17 @@ def kill_client_group(proc):
     # SIGKILL the whole session/process group of a client we started, reaping the `sudo` wrapper and the
     # `clickhouse client` grandchild together (killing `proc` alone would orphan the grandchild). Only
     # this script's own clients are ever passed here.
+    #
+    # Skip a `Popen` that has already finished and been reaped: `cleanup` can snapshot `_clients` in the
+    # window between a worker's `communicate()` reaping the child and its `finally` discarding the entry,
+    # and once the child is reaped its PID may be recycled by an unrelated process, so signalling the PGID
+    # could hit the new owner (as root, no less). While the child is unreaped its PID is held (running or
+    # zombie), so the PGID lookup targets our own client. This check narrows the race rather than closing
+    # it airtight - a concurrent `communicate` can still reap in the instant between the check and the
+    # signal - the same best-effort stance as the port-reservation handoff above; the residual window is
+    # microseconds against a kernel PID-recycling cycle.
+    if proc.poll() is not None:
+        return
     try:
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
