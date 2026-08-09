@@ -837,6 +837,13 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::getFileInfo()
             e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_REQUEST_TIMEOUT &&
             e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_MISDIRECTED_REQUEST)
         {
+            /// But a HEAD interrupted by a cancellation must not come out as a file without
+            /// metadata: the caller would go on making requests - here, the requests for the
+            /// metadata this request failed to get - after the read has been cancelled, see
+            /// tryGetLastModificationTime and tryGetFileSize.
+            if (isReadCancelled())
+                throw;
+
             return HTTPFileInfo{};
         }
 
