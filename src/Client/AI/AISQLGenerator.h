@@ -27,9 +27,9 @@ public:
     /// Get the provider name
     std::string getProviderName() const;
 
-    /// Extract the SQL query from the model response: take the last `<sql>` tagged block
-    /// and trim the surrounding whitespace. Returns an empty string when there are no
-    /// tags, which means no query was generated.
+    /// Extract the SQL query from the model response: take the outermost `<sql>` tagged
+    /// block and trim the surrounding whitespace. Returns an empty string when there are
+    /// no tags, which means no query was generated.
     static std::string cleanSQL(const std::string & sql);
 
 private:

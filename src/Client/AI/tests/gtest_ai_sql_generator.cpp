@@ -239,15 +239,18 @@ TEST(AISQLGenerator, ConfigurationValidation)
 
 /// `cleanSQL` is a pure function, so these tests need no AI credentials.
 
-TEST(AISQLGenerator, CleanSQLExtractsLastTaggedBlock)
+TEST(AISQLGenerator, CleanSQLExtractsTaggedQuery)
 {
     EXPECT_EQ(AISQLGenerator::cleanSQL("<sql>SELECT 1</sql>"), "SELECT 1");
+    EXPECT_EQ(AISQLGenerator::cleanSQL("Here is the query: <sql>SELECT 1</sql> Enjoy!"), "SELECT 1");
+}
 
-    /// In a multi-step generation the SDK concatenates the text of all steps, so the
-    /// text can contain several tagged blocks; the final step's query is the last one.
-    EXPECT_EQ(
-        AISQLGenerator::cleanSQL("Let me explore. <sql>SELECT 1</sql> Refined: <sql>SELECT 2</sql>"),
-        "SELECT 2");
+TEST(AISQLGenerator, CleanSQLKeepsLiteralTagsInsideTheQuery)
+{
+    /// The tags can appear inside the query itself, e.g. in a string literal; the
+    /// outermost pair delimits the query.
+    EXPECT_EQ(AISQLGenerator::cleanSQL("<sql>SELECT '<sql>' AS marker</sql>"), "SELECT '<sql>' AS marker");
+    EXPECT_EQ(AISQLGenerator::cleanSQL("<sql>SELECT '</sql>' AS marker</sql>"), "SELECT '</sql>' AS marker");
 }
 
 TEST(AISQLGenerator, CleanSQLTrimsWhitespace)
@@ -262,9 +265,10 @@ TEST(AISQLGenerator, CleanSQLReturnsEmptyWithoutTags)
     EXPECT_EQ(AISQLGenerator::cleanSQL("I'll help you generate a ClickHouse SQL query."), "");
     EXPECT_EQ(AISQLGenerator::cleanSQL(""), "");
 
-    /// Incomplete tags do not count either.
+    /// Incomplete or misordered tags do not count either.
     EXPECT_EQ(AISQLGenerator::cleanSQL("<sql>SELECT 1"), "");
     EXPECT_EQ(AISQLGenerator::cleanSQL("SELECT 1</sql>"), "");
+    EXPECT_EQ(AISQLGenerator::cleanSQL("</sql>SELECT 1<sql>"), "");
 }
 
 /// Test SQL injection attempts in natural language queries

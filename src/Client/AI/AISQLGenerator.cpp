@@ -145,22 +145,23 @@ std::string AISQLGenerator::buildCompletePrompt(const std::string & user_prompt)
 
 std::string AISQLGenerator::cleanSQL(const std::string & sql)
 {
-    /// The model is instructed to wrap the final query in `<sql>` tags, and in a
-    /// multi-step generation the SDK concatenates the text of all steps, so the text
-    /// can contain explanatory prose before the query. Extract the last tagged block -
-    /// it is the one produced by the final step. No tags means no query was generated:
-    /// return an empty string rather than mistaking the prose for SQL.
+    /// The model is instructed to wrap the final query in `<sql>` tags, possibly
+    /// surrounded by prose. Extract the outermost tagged block - the first opening and
+    /// the last closing tag - because the tags can also appear inside the query itself
+    /// (e.g. in a string literal), where an inner pair would truncate the query.
+    /// No tags means no query was generated: return an empty string rather than
+    /// mistaking the prose for SQL.
     static constexpr std::string_view open_tag = "<sql>";
     static constexpr std::string_view close_tag = "</sql>";
 
-    const size_t end_tag = sql.rfind(close_tag);
-    if (end_tag == std::string::npos)
-        return {};
-    const size_t start_tag = sql.rfind(open_tag, end_tag);
+    const size_t start_tag = sql.find(open_tag);
     if (start_tag == std::string::npos)
         return {};
-
     const size_t query_begin = start_tag + open_tag.size();
+    const size_t end_tag = sql.rfind(close_tag);
+    if (end_tag == std::string::npos || end_tag < query_begin)
+        return {};
+
     std::string cleaned = sql.substr(query_begin, end_tag - query_begin);
 
     // Trim whitespace
