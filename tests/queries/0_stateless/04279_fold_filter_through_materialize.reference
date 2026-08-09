@@ -34,3 +34,8 @@ pushdown into union distinct branches	2
 0
 pushdown over join	1
 0
+mixed tuple comparison not folded	1
+1
+nested mixed tuple comparison not folded	1
+same-typed tuple folded	1
+1

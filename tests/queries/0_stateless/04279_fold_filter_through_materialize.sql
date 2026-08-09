@@ -159,3 +159,19 @@ FROM (EXPLAIN PLAN actions = 1
 SELECT count() FROM (SELECT number AS a, materialize(1) AS m FROM numbers(3)) t1
 JOIN (SELECT number AS a FROM numbers(3)) t2 ON t1.a = t2.a
 WHERE m = 5;
+
+-- tuple comparison decomposes a constant tuple into constant element columns, so a nested
+-- string / non-string element pair reaches `executeWithConstString` only on the folded path -
+-- the invariance check recurses through tuple elements and such filters must stay in the plan
+SELECT 'mixed tuple comparison not folded', countIf(explain LIKE '%Filter column: materialize%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(tuple(toUInt8(1))) = tuple('1'));
+SELECT count() FROM numbers(1) WHERE materialize(tuple(toUInt8(1))) = tuple('1');
+SELECT 'nested mixed tuple comparison not folded', countIf(explain LIKE '%Filter column: materialize%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(tuple(tuple(toUInt8(1)), 1)) = tuple(tuple('1'), 1));
+-- with the string on the materialized side the nested comparison raises - the fold must not
+-- swallow the exception
+SELECT count() FROM numbers(1) WHERE materialize(tuple('1')) = tuple(toUInt8(1)); -- { serverError NO_COMMON_TYPE }
+-- same-shaped tuples still fold
+SELECT 'same-typed tuple folded', countIf(explain LIKE '%Filter column: 1%')
+FROM (EXPLAIN PLAN actions = 1 SELECT count() FROM numbers(1) WHERE materialize(tuple('1', 2)) = tuple('1', 2));
+SELECT count() FROM numbers(1) WHERE materialize(tuple('1', 2)) = tuple('1', 2);

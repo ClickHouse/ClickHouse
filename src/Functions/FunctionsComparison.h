@@ -811,14 +811,39 @@ public:
         if (arguments.size() != 2)
             return false;
 
-        auto is_string = [](const DataTypePtr & type)
-        {
-            return isStringOrFixedString(removeNullable(removeLowCardinality(type)));
-        };
-
-        return is_string(arguments[0]) == is_string(arguments[1]);
+        return isInvariantToConstnessForTypes(arguments[0], arguments[1]);
     }
 private:
+    /// Tuple comparison (`executeTuple`) decomposes a constant tuple into constant element columns
+    /// and compares the aligned element pairs with scalar comparisons, so a nested string /
+    /// non-string pair reaches `executeWithConstString` the same way a top-level one does -
+    /// the rule has to hold recursively
+    static bool isInvariantToConstnessForTypes(const DataTypePtr & left, const DataTypePtr & right)
+    {
+        const DataTypePtr left_nested = removeNullable(removeLowCardinality(left));
+        const DataTypePtr right_nested = removeNullable(removeLowCardinality(right));
+
+        const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(left_nested.get());
+        const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(right_nested.get());
+        if (left_tuple || right_tuple)
+        {
+            if (!left_tuple || !right_tuple)
+                return false;
+
+            const auto & left_elements = left_tuple->getElements();
+            const auto & right_elements = right_tuple->getElements();
+            if (left_elements.size() != right_elements.size())
+                return false;
+
+            for (size_t i = 0; i < left_elements.size(); ++i)
+                if (!isInvariantToConstnessForTypes(left_elements[i], right_elements[i]))
+                    return false;
+            return true;
+        }
+
+        return isStringOrFixedString(left_nested) == isStringOrFixedString(right_nested);
+    }
+
     const ComparisonParams params;
 
     static ComparisonOrderDomain getComparisonOrderDomainForType(const DataTypePtr & type)
