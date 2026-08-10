@@ -1,0 +1,14 @@
+== gzip: the whole accepted level range round-trips via external gunzip ==
+level 1: OK
+level 9: OK
+level 10: OK
+level 12: OK
+== gzip: above-max level rejected before writing ==
+Invalid compression level
+file not written: OK
+== deflate (zlib): max accepted level round-trips through ClickHouse ==
+deflate level 12: OK
+== deflate (zlib): above-max level rejected ==
+Invalid compression level
+== output_format_compression_level above zlib's maximum is clamped, not rejected ==
+setting level 12: OK

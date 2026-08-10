@@ -211,6 +211,16 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
         "Only 'auto', 'none', 'gzip', 'deflate', 'br', 'xz', 'zstd', 'lz4', 'bz2', 'snappy' are supported as compression methods", hint);
 }
 
+/// zlib's `deflateInit2` rejects anything above 9.
+static constexpr int ZLIB_MAX_COMPRESSION_LEVEL = 9;
+
+/// 26.7 shipped `libdeflate` for `gzip`/`zlib`/`deflate`, which accepted compression levels up to 12,
+/// and that range is documented for `INTO OUTFILE ... LEVEL`, `output_format_compression_level`,
+/// `http_zlib_compression_level` and the gRPC `output_compression_level`. Now that these paths are back
+/// on zlib, keep accepting `10..12` so queries, profiles and settings profiles written against 26.7
+/// keep working; `createWriteCompressedWrapper` clamps them to `ZLIB_MAX_COMPRESSION_LEVEL`.
+static constexpr int ZLIB_MAX_ACCEPTED_COMPRESSION_LEVEL = 12;
+
 std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod & method)
 {
     switch (method)
@@ -219,8 +229,11 @@ std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod &
             return {1, 22};
         case CompressionMethod::Lz4:
             return {1, 12};
+        case CompressionMethod::Gzip:
+        case CompressionMethod::Zlib:
+            return {1, ZLIB_MAX_ACCEPTED_COMPRESSION_LEVEL};
         default:
-            return {1, 9};
+            return {1, ZLIB_MAX_COMPRESSION_LEVEL};
     }
 }
 
@@ -269,7 +282,13 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
     WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, [[maybe_unused]] SnappyMode snappy_mode, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
 {
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
+    {
+        /// Levels 10..12 were accepted in 26.7 while `libdeflate` was used; clamp them to zlib's maximum
+        /// instead of failing in `deflateInit2`, see `getCompressionLevelRange`.
+        if (level > ZLIB_MAX_COMPRESSION_LEVEL && level <= ZLIB_MAX_ACCEPTED_COMPRESSION_LEVEL)
+            level = ZLIB_MAX_COMPRESSION_LEVEL;
         return std::make_unique<ZlibDeflatingWriteBuffer>(std::forward<WriteBufferT>(nested), method, level, buf_size, existing_memory, alignment, compress_empty);
+    }
 
 #if USE_BROTLI
     if (method == DB::CompressionMethod::Brotli)
