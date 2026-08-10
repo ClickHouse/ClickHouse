@@ -807,7 +807,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
     for (const auto & prepared_set_data_type : prepared_set->getDataTypes())
     {
-        /// At `transform_null_in = 1` a Nullable key keeps the wrapper on its set elements even when
+        /// At `transform_null_in = 1` a `Nullable` key keeps the wrapper on its set elements even when
         /// no element is NULL. NULL values are refused per row below.
         auto prepared_set_data_type_id = removeNullable(prepared_set_data_type)->getTypeId();
         if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
@@ -826,12 +826,12 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         key_position.push_back(elem.key_index);
 
         size_t tuple_idx = elem.tuple_index;
-        /// tuple_index counts left-hand arguments while columns are the set elements.
+        /// `tuple_index` counts left-hand arguments while `columns` are the set elements.
         if (tuple_idx >= columns.size())
             return false;
 
         const auto & column = columns[tuple_idx];
-        /// isNullable() is false for LowCardinality(Nullable).
+        /// `isNullable` is false for `LowCardinality(Nullable)`.
         const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*column);
 
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)

@@ -1704,7 +1704,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     const auto & set_column = *columns[*set_key_position];
 
-    /// At `transform_null_in = 1` a Nullable key keeps the wrapper on its set elements even when no
+    /// At `transform_null_in = 1` a `Nullable` key keeps the wrapper on its set elements even when no
     /// element is NULL, so look through it and decide on the values in the loop below.
     const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(&set_column);
     const auto & set_column_values = set_column_nullable ? set_column_nullable->getNestedColumn() : set_column;
@@ -1712,7 +1712,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (!WhichDataType(set_column_values.getDataType()).isStringOrFixedString())
         return false;
 
-    /// isNullable() is false for LowCardinality(Nullable).
+    /// `isNullable` is false for `LowCardinality(Nullable)`.
     const bool set_column_is_nullable = isColumnNullableOrLowCardinalityNullable(set_column);
 
     size_t total_row_count = prepared_set->getTotalRowCount();
