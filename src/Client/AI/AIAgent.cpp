@@ -191,7 +191,7 @@ ai::ToolResult AIAgent::executeToolCall(const ai::ToolCall & call)
             std::string(
                 "Your <tool_call> block could not be parsed ("
                 + call.arguments.value("parse_error", "invalid JSON")
-                + "). Emit exactly: <tool_call>{\"name\": \"<tool>\", \"arguments\": {...}}</tool_call> with valid JSON inside."));
+                + R"(). Emit exactly: <tool_call>{"name": "<tool>", "arguments": {...}}</tool_call> with valid JSON inside.)"));
 
     return ai::ToolExecutor::execute_tool(call, tools, messages);
 }

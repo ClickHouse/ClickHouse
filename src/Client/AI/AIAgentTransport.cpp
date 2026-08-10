@@ -95,6 +95,9 @@ bool AIServerFunctionTransport::isAvailable(const ScalarQueryExecutor & executor
     }
     catch (...)
     {
+        /// Ok: this is only a capability probe - an old server without `aiGenerate`, or one that
+        /// denies access to `system.functions`/`system.settings`, simply means the transport is
+        /// not available. The real error is reported when the transport is actually used.
         return false;
     }
 }

@@ -376,7 +376,7 @@ The older `??` command, which generated a single SQL query and pre-filled it at 
 
 To answer a question, the assistant uses a set of tools:
 
-- **Recent queries** — it is given the last queries you ran in this session, with their results truncated to the first and last rows and any error messages, and it can read further back from the [`system.user_query_log`](/operations/system-tables/user_query_log) table. When you say "my query" or "that error", it knows what you mean.
+- **Recent queries** — it is given the last queries you ran in this session, with their results truncated to the first and last rows and any error messages, and it can read further back from the [`system.user_query_log`](/reference/system-tables/user_query_log) table. When you say "my query" or "that error", it knows what you mean.
 - **Schema exploration** — it lists databases and tables and reads `CREATE TABLE` statements instead of guessing column names.
 - **Documentation** — it looks entities up in the embedded documentation (the [`system.documentation`](/operations/system-tables/documentation) table), the same source as the `help` command.
 - **Read-only queries without confirmation** — it runs `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS` and `CHECK` statements under a sandbox: `readonly = 1`, a 30-second time limit and a 10 GiB memory limit. These are displayed and executed on your connection without asking.

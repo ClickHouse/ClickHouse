@@ -3871,7 +3871,7 @@ bool ClientBase::processAIChat(const String & text)
 
     if (text == "clear" || text == "reset")
     {
-        ai_agent->reset();
+        (*ai_agent).reset();
         output_stream << "The AI conversation was cleared." << std::endl << std::endl;
         return true;
     }
