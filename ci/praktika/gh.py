@@ -811,16 +811,44 @@ class GH:
             os.unlink(temp_file_path)
 
     @classmethod
-    def request_team_reviews(cls, team_slugs, pr=None, repo=None):
-        requested = set(team_slugs)
-        if not requested:
-            return True
+    def _get_review_team(cls, team_slug, repo):
+        owner, separator, _ = repo.partition("/")
+        assert separator and owner, f"Invalid repository name [{repo}]"
 
-        if not repo:
-            repo = _Environment.get().REPOSITORY
-        if not pr:
-            pr = _Environment.get().PR_NUMBER
+        endpoint = shlex.quote(f"/orgs/{owner}/teams/{team_slug}")
+        cmd = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" {endpoint} '
+            "--jq '{slug: .slug, node_id: .node_id, privacy: .privacy}'"
+        )
+        output = cls.get_output_with_retries(cmd, verbose=True)
+        if not output:
+            raise RuntimeError(
+                f"GitHub identity cannot resolve review team [{owner}/{team_slug}]"
+            )
 
+        try:
+            team = json.loads(output)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"Failed to parse review team [{owner}/{team_slug}]: {e}"
+            ) from e
+        if (
+            not isinstance(team, dict)
+            or team.get("slug") != team_slug
+            or not team.get("node_id")
+        ):
+            raise RuntimeError(
+                f"Unexpected review team response for [{owner}/{team_slug}]"
+            )
+
+        print(
+            f"Resolved review team [{owner}/{team_slug}] as node "
+            f"[{team['node_id']}], privacy [{team.get('privacy', '')}]"
+        )
+        return team
+
+    @classmethod
+    def _get_requested_team_reviews(cls, pr, repo):
         cmd = (
             f'gh api -H "Accept: application/vnd.github.v3+json" '
             f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
@@ -845,9 +873,34 @@ class GH:
                 f"Unexpected team review request response for pull request [{pr}]"
             )
 
-        teams_to_request = sorted(requested - set(requested_teams))
+        return set(requested_teams)
+
+    @classmethod
+    def request_team_reviews(cls, team_slugs, pr=None, repo=None):
+        requested = set(team_slugs)
+        if not requested:
+            return True
+
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        teams_to_request = sorted(
+            requested - cls._get_requested_team_reviews(pr, repo)
+        )
         if teams_to_request:
+            for team_slug in teams_to_request:
+                cls._get_review_team(team_slug, repo)
             cls._submit_team_review_requests(teams_to_request, pr, repo)
+            missing_teams = set(teams_to_request) - cls._get_requested_team_reviews(
+                pr, repo
+            )
+            if missing_teams:
+                raise RuntimeError(
+                    "Failed to verify team review requests for pull request "
+                    f"[{pr}], missing teams [{', '.join(sorted(missing_teams))}]"
+                )
 
         return True
 
