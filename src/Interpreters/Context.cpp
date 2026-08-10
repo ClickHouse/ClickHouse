@@ -6465,6 +6465,7 @@ void Context::startClusterDiscovery()
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
     ClusterDiscovery * discovery_to_update = nullptr;
+    ClusterDiscovery * discovery_just_created_ptr = nullptr;
     {
         std::lock_guard lock(shared->clusters_mutex);
         bool discovery_just_created = false;
@@ -6483,26 +6484,42 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         /// shared->clusters using the fallback getConfigRef() without setting shared->clusters_config.
         /// If setClustersConfig() then runs before the config reloader stores its ConfigurationPtr,
         /// dereferencing shared->clusters_config would throw Poco::NullPointerException.
-        if (shared->clusters && shared->clusters_config && isSameConfiguration(*config, *shared->clusters_config, config_name))
-            return;
+        ///
+        /// Still start a discovery object created after server start when only the allow-flag
+        /// flipped (remote_servers subtree unchanged) — otherwise the worker never runs.
+        const bool remote_servers_unchanged
+            = shared->clusters && shared->clusters_config
+            && isSameConfiguration(*config, *shared->clusters_config, config_name);
 
-        auto old_clusters_config = shared->clusters_config;
-        shared->clusters_config = config;
+        if (!remote_servers_unchanged)
+        {
+            auto old_clusters_config = shared->clusters_config;
+            shared->clusters_config = config;
 
-        if (!shared->clusters)
-            shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
-        else
-            shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
+            if (!shared->clusters)
+                shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
+            else
+                shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
 
-        if (shared->cluster_discovery && !discovery_just_created)
-            discovery_to_update = shared->cluster_discovery.get();
+            if (shared->cluster_discovery && !discovery_just_created)
+                discovery_to_update = shared->cluster_discovery.get();
 
-        ++shared->clusters_version;
+            ++shared->clusters_version;
+        }
+
+        /// Constructor already applied config. Start outside this lock if the server is ready;
+        /// otherwise programs/server/Server.cpp calls startClusterDiscovery() after listen.
+        if (discovery_just_created)
+            discovery_just_created_ptr = shared->cluster_discovery.get();
     }
 
     /// Apply discovery updates outside clusters_mutex: may start the worker and touch ZooKeeper.
     if (discovery_to_update)
         discovery_to_update->updateFromConfig(*config, config_name);
+
+    /// Re-check server readiness without clusters_mutex (isServerCompletelyStarted takes shared->mutex).
+    if (discovery_just_created_ptr && getApplicationType() == ApplicationType::SERVER && isServerCompletelyStarted())
+        discovery_just_created_ptr->start();
 
     {
         SharedLockGuard lock(shared->mutex);
