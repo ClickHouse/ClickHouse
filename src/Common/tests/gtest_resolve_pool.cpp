@@ -617,6 +617,10 @@ TEST_F(ResolvePoolTest, BannedForConsiquenceFail)
     // `setFail` stamps the ban's anchor before refreshing DNS, so the anchor lies in
     // [before, after]. Deadlines gating "still banned" must use `before`, waits for expiry
     // `after`; one anchor taken after `setFail` can outlive the ban it waits on.
+
+    /// The refresh is slow on purpose: a window narrower than one refresh cannot survive it,
+    /// and the assertion below then reads 0.
+    slow_down_refreshes(1, 20ms);
     auto before = now();
     failed_addr.setFail();
     auto after = now();
@@ -665,6 +669,9 @@ TEST_F(ResolvePoolTest, NoAditionalBannForConcurrentFail)
     // sound but needlessly loose by two whole DNS refreshes.
     failed_addr.setFail();
     failed_addr.setFail();
+
+    /// Arm only the refresh the window is anchored on, as in BannedForConsiquenceFail.
+    slow_down_refreshes(1, 20ms);
     auto before = now();
     failed_addr.setFail();
     auto after = now();
@@ -698,6 +705,27 @@ TEST_F(ResolvePoolTest, BanSurvivesSlowFailRefresh)
 
     ASSERT_EQ(3, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(1, CurrentMetrics::get(metrics.banned_count));
+}
+
+TEST_F(ResolvePoolTest, NoSampleBeforeDeadlineIsNotAFailure)
+{
+    auto history = 100ms;
+    auto resolver = make_resolver(toMilliseconds(history));
+
+    auto failed_addr = resolver->resolve();
+    ASSERT_TRUE(addresses.contains(*failed_addr));
+
+    failed_addr.setFail();
+
+    /// Age the resolver past `resolve_interval` (history / 3) so the helper's own first
+    /// `resolve()` has to refresh DNS, and make that refresh slower than the deadline below.
+    sleep_for(history / 3 + epsilon);
+    slow_down_refreshes(1, 30ms);
+
+    /// The deadline is alive on entry and expires during that first refresh, so the helper
+    /// crosses it having sampled nothing. There is no observation to judge, so it must return
+    /// rather than report the absence of samples as a defect.
+    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, now() + 500us);
 }
 
 TEST_F(ResolvePoolTest, BanWindowAnchoredOnFailTimestamp)
