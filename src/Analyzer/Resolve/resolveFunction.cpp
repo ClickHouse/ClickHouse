@@ -785,9 +785,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Replace IN (subquery)
     /// NOTE: the resulting subquery in the argument of EXISTS will have correlated column x, that's why this rewriting has to be before handling
     /// EXISTS which is done below in 'if (is_special_function_exists)' case.
+    /// NOTE: the rewrite is skipped inside `PREWHERE`: the rewritten form is a correlated subquery,
+    /// and `PREWHERE` is evaluated by the reading step, which cannot execute one (the planner rejects
+    /// it with `ILLEGAL_PREWHERE`). Keeping the plain `IN` there makes `PREWHERE x IN (subquery)`
+    /// behave exactly like its `WHERE` spelling instead of failing.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/114026.
     if (is_special_function_in &&
         (function_name == "in" || function_name == "notIn") &&
-        scope.context->getSettingsRef()[Setting::rewrite_in_to_join])
+        scope.context->getSettingsRef()[Setting::rewrite_in_to_join] &&
+        !scope.in_prewhere)
     {
         if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
             throw Exception(
