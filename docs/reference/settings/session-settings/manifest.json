@@ -1,5 +1,5 @@
 {
-  "settings": 1280,
+  "settings": 1279,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -1230,6 +1230,7 @@
     "use_iceberg_partition_pruning": "/reference/settings/session-settings/use-iceberg",
     "use_index_for_in_with_subqueries": "/reference/settings/session-settings/use-index-for-in-with-subqueries",
     "use_index_for_in_with_subqueries_max_values": "/reference/settings/session-settings/use-index-for-in-with-subqueries",
+    "use_indexes_refiner_in_read_pools": "/reference/settings/session-settings/use",
     "use_join_disjunctions_push_down": "/reference/settings/session-settings/use",
     "use_legacy_to_time": "/reference/settings/session-settings/use",
     "use_lightweight_primary_key_index_analysis": "/reference/settings/session-settings/use",
@@ -1243,7 +1244,6 @@
     "use_partition_minmax_for_primary_key_pruning": "/reference/settings/session-settings/use-partition",
     "use_partition_pruning": "/reference/settings/session-settings/use-partition",
     "use_primary_key": "/reference/settings/session-settings/use",
-    "use_projection_index_in_read_pools": "/reference/settings/session-settings/use",
     "use_query_cache": "/reference/settings/session-settings/use-query",
     "use_query_condition_cache": "/reference/settings/session-settings/use-query",
     "use_query_condition_cache_for_top_k": "/reference/settings/session-settings/use-query",
@@ -1272,7 +1272,6 @@
     "use_variant_as_common_type": "/reference/settings/session-settings/use-variant",
     "use_variant_default_implementation_for_comparisons": "/reference/settings/session-settings/use-variant",
     "use_with_fill_by_sorting_prefix": "/reference/settings/session-settings/use",
-    "uuid_type_version": "/reference/settings/session-settings/other",
     "validate_enum_literals_in_operators": "/reference/settings/session-settings/validate",
     "validate_mutation_query": "/reference/settings/session-settings/validate",
     "validate_polygons": "/reference/settings/session-settings/validate",
