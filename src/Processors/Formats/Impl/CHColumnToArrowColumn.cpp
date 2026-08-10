@@ -1544,7 +1544,14 @@ namespace DB
                     || std::is_same_v<ToDataType, DataTypeDecimal<Decimal256>>)
                 {
                     const auto & decimal_type = assert_cast<const ToDataType *>(column_type.get());
-                    arrow_type = arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale());
+                    const auto precision = decimal_type->getPrecision();
+                    /// Reproduces what the removed `arrow::decimal` did: `Decimal256` above precision 38,
+                    /// `Decimal128` otherwise. `arrow::smallest_decimal` is deliberately not used here -
+                    /// Arrow gained `Decimal32` and `Decimal64`, so it would narrow small decimals and
+                    /// change the schema we write.
+                    arrow_type = precision > 38
+                        ? arrow::decimal256(precision, decimal_type->getScale())
+                        : arrow::decimal128(precision, decimal_type->getScale());
                     return true;
                 }
 
