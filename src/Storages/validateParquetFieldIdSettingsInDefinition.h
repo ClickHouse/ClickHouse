@@ -11,8 +11,9 @@ namespace DB
   * `output_format_parquet_column_field_ids` map supplied in the definition would be accepted at
   * `CREATE` time and then fail every later `INSERT`, leaving a table that can never be written.
   * This validates the Parquet `field_id` settings up front when the definition itself supplies
-  * them (ambient session or profile values are left to the write-time checks), the definition is
-  * a fresh one — a `CREATE`, or a full-definition `ATTACH` — and the format is Parquet. Replaying
+  * them (an ambient session or profile value never reaches a table definition — see
+  * `getFormatSettingsForTableDefinition`), the definition is a fresh one — a `CREATE`, or a
+  * full-definition `ATTACH` — and the format is Parquet. Replaying
   * an already-accepted definition (server startup, replicated or `ON CLUSTER` DDL replay,
   * `RESTORE` from backup, a short `ATTACH TABLE t`) is exempt, so existing tables always load.
   *

@@ -31,8 +31,8 @@ void validateParquetFieldIdSettingsInDefinitionImpl(
         return;
 
     /// Only settings written in the definition itself express an intent to give this table its own
-    /// `field_id`s; an ambient session or profile value frozen alongside them keeps today's
-    /// write-time behavior.
+    /// `field_id`s, and only those reach the frozen `FormatSettings` in the first place — an ambient
+    /// session or profile value is dropped by `getFormatSettingsForTableDefinition`.
     const auto is_set_in_definition = [&](std::string_view name)
     {
         return std::ranges::any_of(

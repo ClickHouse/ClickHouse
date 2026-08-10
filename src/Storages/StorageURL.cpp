@@ -1629,22 +1629,8 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
     // session and user are ignored.
-    FormatSettings format_settings;
-    if (args.storage_def->settings)
-    {
-        Settings settings = args.getContext()->getSettingsCopy();
-
-        // Apply changes from SETTINGS clause, with validation.
-        settings.applyChanges(args.storage_def->settings->changes);
-
-        format_settings = getFormatSettings(args.getContext(), settings);
-    }
-    else
-    {
-        format_settings = getFormatSettings(args.getContext());
-    }
-
-    return format_settings;
+    return getFormatSettingsForTableDefinition(
+        args.getContext(), args.storage_def->settings ? &args.storage_def->settings->changes : nullptr);
 }
 
 size_t StorageURL::evalArgsAndCollectHeaders(

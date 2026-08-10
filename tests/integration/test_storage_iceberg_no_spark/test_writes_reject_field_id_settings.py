@@ -284,7 +284,7 @@ def test_plain_object_storage_validates_field_ids_in_definition(
     `output_format_parquet_column_field_ids` map used to be accepted at CREATE time
     and then fail every later `INSERT` — an accepted but permanently unwritable
     table. Such a definition is validated up front now and rejected at DDL time,
-    while ambient (session/profile) values keep failing at write time only.
+    while an ambient (session/profile) value is not frozen onto the table at all.
     """
     from helpers.config_cluster import minio_access_key, minio_secret_key
 
@@ -435,3 +435,23 @@ def test_plain_object_storage_validates_field_ids_in_definition(
     assert (
         instance.query(f"SELECT * FROM {inferred_ok_table} ORDER BY ALL") == "1\t2\n"
     )
+
+    # An ambient (session) value is not frozen onto the table: the CREATE query never
+    # mentioned it, so it is neither validated against the table's columns nor written
+    # into the table's definition. Freezing it would leave a table whose every INSERT
+    # fails with `references unknown column`.
+    ambient_table = make_table_name("ambient")
+    ambient_settings = {
+        "output_format_parquet_column_field_ids": "{'missing': '1'}",
+        "output_format_parquet_auto_assign_field_ids": "1",
+    }
+    instance.query(
+        f"CREATE TABLE {ambient_table} (x Int32, y Int32) "
+        f"ENGINE = S3('{base_url}/{ambient_table}.parquet', "
+        f"'{minio_access_key}', '{minio_secret_key}', 'Parquet')",
+        settings=ambient_settings,
+    )
+    instance.query(
+        f"INSERT INTO {ambient_table} VALUES (3, 4)", settings=ambient_settings
+    )
+    assert instance.query(f"SELECT * FROM {ambient_table} ORDER BY ALL") == "3\t4\n"

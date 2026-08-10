@@ -59,13 +59,10 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// `field_id` settings at write time in that case. The format settings are frozen here at table
     /// definition time, so accepting these settings would produce a table whose every `INSERT` fails.
     ///
-    /// The format settings below also carry the ambient server/profile defaults, not only what the
-    /// definition says. Only settings written in the definition itself express an intent to give this
-    /// table its own `field_id`s; the ambient ones would otherwise silently make every existing
-    /// Iceberg table unwritable for a user whose profile enables them, so they are reset before the
-    /// `FormatSettings` are built — early enough that an ambient value is not even parsed. Each of the
-    /// two settings is tracked separately: naming one of them in the definition must not stop the
-    /// other one's ambient value from being ignored.
+    /// The frozen format settings also carry the ambient server/profile/session values, not only what
+    /// the definition says, so `getFormatSettingsForTableDefinition` drops the ambient `field_id`
+    /// values — early enough that they are not even parsed. Whether the definition itself named them
+    /// is what the checks below act on.
     const auto is_set_in_definition = [&](std::string_view name)
     {
         return args.storage_def->settings
@@ -74,33 +71,11 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     };
     const bool column_field_ids_in_definition = is_set_in_definition("output_format_parquet_column_field_ids");
     const bool auto_assign_field_ids_in_definition = is_set_in_definition("output_format_parquet_auto_assign_field_ids");
-    const bool ignore_ambient_field_ids = configuration->isIcebergConfiguration()
-        && !(column_field_ids_in_definition && auto_assign_field_ids_in_definition);
 
-    // Use format settings from global server context + settings from
-    // the SETTINGS clause of the create query. Settings from current
-    // session and user are ignored.
-    std::optional<FormatSettings> format_settings;
-    if (args.storage_def->settings || ignore_ambient_field_ids)
-    {
-        Settings settings = context->getSettingsCopy();
-
-        // Apply changes from SETTINGS clause, with validation.
-        if (args.storage_def->settings)
-            settings.applyChanges(args.storage_def->settings->changes);
-
-        /// Ambient defaults are ignored for Iceberg engines: the table metadata wins. A setting named
-        /// in the definition keeps its definition value; only the settings absent from the definition
-        /// are reset.
-        if (ignore_ambient_field_ids)
-            resetParquetFieldIdSettings(settings, !column_field_ids_in_definition, !auto_assign_field_ids_in_definition);
-
-        format_settings = getFormatSettings(context, settings);
-    }
-    else
-    {
-        format_settings = getFormatSettings(context);
-    }
+    // Freeze the format settings of the query context plus the settings from the SETTINGS clause of
+    // the create query, minus the ambient Parquet `field_id` values.
+    std::optional<FormatSettings> format_settings = getFormatSettingsForTableDefinition(
+        context, args.storage_def->settings ? &args.storage_def->settings->changes : nullptr);
 
     /// Reject the definition up front when the settings are freshly supplied by the user: a `CREATE`
     /// query, or a full-definition `ATTACH TABLE t (...) ENGINE = ...` query, which introduces a new

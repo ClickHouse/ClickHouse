@@ -28,6 +28,9 @@
 #include <Core/Field.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Common/SettingsChanges.h>
+
+#include <algorithm>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -120,6 +123,30 @@ FormatSettings getFormatSettingsIgnoringParquetFieldIds(const ContextPtr & conte
 {
     Settings settings = context->getSettingsCopy();
     resetParquetFieldIdSettings(settings);
+
+    return getFormatSettings(context, settings);
+}
+
+FormatSettings getFormatSettingsForTableDefinition(const ContextPtr & context, const SettingsChanges * definition_changes)
+{
+    Settings settings = context->getSettingsCopy();
+
+    /// Apply changes from the SETTINGS clause of the definition, with validation.
+    if (definition_changes)
+        settings.applyChanges(*definition_changes);
+
+    const auto is_set_in_definition = [&](std::string_view name)
+    {
+        return definition_changes
+            && std::ranges::any_of(*definition_changes, [&](const auto & change) { return change.name == name; });
+    };
+
+    /// An ambient value of these settings must not be frozen onto the table: it was not written for
+    /// this table, and it would make the table unwritable (see the declaration).
+    resetParquetFieldIdSettings(
+        settings,
+        !is_set_in_definition("output_format_parquet_column_field_ids"),
+        !is_set_in_definition("output_format_parquet_auto_assign_field_ids"));
 
     return getFormatSettings(context, settings);
 }

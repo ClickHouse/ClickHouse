@@ -2736,19 +2736,9 @@ void registerStorageFile(StorageFactory & factory)
             // Use format settings from global server context + settings from
             // the SETTINGS clause of the create query. Settings from current
             // session and user are ignored.
-            if (factory_args.storage_def->settings)
-            {
-                Settings settings = factory_args.getContext()->getSettingsCopy();
-
-                // Apply changes from SETTINGS clause, with validation.
-                settings.applyChanges(factory_args.storage_def->settings->changes);
-
-                storage_args.format_settings = getFormatSettings(factory_args.getContext(), settings);
-            }
-            else
-            {
-                storage_args.format_settings = getFormatSettings(factory_args.getContext());
-            }
+            storage_args.format_settings = getFormatSettingsForTableDefinition(
+                factory_args.getContext(),
+                factory_args.storage_def->settings ? &factory_args.storage_def->settings->changes : nullptr);
 
             /// The frozen format settings make an invalid definition-supplied Parquet `field_id`
             /// map fail every later `INSERT` — validate a fresh definition up front instead.
