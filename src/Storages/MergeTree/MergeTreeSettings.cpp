@@ -1124,6 +1124,11 @@ than compression.
 
 An explicitly set `optimize_row_order = 0` takes precedence: such a table is
 never row-order optimized, regardless of this setting.
+
+As with `optimize_row_order`, the optimization applies to ordinary `MergeTree`
+tables only. Specialized engines of the family, e.g. `ReplacingMergeTree`,
+`CollapsingMergeTree` or `AggregatingMergeTree`, are never row-order optimized
+and keep the order of the inserted rows.
 )", 0) \
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
 Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.

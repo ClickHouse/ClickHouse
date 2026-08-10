@@ -1408,7 +1408,7 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
-You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse reorders the rows of every inserted block to improve their compressibility, because with an empty sorting key no query can rely on the physical row order. This is controlled by the `optimize_row_order_if_no_order_by` setting, which is enabled by default.
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse reorders the rows of every inserted block to improve their compressibility, because with an empty sorting key no query can rely on the physical row order. This is controlled by the `optimize_row_order_if_no_order_by` setting, which is enabled by default for ordinary `MergeTree` tables. Specialized engines of the family, e.g. `ReplacingMergeTree` or `AggregatingMergeTree`, are never row-order optimized and keep the order of the inserted rows.
 
 If you need the data to be stored in the order of inserting instead, disable the reordering with `optimize_row_order_if_no_order_by = 0` (or `optimize_row_order = 0`) in the table's `SETTINGS` clause, and, when inserting data by `INSERT ... SELECT` queries, also set [max_insert_threads = 1](/reference/settings/session-settings/max-insert#max_insert_threads).
 

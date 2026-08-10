@@ -1353,7 +1353,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
-            {"optimize_row_order_if_no_order_by", false, true, "Enable row order optimization automatically for tables with an empty sorting key (e.g. ORDER BY () / ORDER BY tuple())"},
+            {"optimize_row_order_if_no_order_by", false, true, "Enable row order optimization automatically for ordinary MergeTree tables with an empty sorting key (e.g. ORDER BY () / ORDER BY tuple())"},
             {"always_fetch_mutated_part", false, false, "New setting to make a replica fetch mutated parts instead of executing mutations locally"},
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},
             {"compute_exact_num_defaults_for_sparse_columns", false, true, "Promote to BETA and enable by default: compute the exact per-column `num_defaults` counter during inserts and merges (instead of the sampling estimate), so `optimize_trivial_count_with_sparsity_filter` and sparsity-based pruning can rely on it."},
