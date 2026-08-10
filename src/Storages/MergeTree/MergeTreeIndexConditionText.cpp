@@ -1017,6 +1017,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 if (!key_array)
                     return false;
                 target_type = key_array->getNestedType();
+                if (!hasKnownJSONAllValuesSerialization(target_type) || !hasStableJSONAllValuesSerialization(target_type))
+                    return false;
             }
 
             if (target_type)

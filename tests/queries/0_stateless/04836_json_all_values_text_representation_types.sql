@@ -1,6 +1,7 @@
 SET allow_experimental_full_text_index = 1;
 SET explain_query_plan_default = 'legacy';
 SET input_format_try_infer_datetimes = 1;
+SET input_format_try_infer_datetimes_only_datetime64 = 0;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS t_json_all_values_representation_types;
@@ -73,3 +74,36 @@ SELECT count() FROM
 WHERE explain LIKE '%Granules: 1/2%';
 
 DROP TABLE t_json_all_values_representation_types;
+
+SET session_timezone = 'UTC';
+
+DROP TABLE IF EXISTS t_json_all_values_array_dynamic;
+
+CREATE TABLE t_json_all_values_array_dynamic
+(
+    data JSON(tags Array(Dynamic)),
+    INDEX idx_values JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 4;
+
+INSERT INTO t_json_all_values_array_dynamic
+SELECT if(
+    number < 4,
+    '{"tags":["2040-03-03 00:00:00"]}',
+    '{"tags":["2041-04-04 00:00:00"]}')
+FROM numbers(8);
+
+SET session_timezone = 'Europe/Moscow';
+
+-- Keep the needle `Dynamic` to exercise the unsafe `Array(Dynamic)` index path.
+SELECT count() FROM t_json_all_values_array_dynamic
+WHERE has(data.tags, CAST(toDateTime('2040-03-03 03:00:00') AS Dynamic))
+SETTINGS use_skip_indexes = 1;
+
+SELECT count() FROM t_json_all_values_array_dynamic
+WHERE has(data.tags, CAST(toDateTime('2040-03-03 03:00:00') AS Dynamic))
+SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_json_all_values_array_dynamic;
