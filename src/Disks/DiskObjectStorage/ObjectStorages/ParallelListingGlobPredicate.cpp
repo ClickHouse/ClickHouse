@@ -97,4 +97,28 @@ std::function<bool(const std::string &)> makeShouldDescendPredicate(const std::s
     };
 }
 
+std::optional<std::string> chooseDelimitedListingStartPrefix(
+    const std::string & glob_path,
+    const std::string & key_prefix,
+    const std::function<bool(const std::string & prefix)> & is_prefix_allowed)
+{
+    if (is_prefix_allowed(key_prefix))
+        return key_prefix;
+
+    /// Back the prefix up to the closest '/' boundary at or before its end (the bucket root when the
+    /// prefix holds no '/' at all).
+    const size_t last_slash = key_prefix.rfind('/');
+    std::string widened_prefix = last_slash == std::string::npos ? std::string{} : key_prefix.substr(0, last_slash + 1);
+
+    if (!is_prefix_allowed(widened_prefix))
+        return std::nullopt;
+
+    /// The walk parallelizes over the "directory" levels below its start prefix, so it needs at least one:
+    /// the glob must have a segment below the widened prefix in addition to the file-name segment.
+    if (splitPathComponents(widened_prefix).size() + 1 >= splitPathComponents(glob_path).size())
+        return std::nullopt;
+
+    return widened_prefix;
+}
+
 }

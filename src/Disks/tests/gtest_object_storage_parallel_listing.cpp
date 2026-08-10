@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <future>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -854,6 +855,76 @@ TEST(ObjectStorageParallelListing, CrossComponentSelectorStaysOnSerialIterator)
     EXPECT_TRUE(should_descend("root/a/"));
     EXPECT_TRUE(should_descend("root/unrelated/"));
     EXPECT_TRUE(should_descend("root/a/b/very/deep/"));
+}
+
+TEST(ObjectStorageParallelListing, DirectoryBucketStartsWalkFromPathBoundary)
+{
+    /// S3 Express / directory buckets accept a `Delimiter` only when the `Prefix` is the bucket root or ends
+    /// with '/', so the walk cannot start from a glob prefix that ends mid-component (`root/year=` for
+    /// `root/year=*/month=*/data_*.parquet`). Falling back to the serial iterator for every such glob would
+    /// take the promised parallel speedup away from exactly the common Hive-style layouts, so the walk starts
+    /// one '/' boundary earlier instead — a superset walk whose extra siblings the descend predicate prunes.
+    auto directory_bucket = [](const std::string & prefix) { return prefix.empty() || prefix.ends_with('/'); };
+    auto plain_bucket = [](const std::string &) { return true; };
+
+    /// A '/'-aligned prefix is used as it is, and a plain bucket never needs the widening.
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/*/data.csv", "root/", directory_bucket), "root/");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*/month=*/data.csv", "root/year=", plain_bucket), "root/year=");
+
+    /// A mid-component prefix with at least one "directory" level left below it backs up to the boundary.
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/year=*/month=*/data.csv", "root/year=", directory_bucket), "root/");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("a/b/c_*/f.csv", "a/b/c_", directory_bucket), "a/b/");
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("year=*/month=*/data.csv", "year=", directory_bucket), "");
+
+    /// With no "directory" level left below the widened prefix the walk would list a single flat range over a
+    /// wider prefix than the serial iterator uses — and serially, since those endpoints reject the keyspace
+    /// split — so it must stay serial.
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("data_??.csv", "data_", directory_bucket), std::nullopt);
+    EXPECT_EQ(chooseDelimitedListingStartPrefix("root/data_??.csv", "root/data_", directory_bucket), std::nullopt);
+
+    /// End to end on such an endpoint: the widened walk must produce every key of the matching sub-tree
+    /// exactly once, prune the non-matching siblings the wider prefix exposes, and never send a `StartAfter`.
+    FakeS3 s3;
+    s3.page_size = 11;
+    s3.reject_start_after = true;
+    for (int y = 2020; y <= 2022; ++y)
+        for (int m = 1; m <= 12; ++m)
+            for (int f = 0; f < 5; ++f)
+                s3.add(fmt::format("root/year={}/month={:02}/data_{:03}.parquet", y, m, f));
+    /// Siblings of `root/year=.../` that the narrower prefix `root/year=` would have excluded by itself.
+    for (int i = 0; i < 40; ++i)
+        s3.add(fmt::format("root/other={:02}/month=01/data_000.parquet", i));
+    s3.add("root/loose.parquet");
+    s3.finalize();
+
+    const std::string glob = "root/year=*/month=*/data_*.parquet";
+    const auto start_prefix = chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket);
+    ASSERT_EQ(start_prefix, "root/");
+
+    /// Everything below the pruned `root/other=.../` siblings stays unlisted; the loose file that the wider
+    /// prefix exposes at the walk's own level is still emitted (as with the serial iterator, only the
+    /// per-file regexp of `GlobIterator` decides about such keys).
+    std::vector<std::string> expected;
+    for (const auto & key : s3.keys)
+        if (!key.starts_with("root/other="))
+            expected.push_back(key);
+    std::sort(expected.begin(), expected.end());
+
+    for (size_t threads : {1, 2, 4, 16})
+    {
+        s3.requests.store(0);
+        ObjectStorageParallelListingIterator iterator(
+            *start_prefix, threads, /* max_buffered_keys */ 128, makeListLevel(s3), makeProbeLevel(s3),
+            makeShouldDescendPredicate(glob),
+            /* allow_keyspace_split */ false, /* check_cancellation */ {},
+            /* max_pending_range_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+            /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ false);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+    }
+    EXPECT_EQ(s3.requests_with_start_after.load(), 0u);
 }
 
 TEST(ObjectStorageParallelListing, Pruning)

@@ -1618,15 +1618,28 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         /// formed by the '/' delimiter), unless disabled or the path cannot be pruned per directory
         /// level and would degrade to one request per directory: the recursive wildcard "**" and
         /// '{...}' selectors spanning '/' (e.g. `root/{a/b,c/d}/*.csv`) both match across '/'.
-        const bool use_parallel_listing =
-            parallelism > 1
-            && object_storage->supportsDelimitedListingFromPrefix(key_prefix)
+        /// Endpoints that accept a delimited listing only from a '/'-aligned prefix (S3 Express /
+        /// directory buckets) keep the parallel walk by starting it one '/' boundary earlier; see
+        /// `chooseDelimitedListingStartPrefix`.
+        std::optional<std::string> listing_start_prefix;
+        if (parallelism > 1
             && key_with_globs.path.find("**") == std::string::npos
-            && !globSelectorSpansPathComponents(key_with_globs.path);
-
-        if (use_parallel_listing)
+            && !globSelectorSpansPathComponents(key_with_globs.path))
         {
-            LOG_DEBUG(log, "Listing {} in parallel with {} threads", key_with_globs.path, parallelism);
+            listing_start_prefix = chooseDelimitedListingStartPrefix(
+                key_with_globs.path,
+                key_prefix,
+                [&](const std::string & prefix) { return object_storage->supportsDelimitedListingFromPrefix(prefix); });
+        }
+
+        if (listing_start_prefix.has_value())
+        {
+            LOG_DEBUG(
+                log,
+                "Listing {} in parallel with {} threads, starting from the prefix {}",
+                key_with_globs.path,
+                parallelism,
+                *listing_start_prefix);
 
             /// The request path treats `list_object_keys_size = 0` as "use the storage-configured
             /// default page size", so resolve the zero the same way before it sizes the buffered-key
@@ -1664,7 +1677,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
             /// buffered-object byte budget (`DEFAULT_MAX_BUFFERED_OBJECT_BYTES`) bounds the buffered-key
             /// memory independently of these settings.
             object_storage_iterator = std::make_shared<ObjectStorageParallelListingIterator>(
-                key_prefix,
+                *listing_start_prefix,
                 parallelism,
                 /* max_buffered_keys */ page_size * parallelism * 2,
                 std::move(list_level),
