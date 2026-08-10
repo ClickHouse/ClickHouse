@@ -11,8 +11,9 @@
 // is ignored — use it to review already-committed branch work.
 //
 // Exits 0 after the user submits their review (comments written to --out),
-// exits 3 when there is nothing to review, exits 4 when this machine has no
-// browser that could reach the server, exits 1 on errors (e.g. port busy).
+// exits 3 when there is nothing to review, exits 4 when the machine looked
+// remote or headless and nobody opened the review page within the wait
+// window, exits 1 on errors (e.g. port busy).
 
 import { createServer } from 'node:http';
 import { spawnSync, spawn } from 'node:child_process';
@@ -21,7 +22,7 @@ import { gunzipSync } from 'node:zlib';
 import { readFileSync, writeFileSync, lstatSync, readlinkSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir } from 'node:os';
+import { tmpdir, hostname, userInfo } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -39,18 +40,23 @@ const COMMITTED = args.includes('--committed');
 const FORCE = args.includes('--force') || process.env.DIFF_REVIEW_FORCE === '1';
 const MAX_FILE_BYTES = 2_000_000;
 
-// ── Refuse to serve where nobody can look ────────────────────────────────────
-// The server binds to loopback, so the review UI is only reachable from a
-// browser running on this very host. On an isolated VM — a cloud instance we
-// reach over SSH, a headless container — there is no such browser. Starting a
-// server there helps nobody: it binds a port and leaves a background task
-// waiting for a review that can never be submitted. Decide this before doing
-// any work at all, so we neither shell out to git nor read the diff.
-function detectNoReachableBrowser() {
+// ── Signals that the user's browser is probably elsewhere ────────────────────
+// The server binds to loopback, so the review UI is reachable from a browser on
+// this very host — or from any machine, once the user forwards the port
+// (ssh -L 3000:localhost:3000). None of the signals below prove the page is
+// unreachable: a cloud desktop has a local browser, `ssh -X` opens one over the
+// wire, and a forwarded port reaches loopback from anywhere. So the signals
+// refuse nothing on their own. They decide two things: whether to print the
+// port-forwarding hint, and whether to arm a deadline so that on an isolated VM
+// — where a review can never be submitted — the server exits instead of leaving
+// a background task waiting forever. The refusal itself rests on the one
+// observation that does prove nobody is looking: no request arrived in time.
+function detectRemoteSignals() {
   const reasons = [];
 
-  // A remote shell: the user's browser runs on the machine at the other end of
-  // the connection, and that machine cannot reach our loopback socket.
+  // A remote shell: the user's browser usually runs on the machine at the other
+  // end of the connection, and reaches our loopback only through a forwarded
+  // port.
   if (process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY)
     reasons.push('this is an SSH session (SSH_CONNECTION/SSH_CLIENT/SSH_TTY is set)');
 
@@ -81,24 +87,21 @@ function detectNoReachableBrowser() {
     }
   }
 
-  // No graphical session: nothing here can open a browser even locally. macOS
-  // and Windows always have a window server, so this only applies to Linux.
+  // No graphical session: no browser can be auto-opened here (the user may
+  // still bring their own through a forwarded port). macOS and Windows always
+  // have a window server, so this only applies to Linux.
   if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
     reasons.push('there is no graphical session (DISPLAY and WAYLAND_DISPLAY are both unset)');
 
   return reasons;
 }
 
-const noBrowserReasons = FORCE ? [] : detectNoReachableBrowser();
-if (noBrowserReasons.length > 0) {
-  process.stderr.write(
-    'diff-review: not starting a server, because no browser on this machine could reach it:\n' +
-      noBrowserReasons.map((r) => `  - ${r}\n`).join('') +
-      'diff-review: show the diff in the terminal instead, with git diff or git show.\n' +
-      'diff-review: --force overrides this, and is only for a user who forwarded the port themselves.\n'
-  );
-  process.exit(4);
-}
+// How long a remote-looking machine waits for the first request before giving
+// up. Long enough to copy the printed ssh -L command into another terminal;
+// short enough that an unattended run does not hang. --force waits forever.
+const NO_VISITOR_WAIT_SECS = 120;
+const remoteSignals = FORCE ? [] : detectRemoteSignals();
+let noVisitorTimer = null;
 
 // Per-session secret: embedded into the served page and required on /submit, so
 // that a submission can only come from the UI this server handed out — not from
@@ -229,6 +232,13 @@ const VENDOR_FILES = new Map([
 
 // ── HTTP server ──────────────────────────────────────────────────────────────
 const server = createServer((req, res) => {
+  // A request is the proof the environment signals could not give: some browser
+  // does reach this server. From here on, wait for the review indefinitely.
+  if (noVisitorTimer != null) {
+    clearTimeout(noVisitorTimer);
+    noVisitorTimer = null;
+    process.stdout.write('diff-review: a browser reached the server; waiting for the review\n');
+  }
   const url = new URL(req.url, `http://localhost:${PORT}`);
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -328,7 +338,12 @@ server.listen(PORT, '127.0.0.1', () => {
     `diff-review: ${files.length} file(s) ready for review at ${url}\n` +
       `diff-review: waiting for the user to submit their review; comments will be written to ${OUT}\n`
   );
-  if (!NO_OPEN) {
+  // Auto-open skips only where it literally cannot work: Linux without a
+  // display. Under `ssh -X` or on a cloud desktop, DISPLAY is set and the
+  // browser opens on the user's screen despite the remote-looking signals.
+  const canOpenBrowser =
+    process.platform !== 'linux' || process.env.DISPLAY || process.env.WAYLAND_DISPLAY;
+  if (!NO_OPEN && canOpenBrowser) {
     const opener =
       process.platform === 'darwin'
         ? ['open', [url]]
@@ -342,6 +357,30 @@ server.listen(PORT, '127.0.0.1', () => {
     } catch {
       process.stdout.write(`diff-review: could not open a browser; open ${url} manually\n`);
     }
+  }
+  if (remoteSignals.length > 0) {
+    let user;
+    try {
+      user = userInfo().username;
+    } catch {
+      user = '<user>';
+    }
+    process.stdout.write(
+      'diff-review: this machine looks remote:\n' +
+        remoteSignals.map((r) => `  - ${r}\n`).join('') +
+        'diff-review: the server listens on loopback only. To review from your own machine, forward the port:\n' +
+        `diff-review:   ssh -L ${PORT}:localhost:${PORT} ${user}@${hostname()}\n` +
+        `diff-review: then open ${url} there.\n` +
+        `diff-review: exiting in ${NO_VISITOR_WAIT_SECS} s unless the review page is opened (--force waits indefinitely).\n`
+    );
+    noVisitorTimer = setTimeout(() => {
+      process.stderr.write(
+        `diff-review: no browser reached the server within ${NO_VISITOR_WAIT_SECS} s, exiting without a review.\n` +
+          'diff-review: show the diff in the terminal instead, with git diff or git show.\n' +
+          'diff-review: or forward the port and re-run with --force to wait indefinitely.\n'
+      );
+      process.exit(4);
+    }, NO_VISITOR_WAIT_SECS * 1000);
   }
 });
 
