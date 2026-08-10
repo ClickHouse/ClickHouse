@@ -137,7 +137,7 @@ Because an omitted field is stored as the default value of its column, `$exists`
 
 A collection created explicitly with `createCollection` has no document to infer a schema from, so until the first `insert` it is a table with a single `JSON` column named `json`. The first `insert` gives it the columns of the inserted document, so a collection created explicitly ends up with the same schema as one created by the insert itself. Creating a collection that already exists is the `NamespaceExists` error, as it is in MongoDB.
 
-A collection that does not exist reads as empty, as it does in MongoDB: `find` returns an empty cursor, `count` returns `0` and `distinct` returns no values. An `update` or a `delete` of such a collection matches no document and is a no-op rather than an error, also as in MongoDB.
+A collection that does not exist reads as empty, as it does in MongoDB: `find` returns an empty cursor, `count` returns `0`, `distinct` returns no values and `aggregate` returns an empty cursor. An `update` or a `delete` of such a collection matches no document and is a no-op rather than an error, also as in MongoDB.
 
 ### Limitations {#limitations}
 
@@ -157,6 +157,7 @@ A collection that does not exist reads as empty, as it does in MongoDB: `find` r
 - A document larger than the advertised `maxBsonObjectSize` (16 MiB) is refused, both in a reply and in a request: a message can carry several documents and may be larger than one of them, so the limit of a message does not bound a document.
 - `$lookup`, `$facet`, `$out`, `$merge` and the other pipeline stages not listed above are not supported, and neither are transactions, change streams and the `OP_COMPRESSED` message.
 - A `$replaceRoot` takes a document as its new root; a field path there would name a column rather than a subdocument.
+- An `aggregate` of a collection that does not exist reads as empty only when its pipeline reads no other collection: the documents a `$unionWith` contributes do not depend on the aggregated collection, and there is no source of the right shape to read in its place, so that combination is an error rather than a wrong answer.
 - Database and collection names must consist of letters, digits, `_` and `-`.
 
 ## MongoDB dialect {#mongodb-dialect}
@@ -177,6 +178,8 @@ db.users.insertMany([{"name" : "a", "age" : 20}, {"name" : "b", "age" : 30}]);
 ```
 
 An `insertOne` or `insertMany` writes into an existing table: the fields of the documents name its columns, and a subdocument writes the `a.b` columns its leaves name. A top level `_id` is dropped, the way the wire protocol drops the object id a driver adds. Every document of one `insertMany` must consist of the same fields, because the rows of one `INSERT` share a column list.
+
+An embedded document that is a value rather than a set of paths - an element of an array, or the document `$push` and `$addToSet` append - is written as a `JSON` value, so an `Array(JSON)` column, which is what the wire protocol infers for an array of documents, is written the same way through either surface.
 
 The first name of a query is the database. The literal `db`, as written by the MongoDB shell, means the current database; any other name addresses that database explicitly:
 

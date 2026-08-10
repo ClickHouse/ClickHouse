@@ -1460,3 +1460,62 @@ def test_aggregation_regex_options_are_applied(started_cluster):
         True,
         True,
     ]
+
+
+def test_aggregate_of_a_missing_collection_is_empty(started_cluster):
+    """`aggregate` honors the same missing-namespace contract as the other read commands: a
+    collection that does not exist is read as empty rather than as a missing-table error. A
+    malformed pipeline is still an error, and a pipeline that unions another collection cannot
+    be answered without the aggregated one, so it is rejected explicitly."""
+    client = make_client()
+    collection = client["db"]["never_created_aggregate"]
+    collection.drop()
+
+    assert list(collection.aggregate([])) == []
+    assert list(collection.aggregate([{"$match": {"id": 1}}, {"$sort": {"id": 1}}])) == []
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(collection.aggregate([{"$typo": {}}]))
+
+    other = client["db"]["never_created_aggregate_other"]
+    other.drop()
+    other.insert_many([{"id": 1}])
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        list(collection.aggregate([{"$unionWith": {"coll": "never_created_aggregate_other"}}]))
+    assert "does not exist" in str(error.value)
+
+    other.drop()
+
+
+def test_dialect_writes_the_embedded_documents_the_wire_path_creates(started_cluster):
+    """An array of embedded documents is inferred as `Array(JSON)` by the wire insert path, and
+    the same shape must be writable through `dialect = 'mongo'`: the elements of the array and
+    the document `$push` appends become `JSON` values."""
+    client = make_client()
+    collection = client["db"]["dialect_embedded_documents"]
+    collection.drop()
+
+    collection.insert_one({"id": 1, "events": [{"name": "start"}]})
+
+    node = cluster.instances["node"]
+    dialect_settings = {"dialect": "mongo", "allow_experimental_mongo_dialect": 1}
+    node.query(
+        'db.dialect_embedded_documents.insertOne({"id": 2, "events": [{"name": "second"}]})',
+        password="123",
+        database="db",
+        settings=dialect_settings,
+    )
+    node.query(
+        'db.dialect_embedded_documents.updateMany({"id": 1}, {"$push": {"events": {"name": "stop"}}})',
+        password="123",
+        database="db",
+        settings=dict(dialect_settings, mutations_sync=1),
+    )
+
+    documents = {document["id"]: document["events"] for document in collection.find({})}
+    assert documents == {
+        1: [{"name": "start"}, {"name": "stop"}],
+        2: [{"name": "second"}],
+    }
+
+    collection.drop()
