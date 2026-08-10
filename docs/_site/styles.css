@@ -1922,6 +1922,12 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
     margin-right: 8px;
 }
 
+html:not(.dark) .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+a.cloudNotSupportedBadge {
+    color: #660099 !important;
+    text-decoration: none !important;
+}
+
 .cloudNotSupportedIcon svg path {
     stroke: #660099;
 }
@@ -1929,6 +1935,12 @@ html.dark .prose a.betaBadge:not(.card):not(.card *),
 .dark .cloudNotSupportedBadge {
     background-color: #33004D;
     color: #EECCFF;
+}
+
+html.dark .prose a.cloudNotSupportedBadge:not(.card):not(.card *),
+.dark a.cloudNotSupportedBadge {
+    color: #EECCFF !important;
+    text-decoration: none !important;
 }
 
 .dark .cloudNotSupportedIcon svg path {
