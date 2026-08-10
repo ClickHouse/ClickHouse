@@ -30,6 +30,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -45,6 +46,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -621,6 +623,40 @@ ReadFromMerge::ReadFromMerge(
 {
 }
 
+/// True if the query has subquery sets (`IN (SELECT ...)`). A child plan is built and optimized
+/// while the *outer* plan is already being executed (`ReadFromMerge` materializes its children
+/// lazily), so by this point `addStepsToBuildSets` has already moved the source plan out of every
+/// `FutureSetFromSubquery`. A child fragment referencing such a consumed set then fails to
+/// serialize with the logical error `Cannot serialize FutureSetFromSubquery with no query plan`.
+static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
+{
+    if (query_info.planner_context && query_info.planner_context->getPreparedSets().hasSubqueries())
+        return true;
+    if (query_info.prepared_sets && query_info.prepared_sets->hasSubqueries())
+        return true;
+    return false;
+}
+
+/// Optimization settings for a child plan of a `Merge` table.
+///
+/// Parallel replicas must stay disabled here. The outer plan has decided its own
+/// parallel-replicas strategy, and distributing the child read from here ships a fragment that
+/// (a) silently loses the filters pushed down into it, and (b) may reference a subquery set
+/// consumed by the outer plan (see `queryHasSubquerySets`).
+///
+/// `make_distributed_plan` stays enabled — distributing the child plans is supported (see
+/// 04367_distributed_plan_merge_scatter_multishard; the second, materializing run of the
+/// transforms in `ReadFromMerge::buildPipeline` is fenced by `planContainsLogicalExchange`) —
+/// unless the query has subquery sets, whose plans a child fragment cannot carry anymore.
+static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(const ContextPtr & context, const SelectQueryInfo & query_info)
+{
+    QueryPlanOptimizationSettings optimization_settings(context);
+    optimization_settings.enable_parallel_replicas = false;
+    if (queryHasSubquerySets(query_info))
+        optimization_settings.make_distributed_plan = false;
+    return optimization_settings;
+}
+
 void ReadFromMerge::addFilter(FilterDAGInfo filter)
 {
     output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
@@ -646,7 +682,7 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             child.plan.addStep(std::move(filter_step));
 
             /// Push down this newly added filter if possible
-            child.plan.optimize(QueryPlanOptimizationSettings(context));
+            child.plan.optimize(getChildPlanOptimizationSettings(context, query_info));
         }
     }
 
@@ -802,6 +838,16 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
         try
         {
             auto modified_context = Context::createCopy(context);
+            /// See `getChildPlanOptimizationSettings`: a child plan must never use parallel
+            /// replicas. The setting is cleared in the context as well, because the
+            /// parallel-replicas conversion re-checks `canUseParallelReplicasOnInitiator` against
+            /// the context captured by the reading step, not only the optimization settings, and
+            /// nested interpreters (e.g. for a `View` child) derive their own settings from this
+            /// context. `make_distributed_plan` is cleared under the same condition as in
+            /// `getChildPlanOptimizationSettings`.
+            modified_context->setSetting("enable_parallel_replicas", Field(0));
+            if (queryHasSubquerySets(query_info))
+                modified_context->setSetting("make_distributed_plan", Field(0));
 
             size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
             size_t current_streams = std::min(current_need_streams, remaining_streams);
@@ -1045,7 +1091,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                     child.plan.addStep(std::move(filter_step));
                 }
 
-                child.plan.optimize(QueryPlanOptimizationSettings(modified_context));
+                child.plan.optimize(getChildPlanOptimizationSettings(modified_context, query_info));
             }
 
             res.emplace_back(std::move(child));
@@ -1343,7 +1389,11 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
     if (!child.plan.isInitialized())
         return nullptr;
 
-    QueryPlanOptimizationSettings optimization_settings(context);
+    /// `buildQueryPipeline` honors `make_distributed_plan` even with `optimize_plan = false`:
+    /// this is the run that materializes the logical exchanges inserted into the child plan when
+    /// it was optimized at creation. See `getChildPlanOptimizationSettings` for why a child plan
+    /// referencing a subquery set must not be distributed.
+    auto optimization_settings = getChildPlanOptimizationSettings(context, query_info);
     /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
