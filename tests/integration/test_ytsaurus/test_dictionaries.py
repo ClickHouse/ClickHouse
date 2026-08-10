@@ -508,6 +508,53 @@ def test_yt_lookups_throttler(started_cluster):
     yt.remove_table(path)
 
 
+def test_yt_lookups_throttler_complex_key(started_cluster):
+    """Regression test: the throttler is also applied to the complex-key selective load (`loadKeys`)."""
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+
+    yt.create_table(
+        path,
+        '{"id1":1, "id2":1, "value":20}{"id1":2, "id2":2, "value":40}{"id1":3, "id2":3, "value":30}',
+        sorted_columns=("id1", "id2"),
+        schema={"id1": "uint64", "id2": "uint64", "value": "int32"},
+        dynamic=True,
+    )
+
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id1 UInt64, id2 UInt64, value Int32)
+        PRIMARY KEY id1, id2
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_throttler_max_requests_per_second '1'
+                lookup_max_rows_per_query '1'
+                )
+            )
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
+
+    old_value = int(instance.query("""
+        SELECT sum(value) FROM system.events WHERE name = 'YTsaurusLookupThrottled'
+        """))
+    assert (
+        instance.query(
+            "SELECT dictGet('yt_dict', 'value', (number + 1, number + 1)) FROM numbers(3)"
+        )
+        == "20\n40\n30\n"
+    )
+    new_value = int(instance.query("""
+        SELECT sum(value) FROM system.events WHERE name = 'YTsaurusLookupThrottled'
+        """))
+    assert old_value < new_value
+
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
+
+
 def test_yt_lookups_unlimited_chunk_size(started_cluster):
     """Regression test: `lookup_max_rows_per_query = 0` means unlimited (one chunk)."""
     yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
