@@ -29,6 +29,11 @@ SELECT v, sum(v) OVER (ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS r
 SELECT '-- sum OVER (PARTITION BY a ORDER BY v)';
 SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) FROM t_window_dist ORDER BY a, v;
 
+-- The empty window is the only shape with no sort below the WindowStep, so it exercises the plain
+-- gather (no order to maintain) rather than the sorted one.
+SELECT '-- sum OVER () (empty window)';
+SELECT v, sum(v) OVER () AS s FROM t_window_dist ORDER BY v;
+
 DROP TABLE t_window_dist;
 
 -- Sanity check that deserializing a WindowStep picks the `window_creator` state variant for
