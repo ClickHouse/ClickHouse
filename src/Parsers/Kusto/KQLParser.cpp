@@ -738,7 +738,31 @@ bool KQLParser::expressionLooksTabular(
     const String lowered = Poco::toLower(name);
     if (lowered == "true" || lowered == "false")
         return false;
-    return begin + 1 == end && !scalar_names.contains(name);
+    if (scalar_names.contains(name))
+        return false;
+    if (begin + 1 == end)
+        return true;
+
+    /// `db.table` - the other source form `parseSource` accepts. Past an unbound name a `.` can
+    /// mean nothing else here: a scalar binding was just excluded, and dynamic member access
+    /// over anything else is not supported.
+    if (tokens[begin + 1].type != KQLTokenType::Dot)
+        return false;
+
+    /// One identifier - a bare word or the `['quoted name']` form - and where it ends, or
+    /// `position` when there is none.
+    const auto identifier_end = [&](size_t position) -> size_t
+    {
+        if (position < end && tokens[position].type == KQLTokenType::BareWord)
+            return position + 1;
+        if (position + 2 < end && tokens[position].type == KQLTokenType::OpeningSquareBracket
+            && tokens[position + 1].type == KQLTokenType::StringLiteral
+            && tokens[position + 2].type == KQLTokenType::ClosingSquareBracket)
+            return position + 3;
+        return position;
+    };
+
+    return identifier_end(begin + 2) == end;
 }
 
 KQLParser::Scope KQLParser::bindArguments(const String & name, const FunctionDefinition & definition, const KQLToken & call_token)

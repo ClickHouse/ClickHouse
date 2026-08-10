@@ -34,6 +34,22 @@ bool looksLikeSetStatement(const std::vector<KQLToken> & tokens)
         && tokens[1].type == KQLTokenType::BareWord && tokens[2].type == KQLTokenType::Equals;
 }
 
+/// Where the next statement starts, looking past the separator and everything insignificant after
+/// it: whitespace, and comments in every spelling the lexer accepts. `end` when there is no next
+/// statement - a trailing `// switch back` is not one.
+///
+/// Only ever used to *look*: the caller's `pos` must stay in front of a trailing comment, because
+/// the client takes the text of the statement it just parsed as everything up to `pos`, and a
+/// comment swallowed into it counts against `max_query_size`.
+const char * afterStatementSeparator(const char * pos, const char * end)
+{
+    const std::vector<KQLToken> tokens = KQLLexer(pos, end).tokenize();
+    size_t index = 0;
+    while (index < tokens.size() && tokens[index].type == KQLTokenType::Semicolon)
+        ++index;
+    return index < tokens.size() ? tokens[index].begin : end;
+}
+
 /// `pos` stands on the `set` word.
 ASTPtr parseSetStatement(const char *& pos, const char * end, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
 {
@@ -46,7 +62,8 @@ ASTPtr parseSetStatement(const char *& pos, const char * end, size_t max_query_s
     if (set_parser.parse(token_iterator, node, expected))
     {
         pos = token_iterator->begin;
-        /// Consume the statement separator so the caller resumes on the next statement.
+        /// Consume the statement separator so the caller resumes on the next statement. A comment
+        /// after it is left alone: the main path treats a leading comment the same way.
         while (pos < end && (*pos == ';' || isWhitespaceASCII(*pos)))
             ++pos;
         return node;
@@ -90,7 +107,7 @@ ASTPtr parseKQLQuery(
         ASTPtr set_query = parseSetStatement(pos, end, max_query_size, max_parser_depth, max_parser_backtracks);
         /// `parseSetStatement` already consumed the statement separator, so anything left is
         /// a second statement, which this fast path must reject the same way the main path does.
-        if (!allow_multi_statements && pos != end)
+        if (!allow_multi_statements && afterStatementSeparator(pos, end) != end)
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Multi-statements are not allowed: unexpected text after the SET statement");
         return set_query;
     }
@@ -104,9 +121,7 @@ ASTPtr parseKQLQuery(
     if (!allow_multi_statements)
     {
         /// Anything left over would otherwise be dropped without a word.
-        const char * rest = pos;
-        while (rest < end && (*rest == ';' || isWhitespaceASCII(*rest)))
-            ++rest;
+        const char * rest = afterStatementSeparator(pos, end);
         if (rest != end)
             throw Exception(
                 ErrorCodes::SYNTAX_ERROR,
@@ -135,7 +150,7 @@ ASTPtr tryParseKQLSetStatement(
 
     /// The escape hatch fires only when the whole query is that one SET statement; anything
     /// after it would be dropped silently. Leave such a query to the caller's disabled-KQL error.
-    if (probe != end)
+    if (afterStatementSeparator(probe, end) != end)
         return nullptr;
 
     pos = probe;
