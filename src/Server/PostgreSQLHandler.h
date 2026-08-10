@@ -113,7 +113,9 @@ private:
     /// After an error has been reported in the middle of `COPY ... FROM STDIN`, consumes and discards
     /// the copy-subprotocol frames the client keeps sending until it terminates the copy with
     /// `CopyDone` or `CopyFail`, as PostgreSQL does, so that the connection stays usable.
-    void discardRemainingCopyInFrames();
+    /// `pending_frame_bytes` is the unread remainder of the frame the copy was abandoned in, if any: it
+    /// is payload and is skipped before the next message header is looked for.
+    void discardRemainingCopyInFrames(size_t pending_frame_bytes);
 
     void processParseQuery();
     void processDescribeQuery();

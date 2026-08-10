@@ -814,3 +814,142 @@ def test_array_type_oids_in_row_description(started_cluster):
         )
     ]
     ch.close()
+
+
+def _pg_read_message(sock):
+    """Reads one backend message: a type byte, a length that counts itself, and the body."""
+
+    def recv_exactly(size):
+        data = b""
+        while len(data) < size:
+            chunk = sock.recv(size - len(data))
+            if not chunk:
+                raise AssertionError("the server closed the connection")
+            data += chunk
+        return data
+
+    message_type = recv_exactly(1)
+    (length,) = struct.unpack("!i", recv_exactly(4))
+    return message_type, recv_exactly(length - 4)
+
+
+def _pg_read_until(sock, wanted_type):
+    """Reads messages until one of `wanted_type` arrives, returning the bodies seen along the way."""
+    seen = {}
+    while True:
+        message_type, body = _pg_read_message(sock)
+        seen.setdefault(message_type, body)
+        if message_type == wanted_type:
+            return seen
+
+
+def _pg_connect_raw(node, user, password, database):
+    """Opens a connection over the raw PostgreSQL wire protocol, up to the first `ReadyForQuery`.
+    A raw socket is what lets a test stall in the middle of a `CopyData` frame: a driver always
+    writes a frame whole."""
+    sock = socket.create_connection((node.ip_address, server_port))
+    startup = b"user\x00" + user.encode() + b"\x00database\x00" + database.encode() + b"\x00\x00"
+    sock.sendall(struct.pack("!ii", 8 + len(startup), 196608) + startup)
+    while True:
+        message_type, body = _pg_read_message(sock)
+        if message_type == b"R":
+            (authentication_type,) = struct.unpack("!i", body[:4])
+            # 0 is `AuthenticationOk`, 3 asks for the password in cleartext.
+            if authentication_type == 3:
+                message = password.encode() + b"\x00"
+                sock.sendall(b"p" + struct.pack("!i", 4 + len(message)) + message)
+            elif authentication_type != 0:
+                raise AssertionError(
+                    f"unexpected authentication request {authentication_type}"
+                )
+        elif message_type == b"E":
+            raise AssertionError(f"the server refused the connection: {body}")
+        elif message_type == b"Z":
+            return sock
+
+
+def test_kill_query_cancels_copy_from_stdin_stalled_inside_a_frame(started_cluster):
+    """A `CopyData` frame is not read as a whole: a client may announce a large frame and then stall
+    in the middle of it, and an external `KILL QUERY` must still take effect promptly - the frame
+    body is staged in the pieces the socket delivers, with a cancellation check between them. Once
+    the client finishes the frame the connection resynchronizes: the rest of the announced body is
+    skipped as payload, so the copy ends with `57014 query_canceled` and a `ReadyForQuery` instead of
+    a protocol error. Nothing reaches the target table."""
+    node = cluster.instances["node"]
+
+    node.query(
+        "CREATE TABLE copy_stall_target (n UInt64) ENGINE = MergeTree ORDER BY n",
+        password="123",
+    )
+
+    frame_body_size = 100_000
+    head = b"1\n2\n"
+    sock = _pg_connect_raw(node, "default", "123", "default")
+    try:
+        query = b"COPY copy_stall_target FROM STDIN\x00"
+        sock.sendall(b"Q" + struct.pack("!i", 4 + len(query)) + query)
+        # `CopyInResponse` - the server is ready for the payload.
+        _pg_read_until(sock, b"G")
+
+        # One frame announced in full, only the first few bytes of it sent: the rest never arrives
+        # until this test decides so.
+        sock.sendall(b"d" + struct.pack("!i", 4 + frame_body_size) + head)
+
+        def staged_copy_count():
+            # Poll over HTTP: a `clickhouse-client` round trip through `docker exec` can take
+            # seconds under sanitizers, which would blur the promptness this test is about.
+            return node.http_query(
+                "SELECT count() FROM system.processes"
+                " WHERE query_id LIKE 'postgres:%' AND query LIKE '%copy_stall_target%'",
+                user="default",
+                password="123",
+            ).strip()
+
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if staged_copy_count() == "1":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("the COPY insert did not show up in the process list")
+
+        node.query(
+            "KILL QUERY WHERE query_id LIKE 'postgres:%'"
+            " AND query LIKE '%copy_stall_target%' ASYNC",
+            password="123",
+        )
+
+        # The kill must take effect while the client is stalled inside the frame, not when the rest
+        # of the frame arrives.
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if staged_copy_count() == "0":
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError(
+                "the killed COPY stayed in the process list while the client was stalled mid-frame"
+            )
+
+        # Finish the announced frame and the copy: the connection has to come back to
+        # `ReadyForQuery` with the cancellation reported, which it can only do by treating the
+        # remainder of the frame as payload.
+        sock.sendall(b"x" * (frame_body_size - len(head)))
+        sock.sendall(b"c" + struct.pack("!i", 4))
+        seen = _pg_read_until(sock, b"Z")
+        assert b"E" in seen, f"the client was not told about the cancellation: {seen}"
+        assert b"57014" in seen[b"E"], seen[b"E"]
+
+        # And the connection is usable afterwards.
+        query = b"SELECT 20260810\x00"
+        sock.sendall(b"Q" + struct.pack("!i", 4 + len(query)) + query)
+        seen = _pg_read_until(sock, b"Z")
+        assert b"20260810" in seen[b"D"], seen
+    finally:
+        sock.close()
+
+    assert (
+        node.query("SELECT count() FROM copy_stall_target", password="123").strip()
+        == "0"
+    )
+    node.query("DROP TABLE copy_stall_target SYNC", password="123")

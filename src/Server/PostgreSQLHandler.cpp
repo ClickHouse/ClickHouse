@@ -88,8 +88,11 @@ namespace
 /// Presents the payload of a `COPY ... FROM STDIN` as one continuous stream. PostgreSQL `CopyData`
 /// frame boundaries are transport-only: a client may split one logical row (or even one multi-byte
 /// character) across several frames and may pack many rows into one, so the input format must parse
-/// the concatenation of all frames, not each frame in isolation. Each refill pulls the next
-/// `CopyData` frame from the connection; `CopyDone` ends the stream.
+/// the concatenation of all frames, not each frame in isolation. A frame body is handed out in
+/// whatever pieces the socket delivers it, never materialized as a whole: a client is free to
+/// announce a huge frame and stall in the middle of it, which must neither make the server hold the
+/// frame resident nor delay an external cancellation until the frame is complete. `CopyDone` ends
+/// the stream.
 class CopyInDataReadBuffer : public ReadBuffer
 {
 public:
@@ -105,6 +108,33 @@ public:
     }
 
 private:
+    /// Waits until the socket has something to read. An external cancellation (a PostgreSQL
+    /// `CancelRequest` or `KILL QUERY`) only marks the query killed in the process list; nothing wakes a
+    /// socket read blocked on a paused client. So poll in short slices and check for the kill in
+    /// between, and the staging aborts promptly instead of sitting here until the client speaks again.
+    void waitForDataOrCancel()
+    {
+        static constexpr size_t cancellation_check_interval_microseconds = 100'000;
+        while (!socket_in.poll(cancellation_check_interval_microseconds))
+            check_cancelled();
+    }
+
+    /// Makes sure the socket buffer holds at least one byte, and returns how many it holds.
+    size_t waitForSomeData()
+    {
+        while (!socket_in.hasPendingData())
+        {
+            waitForDataOrCancel();
+            /// `poll` said the socket is readable, so this refill does not block. A closed connection
+            /// mid-copy is a client that will never finish it.
+            if (socket_in.eof())
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                    "Unexpected end of stream while reading the payload of COPY FROM STDIN");
+        }
+        return socket_in.available();
+    }
+
     bool nextImpl() override
     {
         /// End-of-stream must be sticky: `ReadBuffer::eof` may probe `next` again after the stream has
@@ -115,26 +145,49 @@ private:
 
         while (true)
         {
+            /// Hand out the body of the frame being received a piece at a time, exactly as the socket
+            /// delivers it: the reader on the other side of this buffer (the staging store) is what
+            /// bounds memory, and a client stalled in the middle of a frame is cancellable between
+            /// pieces. The bytes are handed out in place - nothing else reads the socket buffer while
+            /// a copy is being staged - so no copy of the frame is made either.
+            if (remaining_frame_bytes > 0)
+            {
+                const size_t piece = std::min(waitForSomeData(), remaining_frame_bytes);
+                working_buffer = Buffer(socket_in.position(), socket_in.position() + piece);
+                socket_in.position() += piece;
+                remaining_frame_bytes -= piece;
+                return true;
+            }
+
             /// Push out anything buffered on the write side before blocking on the client.
             transport.flush();
-            /// An external cancellation (a PostgreSQL `CancelRequest` or `KILL QUERY`) only marks the
-            /// query killed in the process list; nothing wakes a socket read blocked on a paused client.
-            /// Poll the socket in short slices and check for the kill in between, so the staging loop
-            /// aborts promptly instead of sitting here until the client sends more data or disconnects.
-            static constexpr size_t cancellation_check_interval_microseconds = 100'000;
-            while (!socket_in.poll(cancellation_check_interval_microseconds))
-                check_cancelled();
+            waitForDataOrCancel();
             PostgreSQLProtocol::Messaging::FrontMessageType message_type = transport.receiveMessageType();
             if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA)
             {
-                current_frame = std::move(transport.receive<PostgreSQLProtocol::Messaging::CopyInData>()->query);
+                /// The frame length is read here instead of through `receive<CopyInData>()`, which would
+                /// reserve and read the whole advertised payload in one go.
+                Int32 frame_size = 0;
+                char frame_size_bytes[sizeof(Int32)];
+                for (size_t byte = 0; byte < sizeof(frame_size_bytes); ++byte)
+                {
+                    waitForSomeData();
+                    frame_size_bytes[byte] = *socket_in.position();
+                    ++socket_in.position();
+                    /// A cancel that lands in the middle of the length leaves the stream out of sync:
+                    /// the drain after the cancel could not tell payload from the next message header.
+                    frame_header_complete = byte + 1 == sizeof(frame_size_bytes);
+                }
+                ReadBufferFromMemory frame_size_in(frame_size_bytes, sizeof(frame_size_bytes));
+                readBinaryBigEndian(frame_size, frame_size_in);
+                if (frame_size < static_cast<Int32>(sizeof(Int32)))
+                    throw Exception(
+                        ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+                        "Wrong message length {} in CopyData, it must be at least 4", frame_size);
 
                 /// An empty frame is legal and does not mean end-of-stream; wait for the next message.
-                if (current_frame.empty())
-                    continue;
-
-                working_buffer = Buffer(current_frame.data(), current_frame.data() + current_frame.size());
-                return true;
+                remaining_frame_bytes = static_cast<size_t>(frame_size) - sizeof(Int32);
+                continue;
             }
             if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION)
             {
@@ -174,12 +227,19 @@ public:
     bool clientAborted() const { return client_aborted; }
     const String & abortReason() const { return abort_reason; }
 
+    /// How many bytes of the frame being received are still unread, and whether the stream stopped on a
+    /// message boundary at all. Used to resynchronize the connection when the copy is abandoned in the
+    /// middle of a frame: those bytes are payload and have to be skipped before the next message header.
+    size_t pendingFrameBytes() const { return remaining_frame_bytes; }
+    bool canResynchronize() const { return frame_header_complete; }
+
 private:
     PostgreSQLProtocol::Messaging::MessageTransport & transport;
     ReadBufferFromPocoSocket & socket_in;
     /// Throws when the query this copy stages for has been killed externally.
     std::function<void()> check_cancelled;
-    String current_frame;
+    size_t remaining_frame_bytes = 0;
+    bool frame_header_complete = true;
     bool received_copy_done = false;
     bool client_aborted = false;
     String abort_reason;
@@ -1104,7 +1164,14 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                         PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "57014",
                         "canceling COPY FROM STDIN due to user request"),
                     true);
-                discardRemainingCopyInFrames();
+                /// The cancel can land in the middle of a `CopyData` frame, even in the middle of its
+                /// length field if the client split the header. In the first case the rest of the frame is
+                /// payload and is skipped before the drain looks for the next message; in the second there
+                /// is no way to tell payload from a header any more, so the connection cannot be reused -
+                /// let the error propagate and close it, as PostgreSQL does on a desynchronized stream.
+                if (!copy_in_stream.canResynchronize())
+                    throw;
+                discardRemainingCopyInFrames(copy_in_stream.pendingFrameBytes());
                 return true;
             }
 
@@ -1282,6 +1349,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto format_ptr = make_input_format(*insert_stream);
 
         executor->start();
+        Int32 rows_count = 0;
         try
         {
             while (true)
@@ -1290,6 +1358,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                 if (chunk.empty())
                     break;
 
+                rows_count += static_cast<Int32>(chunk.getNumRows());
                 executor->push(convert_arrays(std::move(chunk)));
             }
             executor->finish();
@@ -1300,8 +1369,10 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             throw;
         }
 
+        /// PostgreSQL reports the number of rows the copy inserted in the command tag ("COPY n"), which
+        /// clients show and scripts check.
         auto command = PostgreSQLProtocol::Messaging::CommandComplete::Command::COPY;
-        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
+        message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, rows_count), true);
         return true;
     }
 
@@ -1438,12 +1509,30 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     return false;
 }
 
-void PostgreSQLHandler::discardRemainingCopyInFrames()
+void PostgreSQLHandler::discardRemainingCopyInFrames(size_t pending_frame_bytes)
 {
     /// Mirrors what PostgreSQL does after reporting an error mid `COPY ... FROM STDIN`: the client may
     /// keep sending `CopyData` frames until it learns of the error, and the backend must consume and
     /// discard them; the copy sub-protocol ends when the client sends `CopyDone` or `CopyFail`, and only
     /// then may `ReadyForQuery` follow. Anything else at this point is a protocol violation.
+
+    /// The copy may have been abandoned in the middle of a frame body (an external cancel does not wait
+    /// for a frame boundary), and the rest of that body is payload: skip it, or the next message header
+    /// would be looked for inside it.
+    while (pending_frame_bytes > 0)
+    {
+        while (!in->poll(1000000))
+            if (!tcp_server.isOpen())
+                return;
+        /// `poll` said the socket is readable, so this refill does not block; skipping only what has
+        /// arrived keeps the loop responsive to the server shutting down.
+        if (in->eof())
+            return;
+        const size_t skipped = std::min(in->available(), pending_frame_bytes);
+        in->position() += skipped;
+        pending_frame_bytes -= skipped;
+    }
+
     while (true)
     {
         while (!in->poll(1000000))

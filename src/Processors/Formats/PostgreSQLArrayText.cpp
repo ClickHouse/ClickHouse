@@ -5,6 +5,8 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
@@ -231,14 +233,38 @@ private:
         /// Only an unquoted `NULL` is a null element - `"NULL"` is the four-character string.
         if (!quoted && Poco::toUpper(value) == "NULL")
         {
-            if (!nested_column.isNullable())
+            /// `LowCardinality(Nullable(T))` holds nulls too, and its default value is a null, but the
+            /// column itself does not report as nullable.
+            if (!isColumnNullableOrLowCardinalityNullable(nested_column))
                 throwError(fmt::format("a NULL element cannot be read into a value of type {}", nested_type->getName()));
             nested_column.insertDefault();
             return;
         }
 
+        /// The element is not a null, and what it reads as must not depend on the null representation of
+        /// a text format: inside an array literal `"NULL"` and `\N` are ordinary strings, and only the
+        /// array grammar decides what a null is. So the value is deserialized as the element type with
+        /// its nullability stripped, and only then inserted into the element column.
+        const auto value_type = removeNullable(removeLowCardinality(nested_type));
         ReadBufferFromString element_buffer(value);
-        nested_type->getDefaultSerialization()->deserializeWholeText(nested_column, element_buffer, settings);
+        if (value_type->equals(*nested_type))
+        {
+            nested_type->getDefaultSerialization()->deserializeWholeText(nested_column, element_buffer, settings);
+            return;
+        }
+
+        auto value_column = value_type->createColumn();
+        value_type->getDefaultSerialization()->deserializeWholeText(*value_column, element_buffer, settings);
+        if (auto * nullable_column = typeid_cast<ColumnNullable *>(&nested_column))
+        {
+            nullable_column->getNestedColumn().insertFrom(*value_column, 0);
+            nullable_column->getNullMapData().push_back(false);
+        }
+        else
+        {
+            /// `LowCardinality`: the value has to go through the dictionary, so it is inserted by value.
+            nested_column.insert((*value_column)[0]);
+        }
     }
 };
 
