@@ -60,21 +60,24 @@ def test_adjust_log_level(start_cluster):
             """,
         ]
     )
-    time.sleep(3)
-    node.query(
-        "SELECT * FROM system.zookeeper SETTINGS allow_unrestricted_reads_from_keeper = 'true'"
-    )
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "sync",
-        ],
-        privileged=True,
-        user="root",
-    )
-    assert (
-        int(
+    # The config reloader applies the new logger settings asynchronously (it polls the config
+    # every couple of seconds), so poll until trace logging becomes active instead of relying
+    # on a fixed sleep, which is not enough on slow (e.g. sanitizer) runs.
+    trace_lines = 0
+    for _ in range(60):
+        node.query(
+            "SELECT * FROM system.zookeeper SETTINGS allow_unrestricted_reads_from_keeper = 'true'"
+        )
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "sync",
+            ],
+            privileged=True,
+            user="root",
+        )
+        trace_lines = int(
             node.exec_in_container(
                 [
                     "bash",
@@ -85,5 +88,7 @@ def test_adjust_log_level(start_cluster):
                 user="root",
             )
         )
-        >= 1
-    )
+        if trace_lines >= 1:
+            break
+        time.sleep(1)
+    assert trace_lines >= 1
