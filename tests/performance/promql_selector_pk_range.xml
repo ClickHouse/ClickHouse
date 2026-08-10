@@ -37,11 +37,11 @@
 
     <!-- whole-metric selectors: the id range replaces the set in index analysis -->
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'pkr_metric', 1003830) FORMAT Null</query>
-    <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{dc=~".*"})', 1003830) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{{dc=~".*"}})', 1003830) FORMAT Null</query>
     <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(rate(pkr_metric[30m]))', 1003830) FORMAT Null</query>
 
     <!-- label-filtered selector: falls back to the id-set index analysis (regression control) -->
-    <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{dc="0"})', 1003830) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_pk_range_ts', 'sum(pkr_metric{{dc="0"}})', 1003830) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_pk_range_ts</drop_query>
 </test>
