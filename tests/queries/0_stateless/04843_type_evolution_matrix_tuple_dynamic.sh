@@ -35,6 +35,18 @@ function state_alter_settings()
     esac
 }
 
+# Every cell first prints the types the active parts actually store for the column under test:
+# an unrewritten cell must still show the *old* type and a rewritten cell the new one. Without
+# this precondition a change that let the mutation run despite `SYSTEM STOP MERGES` would
+# silently turn the unrewritten cells into duplicates of the rewritten control and stay green.
+function state_check()
+{
+    echo "SELECT '-- $3: part column types';
+        SELECT type, count() FROM system.parts_columns
+        WHERE database = currentDatabase() AND table = '$1' AND active AND column = '$2'
+        GROUP BY type ORDER BY type;"
+}
+
 # `Array(String)` -> `Array(Tuple(x String))`: the values are strings parseable as tuples.
 for state in compact wide rewritten; do
     table="t_matrix_tuple_dotted_${state}"
@@ -46,6 +58,7 @@ for state in compact wide rewritten; do
         INSERT INTO $table VALUES (1, ['(''p'')', '(''q'')'], [10, 20]);
         $(state_stop_merges "$state" "$table")
         ALTER TABLE $table MODIFY COLUMN \`arr.n\` Array(Tuple(x String)) SETTINGS $(state_alter_settings "$state");
+        $(state_check "$table" "arr.n" "tuple dotted $state")
         SELECT '-- tuple dotted $state: subcolumn alone';
         SELECT \`arr.n\`.x FROM $table SETTINGS max_threads = 1;
         SELECT '-- tuple dotted $state: subcolumn, parent';
@@ -72,6 +85,7 @@ for state in compact wide rewritten; do
         INSERT INTO $table VALUES (1, ['a', 'b'], [10, 20]);
         $(state_stop_merges "$state" "$table")
         ALTER TABLE $table MODIFY COLUMN \`arr.n\` Array(Dynamic) SETTINGS $(state_alter_settings "$state");
+        $(state_check "$table" "arr.n" "dynamic dotted $state")
         SELECT '-- dynamic dotted $state: typed subcolumn alone';
         SELECT \`arr.n\`.String FROM $table SETTINGS max_threads = 1;
         SELECT '-- dynamic dotted $state: typed subcolumn, parent';
@@ -98,6 +112,7 @@ for state in compact wide rewritten; do
         INSERT INTO $table VALUES (1, [('x', 1.5), ('y', 2.5)], [10, 20]);
         $(state_stop_merges "$state" "$table")
         ALTER TABLE $table MODIFY COLUMN \`arr.n\` Array(Tuple(a Nullable(String), b Float64)) SETTINGS $(state_alter_settings "$state");
+        $(state_check "$table" "arr.n" "tuple deep $state")
         SELECT '-- tuple deep $state: depth-3 subcolumn alone';
         SELECT \`arr.n\`.a.null FROM $table SETTINGS max_threads = 1;
         SELECT '-- tuple deep $state: depth-3 subcolumn, element';

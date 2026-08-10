@@ -1,3 +1,5 @@
+-- widen dotted compact: part column types
+Array(UInt32)	1
 -- widen dotted compact: parent alone
 [100,200]
 -- widen dotted compact: size0 alone
@@ -10,6 +12,8 @@
 2	[10,20]
 -- widen dotted compact: type of the read parent
 Array(UInt64)
+-- widen dotted wide: part column types
+Array(UInt32)	1
 -- widen dotted wide: parent alone
 [100,200]
 -- widen dotted wide: size0 alone
@@ -22,6 +26,8 @@ Array(UInt64)
 2	[10,20]
 -- widen dotted wide: type of the read parent
 Array(UInt64)
+-- widen dotted rewritten: part column types
+Array(UInt64)	1
 -- widen dotted rewritten: parent alone
 [100,200]
 -- widen dotted rewritten: size0 alone
@@ -34,6 +40,8 @@ Array(UInt64)
 2	[10,20]
 -- widen dotted rewritten: type of the read parent
 Array(UInt64)
+-- widen+nullable dotted compact: part column types
+Array(UInt32)	1
 -- widen+nullable dotted compact: subcolumn alone
 [0,0]
 -- widen+nullable dotted compact: subcolumn, parent
@@ -42,6 +50,8 @@ Array(UInt64)
 [100,200]	[0,0]
 -- widen+nullable dotted compact: subcolumn, sibling member
 [0,0]	[10,20]
+-- widen+nullable dotted wide: part column types
+Array(UInt32)	1
 -- widen+nullable dotted wide: subcolumn alone
 [0,0]
 -- widen+nullable dotted wide: subcolumn, parent
@@ -50,6 +60,8 @@ Array(UInt64)
 [100,200]	[0,0]
 -- widen+nullable dotted wide: subcolumn, sibling member
 [0,0]	[10,20]
+-- widen+nullable dotted rewritten: part column types
+Array(Nullable(UInt64))	1
 -- widen+nullable dotted rewritten: subcolumn alone
 [0,0]
 -- widen+nullable dotted rewritten: subcolumn, parent
@@ -58,23 +70,31 @@ Array(UInt64)
 [100,200]	[0,0]
 -- widen+nullable dotted rewritten: subcolumn, sibling member
 [0,0]	[10,20]
+-- lowcardinality dotted compact: part column types
+Array(String)	1
 -- lowcardinality dotted compact: parent alone
 ['a','b']
 -- lowcardinality dotted compact: size0, parent
 2	['a','b']
 -- lowcardinality dotted compact: size0, sibling member
 2	[10,20]
+-- lowcardinality dotted wide: part column types
+Array(String)	1
 -- lowcardinality dotted wide: parent alone
 ['a','b']
 -- lowcardinality dotted wide: size0, parent
 2	['a','b']
 -- lowcardinality dotted wide: size0, sibling member
 2	[10,20]
+-- lowcardinality dotted rewritten: part column types
+Array(LowCardinality(String))	1
 -- lowcardinality dotted rewritten: parent alone
 ['a','b']
 -- lowcardinality dotted rewritten: size0, parent
 2	['a','b']
 -- lowcardinality dotted rewritten: size0, sibling member
 2	[10,20]
+-- widen scalar control: part column types
+UInt32	1
 -- widen scalar control
 100	UInt64

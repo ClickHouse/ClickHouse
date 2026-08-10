@@ -1,3 +1,5 @@
+-- nullable dotted compact: part column types
+Array(String)	1
 -- nullable dotted compact: subcolumn alone
 [0,0]
 -- nullable dotted compact: subcolumn, parent
@@ -12,6 +14,8 @@
 [0,0]	1
 -- nullable dotted compact: size0, null
 2	[0,0]
+-- nullable dotted wide: part column types
+Array(String)	1
 -- nullable dotted wide: subcolumn alone
 [0,0]
 -- nullable dotted wide: subcolumn, parent
@@ -26,6 +30,8 @@
 [0,0]	1
 -- nullable dotted wide: size0, null
 2	[0,0]
+-- nullable dotted noshare: part column types
+Array(String)	1
 -- nullable dotted noshare: subcolumn alone
 [0,0]
 -- nullable dotted noshare: subcolumn, parent
@@ -40,6 +46,8 @@
 [0,0]	1
 -- nullable dotted noshare: size0, null
 2	[0,0]
+-- nullable dotted rewritten: part column types
+Array(Nullable(String))	1
 -- nullable dotted rewritten: subcolumn alone
 [0,0]
 -- nullable dotted rewritten: subcolumn, parent
@@ -54,6 +62,9 @@
 [0,0]	1
 -- nullable dotted rewritten: size0, null
 2	[0,0]
+-- nullable dotted mixed: part column types
+Array(Nullable(String))	1
+Array(String)	1
 -- nullable dotted mixed: subcolumn alone
 [0,0]
 [1,0]
@@ -75,6 +86,8 @@
 -- nullable dotted mixed: size0, null
 2	[0,0]
 2	[1,0]
+-- nullable declared compact: part column types
+Array(String)	1
 -- nullable declared compact: subcolumn alone
 [0,0]
 -- nullable declared compact: subcolumn, parent
@@ -89,6 +102,8 @@
 [0,0]	1
 -- nullable declared compact: size0, null
 2	[0,0]
+-- nullable declared wide: part column types
+Array(String)	1
 -- nullable declared wide: subcolumn alone
 [0,0]
 -- nullable declared wide: subcolumn, parent
@@ -103,6 +118,8 @@
 [0,0]	1
 -- nullable declared wide: size0, null
 2	[0,0]
+-- nullable declared noshare: part column types
+Array(String)	1
 -- nullable declared noshare: subcolumn alone
 [0,0]
 -- nullable declared noshare: subcolumn, parent
@@ -117,6 +134,8 @@
 [0,0]	1
 -- nullable declared noshare: size0, null
 2	[0,0]
+-- nullable declared rewritten: part column types
+Array(Nullable(String))	1
 -- nullable declared rewritten: subcolumn alone
 [0,0]
 -- nullable declared rewritten: subcolumn, parent
@@ -131,6 +150,9 @@
 [0,0]	1
 -- nullable declared rewritten: size0, null
 2	[0,0]
+-- nullable declared mixed: part column types
+Array(Nullable(String))	1
+Array(String)	1
 -- nullable declared mixed: subcolumn alone
 [0,0]
 [1,0]
@@ -152,22 +174,30 @@
 -- nullable declared mixed: size0, null
 2	[0,0]
 2	[1,0]
+-- nullable plain compact: part column types
+Array(String)	1
 -- nullable plain compact: subcolumn alone
 [0,0]
 -- nullable plain compact: subcolumn, parent
 [0,0]	['a','b']
 -- nullable plain compact: parent, subcolumn
 ['a','b']	[0,0]
+-- nullable plain wide: part column types
+Array(String)	1
 -- nullable plain wide: subcolumn alone
 [0,0]
 -- nullable plain wide: subcolumn, parent
 [0,0]	['a','b']
 -- nullable plain wide: parent, subcolumn
 ['a','b']	[0,0]
+-- nullable scalar compact: part column types
+UInt8	1
 -- nullable scalar compact: subcolumn alone
 0
 -- nullable scalar compact: subcolumn, parent
 0	7
+-- nullable scalar wide: part column types
+UInt8	1
 -- nullable scalar wide: subcolumn alone
 0
 -- nullable scalar wide: subcolumn, parent

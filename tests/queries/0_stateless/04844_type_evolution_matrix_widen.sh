@@ -34,6 +34,18 @@ function state_alter_settings()
     esac
 }
 
+# Every cell first prints the types the active parts actually store for the column under test:
+# an unrewritten cell must still show the *old* type and a rewritten cell the new one. Without
+# this precondition a change that let the mutation run despite `SYSTEM STOP MERGES` would
+# silently turn the unrewritten cells into duplicates of the rewritten control and stay green.
+function state_check()
+{
+    echo "SELECT '-- $3: part column types';
+        SELECT type, count() FROM system.parts_columns
+        WHERE database = currentDatabase() AND table = '$1' AND active AND column = '$2'
+        GROUP BY type ORDER BY type;"
+}
+
 # `Array(UInt32)` -> `Array(UInt64)`: pure widening of a member's element.
 for state in compact wide rewritten; do
     table="t_matrix_widen_dotted_${state}"
@@ -45,6 +57,7 @@ for state in compact wide rewritten; do
         INSERT INTO $table VALUES (1, [100, 200], [10, 20]);
         $(state_stop_merges "$state" "$table")
         ALTER TABLE $table MODIFY COLUMN \`arr.n\` Array(UInt64) SETTINGS $(state_alter_settings "$state");
+        $(state_check "$table" "arr.n" "widen dotted $state")
         SELECT '-- widen dotted $state: parent alone';
         SELECT \`arr.n\` FROM $table SETTINGS max_threads = 1;
         SELECT '-- widen dotted $state: size0 alone';
@@ -72,6 +85,7 @@ for state in compact wide rewritten; do
         INSERT INTO $table VALUES (1, [100, 200], [10, 20]);
         $(state_stop_merges "$state" "$table")
         ALTER TABLE $table MODIFY COLUMN \`arr.n\` Array(Nullable(UInt64)) SETTINGS $(state_alter_settings "$state");
+        $(state_check "$table" "arr.n" "widen+nullable dotted $state")
         SELECT '-- widen+nullable dotted $state: subcolumn alone';
         SELECT \`arr.n\`.null FROM $table SETTINGS max_threads = 1;
         SELECT '-- widen+nullable dotted $state: subcolumn, parent';
@@ -96,6 +110,7 @@ for state in compact wide rewritten; do
         INSERT INTO $table VALUES (1, ['a', 'b'], [10, 20]);
         $(state_stop_merges "$state" "$table")
         ALTER TABLE $table MODIFY COLUMN \`arr.n\` Array(LowCardinality(String)) SETTINGS $(state_alter_settings "$state");
+        $(state_check "$table" "arr.n" "lowcardinality dotted $state")
         SELECT '-- lowcardinality dotted $state: parent alone';
         SELECT \`arr.n\` FROM $table SETTINGS max_threads = 1;
         SELECT '-- lowcardinality dotted $state: size0, parent';
@@ -115,6 +130,7 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_matrix_widen_scalar VALUES (1, 100);
     SYSTEM STOP MERGES t_matrix_widen_scalar;
     ALTER TABLE t_matrix_widen_scalar MODIFY COLUMN x UInt64 SETTINGS alter_sync = 0;
+        $(state_check "t_matrix_widen_scalar" "x" "widen scalar control")
     SELECT '-- widen scalar control';
     SELECT x, toTypeName(x) FROM t_matrix_widen_scalar SETTINGS max_threads = 1;
     DROP TABLE t_matrix_widen_scalar;

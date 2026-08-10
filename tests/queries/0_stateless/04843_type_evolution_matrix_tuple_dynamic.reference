@@ -1,3 +1,5 @@
+-- tuple dotted compact: part column types
+Array(String)	1
 -- tuple dotted compact: subcolumn alone
 ['p','q']
 -- tuple dotted compact: subcolumn, parent
@@ -8,6 +10,8 @@
 ['p','q']	[10,20]
 -- tuple dotted compact: subcolumn, unrelated scalar
 ['p','q']	1
+-- tuple dotted wide: part column types
+Array(String)	1
 -- tuple dotted wide: subcolumn alone
 ['p','q']
 -- tuple dotted wide: subcolumn, parent
@@ -18,6 +22,8 @@
 ['p','q']	[10,20]
 -- tuple dotted wide: subcolumn, unrelated scalar
 ['p','q']	1
+-- tuple dotted rewritten: part column types
+Array(Tuple(x String))	1
 -- tuple dotted rewritten: subcolumn alone
 ['p','q']
 -- tuple dotted rewritten: subcolumn, parent
@@ -28,6 +34,8 @@
 ['p','q']	[10,20]
 -- tuple dotted rewritten: subcolumn, unrelated scalar
 ['p','q']	1
+-- dynamic dotted compact: part column types
+Array(String)	1
 -- dynamic dotted compact: typed subcolumn alone
 ['a','b']
 -- dynamic dotted compact: typed subcolumn, parent
@@ -38,6 +46,8 @@
 ['a','b']	[10,20]
 -- dynamic dotted compact: absent typed subcolumn, sibling member
 [NULL,NULL]	[10,20]
+-- dynamic dotted wide: part column types
+Array(String)	1
 -- dynamic dotted wide: typed subcolumn alone
 ['a','b']
 -- dynamic dotted wide: typed subcolumn, parent
@@ -48,6 +58,8 @@
 ['a','b']	[10,20]
 -- dynamic dotted wide: absent typed subcolumn, sibling member
 [NULL,NULL]	[10,20]
+-- dynamic dotted rewritten: part column types
+Array(Dynamic)	1
 -- dynamic dotted rewritten: typed subcolumn alone
 ['a','b']
 -- dynamic dotted rewritten: typed subcolumn, parent
@@ -58,6 +70,8 @@
 ['a','b']	[10,20]
 -- dynamic dotted rewritten: absent typed subcolumn, sibling member
 [NULL,NULL]	[10,20]
+-- tuple deep compact: part column types
+Array(Tuple(a String, b Float64))	1
 -- tuple deep compact: depth-3 subcolumn alone
 [0,0]
 -- tuple deep compact: depth-3 subcolumn, element
@@ -68,6 +82,8 @@
 [0,0]	[('x',1.5),('y',2.5)]
 -- tuple deep compact: depth-3 subcolumn, sibling member
 [0,0]	[10,20]
+-- tuple deep wide: part column types
+Array(Tuple(a String, b Float64))	1
 -- tuple deep wide: depth-3 subcolumn alone
 [0,0]
 -- tuple deep wide: depth-3 subcolumn, element
@@ -78,6 +94,8 @@
 [0,0]	[('x',1.5),('y',2.5)]
 -- tuple deep wide: depth-3 subcolumn, sibling member
 [0,0]	[10,20]
+-- tuple deep rewritten: part column types
+Array(Tuple(a Nullable(String), b Float64))	1
 -- tuple deep rewritten: depth-3 subcolumn alone
 [0,0]
 -- tuple deep rewritten: depth-3 subcolumn, element
