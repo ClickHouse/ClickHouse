@@ -4,10 +4,10 @@ set -euxf -o pipefail
 
 export SEAWEEDFS_ACCESS_KEY=${SEAWEEDFS_ACCESS_KEY:-clickhouse}
 export SEAWEEDFS_SECRET_KEY=${SEAWEEDFS_SECRET_KEY:-clickhouse}
-# a region must be configured or the aws cli may stall querying the EC2
-# instance metadata endpoint; SeaweedFS accepts any region in the signature
-export AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
 S3_ENDPOINT="http://localhost:11111"
+# the filer serves plain unauthenticated HTTP; provisioning goes through it
+# instead of the S3 gateway, which would need a SigV4-capable client
+FILER_ENDPOINT="http://localhost:11114"
 TEST_DIR=${2:-/repo/tests/}
 
 if [ -d "$TEMP_DIR" ]; then
@@ -126,12 +126,13 @@ start_seaweedfs() {
 }
 
 setup_seaweedfs() {
-  aws --endpoint-url "$S3_ENDPOINT" s3 mb s3://test
-  # the S3 endpoint answers before volume allocation is ready on a cold start,
+  echo "s3.bucket.create -name test" | weed shell -master "localhost:11112"
+  # writes fail until the initial volume allocation is done on a cold start,
   # so wait until a real write succeeds
   local counter=0
   local max_counter=60
-  until echo ready | aws --endpoint-url "$S3_ENDPOINT" s3 cp - s3://test/.write_probe
+  echo ready > ./.write_probe
+  until curl --silent --show-error --fail --upload-file ./.write_probe "$FILER_ENDPOINT/buckets/test/.write_probe"
   do
     if [[ ${counter} == "${max_counter}" ]]; then
       echo "failed to wait for seaweedfs write readiness"
@@ -141,7 +142,8 @@ setup_seaweedfs() {
     sleep 1
     counter=$((counter + 1))
   done
-  aws --endpoint-url "$S3_ENDPOINT" s3 rm s3://test/.write_probe
+  curl --silent --show-error --fail --request DELETE "$FILER_ENDPOINT/buckets/test/.write_probe"
+  rm ./.write_probe
 }
 
 # uploads data to seaweedfs, by default after unpacking all tests
@@ -153,29 +155,19 @@ upload_data() {
   echo "upload_data() data_path=$data_path"
 
   if [ -d "${data_path}" ]; then
-    aws --endpoint-url "$S3_ENDPOINT" s3 cp --recursive "${data_path}"/ s3://test/
+    # upload through the filer (buckets are folders under /buckets); the
+    # S3 gateway serves the same content. The subshell re-enables globbing.
+    (
+      set +f
+      weed filer.copy "${data_path}"/* "$FILER_ENDPOINT/buckets/test/"
+    )
   fi
-}
-
-setup_aws_credentials() {
-  mkdir -p ~/.aws
-  if [[ -f ~/.aws/credentials ]]; then
-    if grep -q "^\[default\]" ~/.aws/credentials; then
-        echo "The credentials file contains a [default] section."
-        return
-    fi
-  fi
-  cat <<EOT >> ~/.aws/credentials
-[default]
-aws_access_key_id=${SEAWEEDFS_ACCESS_KEY}
-aws_secret_access_key=${SEAWEEDFS_SECRET_KEY}
-EOT
 }
 
 wait_for_it() {
   local counter=0
   local max_counter=60
-  local url="http://localhost:11111"
+  local url="$S3_ENDPOINT"
   local params=(
     --silent
     --verbose
@@ -197,14 +189,9 @@ wait_for_it() {
 main() {
   local query_dir
   query_dir=$(check_arg "$@")
-  if ! command -v aws; then
-    echo "ERROR: the aws cli is required"
-    exit 1
-  fi
   if ! weed version; then
     download_seaweedfs
   fi
-  setup_aws_credentials
   write_s3_config "$1"
   start_seaweedfs
   setup_seaweedfs

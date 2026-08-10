@@ -88,7 +88,7 @@ ARG TARGETARCH
 
 # Download SeaweedFS (the S3 server for stateless tests); the weed binary is a
 # static Go executable. Provisioning (identities, bucket, data upload) is done
-# with the aws cli installed above, so no mc is needed.
+# with the weed binary itself plus curl, so no S3 client is needed.
 # Fetch with --fail (never write an error body as a "binary") and retry with
 # backoff on transient errors/timeouts; otherwise one blip fails the build and
 # the image is never pushed, breaking every downstream stateless job with
@@ -128,7 +128,7 @@ RUN arch=${TARGETARCH:-amd64} \
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 
-# for the object storage setup (~/.aws credentials) to work without root
+# a writable HOME for the object storage clients' state to work without root
 RUN chmod 777 /home
 ENV HOME="/home"
 
