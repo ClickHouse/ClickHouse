@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: case-insensitive UTF-8 folding uses ICU.
--- The searchers now report the work they do so a caller can observe a deadline inside one search.
+-- The searchers now charge a cancellation budget so a caller can observe a deadline inside one search.
 -- Charging runs on the matching path too, so it must not drop, duplicate or misplace an occurrence.
 -- This file is that regression guard only: it pins the counts, not the interruption itself, which is
 -- timing-dependent and left untested on purpose.
@@ -32,12 +32,10 @@ SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat('\x80', 64) || repe
 SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat('\x80', 100) || 'Ж' || repeat('\x80', 100) || 'Ж'), 'Ж'), countSubstrings(materialize(repeat('\x80', 100) || 'Ж' || repeat('\x80', 100) || 'Ж'), 'Ж');
 SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat(repeat('\x80', 40) || 'Ж', 10)), 'Ж'), countSubstrings(materialize(repeat(repeat('\x80', 40) || 'Ж', 10)), 'Ж');
 
--- Many occurrences, so the charge is reported once per match rather than once per batch: every search here
--- returns after about 402 bytes, well under the 64 KiB batch, and must still contribute its work.
+-- Many occurrences, so a search returns after about 402 bytes and the charge lands on the matching path.
 SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat(repeat('Ж', 200) || 'Щ', 5000)), repeat('Ж', 16) || 'Щ') SETTINGS max_threads = 1;
 
--- The other side of that split: no match, so one search spans the whole 2 MB haystack and the batch
--- threshold is crossed about 30 times inside that single call.
+-- The other side of that split: no match, so one search spans the whole 2 MB haystack.
 SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat('Ж', 1000000)), repeat('Ж', 16) || 'Щ') SETTINGS max_threads = 1;
 
 -- The ASCII case-insensitive searcher charges from the short-haystack scalar scan, and on AVX2 and NEON

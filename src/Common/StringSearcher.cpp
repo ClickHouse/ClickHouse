@@ -240,9 +240,9 @@ bool UTF8CaseInsensitiveSearcherImpl::compare(const UInt8 * /*haystack*/, const 
     return false;
 }
 
-template <typename Batch>
+template <bool charge>
 const UInt8 * UTF8CaseInsensitiveSearcherImpl::searchImpl(
-    const UInt8 * haystack, const UInt8 * const haystack_end, Batch batch) const
+    const UInt8 * haystack, const UInt8 * const haystack_end, CancellationBudget * budget) const
 {
     if (needle_size == 0)
         return haystack;
@@ -276,7 +276,8 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::searchImpl(
                 /// is bounded per iteration. Stopping mid-run is safe: a continuation byte begins no match.
                 const auto * sync_end = static_cast<size_t>(haystack_end - haystack) > N ? haystack + N : haystack_end;
                 UTF8::syncForward(haystack, sync_end);
-                batch.add(N);
+                if constexpr (charge)
+                    budget->charge(N);
                 continue;
             }
 
@@ -292,40 +293,44 @@ const UInt8 * UTF8CaseInsensitiveSearcherImpl::searchImpl(
 
                 if ((mask_offset_both & cachemask) == cachemask)
                 {
-                    /// A candidate can traverse the whole needle and fail at its last code point, so charge the
-                    /// needle rather than the one code point the cursor then advances by.
-                    batch.add(needle_size);
+                    /// A candidate can traverse the whole needle and fail at its last code point, so the
+                    /// needle bounds the work, not the code point the cursor then advances by.
+                    if constexpr (charge)
+                        budget->charge(needle_size);
                     if (compareTrivial(haystack, haystack_end, needle))
-                        return batch.finish(haystack);
+                        return haystack;
                 }
 
-                /// A candidate rejected by the cache above pays nothing for the comparison it skipped, so
-                /// charge the cursor here: `offset` is zero whenever the first candidate sits at index 0.
+                /// A candidate the cache rejects skips the comparison, so the cursor bounds its work.
+                /// `offset` is zero whenever the first candidate sits at index 0.
                 const size_t consumed = UTF8::seqLength(*haystack);
                 haystack += consumed;
-                batch.add(offset + consumed);
+                if constexpr (charge)
+                    budget->charge(offset + consumed);
                 continue;
             }
         }
 
         if (haystack == haystack_end)
-            return batch.finish(haystack_end);
+            return haystack_end;
 
         if (*haystack == l || *haystack == u)
         {
             const auto * haystack_pos = haystack + first_needle_symbol_is_ascii;
             const auto * needle_pos = needle + first_needle_symbol_is_ascii;
 
-            batch.add(needle_size);
+            if constexpr (charge)
+                budget->charge(needle_size);
             if (compareTrivial(haystack_pos, haystack_end, needle_pos))
-                return batch.finish(haystack);
+                return haystack;
         }
 
         haystack += UTF8::seqLength(*haystack);
-        batch.add(1);
+        if constexpr (charge)
+            budget->charge(1);
     }
 
-    return batch.finish(haystack_end);
+    return haystack_end;
 
 scalar:
 #endif
@@ -336,24 +341,26 @@ scalar:
             const auto * haystack_pos = haystack + first_needle_symbol_is_ascii;
             const auto * needle_pos = needle + first_needle_symbol_is_ascii;
 
-            batch.add(needle_size);
+            if constexpr (charge)
+                budget->charge(needle_size);
             if (compareTrivial(haystack_pos, haystack_end, needle_pos))
-                return batch.finish(haystack);
+                return haystack;
         }
 
         haystack += UTF8::seqLength(*haystack);
-        batch.add(1);
+        if constexpr (charge)
+            budget->charge(1);
     }
 
-    return batch.finish(haystack_end);
+    return haystack_end;
 }
 
 const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(
-    const UInt8 * haystack, const UInt8 * const haystack_end, const SearchWorkCharger & charger) const
+    const UInt8 * haystack, const UInt8 * const haystack_end, CancellationBudget * budget) const
 {
-    if (charger)
-        return searchImpl(haystack, haystack_end, SearchWorkBatch(charger));
-    return searchImpl(haystack, haystack_end, NoSearchWorkBatch{});
+    if (budget)
+        return searchImpl<true>(haystack, haystack_end, budget);
+    return searchImpl<false>(haystack, haystack_end, nullptr);
 }
 
 }

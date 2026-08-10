@@ -446,15 +446,15 @@ public:
     }
 
 
-    /// If not found, the end of the haystack is returned. `charger` reports the work done, so that a scan
-    /// long enough to outrun a deadline can be interrupted: see `SearchWorkCharger`. An uncharged call is
-    /// dispatched to a separate instantiation, because the hash loop below runs it per step.
+    /// If not found, the end of the haystack is returned. A charged scan observes the deadline from inside
+    /// the hash loop below, which can otherwise run to completion over a whole block. An uncharged one is a
+    /// separate instantiation, because that loop charges per step.
     const UInt8 * search(
-        const UInt8 * const haystack, const size_t haystack_size, const SearchWorkCharger & charger = no_search_work_charge) const
+        const UInt8 * const haystack, const size_t haystack_size, CancellationBudget * budget = nullptr) const
     {
-        if (charger)
-            return searchImpl(haystack, haystack_size, SearchWorkBatch(charger));
-        return searchImpl(haystack, haystack_size, NoSearchWorkBatch{});
+        if (budget)
+            return searchImpl<true>(haystack, haystack_size, budget);
+        return searchImpl<false>(haystack, haystack_size, nullptr);
     }
 
     const char * search(const char * haystack, size_t haystack_size) const
@@ -463,8 +463,8 @@ public:
     }
 
 private:
-    template <typename Batch>
-    const UInt8 * searchImpl(const UInt8 * const haystack, const size_t haystack_size, Batch batch) const
+    template <bool charge>
+    const UInt8 * searchImpl(const UInt8 * const haystack, const size_t haystack_size, CancellationBudget * budget) const
     {
         if (needle_size == 0)
             return haystack;
@@ -472,11 +472,11 @@ private:
         const auto * haystack_end = haystack + haystack_size;
 
         if constexpr (use_fallback_searcher)
-            return batch.delegate(fallback_searcher, haystack, haystack_end);
+            return fallback_searcher.search(haystack, haystack_end, budget);
         else
         {
             if (fallback || haystack_size <= needle_size)
-                return batch.delegate(fallback_searcher, haystack, haystack_end);
+                return fallback_searcher.search(haystack, haystack_end, budget);
 
             /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
             const auto * pos = haystack + needle_size - sizeof(VolnitskyTraits::Ngram);
@@ -490,18 +490,19 @@ private:
                     const auto * res = pos - (hash[cell_num] - 1);
 
                     /// One comparison walks up to the whole needle while a step advances only `step` bytes.
-                    batch.add(needle_size);
+                    if constexpr (charge)
+                        budget->charge(needle_size);
 
                     /// pointer in the code is always padded array so we can use pagesafe semantics
                     if (fallback_searcher.compare(haystack, haystack_end, res))
-                        return batch.finish(res);
+                        return res;
                 }
 
-                batch.add(step);
+                if constexpr (charge)
+                    budget->charge(step);
             }
 
-            batch.flush();
-            return batch.delegate(fallback_searcher, pos - step + 1, haystack_end);
+            return fallback_searcher.search(pos - step + 1, haystack_end, budget);
         }
     }
 

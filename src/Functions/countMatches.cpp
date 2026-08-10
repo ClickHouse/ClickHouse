@@ -7,7 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/CancellationBudget.h>
+#include <Common/CancellationBudget.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 
