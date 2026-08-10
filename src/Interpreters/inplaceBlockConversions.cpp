@@ -16,9 +16,21 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -26,6 +38,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageDummy.h>
 #include <Common/checkStackSize.h>
+#include <Common/quoteString.h>
 
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
@@ -317,6 +330,64 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     return createExpressions(header, expr_list, save_unneeded_columns, context);
 }
 
+/// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class
+/// it does not expect. It descends exactly the levels whose serializations `assert_cast` the
+/// column (`Array`, `Nullable`, `Tuple`, `Map`, and the class-only `Dynamic`, `Variant`, `Object`)
+/// and accepts everything else: serializations of scalars do not type-check the column, and leaf
+/// divergence (e.g. a part storing `UInt32` for a column widened to `UInt64`) is legitimate.
+/// A wrapper mismatch means the type and the column were resolved from different sources
+/// (the table's metadata vs a data part with an older type), which the walk itself would report
+/// only as a `Bad cast` between two column classes, with no indication of which column it was.
+static bool columnMatchesTypeStructure(const IColumn & column, const IDataType & type)
+{
+    /// A lazily replicated column describes data of its nested column.
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(&column))
+        return columnMatchesTypeStructure(*column_replicated->getNestedColumn(), type);
+
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(&type))
+    {
+        const auto * column_array = typeid_cast<const ColumnArray *>(&column);
+        return column_array && columnMatchesTypeStructure(column_array->getData(), *type_array->getNestedType());
+    }
+
+    if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column);
+        return column_nullable && columnMatchesTypeStructure(column_nullable->getNestedColumn(), *type_nullable->getNestedType());
+    }
+
+    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        const auto * column_tuple = typeid_cast<const ColumnTuple *>(&column);
+        if (!column_tuple || column_tuple->tupleSize() != type_tuple->getElements().size())
+            return false;
+
+        for (size_t i = 0; i < column_tuple->tupleSize(); ++i)
+            if (!columnMatchesTypeStructure(column_tuple->getColumn(i), *type_tuple->getElement(i)))
+                return false;
+
+        return true;
+    }
+
+    if (const auto * type_map = typeid_cast<const DataTypeMap *>(&type))
+    {
+        const auto * column_map = typeid_cast<const ColumnMap *>(&column);
+        return column_map && columnMatchesTypeStructure(column_map->getNestedColumn(), *type_map->getNestedType());
+    }
+
+    /// The internal structure of these is data-dependent, so only the class is checked.
+    if (typeid_cast<const DataTypeDynamic *>(&type))
+        return typeid_cast<const ColumnDynamic *>(&column) != nullptr;
+
+    if (typeid_cast<const DataTypeVariant *>(&type))
+        return typeid_cast<const ColumnVariant *>(&column) != nullptr;
+
+    if (typeid_cast<const DataTypeObject *>(&type))
+        return typeid_cast<const ColumnObject *>(&column) != nullptr;
+
+    return true;
+}
+
 static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
     const NamesAndTypesList & available_columns, const Columns & res_columns, bool share_nested_offsets)
 {
@@ -334,6 +405,13 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
         /// Small hack. Currently sparse serialization is not supported with Arrays.
         if (res_columns[i]->isSparse())
             continue;
+
+        if (!columnMatchesTypeStructure(*res_columns[i], *available_column->type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} is listed with type {} among available columns, but its data has "
+                "incompatible structure {}. It is likely that a type resolved from the table's "
+                "metadata was combined with a column read from a data part with an older type",
+                backQuote(available_column->name), available_column->type->getName(), res_columns[i]->dumpStructure());
 
         auto serialization = available_column->type->getSerialization(*available_column->type->getSerializationInfo(*res_columns[i]));
         serialization->enumerateStreams([&](const auto & subpath)
