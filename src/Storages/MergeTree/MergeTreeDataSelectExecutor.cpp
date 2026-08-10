@@ -92,6 +92,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool per_part_index_stats;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
@@ -842,9 +843,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     for (const auto & part : parts)
     {
+        auto estimates = part.data_part->getEstimates();
         try
         {
-            auto estimates = part.data_part->getEstimates();
             if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
             {
                 LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
@@ -854,7 +855,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
         catch (const Exception &)
         {
             tryLogCurrentException(log, fmt::format(
-                "Failed to use statistics for part {}, skipping statistics pruning for this part",
+                "Failed to apply statistics pruning for part {}, skipping statistics pruning for this part",
                 part.data_part->name), LogsLevel::debug);
         }
         res_parts.push_back(part);
@@ -1551,6 +1552,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
             || !settings[Setting::allow_experimental_analyzer]
+            /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
+            /// by normal reads: those may exclude a granule whose only matching rows are deleted.
+            || !settings[Setting::apply_deleted_mask]
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
@@ -1841,7 +1845,6 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         if (!query_info.isStream() && merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
-    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
     else if (!parts)
     {
         if (!query_info.isStream())
