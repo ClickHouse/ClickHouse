@@ -393,7 +393,14 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        /// Remote databases are excluded as well: this loop opens `getTablesIterator` on every
+        /// database it keeps, and enumerating the tables of a remote database can call the remote
+        /// service. A remote database engine is also `isExternal`, so the flag matters for the one
+        /// local database that reports itself as remote — a read-only `Overlay` facade, which is not
+        /// external when at least one of its sources is local, and would otherwise reach a remote
+        /// source through the facade from this background thread.
+        auto databases = DatabaseCatalog::instance().getDatabases(
+            GetDatabasesOptions{.with_datalake_catalogs = false, .with_remote_databases = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -656,7 +663,9 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     /// deduplicate by `IStorage *`, mirroring `updateImpl`.
     std::unordered_set<const IStorage *> seen_tables;
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    /// Remote databases are excluded for the same reason as in `updateImpl`.
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(
+             GetDatabasesOptions{.with_datalake_catalogs = false, .with_remote_databases = false}))
     {
         if (db.second->isExternal())
             continue;

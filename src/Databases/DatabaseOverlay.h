@@ -223,6 +223,12 @@ public:
     /// source databases.
     bool areSourceDatabaseNamesVisible(const ContextPtr & context) const;
 
+    /// True when this database is a read-only facade that lists `source_database_name` among its
+    /// sources.
+    /// Used when a new read-only `Overlay` is created or attached, to reject nesting from the other
+    /// side: the new facade must not take the place of a source of an existing one.
+    bool usesSourceDatabase(const String & source_database_name) const;
+
     /// Throwing form of `areSourceDatabaseNamesVisible` for the database-metadata queries that
     /// report a denial (`SHOW CREATE DATABASE`, `BACKUP DATABASE`). The message names only the
     /// facade, never a source, so a denied user learns nothing about which sources are hidden.
@@ -234,9 +240,10 @@ protected:
     /// Returns the current snapshot of underlying databases, preserving
     /// registration order. In readonly mode, each call resolves source names via
     /// `DatabaseCatalog::tryGetDatabase` (lazy), so updates to the catalog become
-    /// visible without re-registering the Overlay. Missing sources are skipped.
-    /// A source that is itself a read-only `Overlay` is rejected (nesting facades
-    /// would let access checks and row policies bypass the intermediate facade).
+    /// visible without re-registering the Overlay. Missing sources are skipped, and
+    /// so is a source that is itself a read-only `Overlay` (nesting facades would let
+    /// access checks and row policies bypass the intermediate facade; it is rejected
+    /// up front by `CREATE`/`ATTACH`, see the definition for the rest).
     /// In non-readonly mode (clickhouse-local), returns the directly-registered
     /// databases stored in `databases`.
     std::vector<DatabasePtr> resolveDatabases() const;
@@ -256,6 +263,9 @@ protected:
     /// Source database names for lazy resolution (server-side readonly mode).
     /// Empty in non-readonly mode.
     std::vector<String> source_names;
+
+    /// Guards the one-shot warning about a source that is itself a read-only `Overlay`.
+    mutable std::atomic_flag nested_source_warning_logged;
 
     LoggerPtr log;
     const bool readonly;

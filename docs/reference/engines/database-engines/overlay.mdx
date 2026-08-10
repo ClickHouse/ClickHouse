@@ -23,7 +23,7 @@ CREATE DATABASE dboverlay ENGINE = Overlay('db_a', 'db_b');
 
 - `'db1', 'db2', ...` — Names of the underlying source databases. At least one is required. Duplicate names are removed while preserving the first occurrence.
 
-A user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source database exists right now. After `ATTACH`, restore, or server startup, sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created. An `Overlay` database cannot reference itself or use another `Overlay` database as a source.
+A user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source database exists right now. After `ATTACH`, restore, or server startup, sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created. An `Overlay` database cannot reference itself or use another `Overlay` database as a source. That is checked in both directions: a database that an existing `Overlay` database already uses as a source cannot be created (or attached) as an `Overlay` database either.
 
 ## Table discovery {#discovery}
 
@@ -62,7 +62,7 @@ The facade is a **view**: data definition and data mutation happen in the member
 | :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Any mutating/management operation through the facade — `CREATE`/`ATTACH`/`ALTER`/`RENAME`/`DROP`/`DETACH`/`TRUNCATE`/`OPTIMIZE TABLE`, `DELETE FROM`, `UPDATE`, `SYSTEM`, `TRUNCATE DATABASE` | `TABLE_IS_PERMANENTLY_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
-| Overlay reference cycle (e.g. `db_a` → `db_b` → `db_a`, formed by re-creating a source) | `BAD_ARGUMENTS` on any lookup through an affected Overlay; `DROP DATABASE` still works to break the cycle |
+| Overlay references another Overlay, or a reference cycle (e.g. `db_a` → `db_b` → `db_a`, formed by re-creating a source) | `BAD_ARGUMENTS` on the `CREATE`/`ATTACH` that would form it — checked from both sides, so a persisted definition never becomes unusable |
 | Overlay references missing database at `CREATE` | `BAD_ARGUMENTS` — a user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source exists right now |
 | Overlay references missing database after `ATTACH`/restore/startup | No error — sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created |
 | `DROP DATABASE` overlay while tables "exist" | Succeeds — the facade is always considered empty for the purposes of `DATABASE_NOT_EMPTY` |

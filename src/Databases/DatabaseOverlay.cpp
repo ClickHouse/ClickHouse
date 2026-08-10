@@ -185,6 +185,15 @@ bool DatabaseOverlay::areSourceDatabaseNamesVisible(const ContextPtr & context_)
     return true;
 }
 
+bool DatabaseOverlay::usesSourceDatabase(const String & source_database_name) const
+{
+    if (!readonly)
+        return false;
+    /// `source_names` is filled by the factory before the database is published in the catalog and
+    /// is never modified afterwards, so it needs no synchronization here.
+    return std::find(source_names.begin(), source_names.end(), source_database_name) != source_names.end();
+}
+
 void DatabaseOverlay::checkSourceDatabaseNamesVisible(const ContextPtr & context_) const
 {
     if (areSourceDatabaseNamesVisible(context_))
@@ -251,23 +260,32 @@ std::vector<DatabasePtr> DatabaseOverlay::resolveDatabases() const
         /// (with `top = Overlay('mid')` and `mid = Overlay('src')`) resolves the storage straight
         /// to `src.t`, so the access and row-policy code — which only sees the written id (`top.t`)
         /// and the resolved storage id (`src.t`) — would never require the grants or apply the row
-        /// policies defined on `mid.t`. Reject the nested facade instead of flattening it.
+        /// policies defined on `mid.t`.
         ///
-        /// This also covers reference cycles that can only form after creation (create `db_b` as
-        /// `Overlay('db_a')`, drop `db_a`, re-create `db_a` as `Overlay('db_b')`), which the
-        /// per-database self-reference check at CREATE time cannot see.
+        /// Every path that can configure such a pair rejects it up front with a clear error: both
+        /// directions are checked when the `Overlay` is created or explicitly attached (see
+        /// `registerDatabaseOverlay`) — the source being a facade already, and the new database
+        /// being a source of an existing facade, which is how a cycle can form after creation
+        /// (create `db_b` as `Overlay('db_a')`, drop `db_a`, re-create `db_a` as `Overlay('db_b')`).
         ///
-        /// The message deliberately names only the facade: this rejection is reached from ordinary
-        /// listing and lookup paths (`SHOW TABLES FROM ov`, `system.tables`, `tryGetTable`), which
-        /// run before the source-name masking of `SHOW CREATE DATABASE` / `system.databases`, so
-        /// naming the offending source would disclose a hidden source database to a caller that is
-        /// not allowed to see it. The definition - and with it the source names - stays available
-        /// through `SHOW CREATE DATABASE` to a caller with `SHOW DATABASES` on every source.
+        /// Here — the lazy path, reachable only for metadata that was not written by those checks,
+        /// e.g. a pair persisted by an older server and replayed at startup — the nested source is
+        /// skipped instead. Skipping is fail-closed (the nested source contributes no table to the
+        /// union, so no grant or row policy can be bypassed through it) and, unlike an exception,
+        /// it keeps one misconfigured facade from breaking unrelated queries: `resolveDatabases` is
+        /// reached from whole-server scans (`system.mutations`, `system.rocksdb`, the asynchronous
+        /// metrics, ...) that walk every database, and throwing here failed such a scan entirely.
         if (const auto * nested = typeid_cast<const DatabaseOverlay *>(db.get()); nested && nested->readonly)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Overlay database {} cannot use another Overlay database as a source",
-                backQuote(getDatabaseName()));
+        {
+            /// Once per instance: the state is permanent, while this runs on every lookup.
+            if (!nested_source_warning_logged.test_and_set())
+                LOG_WARNING(
+                    log,
+                    "Overlay database {} uses another Overlay database as a source, which is not supported. "
+                    "That source is excluded from the facade; re-create the database to fix its definition",
+                    backQuote(getDatabaseName()));
+            continue;
+        }
 
         resolved.push_back(std::move(db));
     }
@@ -1114,11 +1132,33 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
 
         /// An explicit `ATTACH DATABASE ... ENGINE = Overlay(...)` (mode `ATTACH`) is user-facing
         /// DDL just like `CREATE`, and it persists metadata: letting it attach a facade over another
-        /// read-only facade would write a database that fails every later lookup in
-        /// `resolveDatabases`. Unlike `CREATE`, sources may legitimately be missing at this point
+        /// read-only facade would write a database that silently loses that source on every lookup
+        /// (see `resolveDatabases`). Unlike `CREATE`, sources may legitimately be missing at this point
         /// (databases can be reattached in a different order than they were detached), so only the
         /// nested-facade rejection applies, and only when the source is currently resolvable.
         const bool validate_no_nested_facade = validate_sources_exist || (args.mode == LoadingStrictnessLevel::ATTACH);
+
+        /// The same nesting can also be configured from the other side: an existing facade names a
+        /// database that is only now (re-)created as a facade itself (`db_top = Overlay('db_hid')`,
+        /// then `db_hid` dropped and re-created as `Overlay('db_src')`), which is also how a
+        /// reference cycle forms after creation. Reject that too, so no user DDL can leave a facade
+        /// with a source it has to skip. The message names only the database being created: the
+        /// source names of the existing facade are protected metadata (see
+        /// `areSourceDatabaseNamesVisible`), so naming it would disclose one of them.
+        if (validate_no_nested_facade)
+        {
+            for (const auto & existing : DatabaseCatalog::instance().getDatabases(
+                     GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true}))
+            {
+                const auto * facade = DatabaseOverlay::asReadonlyFacade(existing.second.get());
+                if (facade && facade->usesSourceDatabase(args.database_name))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Database {} cannot be created with the {} engine because another Overlay database "
+                        "already uses it as a source, and one Overlay database cannot be a source of another",
+                        backQuote(args.database_name), engine_name);
+            }
+        }
 
         for (const auto & source_name : sources)
         {
@@ -1132,8 +1172,8 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
                         engine_name, source_name);
 
                 /// Reject nesting one read-only `Overlay` inside another up front. Lazy resolution
-                /// rejects it later too (see `resolveDatabases`), but an immediate error on CREATE
-                /// or ATTACH is friendlier than a failure on the first query through the facade.
+                /// only skips such a source (see `resolveDatabases`), so this is where the user
+                /// learns that the definition they wrote cannot work.
                 if (source_db)
                     if (const auto * nested = typeid_cast<const DatabaseOverlay *>(source_db.get()); nested && nested->isReadOnly())
                         throw Exception(
@@ -1163,7 +1203,7 @@ CREATE DATABASE dboverlay ENGINE = Overlay('db_a', 'db_b');
 
 - `'db1', 'db2', ...` — Names of the underlying source databases. At least one is required. Duplicate names are removed while preserving the first occurrence.
 
-A user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source database exists right now. After `ATTACH`, restore, or server startup, sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created. An `Overlay` database cannot reference itself or use another `Overlay` database as a source.
+A user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source database exists right now. After `ATTACH`, restore, or server startup, sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created. An `Overlay` database cannot reference itself or use another `Overlay` database as a source. That is checked in both directions: a database that an existing `Overlay` database already uses as a source cannot be created (or attached) as an `Overlay` database either.
 
 ## Table discovery {#discovery}
 
@@ -1202,7 +1242,7 @@ The facade is a **view**: data definition and data mutation happen in the member
 | :----------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Any mutating/management operation through the facade — `CREATE`/`ATTACH`/`ALTER`/`RENAME`/`DROP`/`DETACH`/`TRUNCATE`/`OPTIMIZE TABLE`, `DELETE FROM`, `UPDATE`, `SYSTEM`, `TRUNCATE DATABASE` | `TABLE_IS_PERMANENTLY_READ_ONLY` — "Database `<name>` is an Overlay facade (read-only). Run this operation in an underlying database." |
 | Overlay references itself                  | `BAD_ARGUMENTS`                                                                                                                                    |
-| Overlay reference cycle (e.g. `db_a` → `db_b` → `db_a`, formed by re-creating a source) | `BAD_ARGUMENTS` on any lookup through an affected Overlay; `DROP DATABASE` still works to break the cycle |
+| Overlay references another Overlay, or a reference cycle (e.g. `db_a` → `db_b` → `db_a`, formed by re-creating a source) | `BAD_ARGUMENTS` on the `CREATE`/`ATTACH` that would form it — checked from both sides, so a persisted definition never becomes unusable |
 | Overlay references missing database at `CREATE` | `BAD_ARGUMENTS` — a user-initiated `CREATE DATABASE ... ENGINE = Overlay(...)` validates that every source exists right now |
 | Overlay references missing database after `ATTACH`/restore/startup | No error — sources are resolved lazily by name, and a currently-missing source is simply omitted from the union until it is (re)created |
 | `DROP DATABASE` overlay while tables "exist" | Succeeds — the facade is always considered empty for the purposes of `DATABASE_NOT_EMPTY` |

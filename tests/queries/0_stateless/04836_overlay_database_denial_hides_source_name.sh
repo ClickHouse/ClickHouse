@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # in the query. The source-side grant hides which source database owns a name, so an error text that
 # spells out the resolved source id gives away exactly what that grant protects. This covers the two
 # diagnostics that used to carry a source name: the source-side grant check of a read, and the
-# runtime rejection of a facade that became nested through a late reconfiguration.
+# rejection of a reconfiguration that would nest one facade inside another.
 
 SUF="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 DB_SRC="db_src_${SUF}"
@@ -71,24 +71,19 @@ check_hidden 'DESCRIBE' "${DB_SRC}" "${err}"
 err=$(${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SHOW CREATE TABLE ${DB_OVL}.t" 2>&1 >/dev/null)
 check_hidden 'SHOW CREATE TABLE' "${DB_SRC}" "${err}"
 
-# Build a facade whose source only becomes another facade afterwards: the check at CREATE time
-# cannot see this, so the nesting is rejected lazily on the first lookup through the facade - on
-# listing paths that run before the source-name masking of `SHOW CREATE DATABASE`.
+# Try to nest facades by a late reconfiguration: `${DB_TOP}` already uses `${DB_HID}` as a source,
+# so re-creating `${DB_HID}` as a facade itself is rejected. The rejection names only the database
+# being created: the source names of `${DB_TOP}` are protected metadata (showing its definition
+# requires `SHOW DATABASES` on every source), so naming that facade would disclose one of them.
 ${CLICKHOUSE_CLIENT} -nm --query "
     CREATE DATABASE ${DB_HID} ENGINE = Atomic;
     CREATE DATABASE ${DB_TOP} ENGINE = Overlay('${DB_HID}');
     DROP DATABASE ${DB_HID};
-    CREATE DATABASE ${DB_HID} ENGINE = Overlay('${DB_SRC}');
-    GRANT SHOW ON ${DB_TOP}.* TO ${USER_OVL};
-    GRANT SELECT ON ${DB_TOP}.* TO ${USER_OVL};
 "
 
-echo 'A facade nested by a late reconfiguration is rejected without naming the source database'
-err=$(${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SHOW TABLES FROM ${DB_TOP}" 2>&1 >/dev/null)
-check_hidden 'SHOW TABLES' "${DB_HID}" "${err}"
-
-err=$(${CLICKHOUSE_CLIENT} --user="${USER_OVL}" --query "SELECT * FROM ${DB_TOP}.t" 2>&1 >/dev/null)
-check_hidden 'SELECT' "${DB_HID}" "${err}"
+echo 'Re-creating a source of an existing facade as a facade is rejected without naming that facade'
+err=$(${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_HID} ENGINE = Overlay('${DB_SRC}')" 2>&1 >/dev/null)
+check_hidden 'CREATE DATABASE' "${DB_TOP}" "${err}"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP DATABASE IF EXISTS ${DB_TOP};
