@@ -128,6 +128,7 @@ def test_empty_working_set_removes_stranded_zookeeper_part(start_cluster):
     # that the removal set still picks up, so wait for the table to hold no part in any state
     # before re-stranding the node. Only the cleanup period matters here: that part is created
     # with remove_time = 0, so old_parts_lifetime never holds it back.
+    # system.parts omits Deleting parts unless _state is referenced.
     node1.query(
         f"ALTER TABLE {table} MODIFY SETTING cleanup_delay_period = 1, "
         "max_cleanup_delay_period = 2"
@@ -135,7 +136,7 @@ def test_empty_working_set_removes_stranded_zookeeper_part(start_cluster):
     node1.query(f"TRUNCATE TABLE {table} SETTINGS alter_sync = 2")
     assert_eq_with_retry(
         node1,
-        f"SELECT count() FROM system.parts WHERE table = '{table}'",
+        f"SELECT count() FROM system.parts WHERE table = '{table}' AND _state != 'dummy'",
         "0\n",
         retry_count=60,
         sleep_time=1,
@@ -154,7 +155,9 @@ def test_empty_working_set_removes_stranded_zookeeper_part(start_cluster):
         == "1"
     )
     assert (
-        node1.query(f"SELECT count() FROM system.parts WHERE table = '{table}'").strip()
+        node1.query(
+            f"SELECT count() FROM system.parts WHERE table = '{table}' AND _state != 'dummy'"
+        ).strip()
         == "0"
     )
 
