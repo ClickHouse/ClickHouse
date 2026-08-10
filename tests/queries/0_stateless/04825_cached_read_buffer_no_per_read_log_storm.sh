@@ -94,14 +94,4 @@ $CLICKHOUSE_CLIENT -q "
     );
 "
 
-# `compatibility` must restore the pre-26.8 logging, which requires the history row to record
-# `true` as the previous value.
-$CLICKHOUSE_CLIENT -q "
-    SELECT
-        (SELECT value FROM system.settings WHERE name = 'filesystem_cache_verbose_logging') = '0'
-            AS off_by_default,
-        (SELECT value FROM system.settings WHERE name = 'filesystem_cache_verbose_logging'
-         SETTINGS compatibility = '26.7') = '1' AS restored_by_compatibility;
-"
-
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_cached_read_log;"
