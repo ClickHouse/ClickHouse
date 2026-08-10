@@ -12,7 +12,7 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `a[N]` – Access to an element of an array. The `arrayElement(a, N)` function.
 `N` can also be an array of integers, in which case the elements at all of those positions are returned as an array,
-the same as `arrayMap(i -> a[i], N)`.
+the same as `arrayMap(i -> a[i], N)`. The positions may be nullable, and a `NULL` position produces `NULL`.
 
 `a.N` – Access to a tuple element. The `tupleElement(a, N)` function.
 

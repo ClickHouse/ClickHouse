@@ -2187,8 +2187,15 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
     ColumnPtr data_column_holder = recursiveRemoveLowCardinality(data_array.getDataPtr());
     const IColumn & data_col = *data_column_holder;
     const auto & data_offsets = data_array.getOffsets();
-    const IColumn & index_data_col = col_index_array->getData();
     const auto & index_offsets = col_index_array->getOffsets();
+
+    /// The index elements may be `LowCardinality` and/or `Nullable`, just like a scalar index.
+    /// A `NULL` index behaves exactly like index `0`: the scalar form returns `NULL` when the
+    /// result can be nullable, and the default value otherwise.
+    ColumnPtr index_column_holder = recursiveRemoveLowCardinality(col_index_array->getDataPtr());
+    const ColumnNullable * nullable_index = checkAndGetColumn<ColumnNullable>(index_column_holder.get());
+    const IColumn & index_data_col = nullable_index ? nullable_index->getNestedColumn() : *index_column_holder;
+    const NullMap * index_null_map = nullable_index ? &nullable_index->getNullMapData() : nullptr;
 
     const ColumnNullable * nullable_data = checkAndGetColumn<ColumnNullable>(&data_col);
     const IColumn & inner_data = nullable_data ? nullable_data->getNestedColumn() : data_col;
@@ -2198,6 +2205,13 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
     const size_t const_array_size = is_data_const ? data_offsets[0] : 0;
 
     bool result_is_nullable = result_element_type->isNullable();
+
+    /// An out-of-range index yields the default value of the element type, which is `NULL` only when
+    /// the element type is nullable on its own -- in `arrayElementOrNull` mode or for a nullable
+    /// source element type. A nullable *index* element type must not turn an out-of-range index into
+    /// `NULL`, exactly like the scalar form: `[10, 20, 30][toNullable(5)]` is `0`, not `NULL`.
+    bool out_of_bounds_is_null = result_is_nullable && (is_null_mode || nullable_data != nullptr);
+
     size_t total_indices = input_rows_count ? index_offsets[input_rows_count - 1] : 0;
 
     /// Result offsets are identical to index offsets
@@ -2263,6 +2277,14 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
 
                 for (size_t k = idx_start; k < idx_end; ++k, ++out)
                 {
+                    if (index_null_map && (*index_null_map)[k])
+                    {
+                        result_vec[out] = DataType();
+                        if (result_null_map)
+                            (*result_null_map)[out] = UInt8(1);
+                        continue;
+                    }
+
                     size_t resolved = resolve_index(indices[k], array_size);
                     if (resolved < array_size)
                     {
@@ -2281,7 +2303,7 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
                     else
                     {
                         result_vec[out] = DataType();
-                        if (result_null_map)
+                        if (out_of_bounds_is_null)
                             (*result_null_map)[out] = UInt8(1);
                     }
                 }
@@ -2363,6 +2385,14 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
 
             for (size_t k = idx_start; k < idx_end; ++k, ++out)
             {
+                if (index_null_map && (*index_null_map)[k])
+                {
+                    result_nested_col->insertDefault();
+                    if (result_null_map)
+                        (*result_null_map)[out] = UInt8(1);
+                    continue;
+                }
+
                 size_t resolved = resolve_index(indices[k], array_size);
                 if (resolved < array_size)
                 {
@@ -2381,7 +2411,7 @@ ColumnPtr FunctionArrayElement<mode>::executeWithArrayIndex(
                 else
                 {
                     result_nested_col->insertDefault();
-                    if (result_null_map)
+                    if (out_of_bounds_is_null)
                         (*result_null_map)[out] = UInt8(1);
                 }
             }
@@ -2448,7 +2478,9 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 
     if (const auto * index_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get()))
     {
-        if (!isNativeInteger(index_array_type->getNestedType()))
+        auto index_element_type = recursiveRemoveLowCardinality(index_array_type->getNestedType());
+        bool index_element_is_nullable = index_element_type->isNullable();
+        if (!isNativeInteger(removeNullable(index_element_type)))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -2458,9 +2490,11 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
         }
 
         /// `arr[indexes]` is equivalent to `arrayMap(i -> arr[i], indexes)`, so an element of the
-        /// result has exactly the type the scalar form returns for the same array.
+        /// result has exactly the type the scalar form returns for the same array. In particular,
+        /// a `NULL` index makes the scalar form return `NULL`, so a nullable index element type
+        /// makes the result element type nullable as well.
         auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
-        if (is_null_mode && nested_type->canBeInsideNullable())
+        if ((is_null_mode || index_element_is_nullable) && nested_type->canBeInsideNullable())
             nested_type = makeNullable(nested_type);
         return std::make_shared<DataTypeArray>(nested_type);
     }
@@ -2742,6 +2776,7 @@ except for arguments of a non-constant array and a constant index 0. In this cas
 When `n` is an array of integers, returns an array of the elements at the specified positions (a gather operation).
 This is equivalent to `arrayMap(i -> arr[i], n)`, but has a separate, more efficient implementation.
 Out-of-bounds positions produce the default value, the same as for a scalar index.
+The index elements may be nullable, and a `NULL` index produces `NULL`, the same as for a scalar index.
 
 :::note
 Arrays in ClickHouse are one-indexed.
@@ -2754,7 +2789,7 @@ Operator `[n]` provides the same functionality.
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
         {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"n", "Position of the element to get, or an array of positions. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
+        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(T)`.", {"Any", "Array(T)"}};
     FunctionDocumentation::Examples examples = {
@@ -2777,6 +2812,7 @@ If the index falls outside of the bounds of an array, `NULL` is returned instead
 When `n` is an array of integers, returns an array of the elements at the specified positions.
 Out-of-bounds positions produce `NULL` values in the result array.
 This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
+The index elements may be nullable, and a `NULL` index produces `NULL`, the same as for a scalar index.
 
 :::note
 Arrays in ClickHouse are one-indexed.
@@ -2787,7 +2823,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arr, n)";
     FunctionDocumentation::Arguments arguments_null = {
         {"arr", "The array to search. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"n", "Position of the element to get, or an array of positions. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
+        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/sql-reference/data-types/int-uint) or [`Array((U)Int*)`](/sql-reference/data-types/array)."}
     };
     FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)`. When `n` is an array, returns `Array(Nullable(T))`.", {"Nullable(T)", "Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples_null = {

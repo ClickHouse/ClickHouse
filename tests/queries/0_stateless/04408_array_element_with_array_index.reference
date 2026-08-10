@@ -100,7 +100,33 @@ Array(String)
 [NULL,NULL]
 [10,NULL,NULL]
 [NULL,NULL]
+-- A nullable index element type propagates NULL, like a scalar nullable index
+Array(Nullable(UInt8))
+[10]
+[10,NULL,20]
+[10,NULL,20]
+['a',NULL,'c']
+[1,NULL,NULL]
+[10,20]
+[10,NULL,20]
+-- An out-of-range index still yields the default value, only a NULL index yields NULL
+[0,NULL,0]
+[NULL,NULL,NULL]
+-- A nullable index with a non-constant source
+[10,NULL,0]
+[NULL,0]
+[10,NULL,NULL]
+[NULL,NULL]
 -- Equivalence with arrayMap; every row must be 1
+1
+1
+1
+1
+1
+1
+1
+1
+1
 1
 1
 1

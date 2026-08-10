@@ -108,6 +108,28 @@ SELECT arr[idx] FROM test_nullable_elements ORDER BY ALL;
 SELECT arrayElementOrNull(arr, idx) FROM test_nullable_elements ORDER BY ALL;
 DROP TABLE test_nullable_elements;
 
+SELECT '-- A nullable index element type propagates NULL, like a scalar nullable index';
+SELECT toTypeName([10, 20, 30][[toNullable(1)]]);
+SELECT [10, 20, 30][[toNullable(1)]];
+SELECT [10, 20, 30][[1, NULL, 2]];
+SELECT materialize([10, 20, 30])[[1, NULL, 2]];
+SELECT ['a', 'b', 'c'][[1, NULL, -1]];
+SELECT [1, NULL, 3][[1, NULL, 2]];
+SELECT [10, 20, 30][[1, 2]::Array(LowCardinality(Int8))] SETTINGS allow_suspicious_low_cardinality_types = 1;
+SELECT [10, 20, 30][[1, NULL, 2]::Array(LowCardinality(Nullable(Int8)))] SETTINGS allow_suspicious_low_cardinality_types = 1;
+
+SELECT '-- An out-of-range index still yields the default value, only a NULL index yields NULL';
+SELECT [10, 20, 30][[5, NULL, -9]];
+SELECT arrayElementOrNull([10, 20, 30], [5, NULL, -9]);
+
+SELECT '-- A nullable index with a non-constant source';
+DROP TABLE IF EXISTS test_nullable_index;
+CREATE TABLE test_nullable_index (arr Array(UInt8), idx Array(Nullable(Int8))) ENGINE = Memory;
+INSERT INTO test_nullable_index VALUES ([10, 20, 30], [1, NULL, 4]), ([], [NULL, 1]);
+SELECT arr[idx] FROM test_nullable_index ORDER BY ALL;
+SELECT arrayElementOrNull(arr, idx) FROM test_nullable_index ORDER BY ALL;
+DROP TABLE test_nullable_index;
+
 SELECT '-- Equivalence with arrayMap; every row must be 1';
 SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [10, 20, 30, 40][[2, 4, 1]] AS x, arrayMap(i -> [10, 20, 30, 40][i], [2, 4, 1]) AS y);
 SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [10, 20, 30][[1, 5, 0, -1, -9]] AS x, arrayMap(i -> [10, 20, 30][i], [1, 5, 0, -1, -9]) AS y);
@@ -125,11 +147,20 @@ SELECT countIf(NOT (toTypeName(x) = toTypeName(y) AND toString(x) = toString(y))
 SELECT countIf(NOT (toTypeName(x) = toTypeName(y) AND toString(x) = toString(y))) = 0 FROM (SELECT arr[idx] AS x, arrayMap(i -> arr[i], idx) AS y FROM (SELECT arrayMap(j -> if(j % 2 = 0, NULL, toUInt8(j)), range(number % 5)) AS arr, arrayMap(j -> toInt32(j) - 2, range(number % 6)) AS idx FROM numbers(100)));
 SELECT countIf(NOT (toTypeName(x) = toTypeName(y) AND toString(x) = toString(y))) = 0 FROM (SELECT arr[idx] AS x, arrayMap(i -> arr[i], idx) AS y FROM (SELECT arrayMap(j -> toString(j), range(number % 5)) AS arr, arrayMap(j -> toInt32(j) - 2, range(number % 6)) AS idx FROM numbers(100)));
 SELECT countIf(NOT (toTypeName(x) = toTypeName(y) AND toString(x) = toString(y))) = 0 FROM (SELECT arr[idx] AS x, arrayMap(i -> arr[i], idx) AS y FROM (SELECT arrayMap(j -> toLowCardinality(toString(j)), range(number % 5)) AS arr, arrayMap(j -> toInt32(j) - 2, range(number % 6)) AS idx FROM numbers(100)));
+SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [10, 20, 30][[1, NULL, 2]] AS x, arrayMap(i -> [10, 20, 30][i], [1, NULL, 2]) AS y);
+SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [10, 20, 30][[5, NULL, -9]] AS x, arrayMap(i -> [10, 20, 30][i], [5, NULL, -9]) AS y);
+SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT ['a', 'b'][[1, NULL, 3]] AS x, arrayMap(i -> ['a', 'b'][i], [1, NULL, 3]) AS y);
+SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [1, NULL, 3][[1, NULL, 4]] AS x, arrayMap(i -> [1, NULL, 3][i], [1, NULL, 4]) AS y);
+SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [[1, 2], [3]][[2, NULL]] AS x, arrayMap(i -> [[1, 2], [3]][i], [2, NULL]) AS y);
+SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT [('a', 1)][[1, NULL]] AS x, arrayMap(i -> [('a', 1)][i], [1, NULL]) AS y);
+SELECT toTypeName(x) = toTypeName(y) AND toString(x) = toString(y) FROM (SELECT arrayElementOrNull([10, 20, 30], [1, NULL, 5]) AS x, arrayMap(i -> arrayElementOrNull([10, 20, 30], i), [1, NULL, 5]) AS y);
+SELECT countIf(NOT (toTypeName(x) = toTypeName(y) AND toString(x) = toString(y))) = 0 FROM (SELECT arr[idx] AS x, arrayMap(i -> arr[i], idx) AS y FROM (SELECT range(number % 5) AS arr, arrayMap(j -> if(j % 3 = 0, NULL, toInt32(j) - 3), range(number % 7)) AS idx FROM numbers(100)));
+SELECT countIf(NOT (toTypeName(x) = toTypeName(y) AND toString(x) = toString(y))) = 0 FROM (SELECT arrayElementOrNull(arr, idx) AS x, arrayMap(i -> arrayElementOrNull(arr, i), idx) AS y FROM (SELECT arrayMap(j -> toString(j), range(number % 5)) AS arr, arrayMap(j -> if(j % 3 = 0, NULL, toInt32(j) - 3), range(number % 7)) AS idx FROM numbers(100)));
 
 SELECT '-- The index must be an array of integers';
 SELECT [10, 20, 30][[1.5]]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT [10, 20, 30][['a']]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT [10, 20, 30][[[1]]]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT [10, 20, 30][[toNullable(1)]]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT [10, 20, 30][[toNullable(1.5)]]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT arrayElementOrNull([10, 20, 30], [1.5]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT map('a', 1)[[1]]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
