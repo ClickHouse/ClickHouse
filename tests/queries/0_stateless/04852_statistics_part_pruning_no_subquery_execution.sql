@@ -35,6 +35,17 @@ SELECT count() FROM (EXPLAIN indexes = 1
     SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 1
 ) WHERE explain LIKE '%Statistics%';
 
+-- The `globalIn` family reaches the same guard, and the reported failure used `globalNullIn`.
+SELECT count() FROM (EXPLAIN indexes = 1
+    SELECT count() FROM t_stats_prune_in WHERE c GLOBAL IN (SELECT 1)
+    SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 1
+) WHERE explain LIKE '%Statistics%';
+
+SELECT count() FROM (EXPLAIN indexes = 1
+    SELECT count() FROM t_stats_prune_in WHERE globalNullIn(c, (SELECT 1))
+    SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 1
+) WHERE explain LIKE '%Statistics%';
+
 -- A literal `IN` list needs no subquery, so pruning still applies: 3 parts -> 1.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1
     SELECT count() FROM t_stats_prune_in WHERE c IN (1, 2)
