@@ -397,6 +397,7 @@ static void testLogAndStateMachine(
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         keeper_context);
     changelog.init(state_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 
@@ -445,6 +446,7 @@ static void testLogAndStateMachine(
         DB::LogFileSettings{
             .force_sync = true, .compress_logs = param.enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
+        DB::ReadAheadSettings{},
         keeper_context);
     restore_changelog.init(restore_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 

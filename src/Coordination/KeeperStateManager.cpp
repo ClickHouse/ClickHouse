@@ -23,15 +23,21 @@ namespace DB
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsBool async_replication;
-    extern const CoordinationSettingsUInt64 commit_logs_cache_size_threshold;
-    extern const CoordinationSettingsUInt64 commit_logs_cache_entry_count_threshold;
     extern const CoordinationSettingsBool compress_logs;
     extern const CoordinationSettingsBool force_sync;
     extern const CoordinationSettingsUInt64 latest_logs_cache_size_threshold;
-    extern const CoordinationSettingsUInt64 latest_logs_cache_entry_count_threshold;
     extern const CoordinationSettingsUInt64 log_file_overallocate_size;
     extern const CoordinationSettingsUInt64 max_flush_batch_size;
     extern const CoordinationSettingsUInt64 max_log_file_size;
+    extern const CoordinationSettingsNonZeroUInt64 log_readahead_chunk_size;
+    extern const CoordinationSettingsUInt64 log_readahead_commit_window_bytes;
+    extern const CoordinationSettingsNonZeroUInt64 log_readahead_eviction_timeout_ms;
+    extern const CoordinationSettingsBool log_readahead_enabled;
+    extern const CoordinationSettingsNonZeroUInt64 log_readahead_max_peer_readers;
+    extern const CoordinationSettingsUInt64 log_readahead_pool_threads;
+    extern const CoordinationSettingsUInt64 log_readahead_serve_wait_timeout_ms;
+    extern const CoordinationSettingsNonZeroUInt64 log_readahead_window_bytes;
+    extern const CoordinationSettingsUInt64 min_time_between_fsyncs_ms;
     extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
 }
 
@@ -123,6 +129,23 @@ std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Ut
     }
 
     return data;
+}
+
+ReadAheadSettings buildReadAheadSettings(const KeeperContextPtr & keeper_context)
+{
+    ReadAheadSettings settings
+    {
+        .enabled = keeper_context->getCoordinationSettings()[CoordinationSetting::log_readahead_enabled],
+        .window_bytes = keeper_context->getCoordinationSettings()[CoordinationSetting::log_readahead_window_bytes],
+        .max_peer_readers = keeper_context->getCoordinationSettings()[CoordinationSetting::log_readahead_max_peer_readers],
+        .eviction_timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::log_readahead_eviction_timeout_ms],
+        .pool_threads = keeper_context->getCoordinationSettings()[CoordinationSetting::log_readahead_pool_threads],
+        .serve_wait_timeout_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::log_readahead_serve_wait_timeout_ms],
+        .chunk_size = keeper_context->getCoordinationSettings()[CoordinationSetting::log_readahead_chunk_size],
+        .commit_window_bytes = keeper_context->getCoordinationSettings()[CoordinationSetting::log_readahead_commit_window_bytes],
+    };
+    validateReadAheadSettings(settings);
+    return settings;
 }
 
 }
@@ -285,6 +308,7 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
     , log_store(nuraft::cs_new<KeeperLogStore>(
           LogFileSettings{.force_sync = false, .compress_logs = false, .rotate_interval = 5000},
           FlushSettings{},
+          ReadAheadSettings{},
           keeper_context_))
     , server_state_file_name("state")
     , keeper_context(keeper_context_)
@@ -316,14 +340,13 @@ KeeperStateManager::KeeperStateManager(
               .max_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_log_file_size],
               .overallocate_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_file_overallocate_size],
               .latest_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_size_threshold],
-              .latest_logs_cache_entry_count_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_entry_count_threshold],
-              .commit_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::commit_logs_cache_size_threshold],
-              .commit_logs_cache_entry_count_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::commit_logs_cache_entry_count_threshold],
           },
           FlushSettings
           {
               .max_flush_batch_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_flush_batch_size],
+              .min_time_between_fsyncs_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::min_time_between_fsyncs_ms],
           },
+          buildReadAheadSettings(keeper_context_),
           keeper_context_))
     , server_state_file_name(server_state_file_name_)
     , keeper_context(keeper_context_)

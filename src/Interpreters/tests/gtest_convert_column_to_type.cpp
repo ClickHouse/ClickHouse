@@ -150,15 +150,26 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Array(UInt64)", Field(Array{UInt64(256)}), "Array(UInt8)"},     // element overflow -> whole null
         {"Tuple(UInt8, String)", Field(Tuple{UInt64(1), String("a")}), "Tuple(Int64, String)"},
 
-        /// `Bool`-source into a numeric `to` is value-preserving (the tag collapse `Bool -> UInt64`
-        /// done by `IColumn::get` does not change a numeric result), so it matches `convertFieldToType`.
-        /// NOTE: `Bool -> String` is intentionally NOT tested here: `IColumn::get` on a `DataTypeBool`
-        /// column (backed by `ColumnUInt8`) reconstructs a `UInt64` `Field`, so the delegation path
-        /// produces `'1'`/`'0'` while `convertFieldToType(Field(true), String)` produces `'true'`/`'false'`.
-        /// That gap is documented in `convertColumnToType.h`; no current caller converts `Bool` to a
-        /// textual type, and it disappears once the delegation is replaced by column-native paths.
+        /// `Bool`-source. `IColumn::get` on a `DataTypeBool` column (backed by `ColumnUInt8`) yields a
+        /// `UInt64` `Field`, but `convertColumnToTypeOrNull` re-tags it back to `Bool` before delegating
+        /// (see `retagBoolInField`), so it matches `convertFieldToType` for tag-sensitive targets too:
+        /// `Bool -> String` gives 'true'/'false', not '1'/'0'. Numeric targets are value-preserving
+        /// either way. Nested `Bool` (Array/Tuple/Map, and under Nullable) is re-tagged recursively.
         {"Bool", Field(true), "Int32"},
         {"Bool", Field(false), "UInt8"},
+        {"Bool", Field(true), "String"},
+        {"Bool", Field(false), "String"},
+        {"Nullable(Bool)", Field(true), "Nullable(String)"},
+        {"Array(Bool)", Field(Array{true, false}), "Array(String)"},
+        {"Tuple(Bool, UInt8)", Field(Tuple{true, UInt64(7)}), "Tuple(String, String)"},
+        {"Map(String, Bool)", Field(Map{Tuple{String("k"), true}}), "Map(String, String)"},
+
+        /// Controls: other custom/dedicated-column types already round-trip their `Field` tag through
+        /// `IColumn::get`, so their textual conversions match `convertFieldToType` without re-tagging.
+        {"Enum8('a' = 1, 'b' = 2)", Field(Int64(1)), "String"},
+        {"Date", Field(UInt64(19000)), "String"},
+        {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "String"},
+        {"IPv4", Field(IPv4(0x7f000001)), "String"},
     };
 
     for (const auto & c : cases)

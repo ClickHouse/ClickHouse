@@ -17,8 +17,13 @@ if __name__ == "__main__":
 
     # Note, LSan does not compatible with debugger
     if "asan" not in job_name:
-        # With gdb we will capture stacktrace in case of abnormal termination and timeout (45 mins)
-        command_launcher = "timeout -s INT -v 45m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex run -ex bt -ex 'thread apply all bt' -arg"
+        # With gdb we will capture stacktrace in case of abnormal termination and timeout.
+        # The tests run sequentially in a single binary, so the timeout must cover the sum of
+        # all test durations: under TSan that sum has grown to 38-40 minutes on average, and a
+        # run on a slower machine regularly exceeded the previous 45-minute budget, blaming
+        # whichever test happened to be running at that moment. Keep several tens of minutes
+        # of headroom (the praktika job-level timeout is 5 hours).
+        command_launcher = "timeout -s INT -v 90m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex run -ex bt -ex 'thread apply all bt' -arg"
     else:
         command_launcher = ""
 
