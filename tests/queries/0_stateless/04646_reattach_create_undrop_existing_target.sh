@@ -11,8 +11,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # interpreter never touches an existing table of the target name: plain `CREATE TABLE dst`,
 # `CREATE TABLE IF NOT EXISTS dst`, `ATTACH TABLE dst`, and `UNDROP TABLE dst` either fail with
 # `TABLE_ALREADY_EXISTS` or turn into a no-op when `dst` already exists, so the hook must NOT
-# `DETACH`/`ATTACH` the existing `dst` for them. The `CREATE OR REPLACE`/`REPLACE` forms do replace an
-# existing `dst`, so for them the target stays covered.
+# `DETACH`/`ATTACH` the existing `dst` for them. The replacing forms — `CREATE OR REPLACE`/`REPLACE` —
+# are out of scope as well: they validate the new definition before the replacement path reaches `dst`,
+# and whether that validation passes cannot be predicted by the hook, so their destination is never
+# eligible either.
 
 MY_CLICKHOUSE_CLIENT=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=trace/g')
 
@@ -52,16 +54,16 @@ function check_noop_without_detach()
     fi
 }
 
-# The statement must succeed and the existing target must be detached (control for the replacing forms).
-function check_succeeds_with_detach()
+# The statement must succeed, and the existing target must not be detached.
+function check_succeeds_without_detach()
 {
     run_with_reattach "$1"
     if [ "$REATTACH_STATUS" -ne 0 ]; then
         echo "FAIL (client error: $REATTACH_OUTPUT)"
     elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
-        echo "OK"
+        echo "FAIL (existing target was detached for a replacing statement)"
     else
-        echo "FAIL (existing target was not detached for a replacing statement)"
+        echo "OK"
     fi
 }
 
@@ -77,8 +79,8 @@ check_fails_without_detach "UNDROP TABLE t_reattach_dst" "t_reattach_dst" "TABLE
 # The data of the original table must be intact after the failing/no-op statements above.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_reattach_dst"
 
-# Control: the replacing forms really do touch the existing target, so it stays covered by the hook.
-check_succeeds_with_detach "CREATE OR REPLACE TABLE t_reattach_dst (a UInt64) ENGINE = MergeTree ORDER BY a" "t_reattach_dst"
-check_succeeds_with_detach "REPLACE TABLE t_reattach_dst (a UInt64) ENGINE = MergeTree ORDER BY a" "t_reattach_dst"
+# The replacing forms are out of scope: their destination is left alone even when the statement succeeds.
+check_succeeds_without_detach "CREATE OR REPLACE TABLE t_reattach_dst (a UInt64) ENGINE = MergeTree ORDER BY a" "t_reattach_dst"
+check_succeeds_without_detach "REPLACE TABLE t_reattach_dst (a UInt64) ENGINE = MergeTree ORDER BY a" "t_reattach_dst"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dst"
