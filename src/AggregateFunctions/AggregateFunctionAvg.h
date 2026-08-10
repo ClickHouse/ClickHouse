@@ -58,42 +58,95 @@ ValueType avgResultToValue(Float64 v, UInt32 scale = 0)
     }
 }
 
+/// Divide an exact integer numerator by a positive integer denominator, rounding half to even
+/// (matching `nearbyint` used by the Float64 path), and clamp the quotient to the result's
+/// native range. The quotient can be out of that range only if the accumulated sum itself has
+/// overflowed (and the result is garbage anyway); the clamp keeps the value representable.
+template <typename ResultNativeType, typename WideType>
+ResultNativeType divideRoundHalfToEvenClamped(WideType num, WideType den)
+{
+    WideType quotient = num / den;
+    const WideType remainder = num - quotient * den;
+
+    WideType abs_remainder = remainder;
+    if constexpr (std::numeric_limits<WideType>::is_signed)
+        if (remainder < 0)
+            abs_remainder = -remainder;
+
+    /// 2 * |remainder| <=> den, written without the doubling so it cannot overflow WideType.
+    const WideType gap = den - abs_remainder;
+    if (abs_remainder > gap || (abs_remainder == gap && (quotient & 1) != 0))
+    {
+        if constexpr (std::numeric_limits<WideType>::is_signed)
+            quotient += (num < 0 ? -1 : 1);
+        else
+            ++quotient;
+    }
+
+    if (quotient > WideType(std::numeric_limits<ResultNativeType>::max()))
+        return std::numeric_limits<ResultNativeType>::max();
+    if constexpr (std::numeric_limits<WideType>::is_signed)
+        if (quotient < WideType(std::numeric_limits<ResultNativeType>::lowest()))
+            return std::numeric_limits<ResultNativeType>::lowest();
+
+    return static_cast<ResultNativeType>(quotient);
+}
+
 /// Convert an exact integer numerator and denominator of avg to an integer-backed result type
 /// (Date/DateTime/Time and their 64-bit variants), rounding the quotient in integer space.
 /// The Float64 division loses precision for values above 2^53 (e.g. nanosecond DateTime64 ticks),
-/// so rounding its result cannot restore the exact average. Rounds half to even, matching
-/// `nearbyint` used by the Float64 path. Returns 0 (the epoch) for the empty set.
+/// so rounding its result cannot restore the exact average. Returns 0 (the epoch) for the
+/// empty set.
 template <typename ValueType, typename Numerator, typename Denominator>
 ValueType avgResultToValueExact(const Numerator & numerator, Denominator denominator)
 {
     using ResultNativeType = NativeType<ValueType>;
+    using NumeratorNativeType = NativeType<Numerator>;
 
     if (denominator == 0)
         return ValueType(0);
 
-    Int256 num;
-    if constexpr (is_decimal<Numerator>)
-        num = numerator.value;
+    /// This conversion runs once per aggregation key, so it must be cheap: the division runs in
+    /// the narrowest arithmetic that fits the numerator. UInt64/Int64 sums of days/seconds
+    /// divide natively; Decimal128 sums of DateTime64/Time64 ticks need the compiler's 128-bit
+    /// arithmetic, which is still several times faster than Int256, whose operations are
+    /// emitted as out-of-line calls.
+    if constexpr (sizeof(NumeratorNativeType) <= 8)
+    {
+        if constexpr (!std::numeric_limits<NumeratorNativeType>::is_signed)
+        {
+            return ValueType(divideRoundHalfToEvenClamped<ResultNativeType>(
+                static_cast<NumeratorNativeType>(numerator), static_cast<NumeratorNativeType>(denominator)));
+        }
+        else
+        {
+            /// A signed division needs the denominator to fit the signed range, which always
+            /// holds for a row count; otherwise fall through to the 128-bit division.
+            if (denominator <= static_cast<Denominator>(std::numeric_limits<NumeratorNativeType>::max())) [[likely]]
+                return ValueType(divideRoundHalfToEvenClamped<ResultNativeType>(
+                    static_cast<NumeratorNativeType>(numerator), static_cast<NumeratorNativeType>(denominator)));
+        }
+    }
+
+    if constexpr (sizeof(NumeratorNativeType) <= 16)
+    {
+        using CompilerInt128 = __int128;
+        CompilerInt128 num;
+        if constexpr (is_decimal<Numerator>)
+            num = static_cast<CompilerInt128>(numerator.value);
+        else
+            num = numerator;
+        return ValueType(divideRoundHalfToEvenClamped<ResultNativeType>(num, static_cast<CompilerInt128>(denominator)));
+    }
     else
-        num = numerator;
-
-    const Int256 den = denominator;
-    Int256 quotient = num / den;
-    const Int256 remainder = num % den;
-    const Int256 twice_abs_remainder = remainder < 0 ? -2 * remainder : 2 * remainder;
-
-    if (twice_abs_remainder > den || (twice_abs_remainder == den && (quotient & 1) != 0))
-        quotient += (num < 0 ? -1 : 1);
-
-    /// The exact average always lies within the range of the inputs, so the quotient is out of
-    /// the result's range only if the accumulated sum has overflowed (and the result is garbage
-    /// anyway); clamp to keep the value representable.
-    if (quotient > Int256(std::numeric_limits<ResultNativeType>::max()))
-        return ValueType(std::numeric_limits<ResultNativeType>::max());
-    if (quotient < Int256(std::numeric_limits<ResultNativeType>::lowest()))
-        return ValueType(std::numeric_limits<ResultNativeType>::lowest());
-
-    return ValueType(static_cast<ResultNativeType>(quotient));
+    {
+        Int256 num;
+        if constexpr (is_decimal<Numerator>)
+            num = numerator.value;
+        else
+            num = numerator;
+        return ValueType(divideRoundHalfToEvenClamped<ResultNativeType>(num, Int256(denominator)));
+    }
 }
 
 struct Settings;
@@ -214,9 +267,9 @@ public:
         const auto & res_type = this->getResultType();
         WhichDataType result_which(res_type);
 
-        Float64 v = compute_avg();
-
-        /// Processing of results with Date/Time types
+        /// Processing of results with Date/Time types. The Float64 average is computed only on
+        /// the paths that consume it: the exact integer paths run once per aggregation key and
+        /// must not pay for an unused Float64 division.
         if (callOnBasicType<void, false, false, false, true>(result_which.idx, [&](auto types) -> bool
         {
             using ValueType = typename decltype(types)::RightType;
@@ -236,20 +289,20 @@ public:
                         return true;
                     }
                 }
-                col.getData().push_back(avgResultToValue<ValueType>(v, col.getScale()));
+                col.getData().push_back(avgResultToValue<ValueType>(compute_avg(), col.getScale()));
             }
             else
             {
                 if constexpr (std::is_integral_v<Numerator> && std::is_integral_v<Denominator>)
                     col.getData().push_back(avgResultToValueExact<ValueType>(this->data(place).numerator, this->data(place).denominator));
                 else
-                    col.getData().push_back(avgResultToValue<ValueType>(v));
+                    col.getData().push_back(avgResultToValue<ValueType>(compute_avg()));
             }
             return true;
         }))
             return;
 
-        assert_cast<ColumnVector<Float64> &>(to).getData().push_back(v);
+        assert_cast<ColumnVector<Float64> &>(to).getData().push_back(compute_avg());
     }
 
 
