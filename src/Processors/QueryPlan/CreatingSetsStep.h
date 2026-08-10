@@ -88,6 +88,14 @@ private:
     PreparedSetsCachePtr prepared_sets_cache;
 };
 
+/// Collect every set in `plan` that is already filled, keyed by `FutureSet::getHash`.
+BuiltSetsByHashPtr collectBuiltSets(const QueryPlan & plan);
+
+/// Adopt sets that `built` already filled into the matching (still empty) sets of `plan`, so that
+/// optimizing `plan` does not re-run those subqueries. Sets with no match are left untouched and
+/// build as usual.
+void reuseBuiltSets(QueryPlan & plan, const BuiltSetsByHashPtr & built);
+
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context);
 
 void addDelayedCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);

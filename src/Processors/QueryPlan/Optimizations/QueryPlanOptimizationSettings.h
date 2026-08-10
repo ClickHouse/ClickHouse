@@ -16,6 +16,9 @@ struct Settings;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+struct BuiltSetsByHash;
+using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
+
 class QueryPlan;
 
 struct QueryPlanOptimizationSettings
@@ -216,7 +219,9 @@ struct QueryPlanOptimizationSettings
 
     bool is_explain;
 
-    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
+    /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
+    /// of re-running the same subqueries.
+    std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;

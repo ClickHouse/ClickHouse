@@ -3,6 +3,7 @@
 #include <city.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -174,6 +175,7 @@ public:
     /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
     void replaceSetAndKey(SetAndKeyPtr set);
     SetAndKeyPtr detachSetAndKey();
+    const SetAndKeyPtr & getSetAndKey() const { return set_and_key; }
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
@@ -207,6 +209,16 @@ private:
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+
+/// Sets that some earlier plan build already filled, keyed by `FutureSet::getHash`. A second plan
+/// build of the same query (automatic parallel replicas builds one to decide whether replicas pay
+/// off) can adopt them instead of re-running the subqueries: `FutureSetFromSubquery::build` and
+/// `buildOrderedSetInplace` both return early once the set is created.
+struct BuiltSetsByHash
+{
+    std::map<FutureSet::Hash, SetAndKeyPtr> sets;
+};
+using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 /// Container for all the sets used in query.
 class PreparedSets
