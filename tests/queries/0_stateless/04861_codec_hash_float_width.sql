@@ -23,13 +23,16 @@ DROP TABLE IF EXISTS alp_32;
 DROP TABLE IF EXISTS alp_64;
 CREATE TABLE alp_mix (f32 Float32 CODEC(ALP), f64 Float64 CODEC(ALP))
     ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
 CREATE TABLE alp_32 (f32 Float32 CODEC(ALP))
     ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
 CREATE TABLE alp_64 (f64 Float64 CODEC(ALP))
     ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
 INSERT INTO alp_mix SELECT sin(number) * 1000, sin(number) * 1000 FROM numbers(20000);
 INSERT INTO alp_32 SELECT sin(number) * 1000 FROM numbers(20000);
 INSERT INTO alp_64 SELECT sin(number) * 1000 FROM numbers(20000);
@@ -43,7 +46,8 @@ SELECT (SELECT sum(data_compressed_bytes) FROM system.parts
 DROP TABLE IF EXISTS alp_rev;
 CREATE TABLE alp_rev (f64 Float64 CODEC(ALP), f32 Float32 CODEC(ALP))
     ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
 INSERT INTO alp_rev SELECT sin(number) * 1000, sin(number) * 1000 FROM numbers(20000);
 SELECT (SELECT sum(data_compressed_bytes) FROM system.parts
             WHERE database = currentDatabase() AND table = 'alp_rev' AND active)
@@ -57,13 +61,16 @@ DROP TABLE IF EXISTS fpc_32;
 DROP TABLE IF EXISTS fpc_64;
 CREATE TABLE fpc_mix (f32 Float32 CODEC(FPC), f64 Float64 CODEC(FPC))
     ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
 CREATE TABLE fpc_32 (f32 Float32 CODEC(FPC))
     ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
 CREATE TABLE fpc_64 (f64 Float64 CODEC(FPC))
     ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000;
+    SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 1000000000,
+             index_granularity = 8192, index_granularity_bytes = 10485760;
 INSERT INTO fpc_mix SELECT sin(number) * 1000, sin(number) * 1000 FROM numbers(20000);
 INSERT INTO fpc_32 SELECT sin(number) * 1000 FROM numbers(20000);
 INSERT INTO fpc_64 SELECT sin(number) * 1000 FROM numbers(20000);
