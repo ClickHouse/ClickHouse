@@ -24,9 +24,10 @@ def normalize_path(file):
 
 def get_docs_teams_to_request(changed_files):
     files = [normalize_path(file) for file in changed_files]
+    files = [file for file in files if file.startswith(DOCS_PREFIX)]
     teams = []
 
-    if not files or not all(file.startswith(DOCS_PREFIX) for file in files):
+    if not files:
         return teams
 
     if any(file.startswith(CLICKPIPES_DOCS_PREFIX) for file in files):
