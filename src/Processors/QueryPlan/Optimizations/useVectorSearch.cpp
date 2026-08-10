@@ -387,10 +387,10 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
 
     ActionsDAG & expression = expression_step->getExpression();
 
-    bool optimize_plan = !settings.vector_search_with_rescoring;
-    /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
-    /// vector row hints only describe the original candidates and must not filter
-    /// rows added for the final merge.
+    /// FINAL can change the visible row set after vector index analysis.
+    /// The optimized `_distance` rewrite also enables exact-row filtering in
+    /// MergeTreeRangeReader, so keep it disabled under FINAL like rescoring.
+    bool optimize_plan = !settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
     bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
     if (optimize_plan)
     {
