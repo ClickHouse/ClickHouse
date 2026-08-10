@@ -766,3 +766,32 @@ ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_oc VALUES (1)"
 check_if_not_detached "OPTIMIZE TABLE t_reattach_oc ON CLUSTER test_shard_localhost FINAL" "t_reattach_oc"
 check_if_detached "OPTIMIZE TABLE t_reattach_oc FINAL" "t_reattach_oc"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_oc"
+
+# Tables of a `URL` database are resolved dynamically, and the resolution itself is not free of side
+# effects: it infers the table structure from the data, and for a `file://` URL it requires the read
+# source grant already in `tryGetTable` (see `DatabaseURL::getTableImpl`). The hook must reject the
+# database (it does not support detaching tables) before resolving any table of it: `EXISTS TABLE`
+# requires only `SHOW TABLES`, so for a user without the read source grant the hook's eligibility
+# probe would otherwise fail the query with `ACCESS_DENIED`.
+URL_DB="db_reattach_url_${CLICKHOUSE_DATABASE}"
+URL_USER="user_reattach_url_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${URL_DB}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${URL_USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${URL_DB} ENGINE = URL('file://')"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${URL_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT SHOW TABLES ON ${URL_DB}.* TO ${URL_USER}"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${URL_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "EXISTS TABLE ${URL_DB}.\`${CLICKHOUSE_USER_FILES_UNIQUE}/02461_data.csv\`" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -ne 0 ]; then
+    echo "FAIL (client error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE"; then
+    echo "FAIL (a URL database table was detached)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP USER ${URL_USER}"
+${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${URL_DB}"

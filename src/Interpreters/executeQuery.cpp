@@ -1964,6 +1964,16 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
 
         const auto & catalog = DatabaseCatalog::instance();
 
+        /// Check the database before resolving the table: in databases that resolve tables dynamically,
+        /// the resolution itself is not free of side effects — e.g. a `URL` database infers the table
+        /// structure from the data and throws `ACCESS_DENIED` already in `tryGetTable` when the user
+        /// lacks the read source grant (see `DatabaseURL::getTableImpl`), which would fail an outer
+        /// query (e.g. `EXISTS TABLE`) that succeeds without the hook. All such databases do not
+        /// support detaching tables, so resolving their tables is never needed here.
+        const auto database = catalog.tryGetDatabase(table_id.getDatabaseName());
+        if (!database || !database->supportsDetachingTables())
+            continue;
+
         /// If table doesn't store data on disk, the data will be lost after detach.
         /// An action lock (e.g. from `SYSTEM STOP MERGES`) is held against the current storage object and
         /// is discarded by a `DETACH`/`ATTACH` cycle — exactly as by a manual `DETACH TABLE` + `ATTACH TABLE`.
@@ -1971,10 +1981,8 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// action before running queries); it is deliberately not atomic with the detach, so a lock installed
         /// concurrently after this check can still be lost. That matches manual `DETACH` semantics and is
         /// acceptable for this testing-only hook.
-        auto [database, table] = catalog.tryGetDatabaseAndTable(table_id, context);
-        if (!database
-            || !database->supportsDetachingTables()
-            || !table
+        auto table = catalog.tryGetTable(table_id, context);
+        if (!table
             || !table->storesDataOnDisk()
             || context->getActionLocksManager()->hasAny(table))
             continue;
