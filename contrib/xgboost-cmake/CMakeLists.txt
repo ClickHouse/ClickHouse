@@ -1,4 +1,15 @@
-option(ENABLE_XGBOOST "Enable xgboost" ${ENABLE_LIBRARIES})
+# `xgboost/src/common/numa_topo.cc` includes <linux/mempolicy.h>. That kernel uapi
+# header is absent from the loongarch64 sysroot, which is the only Linux sysroot in
+# `contrib/sysroot` that does not ship it.
+if (ARCH_LOONGARCH64)
+    if (ENABLE_XGBOOST)
+        message (${RECONFIGURE_MESSAGE_LEVEL}
+            "xgboost is disabled implicitly because the architecture is not supported. Use -DENABLE_XGBOOST=0")
+    endif()
+    set(ENABLE_XGBOOST OFF)
+else()
+    option(ENABLE_XGBOOST "Enable xgboost" ${ENABLE_LIBRARIES})
+endif()
 
 if (NOT ENABLE_XGBOOST)
     message(STATUS "Not using xgboost")
@@ -79,33 +90,59 @@ add_library(_dmlc_core ${DMLC_CORE_SOURCES} ${DMLC_CORE_HEADERS})
 target_include_directories(_dmlc_core SYSTEM PUBLIC ${DMLC_CORE_INCLUDE_DIR} ${DMLC_CORE_BINARY_DIR})
 target_compile_features(_dmlc_core PRIVATE cxx_std_14)
 
-set(DMLC_CORE_COMPILE_DEFINITIONS
-    -DDMLC_USE_CXX11=1
-    -DDMLC_USE_CXX14=1
-    -D_XOPEN_SOURCE=700
-    -D_POSIX_SOURCE
-    -D_POSIX_C_SOURCE=200809L
-    -D_DARWIN_C_SOURCE
-    -D__USE_XOPEN2K8
-    -DDMLC_CORE_USE_CMAKE
+# `dmlc/base.h` reads the build configuration either from the `build_config.h`
+# generated below, when `DMLC_CORE_USE_CMAKE` is defined, or from
+# `build_config_default.h` otherwise. The two headers disagree, so every target that
+# includes a dmlc header must make the same choice: letting `_xgboost` fall back to
+# the defaults while `_dmlc_core` uses the generated header means the two halves of
+# the same library see different values of `DMLC_LITTLE_ENDIAN` and
+# `DMLC_LOG_STACK_TRACE`. The definitions that select and describe the configuration
+# are therefore PUBLIC, so they reach `_xgboost` through the link dependency.
+set(DMLC_CORE_PUBLIC_COMPILE_DEFINITIONS
+    DMLC_USE_CXX11=1
+    DMLC_USE_CXX14=1
+    DMLC_CORE_USE_CMAKE
 )
 
-# `fopen64` exists in glibc (Linux), not on macOS/FreeBSD.
-if (OS_LINUX)
-    list(APPEND DMLC_CORE_COMPILE_DEFINITIONS -DDMLC_FOPEN_64_PRESENT)
+# Feature test macros, only needed while compiling dmlc itself.
+set(DMLC_CORE_PRIVATE_COMPILE_DEFINITIONS
+    _XOPEN_SOURCE=700
+    _POSIX_SOURCE
+    _POSIX_C_SOURCE=200809L
+    _DARWIN_C_SOURCE
+    __USE_XOPEN2K8
+)
+
+target_compile_definitions(_dmlc_core
+    PUBLIC ${DMLC_CORE_PUBLIC_COMPILE_DEFINITIONS}
+    PRIVATE ${DMLC_CORE_PRIVATE_COMPILE_DEFINITIONS}
+)
+
+# The settings below are consumed by `configure_file` through `#cmakedefine`, which
+# reads plain CMake variables at configure time. They are not compile definitions.
+
+# `fopen64` is a glibc extension: musl, macOS and FreeBSD only provide `fopen`.
+# Leaving the variable unset makes `build_config.h` map `fopen64` onto `std::fopen`.
+if (OS_LINUX AND NOT USE_MUSL)
+    set(DMLC_FOPEN_64_PRESENT 1)
 endif()
 
 # `nanosleep` is POSIX and present on all supported targets.
-list(APPEND DMLC_CORE_COMPILE_DEFINITIONS -DDMLC_NANOSLEEP_PRESENT)
+set(DMLC_NANOSLEEP_PRESENT 1)
 
 # <cxxabi.h> is provided by the vendored libc++.
-list(APPEND DMLC_CORE_COMPILE_DEFINITIONS -DDMLC_CXXABI_H_PRESENT)
+set(DMLC_CXXABI_H_PRESENT 1)
 
-# Not a compile definition but a build_config.h.in constant.
-# All ClickHouse target architectures (x86-64, AArch64) are little-endian.
-set(DMLC_CMAKE_LITTLE_ENDIAN 1)
+# `DMLC_EXECINFO_H_PRESENT` is deliberately left unset. Setting it enables dmlc's own
+# stack traces, which call `backtrace_symbols`; that function lives in `libexecinfo`
+# rather than in libc on FreeBSD. ClickHouse prints its own stack traces anyway.
 
-target_compile_definitions(_dmlc_core PRIVATE ${DMLC_CORE_COMPILE_DEFINITIONS})
+# s390x is the only big-endian target that ClickHouse supports.
+if (ARCH_S390X)
+    set(DMLC_CMAKE_LITTLE_ENDIAN 0)
+else()
+    set(DMLC_CMAKE_LITTLE_ENDIAN 1)
+endif()
 
 # Generate config with constants into binary directory
 configure_file(
