@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # The multi-member slice of the type-evolution matrix (see
-# `04836_type_evolution_matrix_nullable.sh` for the design): one `Nested` group whose members
+# `04842_type_evolution_matrix_nullable.sh` for the design): one `Nested` group whose members
 # are in different evolution states at once. A shared-offsets group is synthesized from all
 # requested members, so the interaction of a type-diverged member (unrewritten after a
 # `MODIFY COLUMN`), a member missing from the part (dropped and re-added), and an untouched

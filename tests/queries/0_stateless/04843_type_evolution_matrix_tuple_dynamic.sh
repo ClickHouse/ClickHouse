@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # The `Tuple` and `Dynamic` slices of the type-evolution matrix (see the `Nullable` slice in
-# `04836_type_evolution_matrix_nullable.sh` for the design): a part written before a
+# `04842_type_evolution_matrix_nullable.sh` for the design): a part written before a
 # `MODIFY COLUMN` that wrapped a `Nested` member into `Tuple(...)` or `Dynamic` keeps the
 # unwrapped data until the mutation rewrites it, and subcolumn reads of the member must resolve
 # against the part's own type in every projection order. Also covers a depth-3 subcolumn path

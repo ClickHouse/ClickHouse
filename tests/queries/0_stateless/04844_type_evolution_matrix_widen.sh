@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # The widening and `LowCardinality` slices of the type-evolution matrix (see
-# `04836_type_evolution_matrix_nullable.sh` for the design). These evolutions change the leaf
+# `04842_type_evolution_matrix_nullable.sh` for the design). These evolutions change the leaf
 # column class without adding a wrapper level, so the cells pin value conversion correctness
 # (an old part read through the new type must return converted values) and the `.size0`
 # subcolumn, which exists for every `Array` regardless of the element type.
