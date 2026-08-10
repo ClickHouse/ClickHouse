@@ -3,6 +3,10 @@
 -- no-parallel-replicas: with parallel replicas the vector search optimization is disabled and the
 -- read layer uses a different pool, so the concurrency this test pins would not exist.
 
+-- Several threads search a vector similarity index over ONE part, so that the per-part vector
+-- search read hints are written and consumed while more than one reader is alive for that part. The
+-- assertions pin the split across readers, the index search, and equality with a single threaded read.
+
 -- The test runner can enable the query result cache. A cache hit returns an earlier attempt's answer
 -- without building a plan or reading the part, which would make every assertion below replay a stale
 -- result instead of measuring this attempt. Session wide, so a future assertion cannot forget it.

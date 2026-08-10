@@ -12,7 +12,6 @@ from ci.defs.defs import (
     JobNames,
     RunnerLabels,
 )
-
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 # Keeper stress spins nested Docker inside the integration-tests-runner container.
 # Using nearly all host RAM for the outer container can starve the host runner
@@ -202,7 +201,7 @@ class JobConfigs:
     )
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
-        runs_on=RunnerLabels.ARM_LARGE,
+        runs_on=RunnerLabels.ARM_SMALL,
         command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
@@ -531,28 +530,6 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
-    # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
-    # stages the .options files, a source-derived fallback all.dict, and seed
-    # corpora repacked from tests/queries/0_stateless/*.sql into the build
-    # output (see ArtifactConfigs.fuzzers), so the produced artifact also
-    # depends on the inputs under tests/fuzz and on the stateless test queries,
-    # which the shared build digest does not cover. Extend the digest of the
-    # fuzzers build only, so that a dictionary generation or corpus change
-    # cannot cache-hit a stale artifact while the other builds are unaffected.
-    special_build_jobs = [
-        (
-            job.set_digest_config(
-                Job.CacheDigestConfig(
-                    include_paths=build_digest_config.include_paths
-                    + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
-                    with_git_submodules=True,
-                )
-            )
-            if job.parameter == BuildTypes.ARM_FUZZERS
-            else job
-        )
-        for job in special_build_jobs
-    ]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
@@ -561,9 +538,14 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
+        # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
+        # images before installing, not just afterwards. Best-effort: praktika does
+        # not propagate a hook's exit code to the job status.
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
@@ -595,9 +577,12 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
+        # See install_check_jobs above.
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
@@ -837,7 +822,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
-            for total_batches in (2,)
+            for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -1291,6 +1276,9 @@ class JobConfigs:
                 "./ci/jobs/compatibility_check.py",
             ],
         ),
+        # Shares the style-checker runners with Install packages and leaves ~4 GB of docker
+        # residue per run, which is what the next job on that runner inherits.
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
@@ -1314,6 +1302,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1352,6 +1341,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1380,6 +1370,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/log_parser.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
+                "./tests/config/config.d/core_dump.yaml",
                 "./ci/docker/fuzzer",
             ],
         ),
@@ -1500,26 +1491,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
     )
-    docs_job = Job.Config(
-        name=JobNames.DOCS,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="python3 ./ci/jobs/docs_job.py",
-        digest_config=Job.CacheDigestConfig(
-            # Restrict to the legacy Docusaurus content tree so that PRs which
-            # only touch the new Mintlify site (./docs/docs.json, ./docs/*.mdx,
-            # etc.) do not trigger this job.
-            include_paths=[
-                "./docs/en/",
-                "./docs/changelogs/",
-                "./ci/jobs/docs_job.py",
-                "CHANGELOG.md",
-                "./src/Functions",
-            ],
-        ),
-        run_in_docker="clickhouse/docs-builder",
-        requires=[ArtifactNames.CH_ARM_BINARY],
-        run_after=[JobNames.STYLE_CHECK],
-    )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -1529,22 +1500,20 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job_mintlify.py",
                 "./ci/jobs/scripts/docs",
+                "./utils/generate-async-metrics-docs",
+                "./utils/generate-system-tables-docs",
             ],
-            # Exclude everything currently in ./docs so that this job runs only
-            # on files that are NOT part of the legacy docs tree (i.e. the new
-            # Mintlify site files such as ./docs/docs.json and any new Mintlify
-            # content). Add new excludes here if more non-Mintlify content is
-            # introduced under ./docs.
+            # These files are internal inputs or contributor documentation, not
+            # pages published by Mintlify.
             exclude_paths=[
                 "./docs/README.md",
                 "./docs/_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
-                "./docs/en/",
             ],
         ),
-        run_in_docker="clickhouse/docs-builder"
+        run_in_docker="clickhouse/docs-builder",
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
@@ -1674,19 +1643,9 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
-        # The release binary is used to generate the fuzzer dictionary (all.dict)
-        # from the actual set of functions, data types and keywords.
-        requires=[
-            ArtifactNames.ARM_FUZZERS,
-            ArtifactNames.FUZZERS_CORPUS,
-            ArtifactNames.CH_ARM_RELEASE,
-        ],
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/libfuzzer_test_check.py",
-                "./tests/fuzz/update_dict.sh",
-                "./tests/fuzz/dictionaries/old.dict",
-            ],
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(

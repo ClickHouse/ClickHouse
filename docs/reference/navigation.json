@@ -113,7 +113,16 @@
                 "reference/statements/create/role",
                 "reference/statements/create/row-policy",
                 "reference/statements/create/settings-profile",
-                "reference/statements/create/table",
+                {
+                  "expanded": false,
+                  "group": "TABLE",
+                  "pages": [
+                    "reference/statements/create/table",
+                    "reference/statements/create/table/codec",
+                    "reference/statements/create/table/temporary-table",
+                    "reference/statements/create/table/replace-table"
+                  ]
+                },
                 "reference/statements/create/user",
                 "reference/statements/create/view"
               ]
@@ -319,6 +328,7 @@
                 "reference/engines/table-engines/integrations/arrowflight",
                 "reference/engines/table-engines/integrations/azure-queue",
                 "reference/engines/table-engines/integrations/azureBlobStorage",
+                "reference/engines/table-engines/integrations/bigquery",
                 "reference/engines/table-engines/integrations/deltalake",
                 "reference/engines/table-engines/integrations/embedded-rocksdb",
                 "reference/engines/table-engines/integrations/ExternalDistributed",
@@ -428,7 +438,7 @@
           "expanded": false,
           "group": "Regular functions",
           "pages": [
-            "reference/functions/regular-functions/regular-functions-index",
+            "reference/functions/regular-functions/overview",
             "reference/functions/regular-functions/ai-functions",
             "reference/functions/regular-functions/arithmetic-functions",
             "reference/functions/regular-functions/array-functions",
@@ -474,7 +484,6 @@
             "reference/functions/regular-functions/numeric-indexed-vector-functions",
             "reference/functions/regular-functions/other-functions",
             "reference/functions/regular-functions/random-functions",
-            "reference/functions/regular-functions/overview",
             "reference/functions/regular-functions/rounding-functions",
             "reference/functions/regular-functions/splitting-merging-functions",
             "reference/functions/regular-functions/string-functions",
@@ -674,6 +683,7 @@
             "reference/functions/table-functions/arrowflight",
             "reference/functions/table-functions/azureBlobStorage",
             "reference/functions/table-functions/azureBlobStorageCluster",
+            "reference/functions/table-functions/bigquery",
             "reference/functions/table-functions/cluster",
             "reference/functions/table-functions/deltalake",
             "reference/functions/table-functions/deltalakeCluster",
@@ -699,6 +709,7 @@
             "reference/functions/table-functions/jdbc",
             "reference/functions/table-functions/loop",
             "reference/functions/table-functions/merge",
+            "reference/functions/table-functions/mergeTreeCodecBlockCounts",
             "reference/functions/table-functions/mergeTreeIndex",
             "reference/functions/table-functions/mergeTreeProjection",
             "reference/functions/table-functions/mergeTreeTextIndex",
@@ -1000,6 +1011,7 @@
         "reference/system-tables/database_replicas",
         "reference/system-tables/databases",
         "reference/system-tables/dead_letter_queue",
+        "reference/system-tables/delta_lake_metadata_log",
         "reference/system-tables/delta_metadata_log",
         "reference/system-tables/detached_parts",
         "reference/system-tables/detached_tables",
@@ -1035,6 +1047,7 @@
         "reference/system-tables/jemalloc_stats",
         "reference/system-tables/jemalloc_profile_text",
         "reference/system-tables/kafka_consumers",
+        "reference/system-tables/keeper_storage",
         "reference/system-tables/keywords",
         "reference/system-tables/licenses",
         "reference/system-tables/macros",
@@ -1112,6 +1125,7 @@
         "reference/system-tables/user_defined_functions",
         "reference/system-tables/user_directories",
         "reference/system-tables/user_processes",
+        "reference/system-tables/user_query_log",
         "reference/system-tables/users",
         "reference/system-tables/view_refreshes",
         "reference/system-tables/warnings",
