@@ -120,6 +120,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
+extern const int FILE_ALREADY_EXISTS;
 }
 
 namespace Setting
@@ -247,7 +248,7 @@ IcebergMetadata::IcebergMetadata(
     /// TODO: for now it's okay to start/stop the task via constructor/destructor. Once refactored, we'd need to plumb startup/shutdown and schedule the task from there
     if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
     {
-        background_metadata_prefetch_task = context_->getIcebergSchedulePool().createTask(
+        background_metadata_prefetch_task = context_->getIcebergSchedulePool()->createTask(
             StorageID("", persistent_components.table_uuid ? *persistent_components.table_uuid : persistent_components.table_path),
             "backgroundMetadataPrefetcherThread",
             [this]
@@ -835,8 +836,10 @@ void IcebergMetadata::createInitial(
         /// The write uses `If-None-Match: *`, so S3 returns PreconditionFailed when the metadata file
         /// already exists (e.g. leftover data after `DROP TABLE` with `iceberg_delete_data_on_drop` off,
         /// or a concurrent creation). When `IF NOT EXISTS` was specified, this is expected.
-        if (if_not_exists && e.code() == ErrorCodes::S3_ERROR
-            && e.message().contains("PreconditionFailed"))
+        const bool precondition_failed
+            = (e.code() == ErrorCodes::S3_ERROR && e.message().contains("PreconditionFailed"))
+            || e.code() == ErrorCodes::FILE_ALREADY_EXISTS;
+        if (if_not_exists && precondition_failed)
             return;
         throw;
     }
@@ -919,7 +922,9 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
 
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
-    auto snapshot_logs = metadata_object->get(f_snapshot_log).extract<Poco::JSON::Array::Ptr>();
+    /// snapshot-log is optional; treat an absent log as empty rather than throwing.
+    Poco::JSON::Array::Ptr snapshot_logs
+        = metadata_object->has(f_snapshot_log) ? metadata_object->getArray(f_snapshot_log) : Poco::JSON::Array::Ptr(new Poco::JSON::Array);
 
     std::vector<Int64> ancestors;
     std::map<Int64, Int64> parents_list;
@@ -946,6 +951,16 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             current_snapshot_id = parents_list[current_snapshot_id];
         }
     }
+
+    /// Parse an Iceberg `timestamp-ms` field (unix milliseconds) into DateTime64.
+    auto parse_timestamp_ms = [](const Poco::JSON::Object::Ptr & object) -> DateTime64
+    {
+        auto value = object->getValue<std::string>(f_timestamp_ms);
+        ReadBufferFromString in(value);
+        DateTime64 time = 0;
+        readDateTime64Text(time, 6, in);
+        return time;
+    };
 
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
@@ -974,20 +989,25 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         else
             history_record.parent_id = 0;
 
+        bool found_in_snapshot_log = false;
+        /// A snapshot-id can occur in snapshot-log more than once (a rollback makes an older
+        /// snapshot current again); made_current_at is the LAST such time, so do not stop early.
         for (size_t j = 0; j < snapshot_logs->size(); ++j)
         {
             const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
             if (snapshot_log->getValue<Int64>(f_metadata_snapshot_id) == history_record.snapshot_id)
             {
-                auto value = snapshot_log->getValue<std::string>(f_timestamp_ms);
-                ReadBufferFromString in(value);
-                DateTime64 time = 0;
-                readDateTime64Text(time, 6, in);
-
-                history_record.made_current_at = time;
-                break;
+                history_record.made_current_at = parse_timestamp_ms(snapshot_log);
+                found_in_snapshot_log = true;
             }
         }
+
+        /// A retained snapshot can be missing from a trimmed snapshot-log; its log time is then
+        /// unrecoverable, so fall back to the snapshot's own commit time instead of the epoch.
+        /// `timestamp-ms` is required on a snapshot, so a missing one is corrupt metadata: let the
+        /// parse throw rather than reporting the epoch as if it were a real time.
+        if (!found_in_snapshot_log)
+            history_record.made_current_at = parse_timestamp_ms(snapshot);
 
         if (std::find(ancestors.begin(), ancestors.end(), history_record.snapshot_id) != ancestors.end())
             history_record.is_current_ancestor = true;
@@ -1122,26 +1142,58 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     }
 
 
-    /// All these "hints" with total rows or bytes are optional both in
-    /// metadata files and in manifest files, so we try all of them one by one
-    if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
-    {
-        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-        return total_rows;
-    }
-
-    Int64 result = 0;
+    /// Row counts stored in the metadata layers above the manifest files are not used as
+    /// data sources, because writers derive them instead of measuring them against the data:
+    /// - the snapshot summary's `total-records` is maintained incrementally (parent total
+    ///   plus this commit's delta), so a single corrupted commit anywhere in the table
+    ///   history silently poisons every later snapshot -- observed in the wild, making
+    ///   SELECT count() disagree with a full scan of the very same table;
+    /// - the manifest-list per-entry `added_rows_count`/`existing_rows_count` are stamped
+    ///   from snapshot summary fields by some writers (ClickHouse itself among them): a
+    ///   rewritten manifest list can list every manifest with `added_rows_count = 0` taken
+    ///   from a compaction snapshot's `added-records = 0`, so trusting these counts turned
+    ///   count() into 0 on a perfectly healthy table.
+    /// The manifest files are the ground truth: the per-data-file `record_count` is a
+    /// required field in every format version, so summing it over the live data files is
+    /// exact, at the cost of opening the manifest files (served from the Iceberg metadata
+    /// cache on repeated queries).
+    UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
             object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
-        auto data_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        auto position_deletes_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
-        if (!data_count.has_value() || !position_deletes_count.has_value())
+
+        /// Live delete files make an exact metadata-only count impossible:
+        /// - the record count of an equality delete file is the number of delete predicates,
+        ///   not the number of data rows they match;
+        /// - position delete records may be duplicated across delete files (the scan
+        ///   deduplicates matching (file_path, pos) pairs) and may reference data files that
+        ///   are no longer part of the snapshot, so subtracting their raw record count can
+        ///   miscount in both directions.
+        /// Bail out to a real scan, which applies the delete transformers and counts the
+        /// surviving rows exactly.
+        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
+            || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
             return {};
 
-        result += data_count.value() - position_deletes_count.value();
+        /// nullopt means a corrupted manifest file with a negative `record_count`: fail
+        /// closed to a real scan instead of returning a wrong count.
+        auto manifest_rows = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        if (!manifest_rows.has_value())
+            return {};
+        result += *manifest_rows;
     }
+
+    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
+    if (summary_total_rows.has_value() && *summary_total_rows != static_cast<size_t>(result))
+        LOG_WARNING(
+            log,
+            "Iceberg snapshot summary of table {} claims {} total rows, but its manifest files describe {} rows. "
+            "The snapshot summary is inconsistent with the table data (possibly a corrupted commit in the table "
+            "history), using the row count from the manifest files",
+            persistent_components.table_location,
+            *summary_total_rows,
+            result);
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return result;
