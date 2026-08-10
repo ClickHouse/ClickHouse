@@ -25,6 +25,9 @@ or look together at how we can increase them in a controlled manner.
 |-------------------------------|---------------------------------------------------------------------------------------------------|
 | **Databases**                 | 1000                                                                                              |
 | **Tables**                    | 5000                                                                                              |
+| **Views**                     | 15000                                                                                             |
+| **Dictionaries**              | 5000                                                                                              |
+| **Named collections** (private preview)        | 1000                                                                                              |
 | **Columns**                   | ~1000 (wide format is preferred to compact)                                                       |
 | **Partitions**                | 50k                                                                                               |
 | **Parts**                     | 10k (see [`max_parts_in_total`](/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000) setting) |
@@ -43,14 +46,16 @@ For warehouse replica and scaling limits, see [warehouses](/products/cloud/featu
 The values above are default guardrails. The limit enforced for a specific service may be higher than the value shown here, as larger services are configured with more headroom. The actual limit that applies to your service is included in the warning you receive as you approach it. For services already exceeding the above usage limits, table/database limits are set at the service's current table/database count plus 25%.
 
 <Note>
-For single-replica services in the Basic tier, the maximum number of databases is
-restricted to 100, and the maximum number of tables is restricted to 500. In
-addition, storage for Basic tier services is limited to 1 TB.
+For Single Replica Services, the maximum number of databases is restricted to 
+100, and the maximum number of tables is restricted to 500. In addition, storage
+for Basic Tier Services is limited to 1 TB. The view, dictionary, and named
+collection limits above are a single value that applies to all services,
+including Single Replica Services.
 </Note>
 
 Your service's specific warn and throw limits can be verified by querying system.server_settings. For example,
 ```
 SELECT * 
 FROM system.server_settings 
-WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw')
+WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
