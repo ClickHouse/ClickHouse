@@ -261,6 +261,29 @@ def _proc_for(servers):
     return proc
 
 
+def test_production_lock_wait_budgets_are_in_range():
+    """The shipped budgets, not the scaled-down ones every other arm runs with.
+
+    Deliberately takes no `fixture`: the fixture monkeypatches both constants to
+    TRAP_WAIT / KILL_WAIT, so an arm that took it could not see these values.
+    """
+    trap = ClickHouseProc.STOP_LOCK_WAIT_TIMEOUT_TRAP
+    kill = ClickHouseProc.STOP_LOCK_WAIT_TIMEOUT_KILL
+    assert trap >= 303, (
+        f"STOP_LOCK_WAIT_TIMEOUT_TRAP is {trap}s, below the fault-signal handler's "
+        "303s pre-core floor (SignalHandlers.cpp:172-183: up to 300x1s waiting for "
+        "the reporting thread, then a flat 3s log flush, before SIG_DFL is restored "
+        "and the signal re-raised). A shorter wait escalates to SIGKILL while the "
+        "handler is still in that prologue, so the core this leg exists to obtain "
+        "is truncated or never written."
+    )
+    assert kill <= 60, (
+        f"STOP_LOCK_WAIT_TIMEOUT_KILL is {kill}s. The kernel drops the flock with "
+        "the open file description as the process dies, so this only absorbs "
+        "scheduling delay and a large value just stalls the job."
+    )
+
+
 def test_wedged_server_is_killed_and_lock_released(fixture):
     """A server that ignores SIGTERM and SIGTRAP is escalated to SIGKILL."""
     server = fixture.start("run_r0")
