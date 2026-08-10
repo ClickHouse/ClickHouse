@@ -117,6 +117,10 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/reference/data-types/int-uint)) — Total number of returned object infos from iceberg iterator.
 - `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
 - `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
+- `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/reference/data-types/int-uint)) — Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.
+- `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/reference/data-types/int-uint)) — Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).
+- `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent requesting access tokens via the Entra ID refresh token grant in the OneLake catalog.
+- `ProfileEvent_OneLakeAccessTokenExpirations` ([UInt64](/reference/data-types/int-uint)) — Number of times the cached OneLake access token was found expired and renewed transparently.
 - `ProfileEvent_VectorSimilarityIndexCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an index granule has been found in the vector index cache.
 - `ProfileEvent_VectorSimilarityIndexCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times an index granule has not been found in the vector index cache and had to be read from disk.
 - `ProfileEvent_VectorSimilarityIndexCacheWeightLost` ([UInt64](/reference/data-types/int-uint)) — Approximate number of bytes evicted from the vector index cache.
@@ -833,6 +837,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_FilesystemCacheCheckCorrectness` ([UInt64](/reference/data-types/int-uint)) — Number of times FileCache::assertCacheCorrectness was called
 - `ProfileEvent_FilesystemCacheCheckCorrectnessMicroseconds` ([UInt64](/reference/data-types/int-uint)) — How much time does FileCache::assertCacheCorrectness takes
 - `ProfileEvent_FileSegmentWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Wait on DOWNLOADING state
+- `ProfileEvent_FileSegmentWaitTimeouts` ([UInt64](/reference/data-types/int-uint)) — Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 - `ProfileEvent_FileSegmentCompleteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Duration of FileSegment::complete() in filesystem cache
 - `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Lock file segment time
 - `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — File segment write() time
@@ -1775,6 +1780,9 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_FilesystemCacheEvictionThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache background eviction (removal) pool
 - `CurrentMetric_FilesystemCacheEvictionThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache background eviction pool running a task
 - `CurrentMetric_FilesystemCacheEvictionThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the filesystem cache background eviction pool
+- `CurrentMetric_FilesystemCacheDropCacheThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache pool for parallel keys removal on SYSTEM DROP FILESYSTEM CACHE
+- `CurrentMetric_FilesystemCacheDropCacheThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the filesystem cache keys removal pool running a task
+- `CurrentMetric_FilesystemCacheDropCacheThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the filesystem cache keys removal pool
 - `CurrentMetric_AsyncInsertCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of async insert hash id in cache
 - `CurrentMetric_IcebergMetadataFilesCacheBytes` ([Int64](/reference/data-types/int-uint)) — Size of the Iceberg metadata cache in bytes
 - `CurrentMetric_IcebergMetadataFilesCacheFiles` ([Int64](/reference/data-types/int-uint)) — Number of cached files in the Iceberg metadata cache
