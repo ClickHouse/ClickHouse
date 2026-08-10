@@ -59,6 +59,23 @@ ORDER BY t WITH FILL STEP {rounding:UInt32}
         },
         {
             { "dashboard", "Filesystem cache" },
+            { "title", "Average read size (bytes)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+    sum(ProfileEvent_CachedReadBufferReadFromCacheBytes)
+        / nullIf(sum(ProfileEvent_CachedReadBufferReadFromCacheHits), 0) AS FromCache,
+    sum(ProfileEvent_CachedReadBufferReadFromSourceBytes)
+        / nullIf(sum(ProfileEvent_CachedReadBufferReadFromCacheMisses), 0) AS FromSource
+FROM merge('system', '^metric_log')
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Filesystem cache" },
             { "title", "Time spent reading (seconds/second)" },
             { "query", trim(R"EOQ(
 WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
@@ -162,6 +179,21 @@ SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS 
     avg(CurrentMetric_FilesystemCacheKeys) AS Keys,
     avg(CurrentMetric_CacheFileSegments) AS FileSegments,
     avg(CurrentMetric_CacheDetachedFileSegments) AS DetachedFileSegments
+FROM merge('system', '^metric_log')
+WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
+GROUP BY t
+ORDER BY t WITH FILL STEP {rounding:UInt32}
+)EOQ") }
+        },
+        {
+            { "dashboard", "Filesystem cache" },
+            { "title", "Average cached file segment size (bytes)" },
+            { "query", trim(R"EOQ(
+WITH toDateTimeOrDefault({from:String}, '', now() - {seconds:UInt32}) AS from,
+    toDateTimeOrDefault({to:String}, '', now()) AS to
+SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t,
+    avg(CurrentMetric_FilesystemCacheSize)
+        / nullIf(avg(CurrentMetric_FilesystemCacheElements), 0) AS AverageSize
 FROM merge('system', '^metric_log')
 WHERE event_date BETWEEN toDate(from) AND toDate(to) AND event_time BETWEEN from AND to
 GROUP BY t
