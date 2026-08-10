@@ -410,25 +410,24 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.set_completion_callback(callback);
 
     /// When a predictive model is available, feed its next-token predictions into the completion
-    /// dictionary. `Suggest::getMatchingWords` merges these words in and prefix-matches them against
-    /// the word currently being typed, so a prediction the user has started typing (e.g. `count`
-    /// after `SELECT c`) is offered — and ranked — alongside the static suggestions, for both Tab
-    /// completion and inline hints, reusing all of the existing hint/acceptance machinery.
+    /// dictionary. `Suggest::getMatchingWords` merges these words in, prefix-matches them against
+    /// the word currently being typed, and ranks the matching ones above the static suggestions, so
+    /// a prediction the user has started typing (e.g. `count` after `SELECT c`) is offered first,
+    /// for both Tab completion and inline hints, reusing all of the existing hint/acceptance
+    /// machinery.
     ///
     /// The model predicts the *next* token, so it must see the context *before* the word being
     /// typed: `prefix` is the text up to the cursor and `prefix_length` the length of that word, so
     /// dropping the last `prefix_length` characters yields the context to predict from (e.g. prefix
-    /// `SELECT co`, length 2 -> predict from `SELECT `). The result must be sorted and unique.
+    /// `SELECT co`, length 2 -> predict from `SELECT `). The returned words are unique and ordered
+    /// most likely first; `Suggest` relies on that order for its ranking.
     if (autocomplete)
     {
         suggest.setCompletionsCallback(
             [this](const String & prefix, size_t prefix_length) -> Suggest::Words
             {
                 const String context = prefix.substr(0, prefix.size() - prefix_length);
-                auto words = autocomplete->predictNextTokens(context);
-                std::sort(words.begin(), words.end());
-                words.erase(std::unique(words.begin(), words.end()), words.end());
-                return words;
+                return autocomplete->predictNextTokens(context);
             });
     }
 

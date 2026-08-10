@@ -11,8 +11,9 @@
 /// Predicts the next SQL tokens from a Kneser-Ney n-gram (Markov) model seeded from the user's
 /// query history and updated with every query entered during the session. The model works on a
 /// lightly normalized token stream: multi-word operators (`NOT IN`, `GLOBAL NOT IN`, ...) are
-/// squashed into single tokens and keywords are upper-cased so that casing does not fragment the
-/// statistics.
+/// squashed into single tokens and string/numeric literals are replaced with a placeholder (so
+/// that literal values from the query history are never replayed as predictions, and so that
+/// queries differing only in literals share their statistics).
 ///
 /// This is the Markov-only core. A small transformer that predicts the *type* of the next token
 /// (literal / identifier / operator / keyword) to route per-type Markov models can be layered on
@@ -31,13 +32,15 @@ private:
     /// Left-padding marker so a query's first real tokens still have a full-order context.
     static const std::string bos;
 
+    /// Stand-in for string/numeric literal tokens (see `tokensToStrings`).
+    static const std::string literal_placeholder;
+
     const static std::unordered_set<std::string> bare_words_operators;
     const static std::unordered_set<DB::TokenType> operator_types;
 
     bool isBareWordEqualToString(const DB::Token & token, const std::string & str) const;
 
     bool isTokenIdentifier(const DB::Token & token) const;
-    bool isTokenKeyword(const DB::Token & token) const;
     bool isTokenLiteral(const DB::Token & token) const;
     bool isTokenOperator(const DB::Token & prev_token, const DB::Token & token) const;
 
@@ -47,7 +50,8 @@ private:
 
     std::vector<std::string> tokensToStrings(const std::vector<DB::Token> & tokens) const;
 
-    /// Drop candidates that render poorly as ghost hints: the padding marker and empty strings.
+    /// Drop candidates that must not or cannot usefully be shown: the padding marker, the literal
+    /// placeholder, empty strings, and punctuation-only tokens.
     bool isBadRec(const std::string & rec) const;
 
 public:

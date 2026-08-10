@@ -43,11 +43,6 @@ bool AutocompleteModel::isTokenIdentifier(const DB::Token & token) const
     return true;
 }
 
-bool AutocompleteModel::isTokenKeyword(const DB::Token & token) const
-{
-    return (token.type == DB::TokenType::BareWord && !isTokenIdentifier(token));
-}
-
 bool AutocompleteModel::isTokenLiteral(const DB::Token & token) const
 {
     return (
@@ -66,12 +61,13 @@ bool AutocompleteModel::isTokenOperator(const DB::Token & prev_token, const DB::
 
 bool AutocompleteModel::isBadRec(const std::string & rec) const
 {
-    if (rec.empty() || rec == bos)
+    if (rec.empty() || rec == bos || rec == literal_placeholder)
         return true;
     /// Drop punctuation/operator-only predictions (e.g. "(", ")", ",", "="): they are noise as
-    /// ghost text. Keep anything with an alphanumeric character (identifiers, keywords, functions,
-    /// numbers, quoted names).
-    return std::none_of(rec.begin(), rec.end(), [](unsigned char c) { return std::isalnum(c) != 0; });
+    /// ghost text. Keep anything with an alphanumeric or non-ASCII byte: identifiers, keywords,
+    /// functions, and quoted names, including ones made entirely of non-ASCII characters (any byte
+    /// of a UTF-8 multi-byte sequence is >= 0x80, so a bytewise check suffices).
+    return std::none_of(rec.begin(), rec.end(), [](unsigned char c) { return std::isalnum(c) != 0 || c >= 0x80; });
 }
 
 void AutocompleteModel::deleteDuplicatesKeepOrder(std::vector<std::string> & recs) const
@@ -104,6 +100,16 @@ std::vector<std::string> AutocompleteModel::predictNextWords(DB::Lexer & lexer)
     if (tokens.empty() || markov.empty())
     {
         return {};
+    }
+
+    /// `addQuery` left-pads every training query with BOS markers, so the query-start n-grams the
+    /// model learns are BOS-prefixed. Pad the prediction context the same way, otherwise the first
+    /// `markov_order - 1` real tokens of a query (the common positions right after `SELECT`,
+    /// `INSERT`, ...) could never match the full-order query-start statistics and would always back
+    /// off to shorter contexts.
+    for (size_t i = 1; i != markov_order; ++i)
+    {
+        tokens.insert(tokens.begin(), bos);
     }
 
     auto recs = markov.predictNext(tokens, recs_number);
@@ -268,12 +274,26 @@ std::vector<std::string> AutocompleteModel::tokensToStrings(const std::vector<DB
     result.reserve(tokens.size());
     for (const auto & token : tokens)
     {
-        if (isTokenKeyword(token))
+        /// String and numeric literals are normalized to a placeholder, for privacy first of all:
+        /// the model is trained on raw query history, and replaying literal values as ghost text
+        /// could leak emails, IDs, API keys, etc. typed in earlier sessions of the same user. It
+        /// also pools the statistics of e.g. `LIMIT 10` and `LIMIT 100` into one n-gram. The
+        /// placeholder is never offered as a prediction (see `isBadRec`). The `NULL` keyword-like
+        /// literal is deliberately kept: it is not user data, and predicting it (e.g. after `IS`)
+        /// is useful.
+        if (token.type == DB::TokenType::StringLiteral || token.type == DB::TokenType::Number
+            || token.type == DB::TokenType::HereDoc)
         {
-            result.push_back(toUpperCaseString(token.begin, token.end));
+            result.push_back(literal_placeholder);
         }
         else
         {
+            /// Tokens are kept exactly as typed, keywords included. Canonicalizing keywords (e.g.
+            /// upper-casing them) looks tempting, because it pools `select` and `SELECT` statistics,
+            /// but a keyword can only be told from an identifier by parsing: `default` and `system`
+            /// are common *identifiers* that collide with keyword names, and rewriting them made the
+            /// model predict `DEFAULT` and `SYSTEM` after `FROM`. Since the history is the user's
+            /// own, predictions in the user's own casing are consistent with what they type anyway.
             result.push_back(std::string(token.begin, token.end));
         }
     }
@@ -309,6 +329,10 @@ std::vector<std::string> AutocompleteModel::preprocessTokens(DB::Lexer & lexer) 
 
 
 const std::string AutocompleteModel::bos = "<BOS>";
+
+/// The angle brackets make a collision with a real token impossible: the lexer never produces them
+/// as part of a bare word.
+const std::string AutocompleteModel::literal_placeholder = "<LITERAL>";
 
 const std::unordered_set<std::string> AutocompleteModel::bare_words_operators{
     "AND",
