@@ -22,7 +22,7 @@ import { gunzipSync } from 'node:zlib';
 import { readFileSync, writeFileSync, lstatSync, readlinkSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir, hostname, userInfo } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -359,17 +359,28 @@ server.listen(PORT, '127.0.0.1', () => {
     }
   }
   if (remoteSignals.length > 0) {
-    let user;
-    try {
-      user = userInfo().username;
-    } catch {
-      user = '<user>';
+    // SSH_CONNECTION is "<client_ip> <client_port> <server_ip> <server_port>":
+    // the address and port the user's own ssh connected to, which a forwarding
+    // command must reuse. hostname() would often name a private interface
+    // (ip-172-31-…) that the user's machine cannot resolve, so without
+    // SSH_CONNECTION the hint shows placeholders instead of posing as
+    // copy-pasteable.
+    const ssh = (process.env.SSH_CONNECTION ?? '').trim().split(/\s+/);
+    let target = '<user>@<this-machine>';
+    if (ssh.length === 4) {
+      let user;
+      try {
+        user = userInfo().username;
+      } catch {
+        user = '<user>';
+      }
+      target = (ssh[3] === '22' ? '' : `-p ${ssh[3]} `) + `${user}@${ssh[2]}`;
     }
     process.stdout.write(
       'diff-review: this machine looks remote:\n' +
         remoteSignals.map((r) => `  - ${r}\n`).join('') +
         'diff-review: the server listens on loopback only. To review from your own machine, forward the port:\n' +
-        `diff-review:   ssh -L ${PORT}:localhost:${PORT} ${user}@${hostname()}\n` +
+        `diff-review:   ssh -L ${PORT}:localhost:${PORT} ${target}\n` +
         `diff-review: then open ${url} there.\n` +
         `diff-review: exiting in ${NO_VISITOR_WAIT_SECS} s unless the review page is opened (--force waits indefinitely).\n`
     );
