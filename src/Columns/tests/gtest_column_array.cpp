@@ -44,16 +44,10 @@ struct Grown
     UInt64 last_offset = 0;
 };
 
-/// Appending `length` empty values only grows the offsets, so pre-sizing them to the final size costs one
-/// reallocation. A `push_back` loop instead walks the doubling chain, and `Allocator::realloc` charges the new
-/// block before releasing the old one, so its last step holds both at once. Peak is what separates the two:
-/// the final capacity is identical.
-///
-/// `create` must return the column by value, because the whole measurement happens on a dedicated thread:
-/// `current_thread` starts as nullptr there whatever other gtests in `unit_tests_dbms` left behind, and this
-/// file leaves none behind either. The column is destroyed on that same thread, so the frees are charged
-/// where the allocations were -- a free on another thread subtracts from that thread's tracker instead.
-/// Only the numbers come back out.
+/// Grows a column of `create()` by `length` defaults on a dedicated thread and returns only numbers.
+/// The column must live and die inside that thread: a free on another thread is charged to that other
+/// thread's tracker, and a `ThreadStatus` of its own keeps this out of whatever `current_thread` the
+/// rest of `unit_tests_dbms` set up.
 template <typename Create>
 Grown grow(size_t length, Create && create)
 {
