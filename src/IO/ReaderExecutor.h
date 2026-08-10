@@ -58,7 +58,6 @@ public:
         const StoredObjects & objects,
         Options options);
 
-    /// All-defaults overload (`Options{}` cannot be a default argument in a member declaration).
     ReaderExecutor(
         std::shared_ptr<IFileBasedSourceReader> source,
         const StoredObjects & objects);
