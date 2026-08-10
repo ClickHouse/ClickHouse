@@ -1990,7 +1990,12 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     /// For unordered mode each file gets its own node under processed/ and failed/.
     /// For ordered mode the processed pointer is a shared node whose *data* is updated,
     /// while the failed node is still per-file.
+    ///
+    /// Exclusive mode does not interact with Zookeeper at all; but note that non-system
+    /// errors during processing will leave paths in a perpetual 'Processing' state.
+    /// This is intentional until 'atomic inserts' are implemented. (Issue #57815)
     const bool is_ordered = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
+    const bool is_exclusive = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::EXCLUSIVE;
 
     auto file_metadata = files_metadata->getFileMetadata(path);
     const auto & processed_node_path = file_metadata->getProcessedNodePath();
@@ -2048,38 +2053,41 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
                 "Timeout waiting for path '{}' to be processed by {}",
                 path, getStorageID().getNameForLogs());
 
-        /// Register watches before checking state to avoid missing a transition
-        /// that occurs between the state check and watch registration.
-        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        if (!is_exclusive)
         {
-            auto zk = files_metadata->getZooKeeper()->getKeeper();
+            /// Register watches before checking state to avoid missing a transition
+            /// that occurs between the state check and watch registration.
+            ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+            {
+                auto zk = files_metadata->getZooKeeper()->getKeeper();
 
-            if (is_ordered)
-            {
-                /// The ordered processed pointer may or may not exist yet:
-                /// - Exists   → tryGetWatch registers a data-change watch.
-                /// - Missing  → fall back to existsWatch so we are notified
-                ///              when the node is first created.
-                std::string dummy_data;
-                Coordination::Stat dummy_stat{};
-                Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue};
-                const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, labelled_event);
-                if (!node_exists)
-                    zk->existsWatch(processed_node_path, nullptr, labelled_event);
-            }
-            else
-            {
-                /// Unordered: each file gets its own processed node; watch for its creation.
+                if (is_ordered)
+                {
+                    /// The ordered processed pointer may or may not exist yet:
+                    /// - Exists   → tryGetWatch registers a data-change watch.
+                    /// - Missing  → fall back to existsWatch so we are notified
+                    ///              when the node is first created.
+                    std::string dummy_data;
+                    Coordination::Stat dummy_stat{};
+                    Coordination::WatchCallbackPtrOrEventPtr labelled_event{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue};
+                    const bool node_exists = zk->tryGetWatch(processed_node_path, dummy_data, &dummy_stat, labelled_event);
+                    if (!node_exists)
+                        zk->existsWatch(processed_node_path, nullptr, labelled_event);
+                }
+                else
+                {
+                    /// Unordered: each file gets its own processed node; watch for its creation.
+                    zk->existsWatch(
+                        processed_node_path, nullptr,
+                        Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
+                }
+
+                /// Per-file failed node: watch for creation regardless of mode.
                 zk->existsWatch(
-                    processed_node_path, nullptr,
+                    failed_node_path, nullptr,
                     Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
-            }
-
-            /// Per-file failed node: watch for creation regardless of mode.
-            zk->existsWatch(
-                failed_node_path, nullptr,
-                Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredObjectStorageQueue});
-        });
+            });
+        }
 
         std::string failure_message;
         const auto state = file_metadata->getPathState(failure_message);

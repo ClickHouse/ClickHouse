@@ -176,6 +176,11 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             chassert(file_status->state == FileStatus::State::Failed);
         }
 
+        if (processing_node_path.empty())
+        {
+            return;
+        }
+
         LOG_TEST(log, "Removing processing node in destructor for file: {} "
                  "(state: {}, exception: {})",
                  path, file_status->state.load(), current_exception);
