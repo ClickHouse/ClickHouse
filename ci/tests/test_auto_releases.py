@@ -224,6 +224,40 @@ def test_failed_statuses_keeps_newest_per_context(monkeypatch):
     assert m._failed_statuses("deadbeef") == ["Tests"]
 
 
+def test_fetch_history_does_not_swallow_unshallow_failures(monkeypatch):
+    """``--unshallow`` must run strictly, and only on a shallow clone.
+
+    It is the only fetch that deepens the clone — the refspec/tag fetches leave a
+    depth-1 checkout shallow — so a swallowed failure would silently truncate the
+    `rev-list` ranges the release candidate and version tweak are derived from.
+    """
+    m = _job_module()
+    calls = []
+    monkeypatch.setattr(
+        m.Shell, "get_output_or_raise", staticmethod(lambda *a, **k: "true")
+    )
+    monkeypatch.setattr(
+        m.Shell,
+        "check",
+        staticmethod(lambda cmd, **kwargs: calls.append((cmd, kwargs)) or True),
+    )
+    m._fetch_history()
+
+    unshallow = [(cmd, kw) for cmd, kw in calls if "--unshallow" in cmd]
+    assert len(unshallow) == 1, "shallow clone must be unshallowed exactly once"
+    cmd, kwargs = unshallow[0]
+    assert "||:" not in cmd, "a failing --unshallow must not be swallowed"
+    assert kwargs.get("strict"), "--unshallow must run with strict=True"
+
+    # A complete repository: `--unshallow` errors there, so it must be skipped.
+    calls.clear()
+    monkeypatch.setattr(
+        m.Shell, "get_output_or_raise", staticmethod(lambda *a, **k: "false")
+    )
+    m._fetch_history()
+    assert not [cmd for cmd, _ in calls if "--unshallow" in cmd]
+
+
 def test_find_release_candidate_skips_new_branch(monkeypatch):
     """A branch whose latest tag ends with ``new`` is not auto-released."""
     m = _job_module()

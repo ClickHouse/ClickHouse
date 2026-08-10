@@ -55,11 +55,22 @@ def _fetch_history() -> None:
     actions/checkout fetches only the workflow ref, but prepare reads
     `origin/<release_branch>` and the release tags to measure how far each
     branch has moved since its last release. Mirrors the fetch phase of
-    ci/jobs/release_job.py."""
-    Shell.check(
-        "git fetch --unshallow --no-recurse-submodules origin ||:",
-        verbose=True,
-    )
+    ci/jobs/release_job.py.
+
+    `--unshallow` is the only fetch here that moves the shallow boundary: the
+    refspec and tag fetches below leave a depth-1 clone shallow. A shallow clone
+    silently truncates `git rev-list {tag}..origin/{branch}` and the
+    `VERSION_GITHASH..{commit}` tweak count, so the run would skip
+    release-worthy commits or probe S3 under the wrong version instead of
+    failing. Fail-close: run it only when the repo is actually shallow (it
+    errors out on a complete one) and let any real failure abort the job."""
+    shallow = Shell.get_output_or_raise("git rev-parse --is-shallow-repository")
+    if shallow.strip() == "true":
+        Shell.check(
+            "git fetch --unshallow --no-recurse-submodules origin",
+            strict=True,
+            verbose=True,
+        )
     Shell.check(
         "git fetch --no-recurse-submodules origin '+refs/heads/*:refs/remotes/origin/*'",
         strict=True,
