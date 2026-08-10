@@ -150,8 +150,8 @@ private:
     const static Int32 HEADER_SIZE_IN_BITS{8};
     const static Int32 ADDRESS_BITS_PER_WORD{3};
     const static Int32 BIT_BYTE_INDEX_MASK{7};
-    const static Int64 HIGHEST_FIRST_BIT = 0x80L << 56;
-    const static Int64 HIGHEST_SECOND_TO_EIGHTH_BIT = 0x7FL << 56;
+    const static Int64 HIGHEST_FIRST_BIT = 0x80LL << 56;
+    const static Int64 HIGHEST_SECOND_TO_EIGHTH_BIT = 0x7FLL << 56;
     String tmp_value;
     LoggerPtr log;
 

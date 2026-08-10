@@ -1,3 +1,8 @@
+-- Tags: no-random-merge-tree-settings
+-- Reason: randomized MergeTree settings (e.g. tiny `index_granularity`) inflate mark I/O
+-- enough to time out the vertical merge under slow runners (MSan WasmEdge, ASan azure, ...).
+-- Sibling vertical-merge tests (02981, 04041, 04145) use the same tag.
+
 DROP TABLE IF EXISTS t_lwd_vertical;
 
 CREATE TABLE t_lwd_vertical
