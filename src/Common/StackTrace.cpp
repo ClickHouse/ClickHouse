@@ -609,8 +609,6 @@ void StackTrace::tryCapture()
     __msan_unpoison(frame_pointers.data(), size * sizeof(frame_pointers[0]));
 }
 
-#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
-
 /// ClickHouse uses bundled libc++ so type names will be the same on every system thus it's safe to hardcode them
 constexpr std::pair<std::string_view, std::string_view> replacements[]
     = {{"::__1", ""}, {"std::basic_string<char, std::char_traits<char>, std::allocator<char>>", "String"}};
@@ -618,7 +616,7 @@ constexpr std::pair<std::string_view, std::string_view> replacements[]
 // Demangle @c symbol_name if it's not from __functional header (as such functions don't provide any useful
 // information but pollute stack traces).
 // Replace parts from @c replacements with shorter aliases
-static String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
+String StackTrace::collapseDemangledNames(std::optional<std::string_view> file, String symbol_name)
 {
     if (symbol_name.empty())
         return "?";
@@ -645,8 +643,6 @@ static String collapseDemangledNames(std::optional<std::string_view> file, Strin
 
     return symbol_name;
 }
-
-#endif
 
 struct StackTraceRefTriple
 {
@@ -703,7 +699,7 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         }
 
         if (frame.symbol.has_value())
-            out << collapseDemangledNames(frame.file, frame.symbol.value());
+            out << StackTrace::collapseDemangledNames(frame.file, frame.symbol.value());
         else
             out << "?";
 
