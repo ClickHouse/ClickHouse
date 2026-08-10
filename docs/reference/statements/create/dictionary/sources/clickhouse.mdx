@@ -61,7 +61,7 @@ Setting fields:
 | `where` | The selection criteria. Optional. |
 | `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](/reference/statements/create/dictionary/lifetime). |
 | `secure` | Use SSL for connection. |
-| `query` | The custom query. Optional. |
+| `query` | The custom query. Optional. Its columns are matched to the dictionary by name, so name each one after the attribute it fills. See [column order of a custom query](/reference/statements/create/dictionary/sources/overview#custom-query-column-order). |
 
 <Note>
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.

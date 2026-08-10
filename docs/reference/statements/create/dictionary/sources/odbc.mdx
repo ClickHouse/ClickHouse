@@ -51,7 +51,7 @@ Setting fields:
 | `connection_string` | Connection string. |
 | `invalidate_query` | Query for checking the dictionary status. Optional. Read more in the section [Refreshing dictionary data using LIFETIME](/reference/statements/create/dictionary/lifetime). |
 | `background_reconnect` | Reconnect to replica in background if connection fails. Optional. |
-| `query` | The custom query. Optional. |
+| `query` | The custom query. Optional. Its columns are taken by position, so it must return them in the [order the dictionary expects](/reference/statements/create/dictionary/sources/overview#custom-query-column-order). |
 
 <Note>
 The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
