@@ -139,8 +139,14 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
         )
         # Pull both replicas' parts before comparing -- an APPEND refresh replicates rows
         # via ReplicatedMergeTree, which SYSTEM WAIT VIEW does not wait for.
-        node1.query_with_retry(f"SYSTEM SYNC REPLICA {db_name}.mv")
-        node2.query_with_retry(f"SYSTEM SYNC REPLICA {db_name}.mv")
+        sync = f"SYSTEM SYNC REPLICA {db_name}.mv"
+        sync_settings = {"receive_timeout": 30}
+        node1.query_with_retry(
+            sync, retry_count=6, sleep_time=1, settings=sync_settings
+        )
+        node2.query_with_retry(
+            sync, retry_count=6, sleep_time=1, settings=sync_settings
+        )
         data1 = TSV(node1.query(f"SELECT x FROM {db_name}.mv ORDER BY x"))
         data2 = TSV(node2.query(f"SELECT x FROM {db_name}.mv ORDER BY x"))
         assert data1 == data2
