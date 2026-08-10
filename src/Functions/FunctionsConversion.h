@@ -3030,23 +3030,24 @@ struct NameToDateTime
     static constexpr auto name = "toDateTime";
     /// The second argument is either a timezone (String) or a scale (UInt); with a scale the result
     /// widens to DateTime64 unless the scale is 0 (see the dateTimeFromScale type function).
+    /// Without an explicit timezone argument the timezone of the value is inherited, so
+    /// `toDateTime(dt)` keeps the timezone of a `DateTime`/`DateTime64` argument.
     static constexpr auto signature =
-        "(Any) -> DateTime"
+        "(V : Any) -> DateTime(timezoneOf(V))"
         " OR (Any, const tz String) -> DateTime(tz)"
-        " OR (Any, const scale NativeUInt) -> dateTimeFromScale(scale)"
+        " OR (V : Any, const scale NativeUInt) -> dateTimeFromScale(scale, timezoneOf(V))"
         " OR (Any, const scale NativeUInt, const tz String) -> dateTimeFromScale(scale, tz)";
     static constexpr bool authoritative = true;
 };
 struct NameToTime
 {
     static constexpr auto name = "toTime";
-    /// Like toDateTime, but Time/Time64 carry no timezone (a timezone argument is accepted and
-    /// ignored); a scale widens to Time64 unless it is 0 (see the timeFromScale type function).
+    /// Like toDateTime, but Time/Time64 carry no timezone, so — unlike `toDateTime` — no
+    /// timezone argument is accepted; a scale widens to Time64 unless it is 0 (see the
+    /// timeFromScale type function).
     static constexpr auto signature =
         "(Any) -> Time"
-        " OR (Any, const tz String) -> Time"
-        " OR (Any, const scale NativeUInt) -> timeFromScale(scale)"
-        " OR (Any, const scale NativeUInt, const tz String) -> timeFromScale(scale)";
+        " OR (Any, const scale NativeUInt) -> timeFromScale(scale)";
     static constexpr bool authoritative = true;
 };
 struct NameToTime64
@@ -3058,14 +3059,14 @@ struct NameToTime64
 struct NameToDateTime32
 {
     static constexpr auto name = "toDateTime32";
-    static constexpr auto signature = "(Any) -> DateTime OR (Any, const tz String) -> DateTime(tz)";
+    static constexpr auto signature = "(V : Any) -> DateTime(timezoneOf(V)) OR (Any, const tz String) -> DateTime(tz)";
     static constexpr bool authoritative = true;
 };
 struct NameToDateTime64
 {
     static constexpr auto name = "toDateTime64";
     static constexpr auto signature =
-        "(Any, const S NativeUInt) -> DateTime64(S)"
+        "(V : Any, const S NativeUInt) -> DateTime64(S, timezoneOf(V))"
         " OR (Any, const S NativeUInt, const tz String) -> DateTime64(S, tz)";
     static constexpr bool authoritative = true;
 };
@@ -3108,7 +3109,11 @@ struct NameToDecimal256
     { \
         static constexpr auto name = "toInterval" #INTERVAL_KIND; \
         static constexpr auto kind = IntervalKind::Kind::INTERVAL_KIND; \
-        static constexpr auto signature = "(Integer | Float) -> Interval" #INTERVAL_KIND; \
+        /* Like the other conversion functions, `toInterval*` converts from any type — from a \
+           number, from a `String` (`INTERVAL '1' DAY`), from another interval kind, from a \
+           `Dynamic`, … — and lets the conversion itself reject what it cannot handle. The only \
+           type refused up front is `Decimal`, mirroring the legacy `getReturnTypeImpl`. */ \
+        static constexpr auto signature = "(Not(Decimal)) -> Interval" #INTERVAL_KIND; \
         static constexpr bool authoritative = true; \
     };
 

@@ -977,6 +977,38 @@ public:
     }
 };
 
+/// `Not(X)` matches everything that `X` does not match. Useful for functions that accept
+/// almost any type but blacklist a few, such as `toIntervalDay`, which converts from any
+/// type except `Decimal`.
+class TypeMatcherNot : public ITypeMatcher
+{
+private:
+    TypeMatcherPtr child_matcher;
+public:
+    explicit TypeMatcherNot(const TypeMatchers & child_matchers)
+    {
+        if (child_matchers.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not type matcher requires single argument");
+
+        child_matcher = child_matchers[0];
+    }
+
+    std::string toString() const override { return "Not(" + child_matcher->toString() + ")"; }
+
+    bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string &) const override
+    {
+        /// The child's mismatch reason describes why the negated matcher *succeeds*, so it is
+        /// dropped. The child is expected to be a plain type predicate that captures no
+        /// variables — a capture made while matching the type we are about to reject would be
+        /// meaningless.
+        std::string nested_reason;
+        return !child_matcher->match(type, variables, iteration, arg_num, nested_reason);
+    }
+
+    size_t getIndex() const override { return 0; }
+};
+
+
 class TypeMatcherMaybeNullable : public ITypeMatcher
 {
 private:
@@ -1127,6 +1159,7 @@ void registerTypeMatchers()
     factory.registerElement("Tuple", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherTuple>(children); });
     factory.registerElement("TupleOfSize", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherTupleOfSize>(children); });
     factory.registerElement("MaybeNullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherMaybeNullable>(children); });
+    factory.registerElement("Not", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherNot>(children); });
     factory.registerElement("Nullable", [](const TypeMatchers & children) -> TypeMatcherPtr { return std::make_shared<TypeMatcherNullable>(children); });
     factory.registerElement("AggregateFunction", [](const TypeMatchers & children) -> TypeMatcherPtr
     {

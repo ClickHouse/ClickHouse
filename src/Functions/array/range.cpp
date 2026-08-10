@@ -68,7 +68,17 @@ private:
         /// capture, so the three lengths are spelled out explicitly instead of using `[optional]`.
         return "(A1 : MaybeNullable(Integer | IPv4) | Nothing) -> rangeResult(A1) "
                "OR (A1 : MaybeNullable(Integer | IPv4) | Nothing, A2 : MaybeNullable(Integer | IPv4) | Nothing) -> rangeResult(A1, A2) "
-               "OR (A1 : MaybeNullable(Integer | IPv4) | Nothing, A2 : MaybeNullable(Integer | IPv4) | Nothing, A3 : MaybeNullable(Integer) | Nothing) -> rangeResult(A1, A2, A3)";
+               "OR (A1 : MaybeNullable(Integer | IPv4) | Nothing, A2 : MaybeNullable(Integer | IPv4) | Nothing, A3 : MaybeNullable(Integer) | Nothing) -> rangeResult(A1, A2, A3) "
+               /// A single `NULL` argument makes the result `NULL` whatever the other arguments
+               /// are — the historical `getReturnTypeImpl` returns `Nullable(Nothing)` before it
+               /// looks at any type at all. These trailing arms reproduce that short circuit;
+               /// they are last so that a well-typed call still reports a type mismatch against
+               /// the arms above.
+               "OR (Nothing, Any) -> NULL "
+               "OR (Any, Nothing) -> NULL "
+               "OR (Nothing, Any, Any) -> NULL "
+               "OR (Any, Nothing, Any) -> NULL "
+               "OR (Any, Any, Nothing) -> NULL";
     }
 
     template <typename T>

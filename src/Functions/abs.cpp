@@ -16,9 +16,11 @@ struct AbsImpl
 {
     using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
     static constexpr bool allow_string_or_fixed_string = false;
+    /// `NativeNumber` does not cover the 128- and 256-bit integers, for which `abs` returns the
+    /// unsigned counterpart, so they are listed explicitly.
     static constexpr auto signature =
         "(D : Decimal) -> D"
-        " OR (A : NativeNumber) -> nativeNumber(maxBits(A), 0, anyFloating(A))";
+        " OR (A : NativeNumber | UInt128 | Int128 | UInt256 | Int256) -> nativeNumber(maxBits(A), 0, anyFloating(A))";
 
     static NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {

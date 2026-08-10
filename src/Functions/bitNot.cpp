@@ -18,8 +18,10 @@ struct BitNotImpl
 {
     using ResultType = typename NumberTraits::ResultOfBitNot<A>::Type;
     static constexpr bool allow_string_or_fixed_string = true;
+    /// `NativeNumber` does not cover the 128- and 256-bit integers, but `bitNot` supports them
+    /// (`~` over the whole value), so they are listed explicitly.
     static constexpr auto signature =
-        "(A : NativeNumber) -> nativeNumber(maxBits(A), anySigned(A), 0)"
+        "(A : NativeNumber | UInt128 | Int128 | UInt256 | Int256) -> nativeNumber(maxBits(A), anySigned(A), 0)"
         " OR (F : FixedString) -> F"
         " OR (String) -> String";
 
