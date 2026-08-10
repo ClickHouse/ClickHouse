@@ -1,10 +1,10 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/transformEndianness.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
+#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 
@@ -17,7 +17,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
@@ -128,20 +127,6 @@ template <is_decimal T>
 }
 
 template <is_decimal T>
-size_t ColumnDecimal<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int) const
-{
-    if (begin >= end)
-        return begin;
-
-    const T * d = data.data();
-    const auto ref = d[begin].value;
-
-    /// A native integer comparison is cheap, so use a longer linear probe (the default is 8).
-    static constexpr size_t linear_probe = 16;
-    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, [&](size_t i) { return d[i].value == ref; });
-}
-
-template <is_decimal T>
 Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 {
     return DecimalUtils::convertTo<Float64>(data[n], scale);
@@ -150,7 +135,7 @@ Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 template <is_decimal T>
 void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
-    T dec{};
+    T dec;
     readBinaryLittleEndian(dec, in);
     data.push_back(std::move(dec));
 }
@@ -182,28 +167,24 @@ void ColumnDecimal<T>::updateHashWithValueRange(size_t begin, size_t end, SipHas
     hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
-/// Finalized per-row CRC32C hash of a decimal value (seeded with `WEAK_HASH32_INITIAL_VALUE`).
-/// Accesses `.value` directly to avoid `wide::integer` implicit-conversion constraints; `intHashCRC32`
-/// consumes the whole native word (folding 64-bit words for 128/256-bit decimals).
 template <is_decimal T>
-static inline UInt32 weakHashDecimalValue32(const T & v) noexcept
+WeakHash32 ColumnDecimal<T>::getWeakHash32() const
 {
-    return static_cast<UInt32>(intHashCRC32(v.value, WEAK_HASH32_INITIAL_VALUE));
-}
+    auto s = data.size();
+    WeakHash32 hash(s);
 
-template <is_decimal T>
-void ColumnDecimal<T>::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
-{
-    /// CRC32C is a hardware dependency chain with no packed form, so SIMD multi-versioning
-    /// would not vectorise; keep a plain scalar loop. See IColumn::computeHashInto.
-    const T * src = data.data() + row_begin;
-    const size_t n = row_end - row_begin;
-    if (initial)
-        for (size_t i = 0; i < n; ++i)
-            hash_out[i] = weakHashDecimalValue32(src[i]);
-    else
-        for (size_t i = 0; i < n; ++i)
-            hash_out[i] = combineWeakHash32(weakHashDecimalValue32(src[i]), hash_out[i]);
+    const T * begin = data.data();
+    const T * end = begin + s;
+    UInt32 * hash_data = hash.getData().data();
+
+    while (begin < end)
+    {
+        *hash_data = static_cast<UInt32>(intHashCRC32(*begin, *hash_data));
+        ++begin;
+        ++hash_data;
+    }
+
+    return hash;
 }
 
 template <is_decimal T>
@@ -446,7 +427,7 @@ bool ColumnDecimal<T>::tryInsert(const Field & x)
 template <is_decimal T>
 void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    T tmp{};
+    T tmp;
     memcpy(&tmp, src, sizeof(T));
     data.emplace_back(tmp);
 }
@@ -692,36 +673,6 @@ void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_
 {
     const auto & src_data = assert_cast<const Self &>(src).getData();
     data[dst_pos] = src_data[src_pos];
-}
-
-template <is_decimal T>
-void ColumnDecimal<T>::serializeAsComparable(size_t n, String & out) const
-{
-    using Native = T::NativeType;
-    if constexpr (!std::is_same_v<T, Time64> && (std::is_integral_v<Native> || is_big_int_v<Native>))
-    {
-        Native value = data[n].value;
-        transformEndianness<std::endian::big>(value);
-        char * bytes = reinterpret_cast<char *>(&value);
-        bytes[0] ^= 0x80;
-        out.append(reinterpret_cast<const char *>(&value), sizeof(Native));
-    }
-    else
-    {
-        IColumn::serializeAsComparable(n, out);
-    }
-}
-
-template <is_decimal T>
-void ColumnDecimal<T>::batchSerializeAsComparable(
-    size_t num_rows,
-    VectorWithMemoryTracking<String> & out,
-    const IColumn::Permutation * permutation,
-    const UInt8 * null_map) const
-{
-    batchSerializeAsComparableImpl(
-        num_rows, out, permutation, null_map,
-        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
 template class ColumnDecimal<Decimal32>;

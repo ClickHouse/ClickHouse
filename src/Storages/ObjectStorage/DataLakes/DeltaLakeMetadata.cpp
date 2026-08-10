@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <set>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -66,7 +65,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_delta_kernel_rs;
+    extern const SettingsBool allow_experimental_delta_kernel_rs;
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -198,11 +197,7 @@ struct DeltaLakeMetadataImpl
         }
         else
         {
-            /// Commits must be replayed in version order: `metaData` establishes the schema that
-            /// later `add` actions are resolved against, and a later `remove` supersedes an earlier
-            /// `add`. Object listing is unordered, so sort the zero-padded version file names.
-            auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
-            std::sort(keys.begin(), keys.end());
+            const auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
             for (const String & key : keys)
                 processMetadataFile(key, current_schema, current_partition_columns, result_files);
         }
@@ -255,7 +250,7 @@ struct DeltaLakeMetadataImpl
         RelativePathWithMetadata object_info(metadata_file_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
 
-        char c = 0;
+        char c;
         String sum_json;
         while (!buf->eof())
         {
@@ -340,6 +335,7 @@ struct DeltaLakeMetadataImpl
                             auto & current_partition_columns = file_partition_columns[full_path];
                             for (const auto & partition_name : partition_values->getNames())
                             {
+                                const auto value = partition_values->getValue<String>(partition_name);
                                 auto name_and_type = file_schema.tryGetByName(partition_name);
                                 if (!name_and_type)
                                 {
@@ -348,16 +344,6 @@ struct DeltaLakeMetadataImpl
                                         "No such column in schema: {} (schema: {})",
                                         partition_name, file_schema.toNamesAndTypesDescription());
                                 }
-
-                                /// A null-equivalent partition value is committed as a JSON null; read it
-                                /// back as NULL instead of throwing while extracting it as a String.
-                                if (partition_values->isNull(partition_name))
-                                {
-                                    current_partition_columns.emplace_back(*name_and_type, Field{});
-                                    continue;
-                                }
-
-                                const auto value = partition_values->getValue<String>(partition_name);
 
                                 LOG_TEST(log, "Partition {} value is {} (data type: {}, file: {})",
                                          partition_name, value, name_and_type->type->getName(), filename);
@@ -475,6 +461,13 @@ struct DeltaLakeMetadataImpl
      * We need to check only `add` column, `remove` column does not have intersections with `add` column.
      *  ...
      */
+    #define THROW_ARROW_NOT_OK(status)                                    \
+        do                                                                \
+        {                                                                 \
+            if (const ::arrow::Status & _s = (status); !_s.ok())          \
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arrow error: {}", _s.ToString()); \
+        } while (false)
+
     size_t getCheckpointIfExists(
         std::set<String> & result,
         NamesAndTypesList & file_schema,
@@ -511,8 +504,7 @@ struct DeltaLakeMetadataImpl
 
         auto open_file_res = parquet::arrow::OpenFile(
             asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
-        if (!open_file_res.ok())
-            throwFromArrowStatus(open_file_res.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open Parquet checkpoint file");
+        THROW_ARROW_NOT_OK(open_file_res.status());
         auto reader = *std::move(open_file_res);
 
         ArrowColumnToCHColumn column_reader(
@@ -527,8 +519,7 @@ struct DeltaLakeMetadataImpl
             /* case_insensitive_column_matching */false);
 
         std::shared_ptr<arrow::Table> table;
-        if (auto read_status = reader->ReadTable(&table); !read_status.ok())
-            throwFromArrowStatus(read_status, ErrorCodes::BAD_ARGUMENTS, "Failed to read Parquet checkpoint file");
+        THROW_ARROW_NOT_OK(reader->ReadTable(&table));
 
         Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows(), reader->parquet_reader()->metadata()->key_value_metadata());
         auto res_block = header.cloneWithColumns(chunk.detachColumns());
@@ -598,16 +589,6 @@ struct DeltaLakeMetadataImpl
                                 "No such column in schema: {} (schema: {})",
                                 partition_name, file_schema.toString());
                         }
-
-                        /// A null-equivalent partition value is committed as a JSON null; read it
-                        /// back as NULL instead of throwing while extracting it as a String.
-                        if (tuple[1].isNull())
-                        {
-                            current_partition_columns.emplace_back(std::move(name_and_type.value()), Field{});
-                            LOG_TEST(log, "Partition {} value is NULL (for {})", partition_name, filename);
-                            continue;
-                        }
-
                         const auto value = tuple[1].safeGet<String>();
                         auto field = DB::DeltaLakeMetadata::getFieldValue(value, name_and_type->type);
                         current_partition_columns.emplace_back(std::move(name_and_type.value()), std::move(field));
@@ -645,7 +626,7 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
 static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)
 {
     const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
-    return supports_delta_kernel && context->getSettingsRef()[Setting::allow_delta_kernel_rs] ;
+    return supports_delta_kernel && context->getSettingsRef()[Setting::allow_experimental_delta_kernel_rs] ;
 }
 
 bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
@@ -675,7 +656,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
             ErrorCodes::UNSUPPORTED_METHOD,
             "Time travel (delta_lake_snapshot_version) is not supported "
             "without DeltaKernel. Use S3 or Local storage with "
-            "allow_delta_kernel_rs = 1");
+            "allow_experimental_delta_kernel_rs = 1");
 
     if (settings[Setting::delta_lake_snapshot_start_version].value != -1
         || settings[Setting::delta_lake_snapshot_end_version].value != -1)
@@ -684,7 +665,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
             "Change data feed (delta_lake_snapshot_start_version / "
             "delta_lake_snapshot_end_version) is not supported "
             "without DeltaKernel. Use S3 or Local storage with "
-            "allow_delta_kernel_rs = 1");
+            "allow_experimental_delta_kernel_rs = 1");
 
     return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 }
@@ -733,8 +714,8 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-        size_t precision = 0;
-        size_t scale = 0;
+        size_t precision;
+        size_t scale;
         readIntText(precision, buf);
         skipWhitespaceIfAny(buf);
         assertChar(',', buf);

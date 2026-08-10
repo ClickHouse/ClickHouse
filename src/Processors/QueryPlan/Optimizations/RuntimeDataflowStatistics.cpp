@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -219,7 +218,6 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & input_columns,
-    const NameSet & partially_read_columns,
     const NamesAndTypesList & part_columns,
     const ColumnSizeByName & column_sizes,
     size_t read_bytes,
@@ -253,18 +251,6 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                     compressed_bytes += static_cast<size_t>(static_cast<double>(column.column->byteSize()) * compressed_ratio);
                 }
             }
-        }
-        else if (std::ranges::any_of(
-                     input_columns, [&](const auto & column) { return partially_read_columns.contains(column.name); }))
-        {
-            /// Partially read columns (e.g. only the offsets of an array whose data is missing from the part)
-            /// are internally inconsistent until `fillMissingColumns` completes them, so they cannot be
-            /// serialized for the sample below. Excluding just those columns would poison the statistics:
-            /// the compression ratio would be derived from the surviving columns only, but applied to
-            /// `read_bytes` of the whole block, which includes the bytes of the skipped column. There is no
-            /// per-column byte split to subtract here (unlike the `column_sizes` branch above, which never
-            /// serializes and handles such columns fine), so give up on the statistics for this query.
-            markUnsupportedCase();
         }
         else
         {

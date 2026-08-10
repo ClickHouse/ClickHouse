@@ -104,7 +104,7 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const final;
     void updateHashWithValue(size_t n, SipHash & hash) const final;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const final;
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const final;
+    WeakHash32 getWeakHash32() const final;
     void updateHashFast(SipHash & hash) const final;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
@@ -112,7 +112,6 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final;
 #endif
     [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const final;
-    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const final;
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                         size_t limit, int nan_direction_hint, IColumn::Permutation & res) const final;
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -162,10 +161,6 @@ public:
 
     UInt32 getScale() const { return scale; }
 
-    void serializeAsComparable(size_t n, String & out) const final;
-
-    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
-
 protected:
     Container data;
     UInt32 scale;
@@ -188,7 +183,7 @@ template <is_decimal T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    chassert(limit <= indexes.size());
+    assert(limit <= indexes.size());
 
     auto res = this->create(limit, scale);
     typename Self::Container & res_data = res->getData();
