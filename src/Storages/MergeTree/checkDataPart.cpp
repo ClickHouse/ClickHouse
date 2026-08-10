@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Interpreters/FileCache/FileCache.h>
@@ -188,6 +189,12 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
         CompressedReadBuffer uncompressing_buf(compressed_hashing_buf, /* allow_different_codecs */ true);
+
+        /// This lambda serves every compressed entry; only part data, marks and the primary index
+        /// were written with a compress block size that used to be unclamped.
+        if (file_path.ends_with(".bin") || isCompressedFromFileName(file_path))
+            uncompressing_buf.allowUnboundedDecompressedSize();
+
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
 
         uncompressed_hashing_buf.ignoreAll();

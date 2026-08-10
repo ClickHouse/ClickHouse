@@ -1284,6 +1284,7 @@ void StorageKeeperMap::restoreDataImpl(
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file);
 
     CompressedReadBufferFromFile compressed_in{backup->readFile(data_file)};
+    compressed_in.allowUnboundedDecompressedSize();
     fs::path data_path_fs(zk_data_path);
 
     auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_multi;

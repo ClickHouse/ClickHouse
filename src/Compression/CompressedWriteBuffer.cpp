@@ -19,6 +19,12 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    /// A frame's size_decompressed is offset(), so buffer capacity is its upper bound.
+    size_t capBufferSize(size_t buf_size) { return std::min<size_t>(buf_size, DBMS_MAX_COMPRESSED_SIZE); }
+}
+
 void CompressedWriteBuffer::nextImpl()
 {
     if (!offset())
@@ -81,11 +87,12 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_, CompressionCodecPtr codec_, size_t buf_size, bool use_adaptive_buffer_size_, size_t adaptive_buffer_initial_size)
     /// The adaptive buffer grows from the initial size up to buf_size (the max), so the
     /// initial allocation must not exceed it (see WriteBufferFromFileDescriptor for details).
-    : BufferWithOwnMemory<WriteBuffer>(use_adaptive_buffer_size_ ? std::min(adaptive_buffer_initial_size, buf_size) : buf_size)
+    : BufferWithOwnMemory<WriteBuffer>(
+        use_adaptive_buffer_size_ ? std::min(adaptive_buffer_initial_size, capBufferSize(buf_size)) : capBufferSize(buf_size))
     , out(out_)
     , codec(std::move(codec_))
     , use_adaptive_buffer_size(use_adaptive_buffer_size_)
-    , adaptive_buffer_max_size(buf_size)
+    , adaptive_buffer_max_size(capBufferSize(buf_size))
 {
     if (!codec)
         codec = CompressionCodecFactory::instance().getDefaultCodec();

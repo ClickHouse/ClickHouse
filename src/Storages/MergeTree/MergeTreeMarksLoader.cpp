@@ -181,7 +181,11 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.mark_type.compressed)
         reader = std::move(buffer);
     else
-        reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+    {
+        auto compressed_reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+        compressed_reader->allowUnboundedDecompressedSize();
+        reader = std::move(compressed_reader);
+    }
 
     /// When streaming, compress marks block-by-block via Builder to avoid
     /// materializing the full plain marks array (can be hundreds of MiB

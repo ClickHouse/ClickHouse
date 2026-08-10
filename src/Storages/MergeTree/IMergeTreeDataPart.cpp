@@ -3429,16 +3429,11 @@ Strings getPartsNames(const MergeTreeDataPartsVector & parts)
     return part_names;
 }
 
-namespace
-{
-
 bool isCompressedFromFileName(const String & file_name)
 {
     std::string extension = fs::path(file_name).extension();
     return (MarkType::isMarkFileExtension(extension) && MarkType(extension).compressed)
         || isCompressedFromIndexExtension(extension);
-}
-
 }
 
 std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_name) const
@@ -3461,7 +3456,11 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
     auto res = data_part_storage.readFile(file_name, read_settings, size_hint);
 
     if (isCompressedFromFileName(file_name))
-        return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+    {
+        auto compressed = std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+        compressed->allowUnboundedDecompressedSize();
+        return compressed;
+    }
 
     return res;
 }
@@ -3486,7 +3485,11 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & 
     if (auto res = data_part_storage.readFileIfExists(file_name, read_settings, size_hint))
     {
         if (isCompressedFromFileName(file_name))
-            return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+        {
+            auto compressed = std::make_unique<CompressedReadBufferFromFile>(std::move(res));
+            compressed->allowUnboundedDecompressedSize();
+            return compressed;
+        }
 
         return res;
     }

@@ -22,6 +22,7 @@ static void checkByCompressedReadBuffer(const std::string & mrk_path, const std:
 {
     DB::ReadBufferFromFile mrk_in(mrk_path);
     DB::CompressedReadBufferFromFile bin_in(DB::createReadBufferFromFileBase(bin_path, /* settings= */ {}));
+    bin_in.allowUnboundedDecompressedSize();
 
     DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
     bool mrk2_format = mrk_path.ends_with(".mrk2");

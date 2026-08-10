@@ -1483,6 +1483,16 @@ The method byte also encodes the [column-level codecs](/reference/statements/cre
 
 `0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when `allow_experimental_codecs` is set, and the method byte is always accepted on decompression.
 
+### Size limits {#frame-size-limits}
+
+Both size fields are 32-bit on the wire, but each is capped at `0x40000000` (1 GiB) **inclusive**: exactly `0x40000000` is accepted and only a strictly larger value is rejected. A decoder checks both from the header alone, before allocating anything, and fails with `TOO_LARGE_SIZE_COMPRESSED`. Nested frames inside a `Multiple` codec use the same limit.
+
+The checksum does not gate these checks. It is an unkeyed CityHash128 over bytes the sender chose, so it detects corruption in transit but not a crafted header, and a decoder that sized a buffer from `uncompressed_size` before checking it would honour whatever the sender declared.
+
+A writer caps its own frame at the same value, so a current writer never emits a frame a current reader rejects: a writer asked for a larger buffer emits several frames within the limit instead of one above it. Readers of data written before that cap existed keep accepting larger frames, so previously written `Log`, `StripeLog`, MergeTree part, backup and `clickhouse compressor` files stay readable. A frame arriving over a socket is always subject to the limit.
+
+For a method byte whose codec stores the body verbatim (`NONE`, `Quantized`), the body length and `uncompressed_size` describe the same bytes, so `compressed_size - 9` must equal `uncompressed_size`; a frame where they disagree is rejected at header-parse time.
+
 ### Checksum {#checksum}
 
 ClickHouse uses CityHash v1.0.2 (the historical variant), **not** modern Google CityHash; the two produce different outputs.
