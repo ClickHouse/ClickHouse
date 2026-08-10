@@ -20,6 +20,7 @@ namespace SettingsChangesHistory
         Field previous_value;
         Field new_value;
         String reason;
+        bool compatibility_blocker = false;
     };
 
     using SettingsChanges = VectorWithMemoryTracking<SettingChange>;
