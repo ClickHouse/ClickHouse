@@ -142,6 +142,8 @@ public:
     {
         /// Only one match is required, no need to copy more.
         static const unsigned matches_limit = 1;
+        /// Empty-match iterations a check interval always covers, bounding how often the check can run.
+        static constexpr size_t min_empty_iterations_per_check = 64;
 
         Pos begin = reinterpret_cast<Pos>(src.data());
         Pos end = reinterpret_cast<Pos>(src.data() + src.size());
@@ -163,8 +165,13 @@ public:
                 }
                 else
                 {
-                    /// `offset` is not a position for an empty match, so only the byte `pos` advances is charged.
-                    budget.charge();
+                    /// `offset` is not a position for an empty match, so the distance scanned is unknown and
+                    /// may be up to `end - pos`. Charged as that distance, but capped so that a single
+                    /// iteration cannot consume a whole check interval and force a check on every byte.
+                    static constexpr size_t max_units_per_empty_match
+                        = CancellationBudget::units_per_check / min_empty_iterations_per_check;
+                    const size_t scanned_units = 1 + (end - pos) / CancellationBudget::bytes_per_unit;
+                    budget.chargeUnits(scanned_units < max_units_per_empty_match ? scanned_units : max_units_per_empty_match);
 
                     if (count_matches_stop_at_empty_match)
                     {
