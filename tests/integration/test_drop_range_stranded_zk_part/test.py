@@ -33,9 +33,7 @@ def remove_part_from_disk(node, table, part_name):
     ).strip()
     if not part_path:
         raise Exception("Part " + part_name + " doesn't exist")
-    node.exec_in_container(
-        ["bash", "-c", "rm -r {p}".format(p=part_path)], privileged=True
-    )
+    node.exec_in_container(["rm", "-r", part_path], privileged=True)
 
 
 def build_stranded_node(table):
