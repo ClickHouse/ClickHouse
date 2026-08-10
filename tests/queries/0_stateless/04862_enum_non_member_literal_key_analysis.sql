@@ -158,6 +158,10 @@ SELECT count() FROM t_nonkey WHERE e =   '4' SETTINGS validate_enum_literals_in_
 SELECT count() FROM t_nonkey WHERE e !=  '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT count() FROM t_nonkey WHERE e <=> '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT count() FROM t_nonkey WHERE isDistinctFrom(e, '4') SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT count() FROM t_nonkey WHERE e <   '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT count() FROM t_nonkey WHERE e <=  '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT count() FROM t_nonkey WHERE e >   '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+SELECT count() FROM t_nonkey WHERE e >=  '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT count() FROM t_key WHERE e = '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT count() FROM t_bf  WHERE e = '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 
