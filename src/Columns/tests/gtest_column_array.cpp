@@ -106,6 +106,9 @@ constexpr Int64 offsets_bytes = static_cast<Int64>(elements) * sizeof(IColumn::O
 /// The shape that motivated the override: one default appended per row, many times.
 constexpr size_t rows_appended_one_by_one = 400'000;
 
+/// An offsets array holds 496 elements before it has to grow, so appending this many reallocates it.
+constexpr size_t appended_past_initial_capacity = 4096;
+
 }
 
 /// A ColumnArray is created from an already populated nested column and offsets, so its offsets
@@ -151,15 +154,17 @@ TEST(ColumnArray, InsertManyDefaultsKeepsOffsetsAfterNonEmptyArrays)
     offsets->insert(Field(UInt64(2)));
     auto column = ColumnArray::create(std::move(nested), std::move(offsets));
 
-    column->insertManyDefaults(3);
+    /// More than the initial capacity, so the offsets are reallocated while the appended value is read.
+    /// Read by reference instead of by value, that value would sit in the freed buffer.
+    column->insertManyDefaults(appended_past_initial_capacity);
 
-    ASSERT_EQ(column->size(), 4u);
+    ASSERT_EQ(column->size(), appended_past_initial_capacity + 1);
     ASSERT_EQ(column->getData().size(), 2u);
     ASSERT_EQ((*column)[0], Field(Array{UInt64(1), UInt64(2)}));
-    for (size_t i = 1; i < 4; ++i)
+    for (size_t i = 1; i < appended_past_initial_capacity + 1; ++i)
     {
-        EXPECT_EQ(column->getOffsets()[i], 2u) << "offset " << i;
-        EXPECT_EQ((*column)[i], Field(Array{})) << "row " << i;
+        ASSERT_EQ(column->getOffsets()[i], 2u) << "offset " << i;
+        ASSERT_EQ((*column)[i], Field(Array{})) << "row " << i;
     }
 }
 
@@ -194,15 +199,15 @@ TEST(ColumnString, InsertManyDefaultsKeepsOffsetsAfterNonEmptyStrings)
     auto column = ColumnString::create();
     column->insert(Field(String("abc")));
 
-    column->insertManyDefaults(3);
+    column->insertManyDefaults(appended_past_initial_capacity);
 
-    ASSERT_EQ(column->size(), 4u);
+    ASSERT_EQ(column->size(), appended_past_initial_capacity + 1);
     ASSERT_EQ(column->getChars().size(), 3u); /// Strings here are not zero-terminated.
     ASSERT_EQ(column->getDataAt(0), std::string_view("abc"));
-    for (size_t i = 1; i < 4; ++i)
+    for (size_t i = 1; i < appended_past_initial_capacity + 1; ++i)
     {
-        EXPECT_EQ(column->getDataAt(i).size(), 0u) << "row " << i;
-        EXPECT_EQ(column->getOffsets()[i], 3u) << "offset " << i;
+        ASSERT_EQ(column->getDataAt(i).size(), 0u) << "row " << i;
+        ASSERT_EQ(column->getOffsets()[i], 3u) << "offset " << i;
     }
 }
 
