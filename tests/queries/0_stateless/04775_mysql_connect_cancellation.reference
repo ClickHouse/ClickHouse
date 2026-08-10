@@ -1,6 +1,7 @@
 kill_one_try ok
 kill_three_tries ok
 kill_unbounded_timeout ok
+unbounded_still_waits ok
 kill_retry_count ok
 kill_engine_table ok
 max_execution_time ok

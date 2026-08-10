@@ -35,25 +35,15 @@ report()
     echo "${name} ${verdict}"
 }
 
-# Run a query in the background and cancel it once it is really inside the MySQL connect.
-# Echoes the elapsed milliseconds; the error text is left in ${CLICKHOUSE_TMP}/${name}.err.
-# With wait_connect = 1 the cancellation is held back until the pool has entered a connection
-# attempt, which every arm that cancels a connect must ask for.
-# Returns 1 if the query never started and 2 if the connect never began; in both cases the
-# fixture is broken and the caller must not judge the arm.
-run_and_cancel()
+# Block until the query is really inside a MySQL connection attempt.
+# Returns 1 if the query never started and 2 if the connect never began; in both cases the query
+# is already reaped, the fixture is broken, and the caller must not judge the arm.
+wait_for_connect_start()
 {
-    local name=$1 query=$2 wait_connect=${3:-0}
-    local query_id="${CLICKHOUSE_DATABASE}_${name}"
-    local start_ms end_ms
+    local query_id=$1 client_pid=$2 wait_connect=${3:-0}
 
-    start_ms=$(date +%s%3N)
-    ${CLICKHOUSE_CLIENT_QUIET} --query_id "${query_id}" -q "${query}" \
-        > "${CLICKHOUSE_TMP}/${name}.err" 2>&1 &
-    local client_pid=$!
-
-    # Cancel only once the query is actually running, so the arm cannot pass by cancelling
-    # something that never started.
+    # Wait until the query is actually running, so an arm cannot pass by acting on something
+    # that never started.
     local seen=0
     for _ in {1..200}; do
         if [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${query_id}'")" = "1" ]; then
@@ -77,6 +67,8 @@ run_and_cancel()
             ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
             # system.text_log is MergeTree backed, so the randomized parallel replicas settings
             # apply to reads of it. Pin them off per query rather than tagging the whole test.
+            # This marker is logged at DEBUG, so the arms need the CI logger level (trace); a
+            # coarser level makes them loud fixture failures rather than silent passes.
             if [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.text_log
                     WHERE query_id = '${query_id}' AND logger_name = 'mysqlxx::Pool'
                       AND message LIKE 'Connecting to%'
@@ -92,6 +84,27 @@ run_and_cancel()
             return 2
         fi
     fi
+}
+
+# Run a query in the background and cancel it once it is really inside the MySQL connect.
+# Echoes the elapsed milliseconds; the error text is left in ${CLICKHOUSE_TMP}/${name}.err.
+# With wait_connect = 1 the cancellation is held back until the pool has entered a connection
+# attempt, which every arm that cancels a connect must ask for.
+# Propagates the wait_for_connect_start return codes.
+run_and_cancel()
+{
+    local name=$1 query=$2 wait_connect=${3:-0}
+    local query_id="${CLICKHOUSE_DATABASE}_${name}"
+    local start_ms end_ms rc
+
+    start_ms=$(date +%s%3N)
+    ${CLICKHOUSE_CLIENT_QUIET} --query_id "${query_id}" -q "${query}" \
+        > "${CLICKHOUSE_TMP}/${name}.err" 2>&1 &
+    local client_pid=$!
+
+    wait_for_connect_start "${query_id}" "${client_pid}" "${wait_connect}"
+    rc=$?
+    [ "${rc}" = "0" ] || return "${rc}"
 
     ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null"
     wait "${client_pid}" 2>/dev/null
@@ -142,6 +155,34 @@ kill_arm kill_one_try "connect_timeout = 100, connection_max_tries = 1"
 kill_arm kill_three_tries "connect_timeout = 100, connection_max_tries = 3"
 # connect_timeout = 0 means wait indefinitely, which must stay killable and must not fail early.
 kill_arm kill_unbounded_timeout "connect_timeout = 0, connection_max_tries = 1"
+
+# The arm above only proves an unbounded wait can be interrupted; a build that mistook the first
+# cancellation-polling slice for a real timeout would still satisfy it, because the cancellation
+# flag is already set by then. So check the other direction: the unbounded wait must still be
+# running after several slices, before anything cancels it.
+UNBOUNDED_NAME=unbounded_still_waits
+UNBOUNDED_ID="${CLICKHOUSE_DATABASE}_${UNBOUNDED_NAME}"
+${CLICKHOUSE_CLIENT_QUIET} --query_id "${UNBOUNDED_ID}" -q \
+    "SELECT * FROM mysql(${MYSQL_ARGS}, SETTINGS connect_timeout = 0, connection_max_tries = 1)" \
+    > "${CLICKHOUSE_TMP}/${UNBOUNDED_NAME}.err" 2>&1 &
+UNBOUNDED_PID=$!
+wait_for_connect_start "${UNBOUNDED_ID}" "${UNBOUNDED_PID}" 1
+RC=$?
+if [ "${RC}" = "0" ]; then
+    sleep 3
+    STILL_RUNNING=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${UNBOUNDED_ID}'")
+    ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${UNBOUNDED_ID}' SYNC FORMAT Null"
+    wait "${UNBOUNDED_PID}" 2>/dev/null
+    rm -f "${CLICKHOUSE_TMP}/${UNBOUNDED_NAME}.err"
+    if [ "${STILL_RUNNING}" = "1" ]; then
+        echo "${UNBOUNDED_NAME} ok"
+    else
+        echo "${UNBOUNDED_NAME} ended early"
+    fi
+else
+    rm -f "${CLICKHOUSE_TMP}/${UNBOUNDED_NAME}.err"
+    report_fixture_failure "${UNBOUNDED_NAME}" "${RC}"
+fi
 
 # The per-attempt check must stop the retry loop, not merely shorten each attempt. The pool logs
 # one line per completed retry, so count them. Waiting for the connect to start makes 1 exact
