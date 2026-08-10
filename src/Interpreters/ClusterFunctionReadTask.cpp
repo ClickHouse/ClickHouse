@@ -26,7 +26,8 @@ namespace Setting
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
 }
 
-ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context)
+ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context, bool read_pins_generation_)
+    : read_pins_generation(read_pins_generation_)
 {
     if (!object)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`object` cannot be null");
@@ -45,6 +46,19 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
     read_source_index = object->relative_path_with_metadata.read_source_index;
     file_bucket_info = object->file_bucket_info;
+
+    /// Propagate object metadata available from the List request to the worker to avoid re-fetching it
+    /// again. Only real (fetched) metadata: the `skip_object_metadata` placeholder carries no usable
+    /// size/time and the worker must fetch its own instead.
+    if (auto object_metadata = object->getObjectMetadata(); object_metadata && object_metadata->is_fetched)
+    {
+        has_object_metadata = true;
+        etag = object_metadata->etag;
+        size_bytes = object_metadata->size_bytes;
+        is_size_known = object_metadata->is_size_known;
+        last_modified_epoch_us = static_cast<UInt64>(object_metadata->last_modified.epochMicroseconds());
+        is_last_modified_known = object_metadata->is_last_modified_known;
+    }
 }
 
 ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(const std::string & path_)
@@ -76,6 +90,22 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     object->relative_path_with_metadata.read_source_index = read_source_index;
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
+
+    /// Rebuild the propagated split-time metadata (see `etag` in the header) so the worker's ranged GETs
+    /// validate against it.
+    if (has_object_metadata)
+    {
+        ObjectMetadata object_metadata;
+        object_metadata.etag = etag;
+        object_metadata.size_bytes = size_bytes;
+        object_metadata.is_size_known = is_size_known;
+        object_metadata.last_modified = Poco::Timestamp(static_cast<Poco::Timestamp::TimeVal>(last_modified_epoch_us));
+        object_metadata.is_last_modified_known = is_last_modified_known;
+        object->setObjectMetadata(object_metadata);
+        /// Mark it as coordinator-propagated (carries no tags) so the worker's read path reuses it -
+        /// skipping its own HEAD - yet still fetches tags when `_tags` is requested.
+        object->metadata_propagated_from_coordinator = true;
+    }
 
     return object;
 }
@@ -151,6 +181,34 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             protocol_version,
             DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX);
     }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_OBJECT_METADATA)
+    {
+        writeBinary(has_object_metadata, out);
+        if (has_object_metadata)
+        {
+            writeStringBinary(etag, out);
+            writeVarUInt(size_bytes, out);
+            writeBinary(is_size_known, out);
+            writeVarUInt(last_modified_epoch_us, out);
+            writeBinary(is_last_modified_known, out);
+        }
+    }
+    else if (file_bucket_info && !etag.empty() && read_pins_generation)
+    {
+        /// Fail closed: a bucket-split task carries offsets computed from the generation this ETag
+        /// identifies. A worker that cannot receive the ETag would pin nothing (or its own fresh HEAD)
+        /// and could apply those offsets to different bytes after a concurrent overwrite - the very
+        /// misread the propagation exists to prevent. Only gated for backends whose read actually pins
+        /// to the ETag (S3); a backend that never pins (Azure, HDFS, ...) loses nothing on an old worker,
+        /// so rejecting it would needlessly break mixed-version rolling upgrades.
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry the object metadata required to pin a bucket-split "
+            "read to the coordinator's generation (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_OBJECT_METADATA);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -205,6 +263,7 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             iceberg_info->deserializeForClusterFunctionProtocol(in, protocol_version);
         }
     }
+
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX)
     {
         bool has_read_source_index = false;
@@ -214,6 +273,19 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             UInt64 value = 0;
             readVarUInt(value, in);
             read_source_index = value;
+        }
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_OBJECT_METADATA)
+    {
+        readBinary(has_object_metadata, in);
+        if (has_object_metadata)
+        {
+            readStringBinary(etag, in);
+            readVarUInt(size_bytes, in);
+            readBinary(is_size_known, in);
+            readVarUInt(last_modified_epoch_us, in);
+            readBinary(is_last_modified_known, in);
         }
     }
 }

@@ -93,6 +93,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace FailPoints
+{
+    /// Test-only: pause a bucket-split worker just before its read (see `04418`) to overwrite between split and read.
+    extern const char object_storage_source_pause_before_read[];
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
@@ -845,25 +851,77 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (!object_info || object_info->getPath().empty())
             return {};
-        if (!object_info->getObjectMetadata())
+
+        /// Test-only pause point (see the failpoint declaration) so a test can overwrite between split and read.
+        if (object_info->file_bucket_info)
+            FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_read);
+
         {
-            bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
+            const bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
+            const auto propagated_metadata = object_info->getObjectMetadata();
+
+            /// Build the metadata-fetch key from the object's `RelativePathWithMetadata` so that a web
+            /// URL shard's `read_source_index` is honored when fetching (see the `getObjectMetadata`
+            /// overloads). All fetches below go through `metadata_object`.
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            if (query_settings.ignore_non_existent_file)
-            {
-                auto metadata = object_storage->tryGetObjectMetadata(metadata_object, with_tags);
-                if (!metadata)
-                    return {};
+            /// Metadata propagated by the s3Cluster coordinator (see `ClusterFunctionReadTaskResponse`)
+            /// lets the worker skip its own metadata HEAD. It is distinguished from ordinary single-node
+            /// listing metadata by `metadata_propagated_from_coordinator` (single-node listing already
+            /// includes tags when requested, so it must keep its no-extra-fetch behavior below).
+            const bool is_propagated_metadata
+                = object_info->metadata_propagated_from_coordinator && propagated_metadata.has_value();
 
-                object_info->setObjectMetadata(metadata.value());
-            }
-            else
+            if (is_propagated_metadata)
             {
-                object_info->setObjectMetadata(object_storage->getObjectMetadata(metadata_object, with_tags));
+                /// Reuse the propagated metadata - and, when `s3_validate_etag_on_read` is enabled, pin
+                /// this read to the coordinator's generation via `If-Match` (S3 is the only backend that
+                /// enforces `StoredObject::etag` on the GET) - unless `_tags` was requested: the propagated
+                /// metadata carries no tags, so they must be fetched. Ignore-missing mode reuses it too:
+                /// a pre-read probe cannot close the list-to-read race anyway (the object can still vanish
+                /// between the probe and the GET), so it would only cost an extra request.
+                const bool reuse_propagated_metadata = !with_tags;
+                if (!reuse_propagated_metadata)
+                {
+                    std::optional<ObjectMetadata> fetched;
+                    if (query_settings.ignore_non_existent_file)
+                    {
+                        fetched = object_storage->tryGetObjectMetadata(metadata_object, with_tags);
+                        if (!fetched)
+                            return {};
+                    }
+                    else
+                        fetched = object_storage->getObjectMetadata(metadata_object, with_tags);
+
+                    if (object_storage->getType() == ObjectStorageType::S3)
+                    {
+                        /// Keep the pinned ETag/size/timestamp and take only the freshly listed tags,
+                        /// so the pin to the coordinator's generation is preserved.
+                        ObjectMetadata pinned = *propagated_metadata;
+                        pinned.tags = std::move(fetched->tags);
+                        object_info->setObjectMetadata(pinned);
+                    }
+                    else
+                        object_info->setObjectMetadata(*fetched);
+                }
             }
+            else if (!propagated_metadata)
+            {
+                if (query_settings.ignore_non_existent_file)
+                {
+                    auto metadata = object_storage->tryGetObjectMetadata(metadata_object, with_tags);
+                    if (!metadata)
+                        return {};
+
+                    object_info->setObjectMetadata(metadata.value());
+                }
+                else
+                    object_info->setObjectMetadata(object_storage->getObjectMetadata(metadata_object, with_tags));
+            }
+            /// Otherwise `propagated_metadata` is present from the worker's own listing / key iteration
+            /// (single-node): keep it as-is, no extra fetch.
         }
 
         if (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0
