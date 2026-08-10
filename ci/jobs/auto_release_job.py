@@ -56,7 +56,7 @@ def _fetch_history() -> None:
     `origin/<release_branch>` and the release tags to measure how far each
     branch has moved since its last release. Mirrors the fetch phase of
     ci/jobs/release_job.py."""
-    # Fail early; the gate is because `--unshallow` errors on a complete repo.
+    # git fails `--unshallow` on an already complete repository.
     shallow = Shell.get_output_or_raise("git rev-parse --is-shallow-repository")
     if shallow.strip() == "true":
         Shell.check(
@@ -149,7 +149,6 @@ def _failed_statuses(sha: str) -> List[str]:
 
     Keeps only the newest status per context (GitHub records one row per
     update) before deciding pass/fail, matching the legacy logic."""
-    # Fail early: an exhausted read returns "", same as "no statuses".
     out = GH.get_output_with_retries(
         f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/statuses"
         f" --jq '.[] | [.context, .state, .updated_at] | @tsv'",
@@ -218,7 +217,6 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
     reports: SKIPPED when not ready yet, ERROR when the branch is broken."""
     tag = _latest_release_tag(branch)
     if not tag:
-        # Broken release metadata, not a branch that is merely not ready yet.
         return "", "no release tag found", Result.Status.ERROR
     if tag.endswith("new"):
         return (
@@ -276,13 +274,11 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
 
 def _latest_create_release_run_id() -> int:
     """Newest CreateRelease run id, or 0 when the workflow has never run."""
-    # Fail early: a 0 fallback would make `_await_new_run` accept a foreign run.
     out = GH.get_output_with_retries(
         f"gh run list --workflow {CREATE_RELEASE_WORKFLOW} -L1 --json databaseId"
         f" --jq '.[0].databaseId // 0'",
         strict=True,
     )
-    # `.[0].databaseId // 0` already prints 0 for an empty run list.
     return int(out.strip())
 
 
