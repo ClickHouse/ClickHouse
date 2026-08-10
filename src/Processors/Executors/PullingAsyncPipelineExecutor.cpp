@@ -101,6 +101,14 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 {
     if (!data)
     {
+        /// Execution starts lazily, on the first pull. A cancellation that arrived before that
+        /// must not be lost, or this pull would start the very query the caller has already
+        /// cancelled (e.g. `LocalConnection` cancels the executor while the client is still
+        /// blocked opening the `INTO OUTFILE` sink, before anything was pulled, and then keeps
+        /// pulling to drain the connection).
+        if (is_cancelled)
+            return false;
+
         data = std::make_unique<Data>();
         data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
@@ -171,6 +179,9 @@ bool PullingAsyncPipelineExecutor::pull(Block & block, uint64_t milliseconds)
 
 void PullingAsyncPipelineExecutor::cancel()
 {
+    /// Latch the cancellation even when execution has not started: see pull().
+    is_cancelled = true;
+
     if (!data)
         return;
 
