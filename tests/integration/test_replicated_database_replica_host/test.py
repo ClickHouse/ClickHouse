@@ -39,6 +39,15 @@ node3 = cluster.add_instance(
     stay_alive=True,
 )
 
+# Node advertising a bare IPv6 literal
+node4 = cluster.add_instance(
+    "node4",
+    main_configs=["configs/config_with_ipv6_replica_host.xml"],
+    with_zookeeper=True,
+    macros={"replica": "node4", "shard": "shard1"},
+    stay_alive=True,
+)
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -153,6 +162,44 @@ def test_replica_host_special_characters(started_cluster):
     assert len(parts) >= 3
 
     node1.query("DROP DATABASE test_escape SYNC")
+
+
+def test_replica_host_ipv6_literal(started_cluster):
+    """Test that a bare IPv6 replica_host round-trips into the auto-generated cluster.
+
+    `getHostID` stores `escapeForFileName(host) + ':' + port`, so a bare IPv6 literal comes
+    back from ZooKeeper as an ambiguous `2001:db8::1:9000` string. `getClusterImpl` must
+    split host and port before handing the address to `parseAddress`, and re-assemble the
+    host in the bracketed form, otherwise `system.clusters` (and with it `Distributed` and
+    `ON CLUSTER`) fails for that replica even though registration in ZooKeeper succeeded.
+    """
+    db = "test_ipv6_host"
+
+    node4.query(
+        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'node4')"
+    )
+    node4.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+    # The IPv6 literal must be registered in ZooKeeper in the escaped form
+    host_id = node4.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/{db}/replicas' AND name = 'shard1|node4'"
+    ).strip()
+    assert "2001:db8::1" in urllib.parse.unquote(host_id), \
+        f"Expected the IPv6 replica_host in host_id, got: {host_id}"
+
+    # ... and it must be readable back as a cluster address, in the unambiguous bracketed form
+    host_name = node4.query(
+        f"SELECT host_name FROM system.clusters WHERE cluster = '{db}' AND database_replica_name = 'node4'"
+    ).strip()
+    assert host_name == "[2001:db8::1]", \
+        f"Expected the IPv6 replica_host as a bracketed cluster address, got: '{host_name}'"
+
+    port = node4.query(
+        f"SELECT port FROM system.clusters WHERE cluster = '{db}' AND database_replica_name = 'node4'"
+    ).strip()
+    assert port == "9000", f"Expected the TCP port 9000 in the cluster address, got: '{port}'"
+
+    node4.query(f"DROP DATABASE {db} SYNC")
 
 
 def test_replica_host_multiple_databases(started_cluster):

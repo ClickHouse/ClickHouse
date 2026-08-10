@@ -510,7 +510,14 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
             current_shard = shard;
             shards.emplace_back();
         }
-        String hostname = unescapeForFileName(host_port);
+        /// `host_port` is `escapeForFileName(host) + ':' + port`, so unescaping it as a whole yields an
+        /// ambiguous `host:port` string for a bare IPv6 literal (e.g. `2001:db8::1:9000`), which
+        /// `parseAddress` cannot split back into host and port. Parse the parts separately and
+        /// re-assemble the address in the unambiguous bracketed form instead.
+        auto [host, port] = Cluster::Address::fromString(host_port);
+        if (host.find(':') != String::npos && !host.starts_with('['))
+            host = '[' + host + ']';
+        String hostname = host + ':' + toString(port);
         shards.back().push_back(DatabaseReplicaInfo{std::move(hostname), std::move(shard), std::move(replica), {}});
     }
 
