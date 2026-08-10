@@ -111,6 +111,11 @@ bool temporaryFilesCodecIsExperimental(const String & compression_codec)
     return CompressionCodecFactory::instance().get(compression_codec)->isExperimental();
 }
 
+bool spillCodecNeedsExperimentalCodecsOptIn(bool spill_is_reachable, bool allow_experimental_codecs, const String & compression_codec)
+{
+    return spill_is_reachable && allow_experimental_codecs && temporaryFilesCodecIsExperimental(compression_codec);
+}
+
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
     : metric_increment(metrics.current_metric)
 {

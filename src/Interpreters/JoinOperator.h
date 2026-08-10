@@ -127,6 +127,12 @@ struct JoinSettings
     /// (the smaller of the two applies). Returns 0 if neither is set, meaning no automatic spilling.
     static UInt64 getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join);
 
+    /// Whether any join built from these settings can reach temporary files, i.e. whether
+    /// `temporary_files_codec` can ever be resolved. `false` for the in-memory-only configurations
+    /// (`hash` / `parallel_hash` / `direct` / `full_sorting_merge` with no external-join threshold and no
+    /// in-memory size limits), which therefore need not carry the spill-codec opt-in in a serialized plan.
+    bool canSpillToTemporaryFiles() const;
+
     /// Combines the stored raw absolute and ratio settings using local memory limits.
     /// Recomputed on every executor so distributed queries pick up per-node memory.
     UInt64 getEffectiveMaxBytesBeforeExternalJoin() const

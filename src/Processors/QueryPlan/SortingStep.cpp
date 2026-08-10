@@ -208,11 +208,13 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     /// `allow_experimental_codecs` is a plan-setting name older peers do not know, and
-    /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire
-    /// only when the opt-in is `true` *and* the spill codec is actually experimental (a reader that does
-    /// not receive it keeps the default `false`, which for a non-experimental codec encodes the identical
-    /// spill behavior). See the matching comment in `AggregatingStep::serializeSettings`.
-    if (allow_experimental_codecs && temporaryFilesCodecIsExperimental(temporary_files_codec))
+    /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire only
+    /// when the spill behavior of this step actually depends on it: `MergeSortingTransform::consume`
+    /// touches the temporary data only when `max_bytes_before_external_sort` is set, so a sort that stays
+    /// in memory never resolves the codec and must not carry the opt-in. See the matching comment in
+    /// `AggregatingStep::serializeSettings` and `spillCodecNeedsExperimentalCodecsOptIn`.
+    if (spillCodecNeedsExperimentalCodecsOptIn(
+            max_bytes_in_block_before_external_sort != 0, allow_experimental_codecs, temporary_files_codec))
         settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }

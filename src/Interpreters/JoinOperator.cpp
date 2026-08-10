@@ -284,11 +284,12 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::max_joined_block_size_bytes] = max_joined_block_size_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
     /// `allow_experimental_codecs` is a plan-setting name older peers do not know, and
-    /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire
-    /// only when the opt-in is `true` *and* the spill codec is actually experimental (a reader that does
-    /// not receive it keeps the default `false`, which for a non-experimental codec encodes the identical
-    /// spill behavior). See the matching comment in `AggregatingStep::serializeSettings`.
-    if (allow_experimental_codecs && temporaryFilesCodecIsExperimental(temporary_files_codec))
+    /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire only
+    /// when the spill behavior of this join actually depends on it: a join that can never reach temporary
+    /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
+    /// the matching comment in `AggregatingStep::serializeSettings` and
+    /// `spillCodecNeedsExperimentalCodecsOptIn`.
+    if (spillCodecNeedsExperimentalCodecsOptIn(canSpillToTemporaryFiles(), allow_experimental_codecs, temporary_files_codec))
         settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
     settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;
@@ -308,6 +309,31 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
+}
+
+bool JoinSettings::canSpillToTemporaryFiles() const
+{
+    /// A `hash` / `parallel_hash` / `direct` / `full_sorting_merge` join reaches temporary files only through
+    /// the automatic conversion to a spilling hash join, which both planners gate on an external-join
+    /// threshold (`PlannerJoins::tryCreateJoin` and `ExpressionAnalyzer::createJoin` test
+    /// `max_bytes_before_external_join > 0`). The raw settings are tested rather than the effective threshold
+    /// so the answer does not depend on the local memory limits of whoever asks.
+    if (max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0.)
+        return true;
+
+    /// `grace_hash` always spills. `partial_merge` / `prefer_partial_merge` / `auto` can end up in
+    /// `MergeJoin`, which writes the right table through `SortedBlocksWriter` once the in-memory size limits
+    /// are hit.
+    for (auto algorithm : join_algorithms)
+    {
+        if (algorithm == JoinAlgorithm::GRACE_HASH || algorithm == JoinAlgorithm::PARTIAL_MERGE
+            || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE || algorithm == JoinAlgorithm::AUTO)
+            return true;
+    }
+
+    /// `ConstantJoin` (`CROSS`, comma and constant-predicate joins, used for every algorithm) streams the
+    /// right table to disk as soon as the in-memory size limits would be exceeded.
+    return max_rows_in_join != 0 || max_bytes_in_join != 0;
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)

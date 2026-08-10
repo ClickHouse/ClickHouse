@@ -70,6 +70,15 @@ struct TemporaryDataOnDiskSettings
 /// resolves to an experimental codec, i.e. spilling with it requires the `allow_experimental_codecs` opt-in.
 bool temporaryFilesCodecIsExperimental(const String & compression_codec);
 
+/// Whether a query-plan step that spills with `compression_codec` has to carry the
+/// `allow_experimental_codecs` opt-in on the wire, so a remote shard resolves the same codec the initiator
+/// accepted. `QueryPlanSerializationSettings` is a strict named schema - `readBinary` throws on a name it
+/// does not know - so a peer that predates the setting rejects any plan carrying it. The name therefore
+/// goes on the wire only when the spill behavior of the step actually depends on it: the step can reach
+/// temporary files at all (`spill_is_reachable`), the opt-in is set, *and* the codec it enables is
+/// experimental. In every other case the reader's default (`false`) encodes the identical spill behavior.
+bool spillCodecNeedsExperimentalCodecsOptIn(bool spill_is_reachable, bool allow_experimental_codecs, const String & compression_codec);
+
 /// Creates temporary files located on specified resource (disk, fs_cache, etc.)
 using TemporaryFileProvider = std::function<std::unique_ptr<TemporaryFileHolder>(const TemporaryDataOnDiskSettings &, size_t)>;
 TemporaryFileProvider createTemporaryFileProvider(VolumePtr volume);
