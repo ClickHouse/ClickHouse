@@ -4,10 +4,6 @@
 -- `nullable_keys128_hash64` / `nullable_keys256_hash64`. Those are new instantiations, so check that each
 -- still groups exactly as the in-memory aggregation does - including the NULL group, which for a single
 -- nullable key lives in a slot outside the cells and for the packed keys is folded into the key itself.
--- The key widths below are what selects each method. Nullable packed keys reserve a null-map bitmap inside
--- the packed key - 2 bytes of the 16 for `keys128`, 4 of the 32 for `keys256` - so only 14 bytes are left
--- for the keys themselves in the 128-bit form: two `UInt32` keys fit, two `UInt64` keys do not and fall to
--- `keys256`.
 
 SET max_bytes_before_external_group_by = 1;
 SET max_threads = 4;
