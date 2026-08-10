@@ -1,17 +1,16 @@
 ---
-description: 'The TPC-DS benchmark data set and queries.'
-sidebarTitle: 'TPC-DS'
-slug: /getting-started/example-datasets/tpcds
-title: 'TPC-DS (2012)'
-doc_type: 'guide'
-keywords: ['example dataset', 'tpcds', 'benchmark', 'sample data', 'performance testing']
+title: "TPC-DS (2012)"
+description: "The TPC-DS benchmark data set and queries."
+sidebarTitle: "TPC-DS"
+slug: "/getting-started/example-datasets/tpcds"
+doc_type: "guide"
+keywords: ["example dataset", "tpcds", "benchmark", "sample data", "performance testing"]
 ---
 
-Similar to the [Star Schema Benchmark (SSB)](/get-started/sample-datasets/star-schema), TPC-DS is based on [TPC-H](/get-started/sample-datasets/tpch), but it took the opposite route, i.e. it expanded the number of joins needed by storing the data in a complex snowflake schema (24 instead of 8 tables).
-The data distribution is skewed (e.g. normal and Poisson distributions).
-It includes 99 reporting and ad-hoc queries with random substitutions.
+Similar to the [Star Schema Benchmark (SSB)](/get-started/sample-datasets/star-schema), TPC-DS is based on [TPC-H](/get-started/sample-datasets/tpch), but it took the opposite route, i.e. it expanded the number of joins needed by storing the data in a complex snowflake schema (24 instead of 8 tables). The data distribution is skewed (e.g. normal and Poisson distributions). It includes 99 reporting and ad-hoc queries with random substitutions.
 
 **References**
+
 - [The Making of TPC-DS](https://dl.acm.org/doi/10.5555/1182635.1164217) (Nambiar), 2006
 
 ## Data Generation and Import {#data-generation-and-import}
@@ -67,9 +66,12 @@ Then run the generated queries.
 
 The 99 TPC-DS queries can be found [here](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-ds/queries) in the ClickHouse repository.
 
-To get SQL standard compatible behavior and expected results, apply the settings from [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/settings.json).
-See the [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/README.md) for known issues and notes on specific queries.
+To get SQL standard compatible behavior and expected results, apply the settings from [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/settings.json). See the [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/README.md) for known issues and notes on specific queries.
 
 **Correctness**
 
-The result of the queries agrees with the official results unless mentioned otherwise. There may be minor precision differences, which are permitted by the TPC-DS specification.
+The results of the queries agree with the official results unless otherwise noted. There may be minor precision differences, which are permitted by the TPC-DS specification.
+
+## Performance benchmark
+
+ClickHouse tracks TPC-DS query performance across every released version. You can explore run times for all 99 TPC-DS queries (scale factor 40) on the [ClickHouse versions benchmark](https://benchmark.clickhouse.com/versions/#version=+s&dataset=+ps&metric=hot&queries=-) page to see how performance has evolved over time.
