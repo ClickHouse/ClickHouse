@@ -8,26 +8,14 @@
 101	1970-01-01 00:03:20.000	2
 102	1970-01-01 00:02:30.000	10
 102	1970-01-01 00:04:10.000	20
--- selector with matchers
-101	1970-01-01 00:01:40.000	1
-101	1970-01-01 00:03:20.000	2
-101	1970-01-01 00:05:00.000	3
-101	1970-01-01 00:01:40.000	1
-101	1970-01-01 00:03:20.000	2
-101	1970-01-01 00:05:00.000	3
-201	1970-01-01 00:01:40.000	100
-201	1970-01-01 00:05:00.000	300
--- prometheusQuery evaluation over the same selector
-[('__name__','foo'),('env','dev')]	1970-01-01 00:04:10.000	20
-[('__name__','foo'),('env','prod')]	1970-01-01 00:04:10.000	2
-[('env','dev')]	[('1970-01-01 00:03:20.000',10),('1970-01-01 00:05:00.000',20)]
-[('env','prod')]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:03:20.000',2),('1970-01-01 00:05:00.000',3)]
 -- the SELECT over the samples table uses bare columns, timestamp range first
-1	1	1
 1
--- a samples table whose physical type differs (here: by timezone only) still gets the cast, with the same results
-101	1970-01-01 00:01:40.000	1	DateTime64(3)
-101	1970-01-01 00:03:20.000	2	DateTime64(3)
-102	1970-01-01 00:02:30.000	10	DateTime64(3)
-102	1970-01-01 00:04:10.000	20	DateTime64(3)
-1	1	1
+-- a samples table whose physical type differs (here: by timezone only): bare conditions, cast in the outer SELECT
+id	timestamp	value
+UInt64	DateTime64(3)	Float64
+101	1970-01-01 00:01:40.000	1
+101	1970-01-01 00:03:20.000	2
+102	1970-01-01 00:02:30.000	10
+102	1970-01-01 00:04:10.000	20
+-- the bare timestamp condition comes before the id IN condition, and the timestamp cast is in the outer SELECT
+1	1

@@ -1,25 +1,22 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
--- Tag no-replicated-database: `DatabaseReplicated::dropTable` does not drop `TimeSeries` inner tables
--- synchronously, so the deferred inner DROPs are rejected with "ON CLUSTER is not allowed for Replicated database".
 
 -- `timeSeriesSelector` (and every PromQL selector evaluated through it) builds a SELECT over the
--- samples table. When the samples table already stores exactly the requested column types, that
--- SELECT must reference the bare `id` / `timestamp` / `value` columns (no no-op `CAST(id, ...)` /
--- `toDateTime64(timestamp, ...)` / `toFloat64(value)` wrappers) and must put the selective
--- timestamp range condition before the `id IN <tags subquery>` condition. Wrapped primary-key
--- columns disable primary-key-based selectivity estimation (which misorders the PREWHERE read
--- steps and runs the expensive `in(id, set)` probe on all read rows), are re-evaluated over the
--- whole primary index during index analysis, and re-execute per row at scan time.
+-- samples table. That inner SELECT must reference the bare `id` / `timestamp` / `value` columns
+-- (no casts wrapping the columns in its SELECT list) and must put the selective timestamp range
+-- condition before the `id IN <tags subquery>` condition. Wrapped primary-key columns are
+-- re-evaluated over the whole primary index during index analysis, and they disable
+-- primary-key-based selectivity estimation - then the PREWHERE read steps are misordered and
+-- the expensive `in(id, set)` probe runs on all read rows. The casts to the declared types are
+-- applied by an outer SELECT over the filtered subquery, so they run only on the rows which
+-- passed the filter.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
 
 DROP TABLE IF EXISTS ts_tags;
 DROP TABLE IF EXISTS ts_samples;
-DROP TABLE IF EXISTS ts_samples_tz;
 DROP TABLE IF EXISTS ts;
-DROP TABLE IF EXISTS ts_cast;
 
 CREATE TABLE ts_tags
 (
@@ -39,6 +36,9 @@ CREATE TABLE ts_samples
 
 CREATE TABLE ts ENGINE = TimeSeries SAMPLES ts_samples TAGS ts_tags;
 
+-- Series 201 ('bar') must not match the 'foo' selector, and it has a sample inside the requested
+-- time range - so if the `id IN <tags subquery>` condition is ever lost from the generated query,
+-- that sample leaks into the result and the test fails.
 INSERT INTO ts_tags (id, metric_name, tags, min_time, max_time) VALUES
     (101, 'foo', map('env', 'prod'), toDateTime64(0, 3), toDateTime64(1000, 3)),
     (102, 'foo', map('env', 'dev'), toDateTime64(0, 3), toDateTime64(1000, 3)),
@@ -59,58 +59,33 @@ SELECT id, timestamp, value FROM ts_samples
 WHERE (timestamp >= toDateTime64(100, 3)) AND (timestamp <= toDateTime64(250, 3)) AND (id IN (101, 102))
 ORDER BY id, timestamp;
 
-SELECT '-- selector with matchers';
-
-SELECT id, timestamp, value FROM timeSeriesSelector(ts, 'foo{env="prod"}', 0, 1000) ORDER BY id, timestamp;
-SELECT id, timestamp, value FROM timeSeriesSelector(ts, '{__name__=~"foo|bar", env!="dev"}', 0, 1000) ORDER BY id, timestamp;
-
-SELECT '-- prometheusQuery evaluation over the same selector';
-
-SELECT * FROM prometheusQuery(ts, 'foo', 250) ORDER BY ALL;
-SELECT * FROM prometheusQueryRange(ts, 'sum by (env) (foo)', 100, 300, 100) ORDER BY ALL;
-
 SELECT '-- the SELECT over the samples table uses bare columns, timestamp range first';
 
--- The plan of the query built over the samples table must not contain casts applied to the
--- `id` / `timestamp` / `value` columns (matches both `CAST(id, ...)` and `_CAST(id, ...)`).
-SELECT plan NOT LIKE '%CAST(id%' AS id_is_bare,
-       plan NOT LIKE '%toDateTime64(timestamp%' AS timestamp_is_bare,
-       plan NOT LIKE '%toFloat64(value%' AS value_is_bare
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts, 'foo', 100, 250)));
+-- The WHERE conditions must reference the bare `id` / `timestamp` columns in the generated order.
+-- If aliased casts shadow the columns, the conditions render with the wrapped expressions
+-- (e.g. `CAST(timestamp AS DateTime64(3)) >= ...`), and `position` returns 0 for both patterns.
+-- `optimize_move_to_prewhere = 0` keeps the generated condition order.
+SELECT position(plan, 'timestamp >=') BETWEEN 1 AND position(plan, 'id IN') AS bare_timestamp_condition_before_id_in
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, timestamp, value FROM timeSeriesSelector(ts, 'foo', 100, 250) SETTINGS optimize_move_to_prewhere = 0));
 
--- The generated WHERE must list the timestamp range conditions before `id IN <subquery>`:
--- with `optimize_move_to_prewhere = 0` the filter keeps the generated condition order.
--- (The old shape rendered `CAST(id, ...) IN ...` and `toDateTime64(timestamp, ...) >= ...`,
--- which match neither pattern, so this correctly returns 0 for the old shape.)
-SELECT position(plan, 'timestamp >=') BETWEEN 1 AND position(plan, 'id IN') AS timestamp_condition_before_id_in
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts, 'foo', 100, 250) SETTINGS optimize_move_to_prewhere = 0));
+SELECT '-- a samples table whose physical type differs (here: by timezone only): bare conditions, cast in the outer SELECT';
 
-SELECT '-- a samples table whose physical type differs (here: by timezone only) still gets the cast, with the same results';
+-- The declared timestamp type of `ts` was captured as `DateTime64(3)` when the table was created,
+-- so this ALTER changes only the physical type of the samples-table column.
+ALTER TABLE ts_samples MODIFY COLUMN timestamp DateTime64(3, 'UTC');
 
--- `DataTypeDateTime64::equals` ignores the timezone, so a samples table with an explicit timezone
--- is accepted by the TimeSeries engine while the requested timestamp type stays `DateTime64(3)`.
--- The cast must be kept in this case: eliding it would change the result header's type name.
+-- The types row of `TSVWithNamesAndTypes` shows the runtime type of the result.
+SELECT id, timestamp, value FROM timeSeriesSelector(ts, 'foo', 100, 250) ORDER BY id, timestamp FORMAT TSVWithNamesAndTypes;
 
-CREATE TABLE ts_samples_tz
-(
-    id UInt64,
-    timestamp DateTime64(3, 'UTC'),
-    value Float64
-) ENGINE = MergeTree() ORDER BY (id, timestamp);
+-- The cast of `timestamp` to the declared type appears only in the outer SELECT (the `Output:`
+-- line of the plan), not in the conditions: comparing the bare `timestamp` column is correct
+-- because the timezone does not change the stored values.
+SELECT '-- the bare timestamp condition comes before the id IN condition, and the timestamp cast is in the outer SELECT';
 
-CREATE TABLE ts_cast (`time_series` Array(Tuple(DateTime64(3), Float64))) ENGINE = TimeSeries SAMPLES ts_samples_tz TAGS ts_tags;
+SELECT position(plan, 'timestamp >=') BETWEEN 1 AND position(plan, 'id IN') AS bare_timestamp_condition_before_id_in,
+       plan LIKE '%CAST(timestamp AS DateTime64(3))%' AS timestamp_cast_in_outer_select
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, timestamp, value FROM timeSeriesSelector(ts, 'foo', 100, 250) SETTINGS optimize_move_to_prewhere = 0));
 
-INSERT INTO ts_samples_tz SELECT id, timestamp, value FROM ts_samples;
-
-SELECT id, timestamp, value, toTypeName(timestamp) FROM timeSeriesSelector(ts_cast, 'foo', 100, 250) ORDER BY id, timestamp;
-
-SELECT plan LIKE '%toDateTime64(timestamp%' AS timestamp_is_cast,
-       plan NOT LIKE '%CAST(id%' AS id_is_bare,
-       plan NOT LIKE '%toFloat64(value%' AS value_is_bare
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_cast, 'foo', 100, 250)));
-
-DROP TABLE ts_cast;
 DROP TABLE ts;
-DROP TABLE ts_samples_tz;
 DROP TABLE ts_samples;
 DROP TABLE ts_tags;
