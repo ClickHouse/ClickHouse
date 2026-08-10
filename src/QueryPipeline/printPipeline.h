@@ -5,15 +5,24 @@
 #include <IO/Operators.h>
 #include <Processors/IProcessor.h>
 
+#include <fmt/format.h>
+
 namespace DB
 {
 
 /** Print pipeline in "dot" format for GraphViz.
   * You can render it with:
   *  dot -T png < pipeline.dot > pipeline.png
+  *
+  * `with_addresses` appends the processor address to every node label, in the same
+  * `{uniqID} at {address}` format that malformed-graph diagnostics use for the endpoints of a
+  * broken edge (see `describeProcessor` in `ExecutingGraph.cpp`). `getUniqID` alone degrades to
+  * the `_0` suffix for every processor when `CurrentThread` is not initialized, so without the
+  * address repeated processor classes would be indistinguishable in the dump. It is off by
+  * default because addresses are unstable noise in user-facing output such as `EXPLAIN PIPELINE`.
   */
 template <typename Processors, typename Statuses>
-void printPipeline(const Processors & processors, const Statuses & statuses, WriteBuffer & out, bool with_profile = false)
+void printPipeline(const Processors & processors, const Statuses & statuses, WriteBuffer & out, bool with_profile = false, bool with_addresses = false)
 {
     out << "digraph\n{\n";
     out << "  rankdir=\"LR\";\n";
@@ -33,8 +42,10 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     for (const auto & processor : processors)
     {
         const auto & description = processor->getDescription();
-        out << "    n" << get_proc_id(*processor) << "[label=\"" << processor->getUniqID() << (description.empty() ? "" : ":")
-            << description;
+        out << "    n" << get_proc_id(*processor) << "[label=\"" << processor->getUniqID();
+        if (with_addresses)
+            out << " at " << fmt::format("{}", static_cast<const void *>(&*processor));
+        out << (description.empty() ? "" : ":") << description;
 
         if (statuses_iter != statuses.end())
         {
@@ -92,9 +103,9 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
 }
 
 template <typename Processors>
-void printPipeline(const Processors & processors, WriteBuffer & out, bool with_profile = false)
+void printPipeline(const Processors & processors, WriteBuffer & out, bool with_profile = false, bool with_addresses = false)
 {
-    printPipeline(processors, VectorWithMemoryTracking<IProcessor::Status>(), out, with_profile);
+    printPipeline(processors, VectorWithMemoryTracking<IProcessor::Status>(), out, with_profile, with_addresses);
 }
 
 /// Prints pipeline in compact representation.
