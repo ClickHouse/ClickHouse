@@ -536,7 +536,7 @@ TEST_F(ResidencyEquivalence, CachelessInterleavedStreamsServeFromPublishedResidu
 /// Randomized layout matrix: deterministic pseudo-randomness on purpose.
 TEST_F(ResidencyEquivalence, RandomizedTwoTierMatrix)
 {
-    std::mt19937 rng(12345); /// NOLINT(cert-msc32-c,cert-msc51-cpp)
+    std::mt19937 rng(12345); /// NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp)
 
     for (size_t round = 0; round < 8; ++round)
     {
