@@ -16,7 +16,7 @@ class StreamingCursorResult
 {
 public:
     /// partition_id -> {"block_number": N, "block_offset": M}
-    using PartitionCursors = std::map<String, std::map<String, Int64>>;
+    using PartitionCursors = std::map<String, std::map<String, Int64>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     void merge(const PartitionCursors & partition_cursors)
     {
