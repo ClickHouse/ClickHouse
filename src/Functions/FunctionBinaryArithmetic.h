@@ -3520,11 +3520,8 @@ public:
 
         const bool is_div_function = name_view == "divide" || name_view == "intDiv";
 
-        // Normalize the constant divisor once, before the branches split, so that every divisor-zero
-        // check below compares the value the division actually uses (see `substituteIPField`) instead
-        // of an IP-tagged `Field`, which has no accurate-comparison arm against a number. For a
-        // non-division name this stays a `Null` `Field`, which compares unequal to zero without
-        // visitor dispatch, and the resulting boolean is read only under `is_div_function` anyway.
+        // Normalized once so every divisor-zero check below compares the value the division actually
+        // uses. Stays `Null` for a non-division name, and `Null` never compares equal to zero.
         const Field right_constant = (is_div_function && right.column && isColumnConst(*right.column))
             ? substituteIPField((*right.column)[0])
             : Field();
@@ -3545,34 +3542,24 @@ public:
                     auto arg_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(left.type)));
                     auto divisor_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(right.type)));
 
-                    // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
-                    // width (`DecimalBinaryOperation` feeds both operands into
-                    // `DivideIntegralImpl<NativeResultType, NativeResultType>` for both functions): the
-                    // dividend is cast into that width and pre-multiplied by the scale, so it wraps or
-                    // truncates at a boundary that depends on the decimal width and scale, not on the
-                    // dividend width. That boundary is not cheaply modelled, so do not claim monotonicity.
-                    // Only a Decimal divisor takes this integral path; a Float divisor computes through
-                    // floating point and stays monotonic.
+                    // A Decimal divisor divides in the decimal's own signed width after scaling the
+                    // dividend, so it wraps at a boundary that is not cheaply modelled here.
                     if ((name_view == "intDiv" || name_view == "divide") && isDecimal(divisor_type))
                         return {false, true, false, false};
 
-                    // `intDiv(unsigned, signed-integer-const)` reinterprets the dividend through a signed
-                    // cast (see `DivideIntegralImpl`/`intDivRangeCrossesSignedWrap`); a Float divisor
-                    // computes through floating point and never wraps. An unbounded range over an unsigned
-                    // domain always contains the discontinuity, so it is never always-monotonic; report
-                    // monotonicity only when an endpoint keeps the range on one side of it.
+                    // `intDiv(unsigned, signed const)` casts the dividend to signed, so it is a step
+                    // function. An unbounded range always contains the step: never always-monotonic.
                     if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
                     {
-                        // At least one endpoint is null here; either one that is not can still be an IP-tagged `Field`.
+                        // A non-null endpoint here can still be IP-tagged.
                         if (intDivRangeCrossesSignedWrap(
                                 arg_type, substituteIPField(left_point), substituteIPField(right_point)))
                             return {false, true, false, false};
                         return {true, is_constant_positive, false};
                     }
 
-                    // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
-                    // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
-                    // so the function is monotonic decreasing even though the raw constant looks positive.
+                    // Mirror case: an unsigned constant divisor with its high bit set casts to a negative
+                    // divisor, so the function decreases even though the raw constant looks positive.
                     if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
                         is_constant_positive = false;
 
@@ -3711,36 +3698,24 @@ public:
                 auto arg_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(left.type)));
                 auto divisor_type = substituteIPType(removeNullable(recursiveRemoveLowCardinality(right.type)));
 
-                // `intDiv` or `divide` by a Decimal constant computes in the decimal's native signed
-                // width (`DecimalBinaryOperation` feeds both operands into
-                // `DivideIntegralImpl<NativeResultType, NativeResultType>` for both functions): the
-                // dividend is cast into that width and pre-multiplied by the scale, so it wraps or
-                // truncates at a boundary that depends on the decimal width and scale, not on the
-                // dividend width. That boundary is not cheaply modelled, so do not claim monotonicity.
-                // Only a Decimal divisor takes this integral path; a Float divisor computes through
-                // floating point and stays monotonic.
+                // A Decimal divisor divides in the decimal's own signed width after scaling the
+                // dividend, so it wraps at a boundary that is not cheaply modelled here.
                 if ((name_view == "intDiv" || name_view == "divide") && isDecimal(divisor_type))
                     return {false, true, false, false};
 
-                // `intDiv(unsigned, signed-integer-const)` is a step function (see
-                // `intDivRangeCrossesSignedWrap`): a range crossing the discontinuity is non-monotonic,
-                // so reject it (no pruning); a range on one side is monotonic on that range but not
-                // always-monotonic. The wrap is exclusive to the signed-integer divisor path; a Float
-                // divisor computes through floating point and never wraps.
+                // `intDiv(unsigned, signed const)` casts the dividend to signed, so it is a step
+                // function: reject a range crossing the step, report monotonicity for one that does not.
                 if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
                 {
-                    // The endpoints are values of the declared key type, so an IP key yields IP-tagged
-                    // `Field`s; substitute them too (see `substituteIPField`) before comparing them
-                    // against the numeric wrap point.
+                    // The endpoints carry the declared key type, so an IP key yields IP-tagged `Field`s.
                     if (intDivRangeCrossesSignedWrap(
                             arg_type, substituteIPField(left_point), substituteIPField(right_point)))
                         return {false, true, false, false};
                     return {true, is_constant_positive, false, is_strict};
                 }
 
-                // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
-                // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
-                // so the function is monotonic decreasing even though the raw constant looks positive.
+                // Mirror case: an unsigned constant divisor with its high bit set casts to a negative
+                // divisor, so the function decreases even though the raw constant looks positive.
                 if (name_view == "intDiv" && intDivConstReinterpretsNegative(arg_type, divisor_type, constant))
                     is_constant_positive = false;
 
@@ -3908,9 +3883,8 @@ public:
         return accurateLessOrEqual(wrap_field, constant);
     }
 
-    /// `IPv4`/`IPv6` operands never reach the arithmetic as themselves: both `getReturnTypeImplStatic`
-    /// and `executeImpl` substitute them with `UInt32`/`UInt128`. Apply the same substitution so the
-    /// type predicates below describe the arithmetic that actually runs.
+    /// The arithmetic substitutes an `IPv4`/`IPv6` operand with `UInt32`/`UInt128`, so the type
+    /// predicates must describe the substituted type, not the declared one.
     static DataTypePtr substituteIPType(const DataTypePtr & type)
     {
         if (isIPv4(type))
@@ -3920,11 +3894,8 @@ public:
         return type;
     }
 
-    /// Value counterpart of `substituteIPType`: an IP-tagged `Field` has no accurate-comparison arm
-    /// against a number, so it must be converted before it is compared here. `IPv6` is stored
-    /// big-endian and the substitution casts it through `convertFromIPv6ToUInt128`, which swaps the
-    /// limbs and byte-swaps each, so a raw `toUnderType` bit copy would yield a different number;
-    /// reuse the same cast the substitution performs.
+    /// Value counterpart: an IP-tagged `Field` cannot be compared against a number. Must cast rather
+    /// than copy the bits, because `IPv6` is stored big-endian and the cast byte-swaps it.
     static Field substituteIPField(const Field & field)
     {
         const bool is_ipv4 = field.getType() == Field::Types::IPv4;
