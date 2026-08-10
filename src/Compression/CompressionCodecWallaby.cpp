@@ -197,37 +197,50 @@ UInt8 leadClassIndex(UInt8 lead)
     return index;
 }
 
+/// The outcome of quantizing one value, distinguishing the two reasons a value can fail, because
+/// only one of them carries over to the smaller scales - see the exception bounds in the chooser.
+enum class QuantizeStatus : UInt8
+{
+    Ok,
+    /// The value needs more decimal places than this scale offers, or it is not finite at all.
+    /// Either way it fails at every smaller scale too: it is an exception of all of them.
+    MonotoneFailure,
+    /// The scaled value leaves the domain where the integer conversion is exact. This says
+    /// nothing about the smaller scales, where the same value scales to a smaller magnitude.
+    DomainFailure,
+};
+
 /** Quantizes a value to alpha decimal places and verifies that the division reconstructs it
-  * bitwise. Returns false when the value cannot be represented this way losslessly.
+  * bitwise. Returns the reason when the value cannot be represented this way losslessly.
   */
 template <typename T>
-bool quantizeValue(typename WallabyTraits<T>::FloatType value, UInt8 alpha, typename WallabyTraits<T>::SignedType & quantized)
+QuantizeStatus quantizeValue(typename WallabyTraits<T>::FloatType value, UInt8 alpha, typename WallabyTraits<T>::SignedType & quantized)
 {
     using Traits = WallabyTraits<T>;
     using SignedType = typename Traits::SignedType;
     using FloatType = typename Traits::FloatType;
 
     if (!std::isfinite(value))
-        return false;
+        return QuantizeStatus::MonotoneFailure;
 
     const Float64 scaled = static_cast<Float64>(value) * WALLABY_POW10[alpha];
     /// Stay inside the exact llround domain.
     if (!(std::fabs(scaled) < 9.2e18))
-        return false;
+        return QuantizeStatus::DomainFailure;
 
     const Int64 q = std::llround(scaled);
     if constexpr (std::is_same_v<SignedType, Int32>)
     {
         if (q < std::numeric_limits<Int32>::min() || q > std::numeric_limits<Int32>::max())
-            return false;
+            return QuantizeStatus::DomainFailure;
     }
 
     const FloatType reconstructed = static_cast<FloatType>(static_cast<Float64>(q) / WALLABY_POW10[alpha]);
     if (std::bit_cast<T>(reconstructed) != std::bit_cast<T>(value))
-        return false;
+        return QuantizeStatus::MonotoneFailure;
 
     quantized = static_cast<SignedType>(q);
-    return true;
+    return QuantizeStatus::Ok;
 }
 
 /// Returns the smallest number of decimal places that quantizes the value losslessly, if any.
@@ -236,7 +249,7 @@ std::optional<UInt8> findAlpha(typename WallabyTraits<T>::FloatType value)
 {
     typename WallabyTraits<T>::SignedType quantized;
     for (UInt8 alpha = 0; alpha <= WallabyTraits<T>::max_alpha; ++alpha)
-        if (quantizeValue<T>(value, alpha, quantized))
+        if (quantizeValue<T>(value, alpha, quantized) == QuantizeStatus::Ok)
             return alpha;
     return std::nullopt;
 }
@@ -343,16 +356,23 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         return best_total_size <= header_size ? 0 : (best_total_size - header_size) / exceptionCost<T>();
     };
 
+    /// Of the exceptions of the scale scanned last, how many are exceptions of every smaller
+    /// scale as well - see monotone_exceptions_at below. A scan abandoned halfway still leaves a
+    /// valid count here: every position it did visit is a real position of the vector.
+    UInt32 monotone_exceptions = 0;
+
     const auto quantize_all = [&](UInt8 candidate_alpha) -> bool
     {
         const UInt32 budget = exception_budget();
         exception_count = 0;
+        monotone_exceptions = 0;
         SignedType previous_good = 0;
         Int32 first_good = -1;
         for (UInt32 i = 0; i < count; ++i)
         {
             SignedType q;
-            if (quantizeValue<T>(values[i], candidate_alpha, q))
+            const QuantizeStatus status = quantizeValue<T>(values[i], candidate_alpha, q);
+            if (status == QuantizeStatus::Ok)
             {
                 quantized[i] = q;
                 previous_good = q;
@@ -361,6 +381,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             }
             else
             {
+                monotone_exceptions += status == QuantizeStatus::MonotoneFailure ? 1 : 0;
                 if (exception_count == budget)
                     return false;
                 exception_positions[exception_count] = static_cast<UInt16>(i);
@@ -381,7 +402,6 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     struct Packing
     {
         UInt8 bits = 0;
-        UInt8 bits_for = 0;
         bool use_delta = false;
         SignedType base = 0;
         UInt32 payload_size = 0;
@@ -421,7 +441,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
 
         const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
         const UInt32 payload_size = header_size + packed_bytes + exception_count * exceptionCost<T>();
-        return Packing{bits, bits_for, use_delta, use_delta ? quantized[0] : min_q, payload_size};
+        return Packing{bits, use_delta, use_delta ? quantized[0] : min_q, payload_size};
     };
 
     /** Candidate scales and their evaluation. A single sampled high-precision value must not
@@ -469,36 +489,45 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         if (sampled_frequency[a] > sampled_frequency[mode_alpha])
             mode_alpha = a;
 
-    /// The first successfully evaluated alpha (normally the most frequent sampled one) and its
-    /// measured packed widths; the pruning estimates scale the widths from there.
+    /// The first successfully evaluated alpha (normally the most frequent sampled one); it is the
+    /// scale whose quantization seeds the trailing-zero candidate generation.
     UInt8 reference_alpha = 0;
     bool reference_filled = false;
-    std::optional<UInt8> reference_packed_bits;
-    std::optional<UInt8> reference_for_bits;
 
-    /** Cheap lower-bound estimate deciding whether a candidate scale can still beat the best
-      * measured payload. Every term of it is one-sided in the candidate's favor, so a candidate
-      * is skipped only when it provably cannot win. Exceptions are counted, not extrapolated:
-      * each sampled value whose minimal alpha exceeds the candidate (or that no scale can
-      * represent) is one distinct position the candidate has to except, which is a lower bound
-      * on its exception count. Extrapolating that count to the whole vector would not be a
-      * bound - the sample positions are deterministic, so a block can put its entire
-      * high-precision minority on them - and the earlier revision of this estimate pruned the
-      * true winner on exactly such blocks. (The trailing-zero structure of the
-      * quantized values is deliberately not used here: for Float32 promoted to Float64 the
-      * quantized integers at scales beyond the type's decimal precision carry junk low digits,
-      * which would wildly overestimate the exception count.) The packed width scales by
-      * log2(10) bits per scale step, always rounded in the candidate's favor: downward from the
-      * cheaper of the reference packings, upward from its Frame-of-Reference width (the range
-      * of the quantized values grows by exactly a factor of ten per step, while no such bound
-      * holds for the delta packing, whose exception placeholders differ between scales), with
-      * two extra bits of slack for values entering the lanes.
+    /// Per scale, the number of values that its scan found to need more decimal places than it
+    /// offers. Those values are exceptions of every smaller scale as well, which is the bound the
+    /// pruning below uses.
+    UInt32 monotone_exceptions_at[Traits::max_alpha + 1] = {};
+
+    /** Lower bound on the payload of a candidate scale, deciding whether it can still beat the
+      * best measured payload. It is a *bound*, not an estimate: a candidate is skipped only when
+      * it provably cannot win, so the chooser never misses the cheapest encoding of a vector.
       *
-      * A bound counted over a sample of 32 values prunes much less than the extrapolation it
-      * replaces, and every unpruned candidate costs two full passes over the vector. So when the
-      * current sample is not enough to prune, the sample is grown (up to WALLABY_MAX_SAMPLES) and
-      * the estimate retried: a larger sample is a strictly stronger bound, and the growth is paid
-      * for only where it can save the far more expensive full-vector passes.
+      * The only term is the exception count, counted rather than extrapolated: each sampled value
+      * whose minimal alpha exceeds the candidate (or that no scale can represent) is one distinct
+      * position the candidate has to except. Extrapolating that count to the whole vector is not a
+      * bound, because the sample positions are deterministic and a block can put its entire
+      * high-precision minority on them. The packed lanes contribute nothing: nothing about their
+      * width can be bounded from below from the reference scale's width. Scaling it by log2(10)
+      * bits per scale step (as an earlier revision did) is an *upper* bound in the widening
+      * direction and unsound in the narrowing one, since the payload takes the cheaper of the
+      * Frame-of-Reference and the delta packing, and a wider scale can turn an almost-constant
+      * exception-ridden vector into one-bit lanes with no exceptions at all.
+      *
+      * The second source of the bound is the work of the candidates already evaluated. A value
+      * that needs more decimal places than some scale offers - or that is not finite - needs more
+      * than any smaller scale offers too, so the number of such values seen while scanning a wider
+      * scale is a lower bound on the exception count of every narrower one. This is what makes
+      * full-precision data cheap again: the first scanned scale abandons its scan once its
+      * exceptions outgrow the best known encoding, and that very count then prunes every narrower
+      * scale without scanning it. (Failures caused by the scaled magnitude leaving the exact
+      * integer domain are excluded: those do not carry over to smaller scales.)
+      *
+      * A bound counted over a sample of 32 values prunes little, and every unpruned candidate
+      * costs two full passes over the vector. So when the current sample is not enough to prune,
+      * the sample is grown (up to WALLABY_MAX_SAMPLES) and the bound recomputed: a larger sample
+      * of distinct positions is a strictly stronger bound, and the growth is paid for only where
+      * it can save the far more expensive full-vector passes.
       */
     const auto estimate_allows = [&](UInt8 candidate) -> bool
     {
@@ -509,31 +538,14 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             UInt32 bound = sampled_unquantizable;
             for (UInt32 i = 0; i < sampled_alpha_count; ++i)
                 bound += sampled_alphas[i] > candidate ? 1 : 0;
+            for (UInt8 wider = candidate + 1; wider <= Traits::max_alpha; ++wider)
+                bound = std::max(bound, monotone_exceptions_at[wider]);
             return bound;
         };
         UInt32 exceptions_lower_bound = exceptions_bound();
-        UInt32 bits_estimate = 0;
-        if (candidate < reference_alpha)
-        {
-            if (!reference_packed_bits)
-                return true;
-            const UInt32 bits_shrink = static_cast<UInt32>(reference_alpha - candidate) * 3322 / 1000;
-            bits_estimate = reference_packed_bits.value() > bits_shrink ? reference_packed_bits.value() - bits_shrink : 0;
-        }
-        else
-        {
-            if (!reference_for_bits)
-                return true;
-            const UInt32 bits_grow = static_cast<UInt32>(candidate - reference_alpha) * 3322 / 1000;
-            bits_estimate = reference_for_bits.value() + bits_grow;
-            bits_estimate = bits_estimate > 2 ? bits_estimate - 2 : 0;
-            if (bits_estimate >= Traits::width_bits)
-                return false;
-        }
-        const UInt32 lanes_size = Compression::FFOR::calculateBitpackedBytes(static_cast<UInt8>(bits_estimate));
         /// best_total_size also carries the caller-provided bound, so a candidate that cannot
         /// beat the other encoding of this vector is skipped even before any candidate wins.
-        while (header_size + lanes_size + exceptions_lower_bound * exceptionCost<T>() < best_total_size)
+        while (header_size + exceptions_lower_bound * exceptionCost<T>() < best_total_size)
         {
             if (!sample_can_grow || sampled_positions >= WALLABY_MAX_SAMPLES)
                 return true;
@@ -593,7 +605,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         if (!estimate_allows(candidate))
             return;
 
-        if (!quantize_all(candidate))
+        const bool quantized_all = quantize_all(candidate);
+        monotone_exceptions_at[candidate] = std::max(monotone_exceptions_at[candidate], monotone_exceptions);
+        if (!quantized_all)
         {
             scratch_alpha.reset();
             return;
@@ -632,11 +646,6 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         }
 
         const auto packing = measure_packing();
-        if (packing && candidate == reference_alpha)
-        {
-            reference_packed_bits = packing->bits;
-            reference_for_bits = packing->bits_for;
-        }
         if (packing && (!best || packing->payload_size < best->payload_size))
         {
             best = *packing;

@@ -3329,4 +3329,31 @@ TEST_F(WallabyTest, FindsTheWinningScaleBehindTheFirstExceptions)
     EXPECT_LT(wallabyCompressedSize(values), 3600u);
 }
 
+TEST_F(WallabyTest, PrefersAWiderScaleThatCollapsesTheLanes)
+{
+    /// A wider scale can be dramatically cheaper than a narrower one, so nothing in the chooser
+    /// may assume that widening costs bits: 500 distinct 7-decimal values in a span of 5e-5 around
+    /// a constant 100.0 pack into 9-bit lanes with no exceptions at all (~1.2 KiB), while alpha = 0
+    /// has to except every one of them (~5 KiB) and the XOR mode pays ~30 bits per value of the
+    /// minority. The minority sits off the sampled positions, so alpha = 7 is discovered from the
+    /// exception probes rather than from the sample. This is a guard rather than a regression:
+    /// the previous encoder also picked alpha = 7 here (its unsound widening estimate never got
+    /// the chance to prune it, because the tight `size_to_beat` from the XOR mode makes the
+    /// alpha = 0 reference abandon its scan first), but the property is what the pruning bound is
+    /// now required to preserve by construction.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024, 100.0);
+    size_t placed = 0;
+    for (size_t i = 0; i < values.size() && placed < 500; ++i)
+    {
+        if (!is_sampled_position[i])
+        {
+            ++placed;
+            values[i] = 100.0 + static_cast<Float64>(placed) / 1e7;
+        }
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 1400u);
+}
+
 }
