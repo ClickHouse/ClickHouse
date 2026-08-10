@@ -3,12 +3,14 @@ SET allow_experimental_statistics = 1;
 SET allow_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 
--- The assertions match plan text, so pin the settings that reshape it. Keep
--- `optimize_use_implicit_projections = 1`: at 0 the first query prunes nothing even without the fix.
+-- The assertions match plan text, so pin the settings that reshape it. Both projection settings must
+-- stay 1 (the effective value is their conjunction): at 0 the first query prunes nothing even
+-- without the fix.
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 
 DROP TABLE IF EXISTS t_stats_prune_in;
@@ -27,8 +29,7 @@ INSERT INTO t_stats_prune_in VALUES ('a', 100);
 INSERT INTO t_stats_prune_in VALUES ('a', 200);
 
 -- Statistics pruning declines an `IN` atom whose set is not built yet, so it prunes nothing and
--- all 3 parts are read. (Absence of the `Statistics` row is the observable; the subquery-execution
--- count itself is proven by the swallow-counter A/B in the PR, not by this assertion.)
+-- all 3 parts are read. This pins the pruning outcome, not the absence of the subquery execution.
 SELECT count() FROM (EXPLAIN indexes = 1
     SELECT count() FROM t_stats_prune_in WHERE c IN (SELECT 1)
     SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 1
