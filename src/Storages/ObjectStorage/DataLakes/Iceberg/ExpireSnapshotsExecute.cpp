@@ -702,7 +702,6 @@ ExpireSnapshotsResult expireSnapshots(
             persistent_table_components.metadata_cache,
             context,
             log,
-            compression_method,
             persistent_table_components.table_uuid);
 
         if (metadata->getValue<Int32>(f_format_version) < 2)

@@ -129,7 +129,7 @@ ReachableFilesResult collectReachableFiles(
     ContextPtr context,
     LoggerPtr log)
 {
-    auto [version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    auto [version, metadata_path, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
@@ -147,7 +147,6 @@ ReachableFilesResult collectReachableFiles(
         persistent_table_components.metadata_cache,
         context,
         log,
-        compression_method,
         persistent_table_components.table_uuid);
 
     std::unordered_set<String> reachable;

@@ -187,7 +187,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
+        = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, std::nullopt);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);
     std::optional<String> table_uuid = std::nullopt;
@@ -221,7 +221,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,
@@ -600,7 +600,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
+        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.table_uuid);
 
     insertRowToLogTable(
         local_context,
@@ -869,7 +869,6 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         persistent_components.metadata_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
         persistent_components.table_uuid);
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
@@ -904,7 +903,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
 {
-    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_components.table_path,
         data_lake_settings,
@@ -915,7 +914,7 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         persistent_components.metadata_compression_method);
 
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
+        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.table_uuid);
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History
@@ -1491,7 +1490,6 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.metadata_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
         persistent_components.table_uuid);
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);

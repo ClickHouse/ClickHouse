@@ -208,7 +208,7 @@ static Plan getPlan(
         persistent_table_components.metadata_compression_method);
 
     Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, persistent_table_components.table_uuid);
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -1369,7 +1369,6 @@ void compactIcebergManifests(
             persistent_table_components.metadata_cache,
             context_,
             log,
-            persistent_table_components.metadata_compression_method,
             persistent_table_components.table_uuid);
 
         /// Validate the format version on the freshly-fetched metadata (before the threshold early-return), since the table may have been upgraded to v3 by another writer after this table object was created.

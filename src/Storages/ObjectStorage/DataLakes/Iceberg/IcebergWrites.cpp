@@ -896,7 +896,6 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.metadata_cache,
         context,
         log,
-        compression_method,
         persistent_table_components.table_uuid);
     metadata_compression_method = compression_method;
     filename_generator = FileNamesGenerator(
@@ -1184,7 +1183,6 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites"),
-                compression_method,
                 persistent_table_components.table_uuid);
             partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
             auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
