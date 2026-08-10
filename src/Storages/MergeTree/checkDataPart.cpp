@@ -76,7 +76,7 @@ bool isRetryableException(std::exception_ptr exception_ptr)
 #if USE_AWS_S3
     catch (const S3Exception & s3_exception)
     {
-        return s3_exception.isRetryableError();
+        return s3_exception.isRetryableError() || s3_exception.isAccessTokenExpiredError();
     }
 #endif
 #if USE_AZURE_BLOB_STORAGE
