@@ -332,9 +332,10 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class
 /// it does not expect. It descends exactly the levels whose serializations `assert_cast` the
-/// column (`Array`, `Nullable`, `Tuple`, `Map`, and the class-only `Dynamic`, `Variant`, `Object`)
-/// and accepts everything else: serializations of scalars do not type-check the column, and leaf
-/// divergence (e.g. a part storing `UInt32` for a column widened to `UInt64`) is legitimate.
+/// column (`Array`, `Nullable`, `Tuple`, `Map`, `Variant`, the typed paths of `Object`, and the
+/// class-only `Dynamic`) and accepts everything else: serializations of scalars do not type-check
+/// the column, and leaf divergence (e.g. a part storing `UInt32` for a column widened to
+/// `UInt64`) is legitimate.
 /// A wrapper mismatch means the type and the column were resolved from different sources
 /// (the table's metadata vs a data part with an older type), which the walk itself would report
 /// only as a `Bad cast` between two column classes, with no indication of which column it was.
@@ -375,15 +376,46 @@ static bool columnMatchesTypeStructure(const IColumn & column, const IDataType &
         return column_map && columnMatchesTypeStructure(column_map->getNestedColumn(), *type_map->getNestedType());
     }
 
-    /// The internal structure of these is data-dependent, so only the class is checked.
+    /// `SerializationVariant::enumerateStreams` walks every alternative declared by the type and
+    /// pairs it with the column's variant of the same global discriminator, so the whole
+    /// alternative list has to match, not only the outer class.
+    if (const auto * type_variant = typeid_cast<const DataTypeVariant *>(&type))
+    {
+        const auto * column_variant = typeid_cast<const ColumnVariant *>(&column);
+        if (!column_variant || column_variant->getNumVariants() != type_variant->getVariants().size())
+            return false;
+
+        for (size_t i = 0; i < type_variant->getVariants().size(); ++i)
+            if (!columnMatchesTypeStructure(column_variant->getVariantByGlobalDiscriminator(i), *type_variant->getVariant(i)))
+                return false;
+
+        return true;
+    }
+
+    /// `SerializationObject::enumerateStreams` walks every typed path declared by the type and
+    /// looks it up in the column, so the typed paths have to match. Dynamic paths and shared data
+    /// are taken from the column itself, hence they need no check.
+    if (const auto * type_object = typeid_cast<const DataTypeObject *>(&type))
+    {
+        const auto * column_object = typeid_cast<const ColumnObject *>(&column);
+        if (!column_object || column_object->getTypedPaths().size() != type_object->getTypedPaths().size())
+            return false;
+
+        for (const auto & [path, path_type] : type_object->getTypedPaths())
+        {
+            auto it = column_object->getTypedPaths().find(path);
+            if (it == column_object->getTypedPaths().end() || !columnMatchesTypeStructure(*it->second, *path_type))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// The internal structure of a `Dynamic` column is data-dependent: `enumerateStreams` takes
+    /// both the type and the column of its variant from the column itself, so only the class is
+    /// checked here.
     if (typeid_cast<const DataTypeDynamic *>(&type))
         return typeid_cast<const ColumnDynamic *>(&column) != nullptr;
-
-    if (typeid_cast<const DataTypeVariant *>(&type))
-        return typeid_cast<const ColumnVariant *>(&column) != nullptr;
-
-    if (typeid_cast<const DataTypeObject *>(&type))
-        return typeid_cast<const ColumnObject *>(&column) != nullptr;
 
     return true;
 }
