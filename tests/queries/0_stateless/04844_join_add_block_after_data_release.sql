@@ -6,6 +6,9 @@
 SET join_algorithm = 'grace_hash';
 SET max_bytes_in_join = 100000;
 SET grace_hash_join_initial_buckets = 1;
+-- With a single build thread the throw unwinds before anything re-enters the join, and the
+-- query then reports the injected fault whether or not the fix is present.
+SET max_threads = 4;
 
 -- A throw while the join's data is released leaves the instance alive with no data, and the
 -- rehash path then adds another block to it. Without the guard that read dereferences null.
