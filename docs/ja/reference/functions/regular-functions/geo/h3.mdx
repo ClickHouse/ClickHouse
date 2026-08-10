@@ -901,7 +901,7 @@ SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
   ## h3ExactEdgeLengthM
 </div>
 
-入力されたH3 インデックスが表す単方向エッジの正確な長さを、メートル単位で返します。
+入力されたH3 インデックスが表す単方向エッジの正確な辺の長さを、メートル単位で返します。
 
 **構文**
 
@@ -915,25 +915,25 @@ h3ExactEdgeLengthM(index)
 
 **戻り値**
 
-* 辺の長さ (メートル単位) の正確な値。[Float64](/ja/reference/data-types/float)
+* 正確な辺の長さ (メートル単位) の値。[Float64](/ja/reference/data-types/float)
 
 **例**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
+SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 ```
 
 ```text title="Response"
-┌───exactEdgeLengthM─┐
-│ 195449.63163407316 │
-└────────────────────┘
+┌─exactEdgeLengthM─┐
+│    195449.631634 │
+└──────────────────┘
 ```
 
 <div id="h3exactedgelengthkm">
   ## h3ExactEdgeLengthKm
 </div>
 
-入力された h3 index が表す単方向エッジの厳密な長さを、キロメートル単位で返します。
+入力された h3 index が表す単方向エッジの正確な辺の長さを、キロメートル単位で返します。
 
 **構文**
 
@@ -947,25 +947,25 @@ h3ExactEdgeLengthKm(index)
 
 **戻り値**
 
-* キロメートル単位の辺の正確な長さ。[Float64](/ja/reference/data-types/float)
+* キロメートル単位の正確な辺の長さ。[Float64](/ja/reference/data-types/float)
 
 **例**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
+SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 ```
 
 ```text title="Response"
-┌──exactEdgeLengthKm─┐
-│ 195.44963163407317 │
-└────────────────────┘
+┌─exactEdgeLengthKm─┐
+│      195.44963163 │
+└───────────────────┘
 ```
 
 <div id="h3exactedgelengthrads">
   ## h3ExactEdgeLengthRads
 </div>
 
-入力された H3 インデックス が表す単方向エッジの正確な長さを、ラジアン単位で返します。
+入力された H3 インデックス が表す単方向エッジの正確な辺の長さを、ラジアン単位で返します。
 
 **構文**
 
@@ -984,13 +984,13 @@ h3ExactEdgeLengthRads(index)
 **例**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
+SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads;
 ```
 
 ```text title="Response"
-┌──exactEdgeLengthRads─┐
-│ 0.030677980118976447 │
-└──────────────────────┘
+┌─exactEdgeLengthRads─┐
+│      0.030677980119 │
+└─────────────────────┘
 ```
 
 <div id="h3numhexagons">
@@ -1053,9 +1053,9 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 ```
 
 ```text title="Response"
-┌──────h3PointDistM─┐
-│ 2223901.039504589 │
-└───────────────────┘
+┌───────h3PointDistM─┐
+│ 2223901.0395045886 │
+└────────────────────┘
 ```
 
 <div id="h3pointdistkm">
@@ -1086,9 +1086,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 ```
 
 ```text title="Response"
-┌─────h3PointDistKm─┐
-│ 2223.901039504589 │
-└───────────────────┘
+┌──────h3PointDistKm─┐
+│ 2223.9010395045884 │
+└────────────────────┘
 ```
 
 <div id="h3pointdistrads">
@@ -1231,8 +1231,8 @@ h3Distance(start,end)
 
 **パラメータ**
 
-* `start` — 開始点を表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)
-* `end` — 終了点を表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)
+* `start` — 始点を表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)
+* `end` — 終点を表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
@@ -1248,7 +1248,7 @@ h3Distance(start,end)
 
 ```text title="Response"
 ┌─distance─┐
-│        7 │
+│        6 │
 └──────────┘
 ```
 

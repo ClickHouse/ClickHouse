@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/scaling
 sidebarTitle: 'Mise à l’échelle'
 title: 'Mise à l’échelle'
-description: 'Redimensionnez verticalement votre instance Postgres managed by ClickHouse grâce à des types de VM flexibles et à une mise à l’échelle indépendante des ressources'
+description: 'Redimensionnez verticalement votre instance ClickHouse Managed Postgres grâce à des types de VM flexibles et à une mise à l’échelle indépendante des ressources'
 keywords: ['mise à l’échelle Postgres', 'mise à l’échelle verticale', 'types de VM', 'mise à l’échelle NVMe', 'types d’instance', 'mise à l’échelle des performances']
 doc_type: 'guide'
 ---
@@ -12,13 +12,13 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
-Managed Postgres offre des options de mise à l’échelle flexibles pour s’adapter aux exigences de votre charge de travail. Avec plus de 50 types d’instance basés sur NVMe au choix, vous pouvez faire évoluer indépendamment le CPU, la mémoire et le stockage afin d’optimiser les performances et les coûts pour votre use case spécifique.
+ClickHouse Managed Postgres offre des options de mise à l’échelle flexibles pour s’adapter aux exigences de votre charge de travail. Avec plus de 50 types d’instance basés sur NVMe au choix, vous pouvez faire évoluer indépendamment le CPU, la mémoire et le stockage afin d’optimiser les performances et les coûts pour votre use case spécifique.
 
 <div id="instance-types">
   ## Types d’instance et flexibilité
 </div>
 
-Managed Postgres offre un large éventail de types d’instance, chacun optimisé pour différents profils de charge de travail :
+ClickHouse Managed Postgres offre un large éventail de types d’instance, chacun optimisé pour différents profils de charge de travail :
 
 * **Plus de 50 types d’instance** disponibles, avec des configurations optimisées pour la puissance de calcul, la mémoire et le stockage
 * **Stockage basé sur NVMe** sur tous les types d’instance pour des E/S disque stables et hautes performances
@@ -46,7 +46,7 @@ Différents types de charges de travail tirent parti de configurations de ressou
   ## Fonctionnement de la mise à l’échelle
 </div>
 
-Lorsque vous changez de type d’instance, Managed Postgres effectue une mise à l’échelle verticale qui alloue une nouvelle infrastructure et migre votre base de données avec un minimum d’indisponibilité.
+Lorsque vous changez de type d’instance, ClickHouse Managed Postgres effectue une mise à l’échelle verticale qui alloue une nouvelle infrastructure et migre votre base de données avec un minimum d’indisponibilité.
 
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="Paramètres de mise à l’échelle" size="md" border />
 
@@ -95,7 +95,7 @@ Le temps de restauration peut varier de quelques minutes à quelques heures, mai
   ### Restauration parallèle avec WAL-G
 </div>
 
-Managed Postgres utilise [WAL-G](https://github.com/wal-g/wal-g) pour accélérer la restauration des sauvegardes lors des opérations de mise à l’échelle. À noter que le créateur de WAL-G fait partie de l’équipe Ubicloud, avec laquelle nous avons noué un partenariat, apportant une solide expertise au processus de restauration.
+ClickHouse Managed Postgres utilise [WAL-G](https://github.com/wal-g/wal-g) pour accélérer la restauration des sauvegardes lors des opérations de mise à l’échelle. À noter que le créateur de WAL-G fait partie de l’équipe Ubicloud, avec laquelle nous avons noué un partenariat, apportant une solide expertise au processus de restauration.
 
 WAL-G offre :
 
@@ -110,7 +110,7 @@ Ces optimisations réduisent considérablement le temps nécessaire pour mettre 
   ### Démarrer une opération de mise à l&#39;échelle
 </div>
 
-Pour mettre à l&#39;échelle votre instance Managed Postgres :
+Pour mettre à l&#39;échelle votre instance ClickHouse Managed Postgres :
 
 1. Accédez à l&#39;onglet **Paramètres** de votre instance
 2. Dans la section **Mise à l&#39;échelle**, faites défiler jusqu&#39;à **Taille du service**
@@ -125,7 +125,7 @@ Pour mettre à l&#39;échelle votre instance Managed Postgres :
   ### Mise à l’échelle verticale
 </div>
 
-La mise à l’échelle verticale (changement de type d’instance) est la principale méthode pour ajuster les ressources de Managed Postgres. Cette approche offre :
+La mise à l’échelle verticale (changement de type d’instance) est la principale méthode pour ajuster les ressources de ClickHouse Managed Postgres. Cette approche offre :
 
 * **Contrôle précis** : choisissez parmi plus de 50 types d’instance pour ajuster finement le CPU, la mémoire et le stockage
 * **Optimisation de la charge de travail** : sélectionnez des configurations optimisées pour votre charge de travail spécifique (à forte intensité de calcul, de mémoire ou de stockage)

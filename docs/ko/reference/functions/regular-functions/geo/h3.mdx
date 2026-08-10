@@ -915,18 +915,18 @@ h3ExactEdgeLengthM(index)
 
 **반환 값**
 
-* 미터 단위의 정확한 변의 길이. [Float64](/ko/reference/data-types/float).
+* 미터 단위의 정확한 에지의 길이. [Float64](/ko/reference/data-types/float).
 
 **예시**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
+SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 ```
 
 ```text title="Response"
-┌───exactEdgeLengthM─┐
-│ 195449.63163407316 │
-└────────────────────┘
+┌─exactEdgeLengthM─┐
+│    195449.631634 │
+└──────────────────┘
 ```
 
 <div id="h3exactedgelengthkm">
@@ -947,18 +947,18 @@ h3ExactEdgeLengthKm(index)
 
 **반환 값**
 
-* 킬로미터 단위의 정확한 변 길이입니다. [Float64](/ko/reference/data-types/float).
+* 킬로미터 단위의 정확한 에지 길이입니다. [Float64](/ko/reference/data-types/float).
 
 **예시**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
+SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 ```
 
 ```text title="Response"
-┌──exactEdgeLengthKm─┐
-│ 195.44963163407317 │
-└────────────────────┘
+┌─exactEdgeLengthKm─┐
+│      195.44963163 │
+└───────────────────┘
 ```
 
 <div id="h3exactedgelengthrads">
@@ -979,18 +979,18 @@ h3ExactEdgeLengthRads(index)
 
 **반환 값**
 
-* 라디안 단위의 정확한 변 길이입니다. [Float64](/ko/reference/data-types/float).
+* 라디안 단위의 정확한 에지 길이입니다. [Float64](/ko/reference/data-types/float).
 
 **예시**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
+SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads;
 ```
 
 ```text title="Response"
-┌──exactEdgeLengthRads─┐
-│ 0.030677980118976447 │
-└──────────────────────┘
+┌─exactEdgeLengthRads─┐
+│      0.030677980119 │
+└─────────────────────┘
 ```
 
 <div id="h3numhexagons">
@@ -1029,7 +1029,7 @@ SELECT h3NumHexagons(3) AS numHexagons;
   ## h3PointDistM
 </div>
 
-GeoCoord 점(위도/경도) 쌍 간의 &quot;대권&quot; 또는 &quot;haversine&quot; 거리를 미터 단위로 반환합니다.
+GeoCoord 점(위도/경도) 쌍 간의 &quot;great circle&quot; 또는 &quot;haversine&quot; 거리를 미터 단위로 반환합니다.
 
 **구문**
 
@@ -1039,7 +1039,7 @@ h3PointDistM(lat1, lon1, lat2, lon2)
 
 **인수**
 
-* `lat1`, `lon1` — point1의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
+* `lat1`, `lon1` — 점의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
 * `lat2`, `lon2` — point2의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
 
 **반환 값**
@@ -1053,16 +1053,16 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 ```
 
 ```text title="Response"
-┌──────h3PointDistM─┐
-│ 2223901.039504589 │
-└───────────────────┘
+┌───────h3PointDistM─┐
+│ 2223901.0395045886 │
+└────────────────────┘
 ```
 
 <div id="h3pointdistkm">
   ## h3PointDistKm
 </div>
 
-GeoCoord 점(위도/경도) 쌍 사이의 &quot;대권&quot; 또는 &quot;haversine&quot; 거리를 킬로미터 단위로 반환합니다.
+GeoCoord 점(위도/경도) 쌍 사이의 &quot;great circle&quot; 또는 &quot;haversine&quot; 거리를 킬로미터 단위로 반환합니다.
 
 **구문**
 
@@ -1072,12 +1072,12 @@ h3PointDistKm(lat1, lon1, lat2, lon2)
 
 **인수**
 
-* `lat1`, `lon1` — 지점 1의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
+* `lat1`, `lon1` — 점 1의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
 * `lat2`, `lon2` — 지점 2의 위도와 경도(도 단위)입니다. [Float64](/ko/reference/data-types/float).
 
 **반환 값**
 
-* 킬로미터 단위의 haversine 또는 대권 거리입니다. [Float64](/ko/reference/data-types/float).
+* 킬로미터 단위의 haversine 또는 great circle 거리입니다. [Float64](/ko/reference/data-types/float).
 
 **예시**
 
@@ -1086,9 +1086,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 ```
 
 ```text title="Response"
-┌─────h3PointDistKm─┐
-│ 2223.901039504589 │
-└───────────────────┘
+┌──────h3PointDistKm─┐
+│ 2223.9010395045884 │
+└────────────────────┘
 ```
 
 <div id="h3pointdistrads">
@@ -1232,7 +1232,7 @@ h3Distance(start,end)
 **매개변수**
 
 * `start` — 시작 지점을 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
-* `end` — 종료 지점을 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `end` — 끝 지점을 나타내는 육각형 인덱스 번호입니다. [UInt64](/ko/reference/data-types/int-uint).
 
 **반환 값**
 
@@ -1248,7 +1248,7 @@ h3Distance(start,end)
 
 ```text title="Response"
 ┌─distance─┐
-│        7 │
+│        6 │
 └──────────┘
 ```
 

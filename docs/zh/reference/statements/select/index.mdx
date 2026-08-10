@@ -1,6 +1,6 @@
 ---
 description: 'SELECT 查询文档'
-sidebarTitle: 'SELECT'
+sidebarTitle: '概览'
 slug: /sql-reference/statements/select/
 title: 'SELECT 查询'
 doc_type: 'reference'
@@ -199,7 +199,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 你可以在查询的任何部分使用别名 (`AS` 别名) 。
 
-`GROUP BY`、`ORDER BY` 和 `LIMIT BY` 子句支持位置参数。要启用此功能，请打开 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings#enable_positional_arguments) 设置。例如，`ORDER BY 1,2` 会先按表中的第 1 列、再按第 2 列对行进行排序。
+`GROUP BY`、`ORDER BY` 和 `LIMIT BY` 子句支持位置参数。要启用此功能，请打开 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 设置。例如，`ORDER BY 1,2` 会先按表中的第 1 列、再按第 2 列对行进行排序。
 
 <div id="implementation-details">
   ## 实现细节

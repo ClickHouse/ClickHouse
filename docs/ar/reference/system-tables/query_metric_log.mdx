@@ -56,6 +56,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_FailedInsertQuery` ([UInt64](/ar/reference/data-types/int-uint)) — مماثل لـ FailedQuery، ولكن لاستعلامات INSERT فقط.
 * `ProfileEvent_FailedAsyncInsertQuery` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استعلامات ASYNC INSERT الفاشلة.
 * `ProfileEvent_ASTFuzzerQueries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات العشوائية التي حاول مولّد AST العشوائي على جانب الخادم تنفيذها.
+* `ProfileEvent_ASTFuzzerSkippedBackupRestore` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استعلامات BACKUP/RESTORE العشوائية التي تخطّاها مولّد AST العشوائي على جانب الخادم بدلًا من تنفيذها.
+* `ProfileEvent_ASTFuzzerSkippedReplicatedDDLInternal` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تخطّى فيها مولّد AST العشوائي على جانب الخادم التشويش بسبب وجود تنفيذ داخلي لـ DDL لقاعدة بيانات متماثلة (ZooKeeperMetadataTransaction نشطة) قيد التنفيذ ضمن Context.
 * `ProfileEvent_QueryTimeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن الإجمالي لجميع الاستعلامات.
 * `ProfileEvent_SelectQueryTimeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن الإجمالي لاستعلامات SELECT.
 * `ProfileEvent_InsertQueryTimeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن الإجمالي لاستعلامات INSERT.
@@ -106,12 +108,17 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_DefaultImplementationForNullsRowsWithNulls` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي تحتوي على قيم NULL والتي عالجها التنفيذ الافتراضي للقيم NULL أثناء تنفيذ الدوال
 * `ProfileEvent_MarkCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على entry في mark cache، لذا لم تكن هناك حاجة إلى تحميل mark file.
 * `ProfileEvent_MarkCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على entry في mark cache، لذا كان لا بد من تحميل mark file إلى الذاكرة، وهي عملية مكلفة تزيد من latency الاستعلام.
+* `ProfileEvent_UniqueKeyBitmapLoadMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في قراءة ملفات delete-bitmap الجانبية وإلغاء تسلسلها لـ UNIQUE KEY عند الإخفاق في DeleteBitmapCache.
+* `ProfileEvent_UniqueKeyBitmapUpdates` ([UInt64](/ar/reference/data-types/int-uint)) — عدد ملفات delete-bitmap الجانبية لـ UNIQUE KEY التي كُتبت (واحد لكل استبدال / commit لـ DELETE).
 * `ProfileEvent_PrimaryIndexCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على entry في primary index cache، لذا لم تكن هناك حاجة إلى تحميل index file.
 * `ProfileEvent_PrimaryIndexCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على entry في primary index cache، لذا كان لا بد من تحميل index file إلى الذاكرة، وهي عملية مكلفة تزيد من latency الاستعلام.
 * `ProfileEvent_IcebergMetadataFilesCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على Iceberg metadata files في cache.
 * `ProfileEvent_IcebergMetadataFilesCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على Iceberg metadata files في iceberg metadata cache، وكان لا بد من قراءتها من disk (بعيد).
 * `ProfileEvent_IcebergMetadataFilesCacheStaleMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على Iceberg metadata files في cache، لكنها اعتُبرت stale، وكان لا بد من قراءتها من disk (بعيد).
 * `ProfileEvent_IcebergMetadataFilesCacheWeightLost` ([UInt64](/ar/reference/data-types/int-uint)) — العدد التقريبي للبايتات التي أُزيلت من iceberg metadata cache.
+* `ProfileEvent_PaimonMetadataFilesCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على ملفات البيانات الوصفية لـ paimon في cache.
+* `ProfileEvent_PaimonMetadataFilesCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على ملفات البيانات الوصفية لـ paimon في paimon metadata cache، وكان لا بد من قراءتها من disk (بعيد).
+* `ProfileEvent_PaimonMetadataFilesCacheWeightLost` ([UInt64](/ar/reference/data-types/int-uint)) — العدد التقريبي للبايتات التي أُزيلت من paimon metadata cache.
 * `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي يقضيه قارئو data في انتظار قراءة Iceberg metadata files وتحليلها، محسوبًا عبر جميع reader threads.
 * `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على Parquet metadata في cache.
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على Parquet metadata في cache، وكان لا بد من قراءتها من disk.
@@ -121,12 +128,18 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمعلومات object المُعادة من iceberg iterator.
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لأزواج data files وposition delete file التي قبلها تحليل minmax من بين الأزواج المناسبة بحسب partitioning ورقم sequence.
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لأزواج data files وposition delete file التي قبلها تحليل minmax من بين الأزواج المناسبة بحسب partitioning ورقم sequence.
+* `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات رمز الوصول التي أصدرها كتالوج OneLake عبر منح رمز التحديث في Entra ID.
+* `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات رمز الوصول الفاشلة التي أصدرها كتالوج OneLake عبر منح رمز التحديث في Entra ID، بما في ذلك رموز التحديث منتهية الصلاحية أو الملغاة.
+* `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في طلب رموز الوصول عبر منح رمز التحديث في Entra ID من كتالوج OneLake.
+* `ProfileEvent_OneLakeAccessTokenExpirations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تبيّن فيها انتهاء صلاحية رمز الوصول المخزّن مؤقتًا لـ OneLake وجُدّد تلقائيًا.
 * `ProfileEvent_VectorSimilarityIndexCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على index granule في vector index cache.
 * `ProfileEvent_VectorSimilarityIndexCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على وحدة index granule في vector index cache، واضطر النظام إلى قراءتها من disk.
 * `ProfileEvent_VectorSimilarityIndexCacheWeightLost` ([UInt64](/ar/reference/data-types/int-uint)) — العدد التقريبي للبايتات التي أُخرجت من vector index cache.
 * `ProfileEvent_TextIndexReadDictionaryBlocks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تمت فيها قراءة block من Dictionary الخاص بـ text index من disk.
 * `ProfileEvent_TextIndexTokensCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على token info الخاص بـ text index في cache.
 * `ProfileEvent_TextIndexTokensCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على token info الخاص بـ text index في cache.
+* `ProfileEvent_TextIndexTokensCacheNegativeHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على token غير موجود في text index ضمن cache.
+* `ProfileEvent_TextIndexTokensCacheNegativeMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد tokens غير الموجودة في text index التي أُضيفت إلى cache بعد lookup في Dictionary.
 * `ProfileEvent_TextIndexHeaderCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على header في cache.
 * `ProfileEvent_TextIndexHeaderCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على header في cache.
 * `ProfileEvent_TextIndexPostingsCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على text index posting list في cache.
@@ -134,13 +147,29 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_TextIndexReadSparseIndexBlocks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تمت فيها قراءة block من sparse index من text index.
 * `ProfileEvent_TextIndexReaderTotalMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في قراءة text index.
 * `ProfileEvent_TextIndexReadGranulesMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في قراءة granules الخاصة بـ text index وتحليلها.
+* `ProfileEvent_TextIndexPositionsDecodeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في فك ترميز قوائم مواضع الفهرس النصي (.pos) للبحث عن العبارات.
+* `ProfileEvent_TextIndexPhraseMatchMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في تقاطع مطابقة العبارات roaringish.
 * `ProfileEvent_TextIndexReadPostings` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تمت فيها قراءة posting list من text index.
 * `ProfileEvent_TextIndexUsedEmbeddedPostings` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي استُخدمت فيها posting list مضمّنة في Dictionary.
 * `ProfileEvent_TextIndexUseHint` ([UInt64](/ar/reference/data-types/int-uint)) — عدد وحدات index granule التي أُضيفت لها direct read من text index كتلميح وتم استخدامه.
 * `ProfileEvent_TextIndexDiscardHint` ([UInt64](/ar/reference/data-types/int-uint)) — عدد وحدات index granule التي أُضيفت لها direct read من text index كتلميح ثم أُهمِل بسبب انخفاض selectivity.
+* `ProfileEvent_TextIndexTemporarySegmentsWritten` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المقاطع المؤقتة التي كُتبت أثناء بناء الفهارس النصية.
+* `ProfileEvent_TextIndexLazyPackedBlocksDecoded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكتل المعبأة التي فُك ترميزها في وضع قوائم الترحيلات الكسول.
+* `ProfileEvent_TextIndexLazyAdvanceCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات التقدّم المنفذة في وضع قوائم الترحيلات الكسول.
+* `ProfileEvent_TextIndexLazySegmentsPrepared` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المقاطع المُحضّرة (المقروءة من القرص أو المخزنة مؤقتًا) في وضع قوائم الترحيلات الكسول.
+* `ProfileEvent_TextIndexLazySegmentsBuilt` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المقاطع التي قُرئت وفُك ترميزها فعليًا (إخفاقات ذاكرة التخزين المؤقت) في وضع قوائم الترحيلات الكسول.
+* `ProfileEvent_TextIndexLazyBruteForceIntersections` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات التقاطع بالقوة الغاشمة المنفذة في وضع قوائم الترحيلات الكسول.
+* `ProfileEvent_TextIndexLazyLeapfrogIntersections` ([UInt64](/ar/reference/data-types/int-uint)) — عدد تقاطعات leapfrog المنفذة في وضع قوائم الترحيلات الكسول.
+* `ProfileEvent_TextIndexLazySegmentsSkippedDense` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المقاطع الكثيفة بالكامل التي مُلئت دفعةً واحدة (memset لـ OR، وزيادةً لـ AND) بدلًا من فك ترميز الكتل، في وضع قوائم الترحيلات الكسول.
+* `ProfileEvent_TextIndexLazySegmentsSkippedResolved` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المقاطع التي جرى تخطيها لأن منطقة الإخراج حُسمت بالفعل (كلها واحد لـ OR، وكلها أصفار لـ AND) في وضع قوائم الترحيلات الكسول.
+* `ProfileEvent_TextIndexLazyBlocksSkippedResolved` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكتل المعبأة التي جرى تخطيها لأن منطقة الإخراج حُسمت بالفعل (كلها واحد لـ OR، وكلها أصفار لـ AND) في وضع قوائم الترحيلات الكسول.
 * `ProfileEvent_TextIndexDiscardPatternScan` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جرى فيها تجاهل dictionary scan المستند إلى pattern في text index لأن عدد posting lists المطلوب قراءتها تجاوز threshold.
+* `ProfileEvent_TextIndexGenericExclusionSearchAlgorithm` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات استخدام خوارزمية الاستبعاد العامة للبحث على الفهرس النصي.
+* `ProfileEvent_TextIndexGenericExclusionSearchStepLimitReached` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي وصل فيها بحث الاستبعاد العام على الفهرس النصي إلى merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps وقَبِل نطاقات العلامات المتبقية دون تقسيم إضافي.
 * `ProfileEvent_QueryConditionCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على entry في query condition cache (وبالتالي يمكن تخطي قراءة marks). لا يتم تحديثه إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;condition&#95;cache = 1.
 * `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على entry في query condition cache (وبالتالي لا يمكن تخطي قراءة mark). لا يتم تحديثه إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;condition&#95;cache = 1.
+* `ProfileEvent_EncryptionHeaderCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على بايتات ترويسة التشفير في ذاكرة التخزين المؤقت لترويسة التشفير، مما أتاح تخطي قراءة الترويسة من المصدر.
+* `ProfileEvent_EncryptionHeaderCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على بايتات ترويسة التشفير في ذاكرة التخزين المؤقت لترويسة التشفير، ولذلك قُرئت من المصدر.
 * `ProfileEvent_QueryCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على نتيجة query في query cache (وبالتالي تم تجنب تنفيذ query). لا يتم تحديثه إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;cache = 1.
 * `ProfileEvent_QueryCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على نتيجة query في query cache (مما استلزم تنفيذ query). لا يتم تحديثه إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;cache = 1.
 * `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/ar/reference/data-types/int-uint)) — مجموع أعمار cache entries التي تم العثور عليها، بالثواني. تُضبط القيمة لكلٍّ من hits وmisses.
@@ -239,6 +268,19 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_AllUsersThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في الانتظار للامتثال لتقييد السرعة &#39;max&#95;network&#95;bandwidth&#95;for&#95;all&#95;users&#39;.
 * `ProfileEvent_QueryRemoteReadThrottlerBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي مرّت عبر مُحدِّد السرعة &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_QueryRemoteReadThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في الانتظار للامتثال لتقييد السرعة &#39;max&#95;remote&#95;read&#95;network&#95;bandwidth&#39;.
+* `ProfileEvent_ReaderExecutorSourceRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الطلبات المفتوحة على جانب المصدر بواسطة ReaderExecutor (باستثناء عمليات إعادة استخدام المخزن المؤقت المباشر).
+* `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات الفعلية التي أصدرها ReaderExecutor إلى المصدر بعد الإخفاق في جميع طبقات ذاكرة التخزين المؤقت (الجلب المسبق في المقدمة والخلفية، بما في ذلك بايتات الجلب المسبق المهدرة بسبب تجاهلها لاحقًا)؛ وليست البايتات المقدَّمة للمستهلك — راجع ReaderExecutorRequestedBytes.
+* `ProfileEvent_ReaderExecutorRequestedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — البايتات المفيدة التي سلّمها ReaderExecutor لطلبات القراءة (حمولة النافذة المطلوبة، باستثناء القراءة الزائدة والكتابة العكسية إلى ذاكرة التخزين المؤقت). وهي مقام مؤشر الأداء الرئيسي لتكلفة البايت المُنمذجة (ReaderExecutorModeledCostMicroseconds / ReaderExecutorRequestedBytes).
+* `ProfileEvent_ReaderExecutorCacheGetRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات ICacheHandle::get في ReaderExecutor. يساوي صفرًا حتى إدخال طبقات ذاكرة التخزين المؤقت لـ ReaderExecutor.
+* `ProfileEvent_ReaderExecutorCachePopulateRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات ICacheHandle::put في ReaderExecutor. يساوي صفرًا حتى إدخال طبقات ذاكرة التخزين المؤقت لـ ReaderExecutor.
+* `ProfileEvent_ReaderExecutorIncompleteConnections` ([UInt64](/ar/reference/data-types/int-uint)) — عدد اتصالات المصدر التي أسقطها ReaderExecutor قبل استنفادها حتى حدّها الأيمن؛ وهي غير قابلة لإعادة الاستخدام في المجمّع، ما يفرض إعادة إنشائها. يساوي صفرًا حتى إدخال إعادة استخدام المخزن المؤقت المباشر للمصدر في ReaderExecutor.
+* `ProfileEvent_ReaderExecutorWorkMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي وقت الساعة الفعلي المستغرَق داخل ReaderExecutor::readNextWindow (فتح النافذة المقدَّمة، والبحث عنها، وقراءتها). مساهم مباشر في زمن استجابة قراءة الاستعلام.
+* `ProfileEvent_ReaderExecutorDecryptMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الذي قضاه ReaderExecutor في فك تشفير الحمولة المقدَّمة في موضعها (CTR، قابل للعنونة بحسب الموضع). يساوي صفرًا للقراءات غير المشفّرة وفي الإصدارات التي لا تتضمن SSL.
+* `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — تكلفة I/O المُنمذجة لقراءات ReaderExecutor: مؤشر أداء رئيسي اصطناعي بديل لمدى مثالية مسار القراءة، وليست زمن استجابة مقاسًا. مجموع موزون للعدادات أعلاه باستخدام أوزان S3 الاستدلالية: 30 مللي ثانية لكل طلب مصدر + 5 مللي ثانية لكل اتصال غير مكتمل + 20 مللي ثانية لكل MiB منقول من المصدر (الحمولة المفيدة بالإضافة إلى القراءة الزائدة) + 0.1 مللي ثانية لكل عملية وضع في ذاكرة التخزين المؤقت + 0.05 مللي ثانية لكل عملية جلب من ذاكرة التخزين المؤقت. اقسم على ReaderExecutorRequestedBytes للحصول على تكلفة لكل بايت مستقلة عن الحمل. تجريبي، ويتتبع ReaderExecutor التجريبي.
+* `ProfileEvent_ReaderExecutorLongConnectionOpened` ([UInt64](/ar/reference/data-types/int-uint)) — عدد اتصالات المصدر الطويلة التي فتحها ReaderExecutor لتحسين القراءة المتسلسلة.
+* `ProfileEvent_ReaderExecutorLongConnectionHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد النوافذ التي خدمها ReaderExecutor بالقراءة من اتصال مصدر طويل مفتوح مسبقًا.
+* `ProfileEvent_ReaderExecutorLongConnectionFallbacks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أراد فيها ReaderExecutor اتصالًا طويلًا لكنه رجع إلى قراءة لمرة واحدة لعدم توفر خانة.
+* `ProfileEvent_ReaderExecutorLongConnectionBytes` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي البايتات المقروءة عبر اتصالات المصدر الطويلة.
 * `ProfileEvent_QueryRemoteWriteThrottlerBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي مرّت عبر مُحدِّد السرعة &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_QueryRemoteWriteThrottlerSleepMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في الانتظار للامتثال لتقييد السرعة &#39;max&#95;remote&#95;write&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_QueryLocalReadThrottlerBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي مرّت عبر مُحدِّد السرعة &#39;max&#95;local&#95;read&#95;bandwidth&#39;.
@@ -305,6 +347,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_SelfDuplicatedAsyncInserts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات async insert في الكتلة المُدرجة بأمر INSERT إلى جدول ReplicatedMergeTree التي أُزيلت ازدواجيتها ذاتيًا.
 * `ProfileEvent_DuplicatedAsyncInserts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات async insert في الكتلة المُدرجة بأمر INSERT إلى جدول ReplicatedMergeTree التي أُزيلت ازدواجيتها.
 * `ProfileEvent_DuplicationElapsedMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في التحقق من ازدواجية الكتل المُدرجة بأمر INSERT إلى جداول *MergeTree.
+* `ProfileEvent_DuplicationDataHashComputations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات حساب تجزئة البيانات حسب الأعمدة التي نُفذت أثناء إزالة ازدواجية الكتل المُدرجة بأمر INSERT إلى جداول *MergeTree (إخفاقات cache في تجزئة إزالة الازدواجية الموحدة).
 * `ProfileEvent_ZooKeeperInit` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُنشئ فيها اتصال مع ZooKeeper.
 * `ProfileEvent_ZooKeeperTransactions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات ZooKeeper، وتشمل عمليات القراءة والكتابة، بالإضافة إلى المعاملات المتعددة.
 * `ProfileEvent_ZooKeeperList` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات &#39;list&#39; ‏(getChildren) إلى ZooKeeper.
@@ -323,6 +366,21 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ZooKeeperClose` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إغلاق الاتصال مع ZooKeeper طوعًا.
 * `ProfileEvent_ZooKeeperGetACL` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات &#39;getACL&#39; إلى ZooKeeper.
 * `ProfileEvent_ZooKeeperWatchResponse` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تلقي إشعار watch من ZooKeeper.
+* `ProfileEvent_ZooKeeperWatchCallbackDurationMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق داخل دوال الاستدعاء الخاصة بمراقبات ZooKeeper (خيط الشبكة).
+* `ProfileEvent_ZooKeeperWatchCallbackErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستثناءات المطروحة من دوال الاستدعاء الخاصة بمراقبات ZooKeeper.
+* `ProfileEvent_ZooKeeperWatchTriggeredOther` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى دوال استدعاء غير مصنفة.
+* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeLog` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى إدخالات سجل ReplicatedMergeTree.
+* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeMutations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى عمليات mutation الخاصة بـ ReplicatedMergeTree.
+* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى انتخاب قائد ReplicatedMergeTree / أقفال النسخ المتماثلة.
+* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة أثناء انتظار النسخ المتماثلة لمعالجة إدخالات السجل (SYNC REPLICA، ALTER، mutations).
+* `ProfileEvent_ZooKeeperWatchTriggeredDistributedDDL` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى طابور DDLWorker.
+* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedAccessControl` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى ReplicatedAccessStorage.
+* `ProfileEvent_ZooKeeperWatchTriggeredUserDefinedSQLObjects` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى UserDefinedSQLObjectsZooKeeperStorage.
+* `ProfileEvent_ZooKeeperWatchTriggeredWorkloadEntity` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى WorkloadEntityKeeperStorage.
+* `ProfileEvent_ZooKeeperWatchTriggeredBackupCoordination` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى تنسيق النسخ الاحتياطي / الاستعادة.
+* `ProfileEvent_ZooKeeperWatchTriggeredObjectStorageQueue` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى ObjectStorageQueue / S3Queue.
+* `ProfileEvent_ZooKeeperWatchTriggeredClusterDiscovery` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى ClusterDiscovery.
+* `ProfileEvent_ZooKeeperWatchTriggeredMaterializedViewRefresh` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إشعارات المراقبة المُرسلة إلى تنسيق تحديث MaterializedView.
 * `ProfileEvent_ZooKeeperUserExceptions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستثناءات أثناء العمل مع ZooKeeper المرتبطة بالبيانات (مثل عدم وجود عقدة، أو إصدار غير صحيح، أو ما شابه ذلك).
 * `ProfileEvent_ZooKeeperHardwareExceptions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستثناءات أثناء العمل مع ZooKeeper المرتبطة بالشبكة (مثل فقدان الاتصال أو ما شابه ذلك).
 * `ProfileEvent_ZooKeeperOtherExceptions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستثناءات الأخرى أثناء العمل مع ZooKeeper، بخلاف ZooKeeperUserExceptions و ZooKeeperHardwareExceptions.
@@ -336,13 +394,15 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_DistributedConnectionStaleReplica` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي رفضنا فيها نسخة متماثلة من استعلام موزع لأن أحد الجداول المطلوبة للاستعلام كان لديه تأخر في النسخ المتماثل أعلى من العتبة المُعدّة.
 * `ProfileEvent_DistributedConnectionSkipReadOnlyReplica` ([UInt64](/ar/reference/data-types/int-uint)) — عدد النُسخ المتماثلة التي جرى تخطيها أثناء INSERT في جدول Distributed بسبب كونها للقراءة فقط
 * `ProfileEvent_DistributedConnectionFailAtAll` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للحالات التي يفشل فيها الاتصال الموزع بعد انتهاء جميع محاولات إعادة المحاولة.
+* `ProfileEvent_DistributedShardsSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الشظايا التي جرى تخطيها بصمت في استعلام إلى جدول Distributed (أو دوال الجداول remote/cluster) عند تمكين `skip_unavailable_shards`، إما لأن الشظية غير متاحة أو لأنها أطلقت استثناءً مشمولًا بـ `skip_unavailable_shards_mode`.
 * `ProfileEvent_Shards` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الشظايا المشاركة في استعلام، محسوبًا كمجموع عبر جميع الجداول الموزعة ودوال الجداول. ويُحتسب المضيف الواحد عدة مرات إذا ظهر في جداول متعددة. ويُمثّل هذا العدد إجمالي العدد المتوقع للشظايا، بما في ذلك الشظايا المتخطاة مع الإعداد `skip_unavailable_shards`.
 * `ProfileEvent_HedgedRequestsChangeReplica` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للحالات التي انتهت فيها مهلة تغيير النسخة المتماثلة في الطلبات المُحوَّطة.
-* `ProfileEvent_SuspendSendingQueryToShard` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للحالات التي عُلِّق فيها إرسال الاستعلام إلى الشظية عند تمكين `async&#95;query&#95;sending&#95;for&#95;remote`.
+* `ProfileEvent_SuspendSendingQueryToShard` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للحالات التي عُلِّق فيها إرسال الاستعلام إلى الشظية عند تمكين async&#95;query&#95;sending&#95;for&#95;remote.
 * `ProfileEvent_CompileFunction` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات بدء ترجمة شيفرة LLVM المُولَّدة (لإنشاء دالة مدمجة للتعبيرات المعقدة).
 * `ProfileEvent_CompiledFunctionExecute` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تنفيذ دالة مُترجَمة.
 * `ProfileEvent_CompileExpressionsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في ترجمة التعبيرات إلى شيفرة LLVM.
 * `ProfileEvent_CompileExpressionsBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المستخدمة في ترجمة التعبيرات.
+* `ProfileEvent_CompileRegexpFunction` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات ترجمة تعبير نمطي إلى شيفرة آلة باستخدام JIT.
 * `ProfileEvent_ExecuteShellCommand` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تنفيذ أوامر الـ shell.
 * `ProfileEvent_ExternalProcessingCompressedBytesTotal` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المضغوطة التي كتبتها المعالجة الخارجية (الفرز/التجميع/الربط)
 * `ProfileEvent_ExternalProcessingUncompressedBytesTotal` ([UInt64](/ar/reference/data-types/int-uint)) — كمية البيانات (غير المضغوطة، قبل الضغط) التي كتبتها المعالجة الخارجية (الفرز/التجميع/الربط)
@@ -374,6 +434,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_JoinReorderMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في تنفيذ خوارزمية إعادة ترتيب JOIN.
 * `ProfileEvent_JoinOptimizeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في تنفيذ تحسينات plan الخاصة بـ JOIN.
 * `ProfileEvent_QueryPlanOptimizeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في تنفيذ تحسينات query plan.
+* `ProfileEvent_QueryParseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في تحليل query text إلى AST.
+* `ProfileEvent_QueryAnalysisMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في بناء query tree وتشغيل مراحل المحلّل (تحليل identifiers وtypes وexpressions).
+* `ProfileEvent_QueryPlanBuildMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في بناء QueryPlan من query tree التي جرى تحليلها.
+* `ProfileEvent_QueryPipelineBuildMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في إنشاء QueryPipeline من QueryPlan المُحسَّنة.
 * `ProfileEvent_DeltaLakePartitionPrunedFiles` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الملفات التي تم تخطيها أثناء partition pruning في DeltaLake
 * `ProfileEvent_DeltaLakeSnapshotInitializations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تمت فيها تهيئة snapshot لجدول DeltaLake (بتحميلها من object storage)
 * `ProfileEvent_DeltaLakeScannedFiles` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الملفات التي جرى فحصها أثناء scan callbacks في DeltaLake
@@ -381,6 +445,12 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ReadBackoff` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تم فيها خفض عدد threads الخاصة بـ query processing بسبب بطء reads.
 * `ProfileEvent_ReplicaPartialShutdown` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي اضطر فيها جدول Replicated إلى إلغاء تهيئة حالته بسبب انتهاء session في ZooKeeper. وتُعاد تهيئة الحالة كلما أصبح ZooKeeper متاحًا مرة أخرى.
 * `ProfileEvent_IndexAnalysisRounds` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُجري فيها index analysis ضمن query.
+* `ProfileEvent_UniqueKeyIndexCacheLookupMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت الساعة الفعلي داخل `UniqueKeyIndexCache::Lookup` + `UniqueKeyIndexCache::Insert` (مهايئ `CacheBase` من جانب ClickHouse لذاكرة التخزين المؤقت للكتل في RocksDB).
+* `ProfileEvent_UniqueKeyIndexCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على entry في UNIQUE KEY index cache، لذا لم تكن هناك حاجة إلى تحميل SST block.
+* `ProfileEvent_UniqueKeyIndexCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على entry في UNIQUE KEY index cache، لذا كان لا بد من تحميل SST block من disk.
+* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي وقت الساعة الفعلي المستغرَق خلال دورة حياة `SSTIndexWriter` — يشمل `Open` لـ SST، وكل عملية Put عبر `addEncoded`، و`Finish` + إنهاء `WriteBuffer` في `finalizeToStorage` (تُدفق بايتات SST مباشرةً إلى `WriteBuffer` الخاص بتخزين الجزء). لا يشمل العمل الذي تنفذه الدوال المساعدة الساكنة قبل إنشاء الكاتب (الترميز + فرز المسار غير ذي البادئة). يُصدر مرة واحدة لكل كاتب.
+* `ProfileEvent_UniqueKeyLoadTimeSSTRebuildCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أجزاء UNIQUE KEY التي أُعيد بناء `unique_key_index.sst` الخاص بها عند التحميل بعد نافذة التعطل قبل التفريغ.
+* `ProfileEvent_UniqueKeyLoadTimeSSTRebuildMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في إعادة بناء `unique_key_index.sst` عند التحميل (قراءة تسلسلية لأعمدة UK وكتابة SST).
 * `ProfileEvent_SelectedParts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد data parts التي تم اختيارها للقراءة من جدول MergeTree.
 * `ProfileEvent_SelectedPartsTotal` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لـ data parts قبل اختيار ما سيُقرأ منها من جدول MergeTree.
 * `ProfileEvent_SelectedRanges` ([UInt64](/ar/reference/data-types/int-uint)) — عدد ranges (غير المتجاورة) في جميع data parts التي تم اختيارها للقراءة من جدول MergeTree.
@@ -502,6 +572,15 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_RegexpLocalCacheMiss` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تعذّر فيها جلب regular expression مُجمَّع من ذاكرة تخزين مؤقت محلية.
 * `ProfileEvent_ContextLock` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات الحصول على قفل Context أو محاولة الحصول عليه. هذا قفل عام.
 * `ProfileEvent_ContextLockWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت انتظار قفل Context بالميكروثانية
+* `ProfileEvent_RowPolicyCacheRecalculations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أعادت فيها ذاكرة التخزين المؤقت لسياسات الصفوف دمج عوامل التصفية لجميع المجموعات النشطة الممكّنة. يُدمج ذلك ليحدث مرة واحدة لكل دفعة إشعارات لكيان الوصول.
+* `ProfileEvent_RowPolicyCacheRecalculationMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في إعادة دمج عوامل تصفية سياسات الصفوف لجميع المجموعات النشطة الممكّنة، خارج قفل RowPolicyCache (بحيث لا يحظر مسار بناء ContextAccess).
+* `ProfileEvent_RoleCacheRecalculations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أعادت فيها ذاكرة التخزين المؤقت للأدوار حساب جميع المجموعات النشطة الممكّنة. يُدمج ذلك ليحدث مرة واحدة لكل دفعة إشعارات لكيان الوصول.
+* `ProfileEvent_RoleCacheRecalculationMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في إعادة احتساب جميع مجموعات الأدوار النشطة المفعّلة (ضمن قفل mutex للذاكرة المؤقتة الذي يستخدمه أيضًا مسار بناء ContextAccess).
+* `ProfileEvent_SettingsProfileCacheRecalculations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أعادت فيها ذاكرة التخزين المؤقت لملف تعريف الإعدادات دمج الإعدادات والقيود لجميع المجموعات النشطة المفعّلة. تُدمج التحديثات في مرة واحدة لكل دفعة إشعارات لكيان وصول.
+* `ProfileEvent_SettingsProfileCacheRecalculationMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في إعادة دمج الإعدادات والقيود لجميع المجموعات النشطة المفعّلة (ضمن قفل mutex للذاكرة المؤقتة الذي يستخدمه أيضًا مسار بناء ContextAccess).
+* `ProfileEvent_QuotaCacheRecalculations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أعادت فيها ذاكرة التخزين المؤقت للحصص اختيار الحصص لجميع المجموعات النشطة المفعّلة. تُدمج التحديثات في مرة واحدة لكل دفعة إشعارات لكيان وصول.
+* `ProfileEvent_QuotaCacheRecalculationMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في إعادة اختيار الحصص لجميع المجموعات النشطة المفعّلة (ضمن قفل mutex للذاكرة المؤقتة الذي يستخدمه أيضًا مسار بناء ContextAccess).
+* `ProfileEvent_FileProgressCallbackInvocations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات استدعاء `FileProgressCallback` لكل استعلام (يحتسب كل حدث `FileProgress` لكل ملف يُسلَّم إلى العميل عبر native TCP أو بواسطة `clickhouse-local`).
 * `ProfileEvent_StorageBufferFlush` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تم فيها تفريغ buffer في جدول &#39;Buffer&#39;.
 * `ProfileEvent_StorageBufferErrorOnFlush` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تعذّر فيها تفريغ buffer في جدول &#39;Buffer&#39; بسبب خطأ في الكتابة إلى الجدول الوجهة.
 * `ProfileEvent_StorageBufferPassedAllMinThresholds` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي استوفت فيها معايير الحدود الدنيا لتفريغ buffer في جدول &#39;Buffer&#39;.
@@ -538,8 +617,6 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
   9. تختلف الإعدادات المرتبطة بتنسيق الأجزاء، مثل &#39;enable&#95;mixed&#95;granularity&#95;parts&#39;، بين النسخ المتماثلة المختلفة.
      اكتشف الخادم هذا الوضع بنجاح، وسيقوم بتنزيل الجزء المدمج من النسخة المتماثلة لفرض نتيجة متطابقة على مستوى البايت.
 * `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لا تكون فيها البيانات بعد الـ mutation مطابقةً على مستوى البايتات للبيانات الموجودة على النسخ المتماثلة الأخرى. بالإضافة إلى الأسباب الموضحة في &#39;DataAfterMergeDiffersFromReplica&#39;، قد يحدث ذلك أيضًا بسبب mutation غير حتمية.
-* `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد نماذج مصنّف Naive Bayes التي تم تحميلها.
-* `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المخصصة لنماذج مصنّف Naive Bayes.
 * `ProfileEvent_USearchAddCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المتجهات التي تمت إضافتها إلى فهارس usearch.
 * `ProfileEvent_USearchAddVisitedMembers` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العقد التي تمت زيارتها عند إضافة المتجهات إلى فهارس usearch.
 * `ProfileEvent_USearchAddComputedDistances` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات حساب المسافة عند إضافة المتجهات إلى فهارس usearch.
@@ -580,6 +657,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ParallelReplicasReadUnassignedMarks` ([UInt64](/ar/reference/data-types/int-uint)) — المجموع عبر جميع النسخ المتماثلة لعدد العلامات غير المعيّنة التي تمت جدولتها
 * `ProfileEvent_ParallelReplicasReadAssignedForStealingMarks` ([UInt64](/ar/reference/data-types/int-uint)) — المجموع عبر جميع النسخ المتماثلة لعدد العلامات المجدولة التي أُسنِدت للسرقة باستخدام التجزئة المتسقة
 * `ProfileEvent_ParallelReplicasReadMarks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العلامات التي قرأتها النسخة المتماثلة المعنية
+* `ProfileEvent_ReadPoolRangeRefinerDroppedMarks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العلامات التي أُسقطت من مهام القراءة بواسطة مُحسِّن النطاقات في مجمّعات قراءة MergeTree (مثل العلامات التي تمت تصفيتها بالكامل بواسطة فهرس إسقاط)
+* `ProfileEvent_ReadPoolRangeRefinerDroppedCuts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُسقطت فيها بالكامل النطاقات المقتطعة من جزء بواسطة مجمّع قراءة MergeTree من قبل مُحسِّن النطاقات، ولذلك لم تُنشأ لها مهمة قراءة
 * `ProfileEvent_ParallelReplicasStealingByHashMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في جمع المقاطع المخصصة للسرقة بحسب التجزئة
 * `ProfileEvent_ParallelReplicasProcessingPartsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في معالجة أجزاء البيانات
 * `ProfileEvent_ParallelReplicasStealingLeftoversMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في جمع المقاطع المتروكة
@@ -694,6 +773,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_WriteBufferFromS3RequestsErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستثناءات أثناء الكتابة إلى S3.
 * `ProfileEvent_WriteBufferFromS3WaitInflightLimitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في الانتظار حتى تكتمل بعض الطلبات الحالية عندما يصل عددها إلى الحد الذي يحدده s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file.
 * `ProfileEvent_QueryMemoryLimitExceeded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تم فيها تجاوز حد الذاكرة للاستعلام.
+* `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تم فيها تجاوز حد الذاكرة العام.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي خُصِّصت فيها الذاكرة دون التحقق من قيود الذاكرة.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار البايتات التي خُصِّصت دون التحقق من قيود الذاكرة.
 * `ProfileEvent_AzureGetObject` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات GetObject في واجهة برمجة تطبيقات Azure.
@@ -730,9 +810,11 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_CachedReadBufferPredownloadedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المقروءة من filesystem cache source. تتم قراءة segments الخاصة بالـ cache بالكامل من اليسار إلى اليمين، وقد نحتاج إلى predownload لبعض part من segment غير المرتبط بالمهمة الحالية فقط للوصول إلى البيانات المطلوبة
 * `ProfileEvent_CachedReadBufferCacheWriteBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة من source (remote fs، إلخ) إلى filesystem cache
 * `ProfileEvent_CachedReadBufferCacheWriteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في كتابة البيانات إلى ذاكرة التخزين المؤقت لنظام الملفات
+* `ProfileEvent_CachedReadBufferCacheWriteStopped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي توقفت فيها كتابة مقطع ملف في ذاكرة التخزين المؤقت لنظام الملفات أثناء التنزيل (بسبب فشل حجز المساحة أو الكتابة إلى الذاكرة المؤقتة)، وبعد ذلك تستمر القراءة مع تجاوز الذاكرة المؤقتة
 * `ProfileEvent_CachedReadBufferCreateBufferMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت إعداد المخزن المؤقت
 * `ProfileEvent_CachedWriteBufferCacheWriteBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المكتوبة من المصدر (remote fs، وما إلى ذلك) إلى ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_CachedWriteBufferCacheWriteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في كتابة البيانات إلى ذاكرة التخزين المؤقت لنظام الملفات
+* `ProfileEvent_CachedWriteBufferCacheWriteStopped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي توقف فيها التخزين المؤقت للكتابة المباشرة (بسبب فشل حجز المساحة أو الكتابة إلى الذاكرة المؤقتة، أو بسبب طرد مقطع متداخل)، وبعد ذلك تستمر الكتابة دون ملء الذاكرة المؤقتة
 * `ProfileEvent_FilesystemCacheLoadMetadataMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في تحميل البيانات الوصفية لذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المطرودة من ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أدلة المفاتيح التي أُنشئت
@@ -744,21 +826,29 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_FilesystemCacheEvictionSkippedMovingFileSegments` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أجزاء الملفات التي جرى تخطيها عند الطرد لأنها في حالة نقل
 * `ProfileEvent_FilesystemCacheEvictionTries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد محاولات طرد ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheEvictionReusedIterator` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إعادة استخدام المكرّر لذاكرة التخزين المؤقت لنظام الملفات
+* `ProfileEvent_FilesystemCacheOvercommitCandidatesIterationSteps` ([UInt64](/ar/reference/data-types/int-uint)) — عدد التكرارات الخارجية الإضافية التي نفذتها حلقة طرد overcommit بعد مرورها الأول لتغطية عجز الحجز
 * `ProfileEvent_FilesystemCacheLockKeyMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت قفل مفتاح ذاكرة التخزين المؤقت
 * `ProfileEvent_FilesystemCacheLockMetadataMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت قفل البيانات الوصفية لذاكرة التخزين المؤقت لنظام الملفات
+* `ProfileEvent_FilesystemCacheLockOriginPoolMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت قفل مجمّع المصدر المشترك لذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCachePriorityWriteLockMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت قفل ذاكرة التخزين المؤقت لنظام الملفات للكتابة إلى طابور الأولوية
 * `ProfileEvent_FilesystemCachePriorityReadLockMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت قفل ذاكرة التخزين المؤقت لنظام الملفات للقراءة من طابور الأولوية
 * `ProfileEvent_FilesystemCacheStateLockMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت قفل حالة ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheReserveMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت حجز المساحة في ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheReserveAttempts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد محاولات حجز المساحة في ذاكرة التخزين المؤقت لنظام الملفات
+* `ProfileEvent_FilesystemCacheFailedReserveAttempts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد محاولات حجز المساحة الفاشلة في ذاكرة التخزين المؤقت للملفات.
 * `ProfileEvent_FilesystemCacheEvictMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت طرد ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheGetOrSetMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت `getOrSet()` لذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheGetMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت `get()` لذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_FilesystemCacheBackgroundEvictedFileSegments` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات التي أُزيلت من الذاكرة المؤقتة بواسطة الخيط الخلفي
 * `ProfileEvent_FilesystemCacheBackgroundEvictedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات التي أُزيلت من الذاكرة المؤقتة بواسطة الخيط الخلفي
+* `ProfileEvent_FilesystemCacheIdleClientEvictions` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُزيلت فيها جميع إدخالات الذاكرة المؤقتة لعميل ذاكرة تخزين مؤقت موزعة خامل (`user_id`) لعدم حدوث أي وصول خلال `idle_client_ttl_sec`.
+* `ProfileEvent_FilesystemCacheBackgroundRemovedInvalidatedEntries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد إدخالات طابور الأولوية غير الصالحة (المزالة بكسل) التي أزالها خيط التنظيف الخلفي
+* `ProfileEvent_FilesystemCacheClientsMapLockWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في انتظار قفل مقطع خريطة الاستخدام المتنازع عليه لكل عميل (`user_id`) في سياسة ذاكرة التخزين المؤقت overcommit
+* `ProfileEvent_FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن الذي نفّذ خلاله الخيط الخلفي مهمة تنظيف إدخالات طابور الأولوية غير الصالحة
 * `ProfileEvent_FilesystemCacheCheckCorrectness` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات استدعاء `FileCache::assertCacheCorrectness`
 * `ProfileEvent_FilesystemCacheCheckCorrectnessMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن الذي تستغرقه `FileCache::assertCacheCorrectness`
 * `ProfileEvent_FileSegmentWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — زمن الانتظار عند الحالة `DOWNLOADING`
+* `ProfileEvent_FileSegmentWaitTimeouts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات انتهاء مهلة انتظار مقطع ملف في حالة `DOWNLOADING` (راجع `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 * `ProfileEvent_FileSegmentCompleteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — مدة `FileSegment::complete()` في filesystem cache
 * `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — زمن قفل مقطع الملف
 * `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — زمن `write()` لمقطع الملف
@@ -772,6 +862,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_FilesystemCacheUnusedHoldFileSegments` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات المحتفَظ بها في filesystem cache ولكن لم تُستخدم (بسبب `seek` أو `LIMIT n` وما إلى ذلك)
 * `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadRun` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تنفيذ الخيط الخلفي لمهمة الحفاظ على المساحة الحرة
 * `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن الذي نفّذ خلاله الخيط الخلفي مهمة الحفاظ على المساحة الحرة
+* `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستثناءات التي التقطتها مهمة الحفاظ على المساحة الحرة في الخلفية (التجميع أو الإزالة أو الإنهاء)
 * `ProfileEvent_FilesystemCacheFailedEvictionCandidates` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مقاطع الملفات التي تعذر إزالتها من الذاكرة المؤقتة بشكل غير متوقع أثناء eviction الديناميكي لـ filesystem cache
 * `ProfileEvent_RemoteFSSeeks` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات `seek` للمخزن المؤقت غير المتزامن
 * `ProfileEvent_RemoteFSPrefetches` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات الجلب المسبق التي أُجريت مع القراءة غير المتزامنة من remote filesystem
@@ -813,6 +904,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_MainConfigLoads` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إعادة تحميل الإعدادات الرئيسية.
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العناصر التي خُصصت مسبقًا في جداول التجزئة لأغراض التجميع.
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد جداول التجزئة التي هُيئت على مستويين لأغراض التجميع.
+* `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي حُوِّل فيها جدول تجزئة للتجميع أحادي المستوى إلى مستويين في وقت التشغيل.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكتل التي طُبّق عليها تحسين النطاقات المتساوية للمفاتيح
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العناصر التي خُصصت مسبقًا في جداول التجزئة لعملية ربط التجزئة.
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي جرى فيها الرد على طلب بيانات وصفية في التخزين الكائني من الذاكرة المؤقتة دون إرسال طلب إلى Keeper
@@ -894,10 +986,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperReadRequestQueueLockWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في انتظار الحصول على قفل صف طلبات القراءة في Keeper
 * `ProfileEvent_KeeperProcessAndResponsesLockWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في انتظار الحصول على قفل المعالجة والاستجابات في Keeper
 * `ProfileEvent_KeeperCommitWaitElapsedMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في انتظار تثبيت سجل معيّن
-* `ProfileEvent_KeeperBatchMaxCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي كان فيها حجم Batch مقيّدًا بالعدد
-* `ProfileEvent_KeeperBatchMaxTotalSize` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي كان فيها حجم Batch مقيّدًا بإجمالي حجم البايتات
+* `ProfileEvent_KeeperBatchMaxCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الدفعات التي بلغت حد max&#95;requests&#95;batch&#95;size
+* `ProfileEvent_KeeperBatchMaxTotalSize` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الدفعات التي بلغت حد max&#95;requests&#95;batch&#95;bytes&#95;size
+* `ProfileEvent_KeeperBatchMaxReadCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الدفعات التي بلغت حد max&#95;read&#95;batch&#95;size
+* `ProfileEvent_KeeperBatchMaxReadTotalSize` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الدفعات التي بلغت حد max&#95;read&#95;batch&#95;bytes&#95;size
 * `ProfileEvent_KeeperReadBatchCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد دفعات طلبات القراءة التي عالجها Keeper
 * `ProfileEvent_KeeperReadBatchTotalRequests` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لطلبات القراءة التي عالجها Keeper على شكل دفعات
+* `ProfileEvent_KeeperWriteBatchCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد دفعات طلبات الكتابة التي عالجها Keeper
+* `ProfileEvent_KeeperWriteBatchTotalRequests` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لطلبات الكتابة التي عالجها Keeper على شكل دفعات
 * `ProfileEvent_KeeperCommits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات commit الناجحة
 * `ProfileEvent_KeeperCommitsFailed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات commit الفاشلة
 * `ProfileEvent_KeeperSnapshotCreations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات إنشاء snapshot
@@ -907,6 +1003,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperReadSnapshot` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات قراءة snapshot المكتملة
 * `ProfileEvent_KeeperReadSnapshotObject` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عناصر snapshot المُرسلة إلى العقد التابعة
 * `ProfileEvent_KeeperReadSnapshotFailed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات قراءة snapshot الفاشلة
+* `ProfileEvent_KeeperReadSnapshotDeferred` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات قراءة snapshot المؤجّلة لأن snapshot المطلوبة لم تعد متاحة محليًا؛ سيعيد NuRaft محاولة قراءة أحدث snapshot.
 * `ProfileEvent_KeeperSnapshotRemoteLoaderErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أخطاء القراءة عن بُعد في RemoteSnapshotLoader أثناء تقديم snapshot إلى عقدة تابعة
 * `ProfileEvent_KeeperSaveSnapshotObject` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عناصر snapshot المستلَمة من القائد
 * `ProfileEvent_KeeperSaveSnapshotFailed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات حفظ snapshot الفاشلة
@@ -928,7 +1025,14 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_KeeperCheckWatchRequest` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات التحقق من المراقبات
 * `ProfileEvent_KeeperRequestRejectedDueToSoftMemoryLimitCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الطلبات التي رُفضت بسبب تجاوز حد الذاكرة المرن
 * `ProfileEvent_KeeperStaleRequestsSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Keeper التي جرى تخطيها لأن الجلسة لم تعد نشطة
+* `ProfileEvent_KeeperTTLRemoveRequestsEnqueued` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات إزالة TTL التي أُضيفت بنجاح إلى الطابور
+* `ProfileEvent_KeeperTTLRemoveRequestsDropped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات إزالة TTL التي أُسقطت لأن الطابور كان ممتلئًا
 * `ProfileEvent_KeeperLiveSessionsLockWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في انتظار الحصول على قفل الجلسات النشطة في Keeper
+* `ProfileEvent_KeeperWatchesTriggered` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مشغلات المراقبات
+* `ProfileEvent_KeeperWatchTriggeredNodeCreated` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مشغلات المراقبة بواسطة عملية `CREATE`
+* `ProfileEvent_KeeperWatchTriggeredNodeDeleted` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مشغلات المراقبة بواسطة عملية `DELETE`
+* `ProfileEvent_KeeperWatchTriggeredNodeDataChanged` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مشغلات المراقبة بواسطة عمليات التغيير
+* `ProfileEvent_KeeperWatchTriggeredNodeChildrenChanged` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مشغلات المراقبة بواسطة عمليات تغيير العُقد الفرعية
 * `ProfileEvent_OverflowBreak` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُلغيت فيها معالجة البيانات بسبب قيود تعقيد الاستعلام مع الإعداد &#39;*&#95;overflow&#95;mode&#39; = &#39;break&#39; وكانت النتيجة غير مكتملة.
 * `ProfileEvent_OverflowThrow` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُلغيت فيها معالجة البيانات بسبب قيود تعقيد الاستعلام مع الإعداد &#39;*&#95;overflow&#95;mode&#39; = &#39;throw&#39; وتم طرح استثناء.
 * `ProfileEvent_OverflowAny` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي كان فيها GROUP BY التقريبي مُفعّلًا: عندما أُجري التجميع على أول &#39;max&#95;rows&#95;to&#95;group&#95;by&#39; من المفاتيح الفريدة فقط، وتجاهُل المفاتيح الأخرى بسبب &#39;group&#95;by&#95;overflow&#95;mode&#39; = &#39;any&#39;.
@@ -955,6 +1059,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueTaggedObjects` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكائنات التي وُسِمت كجزء من after&#95;processing = tag
 * `ProfileEvent_ObjectStorageQueueInsertIterations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد تكرارات الإدراج
 * `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Keeper لتنفيذ commit للملفات باعتبارها إما فاشلة أو تمت معالجتها
+* `ProfileEvent_ObjectStorageQueueBucketLockLostOwnership` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي اكتُشف فيها فقدان ملكية قفل الحاوية في S3(Azure)Queue. تشير القيمة غير الصفرية إلى أن persistent&#95;processing&#95;node&#95;ttl&#95;seconds صغير جدًا أو إلى وجود خلل
+* `ProfileEvent_ObjectStorageQueueBucketLockRefreshes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات تحديث قفل الحاوية الناجحة في S3(Azure)Queue
 * `ProfileEvent_ObjectStorageQueueSuccessfulCommits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات commit الناجحة في Keeper
 * `ProfileEvent_ObjectStorageQueueUnsuccessfulCommits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات commit غير الناجحة في Keeper
 * `ProfileEvent_ObjectStorageQueueCancelledFiles` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الملفات التي أُلغيت في StorageS3(Azure)Queue
@@ -1010,28 +1116,41 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheRangeChange` ([UInt64](/ar/reference/data-types/int-uint)) — حدث read buffer لـ Distributed Cache. عدد المرات التي غيّرنا فيها نطاق القراءة بسبب تغيّر seek/last&#95;position
 * `ProfileEvent_DistrCacheRangeResetBackward` ([UInt64](/ar/reference/data-types/int-uint)) — حدث read buffer لـ Distributed Cache. عدد المرات التي أعدنا فيها تعيين نطاق القراءة بسبب تغيّر seek/last&#95;position
 * `ProfileEvent_DistrCacheRangeResetForward` ([UInt64](/ar/reference/data-types/int-uint)) — حدث read buffer لـ Distributed Cache. عدد المرات التي أعدنا فيها تعيين نطاق القراءة بسبب تغيّر seek/last&#95;position
-* `ProfileEvent_DistrCacheReconnectsAfterTimeout` ([UInt64](/ar/reference/data-types/int-uint)) — حدث read buffer لـ Distributed Cache. عدد مرات إعادة الاتصال بعد timeout
+* `ProfileEvent_DistrCacheReadRequestRetries` ([UInt64](/ar/reference/data-types/int-uint)) — حدث read buffer لـ Distributed Cache. عدد مرات إعادة محاولة طلبات القراءة بعد خطأ قابل لإعادة المحاولة، بما في ذلك إعادة محاولة إنشاء الطلب الأولي
 * `ProfileEvent_DistrCacheServerUpdates` ([UInt64](/ar/reference/data-types/int-uint)) — حدث Distributed Cache. عدد مرات تبديل الخادم أثناء القراءة أو الكتابة بسبب تغيّر الخادم الذي اختاره hash (على سبيل المثال، بسبب إلغاء تسجيل الخادم)
-* `ProfileEvent_DistrCacheReadErrors` ([UInt64](/ar/reference/data-types/int-uint)) — حدث read buffer لـ Distributed Cache. عدد أخطاء Distributed Cache أثناء القراءة
-* `ProfileEvent_DistrCacheWriteErrors` ([UInt64](/ar/reference/data-types/int-uint)) — حدث write buffer لـ Distributed Cache. عدد أخطاء Distributed Cache أثناء الكتابة
-* `ProfileEvent_DistrCacheWriteReconnectsAfterTimeout` ([UInt64](/ar/reference/data-types/int-uint)) — حدث write buffer لـ Distributed Cache. عدد مرات إعادة الاتصال بعد timeout
+* `ProfileEvent_DistrCacheReadErrors` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. العدد الإجمالي لأخطاء Distributed Cache أثناء طلبات القراءة (يساوي DistrCacheReadErrorsRetriable + DistrCacheReadErrorsNonRetriable)
+* `ProfileEvent_DistrCacheReadErrorsRetriable` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. عدد أخطاء Distributed Cache القابلة لإعادة المحاولة أثناء طلبات القراءة (تُحتسب عند كل حدوث، بما في ذلك الأخطاء التي عولجت بإعادة المحاولة)
+* `ProfileEvent_DistrCacheReadErrorsNonRetriable` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. عدد أخطاء Distributed Cache غير القابلة لإعادة المحاولة أثناء طلبات القراءة
+* `ProfileEvent_DistrCacheReadRequestRetriesExhausted` ([UInt64](/ar/reference/data-types/int-uint)) — حدث read buffer لـ Distributed Cache. عدد المرات التي لم يُعالَج فيها خطأ قراءة قابل لإعادة المحاولة ضمن الحد الأقصى لمحاولات إعادة طلبات القراءة
+* `ProfileEvent_DistrCacheWriteErrors` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. العدد الإجمالي لأخطاء Distributed Cache أثناء طلبات الكتابة (يساوي DistrCacheWriteErrorsRetriable + DistrCacheWriteErrorsNonRetriable). لا يُعد `Stop` لذاكرة التخزين المؤقت للكتابة المباشرة الذي يبدأه الخادم خطأً، بل هو تحكم في التدفق، ولا يُحتسب
+* `ProfileEvent_DistrCacheWriteErrorsRetriable` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. عدد أخطاء Distributed Cache القابلة لإعادة المحاولة أثناء طلبات الكتابة (تُحتسب عند كل حدوث، بما في ذلك الأخطاء التي عولجت بإعادة المحاولة)
+* `ProfileEvent_DistrCacheWriteErrorsNonRetriable` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. عدد أخطاء Distributed Cache غير القابلة لإعادة المحاولة أثناء طلبات الكتابة
+* `ProfileEvent_DistrCacheWriteRequestRetriesExhausted` ([UInt64](/ar/reference/data-types/int-uint)) — حدث write buffer لـ Distributed Cache. عدد المرات التي لم يُعالَج فيها خطأ كتابة قابل لإعادة المحاولة ضمن الحد الأقصى لمحاولات إعادة طلبات الكتابة
+* `ProfileEvent_DistrCacheWriteRequestRetries` ([UInt64](/ar/reference/data-types/int-uint)) — حدث write buffer لـ Distributed Cache. عدد محاولات إعادة طلبات الكتابة بعد خطأ قابل لإعادة المحاولة
 * `ProfileEvent_DistrCacheWriteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث write buffer لـ Distributed Cache. الوقت المستغرق في WriteBufferFromDistributedCache::writeToFileSegment
 * `ProfileEvent_DistrCacheWriteBytes` ([UInt64](/ar/reference/data-types/int-uint)) — حدث write buffer لـ Distributed Cache. عدد البايتات المكتوبة إلى Distributed Cache
 * `ProfileEvent_DistrCacheObjectStorageWriteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث write buffer لـ Distributed Cache. الوقت المستغرق في الكتابة إلى object storage
 * `ProfileEvent_DistrCacheObjectStorageWriteBytes` ([UInt64](/ar/reference/data-types/int-uint)) — حدث write buffer لـ Distributed Cache. عدد البايتات المكتوبة إلى object storage
+* `ProfileEvent_DistrCacheBackgroundWrites` ([UInt64](/ar/reference/data-types/int-uint)) — حدث write buffer لـ Distributed Cache. عدد عمليات الكتابة إلى cache التي نُفِّذت على الخيط الخلفي (تم الحصول على خانة كتابة في الخلفية)
+* `ProfileEvent_DistrCacheInlineWrites` ([UInt64](/ar/reference/data-types/int-uint)) — حدث write buffer لـ Distributed Cache. عدد عمليات الكتابة إلى cache التي نُفِّذت مباشرةً على الخيط المستدعي (لم تتوفر خانة كتابة في الخلفية، أو كانت الكتابة لبيانات مؤقتة)
 * `ProfileEvent_DistrCacheGetResponseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. الوقت المستغرق في انتظار الاستجابة من Distributed Cache
+* `ProfileEvent_DistrCacheConnectErrors` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. عدد حالات الفشل في الاتصال بخادم Distributed Cache قبل إرسال طلب (يُحتسب مرة واحدة لكل طلب، بعد استنفاد جميع محاولات الاتصال، بخلاف DistrCacheUnsuccessfulConnectAttempts الذي يُحتسب لكل محاولة). ويُحتسب هنا أيضًا timeout أثناء انتظار اتصال مجمّع شاغر. أما حالات الفشل في إعادة الاتصال أثناء إنشاء الطلب فتُحتسب في DistrCacheMakeRequestErrors بدلًا من ذلك
 * `ProfileEvent_DistrCacheMakeRequestErrors` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. عدد أخطاء Distributed Cache عند إرسال طلب
 * `ProfileEvent_DistrCacheReceiveResponseErrors` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. عدد أخطاء Distributed Cache عند استلام استجابة لطلب
+* `ProfileEvent_DistrCacheSystemTablesErrors` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. عدد أخطاء Distributed Cache أثناء طلبات جداول نظام الاستبطان (system.distributed&#95;cache، system.distributed&#95;cache&#95;metrics، system.distributed&#95;cache&#95;events). لا يُعاد تنفيذ هذه الطلبات، لذا تُحتسب الأخطاء القابلة لإعادة المحاولة وغير القابلة لإعادة المحاولة معًا
 * `ProfileEvent_DistrCacheReceivedDataPackets` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. العدد الإجمالي لحزم Data المستلمة من Distributed Cache
 * `ProfileEvent_DistrCacheReceivedDataPacketsBytes` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. عدد البايتات في حزم Data المستلمة من Distributed Cache
 * `ProfileEvent_DistrCacheReceivedOkPackets` ([UInt64](/ar/reference/data-types/int-uint)) — حدث client لـ Distributed Cache. العدد الإجمالي لحزم Ok المستلمة من Distributed Cache
 * `ProfileEvent_DistrCacheReceivedErrorPackets` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. العدد الإجمالي لحزم Error المستلمة من Distributed Cache
 * `ProfileEvent_DistrCacheReceivedCredentialsRefreshPackets` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. العدد الإجمالي لحزم RefreshCredentials المستلمة من Distributed Cache
 * `ProfileEvent_DistrCacheReceivedStopPackets` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. العدد الإجمالي لحزم Stop المستلمة من Distributed Cache
+* `ProfileEvent_DistrCacheReceivedSlowDownPackets` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. العدد الإجمالي لحزم SlowDown المستلمة من Distributed Cache (رفض الخادم اتصالًا جديدًا لأن لدى هذا العميل عددًا كبيرًا جدًا من الاتصالات المفتوحة مقارنةً بوزنه)
 * `ProfileEvent_DistrCacheSentDataPackets` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. العدد الإجمالي لحزم البيانات المرسلة إلى Distributed Cache
 * `ProfileEvent_DistrCacheSentDataPacketsBytes` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. عدد البايتات في حزم Data المرسلة إلى Distributed Cache
 * `ProfileEvent_DistrCacheUnusedPackets` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. عدد الحزم غير المستخدمة التي تم تخطيها من Distributed Cache
 * `ProfileEvent_DistrCacheUnusedDataPacketsBytes` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. عدد البايتات في حزم Data التي تم تجاهلها
+* `ProfileEvent_DistrCacheUnusedDataPacketsBytesUnknownRequest` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. عدد البايتات في حزم Data المتجاهلة (جزء من DistrCacheUnusedDataPacketsBytes) التي وصلت لطلب لم يعد العميل يتتبعه (مثلًا، أُوقفت القراءة عبر EndRequest بعد أن كان الخادم قد أرسل بالفعل المزيد من البيانات)
+* `ProfileEvent_DistrCacheUnusedDataPacketsBytesReadRangeIdChanged` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. عدد البايتات في حزم Data المتجاهلة (جزء من DistrCacheUnusedDataPacketsBytes) التي وصلت للطلب المتتبَّع ولكن لمعرّف نطاق قراءة أقدم (طُلب نطاق قراءة أحدث ضمن الطلب نفسه)
 * `ProfileEvent_DistrCacheUnusedPacketsBufferAllocations` ([UInt64](/ar/reference/data-types/int-uint)) — حدث عميل Distributed Cache. عدد عمليات تخصيص المخزن المؤقت الإضافية عند تعذر إعادة استخدام المخزن المؤقت الحالي
 * `ProfileEvent_DistrCacheLockRegistryMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث سجل Distributed Cache. الوقت المستغرق للحصول على قفل DistributedCacheRegistry
 * `ProfileEvent_DistrCacheRegistryUpdateMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث سجل Distributed Cache. الوقت المستغرق في تحديث سجل Distributed Cache
@@ -1068,6 +1187,11 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheServerCachedReadBufferObjectStorageReadBytes` ([UInt64](/ar/reference/data-types/int-uint)) — حدث خادم Distributed Cache. عدد البايتات المقروءة من تخزين الكائنات في Distributed Cache أثناء القراءة من ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_DistrCacheServerCachedReadBufferCachePredownloadBytes` ([UInt64](/ar/reference/data-types/int-uint)) — حدث خادم Distributed Cache. عدد البايتات المقروءة من تخزين الكائنات للتنزيل المسبق في Distributed Cache أثناء القراءة من ذاكرة التخزين المؤقت لنظام الملفات
 * `ProfileEvent_DistrCacheServerSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — حدث خادم Distributed Cache. عدد المرات التي تم فيها تخطي خادم Distributed Cache بسبب محاولات اتصال سابقة فاشلة
+* `ProfileEvent_DistrCacheServerShutdownConnectionsMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث خادم Distributed Cache. الوقت المستغرَق في `shutdownAllConnections` بانتظار اكتمال الاتصالات النشطة أو إغلاقها قسرًا أثناء إيقاف تشغيل الخادم
+* `ProfileEvent_DistrCacheServerConnectionsDroppedOverLimit` ([UInt64](/ar/reference/data-types/int-uint)) — حدث خادم Distributed Cache. عدد الاتصالات التي أُغلقت لأن عدد الاتصالات تجاوز الحد (أُغلقت اتصالات العميل الذي لديه أكبر عدد من الاتصالات نسبةً إلى وزنه)
+* `ProfileEvent_DistrCacheServerConnectionsRejectedOverLimit` ([UInt64](/ar/reference/data-types/int-uint)) — حدث خادم Distributed Cache. عدد الاتصالات الجديدة التي رُفضت بحزمة SlowDown لأن العميل المتصل تجاوز حصته من الاتصالات
+* `ProfileEvent_DistrCacheServerConnectionRegistryLockWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث خادم Distributed Cache. الوقت المستغرَق في انتظار `mutex` لسجل الاتصالات العام عند التنازع (identify وsetClientWeight والإخلاء وإلغاء التسجيل عند استحقاق إعادة الفهرسة أو إزالة bucket)
+* `ProfileEvent_DistrCacheServerConnectionRegistryClientLockWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — حدث خادم Distributed Cache. الوقت المستغرَق في انتظار `mutex` لمجموعة اتصالات لكل عميل عند التنازع (register/unregister/identify/eviction)
 * `ProfileEvent_LogTest` ([UInt64](/ar/reference/data-types/int-uint)) — عدد رسائل السجل ذات المستوى Test
 * `ProfileEvent_LogTrace` ([UInt64](/ar/reference/data-types/int-uint)) — عدد رسائل السجل ذات المستوى Trace
 * `ProfileEvent_LogDebug` ([UInt64](/ar/reference/data-types/int-uint)) — عدد رسائل السجل ذات المستوى Debug
@@ -1091,6 +1215,9 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ParallelReplicasUsedCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد النسخ المتماثلة المستخدمة لتنفيذ استعلام باستخدام النسخ المتماثلة المتوازية المعتمدة على المهام
 * `ProfileEvent_ParallelReplicasAvailableCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد النسخ المتماثلة المتاحة لتنفيذ استعلام باستخدام النسخ المتماثلة المتوازية المعتمدة على المهام
 * `ProfileEvent_ParallelReplicasUnavailableCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد النسخ المتماثلة التي جرى اختيارها، لكن تبيّن عدم توفرها أثناء تنفيذ الاستعلام باستخدام النسخ المتماثلة المتوازية المعتمدة على المهام
+* `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المهام المُرسلة إلى العاملين البعيدين عند تنفيذ استعلام باستخدام make&#95;distributed&#95;plan. تشير القيمة غير الصفرية إلى أن الاستعلام نُفِّذ بالفعل بشكل موزع.
+* `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/ar/reference/data-types/int-uint)) — تُضبط إلى 1 عند تنفيذ استعلام make&#95;distributed&#95;plan ضمن العملية عبر المنفّذ المحلي (distributed&#95;plan&#95;execute&#95;locally) بدلًا من إرساله إلى العاملين البعيدين.
+* `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المضيفين المميزين الذين أُسنِدت إليهم مهمة واحدة على الأقل عند تنفيذ استعلام باستخدام make&#95;distributed&#95;plan.
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdates` ([UInt64](/ar/reference/data-types/int-uint)) — عدد تحديثات الأجزاء الافتراضية
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesByLeader` ([UInt64](/ar/reference/data-types/int-uint)) — تحديثات الأجزاء الافتراضية بواسطة القائد
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن بالميكروثانية لتحديث الأجزاء الافتراضية
@@ -1123,6 +1250,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdateTaskRuns` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات تشغيل updateReplicaSetTask
 * `ProfileEvent_SharedMergeTreeOptimizeAsync` ([UInt64](/ar/reference/data-types/int-uint)) — استعلامات OPTIMIZE غير المتزامنة التي نُفِّذت
 * `ProfileEvent_SharedMergeTreeOptimizeSync` ([UInt64](/ar/reference/data-types/int-uint)) — استعلامات OPTIMIZE المتزامنة التي نُفِّذت
+* `ProfileEvent_SharedMergeTreePartitionOperationRetries` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي اضطرت فيها عملية على مستوى القسم (DROP/MOVE/REPLACE/CLONE/TRUNCATE PARTITION) إلى إعادة محاولة الكتابة المتعددة في Keeper بسبب تغيير متزامن
 * `ProfileEvent_SharedMergeTreeScheduleDataProcessingJob` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات استدعاء scheduleDataProcessingJob/
 * `ProfileEvent_SharedMergeTreeScheduleDataProcessingJobNothingToScheduled` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات استدعاء scheduleDataProcessingJob دون وجود ما يجب تنفيذه
 * `ProfileEvent_SharedMergeTreeScheduleDataProcessingJobMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — زمن تنفيذ scheduleDataProcessingJob
@@ -1195,10 +1323,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_WriteBufferFromHTTPRequestsSent` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات HTTP التي أرسلها WriteBufferFromHTTP
 * `ProfileEvent_WriteBufferFromHTTPBytes` ([UInt64](/ar/reference/data-types/int-uint)) — الحجم الإجمالي لبايتات الحمولة المستلمة والمرسلة بواسطة WriteBufferFromHTTP. لا يشمل رؤوس HTTP.
 * `ProfileEvent_ConcurrencyControlSlotsGranted` ([UInt64](/ar/reference/data-types/int-uint)) — عدد CPU slot الممنوحة وفقًا لضمان خيط تنفيذ واحد لكل استعلام، وللاستعلامات التي يكون فيها الإعداد &#39;use&#95;concurrency&#95;control&#39; = 0
-* `ProfileEvent_ConcurrencyControlSlotsDelayed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد CPU slot التي لم تُمنح مبدئيًا واحتاجت إلى انتظار CPU slot شاغرة
+* `ProfileEvent_ConcurrencyControlSlotsDelayed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد CPU slots التي لم تُمنح وقت التخصيص بسبب ضغط السعة. لا يشمل الخانات المحجوزة بسبب التخصيص الكسول.
 * `ProfileEvent_ConcurrencyControlSlotsAcquired` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لـ CPU slots التي تم الحصول عليها
 * `ProfileEvent_ConcurrencyControlSlotsAcquiredNonCompeting` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لـ CPU slot غير المتنافسة التي تم الحصول عليها
-* `ProfileEvent_ConcurrencyControlQueriesDelayed` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لتخصيصات CPU slot (الاستعلامات) التي اضطرت إلى انتظار فتحات للتوسّع
+* `ProfileEvent_ConcurrencyControlQueriesDelayed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات المتأخرة بسبب ضغط سعة CPU slot. مؤشر تنازع — لا يشمل فترات انتظار التوسّع الكسول على خادم بلا تنازع.
 * `ProfileEvent_ConcurrencyControlWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي كان فيه الاستعلام ينتظر طلبات الموارد الخاصة بـ CPU slots.
 * `ProfileEvent_ConcurrencyControlPreemptedMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الإجمالي الذي قضاه الاستعلام في الانتظار بسبب استباق خانات CPU.
 * `ProfileEvent_ConcurrencyControlPreemptions` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات استباق CPU
@@ -1206,6 +1334,12 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ConcurrencyControlDownscales` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لأحداث تقليل موارد CPU
 * `ProfileEvent_ConcurrentQuerySlotsAcquired` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لخانات الاستعلام التي تم الحصول عليها
 * `ProfileEvent_ConcurrentQueryWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الإجمالي الذي قضاه الاستعلام في الانتظار للحصول على خانات استعلام
+* `ProfileEvent_MemoryReservationAdmitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في انتظار قبول حجز الذاكرة الأولي
+* `ProfileEvent_MemoryReservationIncreaseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه الاستعلام في انتظار الموافقة على زيادة حجز الذاكرة
+* `ProfileEvent_MemoryReservationIncreases` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لطلبات زيادة حجز الذاكرة الموافق عليها
+* `ProfileEvent_MemoryReservationDecreases` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لطلبات تقليل حجز الذاكرة الموافق عليها
+* `ProfileEvent_MemoryReservationKilled` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لإشارات إنهاء حجز الذاكرة
+* `ProfileEvent_MemoryReservationFailed` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لحالات فشل حجز الذاكرة
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorUpdateCount` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لتحديثات منسّق الدمج
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorUpdateMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الإجمالي المستغرَق في تحديث حالة منسّق الدمج
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorFetchMetadataMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الإجمالي المستغرَق في جلب البيانات الوصفية الأحدث داخل منسّق الدمج
@@ -1223,6 +1357,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_CoordinatedMergesMergeAssignmentResponseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الإجمالي المستغرَق في معالج إسناد الدمج
 * `ProfileEvent_SharedDatabaseCatalogFailedToApplyState` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الإخفاقات في تطبيق الحالة الجديدة في SharedDatabaseCatalog
 * `ProfileEvent_SharedDatabaseCatalogStateApplicationMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الإجمالي المستغرَق في تطبيق الحالة الجديدة في SharedDatabaseCatalog
+* `ProfileEvent_SharedCatalogStateFetchFullFallback` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي فشل فيها الجلب التزايدي لحالة Shared Catalog مرات متتالية كثيرة، فنُفّذ جلب كامل للحالة بدلًا من ذلك
 * `ProfileEvent_MemoryWorkerRun` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات التشغيل التي نفّذها MemoryWorker في الخلفية
 * `ProfileEvent_MemoryWorkerRunElapsedMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت الإجمالي الذي استغرقه MemoryWorker في العمل في الخلفية
 * `ProfileEvent_ParquetFetchWaitTimeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت انتظار قراءات ملف Parquet من خيوط فك الترميز (وليس خيوط `prefetch`)
@@ -1232,8 +1367,17 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في تنفيذ شيفرة WebAssembly
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/ar/reference/data-types/int-uint)) — عدد بيئات WebAssembly المعزولة التي تم إنشاؤها
 * `ProfileEvent_WasmMemoryAllocated` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الذاكرة المخصصة لبيئات WebAssembly المعزولة
+* `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات الدوال المعرفة من قبل المستخدم من نوع executable وexecutable&#95;pool.
+* `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت الساعة الفعلي المستغرَق في تنفيذ الدالات المعرفة من المستخدم القابلة للتنفيذ ودالات executable&#95;pool المعرفة من المستخدم، بالميكروثانية.
+* `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت CPU في وضع المستخدم الذي تستهلكه العمليات الفرعية للدالات المعرفة من المستخدم القابلة للتنفيذ ودالات executable&#95;pool المعرفة من المستخدم، بالميكروثانية.
+* `ProfileEvent_ExecutableUserDefinedFunctionSystemTimeMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت CPU في وضع النواة الذي تستهلكه العمليات الفرعية للدالات المعرفة من المستخدم القابلة للتنفيذ ودالات executable&#95;pool المعرفة من المستخدم، بالميكروثانية.
+* `ProfileEvent_ExecutableUserDefinedFunctionPeakMemoryByteSeconds` ([UInt64](/ar/reference/data-types/int-uint)) — ذروة الذاكرة لكل عملية والمستخدمة بواسطة العمليات الفرعية للدالات المعرفة من المستخدم القابلة للتنفيذ ودالات executable&#95;pool المعرفة من المستخدم، متكاملةً على مدى وقت الساعة الفعلي، بوحدة بايت-ثانية.
+* `ProfileEvent_ExecutableUserDefinedFunctionInputBytes` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي البايتات المكتوبة إلى stdin للعمليات الفرعية للدالات المعرفة من المستخدم القابلة للتنفيذ ودالات executable&#95;pool المعرفة من المستخدم.
+* `ProfileEvent_ExecutableUserDefinedFunctionOutputBytes` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي البايتات المقروءة من stdout للعمليات الفرعية للدالات المعرفة من المستخدم القابلة للتنفيذ ودالات executable&#95;pool المعرفة من المستخدم.
+* `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في انتظار tryBorrowObject عند استنفاد مجمع الدالات المعرفة من المستخدم executable&#95;pool، بالميكروثانية.
 * `ProfileEvent_ParquetReadRowGroups` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمجموعات الصفوف المقروءة من بيانات Parquet
 * `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لمجموعات الصفوف المستبعَدة من بيانات Parquet
+* `ProfileEvent_ParquetPrunedPages` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي للصفحات المستبعَدة من بيانات Parquet عبر فهرس الأعمدة
 * `ProfileEvent_ParquetDecodingTasks` ([UInt64](/ar/reference/data-types/int-uint)) — المهام الصادرة عن قارئ Parquet
 * `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/ar/reference/data-types/int-uint)) — مجموعات المهام المرسلة إلى مجموعة خيوط بواسطة قارئ Parquet
 * `ProfileEvent_ParquetPrefetcherReadRandomRead` ([UInt64](/ar/reference/data-types/int-uint)) — العدد الإجمالي لعمليات القراءة باستخدام `ReadMode::RandomRead` بواسطة `DB::Parquet::Prefetcher`
@@ -1246,6 +1390,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_QueryPreempted` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إيقاف المهام مؤقتًا وانتظارها بسبب إعداد &#39;priority&#39;
 * `ProfileEvent_IndexBinarySearchAlgorithm` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات استخدام خوارزمية البحث الثنائي على علامات الفهرس
 * `ProfileEvent_IndexGenericExclusionSearchAlgorithm` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات استخدام خوارزمية الاستبعاد العامة للبحث على علامات الفهرس
+* `ProfileEvent_IndexGenericExclusionSearchStepLimitReached` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي وصل فيها البحث العام للاستبعاد عبر علامات الفهرس إلى merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps وقَبِل نطاقات العلامات المتبقية دون تقسيم إضافي
 * `ProfileEvent_ParallelReplicasQueryCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الاستعلامات (والاستعلامات الفرعية) المنفذة باستخدام النسخ المتماثلة المتوازية أثناء تنفيذ الاستعلام
 * `ProfileEvent_DistributedConnectionReconnectCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات إعادة الاتصال بخوادم أخرى أثناء تنفيذ الاستعلام الموزع. قد يحدث ذلك عند الحصول على اتصال قديم من مجمع الاتصالات
 * `ProfileEvent_DistributedConnectionConnectCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات الاتصال بخوادم أخرى أثناء تنفيذ الاستعلام الموزع. يحدث ذلك عند إنشاء اتصال جديد بدلًا من استخدام اتصال موجود من المجمع.
@@ -1277,12 +1422,35 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterRowsChecked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي فحصتها مرشحات JOIN وقت التشغيل
 * `ProfileEvent_RuntimeFilterRowsPassed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي مرّت عبر مرشحات JOIN وقت التشغيل (أي لم تُستبعَد بواسطتها)
 * `ProfileEvent_RuntimeFilterRowsSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف في الكتل التي تخطّتها مرشحات JOIN وقت التشغيل
+* `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الوحدات الحبيبية التي فُحصت للاستبعاد في وقت القراءة بواسطة مرشحات وقت تشغيل JOIN
+* `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الوحدات الحبيبية المستبعَدة في وقت القراءة بواسطة مرشحات وقت تشغيل JOIN
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن المنقضي لخطوات المعالجة اللاحقة بعد بناء الجانب الأيمن من JOIN.
 * `ProfileEvent_AIInputTokens` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي رموز prompt المستهلَكة عبر جميع استدعاءات AI function في الاستعلام.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي رموز الإكمال المستهلَكة عبر جميع استدعاءات AI function في الاستعلام.
 * `ProfileEvent_AIAPICalls` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات HTTP التي أُرسلت إلى موفري خدمات الذكاء الاصطناعي.
 * `ProfileEvent_AIRowsProcessed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي تلقّت نتيجة من AI.
 * `ProfileEvent_AIRowsSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي تلقّت قيمة افتراضية بسبب QUOTA أو خطأ.
+* `ProfileEvent_StatelessWorkerRequested` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العاملين عديمي الحالة الذين طلبتهم الاستعلامات لتنفيذ الاستعلامات الموزعة.
+* `ProfileEvent_StatelessWorkerProvided` ([UInt64](/ar/reference/data-types/int-uint)) — عدد العاملين عديمي الحالة الذين وُفّروا للاستعلامات لتنفيذ الاستعلامات الموزعة.
+* `ProfileEvent_StatelessWorkerProvisioningMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضته الاستعلامات في انتظار توفير العاملين عديمي الحالة.
+* `ProfileEvent_StatelessWorkerProvisioningWaits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي اضطر فيها استعلام إلى انتظار خدمة اكتشاف العاملين عديمي الحالة لتوفير عاملين.
+* `ProfileEvent_StatelessWorkerCreateLeaseRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات create&#95;lease المرسلة إلى خدمة اكتشاف العاملين عديمي الحالة للحصول على عاملين.
+* `ProfileEvent_StatelessWorkerCreateLeaseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في طلبات create&#95;lease إلى خدمة اكتشاف العاملين عديمي الحالة.
+* `ProfileEvent_StatelessWorkerCreateLeaseErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات create&#95;lease الفاشلة إلى خدمة اكتشاف العاملين عديمي الحالة (أي خطأ أو timeout).
+* `ProfileEvent_StatelessWorkerGetLeaseRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات get&#95;lease المرسلة إلى خدمة اكتشاف العاملين عديمي الحالة لتحديث قائمة العاملين المستأجَرين.
+* `ProfileEvent_StatelessWorkerGetLeaseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في طلبات get&#95;lease إلى خدمة اكتشاف العاملين عديمي الحالة.
+* `ProfileEvent_StatelessWorkerGetLeaseErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات get&#95;lease الفاشلة إلى خدمة اكتشاف العامل عديم الحالة (بسبب أي خطأ أو مهلة انتظار).
+* `ProfileEvent_StatelessWorkerUpdateLeaseRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات update&#95;lease المرسلة إلى خدمة اكتشاف العامل عديم الحالة لتجديد عقود إيجار العاملين.
+* `ProfileEvent_StatelessWorkerUpdateLeaseMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في طلبات update&#95;lease إلى خدمة اكتشاف العامل عديم الحالة.
+* `ProfileEvent_StatelessWorkerUpdateLeaseErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات update&#95;lease الفاشلة إلى خدمة اكتشاف العامل عديم الحالة (بسبب أي خطأ أو مهلة انتظار).
+* `ProfileEvent_StatelessWorkerServerRegisterRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات التسجيل التي أرسلها عامل عديم الحالة إلى خدمة اكتشاف العامل عديم الحالة.
+* `ProfileEvent_StatelessWorkerServerRegisterMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه العاملون عديمو الحالة في التسجيل لدى خدمة اكتشاف العامل عديم الحالة.
+* `ProfileEvent_StatelessWorkerServerRegisterErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات التسجيل الفاشلة من العاملين عديمي الحالة إلى خدمة اكتشاف العامل عديم الحالة (بسبب أي خطأ أو مهلة انتظار).
+* `ProfileEvent_StatelessWorkerServerHeartbeatRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد نبضات القلب التي أرسلها عامل عديم الحالة إلى خدمة اكتشاف العامل عديم الحالة.
+* `ProfileEvent_StatelessWorkerServerHeartbeatMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت الذي قضاه العاملون عديمو الحالة في إرسال نبضات القلب إلى خدمة اكتشاف العامل عديم الحالة.
+* `ProfileEvent_StatelessWorkerServerHeartbeatErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد نبضات القلب الفاشلة من العاملين عديمي الحالة إلى خدمة اكتشاف العامل عديم الحالة (بسبب أي خطأ أو مهلة انتظار).
+* `ProfileEvent_StatelessWorkerServerTenantBindings` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي أُسنِد فيها عامل عديم الحالة إلى مستأجر لخدمة استعلاماته.
+* `ProfileEvent_StatelessWorkerServerLeasesLost` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي انتهى فيها عقد إيجار عامل عديم الحالة وبدأ انتظار إيقاف تشغيله.
 
 {/*AUTOGENERATED_END*/}
 
@@ -1316,8 +1484,8 @@ ProfileEvent_FailedSelectQuery:                                  0
   ## انظر أيضًا
 </div>
 
-* [إعداد query&#95;metric&#95;log](/ar/reference/settings/server-settings/settings#query_metric_log) — تمكين الإعداد وتعطيله.
-* [query&#95;metric&#95;log&#95;interval](/ar/reference/settings/session-settings#query_metric_log_interval)
+* [إعداد query&#95;metric&#95;log](/ar/reference/settings/server-settings/settings/query#query_metric_log) — تمكين الإعداد وتعطيله.
+* [query&#95;metric&#95;log&#95;interval](/ar/reference/settings/session-settings/other#query_metric_log_interval)
 * [system.asynchronous&#95;metrics](/ar/reference/system-tables/asynchronous_metrics) — يحتوي على مقاييس تُحسب دوريًا.
 * [system.events](/ar/reference/system-tables/events) — يحتوي على عدد من الأحداث التي حدثت.
 * [system.metrics](/ar/reference/system-tables/metrics) — يحتوي على مقاييس تُحسب آنيًا.

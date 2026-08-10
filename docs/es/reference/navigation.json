@@ -14,6 +14,7 @@
           "expanded": false,
           "group": "Sentencias",
           "pages": [
+            "es/reference/statements/index",
             {
               "expanded": false,
               "group": "ALTER",
@@ -43,8 +44,7 @@
                 "es/reference/statements/alter/user",
                 "es/reference/statements/alter/masking-policy",
                 "es/reference/statements/alter/view"
-              ],
-              "root": "es/reference/statements/alter/index"
+              ]
             },
             "es/reference/statements/attach",
             "es/reference/statements/check-grant",
@@ -54,18 +54,21 @@
               "expanded": false,
               "group": "CREATE",
               "pages": [
+                "es/reference/statements/create/index",
                 "es/reference/statements/create/database",
                 {
                   "expanded": false,
                   "group": "DICTIONARY",
                   "pages": [
+                    "es/reference/statements/create/dictionary",
                     "es/reference/statements/create/dictionary/attributes",
                     "es/reference/statements/create/dictionary/embedded",
                     "es/reference/statements/create/dictionary/lifetime",
                     {
                       "expanded": false,
-                      "group": "Disposiciones",
+                      "group": "Diseños",
                       "pages": [
+                        "es/reference/statements/create/dictionary/layouts/overview",
                         "es/reference/statements/create/dictionary/layouts/flat",
                         "es/reference/statements/create/dictionary/layouts/hashed",
                         "es/reference/statements/create/dictionary/layouts/hashed-array",
@@ -78,13 +81,13 @@
                         "es/reference/statements/create/dictionary/layouts/polygon",
                         "es/reference/statements/create/dictionary/layouts/ip-trie",
                         "es/reference/statements/create/dictionary/layouts/regexp-tree"
-                      ],
-                      "root": "es/reference/statements/create/dictionary/layouts/overview"
+                      ]
                     },
                     {
                       "expanded": false,
                       "group": "Fuentes",
                       "pages": [
+                        "es/reference/statements/create/dictionary/sources/overview",
                         "es/reference/statements/create/dictionary/sources/local-file",
                         "es/reference/statements/create/dictionary/sources/executable-file",
                         "es/reference/statements/create/dictionary/sources/executable-pool",
@@ -99,11 +102,9 @@
                         "es/reference/statements/create/dictionary/sources/null",
                         "es/reference/statements/create/dictionary/sources/yamlregexptree",
                         "es/reference/statements/create/dictionary/sources/ytsaurus"
-                      ],
-                      "root": "es/reference/statements/create/dictionary/sources/overview"
+                      ]
                     }
-                  ],
-                  "root": "es/reference/statements/create/dictionary"
+                  ]
                 },
                 "es/reference/statements/create/masking-policy",
                 "es/reference/statements/create/function",
@@ -112,11 +113,19 @@
                 "es/reference/statements/create/role",
                 "es/reference/statements/create/row-policy",
                 "es/reference/statements/create/settings-profile",
-                "es/reference/statements/create/table",
+                {
+                  "expanded": false,
+                  "group": "TABLA",
+                  "pages": [
+                    "es/reference/statements/create/table",
+                    "es/reference/statements/create/table/codec",
+                    "es/reference/statements/create/table/temporary-table",
+                    "es/reference/statements/create/table/replace-table"
+                  ]
+                },
                 "es/reference/statements/create/user",
                 "es/reference/statements/create/view"
-              ],
-              "root": "es/reference/statements/create/index"
+              ]
             },
             "es/reference/statements/delete",
             "es/reference/statements/describe-table",
@@ -141,6 +150,7 @@
               "expanded": false,
               "group": "SELECT",
               "pages": [
+                "es/reference/statements/select/index",
                 "es/reference/statements/select/all",
                 "es/reference/statements/select/apply_modifier",
                 "es/reference/statements/select/array-join",
@@ -165,8 +175,7 @@
                 "es/reference/statements/select/union",
                 "es/reference/statements/select/where",
                 "es/reference/statements/select/with"
-              ],
-              "root": "es/reference/statements/select/index"
+              ]
             },
             "es/reference/statements/set-role",
             "es/reference/statements/set",
@@ -177,18 +186,17 @@
             "es/reference/statements/update",
             "es/reference/statements/use",
             "es/reference/statements/watch"
-          ],
-          "root": "es/reference/statements/index"
+          ]
         },
         {
           "expandable": true,
           "expanded": false,
           "group": "Operadores",
           "pages": [
+            "es/reference/operators/index",
             "es/reference/operators/exists",
             "es/reference/operators/distributed-ddl"
-          ],
-          "root": "es/reference/operators/index"
+          ]
         }
       ]
     },
@@ -197,6 +205,7 @@
       "expanded": false,
       "group": "Tipos de datos",
       "pages": [
+        "es/reference/data-types/index",
         {
           "expanded": false,
           "group": "Tipos numéricos",
@@ -285,12 +294,12 @@
           "expanded": false,
           "group": "Tipos de datos especiales",
           "pages": [
+            "es/reference/data-types/special-data-types/index",
             "es/reference/data-types/special-data-types/expression",
             "es/reference/data-types/special-data-types/interval",
             "es/reference/data-types/special-data-types/nothing",
             "es/reference/data-types/special-data-types/set"
-          ],
-          "root": "es/reference/data-types/special-data-types/index"
+          ]
         },
         {
           "group": "Codificación binaria",
@@ -298,25 +307,28 @@
             "es/reference/data-types/data-types-binary-encoding"
           ]
         }
-      ],
-      "root": "es/reference/data-types/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Motores",
       "pages": [
+        "es/reference/engines/engines",
         {
           "expanded": false,
           "group": "Motores de tablas",
           "pages": [
+            "es/reference/engines/table-engines/index",
             {
               "expanded": false,
               "group": "Integraciones",
               "pages": [
+                "es/reference/engines/table-engines/integrations/index",
                 "es/reference/engines/table-engines/integrations/arrowflight",
                 "es/reference/engines/table-engines/integrations/azure-queue",
                 "es/reference/engines/table-engines/integrations/azureBlobStorage",
+                "es/reference/engines/table-engines/integrations/bigquery",
                 "es/reference/engines/table-engines/integrations/deltalake",
                 "es/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "es/reference/engines/table-engines/integrations/ExternalDistributed",
@@ -340,23 +352,23 @@
                 "es/reference/engines/table-engines/integrations/sqlite",
                 "es/reference/engines/table-engines/integrations/time-series",
                 "es/reference/engines/table-engines/integrations/ytsaurus"
-              ],
-              "root": "es/reference/engines/table-engines/integrations/index"
+              ]
             },
             {
               "expanded": false,
               "group": "Familia Log",
               "pages": [
+                "es/reference/engines/table-engines/log-family/index",
                 "es/reference/engines/table-engines/log-family/log",
                 "es/reference/engines/table-engines/log-family/stripelog",
                 "es/reference/engines/table-engines/log-family/tinylog"
-              ],
-              "root": "es/reference/engines/table-engines/log-family/index"
+              ]
             },
             {
               "expanded": false,
               "group": "Familia MergeTree",
               "pages": [
+                "es/reference/engines/table-engines/mergetree-family/index",
                 "es/reference/engines/table-engines/mergetree-family/mergetree",
                 "es/reference/engines/table-engines/mergetree-family/aggregatingmergetree",
                 "es/reference/engines/table-engines/mergetree-family/annindexes",
@@ -369,13 +381,13 @@
                 "es/reference/engines/table-engines/mergetree-family/summingmergetree",
                 "es/reference/engines/table-engines/mergetree-family/textindexes",
                 "es/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree"
-              ],
-              "root": "es/reference/engines/table-engines/mergetree-family/index"
+              ]
             },
             {
               "expanded": false,
               "group": "Especial",
               "pages": [
+                "es/reference/engines/table-engines/special/index",
                 "es/reference/engines/table-engines/special/alias",
                 "es/reference/engines/table-engines/special/buffer",
                 "es/reference/engines/table-engines/special/dictionary",
@@ -394,16 +406,15 @@
                 "es/reference/engines/table-engines/special/set",
                 "es/reference/engines/table-engines/special/url",
                 "es/reference/engines/table-engines/special/view"
-              ],
-              "root": "es/reference/engines/table-engines/special/index"
+              ]
             }
-          ],
-          "root": "es/reference/engines/table-engines/index"
+          ]
         },
         {
           "expanded": false,
-          "group": "Motores de bases de datos",
+          "group": "Motores de base de datos",
           "pages": [
+            "es/reference/engines/database-engines/index",
             "es/reference/engines/database-engines/atomic",
             "es/reference/engines/database-engines/backup",
             "es/reference/engines/database-engines/datalake",
@@ -413,21 +424,21 @@
             "es/reference/engines/database-engines/replicated",
             "es/reference/engines/database-engines/shared",
             "es/reference/engines/database-engines/sqlite"
-          ],
-          "root": "es/reference/engines/database-engines/index"
+          ]
         }
-      ],
-      "root": "es/reference/engines/engines"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Funciones",
       "pages": [
+        "es/reference/functions/index",
         {
           "expanded": false,
           "group": "Funciones regulares",
           "pages": [
+            "es/reference/functions/regular-functions/overview",
             "es/reference/functions/regular-functions/ai-functions",
             "es/reference/functions/regular-functions/arithmetic-functions",
             "es/reference/functions/regular-functions/array-functions",
@@ -449,6 +460,7 @@
               "expanded": false,
               "group": "Geo",
               "pages": [
+                "es/reference/functions/regular-functions/geo/index",
                 "es/reference/functions/regular-functions/geo/coordinates",
                 "es/reference/functions/regular-functions/geo/flipCoordinates",
                 "es/reference/functions/regular-functions/geo/geometry",
@@ -458,8 +470,7 @@
                 "es/reference/functions/regular-functions/geo/polygon",
                 "es/reference/functions/regular-functions/geo/s2",
                 "es/reference/functions/regular-functions/geo/svg"
-              ],
-              "root": "es/reference/functions/regular-functions/geo/index"
+              ]
             },
             "es/reference/functions/regular-functions/hash-functions",
             "es/reference/functions/regular-functions/in-functions",
@@ -473,7 +484,6 @@
             "es/reference/functions/regular-functions/numeric-indexed-vector-functions",
             "es/reference/functions/regular-functions/other-functions",
             "es/reference/functions/regular-functions/random-functions",
-            "es/reference/functions/regular-functions/overview",
             "es/reference/functions/regular-functions/rounding-functions",
             "es/reference/functions/regular-functions/splitting-merging-functions",
             "es/reference/functions/regular-functions/string-functions",
@@ -488,13 +498,13 @@
             "es/reference/functions/regular-functions/uniqtheta-functions",
             "es/reference/functions/regular-functions/url-functions",
             "es/reference/functions/regular-functions/uuid-functions"
-          ],
-          "root": "es/reference/functions/regular-functions/regular-functions-index"
+          ]
         },
         {
           "expanded": false,
           "group": "Funciones de agregación",
           "pages": [
+            "es/reference/functions/aggregate-functions/index",
             "es/reference/functions/aggregate-functions/combinators",
             "es/reference/functions/aggregate-functions/grouping_function",
             "es/reference/functions/aggregate-functions/parametric-functions",
@@ -663,16 +673,17 @@
                 "es/reference/functions/aggregate-functions/welchTTest"
               ]
             }
-          ],
-          "root": "es/reference/functions/aggregate-functions/index"
+          ]
         },
         {
           "expanded": false,
           "group": "Funciones de tabla",
           "pages": [
+            "es/reference/functions/table-functions/index",
             "es/reference/functions/table-functions/arrowflight",
             "es/reference/functions/table-functions/azureBlobStorage",
             "es/reference/functions/table-functions/azureBlobStorageCluster",
+            "es/reference/functions/table-functions/bigquery",
             "es/reference/functions/table-functions/cluster",
             "es/reference/functions/table-functions/deltalake",
             "es/reference/functions/table-functions/deltalakeCluster",
@@ -698,6 +709,7 @@
             "es/reference/functions/table-functions/jdbc",
             "es/reference/functions/table-functions/loop",
             "es/reference/functions/table-functions/merge",
+            "es/reference/functions/table-functions/mergeTreeCodecBlockCounts",
             "es/reference/functions/table-functions/mergeTreeIndex",
             "es/reference/functions/table-functions/mergeTreeProjection",
             "es/reference/functions/table-functions/mergeTreeTextIndex",
@@ -728,13 +740,13 @@
             "es/reference/functions/table-functions/view",
             "es/reference/functions/table-functions/ytsaurus",
             "es/reference/functions/table-functions/zeros"
-          ],
-          "root": "es/reference/functions/table-functions/index"
+          ]
         },
         {
           "expanded": false,
           "group": "Funciones de ventana",
           "pages": [
+            "es/reference/functions/window-functions/index",
             "es/reference/functions/window-functions/cume_dist",
             "es/reference/functions/window-functions/dense_rank",
             "es/reference/functions/window-functions/first_value",
@@ -749,8 +761,7 @@
             "es/reference/functions/window-functions/percent_rank",
             "es/reference/functions/window-functions/rank",
             "es/reference/functions/window-functions/row_number"
-          ],
-          "root": "es/reference/functions/window-functions/index"
+          ]
         },
         {
           "group": "Funciones definidas por el usuario",
@@ -759,14 +770,14 @@
             "es/reference/functions/regular-functions/wasm_udf"
           ]
         }
-      ],
-      "root": "es/reference/functions/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Formatos",
       "pages": [
+        "es/reference/formats/index",
         {
           "expanded": false,
           "group": "Arrow",
@@ -937,14 +948,14 @@
         "es/reference/formats/Values",
         "es/reference/formats/Vertical",
         "es/reference/formats/XML"
-      ],
-      "root": "es/reference/formats/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Configuración",
       "pages": [
+        "es/reference/settings/index",
         {
           "$ref": "./settings/server-settings/settings/navigation.json"
         },
@@ -958,15 +969,14 @@
           "$ref": "./settings/formats/navigation.json"
         },
         "es/reference/settings/beta-and-experimental-features"
-      ],
-      "root": "es/reference/settings/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Tablas del sistema",
       "pages": [
-        "es/reference/system-tables/index",
+        "es/reference/system-tables/overview",
         "es/reference/system-tables/aggregate_function_combinators",
         "es/reference/system-tables/aggregated_zookeeper_log",
         "es/reference/system-tables/asynchronous_insert_log",
@@ -1001,6 +1011,7 @@
         "es/reference/system-tables/database_replicas",
         "es/reference/system-tables/databases",
         "es/reference/system-tables/dead_letter_queue",
+        "es/reference/system-tables/delta_lake_metadata_log",
         "es/reference/system-tables/delta_metadata_log",
         "es/reference/system-tables/detached_parts",
         "es/reference/system-tables/detached_tables",
@@ -1036,6 +1047,7 @@
         "es/reference/system-tables/jemalloc_stats",
         "es/reference/system-tables/jemalloc_profile_text",
         "es/reference/system-tables/kafka_consumers",
+        "es/reference/system-tables/keeper_storage",
         "es/reference/system-tables/keywords",
         "es/reference/system-tables/licenses",
         "es/reference/system-tables/macros",
@@ -1113,6 +1125,7 @@
         "es/reference/system-tables/user_defined_functions",
         "es/reference/system-tables/user_directories",
         "es/reference/system-tables/user_processes",
+        "es/reference/system-tables/user_query_log",
         "es/reference/system-tables/users",
         "es/reference/system-tables/view_refreshes",
         "es/reference/system-tables/warnings",
@@ -1125,13 +1138,13 @@
         "es/reference/system-tables/zookeeper_connection_log",
         "es/reference/system-tables/zookeeper_log",
         "es/reference/system-tables/zookeeper_watches"
-      ],
-      "root": "es/reference/system-tables/overview"
+      ]
     },
     {
       "group": "Lagos de datos",
-      "pages": [],
-      "root": "es/reference/datalakes"
+      "pages": [
+        "es/reference/datalakes"
+      ]
     }
   ]
 }

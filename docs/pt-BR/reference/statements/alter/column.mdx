@@ -40,7 +40,7 @@ As seguintes ações são suportadas:
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Adiciona uma nova coluna à tabela com `name`, `type`, [`codec`](/pt-BR/reference/statements/create/table#column_compression_codec) e `default_expr` especificados (consulte a seção [Expressões padrão](/pt-BR/reference/statements/create/table#default_values)).
+Adiciona uma nova coluna à tabela com `name`, `type`, [`codec`](/pt-BR/reference/statements/create/table/codec) e `default_expr` especificados (consulte a seção [Expressões padrão](/pt-BR/reference/statements/create/table#default_values)).
 
 Se a cláusula `IF NOT EXISTS` estiver incluída, a consulta não retornará erro se a coluna já existir. Se você especificar `AFTER name_after` (o nome de outra coluna), a coluna será adicionada depois da coluna especificada na lista de colunas da tabela. Se quiser adicionar uma coluna no início da tabela, use a cláusula `FIRST`. Caso contrário, a coluna será adicionada ao final da tabela. Em uma cadeia de ações, `name_after` pode ser o nome de uma coluna adicionada em uma das ações anteriores.
 
@@ -175,7 +175,7 @@ Esta consulta altera as propriedades da coluna `name`:
 
 * Valores de enum para os tipos Enum/Enum8/Enum16
 
-Para ver exemplos de modificação de CODECS de compressão de colunas, consulte [Column Compression Codecs](/pt-BR/reference/statements/create/table#column_compression_codec).
+Para ver exemplos de modificação de CODECS de compressão de colunas, consulte [Column Compression Codecs](/pt-BR/reference/statements/create/table/codec).
 
 Para ver exemplos de modificação de TTL de colunas, consulte [Column TTL](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
@@ -377,9 +377,20 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 └───────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-**Veja também**
+<Note>
+  `MATERIALIZE COLUMN` sempre regrava os **valores da coluna**. A reconstrução de [índices de ignorar dados](/pt-BR/sql-reference/statements/alter/skipping-index) (incluindo índices de texto) também depende do layout da parte e de como o índice é armazenado:
+
+  * Em partes que são simultaneamente **wide + full-storage**, arquivos **independentes** de índices de ignorar dados (e índices de texto) **não** são reconstruídos automaticamente quando apenas a coluna é regravada. Após alterar dados da coluna subjacente de que um índice depende, execute [`ALTER TABLE ... MATERIALIZE INDEX`](/pt-BR/sql-reference/statements/alter/skipping-index#materialize-index) se precisar atualizar esses arquivos de índice.
+  * **Exceção:** índices de ignorar dados comuns compactados em `skp_idx.packed` (pequenos subfluxos de índices de ignorar dados abaixo do valor padrão de [`packed_skip_index_max_bytes`](/pt-BR/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes); índices de texto completo não são compactados dessa forma) são recalculados forçadamente mesmo em partes wide + full-storage.
+  * Em **qualquer parte que não seja wide + full-storage** (incluindo **compact + full**, **compact + packed** e **wide + packed**), a mutação segue um caminho de regravação completa da parte e recalcula forçadamente os índices secundários preexistentes nessa parte. Partes pequenas geralmente são compactas, embora ainda usem o armazenamento de parte full por padrão; portanto, esse cenário é comum em inserções recentes.
+
+  Separadamente, `ADD INDEX` atualiza apenas os metadados: ele **não** materializa imediatamente o novo índice (incluindo índices de texto) nas partes históricas. As partes históricas são materializadas por meio de um [`MATERIALIZE INDEX`](/pt-BR/sql-reference/statements/alter/skipping-index#materialize-index) explícito ou de uma mesclagem posterior, quando [`materialize_skip_indexes_on_merge`](/pt-BR/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) está habilitado e o índice não está listado em [`exclude_materialize_skip_indexes_on_merge`](/pt-BR/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). O `MATERIALIZE INDEX` explícito é a opção determinística quando você precisa criar o índice sem aguardar as configurações de mesclagem.
+</Note>
+
+**Consulte também**
 
 * [MATERIALIZED](/pt-BR/reference/statements/create/view#materialized-view).
+* [MATERIALIZE INDEX](/pt-BR/sql-reference/statements/alter/skipping-index#materialize-index).
 
 <div id="limitations">
   ## Limitações

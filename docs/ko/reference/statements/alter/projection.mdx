@@ -376,7 +376,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [I
 
 쿼리를 실행하면 ClickHouse는 원본 테이블 또는 해당 프로젝션 중 어디에서 읽을지 선택합니다.
 원본 테이블과 프로젝션 중 어느 쪽에서 읽을지는 각 테이블 파트별로 개별적으로 결정됩니다.
-일반적으로 ClickHouse는 가능한 한 적은 양의 데이터만 읽으려고 하며, 예를 들어 파트의 기본 키를 샘플링하는 등 읽기에 가장 적합한 파트를 식별하기 위해 몇 가지 기법을 사용합니다.
+일반적으로 ClickHouse는 가능한 한 적은 양의 데이터만 읽으려고 하며, 예를 들어 파트의 프라이머리 키를 샘플링하는 등 읽기에 가장 적합한 파트를 식별하기 위해 몇 가지 기법을 사용합니다.
 경우에 따라 원본 테이블 파트에 대응하는 프로젝션 파트가 없을 수 있습니다.
 예를 들어 SQL에서 테이블의 프로젝션 생성은 기본적으로 &quot;lazy&quot;하게 동작하므로, 새로 삽입된 데이터에만 영향을 주고 기존 파트는 변경하지 않습니다.
 
@@ -386,13 +386,13 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [I
 예를 들어 테이블이 `ReplacingMergeTree` 테이블 엔진을 사용한다고 가정해 보겠습니다.
 머지 중 여러 입력 파트에서 동일한 행이 발견되면 가장 최신 행 버전(가장 최근에 삽입된 파트의 행)만 유지되고, 이전 버전은 모두 삭제됩니다.
 
-마찬가지로 테이블이 `AggregatingMergeTree` 테이블 엔진을 사용하는 경우, 머지 작업은 입력 파트의 동일한 행을(기본 키 값을 기준으로) 하나의 행으로 합쳐 부분 집계 상태를 갱신할 수 있습니다.
+마찬가지로 테이블이 `AggregatingMergeTree` 테이블 엔진을 사용하는 경우, 머지 작업은 입력 파트의 동일한 행을(프라이머리 키 값을 기준으로) 하나의 행으로 합쳐 부분 집계 상태를 갱신할 수 있습니다.
 
-ClickHouse v24.8 이전에는 프로젝션 파트가 메인 데이터와 조용히 불일치 상태가 되거나, 테이블에 프로젝션이 있으면 데이터베이스가 자동으로 예외를 발생시켰기 때문에 업데이트 및 삭제와 같은 특정 작업을 아예 실행할 수 없었습니다.
+ClickHouse v24.8 이전에는 프로젝션 파트가 메인 데이터와 조용히 불일치 상태가 되거나, 테이블에 프로젝션이 있으면 데이터베이스가 자동으로 예외를 발생시켰기 때문에 UPDATE 및 삭제와 같은 특정 작업을 아예 실행할 수 없었습니다.
 
-v24.8부터는 새로운 테이블 수준 설정 [`deduplicate_merge_projection_mode`](/ko/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode)으로 앞서 설명한 비단순한 백그라운드 머지 작업이 원본 테이블의 파트에서 발생할 때의 동작을 제어할 수 있습니다.
+v24.8부터는 새로운 테이블 수준 설정 [`deduplicate_merge_projection_mode`](/ko/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode)으로 앞서 설명한 비단순한 백그라운드 머지 작업이 원본 테이블의 파트에서 발생할 때의 동작을 제어할 수 있습니다.
 
-삭제 뮤테이션도 원본 테이블의 파트에서 행을 제거하는 파트 병합 작업의 또 다른 예입니다. v24.7부터는 경량한 삭제에 의해 트리거된 삭제 뮤테이션의 동작을 제어하는 설정 [`lightweight_mutation_projection_mode`](/ko/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode)도 제공됩니다.
+삭제 뮤테이션도 원본 테이블의 파트에서 행을 제거하는 파트 병합 작업의 또 다른 예입니다. v24.7부터는 경량한 삭제에 의해 트리거된 삭제 뮤테이션의 동작을 제어하는 설정 [`lightweight_mutation_projection_mode`](/ko/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode)도 제공됩니다.
 
 아래는 `deduplicate_merge_projection_mode`와 `lightweight_mutation_projection_mode`에 사용할 수 있는 값입니다:
 

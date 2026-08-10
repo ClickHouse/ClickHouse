@@ -17,7 +17,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 </Note>
 
 論理更新 `UPDATE` ステートメントは、式 `filter_expr` に一致するテーブル `[db.]table` の行を更新します。
-これは、データパーツ内のカラム全体を書き換える重量級の処理である [`ALTER TABLE ... UPDATE`](/ja/reference/statements/alter/update) クエリと対比して、&quot;lightweight update&quot; と呼ばれています。
+これは、データパーツ内のカラム全体を書き換える重量級の処理である [`ALTER TABLE ... UPDATE`](/ja/reference/statements/alter/update) クエリと対比して、&quot;論理更新&quot; と呼ばれています。
 この機能は、[`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルエンジンファミリーでのみ利用できます。
 
 ```sql
@@ -57,13 +57,13 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 
 論理更新は、[`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree)、[`ReplacingMergeTree`](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree)、[`CollapsingMergeTree`](/ja/reference/engines/table-engines/mergetree-family/collapsingmergetree)、[`VersionedCollapsingMergeTree`](/ja/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) エンジンと、それらの [`Replicated`](/ja/reference/engines/table-engines/mergetree-family/replication) および [`Shared`](/ja/products/cloud/features/infrastructure/shared-merge-tree) バージョンでサポートされています。
 
-論理更新を使用するには、テーブル設定 [`enable_block_number_column`](/ja/reference/settings/merge-tree-settings#enable_block_number_column) と [`enable_block_offset_column`](/ja/reference/settings/merge-tree-settings#enable_block_offset_column) を使用して、`_block_number` および `_block_offset` カラムのマテリアライズを有効にする必要があります。
+論理更新を使用するには、テーブル設定 [`enable_block_number_column`](/ja/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) と [`enable_block_offset_column`](/ja/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column) を使用して、`_block_number` および `_block_offset` カラムの実体化を有効にする必要があります。
 
 <div id="lightweight-delete">
   ## 論理削除
 </div>
 
-[論理削除 `DELETE`](/ja/reference/statements/delete) クエリは、`ALTER UPDATE` ミューテーションではなく、論理更新 `UPDATE` として実行できます。論理削除 `DELETE` の実装は、[`lightweight_delete_mode`](/ja/reference/settings/session-settings#lightweight_delete_mode) 設定によって制御されます。
+[論理削除 `DELETE`](/ja/reference/statements/delete) クエリは、`ALTER UPDATE` ミューテーションではなく、論理更新 `UPDATE` として実行できます。論理削除 `DELETE` の実装は、[`lightweight_delete_mode`](/ja/reference/settings/session-settings/lightweight#lightweight_delete_mode) 設定によって制御されます。
 
 <div id="performance-considerations">
   ## パフォーマンスに関する考慮事項
@@ -88,7 +88,7 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 </div>
 
 論理更新は、重い ミューテーション とは異なり、現在実行中の マージ や ミューテーション の完了を待ちません。
-同時実行される論理更新の整合性は、設定 [`update_sequential_consistency`](/ja/reference/settings/session-settings#update_sequential_consistency) と [`update_parallel_mode`](/ja/reference/settings/session-settings#update_parallel_mode) によって制御されます。
+同時実行される論理更新の整合性は、設定 [`update_sequential_consistency`](/ja/reference/settings/session-settings/update#update_sequential_consistency) と [`update_parallel_mode`](/ja/reference/settings/session-settings/update#update_parallel_mode) によって制御されます。
 
 <div id="update-permissions">
   ## `UPDATE` の権限

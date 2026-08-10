@@ -42,43 +42,61 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 جهّز حساب AWS جديدًا، أو مشروع GCP جديدًا، أو اشتراك Azure جديدًا ضمن مؤسستك.
 
 <Steps>
-  <Step title="اختر موفر خدمة سحابية" id="choose-cloud-provider">
-    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
+  <Step title="اختر مزوّد خدمة سحابية" id="choose-cloud-provider">
+    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="اختيار موفر الخدمات السحابية لـ BYOC" background="black" />
   </Step>
 
   <Step title="إعداد الحساب/المشروع/الاشتراك" id="account-setup">
-    يمكن تنفيذ إعداد BYOC الأولي باستخدام [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)، أو [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)، أو [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). يؤدي ذلك إلى إنشاء هوية عالية الامتيازات (دور IAM/حساب خدمة/service principal)، ما يتيح لوحدات التحكم الخاصة بـ BYOC من ClickHouse Cloud إدارة بنيتك التحتية.
+    يمكن تنفيذ إعداد BYOC الأولي باستخدام [قالب CloudFormation ‏(AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml)، أو [وحدة Terraform ‏(GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)، أو [وحدة Terraform ‏(Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). ينشئ ذلك هوية بصلاحيات واسعة (دور IAM/حساب خدمة/service principal)، مما يتيح لوحدات تحكم BYOC في ClickHouse Cloud إدارة بنيتك التحتية.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
+    <Warning>
+      **طبّق ملفات إعداد Onboarding كما هي تمامًا.** لا تغيّر أي شيء في قالب CloudFormation أو وحدة Terraform — بما في ذلك إعادة تسمية الموارد أو إضافة معلمات مثل `PermissionsBoundary` — من دون موافقة صريحة من ClickHouse. تعتمد أتمتة ClickHouse على الموارد المحددة التي تنشئها هذه الملفات، وتُتاح التخصيصات المدعومة على شكل معلمات. وعلى وجه الخصوص، في AWS يجب أن يحتفظ دور IAM باسمه الافتراضي `ClickHouseManagementRole` — من دون بادئة أو لاحقة — ما لم توافق ClickHouse صراحةً ومسبقًا على اسم مختلف. تتضمن وحدة Terraform تقنيًا مُدخلًا باسم `role_name`، لكن يجب تهيئة أتمتة ClickHouse لتتوافق معه؛ لذا فإن تغييره من دون تنسيق (أو إعادة تسمية الدور في قالب CloudFormation الذي لا يتضمن معلمة مماثلة) يؤدي إلى إنشاء stack يُطبّق بنجاح، بينما يفشل توفير البنية التحتية لأن ClickHouse لا يستطيع تولي الدور المتوقع.
+    </Warning>
+
+    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="تهيئة حساب BYOC" background="black" />
 
     <Note>
-      لا يشمل هذا الإعداد الأولي حاويات التخزين، أو VPC/VNet، أو عنقود Kubernetes، أو موارد compute اللازمة لتشغيل ClickHouse. سيتم توفيرها في الخطوة التالية.
+      لا يتضمن هذا الإعداد الأولي حاويات التخزين وVPC/VNet ومجموعة Kubernetes وموارد الحوسبة المطلوبة لتشغيل ClickHouse. وسيتم توفيرها في الخطوة التالية.
     </Note>
 
-    #### Terraform module بديل لـ AWS
+    #### وحدة Terraform لـ AWS
 
-    إذا كنت تفضل استخدام Terraform بدلًا من CloudFormation لعمليات نشر AWS، فنحن نوفر أيضًا [Terraform module لـ AWS](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
-
-    الاستخدام:
+    إذا كنت تفضل استخدام Terraform بدلًا من CloudFormation لعمليات النشر على AWS، فاستخدم وحدة [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
     ```hcl
     module "clickhouse_onboarding" {
-      source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-      byoc_env = "production"
+      source      = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id = "<external-id-provided-by-clickhouse>"
     }
     ```
+
+    استبدل `<version>` بأحدث وسم في [صفحة إصدارات](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) الوحدة — استخدم دائمًا أحدث إصدار.
+
+    تُنتج الوحدة `clickhouse_management_role_arn`. في المسار القياسي، لا يلزمك اتخاذ أي إجراء بشأنه — إذ تستمر عملية الإعداد في واجهة ClickHouse Cloud — لكن احتفظ به في متناول اليد، إذ سيطلبه ClickHouse إذا كان إعدادك يختلف عن الإعدادات الافتراضية (مثل اسم دور مخصص ومنسق).
+
+    <Note>
+      كانت الوحدة تُوزَّع سابقًا كأرشيف tarball على `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. لا يزال عنوان URL هذا متاحًا، لكنه مهمل — استخدم وحدة GitHub المذكورة أعلاه.
+    </Note>
+
+    #### المعرّف الخارجي لـ AWS
+
+    في AWS، يثق دور IAM الذي يُنشأ أثناء الإعداد بـ ClickHouse Cloud باستخدام [معرّف خارجي](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) للحماية من هجمات «النائب الملتبس». تنشئ واجهة ClickHouse Cloud معرّفًا خارجيًا لحساب AWS الخاص بك عند بدء عملية الإعداد، وتملؤه مسبقًا في رابط CloudFormation؛ وإذا كنت تستخدم Terraform، فمرّر القيمة نفسها باعتبارها `external_id`. تشترك جميع البنى التحتية لـ BYOC ضمن حساب AWS نفسه في المعرّف الخارجي ذاته.
+
+    <Note>
+      تستخدم البنى التحتية لـ BYOC التي تم إعدادها قبل إدخال المعرّفات الخارجية القيمة النائبة `emptyid` للحفاظ على التوافق مع الإصدارات السابقة. تعرض الواجهة هذه القيمة عند إضافة بنية تحتية إلى حساب AWS يتضمن نشرًا قديمًا قائمًا، بحيث تحتفظ جميع البنى التحتية في الحساب بتكوين ثقة متسق. إذا أردت الانتقال إلى معرّف خارجي فريد، فتواصل مع ClickHouse Support.
+    </Note>
   </Step>
 
-  <Step title="إعداد البنية التحتية لـ BYOC" id="setup-byoc-infrastructure">
-    سيُطلب منك إعداد البنية التحتية، بما في ذلك حاويات تخزين الكائنات وVPC/VNet وعنقود Kubernetes، من خلال وحدة تحكم ClickHouse Cloud. يجب تحديد بعض الإعدادات في هذه المرحلة، لأنها لا يمكن تغييرها لاحقًا. وتحديدًا:
+  <Step title="إعداد البنية التحتية لنموذج BYOC" id="setup-byoc-infrastructure">
+    سيُطلب منك إعداد البنية التحتية من ClickHouse Cloud console، بما في ذلك حاويات تخزين الكائنات وVPC/VNet وعنقود Kubernetes. يجب تحديد بعض الإعدادات في هذه المرحلة، إذ لا يمكن تغييرها لاحقًا. وتشمل ما يلي:
 
-    * **Region**: جميع **المناطق العامة** المدرجة في وثائق [supported regions](/ar/products/cloud/reference/supported-regions) متاحة لعمليات نشر BYOC. أما المناطق الخاصة فغير مدعومة حاليًا.
+    * **المنطقة**: تتوفر جميع **المناطق العامة** المدرجة في وثائق [المناطق المدعومة](/ar/products/cloud/reference/supported-regions) لعمليات نشر BYOC. ولا تُدعم المناطق الخاصة حاليًا.
 
-    * **نطاق CIDR لـ VPC/VNet**: نستخدم افتراضيًا `10.0.0.0/16` لنطاق CIDR الخاص بـ BYOC VPC ‏(AWS/GCP) أو VNet ‏(Azure). إذا كنت تخطط لاستخدام VPC/VNet peering مع حساب آخر، فتأكد من عدم تداخل نطاقات CIDR. خصّص نطاق CIDR مناسبًا لـ BYOC، بحد أدنى `/23` لاستيعاب workloads المطلوبة.
+    * **نطاق CIDR لـ VPC/VNet**: نستخدم افتراضيًا `10.0.0.0/16` كنطاق CIDR لـ VPC الخاص بـ BYOC (في AWS/GCP) أو VNet (في Azure). إذا كنت تخطط لاستخدام VPC/VNet peering مع حساب آخر، فتأكد من عدم تداخل نطاقات CIDR. خصص لـ BYOC نطاق CIDR مناسبًا بحجم أدنى `/23` لاستيعاب أعباء العمل المطلوبة. إذ لا يستوعب الحد الأدنى `/23` سوى نحو 30 وحدة pod للخادم، وتستهلك كل نسخة متماثلة عناوين IP؛ لذا خصص نطاقًا أكبر (ويُوصى بأن يكون `/22` على الأقل) إذا كنت تتوقع نمو عملية النشر.
 
-    * **Availability Zones**: إذا كنت تخطط لاستخدام VPC peering، فإن مواءمة Availability Zones بين الحساب المصدر وحساب BYOC قد تساعد في تقليل تكاليف حركة المرور بين مناطق التوافر. على سبيل المثال، في AWS، قد تشير لواحق Availability Zones (`a` و`b` و`c`) إلى معرّفات مناطق فعلية مختلفة عبر الحسابات. راجع [دليل AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) لمزيد من التفاصيل.
+    * **مناطق التوافر**: إذا كنت تخطط لاستخدام VPC peering، فقد تساعد محاذاة مناطق التوافر بين الحساب المصدر وحساب BYOC على خفض تكاليف حركة المرور بين مناطق التوافر. على سبيل المثال، في AWS، قد تمثل لاحقات مناطق التوافر (`a` و`b` و`c`) معرّفات لمناطق فعلية مختلفة بين الحسابات. راجع [دليل AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) لمزيد من التفاصيل.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC set up infrastructure" background="black" />
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="إعداد البنية التحتية لـ BYOC" background="black" />
   </Step>
 </Steps>
 

@@ -15,7 +15,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
 
 ClickHouse Cloud поддерживает единый вход (SSO) через Security Assertion Markup Language (SAML). Это позволяет безопасно входить в свою организацию ClickHouse Cloud, проходя аутентификацию через провайдер идентификации (IdP).
 
-Мы поддерживаем SSO, инициируемый поставщиком услуг, несколько организаций с использованием отдельных подключений, а также just-in-time provisioning. Мы также поддерживаем [SCIM provisioning](/ru/products/cloud/guides/security/cloud-access-management/scim-setup) в рамках закрытой предварительной версии с поддержкой Okta. Мы пока не поддерживаем сопоставление атрибутов.
+Мы поддерживаем SSO, инициируемый поставщиком услуг, несколько организаций с использованием отдельных подключений, а также just-in-time provisioning. Мы также поддерживаем SCIM provisioning в рамках закрытой предварительной версии с [Okta](/ru/products/cloud/guides/security/cloud-access-management/scim-setup) и [Microsoft Entra ID](/ru/products/cloud/guides/security/cloud-access-management/scim-setup-entra). Мы пока не поддерживаем сопоставление атрибутов.
 
 Клиенты, включившие SAML-интеграции, также могут назначить роль по умолчанию, которая будет присваиваться новым пользователям, и настроить тайм-аут сеанса.
 
@@ -364,5 +364,5 @@ ClickHouse Cloud поддерживает единый вход (SSO) через
 </div>
 
 * [Manage cloud users](/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — управление разрешениями пользователей и ограничение доступа только через SAML-подключения.
-* [SCIM provisioning](/ru/products/cloud/guides/security/cloud-access-management/scim-setup) — автоматизируйте подготовку пользователей и групп (закрытая предварительная версия).
+* SCIM provisioning — автоматизируйте подготовку пользователей и групп с помощью [Okta](/ru/products/cloud/guides/security/cloud-access-management/scim-setup) или [Microsoft Entra ID](/ru/products/cloud/guides/security/cloud-access-management/scim-setup-entra) (закрытая предварительная версия).
 * [Роли и разрешения в консоли](/ru/products/cloud/reference/security/console-roles) — роли, которые можно назначить в качестве роли SAML по умолчанию.

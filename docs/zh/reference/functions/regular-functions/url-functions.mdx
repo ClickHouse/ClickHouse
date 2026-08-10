@@ -585,7 +585,8 @@ SELECT
 
 引入版本：v1.1.0
 
-如果存在，则从 URL 中移除 `name` 参数。
+从 URL 中移除每个请求参数首次出现的 `name=value`。
+仅匹配拼写为 `name=` 的参数，因此不带值的标志参数会保持不变，例如，`cutURLParameter('http://bigmir.net/?a&c=d', 'a')` 会原样返回该 URL。
 此函数不会对参数名称中的字符进行编码或解码，例如，`Client ID` 和 `Client%20ID` 会被视为不同的参数名称。
 
 **语法**
@@ -601,7 +602,7 @@ cutURLParameter(url, name)
 
 **返回值**
 
-移除 `name` URL 参数后的 URL。[`String`](/zh/reference/data-types/string)
+移除每个指定参数首次出现的 `name=value` 后的 URL。[`String`](/zh/reference/data-types/string)
 
 **示例**
 

@@ -175,18 +175,18 @@ Dando lugar a la siguiente configuración:
 
 También es posible reemplazar partes de la configuración por el contenido de archivos. Esto puede hacerse de dos maneras:
 
-* *Sustitución de valores*: Si un elemento tiene el atributo `incl`, su valor se reemplazará por el contenido del archivo al que hace referencia. De forma predeterminada, la ruta al archivo con las sustituciones es `/etc/metrika.xml`. Esto puede cambiarse en el elemento [`include_from`](/es/reference/settings/server-settings/settings#include_from) de la configuración del servidor. Los valores de sustitución se especifican en elementos `/clickhouse/substitution_name` dentro de este archivo. Si una sustitución especificada en `incl` no existe, se registra en el log. Para evitar que ClickHouse registre sustituciones ausentes, especifique el atributo `optional="true"` (por ejemplo, para la configuración de [macros](/es/reference/settings/server-settings/settings#macros)).
+* *Sustitución de valores*: Si un elemento tiene el atributo `incl`, su valor se reemplazará por el contenido del archivo al que hace referencia. De forma predeterminada, la ruta al archivo con las sustituciones es `/etc/metrika.xml`. Esto puede cambiarse en el elemento [`include_from`](/es/reference/settings/server-settings/settings/other#include_from) de la configuración del servidor. Los valores de sustitución se especifican en elementos `/clickhouse/substitution_name` dentro de este archivo. Si una sustitución especificada en `incl` no existe, se registra en el log. Para evitar que ClickHouse registre sustituciones ausentes, especifique el atributo `optional="true"` (por ejemplo, para la configuración de [macros](/es/reference/settings/server-settings/settings/other#macros)).
 * *Sustitución de elementos*: Si desea reemplazar el elemento completo por una sustitución, use `include` como nombre del elemento. El nombre de elemento `include` puede combinarse con el atributo `from_zk = "/path/to/node"`. En este caso, el valor del elemento se reemplaza por el contenido del nodo de ZooKeeper en `/path/to/node`. Esto también funciona si almacena un subárbol XML completo como un nodo de ZooKeeper; se insertará íntegramente en el elemento de origen.
 
 A continuación se muestra un ejemplo:
 
 ```xml
 <clickhouse>
-    <!-- Agrega el subárbol XML encontrado en la ruta ZK `/profiles-in-zookeeper` al elemento `<profiles>`. -->
+    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
     <users>
-        <!-- Reemplaza el elemento `include` con el subárbol encontrado en la ruta ZK `/users-in-zookeeper`. -->
+        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
@@ -200,7 +200,7 @@ Si desea fusionar el contenido sustituido con la configuración existente en lug
 </div>
 
 Puede usar cifrado simétrico para cifrar un elemento de configuración, por ejemplo, una contraseña en texto plano o una clave privada.
-Para ello, primero configure el [codec de cifrado](/es/reference/statements/create/table#encryption-codecs) y, a continuación, añada al elemento que desea cifrar el atributo `encrypted_by`, con el nombre del codec de cifrado como valor.
+Para ello, primero configure el [codec de cifrado](/es/reference/statements/create/table/codec#encryption-codecs) y, a continuación, añada al elemento que desea cifrar el atributo `encrypted_by`, con el nombre del codec de cifrado como valor.
 
 A diferencia de los atributos `from_zk`, `from_env` e `incl`, o del elemento `include`, en el archivo preprocesado no se realiza ninguna sustitución (es decir, el descifrado del valor cifrado).
 El descifrado solo se produce en tiempo de ejecución, dentro del proceso del servidor.

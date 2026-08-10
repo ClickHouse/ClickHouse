@@ -4,6 +4,7 @@
       "group": "ClickPipes for Object Storage",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
+        "fr/integrations/clickpipes/home",
         {
           "group": "Amazon S3",
           "icon": "/images/integrations/logos/amazon_s3_logo.svg",
@@ -30,13 +31,13 @@
             "fr/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
           ]
         }
-      ],
-      "root": "fr/integrations/clickpipes/home"
+      ]
     },
     {
       "group": "ClickPipes for Postgres",
       "icon": "/images/integrations/logos/postgresql.svg",
       "pages": [
+        "fr/integrations/clickpipes/postgres/index",
         "fr/integrations/clickpipes/postgres/deduplication",
         "fr/integrations/clickpipes/postgres/ordering-keys",
         "fr/integrations/clickpipes/postgres/toast",
@@ -47,7 +48,6 @@
         "fr/integrations/clickpipes/postgres/postgres-generated-columns",
         "fr/integrations/clickpipes/postgres/parallel-initial-load",
         "fr/integrations/clickpipes/postgres/lifecycle",
-        "fr/integrations/clickpipes/postgres/auth",
         {
           "group": "Opérations",
           "pages": [
@@ -76,20 +76,19 @@
             "fr/integrations/clickpipes/postgres/source/planetscale"
           ]
         }
-      ],
-      "root": "fr/integrations/clickpipes/postgres/index"
+      ]
     },
     {
       "group": "ClickPipes for Kafka",
       "icon": "/images/integrations/logos/kafka.svg",
       "pages": [
+        "fr/integrations/clickpipes/kafka/index",
         "fr/integrations/clickpipes/kafka/create-kafka-clickpipe",
         "fr/integrations/clickpipes/kafka/schema-registries",
         "fr/integrations/clickpipes/kafka/reference",
         "fr/integrations/clickpipes/kafka/best-practices",
         "fr/integrations/clickpipes/kafka/faq"
-      ],
-      "root": "fr/integrations/clickpipes/kafka/index"
+      ]
     },
     {
       "group": "ClickPipes for Kinesis",
@@ -97,8 +96,7 @@
       "pages": [
         "fr/integrations/clickpipes/kinesis/overview",
         "fr/integrations/clickpipes/kinesis/auth"
-      ],
-      "root": "fr/integrations/clickpipes/kinesis/index"
+      ]
     },
     {
       "group": "ClickPipes for GCP Pub/Sub",
@@ -106,13 +104,13 @@
       "pages": [
         "fr/integrations/clickpipes/pubsub/overview",
         "fr/integrations/clickpipes/pubsub/auth"
-      ],
-      "root": "fr/integrations/clickpipes/pubsub/index"
+      ]
     },
     {
       "group": "ClickPipes for MySQL",
       "icon": "/images/integrations/logos/mysql.svg",
       "pages": [
+        "fr/integrations/clickpipes/mysql/index",
         "fr/integrations/clickpipes/mysql/faq",
         "fr/integrations/clickpipes/mysql/datatypes",
         "fr/integrations/clickpipes/mysql/parallel-initial-load",
@@ -142,13 +140,13 @@
             "fr/integrations/clickpipes/mysql/source/generic-maria"
           ]
         }
-      ],
-      "root": "fr/integrations/clickpipes/mysql/index"
+      ]
     },
     {
       "group": "ClickPipes for MongoDB",
       "icon": "/images/integrations/logos/mongodb.svg",
       "pages": [
+        "fr/integrations/clickpipes/mongodb/index",
         "fr/integrations/clickpipes/mongodb/datatypes",
         "fr/integrations/clickpipes/mongodb/quickstart",
         "fr/integrations/clickpipes/mongodb/lifecycle",
@@ -173,8 +171,7 @@
             "fr/integrations/clickpipes/mongodb/source/documentdb"
           ]
         }
-      ],
-      "root": "fr/integrations/clickpipes/mongodb/index"
+      ]
     },
     {
       "group": "ClickPipes for BigQuery",
@@ -193,10 +190,20 @@
       ]
     },
     {
+      "group": "Réseau",
+      "icon": "network-wired",
+      "pages": [
+        "fr/integrations/clickpipes/networking/index",
+        "fr/integrations/clickpipes/networking/static-ips",
+        "fr/integrations/clickpipes/networking/aws-privatelink",
+        "fr/integrations/clickpipes/networking/gcp-psc",
+        "fr/integrations/clickpipes/networking/azure-privatelink"
+      ]
+    },
+    {
       "group": "Autres",
       "icon": "ellipsis",
       "pages": [
-        "fr/integrations/clickpipes/aws-privatelink",
         "fr/integrations/clickpipes/dynamodb",
         "fr/integrations/clickpipes/monitoring"
       ]

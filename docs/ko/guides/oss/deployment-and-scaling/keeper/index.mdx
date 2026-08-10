@@ -66,38 +66,47 @@ ClickHouse Keeper는 독립형 ZooKeeper 대체재로 사용하거나 ClickHouse
 
 내부 조정 설정은 `<keeper_server>.<coordination_settings>` 섹션에 있으며, 다음 매개변수가 있습니다:
 
-| Parameter                          | Description                                                                                                                       | Default          |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `operation_timeout_ms`             | 단일 클라이언트 작업의 타임아웃(ms)                                                                                                             | `10000`          |
-| `min_session_timeout_ms`           | 클라이언트 세션의 최소 타임아웃(ms)                                                                                                             | `10000`          |
-| `session_timeout_ms`               | 클라이언트 세션의 최대 타임아웃(ms)                                                                                                             | `100000`         |
-| `dead_session_check_period_ms`     | ClickHouse Keeper가 종료된 세션을 확인하고 제거하는 주기(ms)                                                                                       | `500`            |
-| `heart_beat_interval_ms`           | ClickHouse Keeper 리더가 팔로워에게 heartbeat를 보내는 주기(ms)                                                                                 | `500`            |
-| `election_timeout_lower_bound_ms`  | 팔로워가 이 인터벌 동안 리더로부터 heartbeat를 받지 못하면 리더 선출을 시작할 수 있습니다. `election_timeout_upper_bound_ms`보다 작거나 같아야 합니다. 이상적으로는 두 값이 같지 않아야 합니다. | `1000`           |
-| `election_timeout_upper_bound_ms`  | 팔로워가 이 인터벌 동안 리더로부터 heartbeat를 받지 못하면 리더 선출을 반드시 시작해야 합니다.                                                                        | `2000`           |
-| `rotate_log_storage_interval`      | 하나의 파일에 저장할 로그 레코드 수입니다.                                                                                                          | `100000`         |
-| `reserved_log_items`               | compaction 전에 보관할 조정 로그 레코드 수입니다.                                                                                                 | `100000`         |
-| `snapshot_distance`                | ClickHouse Keeper가 새 스냅샷을 생성하는 주기입니다(로그의 레코드 수 기준).                                                                               | `100000`         |
-| `snapshots_to_keep`                | 유지할 스냅샷 수입니다.                                                                                                                     | `3`              |
-| `stale_log_gap`                    | 리더가 팔로워를 오래된 상태로 판단하고 로그 대신 스냅샷을 보내는 임계값입니다.                                                                                      | `10000`          |
-| `fresh_log_gap`                    | 노드가 최신 상태로 간주되는 기준입니다.                                                                                                            | `200`            |
-| `max_requests_batch_size`          | 요청 수 기준으로 RAFT에 전송되기 전 Batch의 최대 크기입니다.                                                                                           | `100`            |
-| `force_sync`                       | 조정 로그에 쓸 때마다 `fsync`를 호출합니다.                                                                                                      | `true`           |
-| `quorum_reads`                     | 읽기 요청을 전체 RAFT 합의를 거치는 쓰기처럼 실행하며, 속도는 유사합니다.                                                                                      | `false`          |
-| `raft_logs_level`                  | 조정 관련 텍스트 로깅 수준입니다(trace, debug 등).                                                                                               | `system default` |
-| `auto_forwarding`                  | 팔로워가 쓰기 요청을 리더로 전달할 수 있도록 허용합니다.                                                                                                  | `true`           |
-| `shutdown_timeout`                 | 내부 연결이 종료되고 셧다운이 완료될 때까지 기다리는 시간(ms)입니다.                                                                                          | `5000`           |
-| `startup_timeout`                  | 지정된 타임아웃 내에 서버가 다른 쿼럼 참여자에 연결하지 못하면 종료됩니다(ms).                                                                                    | `30000`          |
-| `async_replication`                | 비동기 복제를 활성화합니다. 더 나은 성능을 제공하면서도 모든 읽기 및 쓰기 보장은 유지됩니다. 이전 버전과의 호환성이 깨지지 않도록 기본적으로 비활성화되어 있습니다.                                     | `false`          |
-| `latest_logs_cache_size_threshold` | 최신 log entries에 대한 인메모리 캐시의 최대 총 크기입니다.                                                                                           | `1GiB`           |
-| `commit_logs_cache_size_threshold` | 커밋에 다음으로 필요한 log entries에 대한 인메모리 캐시의 최대 총 크기입니다.                                                                                 | `500MiB`         |
-| `disk_move_retries_wait_ms`        | 파일을 디스크 간에 이동하는 중 실패가 발생했을 때, 재시도 사이에 대기하는 시간입니다.                                                                                 | `1000`           |
-| `disk_move_retries_during_init`    | 초기화 중 파일을 디스크 간에 이동하다 실패가 발생했을 때의 재시도 횟수입니다.                                                                                      | `100`            |
-| `experimental_use_rocksdb`         | rocksdb를 백엔드 저장소로 사용합니다.                                                                                                          | `0`              |
+| Parameter                                 | Description                                                                                                                       | Default          |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `operation_timeout_ms`                    | 단일 클라이언트 작업의 타임아웃(ms)                                                                                                             | `10000`          |
+| `min_session_timeout_ms`                  | 클라이언트 세션의 최소 타임아웃(ms)                                                                                                             | `10000`          |
+| `session_timeout_ms`                      | 클라이언트 세션의 최대 타임아웃(ms)                                                                                                             | `100000`         |
+| `dead_session_check_period_ms`            | ClickHouse Keeper가 종료된 세션을 확인하고 제거하는 주기(ms)                                                                                       | `500`            |
+| `heart_beat_interval_ms`                  | ClickHouse Keeper 리더가 팔로워에게 heartbeat를 보내는 주기(ms)                                                                                 | `500`            |
+| `election_timeout_lower_bound_ms`         | 팔로워가 이 인터벌 동안 리더로부터 heartbeat를 받지 못하면 리더 선출을 시작할 수 있습니다. `election_timeout_upper_bound_ms`보다 작거나 같아야 합니다. 이상적으로는 두 값이 같지 않아야 합니다. | `1000`           |
+| `election_timeout_upper_bound_ms`         | 팔로워가 이 인터벌 동안 리더로부터 heartbeat를 받지 못하면 리더 선출을 반드시 시작해야 합니다.                                                                        | `2000`           |
+| `rotate_log_storage_interval`             | 하나의 파일에 저장할 로그 레코드 수입니다.                                                                                                          | `100000`         |
+| `reserved_log_items`                      | compaction 전에 보관할 조정 로그 레코드 수입니다.                                                                                                 | `100000`         |
+| `snapshot_distance`                       | ClickHouse Keeper가 새 스냅샷을 생성하는 주기입니다(로그의 레코드 수 기준).                                                                               | `100000`         |
+| `snapshots_to_keep`                       | 유지할 스냅샷 수입니다.                                                                                                                     | `3`              |
+| `stale_log_gap`                           | 리더가 팔로워를 오래된 상태로 판단하고 로그 대신 스냅샷을 보내는 임계값입니다.                                                                                      | `10000`          |
+| `fresh_log_gap`                           | 노드가 최신 상태로 간주되는 기준입니다.                                                                                                            | `200`            |
+| `max_requests_batch_size`                 | 요청 수 기준으로 RAFT에 전송되기 전 Batch의 최대 크기입니다.                                                                                           | `100`            |
+| `force_sync`                              | 조정 로그에 쓸 때마다 `fsync`를 호출합니다.                                                                                                      | `true`           |
+| `quorum_reads`                            | 읽기 요청을 전체 RAFT 합의를 거치는 쓰기처럼 실행하며, 속도는 유사합니다.                                                                                      | `false`          |
+| `raft_logs_level`                         | 조정 관련 텍스트 로깅 수준입니다(trace, debug 등).                                                                                               | `system default` |
+| `auto_forwarding`                         | 팔로워가 쓰기 요청을 리더로 전달할 수 있도록 허용합니다.                                                                                                  | `true`           |
+| `shutdown_timeout`                        | 내부 연결이 종료되고 셧다운이 완료될 때까지 기다리는 시간(ms)입니다.                                                                                          | `5000`           |
+| `startup_timeout`                         | 지정된 타임아웃 내에 서버가 다른 쿼럼 참여자에 연결하지 못하면 종료됩니다(ms).                                                                                    | `30000`          |
+| `async_replication`                       | 비동기 복제를 활성화합니다. 더 나은 성능을 제공하면서도 모든 읽기 및 쓰기 보장은 유지됩니다. 이전 버전과의 호환성이 깨지지 않도록 기본적으로 비활성화되어 있습니다.                                     | `false`          |
+| `latest_logs_cache_size_threshold`        | 최신 log entries에 대한 인메모리 캐시의 최대 총 크기입니다.                                                                                           | `1GiB`           |
+| `commit_logs_cache_size_threshold`        | 더 이상 사용되지 않습니다. 이 설정이 지정되지 않은 경우 `log_readahead_commit_window_bytes`에 사용됩니다.                                                      | -                |
+| `commit_logs_cache_entry_count_threshold` | 더 이상 사용되지 않으며 효과가 없습니다. 대신 `log_readahead_commit_window_bytes`를 사용하십시오.                                                           | -                |
+| `log_readahead_enabled`                   | 변경 로그 catch-up 읽기(팔로워 복제)를 위한 피어별 디코딩 read-ahead를 활성화합니다.                                                                         | `false`          |
+| `log_readahead_window_bytes`              | 피어 리더별로 버퍼링되는 디코딩 항목의 최대 바이트 수입니다. 일반적인 append-entries Batch만큼 커야 합니다.                                                            | `64MiB`          |
+| `log_readahead_max_peer_readers`          | 동시에 실행할 수 있는 피어별 read-ahead 리더의 최대 수입니다.                                                                                          | `8`              |
+| `log_readahead_eviction_timeout_ms`       | 비활성 피어별 read-ahead 리더 또는 커밋 리더가 제거되는 유휴 타임아웃입니다(이후 누락 시 다시 생성됩니다).                                                                | `30000`          |
+| `log_readahead_pool_threads`              | 전용 read-ahead 스레드 풀의 스레드 수입니다. `0`은 `log_readahead_max_peer_readers`에서 값을 도출합니다.                                                  | `0`              |
+| `log_readahead_serve_wait_timeout_ms`     | 직접 읽기로 대체하기 전 백그라운드 read-ahead 채우기를 기다리는 최대 시간입니다.                                                                                | `200`            |
+| `log_readahead_chunk_size`                | 사전 읽기 채우기 작업에서 청크당 디코딩하는 로그 항목 수입니다.                                                                                              | `16`             |
+| `log_readahead_commit_window_bytes`       | 커밋 스레드에 앞서 버퍼링되는 디코딩된 로그 항목의 최대 총 크기입니다. `0`은 커밋 사전 읽기를 비활성화합니다(커밋은 디스크에서 항목을 하나씩 읽음).                                            | `500MiB`         |
+| `disk_move_retries_wait_ms`               | 파일을 디스크 간에 이동하는 중 실패가 발생했을 때, 재시도 사이에 대기하는 시간입니다.                                                                                 | `1000`           |
+| `disk_move_retries_during_init`           | 초기화 중 파일을 디스크 간에 이동하다 실패가 발생했을 때의 재시도 횟수입니다.                                                                                      | `100`            |
+| `experimental_use_rocksdb`                | rocksdb를 백엔드 저장소로 사용합니다.                                                                                                          | `0`              |
 
-쿼럼 구성은 `<keeper_server>.<raft_configuration>` 섹션에 있으며, 서버 설명을 포함합니다.
+쿼럼 구성은 `<keeper_server>.<raft_configuration>` 섹션에 있으며 서버 설명을 포함합니다.
 
-전체 쿼럼에 대한 유일한 매개변수는 `secure`이며, 쿼럼 참여자 간 통신에 암호화된 연결을 활성화합니다. 노드 간 내부 통신에 SSL 연결이 필요하면 이 매개변수를 `true`로 설정할 수 있으며, 그렇지 않으면 지정하지 않아도 됩니다.
+전체 쿼럼에 대한 유일한 매개변수는 쿼럼 참여자 간 통신에 암호화된 연결을 활성화하는 `secure`입니다. 노드 간 내부 통신에 SSL 연결이 필요한 경우 이 매개변수를 `true`로 설정하고, 그렇지 않으면 지정하지 않아도 됩니다.
 
 각 `<server>`의 주요 매개변수는 다음과 같습니다:
 
@@ -721,17 +730,27 @@ Keeper 인스턴스에 사용할 수 있는 스토리지 구성 예시는 다음
 </div>
 
 디스크에서 읽는 데이터 양을 최소화하기 위해 Keeper는 로그 항목을 메모리에 캐시합니다.
-요청이 크면 로그 항목이 메모리를 과도하게 차지할 수 있으므로 캐시되는 로그의 양에는 상한이 있습니다.
-이 제한은 다음 두 가지 설정으로 제어됩니다.
+요청이 많으면 로그 항목이 메모리를 과도하게 차지할 수 있으므로 캐시되는 로그의 양에 제한이 적용됩니다.
+최신 로그 캐시의 제한은 다음 설정으로 제어됩니다.
 
-* `latest_logs_cache_size_threshold` - 캐시에 저장되는 최신 로그의 총 크기
-* `commit_logs_cache_size_threshold` - 다음 커밋에 필요한 후속 로그의 총 크기
+* `latest_logs_cache_size_threshold` - 캐시에 저장된 최신 로그의 총 크기
 
-기본값이 너무 크면 이 두 설정 값을 낮춰 메모리 사용량을 줄일 수 있습니다.
+기본값이 너무 크면 이 구성을 줄여 메모리 사용량을 낮출 수 있습니다.
+
+다음 커밋에 필요한 로그 항목은 디코딩된 미리 읽기 리더에서 제공되며, 크기는
+`log_readahead_commit_window_bytes`로 지정됩니다(`0`은 커밋 미리 읽기를 비활성화합니다). 이 설정은
+더 이상 사용되지 않는 `commit_logs_cache_size_threshold` 및 `commit_logs_cache_entry_count_threshold` 설정을
+대체합니다. 이 설정들은 구성 호환성을 위해서만 유지되며, 전자는 `log_readahead_commit_window_bytes`가 설정되지 않은 경우 여전히 해당 설정에 매핑되고
+후자는 아무런 효과가 없습니다. 동일한 미리 읽기 메커니즘은 `log_readahead_enabled`가 `true`일 때 팔로워의
+복제 동기화 읽기에도 사용됩니다. 피어 측 조정
+옵션은 [내부 조정 설정](#internal-coordination-settings)의
+`log_readahead_window_bytes`, `log_readahead_max_peer_readers`, `log_readahead_eviction_timeout_ms`,
+`log_readahead_pool_threads`, `log_readahead_serve_wait_timeout_ms`, `log_readahead_chunk_size`를
+참조하십시오.
 
 <Note>
-  `pfev` 명령을 사용하면 각 캐시와 파일에서 읽은 로그 양을 확인할 수 있습니다.
-  또한 Prometheus 엔드포인트의 메트릭을 사용해 두 캐시의 현재 크기를 추적할 수 있습니다.
+  `pfev` 명령을 사용하여 각 캐시와 파일에서 읽은 로그의 양을 확인할 수 있습니다.
+  Prometheus 엔드포인트의 메트릭을 사용하여 두 캐시의 현재 크기를 추적할 수도 있습니다.
 </Note>
 
 <div id="prometheus">

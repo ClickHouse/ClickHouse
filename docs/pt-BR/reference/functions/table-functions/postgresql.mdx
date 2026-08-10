@@ -35,7 +35,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 Os argumentos também podem ser passados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections). Nesse caso, `host` e `port` devem ser especificados separadamente. Essa abordagem é recomendada para ambientes de produção.
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor retornado
 </div>
 
@@ -83,7 +83,7 @@ Isso é útil para delegar junções, agregações ou qualquer outro processamen
 <Note>
   A forma de subconsulta `(SELECT ...)` é analisada pelo ClickHouse e reserializada no dialeto PostgreSQL (uso de aspas em identificadores do PostgreSQL e escape de literais de string) antes de ser enviada ao servidor. Portanto, ela deve ser um ClickHouse SQL válido. Para passar sintaxe específica do PostgreSQL que o ClickHouse não analisa, use a forma `query('...')`, cujo texto é enviado ao PostgreSQL literalmente.
 
-  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse ao redor **não** é transferido para a consulta enviada — ele é aplicado no ClickHouse após a obtenção do resultado completo da consulta. Para restringir os dados lidos do PostgreSQL, coloque o filtro dentro da consulta enviada. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings#external_table_strict_query), um filtro externo que não pode ser transferido é rejeitado com uma exceção em vez de ser aplicado localmente.
+  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse ao redor **não** é transferido para a consulta enviada — ele é aplicado no ClickHouse após a obtenção do resultado completo da consulta. Para restringir os dados lidos do PostgreSQL, coloque o filtro dentro da consulta enviada. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo que não pode ser transferido é rejeitado com uma exceção em vez de ser aplicado localmente.
 </Note>
 
 As consultas `INSERT` no PostgreSQL são executadas como `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` dentro de uma transação PostgreSQL, com commit automático após cada instrução `INSERT`.
@@ -106,7 +106,7 @@ ou
 SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
 ```
 
-Suporta prioridade de réplicas para a fonte do dicionário PostgreSQL. Quanto maior o número no map, menor a prioridade. A prioridade mais alta é `0`.
+Suporta prioridade de réplicas para a fonte de dicionário PostgreSQL. Quanto maior o número no map, menor a prioridade. A prioridade mais alta é `0`.
 
 <div id="examples">
   ## Exemplos

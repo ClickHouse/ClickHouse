@@ -7,7 +7,7 @@ doc_type: 'guide'
 ---
 
 <Note>
-  只有在 [enable&#95;analyzer](/zh/reference/settings/session-settings#enable_analyzer) 设置为 true 时，查询条件缓存才会生效，而这也是默认值。
+  只有在 [enable&#95;analyzer](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer) 设置为 true 时，查询条件缓存才会生效，而这也是默认值。
 </Note>
 
 许多真实场景中的工作负载都会针对相同或几乎相同的数据反复执行查询 (例如，在已有数据的基础上又新增了一些数据) 。
@@ -34,7 +34,7 @@ ClickHouse 提供了多种优化技术来优化这类查询模式。
 </div>
 
 由于查询条件缓存对每个过滤条件和粒度仅存储一个比特，因此占用的内存很少。
-查询条件缓存的最大大小可通过服务器设置 [`query_condition_cache_size`](/zh/reference/settings/server-settings/settings#query_condition_cache_size) 配置 (默认值：100 MB) 。
+查询条件缓存的最大大小可通过服务器设置 [`query_condition_cache_size`](/zh/reference/settings/server-settings/settings/query-condition#query_condition_cache_size) 配置 (默认值：100 MB) 。
 100 MB 的缓存大小对应 100 * 1024 * 1024 * 8 = 838,860,800 个条目。
 由于每个条目代表一个标记 (默认情况下为 8192 行) ，因此该缓存最多可覆盖单列的 6,871,947,673,600 (6.8 万亿) 行。
 在实际场景中，过滤条件通常会在多个列上求值，因此这个数字需要除以被过滤的列数。
@@ -43,7 +43,7 @@ ClickHouse 提供了多种优化技术来优化这类查询模式。
   ## 配置项及用法
 </div>
 
-设置 [use&#95;query&#95;condition&#95;cache](/zh/reference/settings/session-settings#use_query_condition_cache) 用于控制某个特定查询或当前会话中的所有查询是否使用查询条件缓存。
+设置 [use&#95;query&#95;condition&#95;cache](/zh/reference/settings/session-settings/use-query#use_query_condition_cache) 用于控制某个特定查询或当前会话中的所有查询是否使用查询条件缓存。
 
 例如，首次执行该查询时
 
@@ -56,6 +56,14 @@ SETTINGS use_query_condition_cache = true;
 
 将存储表中不满足谓词的范围。
 后续执行相同查询时，如果同样使用参数 `use_query_condition_cache = true`，将利用查询条件缓存以减少扫描的数据量。
+
+<div id="top-k-queries">
+  ### `ORDER BY ... LIMIT n` (TopK) 查询
+</div>
+
+默认情况下，使用 TopK 优化的查询 (`ORDER BY <column> LIMIT n`，通过动态筛选或排序列上的 minmax 跳过索引加速) 不会使用查询条件缓存：此类读取既不会查阅，也不会填充该缓存。
+TopK 读取可根据查询执行期间不断变化的阈值跳过粒度，因此其缓存条目需要额外谨慎处理；在充分确认这些条目的正确性之前，需通过单独的设置 [`use_query_condition_cache_for_top_k`](/zh/reference/settings/session-settings/use-query) (默认：禁用) 启用。
+仅当同时启用 `use_query_condition_cache` 时，该设置才会生效。
 
 <div id="administration">
   ## 管理

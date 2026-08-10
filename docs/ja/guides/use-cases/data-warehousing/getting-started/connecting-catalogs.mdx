@@ -12,15 +12,15 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 [前のセクション](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly)では、ストレージパスを直接指定してオープンテーブルフォーマットをクエリしました。実際には、ほとんどの組織がテーブルメタデータを **データカタログ** で管理しています。これは、テーブルの場所、スキーマ、パーティションを追跡するための中央レジストリです。[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを使って ClickHouse をカタログに接続すると、カタログ全体が ClickHouse データベースとして公開されます。カタログ内の各テーブルは自動的に表示され、完全な ClickHouse SQL でクエリできます。個々のテーブルパスを把握したり、テーブルごとに認証情報を管理したりする必要はありません。
 
-このガイドでは、[Databricks Unity カタログ](https://www.databricks.com/product/unity-catalog) への接続方法を説明します。ClickHouse は次のカタログにも対応しています。完全なセットアップ手順については、各リファレンスガイドを参照してください。
+このガイドでは、[Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) への接続方法を説明します。ClickHouse は次のカタログにも対応しています。完全なセットアップ手順については、各リファレンスガイドを参照してください。
 
-| カタログ              | Reference guide                                                             |
-| -------------------- | --------------------------------------------------------------------------- |
+| カタログ                 | Reference guide                                                          |
+| -------------------- | ------------------------------------------------------------------------ |
 | AWS Glue             | [AWS Glue カタログ](/ja/guides/use-cases/data-warehousing/glue-catalog)         |
 | Iceberg REST Catalog | [REST カタログ](/ja/guides/use-cases/data-warehousing/rest-catalog)             |
 | Lakekeeper           | [Lakekeeper カタログ](/ja/guides/use-cases/data-warehousing/lakekeeper-catalog) |
 | Project Nessie       | [Nessie カタログ](/ja/guides/use-cases/data-warehousing/nessie-catalog)         |
-| Microsoft OneLake    | [Fabric OneLake](/ja/guides/use-cases/data-warehousing/onelake-catalog)        |
+| Microsoft OneLake    | [Fabric OneLake](/ja/guides/use-cases/data-warehousing/onelake-catalog)     |
 
 <div id="connecting-to-unity-catalog">
   ## Unity Catalog への接続

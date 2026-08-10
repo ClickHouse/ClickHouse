@@ -1,0 +1,122 @@
+---
+sidebar_label: '直接マテリアライゼーションコネクタ'
+sidebar_position: 4
+sidebarTitle: '直接マテリアライゼーションコネクタ'
+slug: /integrations/estuary/native
+description: 'ネイティブプロトコルを使用するコネクタでEstuaryとClickHouseを統合する'
+title: 'EstuaryからClickHouseへの直接マテリアライゼーション'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://estuary.dev'
+keywords: ['estuary', 'データインジェスト', 'etl', 'パイプライン', 'データインテグレーション']
+---
+
+import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Estuary は、ClickHouse の[ネイティブプロトコル](/ja/interfaces/tcp)と[ネイティブフォーマット](/ja/interfaces/formats/Native)を使用する、ClickHouse 向けの直接マテリアライゼーションコネクタを提供します。
+
+これにより、Estuary では次のことが可能です。
+
+* セルフホスト環境と ClickHouse Cloud インスタンスの両方にデータをマテリアライズする
+* テーブル作成やスキーマ進化などのタスクを自動的に処理する
+* 論理削除と物理削除をサポートする
+* 通常のマージ更新には `ReplacingMergeTree`、デルタ更新には `MergeTree` を使用する
+* exactly-once 配信を提供する
+
+ClickPipes ワークフローについては、[Estuary の Kafka ClickPipe インテグレーション](/ja/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes)を参照してください。
+
+<div id="setup-guide">
+  ## セットアップガイド
+</div>
+
+**前提条件**
+
+以下が必要です。
+
+* [Estuary アカウント](https://dashboard.estuary.dev/register)
+* 任意のデータソースからデータを取得する、Estuary の 1 つ以上の [**キャプチャ**](https://docs.estuary.dev/concepts/captures/)
+* セルフホストの ClickHouse インスタンス、または ClickHouse Cloud アカウント
+* 認証情報を持つ ClickHouse データベースユーザー
+
+<Steps>
+  <Step title="インテグレーション用に ClickHouse を設定する" id="1-configure-clickhouse">
+    Estuary の ClickHouse コネクタをセットアップするには、ClickHouse インスタンスからいくつかの情報を収集し、ユーザー権限を設定する必要があります。
+
+    1. データベースのホストエンドポイントをコピーします。
+
+       ポートには、TLS が有効な場合は **9440**、無効な場合は **9000** を使用します。
+
+       ホストとポートを組み合わせたものが、Estuary に指定する **アドレス** になります。
+
+    2. Estuary がアクセスするデータベースユーザーに権限を付与します。
+
+       Estuary がテーブルを自動的に作成・管理するには、移行先データベースに対する `CREATE`、`SELECT`、`INSERT` などの権限に加え、メタデータ検出およびパーティション管理の権限が必要です。
+
+       次の SQL コマンドを実行し、`<database>` と `<user>` を実際の値に置き換えると、必要なすべての権限を付与できます。
+
+       ```sql
+       -- 移行先データベースへのアクセス: CREATE TABLE、DROP TABLE、SELECT、INSERT、TRUNCATE など。
+       GRANT ALL ON <database>.* TO <user>;
+
+       -- メタデータ検出およびパーティション管理のためのシステムテーブルへのアクセス。
+       -- これらは上記のデータベース権限には含まれません。
+       GRANT SELECT ON system.columns TO <user>;
+       GRANT SELECT ON system.parts TO <user>;
+       GRANT SELECT ON system.tables TO <user>;
+       ```
+
+    3. 必要に応じて、ユーザーのシステムアクセスを移行先データベースのみに制限します。
+
+       これは行レベルポリシーで設定できます。例:
+
+       ```sql
+       CREATE ROW POLICY estuary_columns ON system.columns FOR SELECT USING database = '<database>' TO <user>;
+       CREATE ROW POLICY estuary_parts ON system.parts FOR SELECT USING database = '<database>' TO <user>;
+       CREATE ROW POLICY estuary_tables ON system.tables FOR SELECT USING database = '<database>' TO <user>;
+       ```
+
+    その後、Estuary に移動してセットアップを完了できます。
+  </Step>
+
+  <Step title="Estuary のマテリアライゼーションを作成する" id="2-create-an-estuary-materialization">
+    1. Estuary のダッシュボードで、[Destinations](https://dashboard.estuary.dev/materializations) ページに移動します。
+    2. **+ New Materialization** をクリックします。
+    3. **ClickHouse** コネクタを選択します。
+    4. **Materialization Details** セクションに入力します。
+       * マテリアライゼーションに一意の名前を付けます
+       * データプレーン (クラウドプロバイダーとリージョン) を選択します
+    5. Estuary が ClickHouse インスタンスに接続できるよう、**Endpoint Config** の詳細を入力します。
+
+       * **Address:** インスタンスのホストとポート
+       * **Database:** 移行先データベース名
+       * **Authentication:** データベースユーザーのユーザー名とパスワード
+
+       物理削除を使用するかどうかや SSL モードなど、任意の設定も構成できます。
+  </Step>
+
+  <Step title="ソースコレクションを設定する" id="3-configure-source-collections">
+    **Source Collections** セクションで、ClickHouse にマテリアライズするログソースを選択します。
+
+    1. 既存の **キャプチャ** をリンクするか、ClickHouse にマテリアライズする個別のデータコレクションを追加します。
+    2. 必要に応じて追加設定するデータコレクションをリストから選択します。カスタマイズオプションには次が含まれます。
+       * コレクションに別のテーブル名を指定する
+       * コレクションのマージ動作を選択する (デルタ更新モードを使用するかどうか)
+       * マテリアライズするフィールドを制御するため、フィールドの選択動作をカスタマイズする
+    3. ClickHouse へのデータのマテリアライズ方法に問題がなければ、**Next**、次に **Save and Publish** をクリックします。
+
+    Estuary は選択したコレクションのデータを ClickHouse にバックフィルし始め、その後は更新が発生するたびにストリーミングします。
+  </Step>
+</Steps>
+
+<div id="additional-resources">
+  ## 関連リソース
+</div>
+
+Estuary で ClickHouse コネクタを設定する方法については、Estuary のドキュメントを参照してください。
+
+* Estuary の [ClickHouse マテリアライゼーションに関するドキュメント](https://docs.estuary.dev/reference/Connectors/materialization-connectors/ClickHouse/)を参照してください。
+* これらの手順で説明した UI ベースのワークフローに加え、CLI を使用して Estuary のパイプライン設定を管理することもできます。Estuary をプログラムから操作する方法については、Estuary の [`flowctl` ガイド](https://docs.estuary.dev/guides/flowctl/ci-cd/)を参照してください。

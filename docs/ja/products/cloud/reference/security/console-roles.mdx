@@ -20,7 +20,7 @@ ClickHouse には、ユーザー管理用の組織レベルのロールが 4 つ
 | Admin          | 組織に関するあらゆる管理作業を実行し、すべての設定を管理します。このロールはデフォルトで組織の最初のユーザーに割り当てられ、すべてのサービスに対する Service Admin 権限が自動的に付与されます。 |
 | Billing        | 使用状況と請求書を確認し、支払い方法を管理します。                                                                               |
 | Org API reader | 組織レベルの設定とユーザーを管理するための API 権限を持ちますが、サービスへのアクセス権はありません。                                                   |
-| Member         | サインインのみ可能で、個人のプロフィール設定を管理できます。SAML SSO ユーザーにはデフォルトで割り当てられます。                                            |
+| Member         | サインインのみ可能で、個人のプロフィール設定を管理できます。組織で別のデフォルトロールが設定されていない限り、SAML SSO ユーザーにはデフォルトで割り当てられます。                   |
 
 <div id="service-roles">
   ## サービスロール
@@ -60,10 +60,10 @@ SQL コンソールのロールの割り当て方法については、[SQL コ�
 | **Organization** ([詳細情報](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users))                              | 組織レベルの権限                                                                                                                                      |
 | control-plane:organization:view                                                                                                    | 組織の詳細と読み取り専用のメタデータを表示します。                                                                                                                     |
 | control-plane:organization:manage                                                                                                  | 組織設定とユーザーを管理します。                                                                                                                              |
-| **Billing** ([詳細情報](/ja/products/cloud/reference/billing/index))                                                                      | 請求と請求書の管理                                                                                                                                     |
+| **Billing** ([詳細情報](/ja/products/cloud/reference/billing/billing-overview))                                                           | 請求と請求書の管理                                                                                                                                     |
 | control-plane:organization:manage-billing                                                                                          | 請求設定、支払い方法、請求書を管理します。                                                                                                                         |
 | control-plane:organization:view-billing                                                                                            | 請求の利用状況と請求書を表示します。                                                                                                                            |
-| **API keys** ([詳細情報](/ja/products/cloud/features/admin-features/api/index))                                                           | 組織の API キー管理                                                                                                                                  |
+| **API keys** ([詳細情報](/ja/products/cloud/features/admin-features/api/api-overview))                                                    | 組織の API キー管理                                                                                                                                  |
 | control-plane:organization:view-api-keys                                                                                           | 組織の API キーを表示します。                                                                                                                             |
 | control-plane:organization:create-api-keys                                                                                         | 組織用の新しい API キーを作成します。                                                                                                                         |
 | control-plane:organization:update-api-keys                                                                                         | 既存の API キーとその権限を更新します。                                                                                                                        |

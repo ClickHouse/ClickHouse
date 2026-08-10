@@ -915,18 +915,18 @@ h3ExactEdgeLengthM(index)
 
 **Valor devuelto**
 
-* Longitud exacta del borde en metros. [Float64](/es/reference/data-types/float).
+* Longitud exacta de la arista en metros. [Float64](/es/reference/data-types/float).
 
 **Ejemplo**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
+SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 ```
 
 ```text title="Response"
-┌───exactEdgeLengthM─┐
-│ 195449.63163407316 │
-└────────────────────┘
+┌─exactEdgeLengthM─┐
+│    195449.631634 │
+└──────────────────┘
 ```
 
 <div id="h3exactedgelengthkm">
@@ -947,18 +947,18 @@ h3ExactEdgeLengthKm(index)
 
 **Valor devuelto**
 
-* Longitud exacta del borde en kilómetros. [Float64](/es/reference/data-types/float).
+* Longitud exacta de la arista en kilómetros. [Float64](/es/reference/data-types/float).
 
 **Ejemplo**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
+SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 ```
 
 ```text title="Response"
-┌──exactEdgeLengthKm─┐
-│ 195.44963163407317 │
-└────────────────────┘
+┌─exactEdgeLengthKm─┐
+│      195.44963163 │
+└───────────────────┘
 ```
 
 <div id="h3exactedgelengthrads">
@@ -979,18 +979,18 @@ h3ExactEdgeLengthRads(index)
 
 **Valor devuelto**
 
-* Longitud exacta del borde en radianes. [Float64](/es/reference/data-types/float).
+* Longitud exacta de la arista en radianes. [Float64](/es/reference/data-types/float).
 
 **Ejemplo**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
+SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads;
 ```
 
 ```text title="Response"
-┌──exactEdgeLengthRads─┐
-│ 0.030677980118976447 │
-└──────────────────────┘
+┌─exactEdgeLengthRads─┐
+│      0.030677980119 │
+└─────────────────────┘
 ```
 
 <div id="h3numhexagons">
@@ -1053,16 +1053,16 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 ```
 
 ```text title="Response"
-┌──────h3PointDistM─┐
-│ 2223901.039504589 │
-└───────────────────┘
+┌───────h3PointDistM─┐
+│ 2223901.0395045886 │
+└────────────────────┘
 ```
 
 <div id="h3pointdistkm">
   ## h3PointDistKm
 </div>
 
-Devuelve la distancia de &quot;gran círculo&quot; o &quot;haversine&quot; entre pares de puntos GeoCoord (latitud/longitud), en kilómetros.
+Devuelve la distancia de &quot;círculo máximo&quot; o &quot;haversine&quot; entre pares de puntos GeoCoord (latitud/longitud), en kilómetros.
 
 **Sintaxis**
 
@@ -1086,9 +1086,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 ```
 
 ```text title="Response"
-┌─────h3PointDistKm─┐
-│ 2223.901039504589 │
-└───────────────────┘
+┌──────h3PointDistKm─┐
+│ 2223.9010395045884 │
+└────────────────────┘
 ```
 
 <div id="h3pointdistrads">
@@ -1248,7 +1248,7 @@ Devuelve un número negativo si no se puede calcular la distancia.
 
 ```text title="Response"
 ┌─distance─┐
-│        7 │
+│        6 │
 └──────────┘
 ```
 

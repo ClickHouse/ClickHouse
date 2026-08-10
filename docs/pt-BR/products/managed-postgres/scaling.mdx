@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/scaling
 sidebarTitle: 'Escalonamento'
 title: 'Escalonamento'
-description: 'Escale verticalmente sua instância do Postgres managed by ClickHouse com tipos de VM flexíveis e escalonamento independente de recursos'
+description: 'Escale verticalmente sua instância do ClickHouse Managed Postgres com tipos de VM flexíveis e escalonamento independente de recursos'
 keywords: ['escalonamento do Postgres', 'escalonamento vertical', 'tipos de VM', 'escalonamento NVMe', 'tipos de instância', 'escalonamento de desempenho']
 doc_type: 'guide'
 ---
@@ -12,13 +12,13 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
-O Managed Postgres oferece opções de escalonamento flexível para atender às exigências da sua carga de trabalho. Com mais de 50 tipos de instância com NVMe à disposição, você pode dimensionar CPU, memória e armazenamento de forma independente para otimizar o desempenho e o custo do seu caso de uso específico.
+O ClickHouse Managed Postgres oferece opções de escalonamento flexível para atender às exigências da sua carga de trabalho. Com mais de 50 tipos de instância com NVMe à disposição, você pode dimensionar CPU, memória e armazenamento de forma independente para otimizar o desempenho e o custo do seu caso de uso específico.
 
 <div id="instance-types">
   ## Tipos de instância e flexibilidade
 </div>
 
-O Managed Postgres oferece uma ampla variedade de tipos de instância, cada um otimizado para diferentes características de carga de trabalho:
+O ClickHouse Managed Postgres oferece uma ampla variedade de tipos de instância, cada um otimizado para diferentes características de carga de trabalho:
 
 * **Mais de 50 tipos de instância** disponíveis em configurações otimizadas para compute, memória e armazenamento
 * **Armazenamento com NVMe** em todos os tipos de instância para E/S de disco consistente e de alto desempenho
@@ -46,7 +46,7 @@ Diferentes cargas de trabalho se beneficiam de diferentes configurações de rec
   ## Como o escalonamento funciona
 </div>
 
-Quando você altera os tipos de instância, o Managed Postgres realiza uma operação de escalonamento vertical que provisiona uma nova infraestrutura e migra seu banco de dados com o mínimo de indisponibilidade.
+Quando você altera os tipos de instância, o ClickHouse Managed Postgres realiza uma operação de escalonamento vertical que provisiona uma nova infraestrutura e migra seu banco de dados com o mínimo de indisponibilidade.
 
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="Configurações de escalonamento" size="md" border />
 
@@ -95,7 +95,7 @@ O tempo de restauração pode variar de alguns minutos a algumas horas, mas a ja
   ### Restauração em paralelo com WAL-G
 </div>
 
-O Managed Postgres usa [WAL-G](https://github.com/wal-g/wal-g) para acelerar a restauração de backups durante operações de escalonamento. Vale destacar que o criador do WAL-G faz parte da equipe da Ubicloud, com quem temos parceria, trazendo ampla expertise para o processo de restauração.
+O ClickHouse Managed Postgres usa [WAL-G](https://github.com/wal-g/wal-g) para acelerar a restauração de backups durante operações de escalonamento. Vale destacar que o criador do WAL-G faz parte da equipe da Ubicloud, com quem temos parceria, trazendo ampla expertise para o processo de restauração.
 
 O WAL-G oferece:
 
@@ -110,7 +110,7 @@ Essas otimizações reduzem significativamente o tempo necessário para colocar 
   ### Iniciando uma operação de escalonamento
 </div>
 
-Para escalar sua instância do Managed Postgres:
+Para escalar sua instância do ClickHouse Managed Postgres:
 
 1. Acesse a aba **Configurações** da sua instância
 2. Na seção **Escalonamento**, vá até **Tamanho do serviço**
@@ -125,7 +125,7 @@ Para escalar sua instância do Managed Postgres:
   ### Escalonamento vertical
 </div>
 
-O escalonamento vertical (mudança de tipos de instância) é o principal método para ajustar recursos no Managed Postgres. Essa abordagem oferece:
+O escalonamento vertical (mudança de tipos de instância) é o principal método para ajustar recursos no ClickHouse Managed Postgres. Essa abordagem oferece:
 
 * **Controle granular**: Escolha entre mais de 50 tipos de instância para ajustar com precisão CPU, memória e armazenamento
 * **Otimização da carga de trabalho**: Selecione configurações otimizadas para sua carga de trabalho específica (intensiva em computação, memória ou armazenamento)

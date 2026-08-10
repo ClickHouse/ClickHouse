@@ -1,5 +1,5 @@
 ---
-description: '이 엔진은 Amazon S3 에코시스템과의 통합을 제공하며 가져오기를
+description: '이 엔진은 Amazon S3 에코시스템과의 통합을 제공하며 스트리밍 가져오기를
   지원합니다. Kafka 및 RabbitMQ 엔진과 유사하지만, S3 전용 기능을 제공합니다.'
 sidebarTitle: 'S3Queue'
 slug: /engines/table-engines/integrations/s3queue
@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-이 엔진은 [Amazon S3](https://aws.amazon.com/s3/) 에코시스템과의 통합을 제공하며 가져오기를 지원합니다. 이 엔진은 [Kafka](/ko/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/ko/reference/engines/table-engines/integrations/rabbitmq) 엔진과 유사하지만, S3 전용 기능을 제공합니다.
+이 엔진은 [Amazon S3](https://aws.amazon.com/s3/) 에코시스템과의 통합을 제공하며 스트리밍 가져오기를 지원합니다. 이 엔진은 [Kafka](/ko/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/ko/reference/engines/table-engines/integrations/rabbitmq) 엔진과 유사하지만, S3 전용 기능을 제공합니다.
 
 [S3Queue 구현의 원본 PR](https://github.com/ClickHouse/ClickHouse/pull/49086/files#diff-e1106769c9c8fbe48dd84f18310ef1a250f2c248800fde97586b3104e9cd6af8R183)의 다음 참고 사항을 이해하는 것이 중요합니다: `MATERIALIZED VIEW`가 이 엔진에 연결되면 S3Queue 테이블 엔진이 백그라운드에서 데이터 수집을 시작합니다.
 
@@ -514,11 +514,13 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 * 파일 처리 도중 파싱 중 예외가 발생하고 `s3queue_loading_retries`를 통해 재시도가 활성화된 경우
 
-* `S3Queue`가 ZooKeeper의 동일한 경로를 가리키도록 여러 서버에 구성되어 있고, 한 서버가 처리된 파일을 커밋하기 전에 Keeper 세션이 만료되면 다른 서버가 해당 파일 처리를 이어받을 수 있으며, 이 경우 첫 번째 서버가 이미 해당 파일을 일부 또는 전체 처리했을 수 있습니다. 다만 `use_persistent_processing_nodes = 1`인 경우, 버전 25.8부터는 더 이상 해당하지 않습니다.
+* `S3Queue`가 ZooKeeper의 동일한 경로를 가리키도록 여러 서버에 구성되어 있고, 한 서버가 처리된 파일을 commit하기 전에 Keeper 세션이 만료되면 다른 서버가 해당 파일 처리를 이어받을 수 있으며, 이 경우 첫 번째 서버가 이미 해당 파일을 일부 또는 전체 처리했을 수 있습니다. 다만 `use_persistent_processing_nodes = 1`인 경우, 버전 25.8부터는 더 이상 해당하지 않습니다.
 
 * 서버가 비정상적으로 종료된 경우
 
 2. `S3Queue`가 ZooKeeper의 동일한 경로를 가리키도록 여러 서버에 구성되어 있고 `Ordered` 모드를 사용하는 경우 `s3queue_loading_retries`는 작동하지 않습니다. 이는 곧 수정될 예정입니다.
+
+3. ClickHouse 노드에서 장치 수준의 전원 손실이 발생하면 행이 손실될 수 있습니다. 파일 활용이 완료되면 삽입이 끝나는 즉시 해당 파일은 Keeper에 처리됨으로 기록되며(`after_processing = 'delete'`인 경우 소스 객체도 제거됨), 삽입된 행은 대상 파트가 fsync된 후에만 영구적으로 저장됩니다. 기본적으로 이는 동기적으로 수행되지 않습니다(`fsync_after_insert = 0`). Keeper는 강제 동기화되고 일반적으로 별도 노드에서 실행되므로 이 노드의 전원 손실에도 유지됩니다. 파일이 처리됨으로 commit된 후 대상 파트가 fsync되기 전에 노드의 전원이 꺼지면, 재시작 시 파일을 다시 읽지 않아 행이 손실됩니다(`after_processing = 'delete'`에서는 복구할 수 없음). 일반적인 프로세스 강제 종료에서는 페이지 캐시가 유지되므로 이 문제가 드러나지 않습니다. 권장되는 구체화된 뷰(Materialized View) 활용 경로(전체 삽입 파이프라인이 완료된 후에만 파일이 commit됨)에서는 대상 `MergeTree` 테이블에 `fsync_after_insert = 1`(및 `fsync_part_directory = 1`)을 설정하면 파일이 처리됨으로 commit되기 전에 삽입된 파트가 영구 저장되어 이 구간이 크게 줄어듭니다. 이는 대상 싱크가 마지막 파트를 완료하기 전에 읽기가 끝날 때 파일이 commit되는 `commit_on_select = 1`의 직접 `INSERT ... SELECT`에는 적용되지 않습니다.
 
 <div id="introspection">
   ## 내부 검사

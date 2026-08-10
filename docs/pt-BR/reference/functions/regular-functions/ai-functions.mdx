@@ -9,17 +9,21 @@ doc_type: 'reference'
 Funções de IA são funções integradas do ClickHouse que você pode usar para chamar IA ou gerar embeddings para trabalhar com seus dados, extrair informações, classificar dados etc...
 
 <Note>
-  As funções de IA são experimentais. Defina [`allow_experimental_ai_functions`](/pt-BR/reference/settings/session-settings#allow_experimental_ai_functions) para ativá-las.
-</Note>
+  As funções de IA são experimentais. Defina [`allow_experimental_ai_functions`](/pt-BR/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) para ativá-las.
 
-<Note>
   As funções de IA podem retornar saídas imprevisíveis. O resultado dependerá muito da qualidade do prompt e do modelo usado.
 </Note>
 
+<Warning>
+  **Injeção de prompt**
+
+  O texto de entrada é enviado ao modelo e pode direcionar sua saída (injeção de prompt). Textos de fontes externas, não verificadas ou não sanitizadas podem conter instruções que fazem o modelo retornar conteúdo controlado por um invasor, ignorar o formato solicitado ou emitir payloads maliciosos. Trate a saída da função de IA como não confiável: valide-a ou sanitize-a antes de usá-la em etapas posteriores, como na criação de SQL, em comandos de shell, consultas adicionais ou decisões de controle de acesso.
+</Warning>
+
 Todas as funções compartilham uma infraestrutura comum que fornece:
 
-* **Aplicação de cotas**: Limites por consulta para tokens ([`ai_function_max_input_tokens_per_query`](/pt-BR/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/pt-BR/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) e chamadas de API ([`ai_function_max_api_calls_per_query`](/pt-BR/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
-* **Retentativas com backoff**: Falhas transitórias são repetidas ([`ai_function_max_retries`](/pt-BR/reference/settings/session-settings#ai_function_max_retries)) com backoff exponencial ([`ai_function_retry_initial_delay_ms`](/pt-BR/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
+* **Aplicação de cotas**: Limites por consulta para tokens ([`ai_function_max_input_tokens_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) e chamadas de API ([`ai_function_max_api_calls_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
+* **Retentativas com backoff**: Falhas transitórias são repetidas ([`ai_function_max_retries`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_retries)) com backoff exponencial ([`ai_function_retry_initial_delay_ms`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
 <div id="configuration">
   ## Configuração
@@ -69,8 +73,8 @@ Uma função determina a coleção nomeada a ser usada na seguinte ordem:
 
 1. a chave `credentials` do seu mapa de parâmetros, quando presente;
 2. caso contrário, a configuração padrão de credenciais aplicável:
-   * [`ai_function_text_default_credentials`](/pt-BR/reference/settings/session-settings#ai_function_text_default_credentials) para as funções de texto (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`);
-   * [`ai_function_embedding_default_credentials`](/pt-BR/reference/settings/session-settings#ai_function_embedding_default_credentials) para `aiEmbed`.
+   * [`ai_function_text_default_credentials`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) para as funções de texto (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`);
+   * [`ai_function_embedding_default_credentials`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) para `aiEmbed`.
 
 Se nenhum dos dois estiver definido, a chamada falhará. As funções de texto e de embedding usam configurações padrão separadas porque um endpoint de chat completions é diferente de um usado para embeddings.
 
@@ -88,7 +92,7 @@ SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
   ### Mapa de parâmetros
 </div>
 
-Cada função aceita, ao final, um `Map(String, String)` opcional de parâmetros. Todos os valores são strings (coloque os números entre aspas, por exemplo, `'0.2'`). Chaves desconhecidas são rejeitadas. Uma chave presente substitui o valor correspondente da coleção nomeada; uma chave ausente recorre à coleção nomeada (para `model`/`max_tokens`) ou ao padrão interno. A exceção é `aiEmbed`, que recebe `model` como um argumento posicional obrigatório (`aiEmbed(text, model[, params])`) e gera erro se ele for definido no mapa de parâmetros ou na coleção nomeada.
+Cada função aceita, ao final, um `Map(String, String)` opcional de parâmetros. Todos os valores são strings (coloque os números entre aspas, por exemplo, `'0.2'`). Chaves desconhecidas são rejeitadas. Uma chave presente substitui o valor correspondente da coleção nomeada; uma chave ausente recorre à coleção nomeada (para `model`/`max_tokens`) ou ao padrão interno. A exceção é `aiEmbed`, que recebe `model` como um argumento posicional obrigatório (`aiEmbed(text, model[, params])`) e gera erro se ele for definido no mapa de parâmetros ou na coleção nomeada. Isso serve para garantir embeddings reproduzíveis.
 
 Os parâmetros a seguir são comuns a todas as funções de IA:
 
@@ -113,7 +117,7 @@ Todas as configurações relacionadas à IA estão listadas em [Settings](/pt-BR
   ### Restringindo hosts de endpoint
 </div>
 
-A URL de `endpoint` em uma coleção nomeada de IA é um destino de saída ao qual o servidor se conecta com sua própria identidade, potencialmente enviando (se especificada) a `api_key` da coleção nomeada nos cabeçalhos da solicitação. Por padrão, o ClickHouse permite qualquer host. Para restringir as funções a um conjunto específico de provedores, configure [`remote_url_allow_hosts`](/pt-BR/reference/settings/server-settings/settings#remote_url_allow_hosts) na configuração do servidor, por exemplo:
+A URL de `endpoint` em uma coleção nomeada de IA é um destino de saída ao qual o servidor se conecta com sua própria identidade, potencialmente enviando (se especificada) a `api_key` da coleção nomeada no cabeçalho da requisição. Por padrão, o ClickHouse permite qualquer host. Para restringir as funções a um conjunto específico de provedores, configure [`remote_url_allow_hosts`](/pt-BR/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) na configuração do servidor, por exemplo:
 
 ```xml
 <remote_url_allow_hosts>
@@ -133,7 +137,7 @@ O transporte é determinado exclusivamente pelo esquema da URL do `endpoint`. N�
 * `https://` — a conexão usa TLS. O corpo da requisição (texto de entrada, prompts) e a `api_key` no cabeçalho da requisição são criptografados em trânsito, e o certificado do provedor é validado. Use isto para qualquer provedor remoto.
 * `http://` — a conexão **não é criptografada**. O corpo da requisição e a `api_key` são enviados em texto claro. Use isto somente com um provedor confiável em uma rede privada (por exemplo, uma instância local de `vLLM` ou `Ollama`).
 
-As funções de IA não forçam HTTPS: um `endpoint` `http://` é aceito e envia dados sem criptografia. Atualmente, não há nenhuma configuração do lado do servidor que rejeite endpoints de IA em texto claro — [`remote_url_allow_hosts`](/pt-BR/reference/settings/server-settings/settings#remote_url_allow_hosts) restringe apenas o host de destino e não inspeciona o esquema da URL, portanto um `endpoint` `http://` para um host permitido ainda passa. Para garantir transporte criptografado, configure coleções nomeadas com endpoints `https://`.
+Por padrão, as funções de IA rejeitam um `endpoint` que enviaria dados em texto claro para um host remoto: qualquer endpoint que não seja HTTPS e cujo host não seja de loopback gera uma exceção. Hosts de loopback (`localhost`, `127.0.0.0/8`, `::1`) estão isentos, portanto um servidor de modelo local em `http://localhost` funciona imediatamente. Para permitir um endpoint `http://` em texto claro em um host remoto, defina [`ai_function_allow_insecure_endpoint`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) como `1`. Essa verificação é independente de [`remote_url_allow_hosts`](/pt-BR/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): essa configuração é uma lista de permissões de hosts e não inspeciona o esquema da URL, portanto um `endpoint` `http://` direcionado a um host permitido ainda passa por ela.
 
 Observe que, em ambos os casos, o provedor recebe os dados de entrada em texto claro após a terminação de TLS; o TLS protege os dados apenas no caminho de rede entre o servidor e o provedor.
 
@@ -189,10 +193,6 @@ Introduzido em: v26.4.0
 
 Classifica o texto fornecido em uma das categorias informadas usando um provedor de LLM.
 
-A função envia o texto junto com um prompt de classificação fixo e um formato de resposta com esquema JSON,
-restringindo o modelo a retornar exatamente um dos rótulos fornecidos. Quando a resposta é retornada como um objeto JSON
-no formato `{"category": "..."}`, o rótulo é extraído, e a string do rótulo é retornada.
-
 As credenciais (uma coleção nomeada que especifica o provedor, o modelo, o endpoint e, opcionalmente, uma chave de API)
 são obtidas da chave `credentials` do mapa de parâmetros opcional, ou da
 configuração `ai_function_text_default_credentials` quando o mapa a omite.
@@ -243,7 +243,7 @@ Gera um vetor de embedding para o texto fornecido usando o provedor de IA config
 
 A função envia o texto para o endpoint de embedding configurado e retorna o vetor resultante como `Array(Float32)`.
 Dentro de um único bloco de linhas, as entradas são agrupadas em lotes de até
-[`ai_function_embedding_max_batch_size`](/pt-BR/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+[`ai_function_embedding_max_batch_size`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 entradas por requisição HTTP para reduzir a sobrecarga por chamada.
 
 As credenciais (uma coleção nomeada que especifica o provedor, o endpoint e, opcionalmente, uma chave de API)
@@ -254,7 +254,7 @@ de um endpoint de chat.
 
 O `model` é um argumento posicional obrigatório (um `String` constante). Diferentemente das funções de texto,
 `aiEmbed` não lê `model` da coleção nomeada nem do mapa de parâmetros. Uma coleção nomeada
-que define `model` é rejeitada em vez de ser ignorada silenciosamente.
+que define `model` é rejeitada.
 
 O parâmetro opcional `dimensions`, quando compatível com o modelo (por exemplo, `text-embedding-3-*` da OpenAI),
 solicita um vetor do tamanho especificado; caso contrário, o tamanho nativo do modelo é retornado.

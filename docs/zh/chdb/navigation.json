@@ -3,25 +3,26 @@
     {
       "group": "开始使用",
       "pages": [
+        "zh/chdb/index",
         "zh/chdb/getting-started"
-      ],
-      "root": "zh/chdb/index"
+      ]
     },
     {
       "group": "语言集成",
       "pages": [
+        "zh/chdb/install/index",
         "zh/chdb/install/python",
         "zh/chdb/install/nodejs",
         "zh/chdb/install/go",
         "zh/chdb/install/rust",
         "zh/chdb/install/bun",
         "zh/chdb/install/c"
-      ],
-      "root": "zh/chdb/install/index"
+      ]
     },
     {
       "group": "DataStore",
       "pages": [
+        "zh/chdb/datastore/index",
         "zh/chdb/datastore/quickstart",
         "zh/chdb/datastore/factory-methods",
         "zh/chdb/datastore/query-building",
@@ -31,30 +32,30 @@
         "zh/chdb/datastore/execution-model",
         "zh/chdb/datastore/pandas-compat",
         "zh/chdb/datastore/class-reference"
-      ],
-      "root": "zh/chdb/datastore/index"
+      ]
     },
     {
       "group": "配置",
       "pages": [
+        "zh/chdb/configuration/index",
         "zh/chdb/configuration/execution-engine",
         "zh/chdb/configuration/function-config",
         "zh/chdb/configuration/performance-mode"
-      ],
-      "root": "zh/chdb/configuration/index"
+      ]
     },
     {
       "group": "调试",
       "pages": [
+        "zh/chdb/debugging/index",
         "zh/chdb/debugging/explain",
         "zh/chdb/debugging/logging",
         "zh/chdb/debugging/profiling"
-      ],
-      "root": "zh/chdb/debugging/index"
+      ]
     },
     {
       "group": "开发者指南",
       "pages": [
+        "zh/chdb/guides/index",
         "zh/chdb/guides/jupysql",
         "zh/chdb/guides/querying-pandas",
         "zh/chdb/guides/querying-apache-arrow",
@@ -66,18 +67,18 @@
         "zh/chdb/guides/pandas-cookbook",
         "zh/chdb/guides/pandas-differences",
         "zh/chdb/guides/pandas-performance",
-        "zh/chdb/guides/pandas-to-sql"
-      ],
-      "root": "zh/chdb/guides/index"
+        "zh/chdb/guides/pandas-to-sql",
+        "zh/chdb/guides/python-udf"
+      ]
     },
     {
       "group": "技术参考文档",
       "pages": [
+        "zh/chdb/reference/index",
         "zh/chdb/reference/data-formats",
         "zh/chdb/reference/sql-reference",
         "zh/chdb/api/python"
-      ],
-      "root": "zh/chdb/reference/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-chdb.svg",

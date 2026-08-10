@@ -23,20 +23,14 @@
         {
           "group": "pg_clickhouse",
           "pages": [
+            "ko/products/managed-postgres/extensions/pg_clickhouse/introduction",
             "ko/products/managed-postgres/extensions/pg_clickhouse/reference",
             "ko/products/managed-postgres/extensions/pg_clickhouse/tutorial"
-          ],
-          "root": "ko/products/managed-postgres/extensions/pg_clickhouse/introduction"
+          ]
         },
         "ko/products/managed-postgres/upgrades",
         "ko/products/managed-postgres/openapi",
         "ko/products/managed-postgres/terraform"
-      ]
-    },
-    {
-      "group": "벤치마크",
-      "pages": [
-        "ko/products/managed-postgres/benchmarks"
       ]
     },
     {
@@ -46,7 +40,7 @@
       ]
     },
     {
-      "group": "ClickHouse 통합",
+      "group": "ClickHouse Integration",
       "pages": [
         "ko/products/managed-postgres/clickhouse-integration"
       ]
@@ -60,7 +54,6 @@
         "ko/products/managed-postgres/migrations/peerdb",
         "ko/products/managed-postgres/migrations/clickpipes",
         "ko/products/managed-postgres/migrations/data-validation",
-        "ko/products/managed-postgres/migrations/clickhouse-cloud",
         "ko/products/managed-postgres/migrations/faq"
       ]
     },
@@ -71,7 +64,8 @@
         "ko/products/managed-postgres/monitoring/dashboard",
         "ko/products/managed-postgres/monitoring/metrics",
         "ko/products/managed-postgres/monitoring/prometheus",
-        "ko/products/managed-postgres/monitoring/query-insights"
+        "ko/products/managed-postgres/monitoring/query-insights",
+        "ko/products/managed-postgres/monitoring/notifications"
       ]
     },
     {
@@ -82,5 +76,5 @@
     }
   ],
   "icon": "/images/icons/icon-postgres.svg",
-  "item": "Managed Postgres"
+  "item": "ClickHouse Managed Postgres"
 }

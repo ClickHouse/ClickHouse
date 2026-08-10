@@ -82,9 +82,9 @@ SELECT count() FROM my_lake.`analytics.events`
 
 许多集成在首次使用前都需要先启用功能标志。如果 `CREATE DATABASE` 因权限错误而失败，请检查你的服务版本。
 
-对于目录连接，不同目录类型都有各自的标志。概览请参阅[Connecting to catalogs](/zh/use-cases/data-lake/getting-started/connecting-catalogs)，设置详情请参阅 [DataLakeCatalog Reference](/zh/engines/database-engines/datalakecatalog)。各目录的具体设置请见[目录指南](/zh/use-cases/data-lake/reference)。
+对于目录连接，不同目录类型都有各自的标志。概览请参阅[Connecting to catalogs](/zh/use-cases/data-lake/getting-started/connecting-catalogs)，设置详情请参阅 [DataLakeCatalog reference](/zh/engines/database-engines/datalakecatalog)。各目录的具体设置请见[目录指南](/zh/use-cases/data-lake/reference)。
 
-对于写入操作，Iceberg 需要 [allow&#95;insert&#95;into&#95;iceberg](/zh/operations/settings/settings#allow_insert_into_iceberg) (25.7+，自 26.2 起为 Beta) 。请参阅[写入数据湖](/zh/use-cases/data-lake/getting-started/writing-data)。Delta Lake 需要 [allow&#95;delta&#95;lake&#95;writes](/zh/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+) 。[支持矩阵](/zh/use-cases/data-lake/support-matrix)列出了每种格式和操作适用的标志。
+对于写入操作，Iceberg 需要 [allow&#95;insert&#95;into&#95;iceberg](/zh/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+，自 26.2 起为 Beta) 。请参阅[写入数据湖](/zh/use-cases/data-lake/getting-started/writing-data)。Delta Lake 需要 [allow&#95;delta&#95;lake&#95;writes](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+) 。[支持矩阵](/zh/use-cases/data-lake/support-matrix)列出了每种格式和操作适用的标志。
 
 <div id="query-performance">
   ## 提升查询性能
@@ -142,14 +142,14 @@ WHERE event_time >= '2026-03-01'
 
 保存上一次成功加载的快照标识符，并在下一次运行时将其用作下界。
 
-* 对于 Iceberg，可使用 [iceberg&#95;snapshot&#95;id](/zh/operations/settings/settings#iceberg_snapshot_id) 或 [iceberg&#95;timestamp&#95;ms](/zh/operations/settings/settings#iceberg_timestamp_ms) (25.4+) 读取某个时间点的视图。对于仅追加表，可将快照设置与 `WHERE` 中的分区过滤条件结合使用。可使用 [system.iceberg&#95;history](/zh/operations/system-tables/iceberg_history) (25.6+) 查找两次运行之间的快照 ID。
-* 对于 Delta Lake，可使用 [delta&#95;lake&#95;snapshot&#95;start&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_start_version) 和 [delta&#95;lake&#95;snapshot&#95;end&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+) 读取两个版本之间的变更。可使用 [delta&#95;lake&#95;snapshot&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_version) (25.8+) 读取单个快照。有关 CDF 示例，请参见 [Delta change data feed](#delta-incremental-sync)。
+* 对于 Iceberg，可使用 [iceberg&#95;snapshot&#95;id](/zh/reference/settings/session-settings/iceberg#iceberg_snapshot_id) 或 [iceberg&#95;timestamp&#95;ms](/zh/reference/settings/session-settings/iceberg#iceberg_timestamp_ms) (25.4+) 读取某个时间点的视图。对于仅追加表，可将快照设置与 `WHERE` 中的分区过滤条件结合使用。可使用 [system.iceberg&#95;history](/zh/operations/system-tables/iceberg_history) (25.6+) 查找两次运行之间的快照 ID。
+* 对于 Delta Lake，可使用 [delta&#95;lake&#95;snapshot&#95;start&#95;version](/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_start_version) 和 [delta&#95;lake&#95;snapshot&#95;end&#95;version](/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_end_version) (25.12+) 读取两个版本之间的变更。可使用 [delta&#95;lake&#95;snapshot&#95;version](/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_version) (25.8+) 读取单个快照。有关 CDF 示例，请参见 [Delta change data feed](#delta-incremental-sync)。
 
 <div id="filesystem-cache">
   ### 在本地缓存 Parquet 文件
 </div>
 
-这两种格式都支持 [enable&#95;filesystem&#95;cache](/zh/operations/settings/settings#enable_filesystem_cache)，可在多次查询之间将热点 [Parquet](/zh/interfaces/formats/Parquet) 文件保存在本地磁盘上。对于自管理部署，请在服务器配置中设置[文件系统缓存磁盘](/zh/operations/storing-data#using-local-cache)，以便该设置有可写入的存储空间。ClickHouse Cloud 会自动管理缓存。进行基准测试时，请将 `enable_filesystem_cache = 0`，以免缓存命中掩盖不同运行之间的变化。
+这两种格式都支持 [enable&#95;filesystem&#95;cache](/zh/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache)，可在多次查询之间将热点 [Parquet](/zh/interfaces/formats/Parquet) 文件保存在本地磁盘上。对于自管理部署，请在服务器配置中设置[文件系统缓存磁盘](/zh/operations/storing-data#using-local-cache)，以便该设置有可写入的存储空间。ClickHouse Cloud 会自动管理缓存。进行基准测试时，请将 `enable_filesystem_cache = 0`，以免缓存命中掩盖不同运行之间的变化。
 
 <div id="iceberg-settings">
   ### Apache Iceberg
@@ -161,12 +161,12 @@ WHERE event_time >= '2026-03-01'
   #### 读取设置
 </div>
 
-| 设置                                                                                                                 | 起始版本 | 默认值           | 说明                                                |
-| ------------------------------------------------------------------------------------------------------------------ | ---- | ------------- | ------------------------------------------------- |
-| [use&#95;iceberg&#95;partition&#95;pruning](/zh/operations/settings/settings#use_iceberg_partition_pruning)           | 25.1 | 从 25.6 起为 `1` | 利用清单中的分区元数据跳过数据文件                                 |
-| [use&#95;iceberg&#95;metadata&#95;files&#95;cache](/zh/operations/settings/settings#use_iceberg_metadata_files_cache) | 25.4 | `1`           | 在内存中缓存 manifest 列表和元数据 JSON                       |
-| [iceberg&#95;metadata&#95;staleness&#95;ms](/zh/operations/settings/settings#iceberg_metadata_staleness_ms)           | 26.3 | `0`           | 查询设置。当缓存的元数据新于该时间窗口时，使用缓存元数据，而不是在每次查询时都调用 catalog |
-| [iceberg&#95;use&#95;version&#95;hint](/zh/sql-reference/table-functions/iceberg#writes-into-iceberg-table)           | 25.6 | —             | 在直接路径访问时读取 `version-hint.text`，以加快元数据解析           |
+| 设置                                                                                                                                    | 起始版本 | 默认值           | 说明                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------- | ------------------------------------------------- |
+| [use&#95;iceberg&#95;partition&#95;pruning](/zh/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning)           | 25.1 | 从 25.6 起为 `1` | 利用清单中的分区元数据跳过数据文件                                 |
+| [use&#95;iceberg&#95;metadata&#95;files&#95;cache](/zh/reference/settings/session-settings/use-iceberg#use_iceberg_metadata_files_cache) | 25.4 | `1`           | 在内存中缓存 manifest 列表和元数据 JSON                       |
+| [iceberg&#95;metadata&#95;staleness&#95;ms](/zh/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_staleness_ms)      | 26.3 | `0`           | 查询设置。当缓存的元数据新于该时间窗口时，使用缓存元数据，而不是在每次查询时都调用 catalog |
+| [iceberg&#95;use&#95;version&#95;hint](/zh/sql-reference/table-functions/iceberg#writes-into-iceberg-table)                              | 25.6 | —             | 在直接路径访问时读取 `version-hint.text`，以加快元数据解析           |
 
 <div id="iceberg-catalog-latency">
   #### 降低 目录 延迟
@@ -175,7 +175,7 @@ WHERE event_time >= '2026-03-01'
 对于连接到 目录 的 Iceberg 表，如果不缓存元数据，每次查询都需要拉取一次元数据。建议配合使用以下两个设置 (26.4+) ：
 
 1. 在创建表时设置 [iceberg&#95;metadata&#95;async&#95;prefetch&#95;period&#95;ms](/zh/engines/table-engines/integrations/iceberg#async-metadata-prefetch)，以便在后台预拉取元数据。
-2. 在查询中设置 [iceberg&#95;metadata&#95;staleness&#95;ms](/zh/operations/settings/settings#iceberg_metadata_staleness_ms) (26.3+) ，允许使用略有过期的元数据，从而跳过与 目录 的往返访问。
+2. 在查询中设置 [iceberg&#95;metadata&#95;staleness&#95;ms](/zh/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_staleness_ms) (26.3+) ，允许使用略有过期的元数据，从而跳过与 目录 的往返访问。
 
 ```sql
 CREATE TABLE events
@@ -195,7 +195,7 @@ SETTINGS iceberg_metadata_staleness_ms = 60000;
   #### 时间旅行
 </div>
 
-使用 [iceberg&#95;timestamp&#95;ms](/zh/operations/settings/settings#iceberg_timestamp_ms) 或 [iceberg&#95;snapshot&#95;id](/zh/operations/settings/settings#iceberg_snapshot_id) 读取历史快照 (两者均从 25.4 版本起支持) 。不要在同一条查询中同时设置这两项。选择 ID 之前，请先在 [system.iceberg&#95;history](/zh/operations/system-tables/iceberg_history) (25.6+) 中查看快照的演变关系。对于重复执行的批次加载，请参见[将批次读取限定到快照](#snapshot-bounds)。
+使用 [iceberg&#95;timestamp&#95;ms](/zh/reference/settings/session-settings/iceberg#iceberg_timestamp_ms) 或 [iceberg&#95;snapshot&#95;id](/zh/reference/settings/session-settings/iceberg#iceberg_snapshot_id) 读取历史快照 (两者均从 25.4 版本起支持) 。不要在同一条查询中同时设置这两项。选择 ID 之前，请先在 [system.iceberg&#95;history](/zh/operations/system-tables/iceberg_history) (25.6+) 中查看快照的演变关系。对于重复执行的批次加载，请参见[将批次读取限定到快照](#snapshot-bounds)。
 
 ```sql
 SELECT count()
@@ -207,13 +207,13 @@ SETTINGS iceberg_timestamp_ms = 1714636800000
   #### Iceberg 写入
 </div>
 
-除 [allow&#95;insert&#95;into&#95;iceberg](/zh/operations/settings/settings#allow_insert_into_iceberg) (25.7+，自 26.2 起为 Beta) 外，还可以控制 insert 时的输出文件大小和分区数：
+除 [allow&#95;insert&#95;into&#95;iceberg](/zh/reference/settings/session-settings/allow#allow_insert_into_iceberg) (25.7+，自 26.2 起为 Beta) 外，还可以控制 insert 时的输出文件大小和分区数：
 
-| Setting                                                                                                                              | Since | Purpose              |
-| ------------------------------------------------------------------------------------------------------------------------------------ | ----- | -------------------- |
-| [iceberg&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/zh/operations/settings/settings#iceberg_insert_max_rows_in_data_file)   | 25.9  | 每个输出数据文件的行数上限        |
-| [iceberg&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/zh/operations/settings/settings#iceberg_insert_max_bytes_in_data_file) | 25.9  | 每个输出数据文件的字节数上限       |
-| [iceberg&#95;insert&#95;max&#95;partitions](/zh/operations/settings/settings#iceberg_insert_max_partitions)                             | 25.12 | 单次 insert 可写入的分区数量上限 |
+| Setting                                                                                                                                                    | Since | Purpose              |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------------------- |
+| [iceberg&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/zh/reference/settings/session-settings/iceberg-insert#iceberg_insert_max_rows_in_data_file)   | 25.9  | 每个输出数据文件的行数上限        |
+| [iceberg&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/zh/reference/settings/session-settings/iceberg-insert#iceberg_insert_max_bytes_in_data_file) | 25.9  | 每个输出数据文件的字节数上限       |
+| [iceberg&#95;insert&#95;max&#95;partitions](/zh/reference/settings/session-settings/iceberg-insert#iceberg_insert_max_partitions)                             | 25.12 | 单次 insert 可写入的分区数量上限 |
 
 请参阅[写入数据湖](/zh/use-cases/data-lake/getting-started/writing-data)和 [Iceberg 引擎参考](/zh/engines/table-engines/integrations/iceberg)。
 
@@ -221,13 +221,21 @@ SETTINGS iceberg_timestamp_ms = 1714636800000
   ### Delta Lake
 </div>
 
-从 25.6 版本开始，ClickHouse 通过 Delta Lake Rust kernel ([allow&#95;experimental&#95;delta&#95;kernel&#95;rs](/zh/operations/settings/settings#allow_experimental_delta_kernel_rs)，25.5+) 在 S3 和 GCS 上读取 Delta Lake。在 Azure Blob 存储上，由于该内核已被禁用，请使用 [deltaLakeAzure()](/zh/sql-reference/table-functions/deltalake) 和 legacy reader。不使用该内核时，将无法使用分区裁剪、change data feed 以及按快照版本读取。
+从 25.6 版本开始，ClickHouse 通过 Delta Lake Rust kernel 在 S3 和 GCS 上读取 Delta Lake。在 26.8 及更高版本中，该设置名为 [`allow_delta_kernel_rs`](/zh/reference/settings/session-settings/allow#allow_delta_kernel_rs)，在 25.5 至 26.7 版本中名为 `allow_experimental_delta_kernel_rs`。在 Azure Blob 存储上，由于该内核已被禁用，请使用 [deltaLakeAzure()](/zh/sql-reference/table-functions/deltalake) 和 legacy reader。不使用该内核时，将无法使用分区裁剪、change data feed 以及按快照版本读取。
 
 <div id="delta-kernel">
   #### Delta Kernel
 </div>
 
-必须启用 [allow&#95;experimental&#95;delta&#95;kernel&#95;rs](/zh/operations/settings/settings#allow_experimental_delta_kernel_rs)，才能使用分区裁剪、change data feed 和快照版本读取。从 25.5 起，该设置在 S3 和 GCS 上默认启用。对于旧版本，或在进行故障排查时，请显式启用它：
+必须启用 Delta kernel 设置，才能使用分区裁剪、change data feed 和快照版本读取。从 25.5 起，该设置在 S3 和 GCS 上默认启用。显式启用时，请使用适用于您的 ClickHouse 版本的名称。
+
+对于 26.8 及更高版本：
+
+```sql
+SET allow_delta_kernel_rs = 1;
+```
+
+对于 25.5 至 26.7 版本：
 
 ```sql
 SET allow_experimental_delta_kernel_rs = 1;
@@ -237,12 +245,12 @@ SET allow_experimental_delta_kernel_rs = 1;
   #### 读取设置
 </div>
 
-| 设置                                                                                                                                                                                                                                      | 自版本   | 默认值  | 说明                                                |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---- | ------------------------------------------------- |
-| [delta&#95;lake&#95;enable&#95;engine&#95;predicate](/zh/operations/settings/settings#delta_lake_enable_engine_predicate)                                                                                                                  | 25.8  | `1`  | 将过滤器下推到内核以进行分区裁剪。需要 [Delta Kernel](#delta-kernel) |
-| [delta&#95;lake&#95;reload&#95;schema&#95;for&#95;consistency](/zh/operations/settings/settings#delta_lake_reload_schema_for_consistency)                                                                                                  | 26.3  | `0`  | 当并发写入器演进 schema 时，在每次查询前重新加载 schema               |
-| [delta&#95;lake&#95;snapshot&#95;start&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_start_version) / [delta&#95;lake&#95;snapshot&#95;end&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_end_version) | 25.12 | `-1` | 读取两个快照版本之间的 CDF 变更。要求上游已启用 CDF                    |
-| [delta&#95;lake&#95;snapshot&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_version)                                                                                                                                    | 25.8  | `-1` | 读取单个历史快照。将 `-1` 设为最新版本 (`0` 也是有效值)                |
+| 设置                                                                                                                                                                                                                                                                          | 自版本   | 默认值  | 说明                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---- | ------------------------------------------------- |
+| [delta&#95;lake&#95;enable&#95;engine&#95;predicate](/zh/reference/settings/session-settings/delta-lake#delta_lake_enable_engine_predicate)                                                                                                                                    | 25.8  | `1`  | 将过滤器下推到内核以进行分区裁剪。需要 [Delta Kernel](#delta-kernel) |
+| [delta&#95;lake&#95;reload&#95;schema&#95;for&#95;consistency](/zh/reference/settings/session-settings/delta-lake#delta_lake_reload_schema_for_consistency)                                                                                                                    | 26.3  | `0`  | 当并发写入器演进 schema 时，在每次查询前重新加载 schema               |
+| [delta&#95;lake&#95;snapshot&#95;start&#95;version](/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_start_version) / [delta&#95;lake&#95;snapshot&#95;end&#95;version](/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_end_version) | 25.12 | `-1` | 读取两个快照版本之间的 CDF 变更。要求上游已启用 CDF                    |
+| [delta&#95;lake&#95;snapshot&#95;version](/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_version)                                                                                                                                                      | 25.8  | `-1` | 读取单个历史快照。将 `-1` 设为最新版本 (`0` 也是有效值)                |
 
 带有[删除向量](https://docs.delta.io/latest/delta-deletion-vectors.html) (26.2+) 的表会在读取时应用行级过滤。ClickHouse 会自动处理这一点，但对 DV 较多的表进行 scan 时，每个文件都需要执行更多操作。
 
@@ -250,7 +258,7 @@ SET allow_experimental_delta_kernel_rs = 1;
   #### Delta change data feed
 </div>
 
-若要仅读取两个 Delta 快照之间发生变化的行，请设置 [delta&#95;lake&#95;snapshot&#95;start&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_start_version) 和 [delta&#95;lake&#95;snapshot&#95;end&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+) 。该表必须在上游启用 change data feed (`delta.enableChangeDataFeed`) 。请在查询设置中同时设置起始版本和结束版本。仅设置结束版本会报错。
+若要仅读取两个 Delta 快照之间发生变化的行，请设置 [delta&#95;lake&#95;snapshot&#95;start&#95;version](/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_start_version) 和 [delta&#95;lake&#95;snapshot&#95;end&#95;version](/zh/reference/settings/session-settings/delta-lake#delta_lake_snapshot_end_version) (25.12+) 。该表必须在上游启用 change data feed (`delta.enableChangeDataFeed`) 。请在查询设置中同时设置起始版本和结束版本。仅设置结束版本会报错。
 
 ```sql
 SELECT *
@@ -266,12 +274,12 @@ SETTINGS
   #### Delta Lake 写入
 </div>
 
-除了 [allow&#95;delta&#95;lake&#95;writes](/zh/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+) 外，还可控制插入时输出文件的大小：
+除了 [allow&#95;delta&#95;lake&#95;writes](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_delta_lake_writes) (25.9+) 外，还可控制插入时输出文件的大小：
 
-| 设置项                                                                                                                                            | 版本   | 用途            |
-| ---------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------- |
-| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/zh/operations/settings/settings#delta_lake_insert_max_rows_in_data_file)   | 25.9 | 每个输出数据文件的行数上限 |
-| [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/zh/operations/settings/settings#delta_lake_insert_max_bytes_in_data_file) | 25.9 | 每个输出数据文件的字节上限 |
+| 设置项                                                                                                                                                              | 版本   | 用途            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------- |
+| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/zh/reference/settings/session-settings/delta-lake#delta_lake_insert_max_rows_in_data_file)   | 25.9 | 每个输出数据文件的行数上限 |
+| [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/zh/reference/settings/session-settings/delta-lake#delta_lake_insert_max_bytes_in_data_file) | 25.9 | 每个输出数据文件的字节上限 |
 
 ```sql
 SET allow_delta_lake_writes = 1;
@@ -307,7 +315,7 @@ CHECK DATABASE my_lake;
 SHOW CREATE TABLE my_lake.`db.table`;
 ```
 
-如果在 `system.tables` 中看不到目录表，请启用 [show&#95;remote&#95;databases&#95;in&#95;system&#95;tables](/zh/operations/settings/settings#show_remote_databases_in_system_tables) (25.8+) 。默认情况下，目录表不会显示在系统内部信息中。在 26.6 之前的版本中，请使用其原名称 `show_data_lake_catalogs_in_system_tables`。
+如果在 `system.tables` 中看不到目录表，请启用 [show&#95;remote&#95;databases&#95;in&#95;system&#95;tables](/zh/reference/settings/session-settings/show#show_remote_databases_in_system_tables) (25.8+) 。默认情况下，目录表不会显示在系统内部信息中。在 26.6 之前的版本中，请使用其原名称 `show_data_lake_catalogs_in_system_tables`。
 
 <div id="debug-files">
   ### 查看读取了哪些文件
@@ -330,7 +338,7 @@ ORDER BY rows DESC;
 
 在添加过滤器或调整设置前后，对比 [system.query&#95;log](/zh/operations/system-tables/query_log) 中的 `read_rows` 和 `read_bytes`。`ReadBufferFromS3Bytes` 和 `CachedReadBufferReadFromCacheBytes` 等 ProfileEvents 可显示有多少数据来自对象存储，以及有多少来自本地缓存。有关 query&#95;log 和 EXPLAIN 的完整说明，请参阅 [查询优化](/zh/optimize/query-optimization)。
 
-进行基准测试时，请禁用 [enable&#95;filesystem&#95;cache](/zh/operations/settings/settings#enable_filesystem_cache)，以免缓存命中掩盖不同运行之间的变化。
+进行基准测试时，请禁用 [enable&#95;filesystem&#95;cache](/zh/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache)，以免缓存命中掩盖不同运行之间的变化。
 
 <div id="debug-metadata-logs">
   ### 元数据日志
@@ -338,11 +346,11 @@ ORDER BY rows DESC;
 
 ClickHouse 提供了三个用于元数据级调试的系统表。请仅在查询时启用日志。它们不适合用于持续监控。
 
-| 系统表                                                                                             | 格式         | 自何版本起 | 启用方式                                                                                                      | 用途                  |
-| ----------------------------------------------------------------------------------------------- | ---------- | ----- | --------------------------------------------------------------------------------------------------------- | ------------------- |
-| [system.iceberg&#95;metadata&#95;log](/zh/operations/system-tables/iceberg_metadata_log)           | Iceberg    | 25.9  | 在查询中设置 [iceberg&#95;metadata&#95;log&#95;level](/zh/operations/settings/settings#iceberg_metadata_log_level) | 追踪读取的元数据文件以及分区裁剪决策  |
-| [system.iceberg&#95;history](/zh/operations/system-tables/iceberg_history)                         | Iceberg    | 25.6  | 对 ClickHouse 中的 Iceberg 表自动填充                                                                             | 在执行时间旅行查询前检查快照谱系    |
-| [system.delta&#95;lake&#95;metadata&#95;log](/zh/operations/system-tables/delta_lake_metadata_log) | Delta Lake | 25.10 | 在查询中设置 [delta&#95;lake&#95;log&#95;metadata](/zh/operations/settings/settings#delta_lake_log_metadata) = `1` | 追踪 Delta 元数据文件和快照解析 |
+| 系统表                                                                                             | 格式         | 自何版本起 | 启用方式                                                                                                                              | 用途                  |
+| ----------------------------------------------------------------------------------------------- | ---------- | ----- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| [system.iceberg&#95;metadata&#95;log](/zh/operations/system-tables/iceberg_metadata_log)           | Iceberg    | 25.9  | 在查询中设置 [iceberg&#95;metadata&#95;log&#95;level](/zh/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_log_level) | 追踪读取的元数据文件以及分区裁剪决策  |
+| [system.iceberg&#95;history](/zh/operations/system-tables/iceberg_history)                         | Iceberg    | 25.6  | 对 ClickHouse 中的 Iceberg 表自动填充                                                                                                     | 在执行时间旅行查询前检查快照谱系    |
+| [system.delta&#95;lake&#95;metadata&#95;log](/zh/operations/system-tables/delta_lake_metadata_log) | Delta Lake | 25.10 | 在查询中设置 [delta&#95;lake&#95;log&#95;metadata](/zh/reference/settings/session-settings/delta-lake#delta_lake_log_metadata) = `1`       | 追踪 Delta 元数据文件和快照解析 |
 
 启用日志后运行查询，刷新日志，然后检查该 `query_id` 对应的条目：
 
@@ -359,7 +367,7 @@ WHERE query_id = '<previous_query_id>';
 
 在 ClickHouse Cloud 中，日志数据仅保存在各个节点本地。使用 `clusterAllReplicas` 可查看跨所有副本的完整情况。
 
-较高的 Iceberg 日志级别会禁用 manifest 列表和文件的 元数据缓存，从而减慢对同一表的后续查询。只有在主动排查问题时才应使用高详细程度。对于 Delta Lake predicate 问题，可启用 [delta&#95;lake&#95;throw&#95;on&#95;engine&#95;predicate&#95;error](/zh/operations/settings/settings#delta_lake_throw_on_engine_predicate_error) (25.8+) ，以便在内核无法下推过滤器时快速报错。
+较高的 Iceberg 日志级别会禁用 manifest 列表和文件的 元数据缓存，从而减慢对同一表的后续查询。只有在主动排查问题时才应使用高详细程度。对于 Delta Lake predicate 问题，可启用 [delta&#95;lake&#95;throw&#95;on&#95;engine&#95;predicate&#95;error](/zh/reference/settings/session-settings/delta-lake#delta_lake_throw_on_engine_predicate_error) (25.8+) ，以便在内核无法下推过滤器时快速报错。
 
 有关列详情和详细程度选项，请参阅 [iceberg&#95;metadata&#95;log](/zh/operations/system-tables/iceberg_metadata_log) 和 [delta&#95;lake&#95;metadata&#95;log](/zh/operations/system-tables/delta_lake_metadata_log) 参考页面。
 

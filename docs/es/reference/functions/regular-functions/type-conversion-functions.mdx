@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 ClickHouse generalmente utiliza el [mismo comportamiento que los programas en C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-Las funciones `to<type>` y [cast](#CAST) se comportan de manera diferente en algunos casos, por ejemplo con [LowCardinality](/es/reference/data-types/lowcardinality): [cast](#CAST) elimina la propiedad [LowCardinality](/es/reference/data-types/lowcardinality), mientras que las funciones `to<type>` no. Lo mismo ocurre con [Nullable](/es/reference/data-types/nullable); este comportamiento no es compatible con el estándar SQL y puede modificarse mediante la configuración [cast&#95;keep&#95;nullable](/es/reference/settings/session-settings#cast_keep_nullable).
+Las funciones `to<type>` y [cast](#CAST) se comportan de manera diferente en algunos casos, por ejemplo con [LowCardinality](/es/reference/data-types/lowcardinality): [cast](#CAST) elimina la propiedad [LowCardinality](/es/reference/data-types/lowcardinality), mientras que las funciones `to<type>` no. Lo mismo ocurre con [Nullable](/es/reference/data-types/nullable); este comportamiento no es compatible con el estándar SQL y puede modificarse mediante la configuración [cast&#95;keep&#95;nullable](/es/reference/settings/session-settings/cast#cast_keep_nullable).
 
 <Note>
   Tenga en cuenta la posible pérdida de datos si los valores de un tipo de datos se convierten a otro más pequeño (por ejemplo, de `Int64` a `Int32`) o entre
@@ -2964,7 +2964,9 @@ toTypeName(value): Date32
 
 Introducido en: v21.11.0
 
-Convierte el argumento al tipo de dato [Date32](/es/reference/data-types/date32). Si el valor está fuera del rango, `toDate32OrDefault` devuelve el valor del límite inferior admitido por [Date32](/es/reference/data-types/date32). Si el argumento es de tipo [Date](/es/reference/data-types/date), se tienen en cuenta sus límites. Devuelve el valor predeterminado si se recibe un argumento no válido.
+Convierte el argumento al tipo de dato [Date32](/es/reference/data-types/date32). Si el argumento no se puede convertir, lo que incluye un valor numérico fuera del rango de [Date32](/es/reference/data-types/date32), la función devuelve un valor predeterminado, que es el segundo argumento (si se especifica) o, de lo contrario, el límite inferior de [Date32](/es/reference/data-types/date32). Si el argumento es de tipo [Date](/es/reference/data-types/date), se tienen en cuenta sus límites.
+
+Tenga en cuenta que, a diferencia de [toDate32](#toDate32), esta función no satura un argumento numérico fuera de rango a los límites de [Date32](/es/reference/data-types/date32); dicho argumento se considera no convertible.
 
 **Sintaxis**
 
@@ -2974,7 +2976,7 @@ toDate32OrDefault(expr[, default])
 
 **Argumentos**
 
-* `expr` — Expresión que devuelve un número o su representación en cadena. [`String`](/es/reference/data-types/string) o [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float)
+* `expr` — Expresión que devuelve un número o la representación en cadena de un número. [`String`](/es/reference/data-types/string) o [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float)
 * `default` — Opcional. El valor predeterminado que se devolverá si el análisis falla. [`Date32`](/es/reference/data-types/date32)
 
 **Valor devuelto**
@@ -2997,6 +2999,16 @@ SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))
 
 ```sql title=Query
 SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))
+```
+
+```response title=Response
+2020-01-01
+```
+
+**Número fuera de rango**
+
+```sql title=Query
+SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))
 ```
 
 ```response title=Response
@@ -3261,8 +3273,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 Introducido en: v20.9.0
 
 Convierte un valor de entrada al tipo `DateTime`.
-Admite la conversión a partir de `String`, `FixedString`, `Date`, `Date32`, `DateTime` o tipos numéricos (`(U)Int*`, `Float*`, `Decimal`).
-DateTime32 proporciona un rango ampliado en comparación con `DateTime`, y admite fechas desde `1900-01-01` hasta `2299-12-31`.
+Admite conversiones desde `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` o tipos numéricos (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). Los valores `Decimal` y `Time64` no son compatibles y generan una excepción; el tipo `Time` y los tipos de enteros de gran tamaño, como `(U)Int128`/`(U)Int256`, se desbordan en lugar de saturarse.
+`DateTime32` es un alias de `DateTime` y admite fechas desde `1970-01-01 00:00:00` hasta `2106-02-07 06:28:15`.
+Al convertir desde una cadena o desde uno de los tipos numéricos saturables enumerados anteriormente, los valores fuera de este intervalo se saturan en sus límites. Los valores de coma flotante no finitos (`NaN`, `inf`, `-inf`) no se pueden convertir y generan una excepción.
+Las conversiones desde otros tipos de fecha y hora, como `Date32` o `DateTime64`, siguen la configuración `date_time_overflow_behavior`: el modo predeterminado `ignore` puede producir valores con desbordamiento, `saturate` los limita a los límites del intervalo y `throw` genera una excepción.
 
 **Sintaxis**
 
@@ -3272,8 +3286,8 @@ toDateTime32(x[, timezone])
 
 **Argumentos**
 
-* `x` — Valor de entrada que se convertirá. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`UInt*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64)
-* `timezone` — Opcional. Zona horaria para el valor `DateTime` devuelto. [`String`](/es/reference/data-types/string)
+* `x` — Valor de entrada que se convertirá. [`String`](/es/reference/data-types/string), [`FixedString`](/es/reference/data-types/fixedstring), [`(U)Int*`](/es/reference/data-types/int-uint), [`Float*`](/es/reference/data-types/float), [`BFloat16`](/es/reference/data-types/float), [`Date`](/es/reference/data-types/date), [`Date32`](/es/reference/data-types/date32), [`Time`](/es/reference/data-types/time), [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64)
+* `timezone` — Opcional. Zona horaria del valor `DateTime` devuelto. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -3281,45 +3295,40 @@ Devuelve el valor de entrada convertido. [`DateTime`](/es/reference/data-types/d
 
 **Ejemplos**
 
-**El valor está dentro del rango**
+**A partir de una cadena**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
 ```
 
-**Como Decimal con precisión**
+**A partir de una marca temporal Unix**
 
 ```sql title=Query
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
 ```
 
 **Con zona horaria**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
 ```
 
 <div id="toDateTime64">
@@ -7099,10 +7108,23 @@ SELECT
   ## toTime
 </div>
 
-Introducido en: v1.1.0
+Introducido en: v25.5.0
 
 Convierte un valor de entrada al tipo [Time](/es/reference/data-types/time).
 Admite la conversión desde String, FixedString, DateTime, DateTime64 o tipos numéricos que representan segundos desde la medianoche.
+Los valores numéricos fuera del rango del tipo (de `-999:59:59` a `999:59:59`, es decir, de `-3599999` a `3599999` segundos) se saturan a los límites del rango, y los valores de coma flotante no finitos (`NaN`, `inf`, `-inf`) no se pueden convertir y generan una excepción.
+
+<Info>
+  **`toTime` heredada**
+
+  Antes de la v25.5, `toTime` era una función diferente que convertía una fecha con hora a una fecha fija (`1970-01-02`) mientras conservaba el
+  componente de hora. Esa función sigue disponible con el nombre [`toTimeWithFixedDate`](/es/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
+
+  Al establecer [`use_legacy_to_time`](/es/reference/settings/session-settings#use_legacy_to_time) en `1`, también se mantiene el nombre `toTime` vinculado a la función
+  heredada; es decir, las llamadas a `toTime` se resuelven como `toTimeWithFixedDate` en lugar de la función de conversión descrita aquí.
+  Mientras la configuración está habilitada, use `CAST(x AS Time)` o `x::Time` para convertir al tipo `Time`.
+  La configuración tiene el valor predeterminado `0` desde la v26.7, pero tenía el valor predeterminado `1` de la v25.6 a la v26.6, por lo que los ejemplos siguientes la establecen explícitamente.
+</Info>
 
 **Sintaxis**
 
@@ -7112,7 +7134,7 @@ toTime(x)
 
 **Argumentos**
 
-* `x` — Valor de entrada que se debe convertir. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64) o [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float)
+* `x` — Valor de entrada que se debe convertir. [`String`](/es/reference/data-types/string) o [`FixedString`](/es/reference/data-types/fixedstring) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64) o [`(U)Int*`](/es/reference/data-types/int-uint) o [`BFloat16`](/es/reference/data-types/float) o [`Float*`](/es/reference/data-types/float)
 
 **Valor devuelto**
 
@@ -7299,10 +7321,10 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
   ## toTimeOrNull
 </div>
 
-Introducido en: v1.1.0
+Introducido en: v25.5.0
 
 Convierte un valor de entrada en un valor de tipo Time, pero devuelve `NULL` en caso de error.
-Al igual que [`toTime`](#toTime), pero devuelve `NULL` en lugar de generar una excepción si se producen errores de conversión.
+Al igual que [`toTime`](#toTime), pero devuelve `NULL` en lugar de lanzar una excepción si se producen errores de conversión.
 
 Véase también:
 
@@ -7341,7 +7363,7 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
   ## toTimeOrZero
 </div>
 
-Introducido en: v1.1.0
+Introducido en: v25.5.0
 
 Convierte un valor de entrada en un valor de tipo Time, pero devuelve `00:00:00` en caso de error.
 Al igual que toTime, devuelve `00:00:00` en lugar de lanzar una excepción si se producen errores de conversión.

@@ -1,8 +1,8 @@
 ---
 slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
-title: OpenAPI de Managed Postgres
-description: 'Gestiona tus servicios de Managed Postgres con nuestra OpenAPI'
+title: 'OpenAPI de ClickHouse Managed Postgres'
+description: 'Gestiona tus servicios de ClickHouse Managed Postgres con nuestra OpenAPI'
 keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'línea de comandos', 'query insights', 'consultas lentas']
 doc_type: 'guide'
 ---
@@ -11,11 +11,11 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-Usa [OpenAPI de ClickHouse](/es/products/cloud/features/admin-features/api/index) para
-gestionar de forma programática tus servicios de Managed Postgres, igual que los servicios de ClickHouse. La
+Usa [OpenAPI de ClickHouse](/es/products/cloud/features/admin-features/api/api-overview) para
+gestionar de forma programática tus servicios de ClickHouse Managed Postgres, igual que los servicios de ClickHouse. La
 misma API también expone un [endpoint de Prometheus] para hacer scraping de las métricas del servicio.
 ¿Ya conoces [OpenAPI]? Obtén tus [claves de API] y ve directamente a la
-[referencia de la API de Managed Postgres][pg-openapi]. De lo contrario, sigue leyendo para ver un
+[referencia de la API de ClickHouse Managed Postgres][pg-openapi]. De lo contrario, sigue leyendo para ver un
 resumen rápido.
 
 <div id="api-keys">
@@ -308,7 +308,7 @@ En caso de éxito, la respuesta devolverá el código de estado 200, por ejemplo
 </div>
 
 Dos endpoints compatibles con Prometheus exponen métricas de CPU, memoria, E/S, conexión
-y transacción para los servicios de Managed Postgres: uno devuelve
+y transacción para los servicios de ClickHouse Managed Postgres: uno devuelve
 métricas de todos los servicios de la organización y el otro de un solo
 servicio. Consulta la página de [endpoint de Prometheus] para la configuración y la
 [referencia de métricas] para ver la lista completa de métricas.
@@ -442,7 +442,7 @@ tiempo de CPU en modo usuario y de sistema, workers paralelos, JIT y WAL —, lo
 
 El ejemplo recorta ambos objetos por brevedad; la API devuelve el conjunto completo de contadores documentado en [per-execution counters].
 
-[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "API de Cloud"
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "API de Cloud"
 
 [OpenAPI]: https://www.openapis.org "Iniciativa OpenAPI"
 
@@ -456,7 +456,7 @@ El ejemplo recorta ambos objetos por brevedad; la API devuelve el conjunto compl
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL Docs: psql — terminal interactiva de PostgreSQL"
 
-[API de parches]: /products/cloud/api-reference/postgres/postgres-service-patch "Actualizar un servicio de PostgreSQL"
+[patch API]: /products/cloud/api-reference/postgres/postgres-service-patch "Actualizar un servicio de PostgreSQL"
 
 [RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: JSON Merge Patch"
 
@@ -468,13 +468,13 @@ El ejemplo recorta ambos objetos por brevedad; la API devuelve el conjunto compl
 
 [password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Restablecer la contraseña del superusuario de un servicio de Postgres"
 
-[endpoint de Prometheus]: /products/managed-postgres/monitoring/prometheus "Prometheus endpoint de Managed Postgres"
+[endpoint de Prometheus]: /products/managed-postgres/monitoring/prometheus "endpoint de Prometheus de ClickHouse Managed Postgres"
 
-[metrics reference]: /products/managed-postgres/monitoring/metrics "Referencia de métricas de Managed Postgres"
+[metrics reference]: /products/managed-postgres/monitoring/metrics "Referencia de métricas de ClickHouse Managed Postgres"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Query Insights de Postgres"
 
-[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "Panel lateral de detalles de Query Insights"
+[panel lateral de detalles]: /products/managed-postgres/monitoring/query-insights#detail "Panel lateral de detalles de Query Insights"
 
 [per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "Contadores por ejecución de Query Insights"
 

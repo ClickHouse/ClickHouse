@@ -72,6 +72,13 @@ ClickHouse 会根据文件扩展名识别该文件使用的是制表符分隔格
   ```
 </Tip>
 
+数据不必位于本地：可使用 URL 替代文件名，URL 协议会选择相应的表引擎 (`http://` 和 `https://` 的读取方式与 [url](/zh/reference/functions/table-functions/url) 函数相同，`s3://` 与 [s3](/zh/reference/functions/table-functions/s3) 函数相同，`file://` 与 [file](/zh/reference/functions/table-functions/file) 函数相同) ：
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)

@@ -2444,7 +2444,7 @@ FORMAT PrettyCompactMonoBlock
 
 Introducido en: v23.6.0
 
-Devuelve la zona horaria del servidor, es decir, el valor de la opción [`timezone`](/es/reference/settings/server-settings/settings#timezone).
+Devuelve la zona horaria del servidor, es decir, el valor de la opción [`timezone`](/es/reference/settings/server-settings/settings/other#timezone).
 Si la función se ejecuta en el contexto de una tabla distribuida, genera una columna normal con valores correspondientes a cada segmento. De lo contrario, produce un valor constante.
 
 <Note>
@@ -3896,7 +3896,7 @@ Introducido en: v1.1.0
 Redondea una fecha o una fecha con hora al último día del mes.
 
 <Note>
-  El tipo de retorno puede configurarse mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno puede configurarse mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -3938,7 +3938,7 @@ Introducido en: v23.5.0
 Redondea una fecha o fecha con hora hacia arriba, hasta el sábado o domingo más cercano.
 
 <Note>
-  El tipo de valor devuelto puede configurarse mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de valor devuelto puede configurarse mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4178,7 +4178,7 @@ Introducido en: v1.1.0
 Redondea una fecha o fecha con hora hacia abajo hasta el lunes de la misma semana. Devuelve la fecha.
 
 <Note>
-  El tipo de dato devuelto se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de dato devuelto se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4710,7 +4710,7 @@ Introducido en: v1.1.0
 redondea hacia abajo una fecha con hora hasta el inicio del día.
 
 <Note>
-  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4750,7 +4750,7 @@ Introducido en: v1.1.0
 Redondea la fecha con hora hacia abajo hasta el inicio del intervalo de quince minutos.
 
 <Note>
-  El tipo de retorno puede configurarse mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno puede configurarse mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4796,7 +4796,7 @@ Introducido en: v22.6.0
 Redondea hacia abajo una fecha con hora al inicio del intervalo de cinco minutos más cercano.
 
 <Note>
-  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4844,7 +4844,7 @@ Introducido en: v1.1.0
 redondea hacia abajo una fecha con hora hasta el inicio de la hora.
 
 <Note>
-  El tipo de retorno se puede configurar con la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar con la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4885,7 +4885,7 @@ Introducido en: v1.1.0
 Redondea hacia abajo una fecha o fecha con hora hasta el primer día del año ISO, que puede diferir de un año natural normal. Consulte la [fecha de semana ISO](https://en.wikipedia.org/wiki/ISO_week_date).
 
 <Note>
-  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5108,7 +5108,7 @@ Introducido en: v1.1.0
 Redondea hacia abajo una fecha con hora al inicio del minuto.
 
 <Note>
-  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5152,7 +5152,7 @@ Introducido en: v1.1.0
 redondea hacia abajo una fecha o una fecha con hora al primer día del mes.
 
 <Note>
-  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5243,7 +5243,7 @@ Introducido en: v1.1.0
 redondea hacia abajo una fecha o fecha con hora hacia abajo hasta el primer día del trimestre. El primer día del trimestre es el 1 de enero, el 1 de abril, el 1 de julio o el 1 de octubre.
 
 <Note>
-  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5334,7 +5334,7 @@ Introducido en: v20.1.0
 Redondea una fecha con hora hacia abajo hasta el inicio del intervalo de diez minutos más cercano.
 
 <Note>
-  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5364,7 +5364,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toStartOfTenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:10:00
 toStartOfTenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -5380,7 +5380,7 @@ Introducido en: v20.1.0
 Redondea una fecha o una fecha con hora al domingo o lunes más cercano anterior.
 
 <Note>
-  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5413,7 +5413,7 @@ SELECT
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
     ──────
     toStartOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-17
     toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-17
@@ -5430,7 +5430,7 @@ Introducido en: v1.1.0
 Redondea hacia abajo una fecha o una fecha con hora hasta el primer día del año. Devuelve la fecha como un objeto `Date`.
 
 <Note>
-  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5465,29 +5465,37 @@ SELECT toStartOfYear(toDateTime('2023-04-21 10:20:30'))
   ## toTimeWithFixedDate
 </div>
 
-Introducido en: v1.1.0
+Introducido en: v25.5.0
 
-Extrae el componente horario de una fecha o de una fecha con hora.
-El resultado devuelto es un desplazamiento con respecto a un punto fijo en el tiempo, actualmente `1970-01-02`,
-pero el punto exacto en el tiempo es un detalle de implementación que podría cambiar en el futuro.
+Extrae el componente de hora de una fecha con hora.
+El resultado devuelto es un desplazamiento respecto a un momento fijo, actualmente `1970-01-02`,
+pero el momento exacto es un detalle de implementación que puede cambiar en el futuro.
 
-Por lo tanto, `toTime` no debe usarse de forma aislada.
-El propósito principal de la función es calcular la diferencia de tiempo entre dos fechas o fechas con hora; por ejemplo, `toTime(dt1) - toTime(dt2)`.
+Por lo tanto, `toTimeWithFixedDate` no debe usarse de forma independiente.
+La función se utiliza principalmente para calcular la diferencia horaria entre dos fechas con hora; por ejemplo, `toTimeWithFixedDate(dt1) - toTimeWithFixedDate(dt2)`.
+
+Esta es la función heredada `toTime`, renombrada en v25.5 porque el nombre `toTime` ahora lo utiliza
+[`toTime`](/es/reference/functions/regular-functions/type-conversion-functions#toTime), que convierte valores al
+tipo de datos [`Time`](/es/reference/data-types/time).
+Sigue estando disponible con su antiguo nombre, `toTime`, cuando la configuración
+[`use_legacy_to_time`](/es/reference/settings/session-settings#use_legacy_to_time) está habilitada (su valor predeterminado es `0` desde v26.7, pero era `1` entre v25.6 y v26.6).
+
+Si el argumento `datetime` tiene componentes inferiores a un segundo, se descartan en el valor `DateTime` devuelto, que tiene precisión de segundos.
 
 **Sintaxis**
 
 ```sql
-toTimeWithFixedDate(date[, timezone])
+toTimeWithFixedDate(datetime[, timezone])
 ```
 
 **Argumentos**
 
-* `date` — Fecha que se convertirá en una hora. [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64)
+* `datetime` — Fecha con hora que se convertirá en una hora. [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64)
 * `timezone` — Opcional. Zona horaria del valor devuelto. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
-Devuelve el componente de hora de una fecha o fecha con hora como un desplazamiento respecto a un punto fijo en el tiempo (actualmente, 1970-01-02). [`DateTime`](/es/reference/data-types/datetime)
+Devuelve el componente de hora de una fecha con hora como un desplazamiento respecto a un momento fijo (actualmente, 1970-01-02). [`DateTime`](/es/reference/data-types/datetime)
 
 **Ejemplos**
 
@@ -5501,6 +5509,31 @@ SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDat
 ┌─result─┬─toTypeName(result)─┐
 │   3600 │ Int32              │
 └────────┴────────────────────┘
+```
+
+**Se descartan los componentes de subsegundos**
+
+```sql title=Query
+SELECT toTimeWithFixedDate(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
+```
+
+```response title=Response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
+```
+
+**La misma función llamada por su nombre legacy**
+
+```sql title=Query
+SET use_legacy_to_time = 1;
+SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
+```
+
+```response title=Response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
 ```
 
 <div id="toTimezone">
@@ -5686,7 +5719,7 @@ Para los valores de `mode` con el significado de &quot;contiene el 1 de enero&qu
 No importa cuántos días del nuevo año contenga esa semana, aunque contenga solo un día.
 Es decir, si la última semana de diciembre contiene el 1 de enero del año siguiente, será la semana 1 del año siguiente.
 
-El primer argumento también puede especificarse como [`String`](/es/reference/data-types/string) en un formato compatible con [`parseDateTime64BestEffort()`](/es/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). La compatibilidad con argumentos de tipo cadena existe solo por motivos de compatibilidad con MySQL, ya que ciertas herramientas de 3rd party la requieren. Como la compatibilidad con argumentos de tipo cadena puede pasar a depender en el futuro de nuevas configuraciones de compatibilidad con MySQL y, además, el análisis de cadenas suele ser lento, se recomienda no usarla.
+El primer argumento también puede especificarse como [`String`](/es/reference/data-types/string) en un formato compatible con [`parseDateTime64BestEffort`](/es/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). La compatibilidad con argumentos de tipo cadena existe solo por motivos de compatibilidad con MySQL, ya que ciertas herramientas de 3rd party la requieren. Como la compatibilidad con argumentos de tipo cadena puede pasar a depender en el futuro de nuevas configuraciones de compatibilidad con MySQL y, además, el análisis de cadenas suele ser lento, se recomienda no usarla.
 
 **Sintaxis**
 
@@ -5918,7 +5951,7 @@ El argumento mode funciona igual que el argumento mode de [`toWeek()`](/es/refer
 
 Advertencia: El número de semana que devuelve `toYearWeek()` puede ser diferente del que devuelve `toWeek()`. `toWeek()` siempre devuelve el número de semana en el contexto del año indicado y, si `toWeek()` devuelve `0`, `toYearWeek()` devuelve el valor correspondiente a la última semana del año anterior. Consulte `prev_yearWeek` en el ejemplo siguiente.
 
-El primer argumento también puede especificarse como [`String`](/es/reference/data-types/string) en un formato compatible con [`parseDateTime64BestEffort()`](/es/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). La compatibilidad con argumentos de cadena existe solo por motivos de compatibilidad con MySQL, ya que determinadas herramientas de 3rd party la requieren. Como en el futuro la compatibilidad con argumentos de cadena podría pasar a depender de nuevas configuraciones de compatibilidad con MySQL y, además, el análisis de cadenas suele ser lento, se recomienda no usarla.
+El primer argumento también puede especificarse como [`String`](/es/reference/data-types/string) en un formato compatible con [`parseDateTime64BestEffort`](/es/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort). La compatibilidad con argumentos de cadena existe solo por motivos de compatibilidad con MySQL, ya que determinadas herramientas de 3rd party la requieren. Como en el futuro la compatibilidad con argumentos de cadena podría pasar a depender de nuevas configuraciones de compatibilidad con MySQL y, además, el análisis de cadenas suele ser lento, se recomienda no usarla.
 
 **Sintaxis**
 

@@ -1148,21 +1148,21 @@ Field 'b' stream (3 strings, 6 bytes):
 
 地理型は、ネストした配列やタプルの別名です。
 
-| 型文字列                         | 基底ワイヤ型                    |
-| ---------------------------- | ------------------------- |
-| `Point`                      | `Tuple(Float64, Float64)` |
-| `Ring`, `LineString`         | `Array(Point)`            |
-| `Polygon`, `MultiLineString` | `Array(Ring)`             |
-| `MultiPolygon`               | `Array(Polygon)`          |
+| 型文字列                               | 基底ワイヤ型                    |
+| ---------------------------------- | ------------------------- |
+| `Point`                            | `Tuple(Float64, Float64)` |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`            |
+| `Polygon`, `MultiLineString`       | `Array(Ring)`             |
+| `MultiPolygon`                     | `Array(Polygon)`          |
 
 したがって、`Point` カラムは `Tuple(Float64, Float64)` とまったく同じようにデコードされ (表示は `(1,2)`) 、`Ring` は `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`) としてデコードされます。以降も同様に、階層に沿って上位の型へと続きます。
 
-`Geometry` も別名ですが、ネストした配列ではなく [`Variant`](#variant) の別名です。その payload は、上記 6 つの geo types の variant です。カラムヘッダーには型文字列 `Geometry` だけが含まれ、variant の内容までは**示されません**。そのため、デコーダーは自分でこれを展開する必要があります。ほかの `Variant` と同様に、discriminator は geo の別名の正規名を名前順にソートした順序に従います。`0` = `LineString`、`1` = `MultiLineString`、`2` = `MultiPolygon`、`3` = `Point`、`4` = `Polygon`、`5` = `Ring` です。選択された各値は、その後、上記の geo の別名に従ってデコードされます (`NULL` の場合は `Variant` の `NULL` discriminator `255` を使用します) 。
+`Geometry` も別名ですが、ネストした配列ではなく [`Variant`](#variant) の別名です。その ペイロード は、上記 7 つの geo types の variant です。カラムヘッダーには型文字列 `Geometry` だけが含まれ、variant の内容までは**示されません**。そのため、デコーダーは自分でこれを展開する必要があります。ユーザーが明示した `Variant` とは異なり、`Geometry` の discriminator は名前順にソートされた順序には**従いません**。これらは互換性のために固定されており、新しい geo types は常に末尾に追加されます。対応は `0` = `LineString`、`1` = `MultiLineString`、`2` = `MultiPolygon`、`3` = `Point`、`4` = `Polygon`、`5` = `Ring`、`6` = `MultiPoint` です (`MultiPoint` は 26.7 で追加されました。古い server からの streams には discriminator `6` は含まれません) 。選択された各値は、その後、上記の geo の別名に従ってデコードされます (`NULL` の場合は `Variant` の `NULL` discriminator `255` を使用します) 。
 
 `SimpleAggregateFunction(func, T)` は、その値型 `T` の別名です。これはすでに確定済みの aggregate 値を格納するため、ワイヤ形式も表示も `T` と完全に同一です (`SimpleAggregateFunction(sum, UInt64)` は `UInt64` としてデコードされます) 。このように別名として扱われるのは単一値型の形式だけで、基底型自体は複合型である場合もあります。
 
 <Note>
-  関連する 2 つの型は**別名ではありません**。これらは有効な `Native` カラム型です。たとえば client は `-State` combinator や distributed aggregation から `AggregateFunction` カラムを受け取ることがあります。ただし、どちらもこのページの範囲外となる専用の payload を持ちます。
+  関連する 2 つの型は**別名ではありません**。これらは有効な `Native` カラム型です。たとえば client は `-State` combinator や distributed aggregation から `AggregateFunction` カラムを受け取ることがあります。ただし、どちらもこのページの範囲外となる専用の ペイロード を持ちます。
 
   * `AggregateFunction(func, ...)` は *中間* aggregation state を保持します (確定済みの値ではありません) 。そのバイナリ layout は aggregate function とバージョンに固有です。
   * `QBit(T, N[, stride])` は、vector-search workloads 向けに bit planes を転置したベクトルを格納します。その on-wire stream layout (group-major の `FixedString` bit-plane streams で、明示的な `stride` を伴う `element_size * (N / stride)` 個) と、その binary type encoding (tag `0x36`、または `stride != N` の場合は `0x37` の `QBitWithStride`) は、[`QBit` data type page](/ja/reference/data-types/qbit) と [binary type encoding](/ja/reference/data-types/data-types-binary-encoding) reference に記載されています。そのため、`Native` reader はそれらを C++ source から復元する必要はありません。
@@ -1577,25 +1577,25 @@ flowchart LR
 | `0x82` | LZ4    | ボディは **LZ4 block format** です。*LZ4 のフレームフォーマットではありません*。magic number は含まれません。 |
 | `0x90` | ZSTD   | ボディは raw zstd の単一フレームストリームです (標準の zstd magic number はボディの一部です) 。            |
 
-メソッドバイトは [column-level codecs](/ja/reference/statements/create/table#column_compression_codec) もエンコードします。これらはストリーム全体の framing ではなく、MergeTree の オンディスク パスでカラムごとに適用されます。ただし、`decompress=1` の HTTP 入力パスでは各フレームのメソッドバイトから codec を取得するため、これらのどのバイトも正当な入力として現れます。したがって、仕様に準拠したデコーダは割り当て済みの空間全体を認識し、未実装のバイトはボディを誤って解釈するのではなく拒否しなければなりません。これらのボディは codec 固有であり、この汎用フレーム契約の対象外です。
+メソッドバイトは [column-level codecs](/ja/reference/statements/create/table/codec) もエンコードします。これらはストリーム全体の framing ではなく、MergeTree の オンディスク パスでカラムごとに適用されます。ただし、`decompress=1` の HTTP 入力パスでは各フレームのメソッドバイトから codec を取得するため、これらのどのバイトも正当な入力として現れます。したがって、仕様に準拠したデコーダは割り当て済みの空間全体を認識し、未実装のバイトはボディを誤って解釈するのではなく拒否しなければなりません。これらのボディは codec 固有であり、この汎用フレーム契約の対象外です。
 
-| Byte   | Method                                               |
-| ------ | ---------------------------------------------------- |
-| `0x91` | `Multiple` (ネストされた codec の数列をラップする composite codec)  |
-| `0x92` | `Delta`                                              |
-| `0x93` | `T64`                                                |
-| `0x94` | `DoubleDelta`                                        |
-| `0x95` | `Gorilla`                                            |
-| `0x96` | `AES_128_GCM_SIV` (暗号化)                              |
-| `0x97` | `AES_256_GCM_SIV` (暗号化)                              |
-| `0x98` | `FPC`                                                |
-| `0x9a` | `GCD`                                                |
-| `0x9c` | `ALP`                                                |
-| `0x9d` | `SZ3`                                                |
-| `0x9e` | `Quantized`                                          |
-| `0x9f` | `ZXC`                                                |
+| Byte   | Method                                              |
+| ------ | --------------------------------------------------- |
+| `0x91` | `Multiple` (ネストされた codec の数列をラップする composite codec) |
+| `0x92` | `Delta`                                             |
+| `0x93` | `T64`                                               |
+| `0x94` | `DoubleDelta`                                       |
+| `0x95` | `Gorilla`                                           |
+| `0x96` | `AES_128_GCM_SIV` (暗号化)                             |
+| `0x97` | `AES_256_GCM_SIV` (暗号化)                             |
+| `0x98` | `FPC`                                               |
+| `0x9a` | `GCD`                                               |
+| `0x9c` | `ALP`                                               |
+| `0x9d` | `SZ3`                                               |
+| `0x9e` | `Quantized`                                         |
+| `0x9f` | `ZXC`                                               |
 
-`0x9d` (`SZ3`) は、`Float32`、`Float64`、およびそれらの型の `Array` 向けの、誤差境界付きの**実験的**な非可逆 codec です。`allow_experimental_codecs` が設定されている場合にのみ `CODEC(SZ3)` を使って table を作成できますが、以前に書き込まれた data を引き続き読み取れるよう、展開時にはこのメソッドバイトが常に受け入れられます。`0x9f` (`ZXC`) は非対称の LZ codec で、圧縮は低速ですが、展開は非常に高速で、ratio は `LZ4` と `ZSTD` の中間です。`0x99` (`DeflateQpl`) と `0x9b` (`ZSTD_QPL`) のバイトは、その後削除された codec に割り当てられていました。これらは予約済みで、再利用されません。
+`0x9d` (`SZ3`) は、`Float32`、`Float64`、およびそれらの型の `Array` 向けの、誤差境界付きの**実験的**な非可逆 codec です。`allow_experimental_codecs` が設定されている場合にのみ `CODEC(SZ3)` を使って table を作成できますが、以前に書き込まれた data を引き続き読み取れるよう、展開時にはこのメソッドバイトが常に受け入れられます。`0x9f` (`ZXC`) は**実験的**な非対称 LZ codec で、圧縮は低速ですが、展開は非常に高速で、ratio は `LZ4` と `ZSTD` の中間です。`allow_experimental_codecs` が設定されている場合にのみ `CODEC(ZXC)` を使って table を作成できますが、以前に書き込まれた data を引き続き読み取れるよう、展開時にはこのメソッドバイトが常に受け入れられます。`0x99` (`DeflateQpl`) と `0x9b` (`ZSTD_QPL`) のバイトは、その後削除された codec に割り当てられていました。これらは予約済みで、再利用されません。
 
 `0x9e` (`Quantized`) は、高密度ベクトルカラム (`Array(Float32)` など) 向けの**実験的**なカラム codec です。`NONE` と同様にパススルーで、フル精度のボディはそのまま保存されますが、この codec があると、ベクトル検索の高速化に使われる compact な量子化 companion ストリームを書き出すシリアライゼーションが関連付けられます。`allow_experimental_codecs` が設定されている場合にのみ `CODEC(Quantized(...))` を使って table を作成でき、展開時にはこのメソッドバイトが常に受け入れられます。
 

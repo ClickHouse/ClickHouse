@@ -7,6 +7,8 @@ title: 'Полнотекстовый поиск с текстовыми инде
 doc_type: 'reference'
 ---
 
+import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 Текстовые индексы (также известные как [инвертированные индексы](https://en.wikipedia.org/wiki/Inverted_index)) обеспечивают быстрый полнотекстовый поиск по текстовым данным.
 Текстовый индекс хранит сопоставление токенов с номерами строк, в которых встречается каждый токен.
 Токены создаются в процессе, называемом токенизацией.
@@ -67,7 +69,7 @@ two    : [3]
 Мы настоятельно рекомендуем использовать ClickHouse версии &gt;= 26.2 в продакшне.
 
 <Note>
-  Текстовые индексы можно использовать в любой версии ClickHouse &gt;= 26.2 независимо от настройки [compatibility](/ru/reference/settings/session-settings#compatibility).
+  Текстовые индексы можно использовать в любой версии ClickHouse &gt;= 26.2 независимо от настройки [compatibility](/ru/reference/settings/session-settings/compatibility#compatibility).
 </Note>
 
 Чтобы создать текстовый индекс, используйте следующий синтаксис:
@@ -82,6 +84,8 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | icu(locale)
+                                            | japanese
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -118,6 +122,8 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | icu(locale)
+                                            | japanese
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -154,6 +160,10 @@ ALTER TABLE table DROP INDEX text_idx;
   Обратите внимание, что каждая строка может состоять из нескольких символов (`', '` в примере).
   Список разделителей по умолчанию, если он не указан явно (например, `tokenizer = splitByString`), — это один пробел `[' ']`.
 * `asciiCJK` разбивает строки на токены, используя правила границ слов Unicode (аналогично [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII-буквенно-цифровые символы и символы подчёркивания образуют токены с соединительными символами (ASCII `:` для букв, `.` и `'` для символов одного типа). Не-ASCII-символы Unicode, включая символы [CJK](https://en.wikipedia.org/wiki/CJK_characters), становятся односимвольными токенами.
+* `icu(locale)` разбивает строки на слова-токены с помощью сегментации слов Unicode (UAX #29) из библиотеки [ICU](https://icu.unicode.org/). Для письменностей, в которых между словами не ставятся пробелы (например, китайской, японской, тайской), ICU применяет сегментацию на основе словаря, поэтому — в отличие от `asciiCJK` — такой текст разбивается на значимые многосимвольные слова, а не на отдельные символы. Здесь «словарь» означает поставляемые с ICU списки слов для этих письменностей (см. [`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries)); ICU выбирает наиболее вероятное разбиение на слова из этих списков.
+  `locale` — это локаль ICU, передаваемая сегментатору; сегментация в основном определяется письменностью и словарём, а локаль выбирает специфичные для неё настройки ICU. Это обязательный параметр, например `tokenizer = icu('ja')` или `tokenizer = icu('zh')`.
+  Доступные локали можно вывести с помощью `SELECT * FROM system.collations`.
+* `japanese` разбивает японский текст на слова с помощью морфологического анализатора [MeCab](https://github.com/taku910/mecab). В отличие от `asciiCJK`, который создаёт односимвольные токены для входных данных CJK, этот токенизатор выполняет корректную сегментацию на слова. Для него требуется словарь, загружаемый во время выполнения из конфигурации сервера (см. [Словарь японского токенизатора](#japanese-tokenizer-dictionary)).
 * `ngrams(N)` разбивает строки на `N`-граммы одинаковой длины (см. функцию [ngrams](/ru/reference/functions/regular-functions/splitting-merging-functions#ngrams)).
   Длину n-граммы можно задать с помощью необязательного целочисленного параметра от 1 до 8, например, `tokenizer = ngrams(3)`.
   Размер n-граммы по умолчанию, если он не указан явно (например, `tokenizer = ngrams`), равен 3.
@@ -165,6 +175,70 @@ ALTER TABLE table DROP INDEX text_idx;
 * `array` не выполняет токенизацию, то есть каждое значение строки является токеном (см. функцию [array](/ru/reference/functions/regular-functions/array-functions#array)).
 
 Все доступные токенизаторы перечислены в [system.tokenizers](/ru/reference/system-tables/tokenizers).
+
+<div id="japanese-tokenizer-dictionary">
+  ### Словарь японского токенизатора
+</div>
+
+<CloudNotSupportedBadge />
+
+Для токенизатора `japanese` требуется словарь MeCab, который не поставляется вместе с ClickHouse. Укажите его в конфигурации сервера:
+
+```xml
+<tokenizer>
+    <japanese>
+        <dictionary_location>https://example.com/dictionary.tar.zst</dictionary_location>
+        <dictionary_sha>0123...cdef</dictionary_sha>
+    </japanese>
+</tokenizer>
+```
+
+* `dictionary_location` — расположение архива со скомпилированным словарём MeCab. Подходит любой официальный словарь, например [IPADIC](https://github.com/taku910/mecab) или [UniDic](https://clrd.ninjal.ac.jp/unidic/). Расположение должно оканчиваться поддерживаемым расширением архива (например, `.tar.gz`, `.tar.zst` или `.zip`) — по нему определяется тип архива, поэтому URL без такого расширения (например, `https://example.com/download`) отклоняется. Поддерживаемые расположения:
+  * локальный путь `file://`;
+  * URL `http(s)://`, загружаемый как обычный файл (используйте его для публичного или предварительно подписанного объекта);
+  * S3-совместимое объектное хранилище — AWS S3, GCS, MinIO, локальная инфраструктура и т. д. (не только AWS) — с адресацией в виде `s3://`/`gs://`/`oss://` или полного URL `http(s)://endpoint/bucket/key`. Для приватного бакета укажите учётные данные S3 в качестве дочерних элементов `<japanese>` (см. пример ниже).
+* `dictionary_sha` — SHA-256 этого архива. Он проверяется перед загрузкой словаря; при несовпадении словарь не загружается и возникает ошибка.
+
+Архив загружается и распаковывается один раз, а затем кэшируется локально. Поскольку словарь определяет, как токенизируются документы, на всех репликах должен быть настроен одинаковый `dictionary_sha`.
+
+Чтобы читать данные из приватного S3-совместимого бакета, добавьте настройки S3 в качестве дочерних элементов `<japanese>` рядом с `dictionary_location` и `dictionary_sha`:
+
+```xml
+<tokenizer>
+    <japanese>
+        <dictionary_location>s3://my-bucket/dictionary.tar.zst</dictionary_location>
+        <dictionary_sha>0123...cdef</dictionary_sha>
+        <access_key_id>...</access_key_id>
+        <secret_access_key>...</secret_access_key>
+        <region>us-east-1</region>
+    </japanese>
+</tokenizer>
+```
+
+Распознаваемые настройки (`access_key_id`, `secret_access_key`, `region`, `no_sign_request`, `use_environment_credentials`, ...) — это те же настройки аутентификации S3, которые используются в других местах ClickHouse. Их наличие также означает, что URL `http(s)://` будет загружен через клиент S3 с подписыванием запросов, а не напрямую.
+
+После настройки словаря токенизатор `japanese` можно использовать следующим образом:
+
+```sql title="Query"
+CREATE TABLE docs
+(
+    id UInt64,
+    body String,
+    INDEX body_idx body TYPE text(tokenizer = 'japanese')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO docs VALUES (1, '日本語の形態素解析エンジン'), (2, 'これはテストの文章です');
+
+SELECT id FROM docs WHERE hasAllTokens(body, '形態 解析', 'japanese') ORDER BY id;
+```
+
+```text title="Response"
+┌─id─┐
+│  1 │
+└────┘
+```
 
 <Note>
   Токенизатор `splitByString` применяет разделители слева направо.
@@ -187,13 +261,15 @@ SELECT tokens('abc def', 'ngrams', 3);
 ['abc','bc ','c d',' de','def']
 ```
 
-*Работа с не-ASCII-входными данными.*
-Текстовые индексы можно строить на основе текстовых данных на любом языке и в любой кодировке.
-Для не-ASCII-текста рекомендуется токенизатор `asciiCJK`, поскольку он корректно определяет границы слов в Unicode, включая символы CJK.
+*Работа с входными данными, содержащими символы не из ASCII.*
+Текстовые индексы можно создавать на основе текстовых данных на любом языке и в любой кодировке.
+Для текста не из ASCII рекомендуется токенизатор `asciiCJK`, так как он корректно обрабатывает границы слов Unicode, включая символы CJK.
+Для языков, в которых слова не разделяются пробелами (например, китайского, японского или тайского), токенизатор `icu(locale)` создаёт значимые токены слов из нескольких символов с помощью сегментации слов на основе словаря ICU.
+Для японского языка токенизатор `japanese` (MeCab) сегментирует текст на слова, а не на отдельные символы, и обычно обеспечивает более точные результаты поиска.
 
 <a id="preprocessor-argument-optional" />**Аргумент препроцессора (необязательно)**. Препроцессор — это выражение, которое применяется к входной строке перед токенизацией.
 
-Типичные сценарии использования аргумента препроцессора:
+Типичные сценарии использования аргумента препроцессора включают
 
 1. Приведение к нижнему/верхнему регистру или свёртка регистра для регистронезависимого сопоставления, например [lower](/ru/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/ru/reference/functions/regular-functions/string-functions#lowerUTF8), [caseFoldUTF8](/ru/reference/functions/regular-functions/string-functions#caseFoldUTF8).
 2. Нормализация UTF-8, например [normalizeUTF8NFC](/ru/reference/functions/regular-functions/string-functions#normalizeUTF8NFC), [normalizeUTF8NFD](/ru/reference/functions/regular-functions/string-functions#normalizeUTF8NFD), [normalizeUTF8NFKC](/ru/reference/functions/regular-functions/string-functions#normalizeUTF8NFKC), [normalizeUTF8NFKD](/ru/reference/functions/regular-functions/string-functions#normalizeUTF8NFKD), [normalizeUTF8NFKCCasefold](/ru/reference/functions/regular-functions/string-functions#normalizeUTF8NFKCCasefold), [toValidUTF8](/ru/reference/functions/regular-functions/string-functions#toValidUTF8).
@@ -227,8 +303,8 @@ SELECT tokens('abc def', 'ngrams', 3);
   Поэтому для оптимального пользовательского опыта мы рекомендуем использовать выражения препроцессора.
 </Note>
 
-Функции [hasToken](/ru/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens) и [hasPhrase](/ru/reference/functions/regular-functions/string-search-functions#hasPhrase) используют препроцессор, чтобы сначала преобразовать поисковый запрос перед его токенизацией.
-Обратите внимание, что, поскольку препроцессор применяется только по пути текстового индекса, результаты этих функций могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
+Функции [hasToken](/ru/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens) и [hasPhrase](/ru/reference/functions/regular-functions/string-search-functions#hasPhrase) используют препроцессор для преобразования поискового запроса перед его токенизацией.
+Обратите внимание: поскольку препроцессор применяется только при использовании текстового индекса, результаты этих функций могут различаться в запросах с текстовым индексом и без него (например, `SETTINGS use_skip_indexes = 0`).
 
 Например,
 
@@ -319,18 +395,18 @@ SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
    ClickHouse предоставляет встроенную функцию [stem](/ru/reference/functions/regular-functions/nlp-functions#stem) для нескольких языков.
    Пример: `stem(str, 'en')`
 4. **Нормализация регистра**. Приведение токенов к нижнему или верхнему регистру для включения сопоставления, например [lower](/ru/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/ru/reference/functions/regular-functions/string-functions#lowerUTF8).
-   Для приведения к нижнему или верхнему регистру мы рекомендуем использовать препроцессор вместо постпроцессора.&quot;
+   Для приведения к нижнему или верхнему регистру мы рекомендуем использовать препроцессор вместо постпроцессора.
 
 Выражение постпроцессора преобразует токены типа [String](/ru/reference/data-types/string) в токены того же типа.
-Кроме того, выражение постпроцессора должно ссылаться только на столбец или выражение, на основе которого определён текстовый индекс.
-Если столбец имеет тип `Array(String)`, постпроцессор по-прежнему оперирует отдельными токенами как обычными значениями типа `String`.
+Кроме того, выражение постпроцессора должно ссылаться только на столбец или выражение, на основе которого определен текстовый индекс.
+Если столбец имеет тип `Array(String)`, постпроцессор по-прежнему работает с отдельными токенами как с обычными значениями `String`.
 
 Использование недетерминированных функций запрещено.
 
 Постпроцессор применяется к каждому сгенерированному токену при построении индекса (для токенизатора `array` каждый элемент массива является токеном). Во время выполнения запроса поведение зависит от функции:
 
-* Для `hasToken`, `hasAllTokens`, `hasAnyTokens` и `hasPhrase` (с любым поддерживаемым токенизатором): постпроцессор применяется и к токенам в haystack, и к поисковому needle, обеспечивая полностью нормализованное сопоставление (например, регистронезависимый поиск). Для `hasPhrase` токены после постобработки располагаются без промежутков, поэтому токен, который постпроцессор отбрасывает, не оставляет позиционного разрыва, и фраза всё равно сопоставляется через него — например, при постпроцессоре стоп-слов, отбрасывающем `the`, `hasPhrase(col, 'see cat')` соответствует документу `see the cat`.
-* Для всех остальных функций (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): для поиска с использованием индексной подсказки постобработке подвергается только needle; предикат на уровне строки по-прежнему сравнивается с исходными значениями столбца.
+* Для `hasToken`, `hasAllTokens`, `hasAnyTokens` и `hasPhrase` (с любым поддерживаемым токенизатором): постпроцессор применяется как к токенам исходной строки, так и к искомой подстроке, обеспечивая полностью нормализованное сопоставление (например, регистронезависимый поиск). Для `hasPhrase` токены после постобработки располагаются плотно, поэтому токен, отброшенный постпроцессором, не оставляет позиционного промежутка, и фраза по-прежнему сопоставляется через него — например, с постпроцессором стоп-слов, отбрасывающим `the`, `hasPhrase(col, 'see cat')` сопоставляется с документом `see the cat`.
+* Для всех остальных функций (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): для поиска с подсказкой индекса постобрабатывается только искомая подстрока; предикат на уровне строки по-прежнему сравнивает с исходными значениями столбца.
 
 Примеры:
 
@@ -349,7 +425,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 ```
 
-* Удалите временные метки с помощью выражения постпроцессора:
+* Удаляйте временные метки с помощью выражения постпроцессора:
 
 ```sql
 -- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
@@ -388,7 +464,7 @@ CREATE TABLE logs
 ENGINE = MergeTree ORDER BY id;
 ```
 
-* Удалите временные метки с помощью общего выражения для препроцессора и постпроцессора:
+* Удалите временные метки с помощью выражения, объединяющего препроцессор и постпроцессор:
 
 ```sql
 -- Preprocessor strips the timestamp, then lowercases the remainder.
@@ -432,38 +508,38 @@ ORDER BY tuple();
 SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 ```
 
-**Поддержка функций**.
+**Поддерживаемые функции**.
 
-Для предикатов, использающих текстовый индекс, препроцессор и постпроцессор применяются к искомому значению перед проверкой на уровне гранулы, чтобы при обращении к индексу использовались те же токены, которые были сохранены при его построении.
+Для предикатов, использующих текстовый индекс, препроцессор и постпроцессор применяются к искомому значению перед проверкой на уровне гранулы, чтобы при обращении к индексу использовались те же токены, которые были сохранены при его построении.
 Для большинства функций (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`) текстовый индекс используется только для пропуска нерелевантных блоков данных; ClickHouse по-прежнему проверяет каждую оставшуюся строку по исходному предикату на исходных данных столбца.
 Для функций поиска по токенам (`hasToken`, `hasAllTokens`, `hasAnyTokens`) текстовый индекс является основным способом вычисления: ClickHouse нормализует искомое значение с помощью того же препроцессора, токенизатора и постпроцессора, которые применялись при построении индекса, и использует эту нормализованную форму как для индексированных, так и для неиндексированных частей таблицы. Если задан постпроцессор, токены в haystack также нормализуются во время выполнения запроса (для любого токенизатора, а не только `array`), поэтому обе стороны сравнения преобразуются единообразно, и результат не зависит от того, читается ли индекс напрямую (настройка `query_plan_direct_read_from_text_index`) или у конкретной части есть материализованный индекс — например, это позволяет включить регистронезависимое сопоставление для `hasAllTokens(col, ['FOO'])` с постпроцессором `lower`.
 Без `support_phrase_search` функция `hasPhrase` использует индекс только как подсказку и проверяет каждую оставшуюся строку по исходному предикату; постпроцессор дополнительно одинаково нормализует и фразу, и токены в haystack, поэтому результат не зависит от способа чтения, а токены, которые постпроцессор отбрасывает, не нарушают смежность фразы. При `support_phrase_search = 1` функция `hasPhrase` использует точное прямое чтение (при этом постпроцессор, если он задан, всё равно применяется).
 Поисковые токены, которые постпроцессор преобразует в пустую строку, игнорируются, то есть считаются отсутствующими в поисковой фразе.
 
-| Функция                                                                                                 | Поддерживает препроцессор                                    | Совместимые токенизаторы                                 | Поддерживает постпроцессор |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------- | -------------------------- |
-| `=`                                                                                                     | да                                                           | все                                                      | да                         |
-| `IN`                                                                                                    | да                                                           | все                                                      | да                         |
-| [hasToken](/ru/reference/functions/regular-functions/string-search-functions#hasToken)                     | да                                                           | все (в первую очередь для `splitByNonAlpha`)             | да                         |
-| [hasAnyTokens(col, str)](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | да                                                           | все                                                      | да                         |
-| [hasAllTokens(col, str)](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | да                                                           | все                                                      | да                         |
-| [hasAnyTokens(col, arr)](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | нет (элементы массива используются как токены без изменений) | все                                                      | да                         |
-| [hasAllTokens(col, arr)](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | нет (элементы массива используются как токены без изменений) | все                                                      | да                         |
-| [hasPhrase](/ru/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | да                                                           | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | да                         |
-| [startsWith](/ru/reference/functions/regular-functions/string-functions#startsWith)                        | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | да                         |
-| [endsWith](/ru/reference/functions/regular-functions/string-functions#endsWith)                            | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | да                         |
-| [like](/ru/reference/functions/regular-functions/string-search-functions#like)                             | да¹                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | да¹                        |
-| [match](/ru/reference/functions/regular-functions/string-search-functions#match)                           | да¹                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | да¹                        |
-| [ilike](/ru/reference/functions/regular-functions/string-search-functions#like)                            | да² (`lower`/`upper` only)                                   | `splitByNonAlpha`, `array`²                              | нет²                       |
-| [mapContainsKey](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | да                                                           | все                                                      | да                         |
-| [mapContainsValue](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | да                                                           | все                                                      | да                         |
-| [mapContainsKeyLike](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | да                         |
-| [mapContainsValueLike](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | да                         |
-| [has](/ru/reference/functions/regular-functions/array-functions#has)                                       | да                                                           | `array`                                                  | да                         |
-| [hasAny](/ru/reference/functions/regular-functions/array-functions#hasAny)                                 | да                                                           | `array`                                                  | да                         |
-| [hasAll](/ru/reference/functions/regular-functions/array-functions#hasAll)                                 | да                                                           | `array`                                                  | да                         |
+| Функция                                                                                                 | Поддерживает препроцессор                                    | Совместимые токенизаторы                                        | Поддерживает постпроцессор |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------- | -------------------------- |
+| `=`                                                                                                     | да                                                           | все                                                             | да                         |
+| `IN`                                                                                                    | да                                                           | все                                                             | да                         |
+| [hasToken](/ru/reference/functions/regular-functions/string-search-functions#hasToken)                     | да                                                           | все (в первую очередь для `splitByNonAlpha`)                    | да                         |
+| [hasAnyTokens(col, str)](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | да                                                           | все                                                             | да                         |
+| [hasAllTokens(col, str)](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | да                                                           | все                                                             | да                         |
+| [hasAnyTokens(col, arr)](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | нет (элементы массива используются как токены без изменений) | все                                                             | да                         |
+| [hasAllTokens(col, arr)](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | нет (элементы массива используются как токены без изменений) | все                                                             | да                         |
+| [hasPhrase](/ru/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | да                                                           | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`, `icu` | да                         |
+| [startsWith](/ru/reference/functions/regular-functions/string-functions#startsWith)                        | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | да                         |
+| [endsWith](/ru/reference/functions/regular-functions/string-functions#endsWith)                            | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | да                         |
+| [like](/ru/reference/functions/regular-functions/string-search-functions#like)                             | да¹                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | да¹                        |
+| [match](/ru/reference/functions/regular-functions/string-search-functions#match)                           | да¹                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹         | да¹                        |
+| [ilike](/ru/reference/functions/regular-functions/string-search-functions#like)                            | да² (`lower`/`upper` only)                                   | `splitByNonAlpha`, `array`²                                     | нет²                       |
+| [mapContainsKey](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | да                                                           | все                                                             | да                         |
+| [mapContainsValue](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | да                                                           | все                                                             | да                         |
+| [mapContainsKeyLike](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | да                         |
+| [mapContainsValueLike](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`          | да                         |
+| [has](/ru/reference/functions/regular-functions/array-functions#has)                                       | да                                                           | `array`                                                         | да                         |
+| [hasAny](/ru/reference/functions/regular-functions/array-functions#hasAny)                                 | да                                                           | `array`                                                         | да                         |
+| [hasAll](/ru/reference/functions/regular-functions/array-functions#hasAll)                                 | да                                                           | `array`                                                         | да                         |
 
-¹ `LIKE` и `match` используют прямое чтение как подсказку для указанных токенизаторов; в остальных случаях используется сканирование полным перебором.
+¹ `LIKE` и `match` используют прямое чтение как подсказку для указанных токенизаторов; в остальных случаях используется полное сканирование.
 `LIKE` также поддерживает *прямое чтение (без подсказки)* (включается через `use_text_index_like_evaluation_by_dictionary_scan`) для токенизаторов `splitByNonAlpha` и `array` без препроцессора и постпроцессора.
 
 ² `ILIKE` поддерживается только через прямое чтение (без подсказки) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, токенизатор `splitByNonAlpha` или `array`).
@@ -476,12 +552,12 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 Если указать значение `1`, индекс дополнительно сохраняет позиционные данные (в файле `.pos`), что позволяет выполнять точный поиск по фразе с помощью прямого чтения для функции [`hasPhrase`](#functions-example-hasphrase).
 Хранение позиций увеличивает размер индекса на диске и стоимость записи, поэтому эта возможность включается только явно.
 Формат хранения на диске пока не является стабильным, поэтому этот параметр экспериментальный и может измениться в одном из будущих релизов.
-Поэтому для создания индекса с `support_phrase_search = 1` требуется, чтобы была включена настройка MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search).
+Поэтому для создания индекса с `support_phrase_search = 1` требуется, чтобы была включена настройка MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search).
 Установите `support_phrase_search = 0` (значение по умолчанию), чтобы сохранить хранение только списков вхождений; текстовые индексы, созданные без этого аргумента, остаются без позиций.
 
 <Warning>
   Этот аргумент является экспериментальным и должен использоваться только для тестирования.
-  Чтобы включить хранение позиций, установите настройку MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search).
+  Чтобы включить хранение позиций, установите настройку MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search).
 </Warning>
 
 <details markdown="1">
@@ -501,7 +577,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
   * `none` — списки вхождений хранятся без дополнительного сжатия.
   * `bitpacking` — применяет [дифференциальное (delta) кодирование](https://en.wikipedia.org/wiki/Delta_encoding), а затем [упаковку битов](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (в обоих случаях в блоках фиксированного размера). Замедляет запросы SELECT, поэтому сейчас не рекомендуется.
 
-  Указанные выше расширенные параметры также можно задавать на уровне таблицы с помощью соответствующих настроек MergeTree: [`text_index_dictionary_block_size`](/ru/reference/settings/merge-tree-settings#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ru/reference/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ru/reference/settings/merge-tree-settings#text_index_posting_list_block_size) и [`text_index_posting_list_codec`](/ru/reference/settings/merge-tree-settings#text_index_posting_list_codec).
+  Указанные выше расширенные параметры также можно задавать на уровне таблицы с помощью соответствующих настроек MergeTree: [`text_index_dictionary_block_size`](/ru/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ru/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ru/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size) и [`text_index_posting_list_codec`](/ru/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   Они применяются ко всем текстовым индексам таблицы, в которых параметр не задан явно.
 
   Основной сценарий использования настроек уровня таблицы — изменение параметров индекса в существующей таблице без удаления и повторного создания текстового индекса для всех частей таблицы.
@@ -754,9 +830,9 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 Функция [hasPhrase](/ru/reference/functions/regular-functions/string-search-functions#hasPhrase) выполняет поиск по фразе: все токены должны идти подряд и в том же порядке, что и в поисковой строке.
 
 В отличие от `hasAllTokens`, для которой достаточно, чтобы все токены присутствовали где угодно, `hasPhrase` требует, чтобы они образовывали непрерывную последовательность.
-Поисковая фраза токенизируется с помощью того же токенизатора, который настроен для столбца индекса.
+Поисковая фраза токенизируется с помощью того же токенизатора, который настроен для индексного столбца.
 Если текстовый индекс использует постпроцессор, поисковая фраза также нормализуется перед поиском по индексу.
-Обратите внимание, что для функции требуется один из токенизаторов `splitByNonAlpha`, `splitByString`, `ngrams` или `asciiCJK`.
+Обратите внимание, что для функции требуется один из токенизаторов `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` или `icu`.
 
 Пример:
 
@@ -1195,7 +1271,7 @@ WHERE hasPhrase(col, 'weather in Tokyo')
 Этот процесс относительно затратен и медленнее обычных запросов текстового поиска.
 Чтобы ускорить запросы поиска по фразам, включите сохранение позиций в текстовом индексе (см. `Optional parameters` выше).
 
-`hasPhrase` можно использовать вместе с токенизаторами `splitByNonAlpha`, `splitByString`, `ngrams` и `asciiCJK`.
+`hasPhrase` можно использовать вместе с токенизаторами `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` и `icu`.
 Указанная строка фразы токенизируется токенизатором индекса.
 Символы-разделители во фразе игнорируются: `hasPhrase(text, 'quick+brown')` эквивалентно `hasPhrase(text, 'quick brown')`, если в качестве токенизатора используется `splitByNonAlpha`.
 
@@ -1254,8 +1330,8 @@ WHERE string_search_function(column_with_text_index)
 
 Прямое чтение управляется двумя настройками:
 
-* Настройка [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ru/reference/settings/session-settings#query_plan_direct_read_from_text_index) (по умолчанию true), которая определяет, включено ли прямое чтение в целом.
-* Настройка [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ru/reference/settings/session-settings#use_skip_indexes_on_data_read) была обязательным предварительным условием для прямого чтения в версиях ClickHouse &lt; 26.4.
+* Настройка [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ru/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) (по умолчанию true), которая определяет, включено ли прямое чтение в целом.
+* Настройка [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ru/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) была обязательным предварительным условием для прямого чтения в версиях ClickHouse &lt; 26.4.
 
 **Поддерживаемые функции**
 
@@ -1272,7 +1348,7 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 0, -- отключить прямое чтение
+SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
 ```
 
 возвращает
@@ -1294,7 +1370,7 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 1, -- включить прямое чтение
+SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
 ```
 
 возвращает
@@ -1324,7 +1400,7 @@ Positions:
 
 Дополнительный фильтр может повысить селективность и в сочетании с другими фильтрами сильнее ограничить результирующий набор, помогая сократить объем данных, считываемых из других столбцов.
 
-Прямое чтение в качестве подсказки управляется настройкой [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ru/reference/settings/session-settings#query_plan_text_index_add_hint) (включена по умолчанию).
+Прямое чтение в качестве подсказки управляется настройкой [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ru/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) (включена по умолчанию).
 
 Пример запроса без подсказки:
 
@@ -1378,12 +1454,12 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 
 Эта оптимизация управляется настройкой:
 
-* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ru/reference/settings/session-settings#use_text_index_like_evaluation_by_dictionary_scan)
+* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ru/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
 Fallback-механизм управляется двумя настройками:
 
-* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ru/reference/settings/session-settings#text_index_like_min_pattern_length)
-* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ru/reference/settings/session-settings#text_index_like_max_postings_to_read)
+* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ru/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ru/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 Эта оптимизация поддерживает только функции `like` и `ilike`.
 
@@ -1393,7 +1469,8 @@ Fallback-механизм управляется двумя настройкам
 
 Существуют различные кэши уровня сервера, позволяющие хранить части текстового индекса в памяти (см. раздел [Подробности реализации](#implementation)):
 В настоящее время доступны кэши для десериализованных заголовков, токенов и списков вхождений текстового индекса, чтобы сократить I/O.
-Используйте настройки [use&#95;text&#95;index&#95;header&#95;cache](/ru/reference/settings/session-settings#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ru/reference/settings/session-settings#use_text_index_tokens_cache) и [use&#95;text&#95;index&#95;postings&#95;cache](/ru/reference/settings/session-settings#use_text_index_postings_cache), чтобы отключить для запросов чтение из отдельных кэшей и запись в них.
+Используйте настройки [use&#95;text&#95;index&#95;header&#95;cache](/ru/reference/settings/session-settings/use-text#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ru/reference/settings/session-settings/use-text#use_text_index_tokens_cache) и [use&#95;text&#95;index&#95;postings&#95;cache](/ru/reference/settings/session-settings/use-text#use_text_index_postings_cache), чтобы отключить для запросов чтение из отдельных кэшей и запись в них.
+Кэширование токенов, отсутствующих в части данных, включено по умолчанию и может независимо управляться с помощью [`use_text_index_negative_tokens_cache`](/ru/reference/settings/session-settings/use-text).
 
 Чтобы очистить кэши, используйте оператор [SYSTEM CLEAR TEXT INDEX CACHES](/ru/reference/statements/system#drop-text-index-caches)
 
@@ -1403,34 +1480,34 @@ Fallback-механизм управляется двумя настройкам
   #### Настройки кэша токенов
 </div>
 
-| Параметр                                                                                                                                    | Описание                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings#text_index_tokens_cache_policy)               | Имя политики кэша токенов текстового индекса.                                                 |
-| [text&#95;index&#95;tokens&#95;cache&#95;size](/ru/reference/settings/server-settings/settings#text_index_tokens_cache_size)                   | Максимальный размер кэша в байтах.                                                            |
-| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings#text_index_tokens_cache_max_entries) | Максимальное количество десериализованных токенов в кэше.                                     |
-| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings#text_index_tokens_cache_size_ratio)   | Размер защищённой очереди в кэше токенов текстового индекса относительно общего размера кэша. |
+| Параметр                                                                                                                                               | Описание                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_policy)               | Имя политики кэша токенов текстового индекса.                                                 |
+| [text&#95;index&#95;tokens&#95;cache&#95;size](/ru/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size)                   | Максимальный размер кэша в байтах.                                                            |
+| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries) | Максимальное количество десериализованных токенов в кэше.                                     |
+| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)   | Размер защищённой очереди в кэше токенов текстового индекса относительно общего размера кэша. |
 
 <div id="caching-header">
   #### Настройки кэша заголовков
 </div>
 
-| Setting                                                                                                                                     | Description                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| [text&#95;index&#95;header&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings#text_index_header_cache_policy)               | Имя политики кэша заголовков текстового индекса.                                                 |
-| [text&#95;index&#95;header&#95;cache&#95;size](/ru/reference/settings/server-settings/settings#text_index_header_cache_size)                   | Максимальный размер кэша в байтах.                                                               |
-| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | Максимальное количество десериализованных заголовков в кэше.                                     |
-| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | Размер защищённой очереди в кэше заголовков текстового индекса относительно общего размера кэша. |
+| Setting                                                                                                                                                | Description                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings/text-index#text_index_header_cache_policy)               | Имя политики кэша заголовков текстового индекса.                                                 |
+| [text&#95;index&#95;header&#95;cache&#95;size](/ru/reference/settings/server-settings/settings/text-index#text_index_header_cache_size)                   | Максимальный размер кэша в байтах.                                                               |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) | Максимальное количество десериализованных заголовков в кэше.                                     |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)   | Размер защищённой очереди в кэше заголовков текстового индекса относительно общего размера кэша. |
 
 <div id="caching-posting-lists">
   #### Настройки кэша списков вхождений
 </div>
 
-| Настройка                                                                                                                                       | Описание                                                                                                |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;postings&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | Имя политики кэша списков вхождений текстового индекса.                                                 |
-| [text&#95;index&#95;postings&#95;cache&#95;size](/ru/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | Максимальный размер кэша в байтах.                                                                      |
-| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | Максимальное количество десериализованных списков вхождений в кэше.                                     |
-| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | Размер защищённой очереди в кэше списков вхождений текстового индекса относительно общего размера кэша. |
+| Настройка                                                                                                                                                  | Описание                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings/text-index#text_index_postings_cache_policy)               | Имя политики кэша списков вхождений текстового индекса.                                                 |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/ru/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size)                   | Максимальный размер кэша в байтах.                                                                      |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries) | Максимальное количество десериализованных списков вхождений в кэше.                                     |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)   | Размер защищённой очереди в кэше списков вхождений текстового индекса относительно общего размера кэша. |
 
 <div id="limitations">
   ## Ограничения

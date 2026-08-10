@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 ClickHouse는 일반적으로 [C++ 프로그램과 동일한 동작 방식](https://en.cppreference.com/w/cpp/language/implicit_conversion)을 사용합니다.
 
-`to<type>` 함수와 [cast](#CAST)는 일부 경우에 서로 다르게 동작합니다. 예를 들어 [LowCardinality](/ko/reference/data-types/lowcardinality)의 경우 [cast](#CAST)는 [LowCardinality](/ko/reference/data-types/lowcardinality) 특성을 제거하지만, `to<type>` 함수는 제거하지 않습니다. [Nullable](/ko/reference/data-types/nullable)도 마찬가지입니다. 이러한 동작은 SQL 표준과 호환되지 않으며, [cast&#95;keep&#95;nullable](/ko/reference/settings/session-settings#cast_keep_nullable) 설정으로 변경할 수 있습니다.
+`to<type>` 함수와 [cast](#CAST)는 일부 경우에 서로 다르게 동작합니다. 예를 들어 [LowCardinality](/ko/reference/data-types/lowcardinality)의 경우 [cast](#CAST)는 [LowCardinality](/ko/reference/data-types/lowcardinality) 특성을 제거하지만, `to<type>` 함수는 제거하지 않습니다. [Nullable](/ko/reference/data-types/nullable)도 마찬가지입니다. 이러한 동작은 SQL 표준과 호환되지 않으며, [cast&#95;keep&#95;nullable](/ko/reference/settings/session-settings/cast#cast_keep_nullable) 설정으로 변경할 수 있습니다.
 
 <Note>
   데이터 타입의 값을 더 작은 데이터 타입으로 변환할 때(예: `Int64`에서 `Int32`로) 또는
@@ -2964,7 +2964,9 @@ toTypeName(value): Date32
 
 도입 버전: v21.11.0
 
-인수를 [Date32](/ko/reference/data-types/date32) 데이터 타입으로 변환합니다. 값이 범위를 벗어나면 `toDate32OrDefault`는 [Date32](/ko/reference/data-types/date32)에서 지원하는 하한 경계값을 반환합니다. 인수가 [Date](/ko/reference/data-types/date) 타입이면 해당 타입의 경계값이 적용됩니다. 잘못된 인수를 받으면 기본값을 반환합니다.
+인수를 [Date32](/ko/reference/data-types/date32) 데이터 타입으로 변환합니다. [Date32](/ko/reference/data-types/date32)의 범위를 벗어난 숫자 값을 포함하여 인수를 변환할 수 없으면, 함수는 두 번째 인수(지정된 경우)를 기본값으로 반환하고, 그렇지 않으면 [Date32](/ko/reference/data-types/date32)의 하한 경계값을 반환합니다. 인수가 [Date](/ko/reference/data-types/date) 타입이면 해당 타입의 경계값이 적용됩니다.
+
+[toDate32](#toDate32)와 달리 이 함수는 범위를 벗어난 숫자 인수를 [Date32](/ko/reference/data-types/date32)의 경계값으로 포화하지 않습니다. 이러한 인수는 변환할 수 없는 것으로 처리됩니다.
 
 **구문**
 
@@ -2974,7 +2976,7 @@ toDate32OrDefault(expr[, default])
 
 **인수**
 
-* `expr` — 숫자 또는 숫자의 문자열 표현을 반환하는 표현식입니다. [`String`](/ko/reference/data-types/string) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
+* `expr` — 숫자 또는 숫자를 문자열로 표현한 값을 반환하는 표현식입니다. [`String`](/ko/reference/data-types/string) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
 * `default` — 선택 사항입니다. 파싱에 실패한 경우 반환할 기본값입니다. [`Date32`](/ko/reference/data-types/date32)
 
 **반환 값**
@@ -2997,6 +2999,16 @@ SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))
 
 ```sql title=Query
 SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))
+```
+
+```response title=Response
+2020-01-01
+```
+
+**범위를 벗어난 숫자**
+
+```sql title=Query
+SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))
 ```
 
 ```response title=Response
@@ -3260,9 +3272,11 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 
 도입 버전: v20.9.0
 
-입력값을 `DateTime` 타입으로 변환합니다.
-`String`, `FixedString`, `Date`, `Date32`, `DateTime` 또는 숫자 타입(`(U)Int*`, `Float*`, `Decimal`)에서의 변환을 지원합니다.
-DateTime32는 `DateTime`보다 더 넓은 범위를 제공하며, `1900-01-01`부터 `2299-12-31`까지의 날짜를 지원합니다.
+입력 값을 `DateTime` 유형으로 변환합니다.
+`String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` 또는 숫자 유형(`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`)에서 변환을 지원합니다. `Decimal` 및 `Time64` 값은 지원되지 않으며 예외가 발생합니다. `Time` 유형과 `(U)Int128`/`(U)Int256` 같은 와이드 정수 유형은 포화 처리되는 대신 값이 래핑됩니다.
+`DateTime32`는 `DateTime`의 별칭이며, `1970-01-01 00:00:00`부터 `2106-02-07 06:28:15`까지의 날짜를 지원합니다.
+문자열 또는 위에 나열된 포화 처리되는 숫자 유형에서 변환할 때 이 범위를 벗어나는 값은 범위 경계값으로 포화 처리됩니다. 유한하지 않은 부동 소수점 값(`NaN`, `inf`, `-inf`)은 변환할 수 없으며 예외가 발생합니다.
+`Date32` 또는 `DateTime64` 같은 다른 날짜 및 시간 유형에서 변환할 때는 `date_time_overflow_behavior` 설정을 따릅니다. 기본 `ignore` 모드에서는 값이 래핑될 수 있으며, `saturate`는 값을 범위 경계값으로 제한하고, `throw`는 예외를 발생시킵니다.
 
 **구문**
 
@@ -3272,8 +3286,8 @@ toDateTime32(x[, timezone])
 
 **인수**
 
-* `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`UInt*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
-* `timezone` — 선택 사항입니다. 반환되는 `DateTime` 값에 사용할 시간대입니다. [`String`](/ko/reference/data-types/string)
+* `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string), [`FixedString`](/ko/reference/data-types/fixedstring), [`(U)Int*`](/ko/reference/data-types/int-uint), [`Float*`](/ko/reference/data-types/float), [`BFloat16`](/ko/reference/data-types/float), [`Date`](/ko/reference/data-types/date), [`Date32`](/ko/reference/data-types/date32), [`Time`](/ko/reference/data-types/time), [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
+* `timezone` — 선택 사항입니다. 반환되는 `DateTime` 값의 시간대입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -3281,45 +3295,40 @@ toDateTime32(x[, timezone])
 
 **예시**
 
-**값이 범위 내에 있는 경우**
+**문자열에서**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
 ```
 
-**precision이 지정된 Decimal로**
+**Unix timestamp로부터**
 
 ```sql title=Query
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
 ```
 
-**시간대 지정**
+**시간대를 지정한 경우**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
 ```
 
 <div id="toDateTime64">
@@ -7099,10 +7108,23 @@ SELECT
   ## toTime
 </div>
 
-도입 버전: v1.1.0
+도입 버전: v25.5.0
 
 입력 값을 [Time](/ko/reference/data-types/time) 타입으로 변환합니다.
 String, FixedString, DateTime, DateTime64 또는 자정 이후 경과한 초를 나타내는 숫자 타입에서 변환할 수 있습니다.
+타입 범위(`-999:59:59`~~`999:59:59`, 즉 `-3599999`~~`3599999`초)를 벗어나는 숫자 값은 범위 경계값으로 포화되며, 유한하지 않은 부동 소수점 값(`NaN`, `inf`, `-inf`)은 변환할 수 없어 예외가 발생합니다.
+
+<Info>
+  **레거시 `toTime`**
+
+  v25.5 이전의 `toTime`은 시간 구성 요소를 유지하면서 시간 정보를 포함한 날짜를 고정 날짜(`1970-01-02`)로 변환하는 다른 함수였습니다.
+  해당 함수는 현재도 [`toTimeWithFixedDate`](/ko/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate)라는 이름으로 사용할 수 있습니다.
+
+  [`use_legacy_to_time`](/ko/reference/settings/session-settings#use_legacy_to_time)을 `1`로 설정하면 `toTime`이라는 이름도 레거시
+  함수에 바인딩된 상태로 유지됩니다. 즉, `toTime` 호출은 여기에서 설명한 변환 함수 대신 `toTimeWithFixedDate`로 해석됩니다.
+  설정이 활성화되어 있는 동안에는 `CAST(x AS Time)` 또는 `x::Time`을 사용하여 `Time` 타입으로 변환하십시오.
+  이 설정은 v26.7부터 기본값이 `0`이지만, v25.6부터 v26.6까지는 기본값이 `1`이었으므로 아래 예시에서는 이를 명시적으로 설정합니다.
+</Info>
 
 **구문**
 
@@ -7112,7 +7134,7 @@ toTime(x)
 
 **인수**
 
-* `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
+* `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`BFloat16`](/ko/reference/data-types/float) 또는 [`Float*`](/ko/reference/data-types/float)
 
 **반환 값**
 
@@ -7299,9 +7321,9 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
   ## toTimeOrNull
 </div>
 
-도입 버전: v1.1.0
+도입 버전: v25.5.0
 
-입력값을 Time 유형의 값으로 변환하며, 오류가 발생한 경우 `NULL`을 반환합니다.
+입력값을 Time 타입의 값으로 변환하며, 오류가 발생한 경우 `NULL`을 반환합니다.
 [`toTime`](#toTime)과 비슷하지만, 변환 오류 시 예외를 발생시키는 대신 `NULL`을 반환합니다.
 
 관련 항목:
@@ -7317,7 +7339,7 @@ toTimeOrNull(x)
 
 **인수**
 
-* `x` — 시간을 나타내는 문자열입니다. [`String`](/ko/reference/data-types/string)
+* `x` — 시간의 문자열 표현입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
@@ -7341,7 +7363,7 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
   ## toTimeOrZero
 </div>
 
-도입 버전: v1.1.0
+도입 버전: v25.5.0
 
 입력 값을 Time 타입의 값으로 변환하며, 오류가 발생하면 `00:00:00`을 반환합니다.
 toTime과 같지만, 변환 오류 시 예외를 발생시키는 대신 `00:00:00`을 반환합니다.
@@ -7354,7 +7376,7 @@ toTimeOrZero(x)
 
 **인수**
 
-* `x` — 시간을 문자열로 나타낸 값입니다. [`String`](/ko/reference/data-types/string)
+* `x` — 시간의 문자열 표현입니다. [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 

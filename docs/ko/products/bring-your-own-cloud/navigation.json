@@ -4,7 +4,7 @@
     {
       "group": "개요",
       "pages": [
-        "ko/products/bring-your-own-cloud/overview/overview",
+        "ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "ko/products/bring-your-own-cloud/overview/architecture"
       ]
     },
@@ -19,7 +19,6 @@
     {
       "group": "온보딩",
       "pages": [
-        "ko/products/bring-your-own-cloud/onboarding/aws",
         "ko/products/bring-your-own-cloud/onboarding/standard",
         {
           "group": "사용자 지정",
@@ -29,15 +28,15 @@
           ]
         },
         {
-          "group": "Network",
+          "group": "네트워크",
           "pages": [
+            "ko/products/bring-your-own-cloud/onboarding/network",
             "ko/products/bring-your-own-cloud/onboarding/network-aws",
-            "ko/products/bring-your-own-cloud/onboarding/network-gcp"
-          ],
-          "root": "ko/products/bring-your-own-cloud/onboarding/network"
+            "ko/products/bring-your-own-cloud/onboarding/network-gcp",
+            "ko/products/bring-your-own-cloud/onboarding/network-azure"
+          ]
         },
-        "ko/products/bring-your-own-cloud/onboarding/new-region",
-        "ko/products/bring-your-own-cloud/onboarding/azure-private-preview"
+        "ko/products/bring-your-own-cloud/onboarding/new-region"
       ]
     },
     {
@@ -50,8 +49,8 @@
         "ko/products/bring-your-own-cloud/reference/billable-aws-services",
         "ko/products/bring-your-own-cloud/reference/cost-model-aws",
         "ko/products/bring-your-own-cloud/reference/aws-service-limits",
-        "ko/products/bring-your-own-cloud/reference/faq",
-        "ko/products/bring-your-own-cloud/reference/faq-aws"
+        "ko/products/bring-your-own-cloud/reference/security-shared-responsibility",
+        "ko/products/bring-your-own-cloud/reference/faq"
       ]
     }
   ]

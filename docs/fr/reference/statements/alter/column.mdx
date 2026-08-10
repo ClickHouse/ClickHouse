@@ -40,7 +40,7 @@ Les actions suivantes sont prises en charge :
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Ajoute une nouvelle colonne à la table avec les `name`, `type`, [`codec`](/fr/reference/statements/create/table#column_compression_codec) et `default_expr` spécifiés (voir la section [Expressions par défaut](/fr/reference/statements/create/table#default_values)).
+Ajoute une nouvelle colonne à la table avec les `name`, `type`, [`codec`](/fr/reference/statements/create/table/codec) et `default_expr` spécifiés (voir la section [Expressions par défaut](/fr/reference/statements/create/table#default_values)).
 
 Si la clause `IF NOT EXISTS` est incluse, la requête ne renvoie pas d&#39;erreur si la colonne existe déjà. Si vous spécifiez `AFTER name_after` (le nom d&#39;une autre colonne), la colonne est ajoutée après celle-ci dans la liste des colonnes de la table. Si vous voulez ajouter une colonne au début de la table, utilisez la clause `FIRST`. Sinon, la colonne est ajoutée à la fin de la table. Dans une chaîne d&#39;actions, `name_after` peut être le nom d&#39;une colonne ajoutée dans l&#39;une des actions précédentes.
 
@@ -175,7 +175,7 @@ Cette requête modifie les propriétés de la colonne `name` :
 
 * Valeurs d’énumération pour les types Enum/Enum8/Enum16
 
-Pour des exemples de modification des CODECS de compression des colonnes, consultez [Codecs de compression des colonnes](/fr/reference/statements/create/table#column_compression_codec).
+Pour des exemples de modification des CODECS de compression des colonnes, consultez [Codecs de compression des colonnes](/fr/reference/statements/create/table/codec).
 
 Pour des exemples de modification du TTL des colonnes, consultez [TTL des colonnes](/fr/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
@@ -377,9 +377,20 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 └───────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
+<Note>
+  `MATERIALIZE COLUMN` réécrit toujours les **valeurs de la colonne**. La reconstruction des [index d’élagage de données](/fr/sql-reference/statements/alter/skipping-index) (y compris les index de texte intégral) dépend également de la disposition de la part et du mode de stockage de l’index :
+
+  * Sur les parts qui sont à la fois **wide + full-storage**, les fichiers autonomes d’index d’élagage (et les index de texte intégral) ne sont **pas** automatiquement reconstruits lorsque seule la colonne est réécrite. Après avoir modifié les données de la colonne sous-jacente dont dépend un index, exécutez [`ALTER TABLE ... MATERIALIZE INDEX`](/fr/sql-reference/statements/alter/skipping-index#materialize-index) si vous devez actualiser ces fichiers d’index.
+  * **Exception :** les index d’élagage ordinaires regroupés dans `skp_idx.packed` (petits sous-flux d’index d’élagage dont la taille est inférieure à la valeur par défaut de [`packed_skip_index_max_bytes`](/fr/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes) ; les index de texte intégral ne sont pas regroupés de cette façon) sont recalculés de force, même sur les parts wide + full-storage.
+  * Sur **toute part qui n’est pas wide + full-storage** (y compris **compact + full**, **compact + packed** et **wide + packed**), la mutation emprunte un chemin de réécriture complète de la part et recalcule de force les index secondaires préexistants de cette part. Les petites parts sont généralement compactes tout en utilisant par défaut un stockage de part complet ; ce cas est donc courant pour les insertions récentes.
+
+  Par ailleurs, `ADD INDEX` ne met à jour que les métadonnées : il ne matérialise **pas** immédiatement le nouvel index (y compris les index de texte intégral) sur les parts historiques. Les parts historiques sont matérialisées soit par un [`MATERIALIZE INDEX`](/fr/sql-reference/statements/alter/skipping-index#materialize-index) explicite, soit lors d’une fusion ultérieure lorsque [`materialize_skip_indexes_on_merge`](/fr/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) est activé et que l’index ne figure pas dans [`exclude_materialize_skip_indexes_on_merge`](/fr/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). Un `MATERIALIZE INDEX` explicite est la méthode déterministe lorsque vous devez créer l’index sans attendre les paramètres de fusion.
+</Note>
+
 **Voir aussi**
 
 * [MATERIALIZED](/fr/reference/statements/create/view#materialized-view).
+* [MATERIALIZE INDEX](/fr/sql-reference/statements/alter/skipping-index#materialize-index).
 
 <div id="limitations">
   ## Limitations

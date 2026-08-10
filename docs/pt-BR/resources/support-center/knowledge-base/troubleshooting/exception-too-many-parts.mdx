@@ -1,41 +1,122 @@
 ---
-title: Como resolver o erro "Too many parts" no ClickHouse
-description: Saiba como resolver o erro "Too many parts" no ClickHouse otimizando as taxas de insert, ajustando as configurações do MergeTree e gerenciando as partições de forma eficaz.
+title: Como resolver a exceção "Too many parts" no ClickHouse
+description: Saiba como diagnosticar e resolver a exceção "Too many parts" agrupando inserts em lotes, usando inserts assíncronos e escolhendo uma chave de particionamento apropriada.
 date: 2023-03-20
 tags: ['Erros e Exceções']
 keywords: ['Too many parts']
 ---
 
-<div id="dbexception-too-many-parts-252-merges-are-processing-significantly-slower-than-inserts">
-  ## DB::Exception: Too many parts (Erro: 252). As mesclagens estão ocorrendo significativamente mais lentamente do que as inserções
+<div id="what-the-exception-means">
+  ## O que a exceção significa
 </div>
 
-Você atingiu o limite da configuração `parts_to_throw_insert` em uma tabela MergeTree.
+O ClickHouse lança a exceção `Too many parts` quando um `INSERT` excederia um limite configurado para o número de partes de dados ativas em uma tabela `MergeTree`. A exceção geralmente inclui a mensagem `Merges are processing significantly slower than inserts`.
 
-Você pode monitorar o número de partes ativas de uma determinada tabela com:
+Cada `INSERT` síncrono cria pelo menos uma parte de dados. Se uma inserção contiver linhas para vários valores de partição, o ClickHouse poderá criar uma parte para cada partição afetada. A mesclagem em segundo plano combina partes menores em partes maiores, mas, se novas partes forem criadas mais rápido do que o ClickHouse consegue mesclá-las, o número de partes ativas continuará aumentando.
+
+A exceção pode ser causada por qualquer uma destas configurações:
+
+* [`parts_to_throw_insert`](/pt-BR/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert), que limita o número de partes ativas em uma única partição.
+* [`max_parts_in_total`](/pt-BR/reference/settings/merge-tree-settings/max-parts#max_parts_in_total), que limita o número total de partes ativas em uma tabela.
+
+<div id="diagnose-the-cause">
+  ## Diagnostique a causa
+</div>
+
+Use a consulta a seguir para encontrar as partições com o maior número de partes ativas:
 
 ```sql
-select count(*) from system.parts where table = '<table_name>' and active == 1
+SELECT
+    database,
+    table,
+    partition_id,
+    count() AS active_parts,
+    sum(rows) AS rows,
+    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk
+FROM system.parts
+WHERE active
+  AND database = '<database_name>'
+  AND table = '<table_name>'
+GROUP BY
+    database,
+    table,
+    partition_id
+ORDER BY active_parts DESC;
 ```
 
-O principal requisito ao inserir dados no ClickHouse: você nunca deve enviar instruções `INSERT` demais por segundo. O ideal é uma inserção por segundo / a cada poucos segundos.
+Para verificar o limite aplicado à tabela como um todo por `max_parts_in_total`, conte todas as partes ativas da tabela:
 
-Assim, você pode inserir 100K linhas por segundo, mas apenas com uma única instrução `INSERT` grande em lote. Quando você envia centenas / milhares de instruções `INSERT` por segundo para uma tabela *MergeTree, sempre terá alguns erros, e isso não pode ser resolvido ajustando algumas configurações.
+```sql
+SELECT
+    database,
+    table,
+    count() AS active_parts,
+    sum(rows) AS rows,
+    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk
+FROM system.parts
+WHERE active
+  AND database = '<database_name>'
+  AND table = '<table_name>'
+GROUP BY
+    database,
+    table;
+```
 
-Se você não consegue combinar muitos inserts em uma única instrução `INSERT` grande em lote fora do ClickHouse, então deve criar uma tabela Buffer antes da tabela *MergeTree.
+As causas comuns incluem:
 
-1. Cada insert cria uma pasta em `/var/lib/clickhouse/.../table_name/`. Dentro dessa pasta, há 2 arquivos para cada coluna - um com os dados (comprimidos), o segundo com o índice. Os dados são ordenados fisicamente pela chave primária dentro desses arquivos. Essas pastas são chamadas de &#39;**partes**&#39;.
+* Inserções síncronas frequentes e pequenas.
+* Uma chave de particionamento de alta cardinalidade.
+* Inserções que contêm linhas para muitos valores de partição.
+* Mesclagens em segundo plano que não conseguem acompanhar devido ao throughput de armazenamento limitado, espaço livre em disco insuficiente ou outra contenção de recursos.
 
-2. O ClickHouse faz o merge dessas partes menores em partes maiores em segundo plano. Ele escolhe quais partes mesclar de acordo com algumas regras. Após o merge de duas (ou mais) partes, uma parte maior é criada e as partes antigas entram na fila para remoção. As configurações que você listou permitem ajustar com mais precisão as regras de merge das partes. O objetivo do processo de merge é deixar uma parte grande para cada partição (ou algumas partes grandes por partição que não valem a pena mesclar porque já são grandes demais). Verifique também este [comentário](https://github.com/yandex/ClickHouse/issues/1661#issuecomment-352739726).
+Você pode inspecionar os merges em execução no momento em [`system.merges`](/pt-BR/reference/system-tables/merges) e revisar os logs do servidor para identificar falhas de merge.
 
-3. Se você criar novas partes rápido demais (por exemplo, fazendo muitos inserts pequenos) e o ClickHouse não conseguir fazer o merge delas na velocidade adequada (ou seja, novas partes chegam mais rápido do que o ClickHouse consegue mesclá-las) - então você recebe a exceção &#39;Merges are processing significantly slower than inserts&#39;. Você pode tentar aumentar o limite, mas pode acabar em uma situação em que terá problemas de filesystem causados pelo número excessivo de arquivos / diretórios (como o limite de inodes).
+<div id="resolve-the-exception">
+  ## Resolva a exceção
+</div>
 
-4. Se você inserir em muitas partições ao mesmo tempo, o problema se multiplica pelo número de partições afetadas pelo insert.
+<div id="batch-synchronous-inserts">
+  ### Inserções síncronas em lote
+</div>
 
-5. Você pode tentar ajustar o comportamento do ClickHouse com uma das configurações listadas, ou com max&#95;insert&#95;block&#95;size / max&#95;block&#95;size / insert&#95;format&#95;max&#95;block&#95;size / max&#95;client&#95;network&#95;bandwidth. Mas: a melhor solução é simplesmente inserir os dados no ritmo esperado. O ritmo esperado é: **um insert a cada 1-2 s, cada insert contendo 10K-500K linhas de dados**.
+Agrupe as linhas no cliente em lotes antes de inseri-las. Cada lote deve conter pelo menos 1.000 linhas e, de preferência, entre 10.000 e 100.000 linhas. Procure fazer aproximadamente um `INSERT` síncrono por segundo. Inserções menos frequentes, porém maiores, criam menos partes e reduzem o trabalho necessário da mesclagem em segundo plano.
 
-6. Portanto, a solução correta para resolver &quot;Merges are processing significantly slower than inserts&quot; é ajustar o número de inserts por segundo e o número de linhas em cada insert. Use inserção em lote para combinar inserts pequenos em um maior se os dados chegarem linha por linha. Reduza a taxa de inserts muito grandes se você tiver dados demais para inserir de uma só vez. Não altere os internals do ClickHouse, a menos que você realmente entenda bem o que isso significa.
+<div id="use-asynchronous-inserts">
+  ### Use inserções assíncronas
+</div>
 
-7. Se seus dados chegarem mais rápido que 500K linhas por segundo - muito provavelmente você precisa de mais servidores no cluster para atender esse tráfego, e não de ajuste de configurações.
+Se o batching do lado do cliente não for viável, use [inserções assíncronas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts) para que o ClickHouse possa agrupar os dados recebidos no servidor:
 
-8. A velocidade dos merges em segundo plano geralmente depende da velocidade do armazenamento, das configurações de compressão usadas, da opção de MergeTree (o algoritmo de merge - merge simples/agregação/soma/collapsing etc.) e da chave de ordenação usada.
+```sql
+INSERT INTO <table_name>
+SETTINGS
+    async_insert = 1,
+    wait_for_async_insert = 1
+VALUES (...);
+```
+
+Mantenha `wait_for_async_insert = 1` para que o ClickHouse confirme uma inserção somente depois que os dados forem gravados com sucesso.
+
+<div id="review-the-partitioning-key">
+  ### Revise a chave de particionamento
+</div>
+
+Use uma chave de particionamento de baixa cardinalidade e evite particionar por valores como identificadores de usuário ou de requisição. O ClickHouse mescla partes apenas dentro da mesma partição, portanto um grande número de partições impede mesclagens eficazes. Para mais informações, consulte [Como escolher uma chave de particionamento](/pt-BR/best-practices/choosing-a-partitioning-key).
+
+<div id="investigate-merge-bottlenecks">
+  ### Investigue gargalos de merge
+</div>
+
+Se as inserções já estiverem adequadamente agrupadas em lotes, verifique o desempenho do armazenamento, o espaço em disco disponível e as tarefas em segundo plano concorrentes. A taxa de merge depende do sistema de armazenamento, do mecanismo da tabela, da chave de ordenação, da compressão e da capacidade disponível de CPU e E/S.
+
+<div id="avoid-increasing-part-limits-as-the-primary-fix">
+  ### Evite aumentar os limites de partes como correção principal
+</div>
+
+Aumentar `parts_to_throw_insert` ou `max_parts_in_total` não resolve a causa da criação excessiva de partes. Limites mais altos podem adiar a exceção, mas também podem aumentar a sobrecarga do sistema de arquivos e dos metadados, além de reduzir o desempenho das consultas. Altere essas configurações somente depois de identificar a causa e confirmar que o sistema tem capacidade suficiente.
+
+<div id="verify-the-recovery">
+  ## Verifique a recuperação
+</div>
+
+Execute a consulta de diagnóstico novamente após alterar a estratégia de `insert` ou o esquema de particionamento. O número de partes ativas deve se estabilizar e depois diminuir, à medida que as mesclagens em segundo plano colocam o processamento em dia. Continue monitorando falhas de `insert`, o espaço livre em disco e [`system.merges`](/pt-BR/reference/system-tables/merges) até que o backlog seja eliminado.

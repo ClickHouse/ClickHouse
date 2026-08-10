@@ -9,17 +9,21 @@ doc_type: 'reference'
 AI 함수는 ClickHouse에 내장된 함수로, AI를 호출하거나 임베딩을 생성해 데이터를 활용하고, 정보를 추출하고, 데이터를 분류하는 등의 작업에 사용할 수 있습니다...
 
 <Note>
-  AI 함수는 실험적 기능입니다. 이를 활성화하려면 [`allow_experimental_ai_functions`](/ko/reference/settings/session-settings#allow_experimental_ai_functions)을 설정하십시오.
-</Note>
+  AI 함수는 실험적 기능입니다. 이를 활성화하려면 [`allow_experimental_ai_functions`](/ko/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions)을 설정하십시오.
 
-<Note>
   AI 함수는 예측하기 어려운 출력을 반환할 수 있습니다. 결과는 프롬프트의 품질과 사용된 모델에 크게 좌우됩니다.
 </Note>
 
+<Warning>
+  **프롬프트 인젝션**
+
+  입력 텍스트는 모델로 전송되며 모델의 출력을 유도할 수 있습니다(프롬프트 인젝션). 외부의 검증되지 않았거나 정제되지 않은 출처의 텍스트에는 모델이 공격자가 제어하는 콘텐츠를 반환하게 하거나, 요청된 형식을 무시하거나, 악성 페이로드를 출력하게 하는 지침이 포함될 수 있습니다. AI 함수 출력은 신뢰할 수 없는 것으로 간주하십시오. SQL 작성, 셸 명령, 추가 쿼리 또는 액세스 제어 결정과 같은 후속 단계에서 사용하기 전에 이를 검증하거나 정제하십시오.
+</Warning>
+
 모든 함수는 다음을 제공하는 공통 인프라를 기반으로 합니다:
 
-* **Quota 적용**: 토큰에 대한 쿼리별 제한([`ai_function_max_input_tokens_per_query`](/ko/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ko/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) 및 API 호출 제한([`ai_function_max_api_calls_per_query`](/ko/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
-* **백오프를 사용하는 재시도**: 일시적인 실패는 지수형 백오프([`ai_function_retry_initial_delay_ms`](/ko/reference/settings/session-settings#ai_function_retry_initial_delay_ms))를 적용하여 재시도됩니다([`ai_function_max_retries`](/ko/reference/settings/session-settings#ai_function_max_retries)).
+* **Quota 적용**: 토큰에 대한 쿼리별 제한([`ai_function_max_input_tokens_per_query`](/ko/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ko/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) 및 API 호출 제한([`ai_function_max_api_calls_per_query`](/ko/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
+* **백오프를 사용하는 재시도**: 일시적인 실패는 지수형 백오프([`ai_function_retry_initial_delay_ms`](/ko/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms))를 적용하여 재시도됩니다([`ai_function_max_retries`](/ko/reference/settings/session-settings/ai-function#ai_function_max_retries)).
 
 <div id="configuration">
   ## 구성
@@ -69,8 +73,8 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. 있는 경우 매개변수 맵의 `credentials` 키
 2. 그렇지 않으면 해당 기본 자격 증명 설정:
-   * 텍스트 함수(`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`)의 경우 [`ai_function_text_default_credentials`](/ko/reference/settings/session-settings#ai_function_text_default_credentials)
-   * `aiEmbed`의 경우 [`ai_function_embedding_default_credentials`](/ko/reference/settings/session-settings#ai_function_embedding_default_credentials)
+   * 텍스트 함수(`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`)의 경우 [`ai_function_text_default_credentials`](/ko/reference/settings/session-settings/ai-function#ai_function_text_default_credentials)
+   * `aiEmbed`의 경우 [`ai_function_embedding_default_credentials`](/ko/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials)
 
 둘 다 설정되지 않으면 호출은 실패합니다. chat-completions 엔드포인트는 embeddings용 엔드포인트와 다르므로, 텍스트 함수와 임베딩 함수는 서로 다른 기본 설정을 사용합니다.
 
@@ -88,7 +92,7 @@ SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
   ### 매개변수 맵
 </div>
 
-각 함수는 선택적으로 끝에 `Map(String, String)` 형식의 매개변수 맵을 받을 수 있습니다. 모든 값은 문자열이므로 숫자도 `'0.2'`처럼 따옴표로 감싸야 합니다. 알 수 없는 키는 허용되지 않습니다. 키가 있으면 해당 명명된 컬렉션 값을 재정의하고, 키가 없으면 명명된 컬렉션(`model`/`max_tokens`의 경우) 또는 내장 기본값이 사용됩니다. 예외는 `aiEmbed`로, `model`을 필수 위치 인수로 받으며(`aiEmbed(text, model[, params])`), 이를 매개변수 맵이나 명명된 컬렉션에 대신 설정하면 오류가 발생합니다.
+각 함수는 선택적으로 끝에 `Map(String, String)` 형식의 매개변수 맵을 받을 수 있습니다. 모든 값은 문자열이므로 숫자도 `'0.2'`처럼 따옴표로 감싸야 합니다. 알 수 없는 키는 허용되지 않습니다. 키가 있으면 해당 명명된 컬렉션 값을 재정의하고, 키가 없으면 명명된 컬렉션(`model`/`max_tokens`의 경우) 또는 내장 기본값이 사용됩니다. 예외는 `aiEmbed`로, `model`을 필수 위치 인수로 받으며(`aiEmbed(text, model[, params])`), 이를 매개변수 맵이나 명명된 컬렉션에 대신 설정하면 오류가 발생합니다. 이는 재현 가능한 임베딩을 보장하기 위한 것입니다.
 
 다음 매개변수는 모든 AI 함수에 공통입니다:
 
@@ -110,10 +114,10 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 모든 AI 관련 설정은 [설정](/ko/reference/settings/session-settings) 문서에서 `ai_function_` 접두사 아래에 나열되어 있습니다.
 
 <div id="restricting-endpoint-hosts">
-  ### `endpoint` 호스트 제한
+  ### `엔드포인트` 호스트 제한
 </div>
 
-AI 명명된 컬렉션의 `endpoint` URL은 서버가 자체 아이덴티티로 연결하는 아웃바운드 대상입니다. 이때 요청 헤더에는 지정된 경우 명명된 컬렉션의 `api_key`가 포함될 수 있습니다. 기본적으로 ClickHouse는 모든 호스트를 허용합니다. 함수를 특정 프로바이더 집합으로 제한하려면 서버 config에서 [`remote_url_allow_hosts`](/ko/reference/settings/server-settings/settings#remote_url_allow_hosts)를 구성하십시오. 예:
+AI 명명된 컬렉션의 `엔드포인트` URL은 서버가 자체 아이덴티티로 연결하는 아웃바운드 대상입니다. 이때 요청 헤더에는 지정된 경우 명명된 컬렉션의 `api_key`가 포함될 수 있습니다. 기본적으로 ClickHouse는 모든 호스트를 허용합니다. 함수를 특정 프로바이더 집합으로 제한하려면 서버 config에서 [`remote_url_allow_hosts`](/ko/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)를 구성하십시오. 예:
 
 ```xml
 <remote_url_allow_hosts>
@@ -133,7 +137,7 @@ AI 명명된 컬렉션의 `endpoint` URL은 서버가 자체 아이덴티티로 
 * `https://` — 연결에 TLS를 사용합니다. 요청 본문(입력 텍스트, 프롬프트)과 요청 headers의 `api_key`는 전송 중 암호화되며, 프로바이더의 certificate도 검증됩니다. 원격 프로바이더를 사용할 때는 항상 이 방식을 사용하십시오.
 * `http://` — 연결이 **암호화되지 않습니다**. 요청 본문과 `api_key`가 평문으로 전송됩니다. 신뢰할 수 있는 프로바이더가 프라이빗 네트워크에 있는 경우(예: 로컬 `vLLM` 또는 `Ollama` instance)에만 사용하십시오.
 
-AI 함수는 HTTPS를 강제하지 않습니다. `http://` 엔드포인트도 허용되며, 데이터는 암호화되지 않은 상태로 전송됩니다. 현재 평문 AI 엔드포인트를 거부하는 서버 측 설정은 없습니다. [`remote_url_allow_hosts`](/ko/reference/settings/server-settings/settings#remote_url_allow_hosts)는 대상 host만 제한하고 URL 스킴은 검사하지 않으므로, 허용된 host를 가리키는 `http://` 엔드포인트도 그대로 허용됩니다. 암호화된 전송을 보장하려면 `https://` 엔드포인트를 사용하는 이름이 지정된 컬렉션을 구성하십시오.
+기본적으로 AI 함수는 원격 host로 데이터를 평문으로 전송하는 `endpoint`를 거부합니다. host가 루프백이 아닌 HTTPS 이외의 모든 엔드포인트는 예외를 발생시킵니다. 루프백 host(`localhost`, `127.0.0.0/8`, `::1`)는 예외이므로 로컬 `http://localhost` 모델 server는 별도 설정 없이 작동합니다. 원격 host에서 평문 `http://` 엔드포인트를 허용하려면 [`ai_function_allow_insecure_endpoint`](/ko/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint)를 `1`로 설정하십시오. 이 검사는 [`remote_url_allow_hosts`](/ko/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)와 독립적입니다. 이 설정은 host allowlist이며 URL 스킴은 검사하지 않으므로, 허용된 host를 가리키는 `http://` 엔드포인트도 이 검사를 통과합니다.
 
 어느 경우든 프로바이더는 TLS 종료 이후 입력 데이터를 평문으로 받습니다. TLS는 server와 프로바이더 사이의 네트워크 경로에서만 데이터를 보호합니다.
 
@@ -189,10 +193,6 @@ ORDER BY event_time DESC;
 
 LLM 프로바이더를 사용해 주어진 텍스트를 제공된 범주 중 하나로 분류합니다.
 
-이 함수는 텍스트를 고정된 분류 프롬프트 및 JSON 스키마 응답 포맷과 함께 전송하여
-모델이 제공된 레이블 중 정확히 하나만 반환하도록 제한합니다. 응답이 JSON
-객체 `{"category": "..."}` 형태로 반환되면 레이블을 추출해 레이블 문자열을 반환합니다.
-
 자격 증명(프로바이더, 모델, endpoint와 선택적으로 API Key를 지정하는 명명된 컬렉션)은
 선택적 매개변수 맵의 `credentials` 키에서 가져오며, 맵에 이 키가 없으면
 `ai_function_text_default_credentials` 설정에서 가져옵니다.
@@ -241,19 +241,19 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 구성된 AI 프로바이더를 사용하여 지정된 텍스트의 임베딩 벡터를 생성합니다.
 
-이 함수는 텍스트를 구성된 임베딩 endpoint로 전송하고, 결과 벡터를 `Array(Float32)`로 반환합니다.
+이 함수는 텍스트를 구성된 임베딩 엔드포인트로 전송하고, 결과 벡터를 `Array(Float32)`로 반환합니다.
 단일 block의 행 내에서는 호출별 overhead를 줄이기 위해 입력이 HTTP request당 최대
-[`ai_function_embedding_max_batch_size`](/ko/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+[`ai_function_embedding_max_batch_size`](/ko/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 개 항목의 batch로 그룹화됩니다.
 
-자격 증명(프로바이더, endpoint, 그리고 선택적으로 API Key를 지정하는 명명된 컬렉션)은
+자격 증명(프로바이더, 엔드포인트, 그리고 선택적으로 API Key를 지정하는 명명된 컬렉션)은
 매개변수 맵의 `credentials` 키에서 가져오며, 맵에서 이를 생략한 경우
-`ai_function_embedding_default_credentials` 설정에서 가져옵니다. 임베딩 endpoint는
-chat endpoint와 다르므로 `aiEmbed`는 텍스트 함수와 별도의 기본 자격 증명 설정을 사용한다는 점에 유의하십시오.
+`ai_function_embedding_default_credentials` 설정에서 가져옵니다. 임베딩 엔드포인트는
+chat 엔드포인트와 다르므로 `aiEmbed`는 텍스트 함수와 별도의 기본 자격 증명 설정을 사용한다는 점에 유의하십시오.
 
 `model`은 필수 위치 인수(상수 `String`)입니다. 텍스트 함수와 달리
 `aiEmbed`는 명명된 컬렉션이나 매개변수 맵에서 `model`을 읽지 않습니다. `model`을 정의하는 명명된 컬렉션은
-조용히 무시되는 대신 거부됩니다.
+거부됩니다.
 
 선택적 `dimensions` 매개변수는 모델이 이를 지원하는 경우(예: OpenAI&#39;s `text-embedding-3-*`)
 지정한 크기의 벡터를 요청하며, 그렇지 않으면 모델의 네이티브 크기가 반환됩니다.

@@ -35,7 +35,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 Los argumentos también pueden pasarse mediante [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections). En este caso, `host` y `port` deben especificarse por separado. Este enfoque se recomienda para entornos de producción.
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor devuelto
 </div>
 
@@ -83,7 +83,7 @@ Esto es útil para hacer pushdown de joins, agregaciones o cualquier otro proces
 <Note>
   La forma de subconsulta `(SELECT ...)` es analizada por ClickHouse y se vuelve a serializar en el dialecto de PostgreSQL (entrecomillado de identificadores de PostgreSQL y escaping de literales de cadena) antes de enviarse al servidor. Por lo tanto, debe ser una consulta ClickHouse SQL válida. Para pasar sintaxis específica de PostgreSQL que ClickHouse no analiza, usa la forma `query('...')`, cuyo texto se envía a PostgreSQL literalmente.
 
-  Cualquier `WHERE`, `LIMIT`, agregación, etc., externos de la consulta de ClickHouse circundante **no** se hacen pushdown en la consulta pasada; se aplican en ClickHouse después de recuperar el resultado completo de la consulta. Para restringir los datos leídos desde PostgreSQL, coloca el filtro dentro de la consulta pasada. Con [`external_table_strict_query = 1`](/es/reference/settings/session-settings#external_table_strict_query), un filtro externo que no puede hacerse pushdown se rechaza con una excepción en lugar de aplicarse localmente.
+  Cualquier `WHERE`, `LIMIT`, agregación, etc., externos de la consulta de ClickHouse circundante **no** se hacen pushdown en la consulta pasada; se aplican en ClickHouse después de recuperar el resultado completo de la consulta. Para restringir los datos leídos desde PostgreSQL, coloca el filtro dentro de la consulta pasada. Con [`external_table_strict_query = 1`](/es/reference/settings/session-settings/external-table#external_table_strict_query), un filtro externo que no puede hacerse pushdown se rechaza con una excepción en lugar de aplicarse localmente.
 </Note>
 
 Las consultas `INSERT` del lado de PostgreSQL se ejecutan como `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` dentro de una transacción de PostgreSQL, con autocommit después de cada sentencia `INSERT`.
@@ -106,7 +106,7 @@ o
 SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
 ```
 
-Admite prioridades de réplicas para la fuente de diccionario de PostgreSQL. Cuanto mayor sea el número en el mapa, menor será la prioridad. La prioridad más alta es `0`.
+Admite prioridades de réplicas para la fuente para diccionario de PostgreSQL. Cuanto mayor sea el número en el mapa, menor será la prioridad. La prioridad más alta es `0`.
 
 <div id="examples">
   ## Ejemplos

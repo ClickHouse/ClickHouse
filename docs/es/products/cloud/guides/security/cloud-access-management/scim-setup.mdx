@@ -16,7 +16,7 @@ import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge
 
 ClickHouse Cloud admite SCIM 2.0 (System for Cross-domain Identity Management) para la gestión automatizada del ciclo de vida de usuarios y grupos. Una vez conectado a tu proveedor de identidad, cada usuario que asignes a la aplicación de ClickHouse Cloud se crea automáticamente en tu organización con el rol adecuado, las actualizaciones de perfil se aplican automáticamente y, al eliminar a un usuario de tu IdP, se le revoca el acceso, sin invitaciones manuales ni cuentas huérfanas.
 
-Esta guía te explica cómo configurar de principio a fin el aprovisionamiento de SCIM con **Okta**. El endpoint de SCIM de ClickHouse Cloud sigue SCIM 2.0 (RFC 7644), pero la autenticación solo es compatible mediante Basic Auth, y Okta es el único proveedor de identidad con el que lo hemos probado. Otros IdP de SCIM 2.0 pueden funcionar si admiten autenticación mediante Basic Auth, pero hoy no cuentan con soporte oficial.
+Esta guía te explica cómo configurar de principio a fin el aprovisionamiento de SCIM con **Okta**. El endpoint de SCIM de ClickHouse Cloud sigue SCIM 2.0 (RFC 7644). Okta se autentica mediante Basic Auth, que es el método que utiliza esta guía. Si tu proveedor de identidad es Microsoft Entra ID, sigue en su lugar la guía de [aprovisionamiento SCIM con Entra ID](/es/products/cloud/guides/security/cloud-access-management/scim-setup-entra).
 
 <div id="before-you-begin">
   ## Antes de comenzar
@@ -316,7 +316,7 @@ Okta reintenta las llamadas de aprovisionamiento fallidas, pero con el tiempo la
   </Accordion>
 
   <Accordion title="¿SCIM funciona con Microsoft Entra ID, OneLogin u otros IdP de SCIM 2.0?">
-    Oficialmente, no: Okta es el único IdP que hemos probado y que admitimos actualmente. El endpoint sigue SCIM 2.0 (RFC 7644), pero la autenticación está restringida a Basic Auth, por lo que cualquier IdP que no pueda autenticarse con Basic Auth no funcionará. En la práctica, otros IdP de SCIM 2.0 compatibles con Basic Auth pueden funcionar, pero no ofrecemos ninguna garantía.
+    Microsoft Entra ID también es compatible; consulte [aprovisionamiento SCIM con Entra ID](/es/products/cloud/guides/security/cloud-access-management/scim-setup-entra). El endpoint sigue SCIM 2.0 (RFC 7644) y acepta Basic Auth (utilizado por Okta) o un token Bearer (utilizado por Entra ID). En la práctica, otros IdP de SCIM 2.0 pueden funcionar si pueden autenticarse de una de estas formas, pero Okta y Entra ID son los IdP que hemos probado y que admitimos actualmente.
   </Accordion>
 
   <Accordion title="¿Con qué rapidez se reflejan en ClickHouse Cloud los cambios realizados en Okta?">

@@ -34,7 +34,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 يمكن أيضًا تمرير الوسيطات باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). في هذه الحالة، يجب تحديد `host` و`port` كلٌّ منهما على حدة. ويُنصح بهذا النهج في بيئة الإنتاج.
 
-<div id="returned_value">
+<div id="returned-value">
   ## القيمة المعادة
 </div>
 
@@ -82,7 +82,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JO
 <Note>
   يُحلِّل ClickHouse صيغة الاستعلام الفرعي `(SELECT ...)` ويُعيد تسلسلها بلهجة PostgreSQL (بما في ذلك وضع علامات الاقتباس لمعرّفات PostgreSQL وإفلات القيم الحرفية النصية) قبل إرسالها إلى الخادم. لذلك يجب أن تكون صالحة في ClickHouse SQL. ولتمرير بنية خاصة بـ PostgreSQL لا يحلّلها ClickHouse، استخدم الصيغة `query('...')`، إذ يُرسل نصها إلى PostgreSQL كما هو.
 
-  إن أي `WHERE` أو `LIMIT` خارجي، أو aggregation، وما إلى ذلك، من استعلام ClickHouse المحيط **لا** يُدفَع إلى داخل الاستعلام المُمرَّر، بل يُطبَّق في ClickHouse بعد جلب نتيجة الاستعلام الكاملة. ولتقييد البيانات المقروءة من PostgreSQL، ضع شرط التصفية داخل الاستعلام المُمرَّر. ومع [`external_table_strict_query = 1`](/ar/reference/settings/session-settings#external_table_strict_query)، يُرفَض أي شرط تصفية خارجي لا يمكن دفعه مع استثناء بدلًا من تطبيقه محليًا.
+  إن أي `WHERE` أو `LIMIT` خارجي، أو aggregation، وما إلى ذلك، من استعلام ClickHouse المحيط **لا** يُدفَع إلى داخل الاستعلام المُمرَّر، بل يُطبَّق في ClickHouse بعد جلب نتيجة الاستعلام الكاملة. ولتقييد البيانات المقروءة من PostgreSQL، ضع شرط التصفية داخل الاستعلام المُمرَّر. ومع [`external_table_strict_query = 1`](/ar/reference/settings/session-settings/external-table#external_table_strict_query)، يُرفَض أي شرط تصفية خارجي لا يمكن دفعه مع استثناء بدلًا من تطبيقه محليًا.
 </Note>
 
 تُنفَّذ استعلامات `INSERT` على جانب PostgreSQL بصيغة `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` داخل معاملة PostgreSQL، مع auto-commit بعد كل تعليمة `INSERT`.

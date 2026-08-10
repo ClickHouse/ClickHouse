@@ -16,11 +16,11 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 存储已执行查询的元数据和统计信息，例如开始时间、耗时、错误消息、资源使用情况以及其他执行细节。它不存储查询结果。
 
-您可以在服务器配置的 [query&#95;log](/zh/reference/settings/server-settings/settings#query_log) 部分修改查询日志设置。
+您可以在服务器配置的 [query&#95;log](/zh/reference/settings/server-settings/settings/query#query_log) 部分修改查询日志设置。
 
-您可以通过设置 [log&#95;queries = 0](/zh/reference/settings/session-settings#log_queries) 来禁用查询日志。我们不建议关闭日志，因为此表中的信息对于排查问题非常重要。
+您可以通过设置 [log&#95;queries = 0](/zh/reference/settings/session-settings/log-queries#log_queries) 来禁用查询日志。我们不建议关闭日志，因为此表中的信息对于排查问题非常重要。
 
-数据的刷写周期在 [query&#95;log](/zh/reference/settings/server-settings/settings#query_log) 服务器设置部分的 `flush_interval_milliseconds` 参数中设置。要强制刷写，请使用 [SYSTEM FLUSH LOGS](/zh/reference/statements/system#flush-logs) 查询。
+数据的刷写周期在 [query&#95;log](/zh/reference/settings/server-settings/settings/query#query_log) 服务器设置部分的 `flush_interval_milliseconds` 参数中设置。要强制刷写，请使用 [SYSTEM FLUSH LOGS](/zh/reference/statements/system#flush-logs) 查询。
 
 ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见 [Introduction](/zh/reference/system-tables/overview#system-tables-introduction)。
 
@@ -35,9 +35,9 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 2. 如果在查询处理期间发生错误，则会创建两个事件，类型分别为 `QueryStart` 和 `ExceptionWhileProcessing`。
 3. 如果在启动查询之前发生错误，则会创建一个类型为 `ExceptionBeforeStart` 的事件。
 
-您可以使用 [log&#95;queries&#95;probability](/zh/reference/settings/session-settings#log_queries_probability) 设置来减少记录到 `query_log` 表中的查询数量。
+您可以使用 [log&#95;queries&#95;probability](/zh/reference/settings/session-settings/log-queries#log_queries_probability) 设置来减少记录到 `query_log` 表中的查询数量。
 
-您可以使用 [log&#95;formatted&#95;queries](/zh/reference/settings/session-settings#log_formatted_queries) 设置将格式化后的查询记录到 `formatted_query` 列。
+您可以使用 [log&#95;formatted&#95;queries](/zh/reference/settings/session-settings/log#log_formatted_queries) 设置将格式化后的查询记录到 `formatted_query` 列。
 
 <div id="columns">
   ## 列

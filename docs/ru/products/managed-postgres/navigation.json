@@ -23,20 +23,14 @@
         {
           "group": "pg_clickhouse",
           "pages": [
+            "ru/products/managed-postgres/extensions/pg_clickhouse/introduction",
             "ru/products/managed-postgres/extensions/pg_clickhouse/reference",
             "ru/products/managed-postgres/extensions/pg_clickhouse/tutorial"
-          ],
-          "root": "ru/products/managed-postgres/extensions/pg_clickhouse/introduction"
+          ]
         },
         "ru/products/managed-postgres/upgrades",
         "ru/products/managed-postgres/openapi",
         "ru/products/managed-postgres/terraform"
-      ]
-    },
-    {
-      "group": "Бенчмарки",
-      "pages": [
-        "ru/products/managed-postgres/benchmarks"
       ]
     },
     {
@@ -46,7 +40,7 @@
       ]
     },
     {
-      "group": "Интеграция ClickHouse",
+      "group": "Интеграция с ClickHouse",
       "pages": [
         "ru/products/managed-postgres/clickhouse-integration"
       ]
@@ -60,7 +54,6 @@
         "ru/products/managed-postgres/migrations/peerdb",
         "ru/products/managed-postgres/migrations/clickpipes",
         "ru/products/managed-postgres/migrations/data-validation",
-        "ru/products/managed-postgres/migrations/clickhouse-cloud",
         "ru/products/managed-postgres/migrations/faq"
       ]
     },
@@ -71,7 +64,8 @@
         "ru/products/managed-postgres/monitoring/dashboard",
         "ru/products/managed-postgres/monitoring/metrics",
         "ru/products/managed-postgres/monitoring/prometheus",
-        "ru/products/managed-postgres/monitoring/query-insights"
+        "ru/products/managed-postgres/monitoring/query-insights",
+        "ru/products/managed-postgres/monitoring/notifications"
       ]
     },
     {
@@ -82,5 +76,5 @@
     }
   ],
   "icon": "/images/icons/icon-postgres.svg",
-  "item": "Managed Postgres"
+  "item": "ClickHouse Managed Postgres"
 }

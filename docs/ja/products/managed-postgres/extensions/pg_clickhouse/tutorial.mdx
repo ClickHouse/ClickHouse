@@ -205,6 +205,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 プロトコルを使用するバイナリドライバーを選択しています。HTTP インターフェイスを使用する
 &quot;http&quot; ドライバーを使うこともできます。
 
+<Note>
+  ClickHouse Cloud console を使用して SQL を実行する場合は、console admin user に foreign server へのアクセスを許可します:
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
+
 次に、PostgreSQL ユーザーを ClickHouse ユーザーに対応付けます。これを行う最も簡単な方法は、
 現在の PostgreSQL ユーザーを foreign
 server のリモートユーザーにそのまま対応付けることです:
@@ -228,7 +236,7 @@ IMPORT FOREIGN SCHEMA taxi FROM SERVER taxi_srv INTO taxi;
 
 ```pgsql
 taxi=# \det+ taxi.*
-                                       外部テーブルの一覧
+                                       List of foreign tables
  Schema | Table |  Server  |                        FDW options                        | Description
 --------+-------+----------+-----------------------------------------------------------+-------------
  taxi   | trips | taxi_srv | (database 'taxi', table_name 'trips', engine 'MergeTree') | [null]

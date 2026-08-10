@@ -9,17 +9,21 @@ doc_type: 'reference'
 AI 関数は ClickHouse の組み込み関数で、AI の呼び出しや埋め込みの生成に使用でき、データの処理、情報の抽出、データの分類などを行えます。
 
 <Note>
-  AI 関数は Experimental です。有効にするには [`allow_experimental_ai_functions`](/ja/reference/settings/session-settings#allow_experimental_ai_functions) を設定してください。
-</Note>
+  AI 関数は Experimental です。有効にするには [`allow_experimental_ai_functions`](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) を設定してください。
 
-<Note>
   AI 関数は予測不能な出力を返す場合があります。結果は、プロンプトの品質と使用するモデルに大きく依存します。
 </Note>
 
+<Warning>
+  **プロンプトインジェクション**
+
+  入力テキストはモデルに送信され、その出力を誘導する可能性があります (プロンプトインジェクション) 。外部の未検証または未サニタイズのソースからのテキストには、モデルに攻撃者が制御するコンテンツを返させたり、要求されたフォーマットを無視させたり、悪意のあるペイロードを出力させたりする指示が含まれている可能性があります。AI 関数の出力は信頼できないものとして扱ってください。SQL の構築、シェルコマンド、追加のクエリ、アクセス制御の判断など、後続のステップで使用する前に検証またはサニタイズしてください。
+</Warning>
+
 すべての関数は、以下を提供する共通のインフラストラクチャを利用しています。
 
-* **クォータの適用**: トークン ([`ai_function_max_input_tokens_per_query`](/ja/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ja/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) および API 呼び出し ([`ai_function_max_api_calls_per_query`](/ja/reference/settings/session-settings#ai_function_max_api_calls_per_query)) に対するクエリ単位の上限。
-* **バックオフ付き再試行**: 一時的な障害は、指数バックオフ ([`ai_function_retry_initial_delay_ms`](/ja/reference/settings/session-settings#ai_function_retry_initial_delay_ms)) を使用して再試行 ([`ai_function_max_retries`](/ja/reference/settings/session-settings#ai_function_max_retries)) されます。
+* **クォータの適用**: トークン ([`ai_function_max_input_tokens_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) および API 呼び出し ([`ai_function_max_api_calls_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)) に対するクエリ単位の上限。
+* **バックオフ付き再試行**: 一時的な障害は、指数バックオフ ([`ai_function_retry_initial_delay_ms`](/ja/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)) を使用して再試行 ([`ai_function_max_retries`](/ja/reference/settings/session-settings/ai-function#ai_function_max_retries)) されます。
 
 <div id="configuration">
   ## Configuration
@@ -69,8 +73,8 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. 存在する場合は、パラメータマップの `credentials` キー。
 2. それ以外の場合は、該当するデフォルト認証情報の設定。
-   * テキスト関数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) では [`ai_function_text_default_credentials`](/ja/reference/settings/session-settings#ai_function_text_default_credentials)。
-   * `aiEmbed` では [`ai_function_embedding_default_credentials`](/ja/reference/settings/session-settings#ai_function_embedding_default_credentials)。
+   * テキスト関数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) では [`ai_function_text_default_credentials`](/ja/reference/settings/session-settings/ai-function#ai_function_text_default_credentials)。
+   * `aiEmbed` では [`ai_function_embedding_default_credentials`](/ja/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials)。
 
 どちらも設定されていない場合、呼び出しは失敗します。テキスト関数と埋め込み関数でデフォルト設定が分かれているのは、chat-completions のエンドポイントが embeddings 用のものとは異なるためです。
 
@@ -88,7 +92,7 @@ SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
   ### パラメータマップ
 </div>
 
-各関数は、末尾に任意の `Map(String, String)` のパラメータマップを受け取れます。すべての値は文字列です (数値も `'0.2'` のようにクォートしてください) 。不明なキーは受け付けられません。指定されたキーは、対応する 名前付きコレクション の値を上書きします。指定されていないキーは、名前付きコレクション (`model`/`max_tokens` の場合) または組み込みのデフォルト値が使われます。例外は `aiEmbed` で、`model` を必須の位置引数として受け取り (`aiEmbed(text, model[, params])`)、代わりにパラメータマップや 名前付きコレクション に設定するとエラーになります。
+各関数は、末尾に任意の `Map(String, String)` のパラメータマップを受け取れます。すべての値は文字列です (数値も `'0.2'` のようにクォートしてください) 。不明なキーは受け付けられません。指定されたキーは、対応する 名前付きコレクション の値を上書きします。指定されていないキーは、名前付きコレクション (`model`/`max_tokens` の場合) または組み込みのデフォルト値が使われます。例外は `aiEmbed` で、`model` を必須の位置引数として受け取り (`aiEmbed(text, model[, params])`)、代わりにパラメータマップや 名前付きコレクション に設定するとエラーになります。これは再現可能な埋め込みを保証するためです。
 
 以下のパラメータは、すべての AI 関数に共通です。
 
@@ -113,7 +117,7 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
   ### エンドポイントホストの制限
 </div>
 
-AI named collection の `endpoint` URL は、サーバーが自身の identity で接続する送信先であり、リクエストヘッダーに named collection の `api_key` を (指定されている場合に) 含めて送信する可能性があります。デフォルトでは、ClickHouse はすべてのホストへの接続を許可します。関数を特定の provider 群のみに制限するには、サーバー設定で [`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings#remote_url_allow_hosts) を設定します。例:
+AI 名前付きコレクション の `endpoint` URL は、サーバーが自身の identity で接続する送信先であり、リクエストヘッダーに 名前付きコレクション の `api_key` を (指定されている場合に) 含めて送信する可能性があります。デフォルトでは、ClickHouse はすべてのホストへの接続を許可します。関数を特定の provider 群のみに制限するには、サーバー設定で [`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) を設定します。例:
 
 ```xml
 <remote_url_allow_hosts>
@@ -133,7 +137,7 @@ AI named collection の `endpoint` URL は、サーバーが自身の identity �
 * `https://` — 接続に TLS が使用されます。リクエストボディ (入力テキスト、プロンプト) と、リクエストヘッダー内の `api_key` は転送中に暗号化され、プロバイダー の certificate も検証されます。リモートの プロバイダー には必ずこちらを使用してください。
 * `http://` — 接続は**暗号化されません**。リクエストボディと `api_key` は平文で送信されます。これは、private network 上の信頼できる プロバイダー (例: ローカルの `vLLM` または `Ollama` インスタンス) に対してのみ使用してください。
 
-AI 関数は HTTPS を強制しません。`http://` エンドポイント も受け入れられ、データは暗号化されないまま送信されます。現時点では、平文の AI エンドポイント を拒否する server-side の設定はありません。[`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings#remote_url_allow_hosts) は宛先 host のみを制限し、URL スキームは検査しないため、許可された host への `http://` エンドポイント は引き続き許可されます。転送を暗号化したい場合は、`https://` エンドポイント を使うように 名前付きコレクション を設定してください。
+デフォルトでは、AI 関数はリモート host に平文でデータを送信する `endpoint` を拒否します。host がループバックでない HTTPS 以外のエンドポイント は例外を発生させます。ループバック host (`localhost`、`127.0.0.0/8`、`::1`) は対象外のため、ローカルの `http://localhost` モデル server はそのまま動作します。リモート host で平文の `http://` エンドポイント を許可するには、[`ai_function_allow_insecure_endpoint`](/ja/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) を `1` に設定します。この check は [`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) とは独立しています。この設定は host の allowlist であり、URL スキームは検査しないため、許可された host を指す `http://` エンドポイント は引き続き許可されます。
 
 いずれの場合も、プロバイダー は TLS 終端後の入力データを平文で受け取る点に注意してください。TLS が保護するのは、server と プロバイダー の間のネットワーク経路上のデータのみです。
 
@@ -189,8 +193,6 @@ ORDER BY event_time DESC;
 
 指定されたテキストを、LLMプロバイダーを使用して、与えられたカテゴリのいずれか 1 つに分類します。
 
-この関数は、固定の分類プロンプトと、モデルが指定されたラベルのうちちょうど 1 つだけを返すよう制約する JSON スキーマのレスポンスフォーマットとともに、テキストを送信します。レスポンスが `{"category": "..."}` 形式の JSON オブジェクトとして返された場合は、ラベルが取り出され、その文字列が返されます。
-
 認証情報 (プロバイダー、モデル、エンドポイント、および必要に応じて API key を指定する 名前付きコレクション) は、オプションの パラメータマップ の `credentials` キーから取得されるか、その map で省略されている場合は `ai_function_text_default_credentials` 設定から取得されます。
 
 **構文**
@@ -205,7 +207,7 @@ aiClassify(text, categories[, params])
 
 * `text` — 分類するテキスト。[`String`](/ja/reference/data-types/string)
 * `categories` — 候補となるカテゴリラベルの定数リスト。[`Array(String)`](/ja/reference/data-types/array)
-* `params` — オプションの定数 `Map(String, String)` パラメーター。関数固有のキー: `temperature` (ランダム性を制御するサンプリング温度。デフォルト `0.0`)、`max_tokens` (1 回の呼び出しあたりの最大出力トークン数。デフォルト `1024`)。共通パラメーター `credentials` と `model` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions) を参照)。[`Map(String, String)`](/ja/reference/data-types/map)
+* `params` — オプションの定数 `Map(String, String)` パラメータ。関数固有のキー: `temperature` (ランダム性を制御するサンプリング温度。デフォルト `0.0`)、`max_tokens` (1 回の呼び出しあたりの最大出力トークン数。デフォルト `1024`)。共通パラメータ `credentials` と `model` も適用されます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions) を参照)。[`Map(String, String)`](/ja/reference/data-types/map)
 
 **戻り値**
 
@@ -235,25 +237,25 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 導入バージョン: v26.6.0
 
-設定済みの AI provider を使用して、指定されたテキストの埋め込みベクトルを生成します。
+設定済みの AI プロバイダー を使用して、指定されたテキストの埋め込みベクトルを生成します。
 
 この関数はテキストを設定済みの埋め込み エンドポイント に送信し、生成されたベクトルを `Array(Float32)` として返します。
 1つの block 内の行については、呼び出しごとのオーバーヘッドを減らすため、入力は
-1回の HTTP request あたり最大
-[`ai_function_embedding_max_batch_size`](/ja/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+1回の HTTP リクエスト あたり最大
+[`ai_function_embedding_max_batch_size`](/ja/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 エントリの batches にグループ化されます。
 
-認証情報 (provider、エンドポイント、必要に応じて API key を指定する 名前付きコレクション)
+認証情報 (プロバイダー、エンドポイント、必要に応じて API key を指定する 名前付きコレクション)
 は、パラメータマップ の `credentials` キーから取得されるか、
 map で省略されている場合は `ai_function_embedding_default_credentials` 設定から取得されます。`aiEmbed` では
-テキスト関数とは別のデフォルト認証情報設定が使われる点に注意してください。これは、embeddings エンドポイント が
+テキスト関数とは別のデフォルト認証情報設定が使われる点に注意してください。これは、埋め込み エンドポイント が
 chat エンドポイント とは異なるためです。
 
 `model` は必須の位置引数 (定数の `String`) です。テキスト関数とは異なり、
 `aiEmbed` は 名前付きコレクション や パラメータマップ から `model` を読み取りません。`model` を定義する 名前付きコレクション は、
-暗黙的に無視されるのではなく、拒否されます。
+拒否されます。
 
-オプションの `dimensions` parameter は、モデルが対応している場合 (たとえば OpenAI&#39;s `text-embedding-3-*`) 、
+オプションの `dimensions` パラメータ は、モデルが対応している場合 (たとえば OpenAI&#39;s `text-embedding-3-*`) 、
 指定したサイズのベクトルを要求します。対応していない場合は、モデル本来のサイズが返されます。
 
 **構文**
@@ -266,7 +268,7 @@ aiEmbed(text, model[, params])
 
 * `text` — 埋め込み対象のテキスト。[`String`](/ja/reference/data-types/string)
 * `model` — 埋め込みモデル名。[`const String`](/ja/reference/data-types/string)
-* `params` — 省略可能な定数 `Map(String, String)` パラメーター。関数固有のキー: `dimensions` (出力ベクトルの目標次元数。`0` または省略時はモデルのネイティブのサイズを意味します) 。共通パラメーター `credentials` も使用できます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions) を参照) 。[`Map(String, String)`](/ja/reference/data-types/map)
+* `params` — 省略可能な定数 `Map(String, String)` パラメータ。関数固有のキー: `dimensions` (出力ベクトルの目標次元数。`0` または省略時はモデルのネイティブのサイズを意味します) 。共通パラメータ `credentials` も使用できます ([AI 関数](/ja/reference/functions/regular-functions/ai-functions) を参照) 。[`Map(String, String)`](/ja/reference/data-types/map)
 
 **戻り値**
 

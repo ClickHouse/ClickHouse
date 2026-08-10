@@ -4248,7 +4248,7 @@ Comprueba si el array de entrada está vacío.
 Un array se considera vacío si no contiene ningún elemento.
 
 <Note>
-  Puede optimizarse habilitando el ajuste [`optimize_functions_to_subcolumns`](/es/reference/settings/session-settings#optimize_functions_to_subcolumns). Con `optimize_functions_to_subcolumns = 1`, la función lee solo la subcolumna [size0](/es/reference/data-types/array#array-size) en lugar de leer y procesar toda la columna de array. La consulta `SELECT empty(arr) FROM TABLE;` se transforma en `SELECT arr.size0 = 0 FROM TABLE;`.
+  Puede optimizarse habilitando el ajuste [`optimize_functions_to_subcolumns`](/es/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Con `optimize_functions_to_subcolumns = 1`, la función lee solo la subcolumna [size0](/es/reference/data-types/array#array-size) en lugar de leer y procesar toda la columna de array. La consulta `SELECT empty(arr) FROM TABLE;` se transforma en `SELECT arr.size0 = 0 FROM TABLE;`.
 </Note>
 
 La función también funciona con Strings o UUIDs.
@@ -5137,6 +5137,11 @@ Si el array no contiene el valor buscado, la función devuelve `0`.
 
 Los elementos con valor `NULL` se tratan como valores normales.
 
+Los elementos `NaN` no siguen la regla de `NULL` anterior.
+Una comparación escalar de dos valores `NaN` (`NaN = NaN`) es `0`, pero `indexOf` puede indicar que se encontró un elemento `NaN`.
+Que lo haga es un detalle de implementación. No dependa de un comportamiento específico.
+Para encontrar uno, compruébelo: `arrayFirstIndex(x -> isNaN(x), arr)` devuelve su posición y `arrayExists(x -> isNaN(x), arr)`, un indicador.
+
 **Sintaxis**
 
 ```sql
@@ -5335,7 +5340,7 @@ Comprueba si el array de entrada no está vacío.
 Un array se considera no vacío si contiene al menos un elemento.
 
 <Note>
-  Se puede optimizar habilitando la opción [`optimize_functions_to_subcolumns`](/es/reference/settings/session-settings#optimize_functions_to_subcolumns). Con `optimize_functions_to_subcolumns = 1`, la función lee solo la subcolumna [size0](/es/reference/data-types/array#array-size) en lugar de leer y procesar toda la columna de tipo Array. La consulta `SELECT notEmpty(arr) FROM table` se transforma en `SELECT arr.size0 != 0 FROM TABLE`.
+  Se puede optimizar habilitando la opción [`optimize_functions_to_subcolumns`](/es/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Con `optimize_functions_to_subcolumns = 1`, la función lee solo la subcolumna [size0](/es/reference/data-types/array#array-size) en lugar de leer y procesar toda la columna de tipo Array. La consulta `SELECT notEmpty(arr) FROM table` se transforma en `SELECT arr.size0 != 0 FROM TABLE`.
 </Note>
 
 La función también funciona con Strings o UUIDs.
@@ -5483,7 +5488,7 @@ Los tipos admitidos son:
 
 * Todos los argumentos `start`, `end` y `step` deben ser de uno de los tipos admitidos anteriores. Los elementos del Array devuelto serán de un supertipo de los argumentos.
 
-* Se genera una excepción si la función devuelve un Array con una longitud total mayor que el número de elementos especificado por la configuración [`function_range_max_elements_in_block`](/es/reference/settings/session-settings#function_range_max_elements_in_block).
+* Se genera una excepción si la función devuelve un Array con una longitud total mayor que el número de elementos especificado por la configuración [`function_range_max_elements_in_block`](/es/reference/settings/session-settings/function#function_range_max_elements_in_block).
 
 * Devuelve `NULL` si algún argumento tiene el tipo Nullable(nothing). Se genera una excepción si algún argumento tiene el valor `NULL` (tipo Nullable(T)).
 

@@ -189,13 +189,27 @@ Vous pouvez également utiliser ces commandes avec la syntaxe décrite ci-dessus
 
   <Tab title="RESTAURATION">
     ```sql
-    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    RESTORE ALL
     FROM S3(
         'https://testchbackups.s3.amazonaws.com/<uuid>',
         '<key id>',
         '<key secret>'
     )
+    SETTINGS restore_access_entities_with_current_grants = 1
     ```
+
+    Le paramètre `restore_access_entities_with_current_grants` est disponible à partir de la version **26.4** de ClickHouse Cloud (build **26.4.1.1942** ou version ultérieure).
+    Vous pouvez vérifier la version exécutée par votre service avec :
+
+    ```sql
+    SELECT version()
+    ```
+
+    Lorsque `restore_access_entities_with_current_grants` est activé, les privilèges des utilisateurs et rôles restaurés sont limités à ceux que l’utilisateur effectuant la restauration est autorisé à accorder
+    (avec la même sémantique que [`GRANT CURRENT GRANTS`](/fr/sql-reference/statements/grant)), plutôt que `RESTORE`
+    échoue avec `ACCESS_DENIED` lorsque la sauvegarde contient davantage de permissions que l’utilisateur effectuant la restauration ne peut accorder.
+
+    Sur les versions antérieures à 26.4, omettez le paramètre.
   </Tab>
 </Tabs>
 
