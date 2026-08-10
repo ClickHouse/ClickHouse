@@ -1000,6 +1000,112 @@ TEST_P(CoordinationTest, TestDurableState)
     }
 }
 
+namespace
+{
+
+/// Test disk: throws when the given file is (re)opened for writing, and rejects moveFile
+/// (as plain/s3_plain metadata does).
+class ThrowingStateDisk : public DB::DiskLocal
+{
+public:
+    ThrowingStateDisk(const std::string & disk_name, const std::string & disk_path, std::string fail_path_)
+        : DB::DiskLocal(disk_name, disk_path), fail_path(std::move(fail_path_))
+    {
+    }
+
+    void arm() { armed = true; }
+    void disarm() { armed = false; }
+
+    std::unique_ptr<DB::WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
+    {
+        auto inner = DB::DiskLocal::writeFile(path, buf_size, mode, settings);
+        if (armed && path == fail_path)
+            throw std::runtime_error("Injected state write failure");
+        return inner;
+    }
+
+    void moveFile(const String &, const String &) override
+    {
+        /// Matches plain (s3_plain) metadata, which throws NOT_IMPLEMENTED for moveFile.
+        throw std::runtime_error("moveFile is not implemented for this disk");
+    }
+
+private:
+    std::string fail_path;
+    bool armed = false;
+};
+
+}
+
+/// Regression test for https://github.com/ClickHouse/ClickHouse/issues/111454.
+TEST_P(CoordinationTest, TestDurableStateCrashDuringSave)
+{
+    ChangelogDirTest logs("./logs");
+    this->setLogDirectory("./logs");
+
+    auto disk = std::make_shared<ThrowingStateDisk>("StateFile", ".", "state");
+    this->keeper_context->setStateFileDisk(disk);
+
+    std::optional<DB::KeeperStateManager> state_manager;
+    const auto reload_state_manager = [&]
+    {
+        state_manager.emplace(1, "localhost", 9181, this->keeper_context);
+        state_manager->loadLogStore(1, 0);
+    };
+
+    reload_state_manager();
+    ASSERT_EQ(state_manager->read_state(), nullptr);
+
+    /// Persist an initial state (term 1) successfully.
+    auto state = nuraft::cs_new<nuraft::srv_state>();
+    state->set_term(1);
+    state->set_voted_for(2);
+    state->allow_election_timer(true);
+    state_manager->save_state(*state);
+
+    {
+        auto read_state = state_manager->read_state();
+        ASSERT_NE(read_state, nullptr);
+        ASSERT_EQ(read_state->get_term(), 1);
+        ASSERT_EQ(read_state->get_voted_for(), 2);
+    }
+
+    /// Now attempt to persist term 2 but crash (throw) while the live "state" file is being
+    /// rewritten. The live file is left truncated/torn, exactly the vulnerable window.
+    auto new_state = nuraft::cs_new<nuraft::srv_state>();
+    new_state->set_term(2);
+    new_state->set_voted_for(3);
+    new_state->allow_election_timer(true);
+
+    disk->arm();
+    ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+    disk->disarm();
+
+    /// After the "crash" the previously committed state must still be recoverable: read_state
+    /// must not return nullptr (which would reset the node to term 0 and lose the vote).
+    reload_state_manager();
+    auto recovered = state_manager->read_state();
+    ASSERT_NE(recovered, nullptr);
+    /// The recovered state is the last durably persisted one (term 1); the interrupted term-2
+    /// write never became durable. The invariant that matters is that state is not lost.
+    ASSERT_EQ(recovered->get_term(), 1);
+    ASSERT_EQ(recovered->get_voted_for(), 2);
+
+    /// A subsequent successful save must work normally after recovery.
+    state_manager->save_state(*new_state);
+    reload_state_manager();
+    auto final_state = state_manager->read_state();
+    ASSERT_NE(final_state, nullptr);
+    ASSERT_EQ(final_state->get_term(), 2);
+    ASSERT_EQ(final_state->get_voted_for(), 3);
+
+    if (std::filesystem::exists("./state"))
+        std::filesystem::remove("./state");
+    if (std::filesystem::exists("./state-OLD"))
+        std::filesystem::remove("./state-OLD");
+}
+
 TEST_P(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
