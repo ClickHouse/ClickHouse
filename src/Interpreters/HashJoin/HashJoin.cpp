@@ -34,6 +34,7 @@
 #include <Interpreters/joinDispatch.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
@@ -57,6 +58,12 @@ extern const int SET_SIZE_LIMIT_EXCEEDED;
 extern const int TYPE_MISMATCH;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int INVALID_JOIN_ON_EXPRESSION;
+extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+extern const char hash_join_throw_after_data_release[];
 }
 
 size_t getMinBytesForPrefetchInJoin()
@@ -1609,6 +1616,11 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     {
         auto sample_block = std::move(data->sample_block);
         data.reset();
+        /// `extract_source_blocks` allocates, so it can throw here with `data` already gone.
+        fiu_do_on(FailPoints::hash_join_throw_after_data_release,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the join data was released");
+        });
         return extract_source_blocks(std::move(right_columns), sample_block);
     }
 

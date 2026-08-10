@@ -282,7 +282,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
-    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause)
+    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
+    ONCE(hash_join_throw_after_data_release)
 
 namespace FailPoints
 {
