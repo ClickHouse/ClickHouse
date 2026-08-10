@@ -95,7 +95,8 @@ public:
     public:
         FillClaim() = default;
         FillClaim(FillClaim && other) noexcept
-            : to_fetch(std::move(other.to_fetch))
+            : available(std::move(other.available))
+            , to_fetch(std::move(other.to_fetch))
             , sibling_led(std::move(other.sibling_led))
             , release(std::exchange(other.release, nullptr))
         {
@@ -105,6 +106,7 @@ public:
             if (this != &other)
             {
                 reset();
+                available = std::move(other.available);
                 to_fetch = std::move(other.to_fetch);
                 sibling_led = std::move(other.sibling_led);
                 release = std::exchange(other.release, nullptr);
@@ -121,6 +123,10 @@ public:
                 r();
         }
 
+        /// Already committed in this thread's own cells (a prior downloader's partial
+        /// that we resumed): read it from cache, never fetch it from the source. Carries
+        /// NO contention meaning - unlike `sibling_led`, it does not flag `m.contended`.
+        VectorWithMemoryTracking<ByteRange> available;
         VectorWithMemoryTracking<ByteRange> to_fetch;
         VectorWithMemoryTracking<ByteRange> sibling_led;
         /// Completes-and-releases the newly-won roles; noexcept by construction (the

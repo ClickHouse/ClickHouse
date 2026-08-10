@@ -416,8 +416,9 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
     /// `window` is FILE-space, clamped per segment. For each held segment overlapping it:
     /// a DOWNLOADED segment is already cached (`sibling_led`: serve from cache, a wait on
     /// it returns immediately); for an undownloaded one, `getOrSetDownloader` either makes
-    /// us the downloader (`to_fetch`: fetch+write it on this thread while the claim is open)
-    /// or a sibling leads it (`sibling_led`). Only roles NEWLY won here enter the claim's
+    /// us the downloader or a sibling leads it (`sibling_led`). When we hold the role, the
+    /// segment's already-committed prefix is `available` (read from cache, never refetched)
+    /// and only the missing tail is `to_fetch`. Only roles NEWLY won here enter the claim's
     /// release set: a nested claim over segments this thread already leads (a tile write
     /// inside a window-long claim) must not release the outer claim's roles. The release
     /// completes-and-resets exactly those segments - a claim whose fetch never reached a
@@ -457,7 +458,19 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
             segment.getOrSetDownloader();
         if (segment.isDownloader())
         {
-            c.to_fetch.push_back(ByteRange{lo, hi - lo});
+            /// We hold the role (won it now, or already had it). Only WE advance `cwo`, so it is
+            /// stable here: the committed prefix `[lo, cwo)` is `available` (read from cache, never
+            /// refetched from the source - a prior downloader's partial we resumed), the tail
+            /// `[cwo, hi)` is `to_fetch`. `cwo` is object-local; shift to file space. An EMPTY
+            /// segment has `cwo` at its start, so `available` is empty and the whole overlap is
+            /// `to_fetch` - identical to before.
+            const size_t cwo_file = segment.getCurrentWriteOffset() + object_file_offset;
+            const size_t avail_hi = std::min(hi, cwo_file);
+            if (avail_hi > lo)
+                c.available.push_back(ByteRange{lo, avail_hi - lo});
+            const size_t fetch_lo = std::max(lo, cwo_file);
+            if (hi > fetch_lo)
+                c.to_fetch.push_back(ByteRange{fetch_lo, hi - fetch_lo});
             if (!already_mine)
                 won->push_back(segment_ptr);
         }

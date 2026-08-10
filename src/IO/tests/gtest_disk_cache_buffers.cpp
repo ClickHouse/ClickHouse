@@ -494,6 +494,43 @@ TEST_F(DiskCacheBuffers, SecondWriterContinuesFromCommittedFrontier)
     EXPECT_EQ(bytes.substr(half), std::string(kSegmentSize - half, 'B'));
 }
 
+/// A FRESH claim whose range covers an already-committed prefix of a
+/// PARTIALLY_DOWNLOADED segment must return that prefix as `available` (read from
+/// cache) and put ONLY the missing tail in `to_fetch` - never refetch the cached
+/// prefix from the source. Crucially `available` is NOT `sibling_led`, so it carries
+/// no contention meaning. This is the concurrent-populate race: one reader commits a
+/// prefix and releases, then a reader whose plan predates the commit claims the range.
+TEST_F(DiskCacheBuffers, FreshClaimServesCommittedPrefixInsteadOfRefetching)
+{
+    auto provider = makeProvider();
+    auto object = makeObject("obj_partial_claim", kSegmentSize);
+
+    const size_t half = kSegmentSize / 2;
+    auto view = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}});
+    ASSERT_EQ(view->misses().size(), 1u);
+    auto & writer = *view->misses()[0].writer;
+    ASSERT_EQ(writer.range().size, kSegmentSize);
+
+    /// Commit the prefix and release the claim -> PARTIALLY_DOWNLOADED at cwo = half.
+    ASSERT_EQ(claimedWrite(writer, makeChain(0, half, 'A')), half);
+
+    /// Fresh claim over the WHOLE range on the now-partial segment.
+    auto claim = writer.claim(ByteRange{0, kSegmentSize});
+
+    ASSERT_EQ(claim.available.size(), 1u) << "the committed prefix must be available (cache read)";
+    EXPECT_EQ(claim.available[0].offset, 0u);
+    EXPECT_EQ(claim.available[0].size, half);
+
+    ASSERT_EQ(claim.to_fetch.size(), 1u) << "only the missing tail may be fetched";
+    EXPECT_EQ(claim.to_fetch[0].offset, half);
+    EXPECT_EQ(claim.to_fetch[0].size, kSegmentSize - half);
+
+    EXPECT_TRUE(claim.sibling_led.empty()) << "our own committed prefix is not contention";
+
+    /// The won role still fills the tail; the segment completes across the two claims.
+    ASSERT_EQ(writer.write(makeChain(half, kSegmentSize - half, 'B')), kSegmentSize - half);
+}
+
 /// RM1 pin: while a sibling HOLDS the claim, a second writer's write is a
 /// graceful no-op (role not adopted, nothing thrown, 0 bytes); once the claim
 /// releases, the same writer object continues from the frontier.
