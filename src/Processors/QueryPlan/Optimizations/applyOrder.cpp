@@ -67,6 +67,18 @@ static void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
             return;
         }
 
+        if (node->children.empty())
+            return;
+
+        /// A set-building step keeps the main pipeline in `children.front()` and adds one more child
+        /// per set subquery, so it usually has several children. Follow only the main child, the same
+        /// way `findReadingStep` in `optimizeReadInOrder` does.
+        if (typeid_cast<CreatingSetsStep *>(step) || typeid_cast<DelayedCreatingSetsStep *>(step))
+        {
+            node = node->children.front();
+            continue;
+        }
+
         if (node->children.size() != 1)
             return;
 
@@ -75,9 +87,7 @@ static void preferMultipleStreamsForReadingBelow(QueryPlan::Node * node)
         if (!typeid_cast<ExpressionStep *>(step)
             && !typeid_cast<FilterStep *>(step)
             && !typeid_cast<ArrayJoinStep *>(step)
-            && !typeid_cast<DistinctStep *>(step)
-            && !typeid_cast<CreatingSetsStep *>(step)
-            && !typeid_cast<DelayedCreatingSetsStep *>(step))
+            && !typeid_cast<DistinctStep *>(step))
             return;
 
         node = node->children.front();

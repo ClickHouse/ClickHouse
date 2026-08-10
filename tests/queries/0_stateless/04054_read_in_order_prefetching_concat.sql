@@ -71,6 +71,34 @@ SELECT arr = arraySort(arr) AS is_sorted, length(arr) AS n FROM (
     )
 ) SETTINGS optimize_distinct_in_order = 1;
 
+-- The same, but with a set subquery in the filter, so a set-building step joins the plan.
+-- `preferMultipleStreamsForReadingBelow` has to follow the main child of such a step (it has one
+-- more child per set subquery), the same way `findReadingStep` does, otherwise the parallel
+-- pre-distinct transforms below it would be collapsed into one stream by `PrefetchingConcat`.
+-- Expect no PrefetchingConcat, a per-stream pre-distinct plus the final one (at least two
+-- `DistinctSortedStreamTransform`), and a sorted merge of the streams.
+SELECT 'no_prefetching_distinct_in_order_with_set';
+SELECT
+    countIf(explain LIKE '%PrefetchingConcat%') AS has_prefetching_concat,
+    countIf(explain LIKE '%DistinctSortedStreamTransform%') >= 2 AS has_per_stream_pre_distinct,
+    countIf(explain LIKE '%MergingSortedTransform%') > 0 AS keeps_multi_stream_merge
+FROM (
+    EXPLAIN PIPELINE SELECT DISTINCT path FROM t_prefetching_concat
+    WHERE path LIKE '%file.log'
+      AND path IN (SELECT concat('path/', toString(number), '/file.log') FROM numbers(500))
+    ORDER BY path
+) SETTINGS optimize_distinct_in_order = 1;
+
+SELECT 'distinct_in_order_with_set_correctness';
+SELECT arr = arraySort(arr) AS is_sorted, length(arr) AS n FROM (
+    SELECT groupArray(path) AS arr FROM (
+        SELECT DISTINCT path FROM t_prefetching_concat
+        WHERE path LIKE '%file.log'
+          AND path IN (SELECT concat('path/', toString(number), '/file.log') FROM numbers(500))
+        ORDER BY path
+    )
+) SETTINGS optimize_distinct_in_order = 1;
+
 -- A residual `WHERE` (not pushed into `PREWHERE`) is per-row CPU work above the read step.
 -- The old multi-stream path runs it in parallel across streams and merges only at the final
 -- sort, while PrefetchingConcat would collapse the streams into one and serialize it. So when a

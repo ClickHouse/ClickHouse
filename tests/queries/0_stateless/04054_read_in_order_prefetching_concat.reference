@@ -6,6 +6,10 @@ no_prefetching_distinct_in_order
 0
 distinct_correctness
 1	100000
+no_prefetching_distinct_in_order_with_set
+0	1	1
+distinct_in_order_with_set_correctness
+1	500
 no_prefetching_residual_filter
 0
 residual_filter_correctness
