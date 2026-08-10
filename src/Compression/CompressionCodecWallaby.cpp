@@ -533,10 +533,27 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     }
 
     /// Filled before use; zeroing per vector is a measurable cost on the compression path.
-    alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> quantized; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
-    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> adjustments; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
-    std::array<UInt16, WALLABY_VECTOR_VALUES> exception_positions; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
-    std::array<bool, WALLABY_VECTOR_VALUES> is_quantization_exception; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+    /// Two buffers per quantization array: the active scratch that quantize_all writes and the
+    /// preserved state of the best candidate so far. A new best swaps the pointer pairs instead
+    /// of copying, and the packing phase swaps once more to make the winner active again — the
+    /// winning scale is never quantized twice. The buffers live per thread, not on the frame:
+    /// doubled they exceed the frame-size limit, and every vector overwrites them fully.
+    struct QuantizationBuffers
+    {
+        alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> quantized[2];
+        alignas(64) std::array<T, WALLABY_VECTOR_VALUES> adjustments[2];
+        std::array<UInt16, WALLABY_VECTOR_VALUES> exception_positions[2];
+        std::array<bool, WALLABY_VECTOR_VALUES> exception_flags[2];
+    };
+    static thread_local QuantizationBuffers buffers;
+    SignedType * quantized = buffers.quantized[0].data();
+    T * adjustments = buffers.adjustments[0].data();
+    UInt16 * exception_positions = buffers.exception_positions[0].data();
+    bool * is_quantization_exception = buffers.exception_flags[0].data();
+    SignedType * best_quantized = buffers.quantized[1].data();
+    T * best_adjustments = buffers.adjustments[1].data();
+    UInt16 * best_exception_positions = buffers.exception_positions[1].data();
+    bool * best_exception_flags = buffers.exception_flags[1].data();
     std::array<bool, WALLABY_VECTOR_VALUES> exile_scratch; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     UInt32 exception_count = 0;
     /// Values representable at the scanned scale only up to a small ULP adjustment. The
@@ -563,18 +580,16 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// valid count here: every position it did visit is a real position of the vector.
     UInt32 monotone_exceptions = 0;
 
-    /// allow_floor_abort is off for the scan that seeds the reference quantization (the
-    /// trailing-zero candidate generation needs the full vector) and both aborts are off for
-    /// the winner's re-quantization (its comparison price may sit below its own floor and its
-    /// exceptions may exceed a budget tightened by that price).
-    const auto quantize_all = [&](Int32 candidate_alpha, bool allow_budget_abort = true, bool allow_floor_abort = true) -> bool
+    /// allow_floor_abort is off for the scan that seeds the reference quantization: the
+    /// trailing-zero candidate generation needs the full vector.
+    const auto quantize_all = [&](Int32 candidate_alpha, bool allow_floor_abort = true) -> bool
     {
-        const UInt32 budget = allow_budget_abort ? exception_budget() : count;
+        const UInt32 budget = exception_budget();
         exception_count = 0;
         soft_exception_count = 0;
         max_adjustment_zigzag = 0;
         monotone_exceptions = 0;
-        std::fill(is_quantization_exception.begin(), is_quantization_exception.begin() + count, false);
+        std::fill(is_quantization_exception, is_quantization_exception + count, false);
         SignedType previous_good = 0;
         Int32 first_good = -1;
         /// Running bounds for the periodic floor check below: the Frame-of-Reference range and
@@ -983,10 +998,11 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
       * scale before the majority scale wins.
       */
     Int32 alpha = 0;
-    /// The alpha whose quantization the scratch arrays currently hold; a failed quantize_all
-    /// leaves them clobbered halfway, so it resets this tracker.
-    std::optional<Int32> scratch_alpha;
     std::optional<Packing> best;
+    /// Scalar counterparts of the swapped best-candidate buffers.
+    UInt32 best_exception_count = 0;
+    UInt32 best_soft_exception_count = 0;
+    T best_max_adjustment_zigzag = 0;
     /// The comparison price of the best packing: its recorded (realizable) size minus the
     /// discount for near-misses that adjustment lanes would absorb more cheaply than the
     /// exception list the uncapped measure prices them as.
@@ -1137,7 +1153,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         if (!estimate_allows(candidate))
             return;
 
-        const bool quantized_all = quantize_all(candidate, true, reference_filled);
+        const bool quantized_all = quantize_all(candidate, reference_filled);
         monotone_exceptions_at[alpha_index(candidate)] = std::max(monotone_exceptions_at[alpha_index(candidate)], monotone_exceptions);
         if (!quantized_all)
         {
@@ -1149,10 +1165,8 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             for (UInt32 i = 0; i < sampled_alpha_count; ++i)
                 if (sampled_alphas[i] == candidate && sampled_exact_alphas[i] != sampled_alphas[i])
                     consider_candidate(sampled_exact_alphas[i]);
-            scratch_alpha.reset();
             return;
         }
-        scratch_alpha = candidate;
 
         if (!reference_filled)
         {
@@ -1233,6 +1247,13 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             best_price = price;
             alpha = candidate;
             best_total_size = std::min(best_total_size, price);
+            std::swap(quantized, best_quantized);
+            std::swap(adjustments, best_adjustments);
+            std::swap(exception_positions, best_exception_positions);
+            std::swap(is_quantization_exception, best_exception_flags);
+            best_exception_count = exception_count;
+            best_soft_exception_count = soft_exception_count;
+            best_max_adjustment_zigzag = max_adjustment_zigzag;
         }
     };
 
@@ -1268,9 +1289,15 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     if (!best)
         return std::nullopt;
 
-    /// The quantization scratch may hold a later evaluated candidate; recompute the winner.
-    if (scratch_alpha != alpha && !quantize_all(alpha, false, false))
-        return std::nullopt;
+    /// The winner's quantization was preserved by the pointer swap at its evaluation; make it
+    /// the active state again (later candidates worked on the other buffer).
+    std::swap(quantized, best_quantized);
+    std::swap(adjustments, best_adjustments);
+    std::swap(exception_positions, best_exception_positions);
+    std::swap(is_quantization_exception, best_exception_flags);
+    exception_count = best_exception_count;
+    soft_exception_count = best_soft_exception_count;
+    max_adjustment_zigzag = best_max_adjustment_zigzag;
 
     /// The capping analysis (PFOR-style patching of lane-width outliers into exceptions, and
     /// the reverse conversion of near-miss exceptions into adjustment lanes) runs once per
