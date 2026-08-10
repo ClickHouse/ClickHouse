@@ -1,5 +1,5 @@
 {
-  "settings": 357,
+  "settings": 358,
   "anchorRoutes": {
     "adaptive_write_buffer_initial_size": "/reference/settings/merge-tree-settings/other",
     "add_implicit_sign_column_constraint_for_collapsing_engine": "/reference/settings/merge-tree-settings/other",
@@ -26,8 +26,9 @@
     "allow_tuple_element_aggregation": "/reference/settings/merge-tree-settings/allow",
     "allow_vertical_merges_from_compact_to_wide_parts": "/reference/settings/merge-tree-settings/allow",
     "alter_column_secondary_index_mode": "/reference/settings/merge-tree-settings/other",
-    "always_fetch_merged_part": "/reference/settings/merge-tree-settings/always",
-    "always_use_copy_instead_of_hardlinks": "/reference/settings/merge-tree-settings/always",
+    "always_fetch_merged_part": "/reference/settings/merge-tree-settings/always-fetch",
+    "always_fetch_mutated_part": "/reference/settings/merge-tree-settings/always-fetch",
+    "always_use_copy_instead_of_hardlinks": "/reference/settings/merge-tree-settings/other",
     "apply_patches_on_merge": "/reference/settings/merge-tree-settings/other",
     "assign_part_uuids": "/reference/settings/merge-tree-settings/other",
     "async_block_ids_cache_update_wait_ms": "/reference/settings/merge-tree-settings/async",
@@ -476,6 +477,11 @@
       "target": "/reference/settings/merge-tree-settings/object-shared"
     },
     {
+      "prefix": "always_fetch",
+      "mode": "token",
+      "target": "/reference/settings/merge-tree-settings/always-fetch"
+    },
+    {
       "prefix": "enable_block",
       "mode": "token",
       "target": "/reference/settings/merge-tree-settings/enable-block"
@@ -686,11 +692,6 @@
       "target": "/reference/settings/merge-tree-settings/refresh"
     },
     {
-      "prefix": "always",
-      "mode": "token",
-      "target": "/reference/settings/merge-tree-settings/always"
-    },
-    {
       "prefix": "detach",
       "mode": "token",
       "target": "/reference/settings/merge-tree-settings/detach"
@@ -775,7 +776,7 @@
     "/reference/settings/merge-tree-settings/add-minmax",
     "/reference/settings/merge-tree-settings/allow",
     "/reference/settings/merge-tree-settings/allow-experimental",
-    "/reference/settings/merge-tree-settings/always",
+    "/reference/settings/merge-tree-settings/always-fetch",
     "/reference/settings/merge-tree-settings/async",
     "/reference/settings/merge-tree-settings/cache-populated-by-fetch",
     "/reference/settings/merge-tree-settings/check",
