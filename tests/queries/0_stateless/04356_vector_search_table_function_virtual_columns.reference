@@ -1,0 +1,32 @@
+-- Source columns + _score appear in SELECT *, MergeTree virtuals do not
+0	[1,0]	0
+2	[1.1,0]	0.010314941
+-- DESCRIBE lists the source columns, _score, and the _distance alias (no MergeTree virtuals)
+id	Int32					
+vec	Array(Float32)					
+_score	Float32					
+_distance	Float32	ALIAS	_score			
+-- The MergeTree virtual columns are queryable explicitly
+0	0	0	0	(0)	1	0	1	1
+1	2	0	1	(1)	2	0	2	1
+2	0	1	0	(0)	1	1	1	1
+3	2	1	1	(1)	2	1	2	1
+4	1	0	0	(0)	3	0	3	1
+6	1	1	0	(0)	3	1	3	1
+-- _disk_name is exposed (value is storage-policy dependent)
+1
+-- WHERE on a partition virtual column
+0	0
+2	0
+4	0
+6	0
+-- WHERE on the _part_offset locator virtual (post-filtered, not pushed into the prefilter)
+0	0
+1	0
+4	0
+-- WHERE on the _part_index locator virtual
+2
+-- _block_number distinguishes the three source parts
+1	2
+2	2
+3	2

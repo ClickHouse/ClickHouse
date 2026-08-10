@@ -1,0 +1,6 @@
+-- empty index_name in the 5-arg form is rejected, not auto-resolved
+-- the explicit and auto-resolve forms still work
+0
+1
+0
+1

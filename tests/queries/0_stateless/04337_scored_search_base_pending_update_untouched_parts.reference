@@ -1,0 +1,4 @@
+-- The prefilter excludes all rows of the updated part: the query succeeds
+2
+3
+-- The updated part contributes rows: the query still throws

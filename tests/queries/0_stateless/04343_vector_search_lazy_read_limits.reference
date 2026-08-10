@@ -1,0 +1,3 @@
+-- tight limit trips on the lazy source-column read
+-- generous limit reads fine
+5

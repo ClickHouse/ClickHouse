@@ -1,0 +1,39 @@
+-- 1. Basic KNN search: top 3 nearest to [1.0, 0.0, 0.0]
+0	0
+1	0.010314941
+4	0.75
+-- 1v. Verification via ORDER BY L2Distance LIMIT
+0	0
+1	0.10000002384185791
+4	0.8660254037844386
+-- 2. All columns are returned
+0	[1,0,0]	0	all_1_1_0
+1	[1.1,0,0]	0.010314941	all_1_1_0
+-- 3. K=1: return single nearest
+2	0
+-- 3v. Verification via ORDER BY L2Distance LIMIT
+2	0
+-- 4. Multi-part test: results merged across parts
+0	0
+1	0.010314941
+2	2
+-- 4v. Verification via ORDER BY L2Distance LIMIT
+0	0
+1	0.10000002384185791
+2	1.4142135623730951
+-- 5. Part name filtering
+0	0	all_1_1_0
+1	0.010314941	all_1_1_0
+-- 5b. Partition pruning
+0	0
+1	0.010314941
+2	2
+0	0
+1	0.010314941
+-- 6. Larger dataset with cosineDistance
+-- 6a. At least 8 of the approximate top-10 fall within the exact top-20
+1
+-- 6b. The table function returns exactly K = 10 rows
+1
+-- 7. Error: non-existent index
+-- 8. Error: wrong index type

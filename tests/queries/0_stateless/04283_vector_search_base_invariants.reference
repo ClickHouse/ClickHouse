@@ -1,0 +1,21 @@
+-- Partition prune: WHERE category = a
+0
+1
+-- Partition prune: WHERE category IN (a, c)
+0
+1
+4
+5
+-- Partition prune: WHERE category = nonexistent
+0
+-- Compound PK prune: WHERE a = 1
+1	10
+1	20
+-- Compound PK prune: WHERE (a, b) = (2, 10)
+2	10
+-- Statistics column does not interfere with vectorSearch
+0
+1
+-- Statistics-aware WHERE composes with vectorSearch
+1
+2

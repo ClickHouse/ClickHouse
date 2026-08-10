@@ -38,6 +38,10 @@ public:
     Status prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts & /*updated_output_ports*/) override;
     PipelineUpdate updatePipeline() override;
 
+    /// The limits are applied to the readers created in `buildReaders`,
+    /// so the lazy reads are accounted against `max_rows_to_read` and friends.
+    void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_) override;
+
 private:
     size_t max_block_size;
     size_t max_threads;
@@ -51,6 +55,7 @@ private:
     const std::string log_name;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
+    std::shared_ptr<const StorageLimitsList> storage_limits;
     std::vector<std::list<Chunk>> chunks;
     std::unordered_map<const InputPort *, size_t> input_port_to_index;
     size_t next_chunk_to_process = 0;

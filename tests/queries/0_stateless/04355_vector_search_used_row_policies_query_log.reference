@@ -1,0 +1,5 @@
+-- the policies are enforced
+0
+2
+-- the policies are recorded in used_row_policies
+['policy_04355 ON default.tab_rp_log','policy_04355_restrictive ON default.tab_rp_log']

@@ -796,18 +796,21 @@ std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag
     return result;
 }
 
-DataPartsVector filterDataPartsWithExpression(
-    const DataPartsVector & data_parts,
-    const std::shared_ptr<ExpressionActions> & virtual_columns_filter)
+template <typename PartsCollection, typename PartNameGetter>
+PartsCollection filterDataPartsByExpressionImpl(
+    const PartsCollection & data_parts,
+    const std::shared_ptr<ExpressionActions> & virtual_columns_filter,
+    const String & column_name,
+    PartNameGetter && part_name_getter)
 {
     if (!virtual_columns_filter)
         return data_parts;
 
     auto all_part_names = ColumnString::create();
     for (const auto & part : data_parts)
-        all_part_names->insert(part->name);
+        all_part_names->insert(part_name_getter(part));
 
-    Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), "part_name"}};
+    Block filtered_block{{std::move(all_part_names), std::make_shared<DataTypeString>(), column_name}};
     filterBlockWithExpression(virtual_columns_filter, filtered_block);
 
     if (!filtered_block.rows())
@@ -820,12 +823,38 @@ DataPartsVector filterDataPartsWithExpression(
     for (size_t i = 0; i < part_names_str.size(); ++i)
         part_names_set.insert(part_names_str.getDataAt(i));
 
-    DataPartsVector filtered_parts;
+    PartsCollection result;
     for (const auto & part : data_parts)
-        if (part_names_set.has(part->name))
-            filtered_parts.push_back(part);
+    {
+        if (part_names_set.has(part_name_getter(part)))
+            result.push_back(part);
+    }
 
-    return filtered_parts;
+    return result;
+}
+
+DataPartsVector filterDataPartsWithExpression(
+    const DataPartsVector & data_parts,
+    const std::shared_ptr<ExpressionActions> & virtual_columns_filter,
+    const String & column_name)
+{
+    return filterDataPartsByExpressionImpl(
+        data_parts,
+        virtual_columns_filter,
+        column_name,
+        [](const auto & part) -> const String & { return part->name; });
+}
+
+RangesInDataParts filterDataPartsRangesWithExpression(
+    const RangesInDataParts & ranges_in_data_parts,
+    const std::shared_ptr<ExpressionActions> & virtual_columns_filter,
+    const String & column_name)
+{
+    return filterDataPartsByExpressionImpl(
+        ranges_in_data_parts,
+        virtual_columns_filter,
+        column_name,
+        [](const auto & part) -> const String & { return part.data_part->name; });
 }
 
 Names filterVirtualColumns(

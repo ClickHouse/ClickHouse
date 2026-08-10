@@ -1,0 +1,28 @@
+8
+-- the number of scorer sources is bounded by max_threads, not the part count
+ScorerSource × 2
+-- and by the part count when max_threads is larger
+ScorerSource × 8
+-- results are identical regardless of the worker count
+0
+1
+2
+3
+4
+5
+6
+7
+0
+1
+2
+3
+4
+5
+6
+7
+-- the WHERE prefilter combines with the shared part queue
+3
+4
+5
+6
+7

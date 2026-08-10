@@ -1,0 +1,8 @@
+-- Local top-3 (sanity)
+0
+1
+4
+-- remote() ingests vectorSearch ids via IN subquery
+0
+1
+4

@@ -1,0 +1,18 @@
+-- no WHERE: the deleted row is excluded by the implicit prefilter
+0
+2
+3
+4
+-- no WHERE: the implicit prefilter gates the scorer pipeline
+1
+-- with WHERE: the deleted row is excluded by the user prefilter
+0
+2
+3
+4
+-- after merges remove the deleted rows, no implicit prefilter is built
+0
+2
+3
+4
+1

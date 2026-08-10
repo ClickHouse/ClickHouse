@@ -1,0 +1,8 @@
+-- Only _score is selected
+1
+4
+9
+-- The plan has no lazy branch
+0
+-- Sanity check: selecting a source column still uses the lazy branch
+1

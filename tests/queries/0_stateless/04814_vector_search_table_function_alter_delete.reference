@@ -1,0 +1,23 @@
+-- reference: the plain read of the source table does not return the deleted row
+0
+2
+3
+-- no WHERE: the deleted row is excluded as well
+0
+2
+3
+-- no WHERE: the scorer is gated behind the bitmap subquery
+1
+-- with WHERE: the deleted row is excluded by the user prefilter
+0
+2
+3
+-- the mutation is not applied with apply_mutations_on_fly = 0, and neither is it here
+0
+1
+2
+3
+0
+1
+2
+3

@@ -1,0 +1,11 @@
+-- _distance equals _score
+0	0	0	1
+1	0.010314941	0.010314941	1
+-- ORDER BY _distance works (same as ORDER BY _score)
+0
+1
+-- WHERE on _distance works
+0
+-- _distance is an alias, so it does not appear in SELECT *
+0	[1,0]	0
+1	[1.1,0]	0.010314941

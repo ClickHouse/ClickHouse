@@ -1,0 +1,11 @@
+-- both replicas see all rows under sequential consistency
+0
+1
+2
+0
+1
+2
+-- the part of the failed quorum insert is hidden from vectorSearch
+0
+1
+2

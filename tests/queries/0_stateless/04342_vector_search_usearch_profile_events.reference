@@ -1,0 +1,11 @@
+-- plain search
+0
+1
+2
+-- filtered search
+0
+2
+4
+-- USearchSearch* events incremented (one row per query)
+1	1	1
+1	1	1

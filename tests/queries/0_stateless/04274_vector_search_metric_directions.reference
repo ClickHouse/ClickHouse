@@ -1,0 +1,16 @@
+-- L2Distance: top 3 nearest
+0
+1
+4
+-- cosineDistance: top 3 nearest
+0
+1
+4
+-- dotProduct: top 3 nearest (largest inner product = lowest _score)
+4
+2
+1
+-- _score is non-negative for L2Distance
+1
+-- _score is non-negative for cosineDistance
+1

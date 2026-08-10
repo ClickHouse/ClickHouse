@@ -1,0 +1,10 @@
+-- no-WHERE: no bitmap gating in pipeline
+1
+-- with-WHERE: bitmap gating is planted
+1
+-- no-WHERE: result is computed without prefilter
+0
+1
+2
+-- no-WHERE: prefilter bitmap rows == 0
+0

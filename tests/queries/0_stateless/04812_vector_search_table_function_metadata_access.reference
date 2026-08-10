@@ -1,0 +1,17 @@
+-- no grants: the structure is not disclosed
+ACCESS_DENIED
+-- no grants: the existence of an index is not disclosed
+ACCESS_DENIED
+-- no grants: the names of the vector indexes are not disclosed
+ACCESS_DENIED
+-- column-level grants are enough to search
+0
+-- column-level grants do not disclose the structure, just like DESCRIBE of the source table
+ACCESS_DENIED
+ACCESS_DENIED
+-- table-level grant: the structure is disclosed
+id	Int32
+secret	String
+vec	Array(Float32)
+_score	Float32
+_distance	Float32

@@ -1,0 +1,18 @@
+-- Top-K across all parts: 6 rows total, K=4
+0	all_1_1_0
+1	all_1_1_0
+4	all_3_3_0
+5	all_3_3_0
+-- Filter to a single part by _part = all_1_1_0
+0	all_1_1_0
+1	all_1_1_0
+-- Filter to a single part by _part = all_2_2_0
+2	all_2_2_0
+3	all_2_2_0
+-- Filter to two parts via IN
+0	all_1_1_0
+1	all_1_1_0
+4	all_3_3_0
+5	all_3_3_0
+-- Filter to a non-existent part: 0 rows
+0

@@ -4,11 +4,16 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <list>
+
 namespace DB
 {
 
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
+
+struct StorageLimits;
+using StorageLimitsList = std::list<StorageLimits>;
 
 /// The second phase of lazy materialization optimization.
 /// Reads lazy columns from MergeTree in `_part_starting_offset + _part_offset` order.
@@ -26,6 +31,9 @@ public:
         const std::string & log_name_);
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_);
+
+    /// Account the lazy reads against the query's read limits
+    void setStorageLimits(std::shared_ptr<const StorageLimitsList> storage_limits_);
 
     String getName() const override { return "LazilyReadFromMergeTree"; }
 
@@ -46,6 +54,7 @@ private:
     const std::string log_name;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
+    std::shared_ptr<const StorageLimitsList> storage_limits;
 };
 
 }

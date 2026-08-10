@@ -737,6 +737,7 @@
             "reference/functions/table-functions/url",
             "reference/functions/table-functions/urlCluster",
             "reference/functions/table-functions/values",
+            "reference/functions/table-functions/vectorSearch",
             "reference/functions/table-functions/view",
             "reference/functions/table-functions/ytsaurus",
             "reference/functions/table-functions/zeros"

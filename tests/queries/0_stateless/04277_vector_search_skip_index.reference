@@ -1,0 +1,15 @@
+-- minmax skip prunes second granule (category = 10)
+0
+1
+2
+-- minmax skip prunes first granule (category = 20)
+4
+5
+6
+-- bloom_filter equivalent (category IN list)
+0
+1
+2
+3
+-- category = 30 prunes everything → 0 rows
+0

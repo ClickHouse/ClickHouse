@@ -59,6 +59,11 @@ LazyReadFromMergeTreeSource::LazyReadFromMergeTreeSource(
 
 LazyReadFromMergeTreeSource::~LazyReadFromMergeTreeSource() = default;
 
+void LazyReadFromMergeTreeSource::setStorageLimits(const std::shared_ptr<const StorageLimitsList> & storage_limits_)
+{
+    storage_limits = storage_limits_;
+}
+
 RangesInDataParts LazyReadFromMergeTreeSource::splitRanges(RangesInDataParts parts_with_ranges, size_t total_marks) const
 {
     /// Split ranges to read more concurrently.
@@ -289,6 +294,9 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
         source->addTotalRowsApprox(total_rows);
+
+        if (storage_limits)
+            source->setStorageLimits(storage_limits);
 
         processors.emplace_back(std::move(source));
     }

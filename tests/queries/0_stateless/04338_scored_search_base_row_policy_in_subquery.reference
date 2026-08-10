@@ -1,0 +1,10 @@
+-- the policy set is built when the predicate moves to PREWHERE
+0
+2
+4
+-- and when it stays in the explicit filter step
+0
+2
+4
+-- the policy combines with an outer WHERE that also uses IN (subquery)
+2
