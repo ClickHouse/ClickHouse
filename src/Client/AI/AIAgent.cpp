@@ -215,7 +215,10 @@ void AIAgent::trimHistory()
 void AIAgent::reset()
 {
     messages.clear();
-    last_seen_seqno = 0;
+    /// Baseline to the latest recorded query so a subsequent `chat` starts from a clean slate.
+    /// Rewinding to `0` would re-prepend the whole buffered recent-query history (with its
+    /// results and errors) right after telling the user the conversation was cleared.
+    last_seen_seqno = query_context ? query_context->latestSeqno() : 0;
 }
 
 String AIAgent::status() const
