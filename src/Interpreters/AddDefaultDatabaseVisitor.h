@@ -277,6 +277,9 @@ private:
         auto qualified_identifier = make_intrusive<ASTTableIdentifier>(database_name, identifier.name());
         if (!identifier.alias.empty())
             qualified_identifier->setAlias(identifier.alias);
+        /// Qualifying only adds the database, so an explicit `UUID '...'` clause still applies.
+        qualified_identifier->uuid = identifier.uuid;
+        qualified_identifier->has_uuid = identifier.has_uuid;
         ast = qualified_identifier;
     }
 

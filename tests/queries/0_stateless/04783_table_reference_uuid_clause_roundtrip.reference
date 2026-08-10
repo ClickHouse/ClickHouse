@@ -1,0 +1,23 @@
+-- a pinned reference executes
+111
+-- the formatter emits the clause, including an explicit all-zero UUID
+SELECT k\nFROM src UUID \'a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5\'
+SELECT k\nFROM src UUID \'00000000-0000-0000-0000-000000000000\'
+-- a REFRESH ... DEPENDS ON dependency keeps its clause
+1
+-- a stored view definition keeps the pin, qualified and unqualified alike
+v_qualified	1
+v_unqualified	1
+-- the pin survives JOIN predicate pushdown, so both values of the setting agree
+111
+111
+-- renaming a reference to its remote table voids the pin: no clause is emitted
+0
+-- controls: a clause-free reference and the CREATE forms format as before
+SELECT k\nFROM src
+CREATE TABLE x UUID \'a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5\'\n(\n    `k` UInt64\n)\nENGINE = MergeTree\nORDER BY k
+-- AST JSON round-trips a user-written clause
+SELECT k FROM src UUID \'a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5\'
+SELECT k FROM src UUID \'00000000-0000-0000-0000-000000000000\'
+-- AST JSON still fails closed for a UUID that no clause would format back
+rejected
