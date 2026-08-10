@@ -183,7 +183,8 @@ void StatementGenerator::generateDerivedTable(
     std::optional<String> recursive,
     Select * sel)
 {
-    Select * osel = sel->New();
+    /// Owned here until `matchQueryAliases` hands it over to `sel`, so that an exception escaping `generateSelect` does not leak it.
+    std::unique_ptr<Select> osel(sel->New());
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
@@ -203,7 +204,7 @@ void StatementGenerator::generateDerivedTable(
 
     this->current_level++;
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    generateSelect(rg, false, false, ncols, allowed_clauses, recursive, osel);
+    generateSelect(rg, false, false, ncols, allowed_clauses, recursive, osel.get());
     this->current_level--;
 
     if (backup)
@@ -220,7 +221,7 @@ void StatementGenerator::generateDerivedTable(
         }
     }
 
-    matchQueryAliases(ncols, osel, sel);
+    matchQueryAliases(ncols, osel.release(), sel);
     chassert(rel.cols.empty());
     for (uint32_t i = 0; i < ncols; i++)
     {
