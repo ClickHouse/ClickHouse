@@ -16,7 +16,7 @@ JSON_APPLY=$(${CLICKHOUSE_CLIENT} --async_insert=0 -q "
          RETURNING (SELECT max(id) FROM t_ast_json_ret)
          SETTINGS custom_insert_source = ''x'''
     ) FORMAT TSVRaw")
-${CLICKHOUSE_CLIENT} --async_insert=0 --dialect clickhouse_json -q "$JSON_APPLY"
+${CLICKHOUSE_CLIENT} --async_insert=0 --dialect clickhouse_json --enable_json_ast_dialect 1 -q "$JSON_APPLY"
 
 echo "json ast unsupported source settings rejected"
 JSON_REJECT=$(${CLICKHOUSE_CLIENT} --async_insert=0 -q "
@@ -26,7 +26,7 @@ JSON_REJECT=$(${CLICKHOUSE_CLIENT} --async_insert=0 -q "
          RETURNING (SELECT count() FROM t_ast_json_ret)
          SETTINGS max_execution_time = 1'
     ) FORMAT TSVRaw")
-OUT=$(${CLICKHOUSE_CLIENT} --async_insert=0 --dialect clickhouse_json -q "$JSON_REJECT" 2>&1 || true)
+OUT=$(${CLICKHOUSE_CLIENT} --async_insert=0 --dialect clickhouse_json --enable_json_ast_dialect 1 -q "$JSON_REJECT" 2>&1 || true)
 echo "$OUT" | grep -qm1 'NOT_IMPLEMENTED' && echo 'rejected' || echo 'NO_REJECT'
 
 ${CLICKHOUSE_CLIENT} --async_insert=0 -q "DROP TABLE t_ast_json_ret"
