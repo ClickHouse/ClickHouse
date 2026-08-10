@@ -77,18 +77,25 @@ namespace
                 /// greedily consumes `IN <storage>` as part of the interval expression instead of leaving
                 /// it for `parseAccessStorageName`. (`VALID UNTIL` is not affected: its value parser stops
                 /// at the string literal.) Detect this exact shape - a top-level `in` whose right side is
-                /// a bare one-token identifier - and give the clause back to the caller: keep the left
-                /// side as the interval and rewind the position to the `IN` keyword. Anything else, e.g.
-                /// a genuine membership test, is left as-is and rejected by the interval type check at
-                /// execution time.
+                /// a bare one-token access-storage name - and give the clause back to the caller: keep the
+                /// left side as the interval and rewind the position to the `IN` keyword. Anything else,
+                /// e.g. a genuine membership test, is left as-is and rejected by the interval type check
+                /// at execution time.
                 if (const auto * maybe_in = valid_until->as<ASTFunction>();
                     maybe_in && maybe_in->name == "in" && maybe_in->arguments && maybe_in->arguments->children.size() == 2)
                 {
-                    if (const auto * storage_identifier = maybe_in->arguments->children[1]->as<ASTIdentifier>();
-                        storage_identifier && storage_identifier->isShort())
+                    /// `parseAccessStorageName` accepts both an identifier and a string literal, so both
+                    /// `IN memory` and `IN 'memory'` have to be given back.
+                    const auto & storage_ast = maybe_in->arguments->children[1];
+                    const auto * storage_identifier = storage_ast->as<ASTIdentifier>();
+                    const auto * storage_literal = storage_ast->as<ASTLiteral>();
+                    const bool is_storage_name = (storage_identifier && storage_identifier->isShort())
+                        || (storage_literal && storage_literal->value.getType() == Field::Types::String);
+
+                    if (is_storage_name)
                     {
-                        /// A short identifier and the `IN` keyword are one token each. Verify the rewound
-                        /// position really points at `IN` before acting on it.
+                        /// A short identifier, a string literal and the `IN` keyword are one token each.
+                        /// Verify the rewound position really points at `IN` before acting on it.
                         IParserBase::Pos in_pos = pos;
                         --in_pos;
                         --in_pos;

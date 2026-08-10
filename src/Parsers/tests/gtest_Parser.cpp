@@ -666,10 +666,28 @@ INSTANTIATE_TEST_SUITE_P(ParserCreateUserQuery, ParserTest,
             "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
         },
         {
+            /// An access storage name can also be written as a string literal.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN 'some_storage'",
+            "CREATE USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\)"
+        },
+        {
+            "CREATE USER user1 IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR INTERVAL 3 MONTH IN 'some_storage'",
+            "CREATE USER user1 IN some_storage IDENTIFIED WITH plaintext_password BY 'abc123' VALID FOR toIntervalMonth\\(3\\)"
+        },
+        {
+            "ALTER USER user1 VALID FOR INTERVAL 1 DAY + INTERVAL 12 HOUR IN 'some_storage'",
+            "ALTER USER user1 IN some_storage VALID FOR toIntervalDay\\(1\\) \\+ toIntervalHour\\(12\\)"
+        },
+        {
             /// A compound identifier cannot be an access storage name, so it stays part of the
             /// interval expression (and is rejected by the interval type check at execution time).
             "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN db.tbl",
             "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(db.tbl\\)"
+        },
+        {
+            /// The same holds for a literal that is not a string: it cannot name an access storage.
+            "CREATE USER user1 VALID FOR INTERVAL 1 DAY IN 123",
+            "CREATE USER user1 VALID FOR toIntervalDay\\(1\\) IN \\(123\\)"
         }
 })));
 
