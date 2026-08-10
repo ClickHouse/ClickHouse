@@ -1079,7 +1079,7 @@ void NO_INLINE Aggregator::executeImpl(
 /// the cell's mapped value is set to a non-null dummy, so the existing "is this cell occupied" checks still
 /// see it as set.
 template <bool prefetch, typename Method, typename State>
-void NO_INLINE Aggregator::executeImplBatchKeysOnly(
+void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     Method & method, State & state, Arena * aggregates_pool, size_t row_begin, size_t row_end, bool all_keys_are_const) const
 {
     using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
@@ -1144,7 +1144,7 @@ void NO_INLINE Aggregator::executeImplBatch(
     if (no_more_keys)
         return;
 
-    executeImplBatchKeysOnly<prefetch>(method, state, aggregates_pool, row_begin, row_end, all_keys_are_const);
+    executeImplBatchNoAggregates<prefetch>(method, state, aggregates_pool, row_begin, row_end, all_keys_are_const);
 }
 
 template <bool prefetch, typename Method, typename State>
@@ -1173,7 +1173,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         if (no_more_keys)
             return;
 
-        executeImplBatchKeysOnly<prefetch>(method, state, aggregates_pool, row_begin, row_end, all_keys_are_const);
+        executeImplBatchNoAggregates<prefetch>(method, state, aggregates_pool, row_begin, row_end, all_keys_are_const);
         return;
     }
 

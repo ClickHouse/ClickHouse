@@ -512,7 +512,7 @@ private:
     /// Registers keys without building aggregate states; shared by the set methods and by the
     /// no-aggregates fast path of the map methods.
     template <bool prefetch, typename Method, typename State>
-    void executeImplBatchKeysOnly(
+    void executeImplBatchNoAggregates(
         Method & method, State & state, Arena * aggregates_pool, size_t row_begin, size_t row_end, bool all_keys_are_const) const;
 
     void executeAggregateInstructions(
