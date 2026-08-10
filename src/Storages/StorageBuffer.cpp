@@ -178,16 +178,9 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
-    /// Reached when loading already-validated metadata, which stores no column list for this engine.
-    /// A freshly created table infers its structure in `registerStorageBuffer` under the user's context.
-    if (columns_.empty())
-    {
-        auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        auto dest_table_metadata = dest_table->getInMemoryMetadataPtr(context_, false);
-        storage_metadata.setColumns(dest_table_metadata->getColumns());
-    }
-    else
-        storage_metadata.setColumns(columns_);
+    /// Columns are always resolved by `registerStorageBuffer` under the user's context, so the
+    /// destination's structure is never read here under the long-lived context this storage holds.
+    storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -1494,14 +1487,15 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
-        /// An omitted structure is inferred here, under the user's context: `StorageBuffer` holds only
-        /// a long-lived context and would read the destination's columns with no user at all. Loading
-        /// of already-validated metadata has no user either, so it keeps inferring in the constructor.
+        /// Infer an omitted structure here, under the user's context, so the constructor never reads
+        /// the destination's columns under the long-lived context it holds. The `SHOW_COLUMNS` check
+        /// runs only for a freshly introduced definition; a metadata reload has no user to check.
         ColumnsDescription columns = args.columns;
-        if (columns.empty() && !destination_id.empty()
-            && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        if (columns.empty() && !destination_id.empty())
         {
-            args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
+            if (!(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+                args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
+
             auto destination = DatabaseCatalog::instance().getTable(destination_id, args.getLocalContext());
             auto destination_metadata = destination->getInMemoryMetadataPtr(args.getLocalContext(), false);
             columns = destination_metadata->getColumns();
