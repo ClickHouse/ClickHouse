@@ -252,6 +252,18 @@ IMDS_PROBE_URL = "http://169.254.169.254/latest/meta-data/"
 INVESTIGATION_RESERVE_SEC = MAX_AGENT_ATTEMPTS * AGENT_TIMEOUT_SEC + REVERT_RESERVE_SEC
 
 TEMP_DIR = "./ci/tmp"
+# Where the agent's scratch space lives -- the disposable clone, `CODEX_HOME`,
+# `GH_CONFIG_DIR`. Not `TEMP_DIR`: resolving a path needs the execute bit on
+# every ancestor directory, `TEMP_DIR` is inside the checkout, inside the job
+# user's home, and a stock Ubuntu image creates `/home/<user>` 0750 (since
+# 21.04) -- the agent's user would own its workspace and still be stopped at
+# the door of an ancestor. Opening those ancestors is not an option either:
+# with the home traversable, every world-readable file of the job user's
+# becomes readable to the agent by known name. So the agent's directories are
+# simply not put behind the job user's door: every ancestor of `/var/tmp` is
+# world-traversable by construction, and unlike `/tmp` it is on disk rather
+# than in memory on a tmpfs image. See `agent_scratch_root`.
+AGENT_SCRATCH_PARENT = "/var/tmp"
 # How much of the recorded failure output is put in front of the agent. The full
 # text can be a megabyte of stress-test log; the head is what identifies it.
 CONTEXT_LIMIT = 4000
@@ -1869,41 +1881,22 @@ def chown(owner: str, *paths: str) -> None:
     Shell.check(f"sudo -n chown -R {owner} {quoted}", verbose=True, strict=True)
 
 
-def allow_traversal(*paths: str) -> None:
-    """Let `AGENT_USER` *reach* `paths`: give every ancestor directory that
-    lacks it the execute bit for other users.
+def agent_scratch_root() -> str:
+    """A fresh directory under `AGENT_SCRATCH_PARENT` that `AGENT_USER` can
+    traverse and nobody but the job user can plant names in.
 
-    Owning the workdir is not enough to use it. Resolving a path needs the
-    execute bit on every directory on the way, the runner image is free to
-    create the job user's home without it -- Ubuntu has made `/home/<user>`
-    0750 since 21.04 -- and the workdir lives inside the checkout, inside
-    that home: the agent is stopped at the door of an ancestor, however
-    thoroughly its own directories were handed over. The same chain also
-    carries what the agent's `git` reads through the clone's alternates
-    file, which points into the job checkout's `.git/objects`.
-
-    Execute without read is traversal by known name only: the directory
-    cannot be listed, and every file on the way keeps its own mode. So what
-    `confine_agent_user` relies on -- the job user's files being another
-    uid's and unreadable -- stays true; the agent gains a corridor, not a
-    view. Only the directories that are actually closed are touched."""
-    ancestors: List[str] = []
-    for path in paths:
-        directory = os.path.dirname(os.path.realpath(path))
-        while directory not in ancestors:
-            ancestors.append(directory)
-            parent = os.path.dirname(directory)
-            if parent == directory:
-                break
-            directory = parent
-    closed = [
-        directory
-        for directory in ancestors
-        if not os.stat(directory).st_mode & 0o001
-    ]
-    if closed:
-        quoted = " ".join(shlex.quote(directory) for directory in sorted(closed))
-        Shell.check(f"sudo -n chmod o+x {quoted}", verbose=True, strict=True)
+    The parent is world-writable (`/var/tmp` is 1777), which is exactly why
+    nothing is created there at a name chosen in advance: `mkdtemp` picks a
+    random name and creates it exclusively, so a leftover process of an
+    earlier agent cannot have squatted the path. The root is then the job
+    user's, mode 0711 -- execute without read or write for everyone else --
+    so the agent can resolve the known names inside it but cannot list it or
+    create siblings, and a fixed name inside the root (the clone that
+    `investigation_clone` removes and recreates per attempt) can only ever
+    be recreated by the job user."""
+    root = tempfile.mkdtemp(prefix="praktika-agent-", dir=AGENT_SCRATCH_PARENT)
+    os.chmod(root, 0o711)
+    return root
 
 
 def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
@@ -1984,8 +1977,12 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
     openai_key = Secret.Config(
         name=OPENAI_KEY_SECRET, type=Secret.Type.AWS_SSM_PARAMETER
     ).get_value()
-    with tempfile.TemporaryDirectory(dir=TEMP_DIR) as codex_home, (
-        tempfile.TemporaryDirectory(dir=TEMP_DIR)
+    # In `AGENT_SCRATCH_PARENT`, not `TEMP_DIR`: the agent's user must be able
+    # to reach these, and `TEMP_DIR` is behind the job user's closed home.
+    # Directly in the parent, with no fixed component: `TemporaryDirectory` is
+    # exclusive creation at a random name, safe in a world-writable directory.
+    with tempfile.TemporaryDirectory(dir=AGENT_SCRATCH_PARENT) as codex_home, (
+        tempfile.TemporaryDirectory(dir=AGENT_SCRATCH_PARENT)
     ) as gh_config_dir:
         subprocess.run(
             [codex, "login", "--with-api-key"],
@@ -1997,12 +1994,10 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
         try:
             chown(f"{AGENT_USER}:", workdir, codex_home, gh_config_dir)
             # The runner's directory layout must actually let the other uid
-            # in, and on a stock Ubuntu image it does not: the job user's
-            # home is 0750 and everything here lives inside it. So the
-            # closed ancestors are opened -- traversal only, see
-            # `allow_traversal` -- and the probe below stays: better loudly
-            # here than obscurely there.
-            allow_traversal(workdir, codex_home, gh_config_dir)
+            # in. Everything the agent touches lives under
+            # `AGENT_SCRATCH_PARENT`, outside the job user's 0750 home,
+            # precisely so that it does -- and the probe checks that it
+            # holds: better loudly here than obscurely there.
             Shell.check(
                 f"sudo -n -u {AGENT_USER} test -w {shlex.quote(workdir)}",
                 strict=True,
@@ -2049,19 +2044,23 @@ def investigation_clone(path: str, repo: str) -> None:
 
     Cloned from GitHub anonymously -- the URL carries no token and the
     checkout's git config holds none (`persist-credentials: false`), so there
-    is nothing to leak into the clone's config. `--reference` points the clone
-    at the job checkout's object store: the objects come from the local disk
-    via an alternates *path*, which shares no file the agent could write
-    through (unlike hardlinks), and only what the checkout is missing is
-    fetched over the network. `--filter=tree:0` matches how the checkout
-    itself was unshallowed: the full commit history is present for `git log`,
-    and trees and blobs of older commits are fetched on demand -- from
-    `origin`, which in this clone is the public GitHub URL, so the lazy
-    fetches are anonymous too."""
+    is nothing to leak into the clone's config. `--reference .` borrows the
+    job checkout's object store for the transfer, so only what the checkout
+    is missing is fetched over the network, and `--dissociate` then copies
+    the borrowed objects into the clone and drops the alternates link. The
+    link could not stay: it is a *path* back into the checkout, behind the
+    job user's closed home (see `AGENT_SCRATCH_PARENT`), where the agent's
+    `git` could not follow it. The dissociated clone stands alone, and shares
+    no file the agent could write through either -- which is also what ruled
+    out hardlinks. `--filter=tree:0` matches how the checkout itself was
+    unshallowed: the full commit history is present for `git log`, and trees
+    and blobs of older commits are fetched on demand -- from `origin`, which
+    in this clone is the public GitHub URL, so the lazy fetches are anonymous
+    too."""
     Shell.check(f"rm -rf {shlex.quote(path)}", verbose=True, strict=True)
     Shell.check(
         f"git clone --filter=tree:0 --no-tags --single-branch "
-        f"--branch {BASE_BRANCH} --reference . "
+        f"--branch {BASE_BRANCH} --reference . --dissociate "
         f"https://github.com/{repo}.git {shlex.quote(path)}",
         verbose=True,
         strict=True,
@@ -2078,8 +2077,9 @@ def reset_worktree() -> None:
     either way, and the reset costs nothing. The branch is re-fetched every
     time because the job moves it itself: a second revert in the same run has
     to be built on top of the first one, not on the master the run started
-    with. `ci/tmp` is spared, since that is where the job keeps its own state,
-    including the investigation clones and the verdict files."""
+    with. `ci/tmp` is spared, since that is where the job keeps its own
+    state. (The investigation clones and the verdict files are elsewhere
+    entirely -- under `AGENT_SCRATCH_PARENT`, outside the checkout.)"""
     Shell.check("git revert --abort", verbose=False)
     Shell.check(
         f"git fetch --no-tags --prune --no-recurse-submodules origin "
@@ -2254,35 +2254,41 @@ def create_reintroduce(
 def investigate(failure: Failure, index: int, repo: str) -> Investigation:
     """Ask the agent about one failure and return the recorded investigation."""
     investigation = Investigation(failure=failure)
-    clone = os.path.abspath(f"{TEMP_DIR}/investigation_{index}")
+    root = agent_scratch_root()
+    clone = os.path.join(root, f"investigation_{index}")
     verdict_file = os.path.join(clone, "verdict.json")
     prompt = investigation_prompt(failure, verdict_file)
     raw = ""
     error = ""
-    for attempt in range(1, MAX_AGENT_ATTEMPTS + 1):
-        # No GitHub token is minted here, deliberately. The agent must not hold a
-        # credential that can write -- see `run_agent` -- and this process makes
-        # no GitHub call until the guards in `act` do, which mint their own.
-        reset_worktree()
-        try:
-            # A fresh clone per attempt, not per failure: whatever the previous
-            # attempt's agent left in it is exactly what must not carry over.
-            investigation_clone(clone, repo)
-            raw = run_agent(prompt, verdict_file, clone)
-            for name, value in parse_verdict(raw).items():
-                setattr(investigation, name, value)
-            error = ""
-            break
-        except Exception as e:  # noqa: BLE001 -- any failure here is worth one retry
-            error = f"{type(e).__name__}: {e}"
-            print(
-                f"WARNING: investigation attempt {attempt}/{MAX_AGENT_ATTEMPTS} of "
-                f"{failure.title!r} failed: {error}"
-            )
-            traceback.print_exc()
-        finally:
-            Shell.check(f"rm -rf {shlex.quote(clone)}", verbose=False)
+    try:
+        for attempt in range(1, MAX_AGENT_ATTEMPTS + 1):
+            # No GitHub token is minted here, deliberately. The agent must not
+            # hold a credential that can write -- see `run_agent` -- and this
+            # process makes no GitHub call until the guards in `act` do, which
+            # mint their own.
             reset_worktree()
+            try:
+                # A fresh clone per attempt, not per failure: whatever the
+                # previous attempt's agent left in it is exactly what must not
+                # carry over.
+                investigation_clone(clone, repo)
+                raw = run_agent(prompt, verdict_file, clone)
+                for name, value in parse_verdict(raw).items():
+                    setattr(investigation, name, value)
+                error = ""
+                break
+            except Exception as e:  # noqa: BLE001 -- worth one retry
+                error = f"{type(e).__name__}: {e}"
+                print(
+                    f"WARNING: investigation attempt {attempt}/"
+                    f"{MAX_AGENT_ATTEMPTS} of {failure.title!r} failed: {error}"
+                )
+                traceback.print_exc()
+            finally:
+                Shell.check(f"rm -rf {shlex.quote(clone)}", verbose=False)
+                reset_worktree()
+    finally:
+        Shell.check(f"rm -rf {shlex.quote(root)}", verbose=False)
     if error:
         investigation.verdict = "error"
         investigation.confidence = ""
