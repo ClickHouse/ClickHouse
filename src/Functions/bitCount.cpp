@@ -86,7 +86,7 @@ REGISTER_FUNCTION(BitCount)
         {"x", "An integer or float value.", {"(U)Int*", "Float*"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
-Returns the number of bits set to one in `x`. [`UInt8`](../data-types/int-uint.md).
+Returns the number of bits set to one in `x`. [`UInt8`](/reference/data-types/int-uint).
 
 :::note
 The function does not convert the input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)).

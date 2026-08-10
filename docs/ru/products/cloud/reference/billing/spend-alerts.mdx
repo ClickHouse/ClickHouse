@@ -35,18 +35,14 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### Откройте диалоговое окно оповещений о расходах
-
+  <Step title="Откройте диалоговое окно оповещений о расходах" id="open-spend-alerts-dialog">
     1. Перейдите в **Organization &gt; Billing** в консоли ClickHouse Cloud.
     2. Нажмите **Actions &gt; Add spend alerts**.
 
     <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Страница Billing с открытым меню Actions и выделенным пунктом Add spend alerts" size="lg" />
   </Step>
 
-  <Step>
-    ### Настройте и сохраните оповещение
-
+  <Step title="Настройте и сохраните оповещение" id="configure-and-save">
     1. Укажите сумму для оповещения о расходах в долларах или кредитах за расчётный период.
     2. Выберите каналы уведомлений: **Email**, **интерфейс** и/или **Slack**.
     3. Нажмите **Save**.

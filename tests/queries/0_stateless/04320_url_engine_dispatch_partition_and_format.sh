@@ -20,8 +20,10 @@ printf '{"a":1,"b":"Hello"}\n{"a":2,"b":"World"}\n' > "$ABS_NOEXT"
 echo "--- ENGINE = URL('file://<extensionless>') with format = auto persists the inferred format ---"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_f"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_f ENGINE = URL('file://${ABS_NOEXT}')"
-# The persisted engine definition carries a concrete format, not 'auto'.
-${CLICKHOUSE_CLIENT} -q "SELECT create_table_query NOT ILIKE '%auto%' FROM system.tables WHERE database = currentDatabase() AND name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_f'"
+# The persisted engine definition carries a concrete format, not 'auto'. Match the quoted literal:
+# a bare '%auto%' also scans the random database name embedded in the DDL and the file path, and an
+# 8-char [a-z0-9] name contains "auto" once in ~340k runs (seen in CI: test_q2autogn).
+${CLICKHOUSE_CLIENT} -q "SELECT create_table_query NOT ILIKE '%''auto''%' FROM system.tables WHERE database = currentDatabase() AND name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_f'"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_f"
 
 echo "--- reload after the source file is removed succeeds (no format re-inference) ---"
@@ -52,8 +54,8 @@ ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION IF EXISTS ${NC}"
 ${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION ${NC} AS url = 'file://${ABS_NOEXT_NC}'"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_n"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_n ENGINE = URL(${NC})"
-# The persisted engine definition carries a concrete format, not 'auto'.
-${CLICKHOUSE_CLIENT} -q "SELECT create_table_query NOT ILIKE '%auto%' FROM system.tables WHERE database = currentDatabase() AND name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_n'"
+# The persisted engine definition carries a concrete format, not 'auto' (quoted literal, see above).
+${CLICKHOUSE_CLIENT} -q "SELECT create_table_query NOT ILIKE '%''auto''%' FROM system.tables WHERE database = currentDatabase() AND name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_n'"
 # Reload after the source file is removed succeeds (no format re-inference).
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_n"
 rm -f "$ABS_NOEXT_NC"

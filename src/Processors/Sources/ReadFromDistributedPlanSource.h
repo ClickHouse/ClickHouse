@@ -50,8 +50,10 @@ private:
     bool started = false;
     bool cleaned_up = false;
 
-    /// Set from `onCancel` (and observed by the executor) to stop remote work promptly.
-    std::shared_ptr<std::atomic<bool>> cancellation_flag = std::make_shared<std::atomic<bool>>(false);
+    /// Set from `onCancel` (and observed by the executor) to stop remote work promptly. The executor
+    /// also records a failing task's exception here, so `tryGenerate` can tell a plain cancellation
+    /// from a failure and report the latter.
+    DistributedQueryCancellationPtr cancellation = std::make_shared<DistributedQueryCancellation>();
 };
 
 }

@@ -1,0 +1,85 @@
+{
+  "groups": [
+    {
+      "group": "はじめに",
+      "pages": [
+        "ja/chdb/getting-started"
+      ],
+      "root": "ja/chdb/index"
+    },
+    {
+      "group": "各言語向けインテグレーション",
+      "pages": [
+        "ja/chdb/install/python",
+        "ja/chdb/install/nodejs",
+        "ja/chdb/install/go",
+        "ja/chdb/install/rust",
+        "ja/chdb/install/bun",
+        "ja/chdb/install/c"
+      ],
+      "root": "ja/chdb/install/index"
+    },
+    {
+      "group": "DataStore",
+      "pages": [
+        "ja/chdb/datastore/quickstart",
+        "ja/chdb/datastore/factory-methods",
+        "ja/chdb/datastore/query-building",
+        "ja/chdb/datastore/aggregation",
+        "ja/chdb/datastore/accessors",
+        "ja/chdb/datastore/io",
+        "ja/chdb/datastore/execution-model",
+        "ja/chdb/datastore/pandas-compat",
+        "ja/chdb/datastore/class-reference"
+      ],
+      "root": "ja/chdb/datastore/index"
+    },
+    {
+      "group": "設定",
+      "pages": [
+        "ja/chdb/configuration/execution-engine",
+        "ja/chdb/configuration/function-config",
+        "ja/chdb/configuration/performance-mode"
+      ],
+      "root": "ja/chdb/configuration/index"
+    },
+    {
+      "group": "デバッグ",
+      "pages": [
+        "ja/chdb/debugging/explain",
+        "ja/chdb/debugging/logging",
+        "ja/chdb/debugging/profiling"
+      ],
+      "root": "ja/chdb/debugging/index"
+    },
+    {
+      "group": "開発者ガイド",
+      "pages": [
+        "ja/chdb/guides/jupysql",
+        "ja/chdb/guides/querying-pandas",
+        "ja/chdb/guides/querying-apache-arrow",
+        "ja/chdb/guides/querying-s3-bucket",
+        "ja/chdb/guides/querying-parquet",
+        "ja/chdb/guides/query-remote-clickhouse",
+        "ja/chdb/guides/clickhouse-local",
+        "ja/chdb/guides/migration-from-pandas",
+        "ja/chdb/guides/pandas-cookbook",
+        "ja/chdb/guides/pandas-differences",
+        "ja/chdb/guides/pandas-performance",
+        "ja/chdb/guides/pandas-to-sql"
+      ],
+      "root": "ja/chdb/guides/index"
+    },
+    {
+      "group": "技術リファレンス",
+      "pages": [
+        "ja/chdb/reference/data-formats",
+        "ja/chdb/reference/sql-reference",
+        "ja/chdb/api/python"
+      ],
+      "root": "ja/chdb/reference/index"
+    }
+  ],
+  "icon": "/images/icons/icon-chdb.svg",
+  "item": "chDB"
+}

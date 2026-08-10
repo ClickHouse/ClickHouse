@@ -87,6 +87,8 @@ CREATE TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
+                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -121,6 +123,8 @@ ALTER TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
+                                [, postprocessor = expression(str)]
+                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -187,7 +191,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 Текстовые индексы можно строить на основе текстовых данных на любом языке и в любой кодировке.
 Для не-ASCII-текста рекомендуется токенизатор `asciiCJK`, поскольку он корректно определяет границы слов в Unicode, включая символы CJK.
 
-**Аргумент препроцессора (необязательно)**. Препроцессор — это выражение, которое применяется к входной строке перед токенизацией.
+<a id="preprocessor-argument-optional" />**Аргумент препроцессора (необязательно)**. Препроцессор — это выражение, которое применяется к входной строке перед токенизацией.
 
 Типичные сценарии использования аргумента препроцессора:
 
@@ -290,7 +294,195 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
-**Другие аргументы (необязательно)**.
+<a id="postprocessor-argument-optional" />**Аргумент постпроцессор (необязательно)**. Постпроцессор — это выражение, применяемое к каждому выходному токену после токенизации.
+
+В отличие от препроцессора, который преобразует всю входную строку до того, как токенизатор разобьет ее на токены, постпроцессор работает с самими токенами — по одному за раз.
+Это естественное место для преобразований, которые по своей сути выполняются на уровне токенов.
+
+Типичные сценарии использования аргумента постпроцессор включают:
+
+1. **Фильтрация стоп-слов (чрезвычайно частых токенов)**. Очень распространенные токены, такие как &quot;the&quot;, &quot;a&quot; и &quot;is&quot;, почти не влияют на релевантность поиска и раздувают индекс.
+   Вы можете использовать постпроцессор, чтобы отбрасывать их, преобразуя в пустые токены — пустые токены игнорируются, то есть не добавляются в индекс.
+   Пример: `if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)`
+2. **Удаление временных меток**. Строки Log часто начинаются со структурированной временной метки, например `2024-01-15T10:23:45`, или содержат ее.
+   Индексация токенов временных меток раздувает индекс строками, не имеющими значения для релевантности поиска.
+   Есть два взаимодополняющих способа игнорировать временные метки:
+   * **Подход с постпроцессором**: используйте токенизатор `splitByString` (разбиение по пробельным символам), чтобы вся временная метка стала одним токеном, а затем используйте `parseDateTimeOrNull`, чтобы распознать и отбросить ее.
+     Пример: `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
+     Для временных меток со смещением часового пояса или дробными секундами используйте `parseDateTimeBestEffortOrNull(str)` без явной строки формата.
+   * **Подход с препроцессором**: удалите временную метку из полной строки лога *до* токенизации с помощью regular expression.
+     Пример: `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
+     Это работает с любым токенизатором и эффективнее, поскольку символы временной метки вообще не токенизируются.
+     Оба подхода можно комбинировать: препроцессор удаляет временную метку, а постпроцессор нормализует или фильтрует оставшиеся токены (например, приводит к нижнему регистру и отбрасывает слова уровня серьезности, такие как `ERROR` или `INFO`).
+3. **Стемминг**. Сопоставление каждого токена с его основой улучшает полноту поиска, позволяя находить морфологические варианты с общим корнем.
+   Например, при английском стемминге &quot;running&quot;, &quot;runs&quot; и &quot;run&quot; приводятся к основе &quot;run&quot;, поэтому запрос по любому из этих вариантов найдет их все.
+   ClickHouse предоставляет встроенную функцию [stem](/ru/reference/functions/regular-functions/nlp-functions#stem) для нескольких языков.
+   Пример: `stem(str, 'en')`
+4. **Нормализация регистра**. Приведение токенов к нижнему или верхнему регистру для включения сопоставления, например [lower](/ru/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/ru/reference/functions/regular-functions/string-functions#lowerUTF8).
+   Для приведения к нижнему или верхнему регистру мы рекомендуем использовать препроцессор вместо постпроцессора.&quot;
+
+Выражение постпроцессора преобразует токены типа [String](/ru/reference/data-types/string) в токены того же типа.
+Кроме того, выражение постпроцессора должно ссылаться только на столбец или выражение, на основе которого определён текстовый индекс.
+Если столбец имеет тип `Array(String)`, постпроцессор по-прежнему оперирует отдельными токенами как обычными значениями типа `String`.
+
+Использование недетерминированных функций запрещено.
+
+Постпроцессор применяется к каждому сгенерированному токену при построении индекса (для токенизатора `array` каждый элемент массива является токеном). Во время выполнения запроса поведение зависит от функции:
+
+* Для `hasToken`, `hasAllTokens`, `hasAnyTokens` и `hasPhrase` (с любым поддерживаемым токенизатором): постпроцессор применяется и к токенам в haystack, и к поисковому needle, обеспечивая полностью нормализованное сопоставление (например, регистронезависимый поиск). Для `hasPhrase` токены после постобработки располагаются без промежутков, поэтому токен, который постпроцессор отбрасывает, не оставляет позиционного разрыва, и фраза всё равно сопоставляется через него — например, при постпроцессоре стоп-слов, отбрасывающем `the`, `hasPhrase(col, 'see cat')` соответствует документу `see the cat`.
+* Для всех остальных функций (`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`): для поиска с использованием индексной подсказки постобработке подвергается только needle; предикат на уровне строки по-прежнему сравнивается с исходными значениями столбца.
+
+Примеры:
+
+* Удаление стоп-слов с помощью выражения постпроцессора:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+* Удалите временные метки с помощью выражения постпроцессора:
+
+```sql
+-- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
+-- The splitByString tokenizer (default: whitespace) keeps the full timestamp as one token.
+-- parseDateTimeOrNull detects and drops it; non-timestamp words are kept.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByString',
+        postprocessor = if(isNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), line, '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Only message-level words are indexed; timestamp tokens are not stored.
+SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast index lookup
+SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
+```
+
+* Удалите временные метки с помощью выражения препроцессора:
+
+```sql
+-- The preprocessor strips the ISO timestamp prefix before tokenization.
+-- Any tokenizer can be used; timestamp characters are never seen by the tokenizer.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer   = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+* Удалите временные метки с помощью общего выражения для препроцессора и постпроцессора:
+
+```sql
+-- Preprocessor strips the timestamp, then lowercases the remainder.
+-- Postprocessor drops the severity word (error, info, warn, debug) after tokenization.
+-- Result: only substantive message words are stored in the index.
+CREATE TABLE logs
+(
+    id   UInt64,
+    line String,
+    INDEX idx(line) TYPE text(
+        tokenizer    = 'splitByNonAlpha',
+        preprocessor = lower(replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')),
+        postprocessor = if(line IN ('error', 'info', 'warn', 'warning', 'debug', 'critical'), '', line)
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- Example log line: '2024-01-15T10:23:45 ERROR connection failed'
+-- After preprocessor:  'error connection failed'
+-- After tokenization:  ['error', 'connection', 'failed']
+-- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
+SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
+```
+
+* Примените стемминг к токенам с помощью выражения постпроцессора:
+
+```sql
+CREATE TABLE table
+(
+    str String,
+    INDEX idx(str) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        postprocessor = stem(str, 'en')
+    )
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+-- The query token 'running' is stemmed to 'run' before the lookup,
+-- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
+SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
+```
+
+**Поддержка функций**.
+
+Для предикатов, использающих текстовый индекс, препроцессор и постпроцессор применяются к искомому значению перед проверкой на уровне гранулы, чтобы при обращении к индексу использовались те же токены, которые были сохранены при его построении.
+Для большинства функций (`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`) текстовый индекс используется только для пропуска нерелевантных блоков данных; ClickHouse по-прежнему проверяет каждую оставшуюся строку по исходному предикату на исходных данных столбца.
+Для функций поиска по токенам (`hasToken`, `hasAllTokens`, `hasAnyTokens`) текстовый индекс является основным способом вычисления: ClickHouse нормализует искомое значение с помощью того же препроцессора, токенизатора и постпроцессора, которые применялись при построении индекса, и использует эту нормализованную форму как для индексированных, так и для неиндексированных частей таблицы. Если задан постпроцессор, токены в haystack также нормализуются во время выполнения запроса (для любого токенизатора, а не только `array`), поэтому обе стороны сравнения преобразуются единообразно, и результат не зависит от того, читается ли индекс напрямую (настройка `query_plan_direct_read_from_text_index`) или у конкретной части есть материализованный индекс — например, это позволяет включить регистронезависимое сопоставление для `hasAllTokens(col, ['FOO'])` с постпроцессором `lower`.
+Без `support_phrase_search` функция `hasPhrase` использует индекс только как подсказку и проверяет каждую оставшуюся строку по исходному предикату; постпроцессор дополнительно одинаково нормализует и фразу, и токены в haystack, поэтому результат не зависит от способа чтения, а токены, которые постпроцессор отбрасывает, не нарушают смежность фразы. При `support_phrase_search = 1` функция `hasPhrase` использует точное прямое чтение (при этом постпроцессор, если он задан, всё равно применяется).
+Поисковые токены, которые постпроцессор преобразует в пустую строку, игнорируются, то есть считаются отсутствующими в поисковой фразе.
+
+| Функция                                                                                                 | Поддерживает препроцессор                                    | Совместимые токенизаторы                                 | Поддерживает постпроцессор |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------- | -------------------------- |
+| `=`                                                                                                     | да                                                           | все                                                      | да                         |
+| `IN`                                                                                                    | да                                                           | все                                                      | да                         |
+| [hasToken](/ru/reference/functions/regular-functions/string-search-functions#hasToken)                     | да                                                           | все (в первую очередь для `splitByNonAlpha`)             | да                         |
+| [hasAnyTokens(col, str)](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | да                                                           | все                                                      | да                         |
+| [hasAllTokens(col, str)](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | да                                                           | все                                                      | да                         |
+| [hasAnyTokens(col, arr)](/ru/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | нет (элементы массива используются как токены без изменений) | все                                                      | да                         |
+| [hasAllTokens(col, arr)](/ru/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | нет (элементы массива используются как токены без изменений) | все                                                      | да                         |
+| [hasPhrase](/ru/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | да                                                           | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | да                         |
+| [startsWith](/ru/reference/functions/regular-functions/string-functions#startsWith)                        | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | да                         |
+| [endsWith](/ru/reference/functions/regular-functions/string-functions#endsWith)                            | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | да                         |
+| [like](/ru/reference/functions/regular-functions/string-search-functions#like)                             | да¹                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | да¹                        |
+| [match](/ru/reference/functions/regular-functions/string-search-functions#match)                           | да¹                                                          | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | да¹                        |
+| [ilike](/ru/reference/functions/regular-functions/string-search-functions#like)                            | да² (`lower`/`upper` only)                                   | `splitByNonAlpha`, `array`²                              | нет²                       |
+| [mapContainsKey](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | да                                                           | все                                                      | да                         |
+| [mapContainsValue](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | да                                                           | все                                                      | да                         |
+| [mapContainsKeyLike](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | да                         |
+| [mapContainsValueLike](/ru/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | да                                                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | да                         |
+| [has](/ru/reference/functions/regular-functions/array-functions#has)                                       | да                                                           | `array`                                                  | да                         |
+| [hasAny](/ru/reference/functions/regular-functions/array-functions#hasAny)                                 | да                                                           | `array`                                                  | да                         |
+| [hasAll](/ru/reference/functions/regular-functions/array-functions#hasAll)                                 | да                                                           | `array`                                                  | да                         |
+
+¹ `LIKE` и `match` используют прямое чтение как подсказку для указанных токенизаторов; в остальных случаях используется сканирование полным перебором.
+`LIKE` также поддерживает *прямое чтение (без подсказки)* (включается через `use_text_index_like_evaluation_by_dictionary_scan`) для токенизаторов `splitByNonAlpha` и `array` без препроцессора и постпроцессора.
+
+² `ILIKE` поддерживается только через прямое чтение (без подсказки) (`use_text_index_like_evaluation_by_dictionary_scan = 1`, токенизатор `splitByNonAlpha` или `array`).
+Перехода к использованию индекса как подсказки нет: если настройка отключена или токенизатор не входит в поддерживаемый набор, индекс для `ILIKE` не используется.
+Препроцессор, если он задан, должен быть `lower` или `upper`; постпроцессоры не поддерживаются.
+
+**Экспериментально: аргумент для поддержки поиска по фразе (необязательный)**.
+
+Экспериментальный параметр `support_phrase_search` (по умолчанию: `0`) определяет, хранит ли индекс позиции токенов.
+Если указать значение `1`, индекс дополнительно сохраняет позиционные данные (в файле `.pos`), что позволяет выполнять точный поиск по фразе с помощью прямого чтения для функции [`hasPhrase`](#functions-example-hasphrase).
+Хранение позиций увеличивает размер индекса на диске и стоимость записи, поэтому эта возможность включается только явно.
+Формат хранения на диске пока не является стабильным, поэтому этот параметр экспериментальный и может измениться в одном из будущих релизов.
+Поэтому для создания индекса с `support_phrase_search = 1` требуется, чтобы была включена настройка MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search).
+Установите `support_phrase_search = 0` (значение по умолчанию), чтобы сохранить хранение только списков вхождений; текстовые индексы, созданные без этого аргумента, остаются без позиций.
+
+<Warning>
+  Этот аргумент является экспериментальным и должен использоваться только для тестирования.
+  Чтобы включить хранение позиций, установите настройку MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search).
+</Warning>
 
 <details markdown="1">
   <summary>Необязательные расширенные параметры</summary>
@@ -374,8 +566,8 @@ SHOW CREATE TABLE table;
 
 <Note>
   Мы рекомендуем использовать функции `hasAnyTokens` и `hasAllTokens` для поиска по текстовому индексу; см. [ниже](#functions-example-hasanytokens-hasalltokens).
-  Эти функции работают со всеми доступными токенизаторами и всеми возможными выражениями препроцессора.
-  Поскольку остальные поддерживаемые функции исторически появились раньше текстового индекса, во многих случаях им пришлось сохранить прежнее поведение (например, без поддержки препроцессора).
+  Эти функции работают со всеми доступными токенизаторами и всеми возможными выражениями препроцессора и постпроцессора.
+  Поскольку остальные поддерживаемые функции исторически появились раньше текстового индекса, во многих случаях им пришлось сохранить прежнее поведение (например, без поддержки препроцессора или постпроцессора).
 </Note>
 
 <div id="functions-support">
@@ -490,6 +682,7 @@ SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' suppo
 
 Как и `LIKE`, функции [startsWith](/ru/reference/functions/regular-functions/string-functions#startsWith) и [endsWith](/ru/reference/functions/regular-functions/string-functions#endsWith) могут использовать текстовый индекс, только если из поискового выражения можно извлечь полные токены.
 Для индекса с токенизатором `ngrams` это возможно, если длина искомых строк между подстановочными шаблонами равна длине n-граммы или больше неё.
+Если текстовый индекс использует постпроцессор, эти функции всё равно могут использовать индекс в режиме Hint, если извлечённые hint-токены остаются непустыми после нормализации. Если нормализация удаляет все hint-токены, индекс не используется для этого предиката.
 
 Пример для текстового индекса с токенизатором `splitByNonAlpha`:
 
@@ -512,16 +705,18 @@ startsWith(comment, 'clickhouse supports ')`
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-<div id="functions-example-hastoken-hastokenornull">
-  #### `hasToken` и `hasTokenOrNull`
+<div id="functions-example-hastoken">
+  #### `hasToken`
 </div>
 
 <Note>
-  Функция `hasToken` на первый взгляд кажется простой в использовании, но при работе с токенизаторами, отличными от используемого по умолчанию, и выражениями препроцессора у неё есть определённые подводные камни.
-  Вместо неё рекомендуем использовать функции `hasAnyTokens` и `hasAllTokens`.
+  Функция `hasToken` на первый взгляд кажется простой в использовании, но при использовании для lookup-операций в текстовых индексах с токенизаторами, отличными от `splitByNonAlpha`, и/или выражениями препроцессора/постпроцессора у неё есть определённые подводные камни.
+  Вместо неё рекомендуем использовать `hasAnyTokens` и `hasAllTokens`.
+
+  Регистронезависимые варианты `hasTokenCaseInsensitive` и `hasTokenCaseInsensitiveOrNull` не учитывают текстовый индекс — они всегда выполняются как полное сканирование строк, даже для столбцов с текстовым индексом. Для регистронезависимого сопоставления используйте препроцессор или постпроцессор `lower(...)` и комбинируйте его с `hasToken` / `hasAllTokens` / `hasAnyTokens`.
 </Note>
 
-Функции [hasToken](/ru/reference/functions/regular-functions/string-search-functions#hasToken) и [hasTokenOrNull](/ru/reference/functions/regular-functions/string-search-functions#hasTokenOrNull) выполняют сопоставление с одним указанным токеном.
+Функция [hasToken](/ru/reference/functions/regular-functions/string-search-functions#hasToken) выполняет сопоставление с одним указанным токеном.
 
 В отличие от ранее упомянутых функций, они не токенизируют поисковый запрос (предполагается, что входное значение — это один токен).
 
@@ -560,16 +755,17 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 
 В отличие от `hasAllTokens`, для которой достаточно, чтобы все токены присутствовали где угодно, `hasPhrase` требует, чтобы они образовывали непрерывную последовательность.
 Поисковая фраза токенизируется с помощью того же токенизатора, который настроен для столбца индекса.
+Если текстовый индекс использует постпроцессор, поисковая фраза также нормализуется перед поиском по индексу.
 Обратите внимание, что для функции требуется один из токенизаторов `splitByNonAlpha`, `splitByString`, `ngrams` или `asciiCJK`.
 
 Пример:
 
 ```sql
--- Совпадение: 'clickhouse' и 'olap' должны идти последовательно именно в таком порядке
+-- Matches: 'clickhouse' and 'olap' must appear consecutively in that order
 SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 
--- НЕ совпадает со строкой, содержащей 'olap clickhouse' (неверный порядок)
--- НЕ совпадает со строкой, содержащей 'clickhouse fast olap' (слова не стоят рядом)
+-- Does NOT match a row containing 'olap clickhouse' (wrong order)
+-- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
 ```
 
 <div id="functions-example-has">
@@ -969,25 +1165,45 @@ SELECT * FROM events WHERE data.level IN ('error', 'critical');
 ```
 
 <div id="text-index-phrase-search">
-  ### Поиск по фразе
+  ### Фразовый поиск
 </div>
 
-Текстовый индекс поддерживает поиск по фразе с помощью функции `hasPhrase`.
-Все токены во фразе должны идти в документе подряд и в том же порядке.
+Например, обычный поиск по текстовому индексу
 
-Текстовый индекс ускоряет поиск по фразе, пересекая списки вхождений всех токенов во фразе, чтобы определить гранулы-кандидаты.
-В пределах этих гранул ClickHouse затем проверяет точное соседство токенов.
+```sql
+SELECT *
+FROM tab
+WHERE hasAllTokens(col, 'weather in Tokyo')
+```
 
-`hasPhrase` поддерживается с токенизаторами `splitByNonAlpha`, `splitByString`, `ngrams` и `asciiCJK`.
+соответствует всем строкам, содержащим заданные токены в произвольном порядке.
+В примере строка `While she stayed in Tokyo, the weather was great.` соответствует условию фильтрации.
 
-Строка фразы токенизируется с помощью токенизатора, настроенного для индекса.
-Символы-разделители токенизатора во фразе игнорируются: `hasPhrase(text, 'quick+brown')` эквивалентно `hasPhrase(text, 'quick brown')` для токенизатора `splitByNonAlpha`.
+Напротив, фразовый поиск подразумевает совпадение токенов в заданном порядке.
+Например,
+
+```sql
+SELECT *
+FROM tab
+WHERE hasPhrase(col, 'weather in Tokyo')
+```
+
+соответствует любой строке, содержащей последовательность токенов `weather in Tokyo`, например `How is the weather in Tokyo?`?
+
+Текстовый индекс ускоряет поиск по фразам, пересекая списки вхождений для всех токенов во фразе, чтобы определить гранулы-кандидаты.
+Затем в пределах этих гранул ClickHouse проверяет точное соседство токенов.
+Этот процесс относительно затратен и медленнее обычных запросов текстового поиска.
+Чтобы ускорить запросы поиска по фразам, включите сохранение позиций в текстовом индексе (см. `Optional parameters` выше).
+
+`hasPhrase` можно использовать вместе с токенизаторами `splitByNonAlpha`, `splitByString`, `ngrams` и `asciiCJK`.
+Указанная строка фразы токенизируется токенизатором индекса.
+Символы-разделители во фразе игнорируются: `hasPhrase(text, 'quick+brown')` эквивалентно `hasPhrase(text, 'quick brown')`, если в качестве токенизатора используется `splitByNonAlpha`.
 
 <div id="text-index-phrase-search-example">
   #### Пример
 </div>
 
-```sql title="Query"
+```sql
 CREATE TABLE tab (
     id UInt32,
     text String,
@@ -1175,11 +1391,10 @@ Fallback-механизм управляется двумя настройкам
   ### Кэширование
 </div>
 
-Доступны различные кэши, позволяющие хранить части текстового индекса в памяти (см. раздел [Подробности реализации](#implementation)):
+Существуют различные кэши уровня сервера, позволяющие хранить части текстового индекса в памяти (см. раздел [Подробности реализации](#implementation)):
 В настоящее время доступны кэши для десериализованных заголовков, токенов и списков вхождений текстового индекса, чтобы сократить I/O.
-Их можно включить с помощью настроек [use&#95;text&#95;index&#95;header&#95;cache](/ru/reference/settings/session-settings#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ru/reference/settings/session-settings#use_text_index_tokens_cache) и [use&#95;text&#95;index&#95;postings&#95;cache](/ru/reference/settings/session-settings#use_text_index_postings_cache).
+Используйте настройки [use&#95;text&#95;index&#95;header&#95;cache](/ru/reference/settings/session-settings#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ru/reference/settings/session-settings#use_text_index_tokens_cache) и [use&#95;text&#95;index&#95;postings&#95;cache](/ru/reference/settings/session-settings#use_text_index_postings_cache), чтобы отключить для запросов чтение из отдельных кэшей и запись в них.
 
-По умолчанию все кэши отключены.
 Чтобы очистить кэши, используйте оператор [SYSTEM CLEAR TEXT INDEX CACHES](/ru/reference/statements/system#drop-text-index-caches)
 
 Чтобы настроить кэши, обратитесь к следующим настройкам сервера.
@@ -1290,6 +1505,11 @@ Fallback-механизм управляется двумя настройкам
 Списки вхождений для всех токенов располагаются последовательно в файле списков вхождений.
 Чтобы экономить место и при этом обеспечивать быстрые операции пересечения и объединения, списки вхождений хранятся в виде [roaring bitmaps](https://roaringbitmap.org/).
 Если список вхождений больше `posting_list_block_size`, он разбивается на несколько блоков, которые последовательно сохраняются в файле списков вхождений.
+
+**Файл позиций (.pos)**
+
+Необязательный, только если аргумент индекса `support_phrase_search = 1`.
+Хранит позиции токенов в совпадающих строках.
 
 **Слияние текстовых индексов**
 

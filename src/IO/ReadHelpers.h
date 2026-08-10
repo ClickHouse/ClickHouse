@@ -1435,6 +1435,22 @@ inline bool tryReadTime64Text(Time64 & time64, UInt32 scale, ReadBuffer & buf, c
     return readTimeTextImpl<bool>(time64, scale, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 }
 
+/// Reading a `DateTime`/`DateTime64` column from an unquoted number in the `JSON`, `Values` and similar text
+/// formats (see `SerializationDateTime`/`SerializationDateTime64`). The number is a Unix timestamp (seconds
+/// since the epoch, with optional sub-second precision for `DateTime64`), consistent with `CAST`,
+/// `toDateTime64` and the `Values` format. Parsing stops at the first character that is not part of the
+/// number (e.g. the `,` or `}` following the value in JSON). The `AsRawValue` variants implement the legacy
+/// behavior, where the number is the raw underlying value.
+void readDateTimeAsNumber(time_t & x, ReadBuffer & buf);
+bool tryReadDateTimeAsNumber(time_t & x, ReadBuffer & buf);
+void readDateTimeAsRawValue(time_t & x, ReadBuffer & buf);
+bool tryReadDateTimeAsRawValue(time_t & x, ReadBuffer & buf);
+
+void readDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
+bool tryReadDateTime64AsNumber(DateTime64 & x, UInt32 scale, ReadBuffer & buf);
+void readDateTime64AsRawValue(DateTime64 & x, ReadBuffer & buf);
+bool tryReadDateTime64AsRawValue(DateTime64 & x, ReadBuffer & buf);
+
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
 {
     char s[10];

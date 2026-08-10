@@ -35,11 +35,11 @@ quantileTDigest(level)(expr)
 
 **引数**
 
-* `expr` — カラム値に対する式。結果は数値型、Date、または DateTime になります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+* `expr` — カラム値に対する式。結果は数値型、`Date`、または `DateTime` になります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
 
 **戻り値**
 
-指定したレベルの近似 分位点。[`Float64`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+指定したレベルの近似 分位点。`Date` および `DateTime` の入力では、出力フォーマットは入力フォーマットと一致します。[`Float32`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
 
 **例**
 

@@ -7,7 +7,7 @@ slug: /cloud/reference/supported-regions
 doc_type: 'reference'
 ---
 
-import EnterprisePlanFeatureBadge from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 ## AWS regions {#aws-regions}
 
@@ -31,6 +31,7 @@ import EnterprisePlanFeatureBadge from "/snippets/components/EnterprisePlanFeatu
 - sa-east-1 (South America)
 - ap-southeast-3 (Jakarta)
 - ap-east-1 (Hong Kong)
+- ap-east-2 (Taipei)
 - mx-central-1 (Mexico)
  
 ## Google Cloud regions {#google-cloud-regions}
@@ -75,7 +76,6 @@ We offer Private regions for our Enterprise tier services. Please [Contact us](h
 Key considerations for private regions:
 - Services won't auto-scale; however, manual vertical and horizontal scaling is supported.
 - Services can't be idled.
-- Status page isn't available for private regions.
   
 Additional requirements may apply for HIPAA compliance (including signing a BAA). Note that HIPAA is currently available only for Enterprise tier services
 

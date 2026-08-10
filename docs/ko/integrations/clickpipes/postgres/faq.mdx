@@ -199,10 +199,15 @@ ClickPipes for Postgres는 ClickHouse 측에서 Postgres 데이터 타입을 가
 현재는 파이프의 일부로 사용자 정의 데이터 타입 매핑을 정의하는 기능을 지원하지 않습니다. 다만 ClickPipes에서 사용하는 기본 데이터 타입 매핑은 네이티브 타입에 매우 가깝다는 점에 유의하십시오. Postgres의 대부분의 컬럼 타입은 ClickHouse의 해당 네이티브 타입에 최대한 가깝게 복제됩니다. 예를 들어 Postgres의 정수 배열 타입은 ClickHouse에서도 정수 배열 타입으로 복제됩니다.
 
 <div id="how-are-json-and-jsonb-columns-replicated-from-postgres">
-  ### Postgres의 JSON 및 JSONB 컬럼은 어떻게 복제되나요?
+  ### Postgres에서 `json` 및 `jsonb` 컬럼은 어떻게 복제되나요?
 </div>
 
-JSON 및 JSONB 컬럼은 ClickHouse에서 String 타입으로 복제됩니다. ClickHouse는 네이티브 [JSON 타입](/ko/reference/data-types/newjson)을 지원하므로, 필요한 경우 ClickPipes 테이블에 materialized view를 생성해 변환할 수 있습니다. 또는 String 컬럼에 [JSON 함수](/ko/reference/functions/regular-functions/json-functions)를 직접 사용할 수도 있습니다. 현재 JSON 및 JSONB 컬럼을 ClickHouse의 JSON 타입으로 직접 복제하는 기능을 개발 중입니다. 이 기능은 몇 개월 내에 제공될 예정입니다.
+`json` 및 `jsonb` 컬럼은 [네이티브 JSON 타입](/ko/reference/data-types/newjson)과 호환되지 않기 때문에 ClickHouse에서는 String 타입으로 복제됩니다. 예를 들면 다음과 같습니다.
+
+* PostgreSQL은 최상위 레벨에서 모든 유효한 JSON 값(문자열, 숫자, 배열)을 허용하지만, ClickHouse의 JSON 타입은 객체만 지원합니다.
+* 점이 포함된 키(예: &quot;app.kubernetes.io/name&quot;)는 ClickHouse의 JSON 타입에서 중첩 경로로 해석되므로 데이터 구조가 달라질 수 있습니다.
+
+Postgres CDC ClickPipe 다운스트림에서 JSON 문자열을 처리하려면 컬럼에 [JSON 함수](/ko/reference/functions/regular-functions/json-functions)를 직접 사용해 데이터를 추출하고 활용할 수 있습니다. 쿼리 성능을 높이려면 materialized view를 사용해 특정 필드를 타입이 지정된 컬럼으로 추출하거나, 컬럼을 네이티브 JSON 타입으로 캐스팅할 수도 있습니다(단, 플랫폼 간 타입 비호환성이 있으면 캐스트가 실패할 수 있다는 점에 유의하십시오).
 
 <div id="what-happens-to-inserts-when-a-mirror-is-paused">
   ### 미러가 일시 중지되면 삽입은 어떻게 됩니까?
@@ -221,7 +226,7 @@ JSON 및 JSONB 컬럼은 ClickHouse에서 String 타입으로 복제됩니다. C
   ### ClickPipe 생성은 자동화할 수 있나요, 아니면 API나 CLI로 수행할 수 있나요?
 </div>
 
-Postgres ClickPipe는 [OpenAPI](/ko/products/cloud/features/admin-features/api/openapi) endpoint를 통해 생성하고 관리할 수도 있습니다. 이 기능은 베타이며, API 참조는 [여기](/ko/api-reference/organization/get-list-of-available-organizations#tag/beta)에서 확인할 수 있습니다. 또한 Postgres ClickPipes 생성을 위한 Terraform 지원도 현재 적극적으로 개발 중입니다.
+Postgres ClickPipe는 [OpenAPI](/ko/products/cloud/features/admin-features/api/openapi) endpoint를 통해 생성하고 관리할 수도 있습니다. 이 기능은 베타이며, API 참조는 [여기](/ko/products/cloud/api-reference/clickpipes/list-clickpipes)에서 확인할 수 있습니다. 또한 Postgres ClickPipes 생성을 위한 Terraform 지원도 현재 적극적으로 개발 중입니다.
 
 <div id="how-do-i-speed-up-my-initial-load">
   ### 초기 적재 속도를 높이려면 어떻게 해야 하나요?

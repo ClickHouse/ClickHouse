@@ -167,7 +167,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     /// Set application name for help messages based on how the binary was invoked
     std::string_view argv0_view(argv0 ? argv0 : "");
     std::string name_with_dash = "clickhouse-" + getName();
-    if (argv0_view.find(name_with_dash) != std::string_view::npos)
+    if (argv0_view.contains(name_with_dash))
         app_name = name_with_dash;
     else
         app_name = "clickhouse " + getName();
@@ -226,7 +226,6 @@ void ClientApplicationBase::init(int argc, char ** argv)
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     query_kind = parseQueryKind(options["query_kind"].as<std::string>());
     profile_events.print = options.contains("print-profile-events");
-    profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
 
