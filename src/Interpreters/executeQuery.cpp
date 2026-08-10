@@ -1,7 +1,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/Logger.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -2367,7 +2367,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// Run the fuzzed query on its own thread group, so that code reading the query context
             /// from the thread (read/write settings, temporary data, distributed plan execution, ...)
             /// sees the fuzz context and the limits pinned above instead of the outer query's.
-            ThreadGroupSwitcher thread_group_switcher(
+            ScopedThreadAttributes scoped_thread_attributes(
                 ThreadGroup::createForQuery(fuzz_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
 
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});

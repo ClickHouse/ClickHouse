@@ -128,7 +128,7 @@ public:
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
-    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
+    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ScopedThreadAttributes)
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
@@ -329,7 +329,7 @@ public:
     }
 
     /// getEffectiveSampleProbability reads only this cache on the per-allocation path, so it must be
-    /// re-resolved from the tracker chain whenever the effective parent changes (attach, switcher),
+    /// re-resolved from the tracker chain whenever the effective parent changes (attach, ScopedThreadAttributes),
     /// otherwise threads parented to total_memory_tracker miss total_memory_tracker_sample_probability.
     MemoryTracker::SampleConfig getMemorySampleConfig() const { return {sample_probability, sample_min_allocation_size, sample_max_allocation_size}; }
     void setMemorySampleConfig(const MemoryTracker::SampleConfig & c)

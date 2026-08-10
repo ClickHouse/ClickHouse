@@ -330,7 +330,7 @@ IcebergIterator::IcebergIterator(
     producer_task = std::make_unique<ThreadFromGlobalPool>(
         [this, thread_group = CurrentThread::getGroup()]()
         {
-            DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
+            DB::ScopedThreadAttributes scoped_attributes(thread_group, DB::ThreadName::ICEBERG_ITERATOR);
             while (!blocking_queue.isFinished())
             {
                 std::optional<ProcessedManifestFileEntryPtr> entry;

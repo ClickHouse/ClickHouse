@@ -6,7 +6,7 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <IO/WriteBufferFromString.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>

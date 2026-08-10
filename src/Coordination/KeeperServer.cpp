@@ -30,7 +30,7 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/setThreadName.h>
@@ -351,7 +351,7 @@ void KeeperServer::KeeperRaftServer::commit_in_bg()
     /// We create a new Context, as if this were a clickhouse query, and set setting
     /// query_profiler_real_time_period_ns so that the profiler samples this thread and results
     /// appear in system.trace_log with query_id = 'KeeperCommit' for easy filtering.
-    std::optional<ThreadGroupSwitcher> thread_group_switcher;
+    std::optional<ScopedThreadAttributes> scoped_thread_attributes;
     UInt64 profiler_period = keeper_context->getCoordinationSettings()[CoordinationSetting::commit_profiler_real_time_period_ns];
     if (profiler_period > 0)
     {
@@ -366,7 +366,7 @@ void KeeperServer::KeeperRaftServer::commit_in_bg()
                 query_context->setSetting("query_profiler_real_time_period_ns", Field(profiler_period));
 
                 auto thread_group = ThreadGroup::createForQuery(query_context);
-                thread_group_switcher.emplace(std::move(thread_group), ThreadName::KEEPER_COMMIT);
+                scoped_thread_attributes.emplace(std::move(thread_group), ThreadName::KEEPER_COMMIT);
             }
         }
         catch (...)

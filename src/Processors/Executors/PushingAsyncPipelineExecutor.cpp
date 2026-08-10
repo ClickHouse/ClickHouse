@@ -7,7 +7,7 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Poco/Event.h>
 
 namespace DB
@@ -102,7 +102,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadName::PUSHING_ASYNC_EXECUTOR);
+        ScopedThreadAttributes scoped_attributes(thread_group, ThreadName::PUSHING_ASYNC_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }

@@ -148,8 +148,8 @@ bool ThreadPoolCallbackRunnerFast::runTaskInline()
 
 void ThreadPoolCallbackRunnerFast::threadFunction()
 {
-    std::optional<ThreadGroupSwitcher> switcher;
-    switcher.emplace(thread_group, thread_name);
+    std::optional<ScopedThreadAttributes> scoped_attributes;
+    scoped_attributes.emplace(thread_group, thread_name);
 
     while (true)
     {
@@ -201,11 +201,11 @@ void ThreadPoolCallbackRunnerFast::threadFunction()
 
             if (shutdown_requested || timed_out)
             {
-                /// Important that we destroy the `ThreadGroupSwitcher` before decrementing `threads`.
-                /// Otherwise ~ThreadGroupSwitcher may access global Context after the query is
+                /// Important that we destroy the `ScopedThreadAttributes` before decrementing `threads`.
+                /// Otherwise ~ScopedThreadAttributes may access global Context after the query is
                 /// finished, which may race with mutating Context (specifically, Settings) at the
                 /// start of next query.
-                switcher.reset();
+                scoped_attributes.reset();
 
                 threads -= 1;
                 if (threads == 0)

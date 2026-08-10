@@ -15,7 +15,7 @@
 #include <base/types.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/ThreadPool.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 
@@ -71,7 +71,7 @@ ManyAggregatedData::~ManyAggregatedData()
                 pool->scheduleOrThrowOnError(
                     [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::AGGREGATOR_DESTRUCTION);
+                        ScopedThreadAttributes scoped_attributes(thread_group, ThreadName::AGGREGATOR_DESTRUCTION);
                         my_variant.reset();
                     });
             }

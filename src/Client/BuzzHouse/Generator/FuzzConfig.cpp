@@ -956,11 +956,11 @@ void FuzzConfig::loadServerConfigurations()
     /// terminate_with_exception, terminate_with_std_exception - Terminates the server
     /// tcp_handler_fail_connection_setup - Fails every new TCP connection setup, so once enabled the fuzzer can neither
     ///     reconnect nor disable it again over its TCP connection (it would deadlock; the test controls it over HTTP)
-    /// attach_to_group_failure, thread_group_switcher_post_attach_failure - Break the "a query thread has a thread
-    ///     group" invariant on whatever thread happens to hit them next. `ThreadGroupSwitcher` is `noexcept` and only
+    /// attach_to_group_failure, scoped_thread_attributes_post_attach_failure - Break the "a query thread has a thread
+    ///     group" invariant on whatever thread happens to hit them next. `ScopedThreadAttributes` is `noexcept` and only
     ///     logs the injected failure, so the thread continues with no group and the next `executeQuery` on it fails
     ///     with the `No thread group attached to the thread` logical error. They are meant for the in-process unit
-    ///     test `gtest_thread_group_switcher`, which enables them around a single controlled switch.
+    ///     test `gtest_scoped_thread_attributes`, which enables them around a single controlled switch.
     loadServerSettings<String>(
         this->failpoints,
         "failpoints",
@@ -968,7 +968,7 @@ void FuzzConfig::loadServerConfigurations()
         " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
         "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
         "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup', 'attach_to_group_failure', "
-        "'thread_group_switcher_post_attach_failure')");
+        "'scoped_thread_attributes_post_attach_failure')");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
     /// Probe which function_implementation values the server supports. They depend on how the binary
     /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an

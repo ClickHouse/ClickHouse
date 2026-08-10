@@ -4,7 +4,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Interpreters/Context.h>

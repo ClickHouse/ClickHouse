@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <string_view>
 
 namespace DB
@@ -147,7 +148,6 @@ namespace DB
     M(RESTORE_MAKE_TABLE, "Restore_MakeTbl") \
     M(RESTORE_TABLE_DATA, "Restore_TblData") \
     M(RESTORE_TABLE_TASK, "Restore_TblTask") \
-    M(RUNTIME_DATA, "RuntimeData") \
     M(S3_BACKUP_READER, "BackupReaderS3") \
     M(S3_BACKUP_WRITER, "BackupWriterS3") \
     M(S3_COPY_POOL, "S3ObjStor_copy") \
@@ -205,6 +205,40 @@ enum class ThreadName : uint8_t
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
+
+/// Raw OS-level thread name (comm). Unlike getThreadName, does not collapse names that are
+/// absent from the ThreadName enum to UNKNOWN: e.g. for a thread that was never renamed the
+/// OS reports the binary name ("clickhouse" for the server's main thread), and tools such as
+/// `pkill clickhouse` or `ps -C clickhouse` match against exactly that comm value.
+///
+/// Returns an empty string when the OS-level name cannot be read: on FreeBSD and illumos there
+/// is no raw read at all (see getThreadName), and on Linux `prctl(PR_GET_NAME)` can be blocked
+/// or unsupported in restricted environments. Callers must not treat an empty result as a name;
+/// use saveThreadName/restoreThreadName, which fall back to the cached ThreadName.
+std::string getThreadNameRaw();
+
+/// Set the raw OS-level name, bypassing the ThreadName enum. The name must not be empty.
+void setThreadNameRaw(const std::string & name);
+
+/// A snapshot of the current thread's name, taken before a temporary rename and restored
+/// afterwards. Keeps both representations, because neither alone is sufficient:
+///  * `raw` is the OS-level comm, needed because a thread that was never renamed by us carries
+///    the binary name (e.g. "clickhouse" for the server's main thread), which has no enum value
+///    and would come back as "Unknown" if restored through the enum;
+///  * `cached` is the ThreadName cache, which also drives the logs, traces and the jemalloc
+///    profile name, and is the only thing available when the raw read is unsupported.
+struct ThreadNameSnapshot
+{
+    /// Empty when the platform or the sandbox does not allow reading the OS-level name.
+    std::string raw;
+    ThreadName cached = ThreadName::UNKNOWN;
+};
+
+ThreadNameSnapshot saveThreadName();
+
+/// Restore a name saved by saveThreadName: verbatim when the raw name is known, otherwise
+/// through the cached ThreadName, so a temporary name never leaks past the scope.
+void restoreThreadName(const ThreadNameSnapshot & snapshot);
 
 std::string_view toString(ThreadName name);
 
