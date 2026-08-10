@@ -20,7 +20,7 @@ CLICKPIPES_TEAM = "clickpipes"
 INTEGRATIONS_ECOSYSTEM_TEAM = "integrations-ecosystem"
 
 TEAM_REVIEW_TOKEN = Secret.Config(
-    name="/ci/robot-ch-test-poll-copilot",
+    name="/ci/robot-ch-test-poll-1-copilot",
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
