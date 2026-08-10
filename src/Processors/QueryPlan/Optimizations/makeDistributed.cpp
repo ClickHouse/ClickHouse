@@ -77,6 +77,7 @@ void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, Quer
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
+bool keyTypeBreaksHashSharding(const IDataType & type);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
@@ -763,12 +764,17 @@ static void tryPushWindowBelowSortedGather(QueryPlan::Node & node, const QueryPl
         return;
 
     /// The partition keys must survive as plain columns at the scatter input, or they cannot be hashed.
+    /// Types whose hash disagrees with `compareAt` (floats, `JSON`, `Dynamic` - see
+    /// `keyTypeBreaksHashSharding`) would split one logical partition across buckets and produce wrong
+    /// window values, so such windows stay gathered.
     const auto & scatter_input_header = scatter_step->getInputHeaders().front();
     Names partition_names;
     partition_names.reserve(partition_by.size());
     for (const auto & partition_column : partition_by)
     {
         if (!scatter_input_header->has(partition_column.column_name))
+            return;
+        if (keyTypeBreaksHashSharding(*scatter_input_header->getByName(partition_column.column_name).type))
             return;
         partition_names.push_back(partition_column.column_name);
     }
