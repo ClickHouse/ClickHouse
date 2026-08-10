@@ -6,14 +6,14 @@
     <create_query>CREATE TABLE sg_text_3_8 (s String, INDEX idx s TYPE text(tokenizer = sparseGrams(3, 8)) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>SYSTEM STOP MERGES</create_query>
 
-    <fill_query>INSERT INTO sg_src SELECT randomPrintableASCII(200) FROM numbers(1_500_000)</fill_query>
+    <fill_query>INSERT INTO sg_src SELECT randomPrintableASCII(200) FROM numbers(150_000)</fill_query>
 
-    <query>INSERT INTO sg_bloom_3_8 SELECT s FROM sg_src</query>
-    <query>INSERT INTO sg_bloom_3_100 SELECT s FROM sg_src</query>
-    <query>INSERT INTO sg_text_3_8 SELECT s FROM sg_src</query>
+    <query>INSERT INTO sg_bloom_3_8 SELECT s FROM sg_src SETTINGS max_threads = 1</query>
+    <query>INSERT INTO sg_bloom_3_100 SELECT s FROM sg_src SETTINGS max_threads = 1</query>
+    <query>INSERT INTO sg_text_3_8 SELECT s FROM sg_src SETTINGS max_threads = 1</query>
 
-    <query>SELECT tokens(s, 'sparseGrams(3, 8)') FROM sg_src FORMAT Null</query>
-    <query>SELECT tokens(s, 'sparseGrams(3, 100)') FROM sg_src FORMAT Null</query>
+    <query>SELECT tokens(s, 'sparseGrams(3, 8)') FROM sg_src FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT tokens(s, 'sparseGrams(3, 100)') FROM sg_src FORMAT Null SETTINGS max_threads = 1</query>
 
     <drop_query>SYSTEM START MERGES</drop_query>
     <drop_query>DROP TABLE IF EXISTS sg_src</drop_query>
