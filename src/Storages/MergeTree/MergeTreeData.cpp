@@ -5128,9 +5128,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     columns_in_keys.insert(columns_alter_type_metadata_only.begin(), columns_alter_type_metadata_only.end());
     columns_in_keys.insert(columns_alter_type_check_safe_for_partition.begin(), columns_alter_type_check_safe_for_partition.end());
 
-    /// No key expression refers to the sign column, its type just cannot be changed. Keep it out of
-    /// `columns_in_keys` so that DROP and RENAME of it are reported by `checkSpecialColumn` below,
-    /// which names it as the sign column instead of a part of a key expression.
     if (!merging_params.sign_column.empty())
         columns_alter_type_forbidden.insert(merging_params.sign_column);
 
