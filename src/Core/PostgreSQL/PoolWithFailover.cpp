@@ -41,7 +41,9 @@ auto PoolWithFailover::connectionReestablisher(std::weak_ptr<PoolHolder> pool, s
 
             if (!connection_available)
             {
-                LOG_WARNING(logger, "Reestablishing connection to {} has failed: unable to fetch connection within the timeout.", connection->getInfoForLog());
+                /// `tryBorrowObject` leaves `connection` null on timeout, so the pool's own metadata
+                /// is the only thing there is to name the replica with here.
+                LOG_WARNING(logger, "Reestablishing connection to {} has failed: unable to fetch connection within the timeout.", shared_pool->connection_info.host_port);
                 return true;
             }
 
