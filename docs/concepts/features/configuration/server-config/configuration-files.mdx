@@ -168,11 +168,11 @@ Resulting in configuration:
 It is also possible to replace parts of the configuration by file contents. This can be done in two ways:
 
 - *Substituting Values*: If an element has the attribute `incl`, its value will be replaced by the content of the referenced file. The path to the file with substitutions is set by the [`include_from`](/reference/settings/server-settings/settings/other#include_from) element in the server config; there is no default path, so substitutions are only read when it is specified. The substitution values are specified in `/clickhouse/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify attribute `optional="true"` (for example, settings for [macros](/reference/settings/server-settings/settings/other#macros)).
-
-:::note Changed in 26.8
-Before version 26.8, the file `/etc/metrika.xml` was used implicitly whenever it existed, even when `include_from` was not specified. If you rely on that file, specify its path in `include_from` explicitly.
-:::
 - *Substituting elements*: If you want to replace the entire element with a substitution, use `include` as the element name. The element name `include` can be combined with the attribute `from_zk = "/path/to/node"`. In this case, the element value is replaced by the contents of the ZooKeeper node at `/path/to/node`. This also works with you store an entire XML subtree as a Zookeeper node, it will be fully inserted into the source element.
+
+<Note>
+Changed in version 26.8: before that version, the file `/etc/metrika.xml` was used implicitly whenever it existed, even when `include_from` was not specified. If you rely on that file, specify its path in `include_from` explicitly.
+</Note>
 
 An example of this is shown below:
 
