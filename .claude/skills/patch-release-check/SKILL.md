@@ -194,7 +194,8 @@ TAG=$(git tag --list "v$BR.*" --sort=-v:refname | head -1)
 # newest 8 — exactly AutoReleaseInfo's set.
 CANDS=$(git rev-list --first-parent "$TAG..FETCH_HEAD" | sed '$d' | head -8)
 # Pick the newest CI-green SHA, mirroring ci_utils.GH exactly:
-#   check_wf_completed   — /check-runs must be NON-EMPTY and every run "completed"
+#   check_wf_completed   — paginate /check-runs, must be NON-EMPTY and every run
+#                          "completed"
 #   get_failed_statuses  — paginate /statuses, keep the newest state PER CONTEXT,
 #                          require none non-success
 # (Re-reading the combined /status rollup is insufficient — it is blind to check-runs
@@ -209,9 +210,11 @@ def gh(args):
         raise SystemExit(f"gh api failed ({' '.join(args)}): {r.stderr.strip()}")
     return r.stdout
 def wf_completed(sha):                       # ci_utils.GH.check_wf_completed
-    runs = (json.loads(gh([f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"]))
-            .get("check_runs") or [])
-    return bool(runs) and all(c["status"] == "completed" for c in runs)
+    # A release-branch commit carries ~180 check runs, so page 1 hides most of them.
+    out = gh(["--paginate", "--jq", ".check_runs[].status",
+              f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"])
+    runs = out.split()
+    return bool(runs) and all(s == "completed" for s in runs)
 def failed_statuses(sha):                    # ci_utils.GH.get_failed_statuses
     out = gh(["--paginate", "--jq", ".[]",
               f"repos/{REPO}/commits/{sha}/statuses?per_page=100"])
