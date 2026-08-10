@@ -428,6 +428,19 @@ void NamedCollectionFactory::addDependency(const String & collection_name, const
 {
     std::lock_guard lock(mutex);
     LOG_TRACE(log, "Adding dependency: collection={}, table={}", collection_name, table_id.getNameForLogs());
+
+    /// The same dependency can be registered more than once for one table - a lazily loaded table
+    /// registers it from its metadata and again when its proxy is materialized - and a duplicate would
+    /// only make the same table be listed twice in the error message of `DROP NAMED COLLECTION`.
+    const auto & idx = dependencies.get<Collection>();
+    auto range = idx.equal_range(collection_name);
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name
+            && it->table_id.uuid == table_id.uuid)
+            return;
+    }
+
     dependencies.emplace(collection_name, table_id);
 
     /// The detached entry of the table, if any, is deliberately not removed here: the dependencies are

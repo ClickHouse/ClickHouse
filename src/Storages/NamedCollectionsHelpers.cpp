@@ -226,6 +226,22 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     return collection_copy;
 }
 
+std::optional<std::string> tryGetUsedNamedCollectionName(const ASTs & asts)
+{
+    auto collection_name = getCollectionName(asts);
+    if (!collection_name.has_value())
+        return std::nullopt;
+
+    NamedCollectionFactory::instance().loadIfNot();
+
+    /// The first argument of an engine is an identifier for other reasons too (a cluster name, for
+    /// example), so it names a collection only if a collection with that name exists.
+    if (!NamedCollectionFactory::instance().exists(*collection_name))
+        return std::nullopt;
+
+    return collection_name;
+}
+
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {

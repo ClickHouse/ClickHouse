@@ -38,7 +38,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 

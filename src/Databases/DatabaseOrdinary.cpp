@@ -30,9 +30,11 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -483,6 +485,17 @@ void DatabaseOrdinary::loadTableLazy(
             create_query, db_name, table_data_path, load_context, mode);
         return table;
     };
+
+    /// A lazy proxy does not build the storage, so the engine arguments are never resolved and the named
+    /// collection the definition uses stays unregistered: `DROP NAMED COLLECTION` would then succeed and
+    /// break the table at its first access, and a `DETACH` of the table would have no dependency to move
+    /// to the list of the detached ones. Register it straight from the metadata instead. The dependency
+    /// is registered again when the proxy is materialized, which is harmless.
+    if (query.storage && query.storage->engine && query.storage->engine->arguments)
+    {
+        if (auto collection_name = tryGetUsedNamedCollectionName(query.storage->engine->arguments->children))
+            NamedCollectionFactory::instance().addDependency(*collection_name, table_id);
+    }
 
     auto proxy = std::make_shared<StorageTableProxy>(
         table_id, std::move(get_nested), std::move(columns));

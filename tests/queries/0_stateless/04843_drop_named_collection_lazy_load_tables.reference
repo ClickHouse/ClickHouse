@@ -1,0 +1,9 @@
+--- a never-accessed lazy proxy holds the collection ---
+TableProxy
+1
+--- and it keeps holding it after the table is detached ---
+1
+--- the table is still there after it is attached back ---
+1
+--- and the collection is released when the table is dropped ---
+0
