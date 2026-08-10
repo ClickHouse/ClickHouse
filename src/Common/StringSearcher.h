@@ -84,13 +84,19 @@ private:
     size_t work = 0;
 };
 
-/// Substituted for `SearchWorkBatch` in the one scan whose loop measurably pays for the bookkeeping, so
-/// that an uncharged scan there is a distinct instantiation with the accounting removed at compile time.
+/// Substituted for `SearchWorkBatch` in the scans that charge per step, so that an uncharged one is a
+/// distinct instantiation with the accounting removed at compile time rather than checked in the loop.
 struct NoSearchWorkBatch
 {
     ALWAYS_INLINE void add(size_t) { }
     ALWAYS_INLINE void flush() { }
     ALWAYS_INLINE const UInt8 * finish(const UInt8 * result) { return result; }
+
+    template <typename Searcher, typename HaystackEnd>
+    ALWAYS_INLINE const UInt8 * delegate(const Searcher & searcher, const UInt8 * haystack, HaystackEnd haystack_end) const
+    {
+        return searcher.search(haystack, haystack_end);
+    }
 };
 
 /// Case-sensitive searcher (delegates to StringZilla)

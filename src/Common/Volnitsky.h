@@ -447,12 +447,25 @@ public:
 
 
     /// If not found, the end of the haystack is returned. `charger` reports the work done, so that a scan
-    /// long enough to outrun a deadline can be interrupted: see `SearchWorkCharger`.
+    /// long enough to outrun a deadline can be interrupted: see `SearchWorkCharger`. An uncharged call is
+    /// dispatched to a separate instantiation, because the hash loop below runs it per step.
     const UInt8 * search(
         const UInt8 * const haystack, const size_t haystack_size, const SearchWorkCharger & charger = no_search_work_charge) const
     {
-        SearchWorkBatch batch(charger);
+        if (charger)
+            return searchImpl(haystack, haystack_size, SearchWorkBatch(charger));
+        return searchImpl(haystack, haystack_size, NoSearchWorkBatch{});
+    }
 
+    const char * search(const char * haystack, size_t haystack_size) const
+    {
+        return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
+    }
+
+private:
+    template <typename Batch>
+    const UInt8 * searchImpl(const UInt8 * const haystack, const size_t haystack_size, Batch batch) const
+    {
         if (needle_size == 0)
             return haystack;
 
@@ -490,11 +503,6 @@ public:
             batch.flush();
             return batch.delegate(fallback_searcher, pos - step + 1, haystack_end);
         }
-    }
-
-    const char * search(const char * haystack, size_t haystack_size) const
-    {
-        return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
     }
 
 protected:
