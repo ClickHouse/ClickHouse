@@ -28,6 +28,7 @@ void BlockIO::reset()
     /// must outlive them.
     resetPipeline(/*cancel=*/false);
     releaseWorkloadResources();
+    query_metadata_cache.reset();
     process_list_entries.clear();
 
     /// TODO Do we need also reset callbacks? In which order?
@@ -43,6 +44,7 @@ BlockIO & BlockIO::operator= (BlockIO && rhs) /// NOLINT(hicpp-noexcept-move,per
 
     process_list_entries    = std::move(rhs.process_list_entries);
     pipeline                = std::move(rhs.pipeline);
+    query_metadata_cache    = std::move(rhs.query_metadata_cache);
     finish_callback_state   = std::move(rhs.finish_callback_state);
 
     finalize_query_pipeline = std::move(rhs.finalize_query_pipeline);
