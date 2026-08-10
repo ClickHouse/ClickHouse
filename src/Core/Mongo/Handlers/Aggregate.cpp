@@ -15,10 +15,43 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::MongoProtocol
 {
+
+namespace
+{
+
+/// Whether any stage of the pipeline, including the ones nested in a `$unionWith`, reads a
+/// collection other than the one the command names.
+bool pipelineReadsOtherCollections(const rapidjson::Value & pipeline)
+{
+    if (!pipeline.IsArray())
+        return false;
+
+    for (const auto & stage : pipeline.GetArray())
+    {
+        if (!stage.IsObject())
+            continue;
+
+        auto union_it = stage.FindMember("$unionWith");
+        if (union_it == stage.MemberEnd())
+            continue;
+        if (!union_it->value.IsObject())
+            return true;
+
+        if (auto nested_it = union_it->value.FindMember("pipeline"); nested_it != union_it->value.MemberEnd())
+            if (pipelineReadsOtherCollections(nested_it->value))
+                return true;
+        return true;
+    }
+
+    return false;
+}
+
+}
 
 std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
@@ -61,6 +94,26 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
     /// The settings the pipeline needs are part of the formatted query already, and a second
     /// `SETTINGS` clause would not parse.
     sql_query += " FORMAT JSON";
+
+    /// Mongo reads a collection that does not exist as empty rather than raising an error, the same
+    /// way `find`, `count` and `distinct` do here. The pipeline is translated first, so that a
+    /// malformed one is still an error.
+    if (!objectExists(executor, "TABLE", collection.getQualifiedName()))
+    {
+        /// A `$unionWith` reads a collection of its own, and the documents it contributes do not
+        /// depend on the collection the command names, so an empty cursor would be the wrong
+        /// answer. Reading the aggregated collection as empty while still returning the union
+        /// would need a source of the right shape to put in its place, which there is none of,
+        /// so this combination is rejected rather than answered incorrectly.
+        if (pipelineReadsOtherCollections(pipeline_it->value))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The collection '{}' of an 'aggregate' with a '$unionWith' stage does not exist: a missing collection is read as empty, "
+                "but the documents of the union cannot be returned without it",
+                collection.getQualifiedName());
+
+        return makeEmptyCursorReply(collection);
+    }
 
     return executeSelectIntoCursor(sql_query, collection, executor);
 }
