@@ -25,7 +25,7 @@ namespace wmt
 {
 
 template <typename T>
-using vector = std::vector<T, AllocatorWithMemoryTracking<T>>;
+using vector = VectorWithMemoryTracking<T>;
 
 }
 

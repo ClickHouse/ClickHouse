@@ -25,7 +25,7 @@ namespace wmt
 {
 
 template <typename T>
-using queue = std::queue<T, deque<T>>;
+using queue = QueueWithMemoryTracking<T>;
 
 }
 

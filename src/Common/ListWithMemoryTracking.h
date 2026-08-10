@@ -25,7 +25,7 @@ namespace wmt
 {
 
 template <typename T>
-using list = std::list<T, AllocatorWithMemoryTracking<T>>;
+using list = ListWithMemoryTracking<T>;
 
 }
 

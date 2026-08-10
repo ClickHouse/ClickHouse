@@ -28,10 +28,10 @@ namespace wmt
 {
 
 template <typename K, typename V, typename Compare = std::less<K>>
-using map = std::map<K, V, Compare, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+using map = MapWithMemoryTracking<K, V, Compare>;
 
 template <typename K, typename V, typename Compare = std::less<K>>
-using multimap = std::multimap<K, V, Compare, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+using multimap = MultiMapWithMemoryTracking<K, V, Compare>;
 
 }
 

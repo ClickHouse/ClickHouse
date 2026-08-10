@@ -25,7 +25,7 @@ namespace wmt
 {
 
 template <typename T>
-using deque = std::deque<T, AllocatorWithMemoryTracking<T>>;
+using deque = DequeWithMemoryTracking<T>;
 
 }
 

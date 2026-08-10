@@ -28,10 +28,10 @@ namespace wmt
 {
 
 template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
-using unordered_set = std::unordered_set<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
+using unordered_set = UnorderedSetWithMemoryTracking<K, Hash, KeyEqual>;
 
 template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
-using unordered_multiset = std::unordered_multiset<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
+using unordered_multiset = UnorderedMultiSetWithMemoryTracking<K, Hash, KeyEqual>;
 
 }
 

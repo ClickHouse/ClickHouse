@@ -28,10 +28,10 @@ namespace wmt
 {
 
 template <typename K, typename Compare = std::less<K>>
-using set = std::set<K, Compare, AllocatorWithMemoryTracking<K>>;
+using set = SetWithMemoryTracking<K, Compare>;
 
 template <typename K, typename Compare = std::less<K>>
-using multiset = std::multiset<K, Compare, AllocatorWithMemoryTracking<K>>;
+using multiset = MultiSetWithMemoryTracking<K, Compare>;
 
 }
 

@@ -29,10 +29,10 @@ namespace wmt
 {
 
 template <typename K, typename V, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
-using unordered_map = std::unordered_map<K, V, Hash, KeyEqual, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+using unordered_map = UnorderedMapWithMemoryTracking<K, V, Hash, KeyEqual>;
 
 template <typename K, typename V, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
-using unordered_multimap = std::unordered_multimap<K, V, Hash, KeyEqual, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+using unordered_multimap = UnorderedMultiMapWithMemoryTracking<K, V, Hash, KeyEqual>;
 
 }
 
