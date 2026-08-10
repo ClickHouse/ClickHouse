@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
 #include <fmt/ranges.h>
@@ -432,7 +433,23 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
             UInt64 data_size = 0;
             readVarUInt(data_size, istr);
 
-            offset += lcp + data_size;
+            /// Reject a corrupted or malicious `.dct`: an out-of-range `lcp` or an overflowing `lcp + data_size` would wrap `offset`, skip the resize, and cause an out-of-bounds write below.
+            const UInt64 previous_token_size = data_offset - previous_token_offset;
+            if (lcp > previous_token_size)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted text index dictionary: front-coding longest common prefix ({}) exceeds the previous token size ({})",
+                    lcp, previous_token_size);
+
+            UInt64 token_size = 0;
+            UInt64 next_offset = 0;
+            if (common::addOverflow(lcp, data_size, token_size) || common::addOverflow<UInt64>(offset, token_size, next_offset))
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted text index dictionary: front-coding token size overflows (lcp = {}, data_size = {})",
+                    lcp, data_size);
+
+            offset = next_offset;
 
             if (offset > data.size())
                 data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
