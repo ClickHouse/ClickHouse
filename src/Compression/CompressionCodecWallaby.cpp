@@ -724,6 +724,11 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
 
     UInt32 ring_position = 0;
     UInt32 newest_slot = 0;
+    /// The ring distance of the last XOR_WINDOW reference. Periodic data (several interleaved
+    /// series in one column) keeps referencing the same distance, so the slot at the previous
+    /// distance is proposed as one more candidate — the idea comes from pcodec's lookback
+    /// proposals, which include the most recently used lookbacks.
+    UInt32 last_window_distance = 0;
 
     writer.writeBits(width, words[0]);
     ring[ring_position] = words[0];
@@ -780,8 +785,12 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
             best_index = equal_slot;
         }
 
-        const UInt32 candidates[3] = {newest_slot, probe[highBitsProbeKey(value)], low_probe[lowBitsProbeKey(value)]};
-        for (UInt32 candidate = 0; candidate < 3 && best_branch != Branch::Equal; ++candidate)
+        const UInt32 candidates[4]
+            = {newest_slot,
+               probe[highBitsProbeKey(value)],
+               low_probe[lowBitsProbeKey(value)],
+               (newest_slot + WALLABY_RING_SIZE - last_window_distance) % WALLABY_RING_SIZE};
+        for (UInt32 candidate = 0; candidate < 4 && best_branch != Branch::Equal; ++candidate)
         {
             const UInt32 slot = candidates[candidate];
             if (candidate > 0 && slot == newest_slot)
@@ -842,6 +851,8 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
                 if (!omit_trail)
                     writer.writeBits(Traits::trail_bits, best_trail);
                 writer.writeBits(center_length, xored >> best_trail);
+                if (best_branch == Branch::XorWindow)
+                    last_window_distance = (newest_slot + WALLABY_RING_SIZE - best_index) % WALLABY_RING_SIZE;
                 break;
             }
             case Branch::Raw:
