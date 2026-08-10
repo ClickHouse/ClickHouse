@@ -7,6 +7,7 @@
 #include <base/sort.h>
 
 #include <Common/Exception.h>
+#include <Common/NaNUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -20,7 +21,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-/// Per-bucket storage of timeseries samples: a flat array of (timestamp, value) pairs kept sorted by timestamp, where duplicate timestamps keep the larger value (and the first arrival against a NaN).
+/// Per-bucket storage of timeseries samples: a flat array of (timestamp, value) pairs kept sorted by timestamp, where duplicate timestamps keep the largest real value (a NaN survives only when every sample at the timestamp is NaN).
 template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeseriesSamples
 {
@@ -36,7 +37,7 @@ public:
             auto & last = buffer.back();
             if (timestamp == last.first)
             {
-                last.second = std::max(last.second, value);
+                last.second = getMax(last.second, value);
                 return;
             }
             sorted = false;
@@ -47,33 +48,40 @@ public:
     void merge(const AggregateFunctionTimeseriesSamples & other)
     {
         if (other.buffer.empty())
+        {
+            /// Nothing to merge: the state is left as is (a rare unsorted state stays unsorted until a later operation sorts it).
             return;
+        }
 
         if (buffer.empty())
         {
             buffer = other.buffer;
-            if (!other.sorted)
-                sortAndDeduplicate(buffer);
-            sorted = true;
+            sorted = other.sorted;
+            sort();
             return;
         }
 
-        normalize();
+        sort();
 
-        /// A rare unsorted argument is normalized into a copy: `other` belongs to another state and is kept intact.
-        Buffer other_normalized;
+        /// A rare unsorted argument is sorted into a copy: `other` belongs to another state and is kept intact.
         const Buffer * rhs = &other.buffer;
+        Buffer sorted_other_buffer;
         if (!other.sorted)
         {
-            other_normalized = other.buffer;
-            sortAndDeduplicate(other_normalized);
-            rhs = &other_normalized;
+            sorted_other_buffer = other.buffer;
+            sortBuffer(sorted_other_buffer);
+            rhs = &sorted_other_buffer;
         }
 
-        /// Partial states often cover disjoint timestamp ranges - then the merge is a plain append.
+        /// Partial states often cover disjoint timestamp ranges - then the merge is a plain append or prepend.
         if (buffer.back().first < rhs->front().first)
         {
             buffer.insert(buffer.end(), rhs->begin(), rhs->end());
+            return;
+        }
+        if (rhs->back().first < buffer.front().first)
+        {
+            buffer.insert(buffer.begin(), rhs->begin(), rhs->end());
             return;
         }
 
@@ -86,12 +94,12 @@ public:
 
     void serialize(WriteBuffer & buf) const
     {
-        /// A rare unsorted state is serialized from a normalized copy, so the state is not mutated behind `const`.
+        /// A rare unsorted state is serialized from a sorted copy, so the state is not mutated behind `const`.
         if (!sorted) [[unlikely]]
         {
-            Buffer normalized = buffer;
-            sortAndDeduplicate(normalized);
-            writeSamples(normalized, buf);
+            Buffer sorted_buffer = buffer;
+            sortBuffer(sorted_buffer);
+            writeSamples(sorted_buffer, buf);
             return;
         }
         writeSamples(buffer, buf);
@@ -106,7 +114,7 @@ public:
         size_t sample_count = 0;
         readBinaryLittleEndian(sample_count, buf);
         buffer.reserve(sample_count);
-        /// No order is assumed on the wire (older peers serialize hash-map iteration order): `add` detects disorder while reading and `normalize` restores the invariant if it was violated.
+        /// No order is assumed on the wire (older peers serialize hash-map iteration order): `add` detects disorder while reading and `sort` restores the invariant if it was violated.
         for (size_t s = 0; s < sample_count; ++s)
         {
             TimestampType timestamp;
@@ -115,7 +123,7 @@ public:
             readBinaryLittleEndian(value, buf);
             add(timestamp, value);
         }
-        normalize();
+        sort();
     }
 
     /// Throws if any sample's timestamp is outside the range.
@@ -135,12 +143,12 @@ public:
     template <typename F>
     void forEachSample(F && f) const
     {
-        /// A rare unsorted state is iterated via a normalized copy, so the state is not mutated behind `const`.
+        /// A rare unsorted state is iterated via a sorted copy, so the state is not mutated behind `const`.
         if (!sorted) [[unlikely]]
         {
-            Buffer normalized = buffer;
-            sortAndDeduplicate(normalized);
-            for (const auto & [timestamp, value] : normalized)
+            Buffer sorted_buffer = buffer;
+            sortBuffer(sorted_buffer);
+            for (const auto & [timestamp, value] : sorted_buffer)
                 f(timestamp, value);
             return;
         }
@@ -167,14 +175,25 @@ private:
         return lhs.first < rhs.first;
     }
 
-    /// Collapses each equal-timestamp run of a sorted buffer into one sample with a left-to-right `std::max` fold: the larger value wins, the first sample wins against a NaN (`std::max` returns its first argument when the comparison is false).
+    /// Returns the larger of two values sharing a timestamp; a NaN loses to any real value.
+    /// The operation is associative and commutative, so the result does not depend on arrival or merge order.
+    static ValueType getMax(ValueType lhs, ValueType rhs)
+    {
+        if (isNaN(lhs))
+            return rhs;
+        if (isNaN(rhs))
+            return lhs;
+        return std::max(lhs, rhs);
+    }
+
+    /// Collapses each equal-timestamp run of a sorted buffer into one sample with `getMax`.
     static void deduplicateSorted(Buffer & buf)
     {
         size_t last_unique = 0;
         for (size_t i = 1; i < buf.size(); ++i)
         {
             if (buf[i].first == buf[last_unique].first)
-                buf[last_unique].second = std::max(buf[last_unique].second, buf[i].second);
+                buf[last_unique].second = getMax(buf[last_unique].second, buf[i].second);
             else
                 buf[++last_unique] = buf[i];
         }
@@ -182,19 +201,18 @@ private:
             buf.resize(last_unique + 1);
     }
 
-    /// The sort is stable so that equal-timestamp samples keep their arrival order for the deduplication fold.
-    static void sortAndDeduplicate(Buffer & buf)
+    static void sortBuffer(Buffer & buf)
     {
-        ::stableSort(buf.begin(), buf.end(), lessByTimestamp);
+        ::sort(buf.begin(), buf.end(), lessByTimestamp);
         deduplicateSorted(buf);
     }
 
     /// Restores the invariant in place after out-of-order `add`s; no-op in the common (already sorted) case.
-    void normalize()
+    void sort()
     {
         if (sorted)
             return;
-        sortAndDeduplicate(buffer);
+        sortBuffer(buffer);
         sorted = true;
     }
 
