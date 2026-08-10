@@ -94,4 +94,9 @@ $CLICKHOUSE_CLIENT -q "
     );
 "
 
+$CLICKHOUSE_CLIENT -q "
+    SELECT value = '0' AS off_by_default FROM system.settings
+    WHERE name = 'filesystem_cache_verbose_logging';
+"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_cached_read_log;"
