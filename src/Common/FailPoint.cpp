@@ -39,6 +39,7 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
+    REGULAR(merge_tree_sink_on_start_random_sleep) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(connection_stale_on_establish) \
@@ -182,6 +183,7 @@ static struct InitFiu
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
+    PAUSEABLE(storage_merge_create_children_plans_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
@@ -246,6 +248,8 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
+    ONCE(rmt_startup_fail_after_being_leader) \
+    REGULAR(rmt_restarting_thread_fail_startup) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
@@ -276,6 +280,13 @@ static struct InitFiu
     PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
+    PAUSEABLE(keeper_changelog_read_plan_resolved) \
+    PAUSEABLE(keeper_changelog_removed_from_disk_set) \
+    PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
+    PAUSEABLE(keeper_changelog_readahead_serve_wait) \
+    PAUSEABLE(keeper_changelog_readahead_park_armed) \
+    PAUSEABLE(keeper_changelog_readahead_pre_drain) \
+    REGULAR(keeper_changelog_readahead_fill_exception) \
     REGULAR(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
