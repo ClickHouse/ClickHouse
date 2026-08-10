@@ -68,6 +68,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int CORRUPTED_DATA;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace MergeTreeSetting
@@ -416,6 +417,9 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
         {
             UInt64 first_token_size = 0;
             readVarUInt(first_token_size, istr);
+            /// Mirror SerializationString's per-string guard (see deserializeTokensRaw) so a corrupted `.dct` cannot drive resize_exact into a huge allocation.
+            if (first_token_size > SerializationString::MAX_STRING_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size: {}. The maximum is: {}.", first_token_size, SerializationString::MAX_STRING_SIZE);
             offset += first_token_size;
             if (offset > data.size())
                 data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
@@ -448,6 +452,9 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
                     ErrorCodes::CORRUPTED_DATA,
                     "Corrupted text index dictionary: front-coding token size overflows (lcp = {}, data_size = {})",
                     lcp, data_size);
+
+            if (token_size > SerializationString::MAX_STRING_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size: {}. The maximum is: {}.", token_size, SerializationString::MAX_STRING_SIZE);
 
             offset = next_offset;
 

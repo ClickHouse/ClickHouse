@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/Serializations/SerializationString.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -18,6 +19,7 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -148,4 +150,29 @@ TEST(TextIndexFrontCoding, RunningOffsetOverflowIsRejected)
     writeFrontCodedToken(out, /*lcp=*/ 4, /*data_size=*/ 0xFFFFFFFFFFFFFFFBULL, "");
 
     EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::CORRUPTED_DATA);
+}
+
+/// A first token size that does not overflow but exceeds the size cap must be rejected before allocating.
+TEST(TextIndexFrontCoding, FirstTokenTooLargeIsRejected)
+{
+    WriteBufferFromOwnString out;
+    writeVarUInt(static_cast<UInt64>(TokensFormat::FrontCodedStrings), out);
+    writeVarUInt(1, out); /// num_tokens
+    writeVarUInt(SerializationString::MAX_STRING_SIZE + 1, out);
+
+    EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::TOO_LARGE_STRING_SIZE);
+}
+
+/// A reconstructed token size that does not overflow but exceeds the size cap must be rejected before allocating.
+TEST(TextIndexFrontCoding, ReconstructedTokenTooLargeIsRejected)
+{
+    WriteBufferFromOwnString out;
+    writeVarUInt(static_cast<UInt64>(TokensFormat::FrontCodedStrings), out);
+    writeVarUInt(2, out); /// num_tokens
+
+    writeVarUInt(4, out);
+    out.write("test", 4);
+    writeFrontCodedToken(out, /*lcp=*/ 4, /*data_size=*/ SerializationString::MAX_STRING_SIZE, "");
+
+    EXPECT_EQ(deserializeTokensErrorCode(out.str()), ErrorCodes::TOO_LARGE_STRING_SIZE);
 }
