@@ -2,8 +2,9 @@
 # Tags: no-fasttest
 # Tag justification:
 #   no-fasttest: depends on libmysql (MySQL table function), not built in fast test.
-# No no-parallel tag: the mysql() table function attaches nothing to system.tables, so
-# concurrent copies cannot observe each other (unlike 04507, which ATTACHes a MySQL database).
+# No no-parallel tag: the engine table lives in ${CLICKHOUSE_DATABASE} and inspecting it does not
+# connect, so concurrent copies cannot observe each other (unlike 04507, which ATTACHes a MySQL
+# database).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -34,16 +35,18 @@ report()
     echo "${name} ${verdict}"
 }
 
-# Cancel a query that is inside the MySQL connect, and report how long it took to come back.
-kill_arm()
+# Run a query in the background and cancel it once it is really inside the MySQL connect.
+# Echoes the elapsed milliseconds; the error text is left in ${CLICKHOUSE_TMP}/${name}.err.
+# Returns non-zero if the query never started, in which case the caller must not judge it.
+run_and_cancel()
 {
-    local name=$1 settings=$2
+    local name=$1 query=$2
     local query_id="${CLICKHOUSE_DATABASE}_${name}"
-    local start_ms end_ms error
+    local start_ms end_ms
 
     start_ms=$(date +%s%3N)
-    ${CLICKHOUSE_CLIENT_QUIET} --query_id "${query_id}" \
-        -q "SELECT * FROM mysql(${MYSQL_ARGS}, SETTINGS ${settings})" > "${CLICKHOUSE_TMP}/${name}.err" 2>&1 &
+    ${CLICKHOUSE_CLIENT_QUIET} --query_id "${query_id}" -q "${query}" \
+        > "${CLICKHOUSE_TMP}/${name}.err" 2>&1 &
     local client_pid=$!
 
     # Cancel only once the query is actually running, so the arm cannot pass by cancelling
@@ -57,27 +60,90 @@ kill_arm()
         sleep 0.1
     done
     if [ "${seen}" = "0" ]; then
-        echo "${name} query never appeared in system.processes"
         wait "${client_pid}" 2>/dev/null
-        return
+        return 1
     fi
 
     ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null"
     wait "${client_pid}" 2>/dev/null
     end_ms=$(date +%s%3N)
 
+    echo "$((end_ms - start_ms))"
+}
+
+# Cancel a query that is inside the MySQL connect, and report how long it took to come back.
+kill_arm()
+{
+    local name=$1 settings=$2
+    local elapsed_ms error
+
+    if ! elapsed_ms=$(run_and_cancel "${name}" "SELECT * FROM mysql(${MYSQL_ARGS}, SETTINGS ${settings})"); then
+        echo "${name} query never appeared in system.processes"
+        return
+    fi
+
     error=$(cat "${CLICKHOUSE_TMP}/${name}.err")
     rm -f "${CLICKHOUSE_TMP}/${name}.err"
-    report "${name}" "$((end_ms - start_ms))" "QUERY_WAS_CANCELLED" "${error}"
+    report "${name}" "${elapsed_ms}" "QUERY_WAS_CANCELLED" "${error}"
 }
 
 # One try: the check before the final error is the only cancellation checkpoint left, so this
 # arm pins the error identity. Without it the cancellation surfaces as ALL_CONNECTION_TRIES_FAILED.
 kill_arm kill_one_try "connect_timeout = 100, connection_max_tries = 1"
-# Three tries: the per-attempt check stops the remaining attempts, so this arm pins the latency.
+# Three tries: latency alone does not pin the per-attempt check, because the sliced wait already
+# bounds each attempt to a fraction of a second. kill_retry_count below is what pins it.
 kill_arm kill_three_tries "connect_timeout = 100, connection_max_tries = 3"
 # connect_timeout = 0 means wait indefinitely, which must stay killable and must not fail early.
 kill_arm kill_unbounded_timeout "connect_timeout = 0, connection_max_tries = 1"
+
+# The per-attempt check must stop the retry loop, not merely shorten each attempt. The pool logs
+# one line per completed retry, so count them: attempt 1 is already under way when the
+# cancellation arrives and legitimately logs its line, and retries 2 and 3 must not happen.
+# Expect exactly 1, never 0.
+KILL_RETRY_NAME=kill_retry_count
+if ELAPSED_MS=$(run_and_cancel "${KILL_RETRY_NAME}" \
+        "SELECT * FROM mysql(${MYSQL_ARGS}, SETTINGS connect_timeout = 100, connection_max_tries = 3)"); then
+    rm -f "${CLICKHOUSE_TMP}/${KILL_RETRY_NAME}.err"
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+    # system.text_log is MergeTree backed, so the randomized parallel replicas settings apply to
+    # reads of it. Pin them off per query rather than tagging the whole test.
+    RETRIES=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.text_log
+        WHERE query_id = '${CLICKHOUSE_DATABASE}_${KILL_RETRY_NAME}'
+          AND message LIKE 'Connection to mysql failed%times'
+        SETTINGS enable_parallel_replicas = 0")
+    if [ "${RETRIES}" = "1" ]; then
+        echo "${KILL_RETRY_NAME} ok"
+    else
+        echo "${KILL_RETRY_NAME} wrong retries: ${RETRIES}"
+    fi
+else
+    echo "${KILL_RETRY_NAME} query never appeared in system.processes"
+fi
+
+# A MySQL engine table connects from inside the pipeline (MySQLWithFailoverSource) instead of
+# during analysis, which is a second entry into the same pool. Explicit columns keep CREATE from
+# connecting, so the connect happens on the SELECT.
+ENGINE_NAME=kill_engine_table
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.mysql_engine_tbl (x Int32)
+    ENGINE = MySQL(${MYSQL_ARGS}) SETTINGS connect_timeout = 100, connection_max_tries = 1"
+if ELAPSED_MS=$(run_and_cancel "${ENGINE_NAME}" "SELECT * FROM ${CLICKHOUSE_DATABASE}.mysql_engine_tbl"); then
+    ERROR=$(cat "${CLICKHOUSE_TMP}/${ENGINE_NAME}.err")
+    rm -f "${CLICKHOUSE_TMP}/${ENGINE_NAME}.err"
+    # Prove the arm really went through the storage rather than repeating the table function:
+    # only the engine path logs under the StorageMySQL logger.
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+    VIA_STORAGE=$(${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.text_log
+        WHERE query_id = '${CLICKHOUSE_DATABASE}_${ENGINE_NAME}' AND logger_name LIKE 'StorageMySQL%'
+        SETTINGS enable_parallel_replicas = 0")
+    if [ "${VIA_STORAGE}" = "1" ]; then
+        report "${ENGINE_NAME}" "${ELAPSED_MS}" "QUERY_WAS_CANCELLED" "${ERROR}"
+    else
+        echo "${ENGINE_NAME} did not reach the MySQL engine path"
+    fi
+else
+    echo "${ENGINE_NAME} query never appeared in system.processes"
+fi
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.mysql_engine_tbl"
 
 # max_execution_time is enforced by a background watchdog that only raises the cancellation
 # flag, so it reaches the connect through the same checks as KILL QUERY.

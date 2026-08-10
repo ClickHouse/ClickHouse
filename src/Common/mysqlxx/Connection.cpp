@@ -24,10 +24,8 @@ namespace
 {
 
 /// Replacement for the connector's own pvio_socket_wait_io_or_timeout, installed via
-/// MARIADB_OPT_IO_WAIT. It waits in short slices so that a cancelled query stops instead of
-/// staying parked in a single poll() for the whole connect timeout.
-/// Contract: `timeout` is in milliseconds and <= 0 means wait indefinitely; a return value
-/// below 1 is a failure, 1 means the socket is ready.
+/// MARIADB_OPT_IO_WAIT. Contract: `timeout` is in milliseconds and <= 0 means wait indefinitely;
+/// a return value below 1 is a failure, 1 means the socket is ready.
 int cancellationAwareIoWait(my_socket handle, my_bool is_read, int timeout) noexcept
 {
     static constexpr int slice_ms = 200;
@@ -79,8 +77,7 @@ int cancellationAwareIoWait(my_socket handle, my_bool is_read, int timeout) noex
     }
 }
 
-/// Scoped so that only the connect is affected: the same hook is also the wait for ordinary
-/// reads and writes, whose cancellation is handled elsewhere.
+/// Scoped to connection establishment; post-connect reads and writes keep the library's own wait.
 struct ScopedCancellationAwareIoWait
 {
     MYSQL * driver;
