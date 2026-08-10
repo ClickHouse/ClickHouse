@@ -470,10 +470,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (merging_params.is_queue && merging_params.mode != MergeTreeData::MergingParams::Ordinary)
         throw Exception(ErrorCodes::UNKNOWN_STORAGE, "MergeTreeQueue does not support merging modes. Used mode: {}", name_part);
 
+    /// A full-definition `ATTACH TABLE t (...) ENGINE = MergeTreeQueue ...` is CREATE-like user input
+    /// that also runs under `LoadingStrictnessLevel::ATTACH`, so it must pass the same checks as
+    /// `CREATE`. Definitions read back from metadata stored on this server (short `ATTACH TABLE t`,
+    /// `ATTACH DATABASE`, server restart) are marked with `attach_short_syntax` (see
+    /// `createTableFromAST`), and `SECONDARY_CREATE` (DDL replay in `Replicated` databases, `RESTORE`)
+    /// also replays previously validated definitions - those must stay loadable regardless of the
+    /// current settings.
+    const bool is_fresh_queue_definition = args.mode <= LoadingStrictnessLevel::CREATE
+        || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
     /// The queue engines are experimental: their on-disk layout and the commit-order contract may
-    /// still change. Gate on CREATE only; ATTACH must load existing metadata regardless of the setting.
+    /// still change. Existing metadata must load regardless of the setting.
     if (merging_params.is_queue
-        && args.mode <= LoadingStrictnessLevel::CREATE
+        && is_fresh_queue_definition
         && !local_settings[Setting::allow_experimental_merge_tree_queue])
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -728,9 +738,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// Block numbers are allocated per partition, so `(_block_number, _block_offset)` is not a
             /// global commit position in a partitioned table: the same pair matches a row in every
             /// partition, which breaks both the queue cursor and point lookups by the key. Until the
-            /// engine contract covers partitioning, reject `PARTITION BY` on creation (`ATTACH` still
-            /// loads existing metadata).
-            if (args.storage_def->partition_by && args.mode <= LoadingStrictnessLevel::CREATE)
+            /// engine contract covers partitioning, reject `PARTITION BY` in a fresh definition
+            /// (replayed metadata still loads).
+            if (args.storage_def->partition_by && is_fresh_queue_definition)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "PARTITION BY is not supported for the {} engine, because block numbers are allocated "
                     "per partition and the commit-order key `(_block_number, _block_offset)` would no longer "
