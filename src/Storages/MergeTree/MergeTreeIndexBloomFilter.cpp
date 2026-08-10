@@ -5,6 +5,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
@@ -689,11 +691,70 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 }
 
 
-static ColumnPtr createColumnFromConstantArray(const Field & value_field, const DataTypePtr & actual_type)
+/// The array-search functions coerce the constant with CAST before comparing it to the elements:
+/// `hasAny`/`hasAll`, and `has`/`indexOf` over a `FixedString` element, cast both sides to the least
+/// supertype (hasAllAny.h, arrayIndex.h `executeGeneric`), and `has`/`indexOf` over a `LowCardinality`
+/// element cast the constant straight to the dictionary type (LowCardinalityExecutionHelpers.h
+/// `dictionaryIndexForConstant`). A CAST of `FixedString` to `String` strips the trailing zero
+/// padding, while `convertFieldToType` keeps it, so the index hashed a value the function never
+/// compares and wrongly pruned granules.
+///
+/// Replicate that coercion at the `Field` level: strip the padding of a `FixedString` constant, then
+/// re-pad it to the width of the element type, which is the stored form of every element the function
+/// can match. Returns a null `Field` (the `convertFieldToType` convention) when no stored element can
+/// match, or when the runtime CAST would throw `TOO_LARGE_STRING_SIZE`; the caller must then decline
+/// the index, so that the error stays reachable instead of turning into silently pruned granules.
+static Field coerceStringFieldLikeSearchFunction(
+    const Field & field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool cast_to_supertype)
+{
+    if (field.isNull())
+        return {};
+
+    String value = field.safeGet<String>();
+    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+
+    if (isFixedString(removeLowCardinalityAndNullable(value_type)))
+    {
+        /// The direct cast to a dictionary type rejects a `FixedString` constant wider than the
+        /// element up front, by width alone, while the supertype cast strips the padding first.
+        if (!cast_to_supertype && fixed_string_type && value.size() > fixed_string_type->getN())
+            return {};
+
+        value.resize(value.find_last_not_of('\0') + 1);
+    }
+
+    if (fixed_string_type)
+    {
+        if (value.size() > fixed_string_type->getN())
+            return {};
+
+        value.resize(fixed_string_type->getN(), '\0');
+    }
+
+    return Field(std::move(value));
+}
+
+/// True for the element/constant types whose comparison `coerceStringFieldLikeSearchFunction`
+/// replicates. Numeric elements take `executeIntegral`, which compares without coercing.
+static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const DataTypePtr & actual_type)
+{
+    return value_type
+        && isStringOrFixedString(removeLowCardinalityAndNullable(value_type))
+        && isStringOrFixedString(actual_type);
+}
+
+static ColumnPtr createColumnFromConstantArray(
+    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool coerce_like_search_function)
 {
     if (value_field.getType() != Field::Types::Array)
         return nullptr;
 
+    DataTypePtr element_type;
+    if (coerce_like_search_function && value_type)
+        if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
+            element_type = value_array_type->getNestedType();
+
+    const bool coerce = element_type && searchFunctionCoercesConstant(element_type, actual_type);
     const bool is_nullable = actual_type->isNullable();
     auto mutable_column = actual_type->createColumn();
 
@@ -702,7 +763,9 @@ static ColumnPtr createColumnFromConstantArray(const Field & value_field, const 
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        auto converted = convertFieldToType(f, *actual_type);
+        Field converted = coerce
+            ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
+            : convertFieldToType(f, *actual_type);
         if (converted.isNull())
             return nullptr;
 
@@ -817,8 +880,19 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 if (function_name == "has" || indexOfCanUseBloomFilter(parent))
                 {
                     out.function = RPNElement::FUNCTION_HAS;
-                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    const DataTypePtr & nested_type = array_type->getNestedType();
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(nested_type);
+
+                    /// Over a plain `String` element `has`/`indexOf` compare the constant's raw padded
+                    /// bytes (arrayIndex.h `executeString`), so the padded form is the value to hash.
+                    /// The test must read the type before `getPrimitiveType` strips `LowCardinality`,
+                    /// whose elements do coerce.
+                    const bool coerce = !WhichDataType(nested_type).isString()
+                        && searchFunctionCoercesConstant(value_type, actual_type);
+                    Field converted_field = coerce
+                        ? coerceStringFieldLikeSearchFunction(
+                              value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality())
+                        : convertFieldToType(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
                         return false;
 
@@ -827,8 +901,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             }
             else if (function_name == "has")
             {
+                /// `has(<constant array>, <indexed scalar>)` compares `Field`s directly
+                /// (arrayIndex.h `executeConst`), so it needs the padded form and no coercion.
                 const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-                ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
+                ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ false);
 
                 if (!column)
                     return false;
@@ -843,7 +919,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return false;
 
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-            ColumnPtr column = createColumnFromConstantArray(value_field, actual_type);
+            ColumnPtr column = createColumnFromConstantArray(value_field, value_type, actual_type, /*coerce_like_search_function=*/ true);
 
             if (!column)
                 return false;
