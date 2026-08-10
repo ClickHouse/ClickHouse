@@ -422,7 +422,7 @@ void KafkaConsumer::rewindToLastCommitted()
                         tp.set_offset(start.get_offset());
 
             consumer->assign(positions);
-            consumer->commit(block_start_offsets);
+            StorageKafkaUtils::commitWithTimeout(*consumer, &block_start_offsets, StorageKafkaUtils::COMMIT_TIMEOUT_MS);
             LOG_TRACE(log, "Aborted in-flight block, rewound to block start: {}", block_start_offsets);
             cleanBlockStartOffsets();
             return;

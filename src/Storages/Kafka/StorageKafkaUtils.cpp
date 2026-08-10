@@ -1177,9 +1177,10 @@ void commitWithTimeout(
 {
     rd_kafka_t * handle = consumer.get_handle();
 
-    cppkafka::TopicPartitionsListPtr c_offsets;
-    if (offsets != nullptr)
-        c_offsets = cppkafka::convert(*offsets);
+    /// `TopicPartitionsListPtr`'s deleter is a function pointer, so it has no default constructor;
+    /// `make_handle` builds the empty one. A null list commits the current assignment.
+    cppkafka::TopicPartitionsListPtr c_offsets
+        = offsets == nullptr ? cppkafka::make_handle(nullptr) : cppkafka::convert(*offsets);
 
     rd_kafka_queue_t * queue = rd_kafka_queue_new(handle);
     if (queue == nullptr)
@@ -1208,6 +1209,14 @@ void commitWithTimeout(
     err = rd_kafka_event_error(event);
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR)
         throw cppkafka::HandleException(cppkafka::Error(err));
+
+    /// The reply carries per-partition errors separately from the request-level one above, and
+    /// cppkafka's blocking commits throw on them through `check_error(error, list)`. Same contract.
+    const rd_kafka_topic_partition_list_t * result = rd_kafka_event_topic_partition_list(event);
+    if (result != nullptr)
+        for (int i = 0; i < result->cnt; ++i)
+            if (result->elems[i].err != RD_KAFKA_RESP_ERR_NO_ERROR)
+                throw cppkafka::HandleException(cppkafka::Error(result->elems[i].err));
 }
 }
 }
