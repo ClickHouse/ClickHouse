@@ -918,6 +918,7 @@ The server successfully detected this situation and will download merged part fr
     M(FileSegmentFailToIncreasePriority, "Number of times the priority was not increased due to a high contention on the cache lock", ValueType::Number) \
     M(FilesystemCacheFailToReserveSpaceBecauseOfLockContention, "Number of times space reservation was skipped due to a high contention on the cache lock", ValueType::Number) \
     M(FilesystemCacheFailToReserveSpaceBecauseOfCacheResize, "Number of times space reservation was skipped due to the cache is being resized", ValueType::Number) \
+    M(FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit, "Number of times space reservation was skipped because the query reached its filesystem cache write limit (filesystem_cache_max_download_size)", ValueType::Number) \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segments count, which were hold", ValueType::Number) \
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadRun, "Number of times background thread executed free space keeping job", ValueType::Number) \

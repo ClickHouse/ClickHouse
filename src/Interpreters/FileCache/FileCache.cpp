@@ -56,6 +56,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds;
     extern const Event FilesystemCacheFreeSpaceKeepingThreadErrors;
     extern const Event FilesystemCacheFailToReserveSpaceBecauseOfCacheResize;
+    extern const Event FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit;
     extern const Event FilesystemCacheBackgroundEvictedFileSegments;
     extern const Event FilesystemCacheBackgroundEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
@@ -1374,7 +1375,7 @@ bool FileCache::doTryReserve(
         /// Check per-query cache limits.
         if (query_limit)
         {
-            query_context = query_limit->tryGetQueryContext(lock);
+            query_context = query_limit->tryGetQueryContext();
             if (query_context)
             {
                 query_priority = &query_context->getPriority();
@@ -1386,6 +1387,7 @@ bool FileCache::doTryReserve(
                         "recache_on_query_limit_exceeded is disabled (while reserving for {}:{} with size {}): {}",
                         file_segment.key(), file_segment.offset(), size, query_priority->getStateInfoForLog(lock));
 
+                    ProfileEvents::increment(ProfileEvents::FilesystemCacheFailToReserveSpaceBecauseOfQueryLimit);
                     failure_reason = "query limit exceeded";
                     return false;
                 }
@@ -1428,19 +1430,26 @@ bool FileCache::doTryReserve(
 
     /// Collect candidates for eviction and
     /// evict them from in-memory state and from filesystem.
+    /// `evicted_entries` are the segments actually removed from cache, needed to keep
+    /// the per-query mirror in sync. Filled only when there is a query context.
+    std::vector<FileCacheKeyAndOffset> evicted_entries;
     if (!doEviction(
         *main_eviction_info, query_eviction_info.get(), file_segment, origin_info,
         main_priority_iterator, reserve_stat, eviction_candidates,
-        invalidated_entries, query_priority, failure_reason))
+        invalidated_entries, query_priority, evicted_entries, failure_reason))
     {
         chassert(!failure_reason.empty());
         return false;
     }
 
     bool added_new_main_entry = !main_priority_iterator;
+    bool added_new_query_entry = false;
+    bool main_size_incremented = false;
     Priority::IteratorPtr query_priority_iterator;
 
-    if (!main_priority_iterator || eviction_candidates.requiresAfterEvictWrite())
+    /// With a per-query limit the write lock is taken on every reservation, because the
+    /// per-query mirror is guarded by it and has to be updated on every reservation.
+    if (!main_priority_iterator || eviction_candidates.requiresAfterEvictWrite() || query_context)
     {
         auto lock = cache_guard.writeLock();
         eviction_candidates.afterEvictWrite(lock);
@@ -1455,12 +1464,24 @@ bool FileCache::doTryReserve(
                 /* size */0,
                 lock,
                 nullptr);
+        }
 
-            if (query_context)
+        if (query_context)
+        {
+            /// Evicted segments are gone from the cache, so the per-query priority must stop
+            /// counting their size and must not keep an iterator for their key/offset.
+            for (const auto & [key, offset] : evicted_entries)
+                query_context->tryRemove(key, offset, lock);
+
+            /// Query-side accounting must mirror every reservation, not only the first one for
+            /// this file segment: a segment is reserved in steps, and all the following steps
+            /// would otherwise bypass the per-query limit.
+            query_priority_iterator = query_context->tryGet(file_segment.key(), file_segment.offset(), lock);
+            if (!query_priority_iterator)
             {
-                query_priority_iterator = query_context->tryGet(file_segment.key(), file_segment.offset(), lock);
-                if (!query_priority_iterator)
-                    query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), /* size */0, lock);
+                query_priority_iterator = query_context->add(
+                    file_segment.getKeyMetadata(), file_segment.offset(), /* size */0, lock);
+                added_new_query_entry = true;
             }
         }
     }
@@ -1479,6 +1500,7 @@ bool FileCache::doTryReserve(
 
         eviction_candidates.afterEvictState(lock);
         main_priority_iterator->incrementSize(size, lock);
+        main_size_incremented = true;
 
         if (query_priority_iterator)
             query_priority_iterator->incrementSize(size, lock);
@@ -1487,8 +1509,25 @@ bool FileCache::doTryReserve(
     {
         /// Protect against zombie queue entries which are not assigned to any file segment
         /// and are not "invalidated" (which makes them non-removable).
-        if (main_priority_iterator && added_new_main_entry)
-            main_priority_iterator->invalidate();
+        if (added_new_main_entry)
+        {
+            if (main_priority_iterator)
+                main_priority_iterator->invalidate();
+        }
+        else if (main_size_incremented)
+        {
+            /// The query-side increment threw after the main one succeeded: roll it back, or the
+            /// main entry stays out of sync with `FileSegment::reserved_size`.
+            main_priority_iterator->decrementSize(size);
+        }
+
+        /// Drop the record as well, not just the entry: otherwise a later reservation for the
+        /// same key/offset gets this iterator back from `tryGet` and accounts into it.
+        if (added_new_query_entry)
+        {
+            auto lock = cache_guard.writeLock();
+            query_context->tryRemove(file_segment.key(), file_segment.offset(), lock);
+        }
 
         throw;
     }
@@ -1519,6 +1558,7 @@ bool FileCache::doEviction(
     EvictionCandidates & eviction_candidates,
     IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
     Priority * query_priority,
+    std::vector<FileCacheKeyAndOffset> & evicted_entries,
     std::string & failure_reason)
 {
     LOG_TEST(log, "Main eviction info {}", main_eviction_info.toString());
@@ -1592,6 +1632,15 @@ bool FileCache::doEviction(
         {
             failure_reason = on_cannot_evict_enough_space_message(*main_priority);
             return false;
+        }
+
+        /// Captured before `evict()` empties the candidates. The main-priority pass can also
+        /// evict segments cached by the current query, so both passes are taken into account.
+        if (query_priority)
+        {
+            for (const auto & [key, key_candidates] : eviction_candidates)
+                for (const auto & candidate : key_candidates.candidates)
+                    evicted_entries.emplace_back(key, candidate->file_segment->offset());
         }
     }
 
@@ -3264,9 +3313,17 @@ FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
     if (!query_limit || cache_settings.max_download_size_per_query == 0)
         return {};
 
-    auto lock = cache_guard.writeLock();
-    auto context = query_limit->getOrSetQueryContext(query_id, cache_settings, lock);
-    return std::make_unique<QueryContextHolder>(query_id, this, query_limit.get(), std::move(context));
+    auto context = query_limit->getOrSetQueryContext(query_id, cache_settings);
+    return std::make_unique<QueryContextHolder>(query_id, query_limit.get(), std::move(context));
+}
+
+void FileCache::decrementQueryLimitSize(const Key & key, size_t offset, size_t size)
+{
+    if (!query_limit)
+        return;
+
+    if (auto query_context = query_limit->tryGetQueryContext())
+        query_context->tryDecrementSize(key, offset, size);
 }
 
 std::vector<FileSegment::Info> FileCache::sync()

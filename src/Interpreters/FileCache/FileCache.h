@@ -257,6 +257,9 @@ public:
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
     QueryContextHolderPtr getQueryContextHolder(const String & query_id, const FilesystemCacheSettings & settings);
 
+    /// Uncharge `size` from the current query's per-query limit accounting for `key`:`offset`.
+    void decrementQueryLimitSize(const Key & key, size_t offset, size_t size);
+
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
 
@@ -466,6 +469,7 @@ private:
         EvictionCandidates & eviction_candidates,
         IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
         Priority * query_priority,
+        std::vector<FileCacheKeyAndOffset> & evicted_entries,
         std::string & failure_reason);
 
     /// How much still needs to be evicted to reach the desired free-space ratio, given the live

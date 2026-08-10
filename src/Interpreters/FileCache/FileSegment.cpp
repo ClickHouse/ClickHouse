@@ -942,7 +942,11 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     chassert(reserved_size >= downloaded_size);
     if (reserved_size > downloaded_size)
     {
-        queue_iterator->decrementSize(reserved_size - downloaded_size);
+        const size_t surplus = reserved_size - downloaded_size;
+        queue_iterator->decrementSize(surplus);
+        /// Keep the per-query limit accounting in sync: the surplus was never written,
+        /// so it must not stay charged against the query quota either.
+        cache->decrementQueryLimitSize(key(), offset(), surplus);
         reserved_size = downloaded_size.load();
     }
 

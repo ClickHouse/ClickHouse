@@ -478,6 +478,19 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
         sed -i "s|<reserve_granularity>[^<]*</reserve_granularity>||g" $DEST_SERVER_PATH/config.d/storage_conf.xml
     fi
 
+    # Randomize the per-query filesystem cache limit. With it enabled every read buffer
+    # gets a `QueryContextHolder` and the cache keeps a per-query priority queue in
+    # addition to the main one, which is otherwise not covered by CI at all.
+    # `filesystem_cache_max_download_size` is left at its (huge) default, so no download
+    # is skipped and cached contents stay the same as without the limit.
+    if (( RANDOM % 2 )); then
+        echo "Enabling enable_filesystem_query_cache_limit for s3_cache"
+        # `0,/re/` restricts the insertion to the first match, i.e. the <s3_cache> disk,
+        # so it does not land inside the <s3_cache> storage policy of the same name.
+        sed -i "0,/<s3_cache>/s|<s3_cache>|<s3_cache>\n                <enable_filesystem_query_cache_limit>1</enable_filesystem_query_cache_limit>|" \
+            $DEST_SERVER_PATH/config.d/storage_conf.xml
+    fi
+
     # Apply `overcommit_eviction_evict_step` randomization only under
     # distributed cache — that is where the overcommit multi-step retry path
     # actually gets exercised in CI. `sed >tmp && mv` reads through the dest

@@ -422,8 +422,10 @@ LRUFileCachePriority::iterateImpl(
         {
             stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
             ++it;
-            /// We should have quit earlier in is_evictable_state under locked key.
-            chassert(false);
+            /// A per-query queue mirrors segments written by one query, and any other thread can
+            /// evict them meanwhile, so a mirror entry may outlive its file segment.
+            /// For all other queues we should have quit earlier in is_evictable_state.
+            chassert(getQueueType() == QueueType::Query);
             continue;
         }
 
@@ -585,7 +587,13 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         const auto & file_segment = segment_metadata->file_segment;
         chassert(file_segment->assertCorrectness());
 
-        if (segment_metadata->releasable())
+        /// The evicting flag is kept in the main queue entry, so for a per-query queue (whose
+        /// entries only mirror the main ones) the state of the iterated entry says nothing about
+        /// whether the segment is already being evicted by someone else.
+        const bool evicted_by_someone_else
+            = getQueueType() == QueueType::Query && segment_metadata->isEvictingOrRemoved(locked_key);
+
+        if (segment_metadata->releasable() && !evicted_by_someone_else)
         {
             res.add(segment_metadata, locked_key);
             stat.update(
