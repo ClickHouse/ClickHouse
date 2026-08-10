@@ -27,6 +27,15 @@ Nullable: IN set with NULL does not prune, result includes NULL rows
 11
 Correctness: null-free set, results equal for transform_null_in 0 vs 1
 1
+Nullable: hand-written nullIn null-free set prunes with transform_null_in=0
+1
+1
+Nullable: hand-written globalNullIn null-free set prunes with transform_null_in=0
+1
+1
+Nullable: hand-written nullIn with a NULL literal keeps skip-index and full-scan results equal at transform_null_in=0
+1
+1
 Array: IN does not prune with transform_null_in=1 (unsound array hashing)
 0
 Array: IN empty array result is correct with transform_null_in=1

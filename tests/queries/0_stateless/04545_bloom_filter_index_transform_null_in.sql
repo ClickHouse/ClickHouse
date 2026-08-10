@@ -77,6 +77,23 @@ SELECT
     (SELECT count() FROM t_bf_null_in_n WHERE b IN ('5', '500') SETTINGS transform_null_in = 0) =
     (SELECT count() FROM t_bf_null_in_n WHERE b IN ('5', '500') SETTINGS transform_null_in = 1);
 
+-- A hand-written `nullIn` reaches this branch regardless of transform_null_in, so the set it
+-- carries is NULL-free whenever the setting is off and pruning is then sound.
+SELECT 'Nullable: hand-written nullIn null-free set prunes with transform_null_in=0';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_null_in_n WHERE nullIn(a, ('5', '500')) SETTINGS transform_null_in = 0) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
+SELECT count() FROM t_bf_null_in_n WHERE nullIn(a, ('5', '500')) SETTINGS transform_null_in = 0;
+
+SELECT 'Nullable: hand-written globalNullIn null-free set prunes with transform_null_in=0';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_null_in_n WHERE globalNullIn(a, ('5', '500')) SETTINGS transform_null_in = 0) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
+SELECT count() FROM t_bf_null_in_n WHERE globalNullIn(a, ('5', '500')) SETTINGS transform_null_in = 0;
+
+-- A NULL literal is not a set element when transform_null_in = 0, so no NULL row can be pruned away.
+SELECT 'Nullable: hand-written nullIn with a NULL literal keeps skip-index and full-scan results equal at transform_null_in=0';
+SELECT
+    (SELECT count() FROM t_bf_null_in_n WHERE nullIn(a, ('5', NULL)) SETTINGS transform_null_in = 0, use_skip_indexes = 1) =
+    (SELECT count() FROM t_bf_null_in_n WHERE nullIn(a, ('5', NULL)) SETTINGS transform_null_in = 0, use_skip_indexes = 0);
+SELECT count() FROM t_bf_null_in_n WHERE nullIn(a, ('5', NULL)) SETTINGS transform_null_in = 0;
+
 DROP TABLE t_bf_null_in_n;
 
 -- Array column: whole-array equality bloom filter hashing is not sound for granules that mix
