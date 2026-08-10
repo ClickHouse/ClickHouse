@@ -155,10 +155,16 @@ def _failed_statuses(sha: str) -> List[str]:
     """Commit-status contexts whose latest state is not success.
 
     Keeps only the newest status per context (GitHub records one row per
-    update) before deciding pass/fail, matching the legacy logic."""
+    update) before deciding pass/fail, matching the legacy logic.
+
+    Reads with `strict=True`: a commit with no statuses and a `/statuses` read
+    that kept 5xx-ing both yield empty output, and the non-strict form would
+    hand back the same empty list, i.e. "everything is green". Raising lets the
+    job fail instead of releasing a commit whose statuses were never read."""
     out = GH.get_output_with_retries(
         f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/statuses"
-        f" --jq '.[] | [.context, .state, .updated_at] | @tsv'"
+        f" --jq '.[] | [.context, .state, .updated_at] | @tsv'",
+        strict=True,
     )
     latest: Dict[str, Tuple[str, str]] = {}
     for line in out.splitlines():
@@ -270,11 +276,18 @@ def _find_release_candidate(branch: str) -> Tuple[str, str]:
 
 
 def _latest_create_release_run_id() -> int:
+    """Newest CreateRelease run id, or 0 when the workflow has never run.
+
+    Strict for the same reason as `_failed_statuses`: falling back to 0 on a read
+    failure would make `_await_new_run` accept an arbitrary historical dispatch as
+    "our" run and stop watching the release this job actually triggered."""
     out = GH.get_output_with_retries(
         f"gh run list --workflow {CREATE_RELEASE_WORKFLOW} -L1 --json databaseId"
-        f" --jq '.[0].databaseId // 0'"
+        f" --jq '.[0].databaseId // 0'",
+        strict=True,
     )
-    return int(out.strip() or "0")
+    # `.[0].databaseId // 0` already prints 0 for an empty run list.
+    return int(out.strip())
 
 
 def _await_new_run(after_id: int) -> int:

@@ -224,6 +224,22 @@ def test_failed_statuses_keeps_newest_per_context(monkeypatch):
     assert m._failed_statuses("deadbeef") == ["Tests"]
 
 
+def test_status_reads_are_strict():
+    """The `/statuses` read must not fail open.
+
+    ``GH.get_output_with_retries`` returns ``""`` once retries are exhausted,
+    which is indistinguishable from "this commit has no statuses" — so a
+    non-strict read would let `_find_release_candidate` treat a commit whose
+    statuses were never read as fully green. Same for the CreateRelease run-id
+    read, where a fallback would attach the watch to a historical dispatch.
+    """
+    text = _read(JOB)
+    for fn in ("_failed_statuses", "_latest_create_release_run_id"):
+        body = text.split(f"def {fn}(", 1)[1].split("\ndef ", 1)[0]
+        assert "get_output_with_retries" in body, f"{fn} should read via GH"
+        assert "strict=True" in body, f"{fn} must read with strict=True (fail-close)"
+
+
 def test_fetch_history_does_not_swallow_unshallow_failures(monkeypatch):
     """``--unshallow`` must run strictly, and only on a shallow clone.
 
