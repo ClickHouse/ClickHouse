@@ -212,6 +212,12 @@ public:
     /// must combine it with hasQuestionOrAsterisk (see GlobASTWildcardInsideEnums).
     bool hasExactlyOneEnum() const;
 
+    /// True when at least one enum alternative contains a '/', i.e. the enum spans path
+    /// segments (e.g. "{a/b,c/d}.csv"). Such a pattern is only meaningful after expansion:
+    /// a directory-by-directory traversal splits the pattern at raw slashes, which cuts the
+    /// enum body apart. Callers that may skip the expansion must reject these patterns.
+    bool hasSlashInsideEnums() const;
+
 private:
     /// Called once from the constructor; a second call would append duplicate expressions.
     void parse();

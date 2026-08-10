@@ -834,6 +834,33 @@ TEST(Common, GlobASTLiteralBraceGroupBesideEnum)
     EXPECT_TRUE(comma_suffix.hasExactlyOneEnum());
 }
 
+TEST(Common, GlobASTSlashInsideEnums)
+{
+    /// An enum whose alternatives span path segments is only meaningful after expansion:
+    /// a per-directory traversal splits the pattern at raw slashes, cutting the enum body
+    /// apart (the first segment would be the impossible "{a"). Callers that may skip the
+    /// expansion (the over-cap fallback in `listFilesWithRegexpMatching`) must detect this.
+    GlobAST::GlobString spanning("{a/b,c/d}.csv");
+    EXPECT_TRUE(spanning.hasSlashInsideEnums());
+    EXPECT_TRUE(spanning.matches("a/b.csv"));
+    EXPECT_TRUE(spanning.matches("c/d.csv"));
+
+    /// A slash in only one alternative still makes the pattern unsplittable.
+    GlobAST::GlobString one_alternative("dir/{a,b/c}.csv");
+    EXPECT_TRUE(one_alternative.hasSlashInsideEnums());
+
+    /// Slashes in constant text are ordinary path separators, and a range body is digits only.
+    GlobAST::GlobString plain_slashes("dir/sub/file_{a,b}.csv");
+    EXPECT_FALSE(plain_slashes.hasSlashInsideEnums());
+
+    GlobAST::GlobString with_range("dir/file_{1..10}.csv");
+    EXPECT_FALSE(with_range.hasSlashInsideEnums());
+
+    /// A single-character brace group parses as constant text, so it holds no enum at all.
+    GlobAST::GlobString literal_group("dir/{a}/file.csv");
+    EXPECT_FALSE(literal_group.hasSlashInsideEnums());
+}
+
 TEST(Common, GlobASTMatchDeepRecursionGuard)
 {
     /// A long run of `*` stays far below the memo-table cap against a short candidate

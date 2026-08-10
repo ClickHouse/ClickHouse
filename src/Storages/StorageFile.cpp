@@ -345,6 +345,17 @@ std::vector<std::string> listFilesWithRegexpMatching(
         }
         else
         {
+            /// The unexpanded traversal splits the pattern at every raw '/', so an enum whose
+            /// alternatives span path segments (e.g. `{a/b,c/d}.csv`) would be cut apart and
+            /// match nothing. Fail closed instead of silently returning the wrong file set.
+            if (glob.hasSlashInsideEnums())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Glob expansion of `{}` would produce more than {} paths, and its enum alternatives span path "
+                    "segments, so the pattern cannot be matched without expansion. "
+                    "Consider simplifying the glob pattern or increasing the `glob_expansion_max_elements` setting.",
+                    for_match, max_expansion);
+
             for_match_paths_expanded = {for_match};
             if (unexpanded_glob_fallback)
                 *unexpanded_glob_fallback = true;

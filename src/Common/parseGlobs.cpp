@@ -256,6 +256,21 @@ bool GlobString::hasExactlyOneEnum() const
     return enum_counter == 1;
 };
 
+bool GlobString::hasSlashInsideEnums() const
+{
+    for (const auto & expression : expressions)
+    {
+        if (expression.type() != ExpressionType::ENUM)
+            continue;
+
+        for (const auto & value : std::get<std::vector<std::string_view>>(expression.getData()))
+            if (value.contains('/'))
+                return true;
+    }
+
+    return false;
+}
+
 std::string_view GlobString::consumeConstantExpression(const std::string_view & input) const
 {
     auto first_nonconstant = input.find_first_of("{*?");
