@@ -792,6 +792,13 @@ private:
 /// below are willing to follow. A longer chain (or a cycle of aliases) fails closed.
 static constexpr size_t max_insert_forwarding_depth = 16;
 
+/// A note on `TimeSeries` in the deduplication probes below. `StorageTimeSeries` does not override
+/// `IStorage::supportsParallelInsert`, so today `all_sinks_support_parallel_insert` already collapses
+/// the write fan-out of any insert whose graph reaches a `TimeSeries` table, and the probes cannot
+/// change the outcome for it. They classify it anyway - it forwards the write through nested
+/// `INSERT`s exactly like `Distributed` and `Buffer` do - so that the classification does not become
+/// silently wrong if `StorageTimeSeries` ever starts supporting parallel inserts.
+
 bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)
