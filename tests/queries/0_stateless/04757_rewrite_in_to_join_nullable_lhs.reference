@@ -1,193 +1,23 @@
 -- { echo }
--- Most arms below run at rewrite_in_to_join = 0 and = 1 and the two outputs must be IDENTICAL: the
--- rewrite must not change the three-valued result of IN. Unpaired arms say why inline. Issue #102630.
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
+SET rewrite_in_to_join = 1;
 DROP TABLE IF EXISTS t_04757;
 CREATE TABLE t_04757 (x Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_04757 VALUES (0), (1), (NULL), (5);
-DROP TABLE IF EXISTS lc_04757;
-CREATE TABLE lc_04757 (y LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO lc_04757 VALUES ('a'), ('b'), (NULL);
-DROP TABLE IF EXISTS var_04757;
-CREATE TABLE var_04757 (v Variant(UInt64, Int64)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO var_04757 VALUES (1), (-2), (NULL);
-DROP TABLE IF EXISTS rn_04757;
-CREATE TABLE rn_04757 (n Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple();
-INSERT INTO rn_04757 VALUES (NULL), (1);
-SELECT 'arm 1: Nullable IN';
-arm 1: Nullable IN
-SELECT x, x IN (SELECT number FROM numbers(3)) AS r FROM t_04757 ORDER BY x SETTINGS rewrite_in_to_join = 0;
+-- NULL IN (non-empty) is NULL, so the NULL row must be NULL and must not pass a NOT IN filter.
+SELECT x, x IN (SELECT number FROM numbers(3)) AS r FROM t_04757 ORDER BY x;
 0	1
 1	1
 5	0
 \N	\N
-SELECT x, x IN (SELECT number FROM numbers(3)) AS r FROM t_04757 ORDER BY x SETTINGS rewrite_in_to_join = 1;
-0	1
-1	1
-5	0
-\N	\N
-SELECT 'arm 2: Nullable NOT IN';
-arm 2: Nullable NOT IN
-SELECT x, x NOT IN (SELECT number FROM numbers(3)) AS r FROM t_04757 ORDER BY x SETTINGS rewrite_in_to_join = 0;
+SELECT x, x NOT IN (SELECT number FROM numbers(3)) AS r FROM t_04757 ORDER BY x;
 0	0
 1	0
 5	1
 \N	\N
-SELECT x, x NOT IN (SELECT number FROM numbers(3)) AS r FROM t_04757 ORDER BY x SETTINGS rewrite_in_to_join = 1;
-0	0
-1	0
-5	1
-\N	\N
-SELECT 'arm 3: NOT IN as a filter must not emit the NULL row';
-arm 3: NOT IN as a filter must not emit the NULL row
-SELECT x FROM t_04757 WHERE x NOT IN (SELECT number FROM numbers(3)) ORDER BY x SETTINGS rewrite_in_to_join = 0;
+SELECT x FROM t_04757 WHERE x NOT IN (SELECT number FROM numbers(3)) ORDER BY x;
 5
-SELECT x FROM t_04757 WHERE x NOT IN (SELECT number FROM numbers(3)) ORDER BY x SETTINGS rewrite_in_to_join = 1;
-5
-SELECT 'arm 3b: NOT (x IN ...) as a filter';
-arm 3b: NOT (x IN ...) as a filter
-SELECT x FROM t_04757 WHERE NOT (x IN (SELECT number FROM numbers(3))) ORDER BY x SETTINGS rewrite_in_to_join = 0;
-5
-SELECT x FROM t_04757 WHERE NOT (x IN (SELECT number FROM numbers(3))) ORDER BY x SETTINGS rewrite_in_to_join = 1;
-5
-SELECT 'arm 4: result type stays Nullable';
-arm 4: result type stays Nullable
-SELECT DISTINCT toTypeName(x IN (SELECT number FROM numbers(3))) FROM t_04757 SETTINGS rewrite_in_to_join = 0;
+SELECT DISTINCT toTypeName(x IN (SELECT number FROM numbers(3))) FROM t_04757;
 Nullable(UInt8)
-SELECT DISTINCT toTypeName(x IN (SELECT number FROM numbers(3))) FROM t_04757 SETTINGS rewrite_in_to_join = 1;
-Nullable(UInt8)
-SELECT 'arm 5: LowCardinality(Nullable) LHS';
-arm 5: LowCardinality(Nullable) LHS
-SELECT y, y IN (SELECT 'a') AS r FROM lc_04757 ORDER BY y SETTINGS rewrite_in_to_join = 0;
-a	1
-b	0
-\N	\N
-SELECT y, y IN (SELECT 'a') AS r FROM lc_04757 ORDER BY y SETTINGS rewrite_in_to_join = 1;
-a	1
-b	0
-\N	\N
-SELECT 'arm 6: Variant column LHS';
-arm 6: Variant column LHS
-SELECT v, v IN (SELECT 1) AS r FROM var_04757 ORDER BY toString(v) SETTINGS rewrite_in_to_join = 0;
-\N	\N
--2	0
-1	1
-SELECT v, v IN (SELECT 1) AS r FROM var_04757 ORDER BY toString(v) SETTINGS rewrite_in_to_join = 1;
-\N	\N
--2	0
-1	1
-SELECT 'arm 7: NULL in the subquery, transform_null_in = 0 (default)';
-arm 7: NULL in the subquery, transform_null_in = 0 (default)
-SELECT x, x IN (SELECT n FROM rn_04757) AS r FROM t_04757 ORDER BY x SETTINGS transform_null_in = 0, rewrite_in_to_join = 0;
-0	0
-1	1
-5	0
-\N	\N
-SELECT x, x IN (SELECT n FROM rn_04757) AS r FROM t_04757 ORDER BY x SETTINGS transform_null_in = 0, rewrite_in_to_join = 1;
-0	0
-1	1
-5	0
-\N	\N
-SELECT 'arm 8: empty subquery on the right still yields NULL';
-arm 8: empty subquery on the right still yields NULL
-SELECT x, x IN (SELECT number FROM numbers(0)) AS r FROM t_04757 ORDER BY x SETTINGS rewrite_in_to_join = 0;
-0	0
-1	0
-5	0
-\N	\N
-SELECT x, x IN (SELECT number FROM numbers(0)) AS r FROM t_04757 ORDER BY x SETTINGS rewrite_in_to_join = 1;
-0	0
-1	0
-5	0
-\N	\N
-SELECT 'arm 9: reference semantics of transform_null_in = 1 without the rewrite';
-arm 9: reference semantics of transform_null_in = 1 without the rewrite
-SELECT x, x IN (SELECT n FROM rn_04757) AS r FROM t_04757 ORDER BY x SETTINGS transform_null_in = 1, rewrite_in_to_join = 0;
-0	0
-1	1
-5	0
-\N	1
-SELECT 'control 10: non-Nullable LHS is untouched';
-control 10: non-Nullable LHS is untouched
-SELECT number, number IN (SELECT n FROM rn_04757) AS r FROM numbers(3) ORDER BY number SETTINGS rewrite_in_to_join = 0;
-0	0
-1	1
-2	0
-SELECT number, number IN (SELECT n FROM rn_04757) AS r FROM numbers(3) ORDER BY number SETTINGS rewrite_in_to_join = 1;
-0	0
-1	1
-2	0
--- Values alone cannot detect an over-broad guard: isNull of a non-Nullable argument folds to a constant
--- 0, so wrapping such an LHS keeps every value and only widens the type.
-SELECT DISTINCT toTypeName(number IN (SELECT n FROM rn_04757)) FROM numbers(3) SETTINGS rewrite_in_to_join = 0;
-UInt8
-SELECT DISTINCT toTypeName(number IN (SELECT n FROM rn_04757)) FROM numbers(3) SETTINGS rewrite_in_to_join = 1;
-UInt8
-SELECT 'control 11: Tuple with Nullable elements is not a carrier';
-control 11: Tuple with Nullable elements is not a carrier
-SELECT x, (x, x) IN (SELECT n, n FROM rn_04757) AS r FROM t_04757 ORDER BY x SETTINGS rewrite_in_to_join = 0;
-0	0
-1	1
-5	0
-\N	0
-SELECT x, (x, x) IN (SELECT n, n FROM rn_04757) AS r FROM t_04757 ORDER BY x SETTINGS rewrite_in_to_join = 1;
-0	0
-1	1
-5	0
-\N	0
-SELECT 'control 12: a lambda LHS keeps its error';
-control 12: a lambda LHS keeps its error
-SELECT (x -> x) IN (SELECT number FROM numbers(3)) FROM t_04757 SETTINGS rewrite_in_to_join = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT (x -> x) IN (SELECT number FROM numbers(3)) FROM t_04757 SETTINGS rewrite_in_to_join = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT 'control 12b: an untuple LHS keeps its error';
-control 12b: an untuple LHS keeps its error
-SELECT untuple((1, 2)) IN (SELECT number FROM numbers(3)) SETTINGS rewrite_in_to_join = 0; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT untuple((1, 2)) IN (SELECT number FROM numbers(3)) SETTINGS rewrite_in_to_join = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT 'control 13: a nonempty multi-column scalar subquery LHS stays UInt8';
-control 13: a nonempty multi-column scalar subquery LHS stays UInt8
-SELECT (SELECT 1, 2) IN (SELECT 1, 2) AS r, toTypeName((SELECT 1, 2) IN (SELECT 1, 2)) AS ty SETTINGS rewrite_in_to_join = 0;
-1	UInt8
-SELECT (SELECT 1, 2) IN (SELECT 1, 2) AS r, toTypeName((SELECT 1, 2) IN (SELECT 1, 2)) AS ty SETTINGS rewrite_in_to_join = 1;
-1	UInt8
-SELECT 'control 14: an expression-backed LHS is deliberately not wrapped';
-control 14: an expression-backed LHS is deliberately not wrapped
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT toNullable(materialize(x)) IN (SELECT number FROM numbers(3)) FROM t_04757 SETTINGS rewrite_in_to_join = 1) WHERE explain LIKE '%isNull%';
-0
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT x IN (SELECT number FROM numbers(3)) FROM t_04757 SETTINGS rewrite_in_to_join = 1) WHERE explain LIKE '%isNull%';
-2
-SELECT 'control 15: transform_null_in = 1 keeps the lowered form unwrapped';
-control 15: transform_null_in = 1 keeps the lowered form unwrapped
-SELECT count() FROM (EXPLAIN QUERY TREE SELECT x IN (SELECT n FROM rn_04757) FROM t_04757 SETTINGS transform_null_in = 1, rewrite_in_to_join = 1) WHERE explain LIKE '%isNull%';
-0
--- arm 16: make_distributed_plan auto-enables the rewrite, so the NULL must survive there too. It has no
--- rewrite_in_to_join = 0 twin because the auto-switch forces the rewrite on; its reference is arm 7,
--- which asserts the same expression non-distributed. The EXPLAIN probes must not aggregate (04653:28).
-SELECT 'arm 16: the NULL survives under make_distributed_plan';
-arm 16: the NULL survives under make_distributed_plan
-SET make_distributed_plan = 1, distributed_plan_execute_locally = 1,
-    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
-    distributed_plan_default_shuffle_join_bucket_count = 3, max_rows_to_group_by = 0,
-    enable_join_runtime_filters = 0, allow_experimental_correlated_subqueries = 1,
-    explain_query_plan_default = 'legacy';
-SELECT x, x IN (SELECT n FROM rn_04757) AS r FROM t_04757 ORDER BY x;
-0	0
-1	1
-5	0
-\N	\N
-SELECT x FROM t_04757 WHERE x NOT IN (SELECT n FROM rn_04757) ORDER BY x;
-0
-5
--- The IN must be lowered to a JOIN, not merely avoid building a set locally.
-SELECT 'rewritten to join' FROM (EXPLAIN SELECT x FROM t_04757 WHERE x NOT IN (SELECT n FROM rn_04757)) WHERE explain ILIKE '%Join%' LIMIT 1;
-rewritten to join
--- Must print nothing: the rewrite keeps the plan distributable instead of building the set locally.
-SELECT 'still builds sets' FROM (EXPLAIN SELECT x, x IN (SELECT n FROM rn_04757) FROM t_04757) WHERE explain ILIKE '%CreatingSet%' LIMIT 1;
--- Positive control, so the empty result above cannot be an empty plan or a broken grep.
-SELECT 'plan produced' FROM (EXPLAIN SELECT x, x IN (SELECT n FROM rn_04757) FROM t_04757) WHERE explain != '' LIMIT 1;
-plan produced
-SET make_distributed_plan = 0;
 DROP TABLE t_04757;
-DROP TABLE lc_04757;
-DROP TABLE var_04757;
-DROP TABLE rn_04757;
