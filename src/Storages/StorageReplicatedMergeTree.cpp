@@ -267,6 +267,7 @@ namespace FailPoints
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
     extern const char check_table_inject_retryable_zk_error[];
+    extern const char rmt_fetch_pause_before_publish_to_detached[];
     extern const char rmt_startup_fail_after_being_leader[];
 }
 
@@ -3543,6 +3544,11 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         part = get_part();
         // The fetched part is valuable and should not be cleaned like a temp part.
         part->is_temp = false;
+        /// Unlike the user FETCH path, this rename intentionally replaces an existing directory:
+        /// a CLONE_PART_FROM_SHARD entry that published the part and then failed to be
+        /// acknowledged is re-executed, and there is no "already in detached" early return here,
+        /// so a refusing rename would fail forever on this entry's own leftover and stall the
+        /// MOVE PARTITION TO SHARD orchestrator before DESTINATION_ATTACH.
         part->renameTo(fs::path(DETACHED_DIR_NAME) / entry.new_part_name, true);
 
         LOG_INFO(log, "Cloned part {} to detached directory", part->name);
@@ -5734,9 +5740,27 @@ bool StorageReplicatedMergeTree::fetchPart(
         }
         else
         {
-            // The fetched part is valuable and should not be cleaned like a temp part.
+            /// Publishing a fetched part onto its canonical `detached/` name must not destroy a
+            /// directory somebody else owns. `ALTER TABLE ... DETACH` claims that name under
+            /// `lockParts` (see `executeDropRange` -> `removePartsInRangeFromWorkingSetAndGet...`),
+            /// so taking the same lock here makes the two mutually exclusive. Keep the region
+            /// down to the check and the rename: no download and no ZooKeeper access under it.
+            FailPointInjection::pauseFailPoint(FailPoints::rmt_fetch_pause_before_publish_to_detached);
+
+            auto data_parts_lock = lockParts();
+
+            /// `rename` below only sees our own disk, while the detached namespace spans the whole
+            /// storage policy, so a copy on another disk has to be rejected explicitly.
+            if (tryGetDiskForDetachedPart(part_name))
+                throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS,
+                    "Detached part directory {} already exists", part_name);
+
+            part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, /*remove_new_dir_if_exists=*/ false);
+
+            /// Only now the part is published: while the rename can still fail, the staging
+            /// directory must stay temporary so that the destructor removes it (nothing sweeps
+            /// leftovers inside `detached/`).
             part->is_temp = false;
-            part->renameTo(fs::path(DETACHED_DIR_NAME) / part_name, true);
         }
     }
     catch (const Exception & e)
@@ -8328,13 +8352,17 @@ void StorageReplicatedMergeTree::fetchPartition(
         }
         else
         {
+            /// Several missing parts may map to the same covering part, and parts are fetched
+            /// concurrently below, so without deduplication one round could fetch the same part
+            /// twice and the second attempt would conflict with the first one's own output.
+            NameSet enqueued_parts;
             for (const String & missing_part : missing_parts)
             {
                 String containing_part = active_parts_set.getContainingPart(missing_part);
-                if (!containing_part.empty())
-                    parts_to_fetch.push_back(containing_part);
-                else
+                if (containing_part.empty())
                     LOG_WARNING(log, "Part {} on replica {}:{} has been vanished.", missing_part, from_zookeeper_name, best_replica_path);
+                else if (enqueued_parts.insert(containing_part).second)
+                    parts_to_fetch.push_back(containing_part);
             }
         }
 
