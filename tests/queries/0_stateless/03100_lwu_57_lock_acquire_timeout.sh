@@ -10,9 +10,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# shellcheck source=./parts.lib
-. "$CURDIR"/parts.lib
-
 set -e
 
 failpoint_name="rmt_lightweight_update_sleep_after_block_allocation"
@@ -35,6 +32,35 @@ trap cleanup EXIT
 # (UpdateAffectedColumns::hasConflict), hence the first update writes `s` and the second reads it.
 hold_ms=3000
 
+# Blocks until an update owns the lightweight update lock on $1. Counts the CHILDREN of a node that
+# the table always has, so the count is zero until a holder takes the lock and drops back to zero
+# when it releases: 'sync' takes a single `lock` node, 'auto' creates one `in_progress/update-*`
+# child per update. A history-based wait would instead match an earlier holder of the same table.
+function wait_for_lock_held()
+{
+    local table_name=$1
+    local mode=$2
+
+    local updates_path="/zookeeper/$CLICKHOUSE_DATABASE/$table_name/lightweight_updates"
+    local condition="path = '$updates_path/in_progress' AND startsWith(name, 'update-')"
+    if [[ "$mode" == "sync" ]]
+    then
+        condition="path = '$updates_path' AND name = 'lock'"
+    fi
+
+    for _ in {0..300}
+    do
+        sleep 0.1
+        if [[ "$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.zookeeper WHERE $condition")" -gt 0 ]]
+        then
+            return 0
+        fi
+    done
+
+    echo "Failed to wait for a $mode holder of the lightweight update lock on $table_name" >&2
+    exit 2
+}
+
 # Starts the blocking update and returns once it holds the lock.
 function start_holder()
 {
@@ -47,10 +73,12 @@ function start_holder()
         UPDATE $table_name SET s = 'xx' WHERE id = 2 SETTINGS update_parallel_mode = '$mode';
     " &
 
-    wait_for_block_allocated "/zookeeper/$CLICKHOUSE_DATABASE/$table_name/block_numbers/all" "block-0000000001"
+    wait_for_lock_held "$table_name" "$mode"
 }
 
-# Server-side duration, lock try count and lost-CAS retry count of the query tagged with $1.
+# Server-side duration, lock try count, lost-CAS retry count and time spent acquiring the lock, for
+# the query tagged with $1. The last one is the acquisition window alone, so unlike the duration it
+# is not inflated by the update's own work.
 function query_stats()
 {
     $CLICKHOUSE_CLIENT --query "
@@ -58,7 +86,8 @@ function query_stats()
         SELECT
             query_duration_ms,
             ProfileEvents['PatchesAcquireLockTries'],
-            ProfileEvents['PatchesAcquireLockBadVersionRetries']
+            ProfileEvents['PatchesAcquireLockBadVersionRetries'],
+            intDiv(toInt64(ProfileEvents['PatchesAcquireLockMicroseconds']), 1000)
         FROM system.query_log
         WHERE current_database = currentDatabase() AND log_comment = '$1' AND type != 'QueryStart'
         ORDER BY event_time_microseconds DESC LIMIT 1;
@@ -97,7 +126,7 @@ function run()
             SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = ${timeout_ms}e-3, log_comment = '$tag';
         " 2>&1 >/dev/null) && error=""
 
-        read -r duration_ms _ <<< "$(query_stats "$tag")"
+        read -r duration_ms _ _ acquire_ms <<< "$(query_stats "$tag")"
 
         if [[ -n "$error" ]]
         then
@@ -107,7 +136,9 @@ function run()
             if [[ "$error" == *TIMEOUT_EXCEEDED* ]]; then timed_out=1; fi
             echo "$mode $timeout_ms failed $timed_out waited $(( duration_ms >= timeout_ms * 9 / 10 && duration_ms < hold_ms ))"
         else
-            echo "$mode $timeout_ms succeeded"
+            # Granted only after the holder released, so the arm really did wait for the lock rather
+            # than finding it free.
+            echo "$mode $timeout_ms succeeded contended $(( acquire_ms >= hold_ms / 2 ))"
         fi
 
         wait
@@ -126,8 +157,8 @@ function run()
         UPDATE $table_name SET v = 400 WHERE s = 'xx'
         SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 1000000, log_comment = '$tag';
     "
-    read -r duration_ms _ <<< "$(query_stats "$tag")"
-    echo "$mode huge-timeout succeeded waited $(( duration_ms >= 500 ))"
+    read -r _ _ _ acquire_ms <<< "$(query_stats "$tag")"
+    echo "$mode huge-timeout succeeded waited $(( acquire_ms >= hold_ms / 2 ))"
 
     wait
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name"
@@ -238,16 +269,7 @@ function run_cancel()
         SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 600, max_threads = 1;
     " &
 
-    # Wait until the slow update owns the lock.
-    for _ in {0..100}
-    do
-        sleep 0.3
-        held=$($CLICKHOUSE_CLIENT --query "
-            SELECT count() FROM system.zookeeper
-            WHERE path = '/zookeeper/$CLICKHOUSE_DATABASE/$table_name/lightweight_updates/in_progress';
-        ")
-        if [[ "$held" -gt 0 ]]; then break; fi
-    done
+    wait_for_lock_held "$table_name" "auto"
 
     # max_execution_time rather than KILL QUERY: both are enforced by QueryStatus::checkTimeLimit(),
     # and this needs no second client racing to catch the waiter in system.processes.
