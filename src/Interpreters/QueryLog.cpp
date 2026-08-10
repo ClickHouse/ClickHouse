@@ -156,7 +156,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"used_number_of_joins", std::make_shared<DataTypeUInt64>(), "The number of physical joins executed by the query. It is collected from the query pipeline, so it reflects the joins that were actually executed after all optimizations, not the number of JOIN clauses in the query text."},
         {"used_join_algorithms", array_low_cardinality_string, "Names of the join algorithms that were actually used during query execution, e.g. 'hash', 'parallel_hash', 'grace_hash', 'direct', 'full_sorting_merge', 'partial_merge'. The setting join_algorithm only lists the allowed algorithms, the choice among them is made at runtime and an algorithm can even be replaced by another one in the middle of execution."},
-        {"used_join_kinds", array_low_cardinality_string, "Kinds of the joins executed by the query: 'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'COMMA', 'PASTE', and additionally 'ASOF' for ASOF joins."},
+        {"used_joins", array_low_cardinality_string, "Join kind and strictness of the joins present in the query."},
         {"join_spilled_to_disk", std::make_shared<DataTypeUInt8>(), "1 if any join of the query wrote data to temporary files on disk (joining in external memory), 0 otherwise."},
 
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
@@ -343,7 +343,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
         typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(used_number_of_joins);
         fill_column(used_join_algorithms, typeid_cast<ColumnArray &>(*columns[i++]));
-        fill_column(used_join_kinds, typeid_cast<ColumnArray &>(*columns[i++]));
+        fill_column(used_joins, typeid_cast<ColumnArray &>(*columns[i++]));
         typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(join_spilled_to_disk);
     }
 

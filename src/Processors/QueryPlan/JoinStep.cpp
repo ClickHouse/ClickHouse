@@ -73,13 +73,23 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
     return description;
 }
 
-void countExecutedJoin()
+void countExecutedJoin(const JoinPtr & join)
 {
-    if (auto query_context = CurrentThread::tryGetQueryContext())
-    {
-        if (auto counters = query_context->getQueryJoinsCounters())
-            counters->number_of_joins.fetch_add(1, std::memory_order_relaxed);
-    }
+    auto query_context = CurrentThread::tryGetQueryContext();
+    if (!query_context)
+        return;
+
+    auto counters = query_context->getQueryJoinsCounters();
+    if (!counters)
+        return;
+
+
+    counters->number_of_joins.fetch_add(1, std::memory_order_relaxed);
+
+    const auto & table_join = join->getTableJoin();
+    auto kind = table_join.kind();
+    auto strictness = table_join.strictness();
+    counters->addJoinKind(kind, strictness);
 }
 
 std::vector<size_t> getPermutationForBlock(
@@ -148,7 +158,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
-    countExecutedJoin();
+    countExecutedJoin(this->getJoin());
 
     Block lhs_header = pipelines[0]->getHeader();
     Block rhs_header = pipelines[1]->getHeader();
@@ -432,7 +442,7 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
 
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    countExecutedJoin();
+    countExecutedJoin(this->getJoin());
 
     bool default_totals = false;
     if (!pipeline.hasTotals() && !join->getTotals().empty())

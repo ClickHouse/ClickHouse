@@ -91,7 +91,7 @@ struct QueryLogElement
     UInt64 used_number_of_joins{};
     /// Sorted containers, so that the logged arrays do not depend on the order of execution.
     std::set<String> used_join_algorithms;
-    std::set<String> used_join_kinds;
+    std::set<String> used_joins;
     bool join_spilled_to_disk{};
 
     Int32 exception_code{}; // because ErrorCodes are int
