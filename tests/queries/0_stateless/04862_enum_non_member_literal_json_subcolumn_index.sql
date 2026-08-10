@@ -37,8 +37,10 @@ SELECT count() FROM t_json_bf      WHERE CAST(j.a AS Enum8('x' = 1, 'y' = 2)) = 
 SELECT count() FROM t_json_tokenbf WHERE CAST(j.a AS Enum8('x' = 1, 'y' = 2)) = 'y' SETTINGS force_data_skipping_indices = 'i';
 
 SELECT 'a non-member literal declines the index instead of throwing';
-SELECT count() FROM t_json_bf      WHERE CAST(j.a AS Enum8('x' = 1, 'y' = 2)) = 'zzz' SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
-SELECT count() FROM t_json_tokenbf WHERE CAST(j.a AS Enum8('x' = 1, 'y' = 2)) = 'zzz' SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
+-- enable_analyzer = 1: the old analyzer folds a non-member Enum comparison to a constant false and
+-- drops the MergeTree read, so no index analysis runs to assert on.
+SELECT count() FROM t_json_bf      WHERE CAST(j.a AS Enum8('x' = 1, 'y' = 2)) = 'zzz' SETTINGS force_data_skipping_indices = 'i', enable_analyzer = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_json_tokenbf WHERE CAST(j.a AS Enum8('x' = 1, 'y' = 2)) = 'zzz' SETTINGS force_data_skipping_indices = 'i', enable_analyzer = 1; -- { serverError INDEX_NOT_USED }
 
 -- The helper is shared by every key type, so the widened null check needs a non-Enum witness:
 -- these would redline if it started declining representable non-Enum predicates.

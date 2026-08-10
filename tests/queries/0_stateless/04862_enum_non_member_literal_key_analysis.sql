@@ -176,8 +176,10 @@ SELECT count() FROM t_bf_arr WHERE hasAll(a, ['a']) SETTINGS force_data_skipping
 SELECT count() FROM t_bf_map WHERE mapContains(m, 'a') SETTINGS force_data_skipping_indices = 'i';
 
 SELECT 'a non-member literal declines the index instead of throwing';
-SELECT count() FROM t_minmax WHERE e = '4' SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
-SELECT count() FROM t_bf     WHERE e = '4' SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
+-- enable_analyzer = 1 where the predicate is a bare scalar comparison: the old analyzer folds it
+-- to a constant false and drops the MergeTree read, so no index analysis runs to assert on.
+SELECT count() FROM t_minmax WHERE e = '4' SETTINGS force_data_skipping_indices = 'i', enable_analyzer = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_bf     WHERE e = '4' SETTINGS force_data_skipping_indices = 'i', enable_analyzer = 1; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM t_bf_arr WHERE has(a, '4')      SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM t_bf_arr WHERE hasAny(a, ['4']) SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM t_bf_arr WHERE hasAll(a, ['4']) SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
@@ -193,8 +195,9 @@ SET explain_query_plan_default = 'legacy';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_key WHERE e = 'b') WHERE explain ILIKE '%e in [2, 2]%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(v) FROM t_part WHERE x = 'Beta') WHERE explain ILIKE '%x in [2, 2]%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(v) FROM t_part WHERE x = 'Beta') WHERE explain ILIKE '%Parts: 1/2%';
--- The non-member literal declines analysis rather than throwing: every part stays in.
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(v) FROM t_part WHERE x = 'zzz') WHERE explain ILIKE '%Parts: 2/2%';
+-- The non-member literal declines analysis rather than throwing: every part stays in. The pin goes
+-- on the outer query because enable_analyzer cannot be changed inside a subquery (INCORRECT_QUERY).
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT sum(v) FROM t_part WHERE x = 'zzz') WHERE explain ILIKE '%Parts: 2/2%' SETTINGS enable_analyzer = 1;
 
 DROP TABLE t_key;
 DROP TABLE t_nonkey;
