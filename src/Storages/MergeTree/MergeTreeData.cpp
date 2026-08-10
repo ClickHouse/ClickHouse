@@ -6994,7 +6994,7 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
-void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
@@ -7086,7 +7086,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     }
 
     /// no need for delay
-    if (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold)
+    if (!allow_delay || (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold))
         return;
 
     UInt64 delay_milliseconds = 0;
