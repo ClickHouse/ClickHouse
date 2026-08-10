@@ -28,11 +28,50 @@ FROM
 ) AS ch
 INNER JOIN system.settings AS s ON s.name = ch.recorded_name;
 
-CREATE VIEW session_changes AS
+-- A rename keeps the old name as an alias only sometimes; when it does not, the alias of a setting no longer leads
+-- to the name it used to have, and the only account of the rename is the reason of a record — written either under
+-- the new name ("Rename of `x`") or under the old one ("Obsolete setting, renamed to `x`"). The pairs of names of
+-- such a rename, with the ones that the aliases already cover excluded. A setting renamed twice would need this
+-- applied transitively; there is no such case today.
+CREATE VIEW session_renames AS
+SELECT DISTINCT previous_name, current_name FROM
+(
+    SELECT
+        p.previous_name AS previous_name,
+        if(cur.alias_for != '', cur.alias_for, p.current_name) AS current_name,
+        if(prev.alias_for != '', prev.alias_for, p.previous_name) AS previous_setting
+    FROM
+    (
+        SELECT
+            extract(reason, '(?i)(?:rename of(?: setting)?|renamed from|new name of|previous name is)[^0-9A-Za-z_]*([0-9A-Za-z_]+)') AS previous_name,
+            setting AS current_name
+        FROM session_records
+        UNION ALL
+        SELECT
+            recorded_name AS previous_name,
+            extract(reason, '(?i)renamed to[^0-9A-Za-z_]*([0-9A-Za-z_]+)') AS current_name
+        FROM session_records
+    ) AS p
+    LEFT JOIN system.settings AS cur ON cur.name = p.current_name
+    LEFT JOIN system.settings AS prev ON prev.name = p.previous_name
+    WHERE p.previous_name != '' AND p.current_name != ''
+)
+WHERE previous_setting != current_name;
+
+-- The history of a setting is the history of every name it has, including the names it no longer has: a record
+-- written under a name the setting was renamed from is history of the setting under the name it has today as well.
+-- It stays under the old name too, for a name that is still a setting of its own — an obsolete setting, say.
+CREATE VIEW own_name_changes AS
 SELECT setting AS name, recorded_name, version, previous_value, new_value, reason
 FROM session_records
 WHERE NOT (recorded_name != setting AND previous_value = new_value AND match(reason,
     '(?i)\\b(?:add\\w*|new|introduc\\w*)\\b[^.]{0,20}\\balias\\b|(?:^|[.;]\\s+)(?:an?\\s+)?alias\\s+(?:for|of|to)\\b'));
+
+CREATE VIEW session_changes AS
+SELECT name, recorded_name, version, previous_value, new_value, reason FROM own_name_changes
+UNION ALL
+SELECT r.current_name AS name, recorded_name, version, previous_value, new_value, reason
+FROM own_name_changes AS c INNER JOIN session_renames AS r ON r.previous_name = c.name;
 
 -- The history of an alias is the history of that name as opposed to the history of the setting it resolves to:
 -- every record written under the alias itself, plus the records written under another name of the same setting
@@ -189,6 +228,29 @@ SELECT description FROM system.documentation WHERE type = 'Setting' AND name = '
 -- 25.1 records with the same values but differently authored reasons, and neither overwrites the other.
 SELECT description FROM system.documentation WHERE type = 'MergeTree Setting' AND name = 'enable_max_bytes_limit_for_min_age_to_force_merge';
 
+-- A rename does not always keep the old name as an alias, and then the history recorded under the old name is not
+-- reachable through the aliases of the setting; it is followed by the name the reason of the rename record gives.
+-- `distributed_cache_alignment` was called `distributed_cache_read_alignment` when it appeared in 24.10 and was
+-- renamed in 25.7, with the old name made obsolete rather than kept as an alias, so its introducing version is the
+-- one in which it appeared under the old name and not the one in which it was renamed.
+SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'distributed_cache_alignment';
+
+-- When the history recorded under the old name cannot be recovered at all — the old name of
+-- `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` has no record of its own — the version of
+-- the rename is not claimed as the introducing one either: the setting demonstrably existed before it.
+SELECT position(description, '**Introduced in:**') = 0,
+       position(description, '\n- **24.11** — the default value remained `1`. Rename of setting') > 0
+FROM system.documentation WHERE type = 'Setting' AND name = 'filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit';
+
+-- The rename can also be recorded under the old name ("Obsolete setting, renamed to ..."), and the two records of
+-- one rename are listed once: `use_projection_index_in_read_pools` became `use_indexes_refiner_in_read_pools` in
+-- 26.8, the version in which it appeared, and the new name lists that version once, as its introduction.
+SELECT position(description, '**Introduced in:** v26.8') > 0,
+       length(splitByString('\n- **', substring(description, position(description, '**History**')))) - 1
+FROM system.documentation WHERE type = 'Setting' AND name = 'use_indexes_refiner_in_read_pools';
+
 DROP VIEW alias_registrations;
 DROP VIEW session_changes;
+DROP VIEW own_name_changes;
+DROP VIEW session_renames;
 DROP VIEW session_records;

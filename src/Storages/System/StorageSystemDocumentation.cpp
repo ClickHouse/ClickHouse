@@ -399,7 +399,9 @@ struct SettingsHistory
     /// Keyed by the canonical name of the setting. `compatibility` resolves the recorded name of every change
     /// through `resolveName` before applying it, so a change recorded under an alias of a setting belongs to the
     /// history of that setting as much as one recorded under its canonical name. Without this, the history of a
-    /// setting that was renamed would be cut at the rename.
+    /// setting that was renamed would be cut at the rename. `resolveName` knows only the names a setting has
+    /// today, so a rename whose old name was not kept as an alias is followed separately, by the names the
+    /// reasons of the rename records give — see `buildRenames`.
     SettingsHistoryIndex by_setting;
     /// Keyed by the name of an alias, and holding the history of that name as opposed to the history of the setting
     /// it resolves to: every record written under the alias itself, plus the records written under another name of
@@ -484,10 +486,87 @@ void addSettingHistoryEntry(std::vector<SettingHistoryEntry> & entries, const Se
         *same_change = entry;
 }
 
+/// The name that the reason of a record gives as another name of the same setting across a rename: the old name
+/// for a record written under the new one ("Rename of `x`", "Rename of setting `x`", "Renamed from `x`",
+/// "New name of `x`", "The setting was renamed. The previous name is `x`."), and the new name for a record written
+/// under the old one ("Obsolete setting, renamed to `x`."). Empty when the reason notes no rename.
+///
+/// The returned view points into `reason`, which is owned by the static change history.
+std::string_view renamedName(std::string_view reason, const re2::RE2 & wording)
+{
+    std::string_view name;
+    if (re2::RE2::PartialMatch(reason, wording, &name))
+        return name;
+    return {};
+}
+
+std::string_view previousNameOfRenamedSetting(std::string_view reason)
+{
+    static const re2::RE2 wording(
+        R"((?i)(?:rename of(?: setting)?|renamed from|new name of|previous name is)[^0-9A-Za-z_]*([0-9A-Za-z_]+))");
+    return renamedName(reason, wording);
+}
+
+std::string_view newNameOfRenamedSetting(std::string_view reason)
+{
+    static const re2::RE2 wording(R"((?i)renamed to[^0-9A-Za-z_]*([0-9A-Za-z_]+))");
+    return renamedName(reason, wording);
+}
+
+/// Maps a name a setting used to have onto the name it has today, for the renames that `resolveName` cannot follow:
+/// a rename keeps the old name as an alias only sometimes, and when it does not — `distributed_cache_read_alignment`
+/// became `distributed_cache_alignment` and was made obsolete — the history recorded under the old name is not
+/// reachable from the setting through the aliases. The history file records such a rename in the reason of a
+/// record, written either under the new name or under the old one, and that reason is the only account of it.
+///
+/// Chains are followed, so a setting renamed twice maps to its current name; the recursion is bounded by the number
+/// of mappings, as a cycle would otherwise be possible for a pair of records naming each other.
+template <typename SettingsCollection>
+std::unordered_map<std::string_view, std::string_view> buildRenames(const VersionToSettingsChangesMap & history)
+{
+    std::unordered_map<std::string_view, std::string_view> renames;
+
+    auto add = [&](std::string_view previous_name, std::string_view current_name)
+    {
+        /// A rename that kept the old name as an alias needs no mapping: `resolveName` already follows it. The same
+        /// goes for a reason that names the setting it is written under ("Renamed from ... (kept as an alias)").
+        if (previous_name.empty() || SettingsCollection::resolveName(previous_name) == current_name)
+            return;
+        renames.emplace(previous_name, current_name);
+    };
+
+    for (const auto & [_, changes] : history)
+        for (const auto & change : changes)
+        {
+            const std::string_view current = SettingsCollection::resolveName(change.name);
+            add(previousNameOfRenamedSetting(change.reason), current);
+            /// The record is written under the old name here, so it is that name which maps onto the new one.
+            if (const std::string_view new_name = newNameOfRenamedSetting(change.reason); !new_name.empty())
+                add(change.name, SettingsCollection::resolveName(new_name));
+        }
+
+    /// Collapse the chains, so that a single lookup gives the current name.
+    for (auto & [previous_name, current_name] : renames)
+    {
+        for (size_t hop = 0; hop < renames.size(); ++hop)
+        {
+            const auto next = renames.find(current_name);
+            if (next == renames.end() || next->second == previous_name)
+                break;
+            current_name = next->second;
+        }
+    }
+
+    return renames;
+}
+
 /// Inverts the change history — a map of version to the changes made in that version — into per-setting indices.
 template <typename SettingsCollection>
 SettingsHistory buildSettingsHistory(const SettingsCollection & settings, const VersionToSettingsChangesMap & history)
 {
+    /// The names that settings used to have before a rename that `resolveName` cannot follow.
+    const auto renames = buildRenames<SettingsCollection>(history);
+
     /// The aliases of every setting of the collection, to attribute a record that registers an alias to that alias
     /// even when the record is written under another name of the same setting.
     std::unordered_map<std::string_view, std::vector<std::string_view>> aliases_by_setting;
@@ -524,6 +603,12 @@ SettingsHistory buildSettingsHistory(const SettingsCollection & settings, const 
                 continue;
 
             addSettingHistoryEntry(result.by_setting[canonical], entry, /* authoritative= */ canonical == change.name);
+
+            /// A record written under a name the setting had before a rename is history of the setting as it is
+            /// named today as well. It is kept under the old name too: a name that is still a setting of its own
+            /// (an obsolete setting, say) keeps its own account of the change.
+            if (const auto renamed = renames.find(canonical); renamed != renames.end())
+                addSettingHistoryEntry(result.by_setting[renamed->second], entry, /* authoritative= */ false);
         }
     }
     return result;
@@ -539,15 +624,21 @@ SettingsHistory buildSettingsHistory(const SettingsCollection & settings, const 
 /// is new. Recognizing the phrasings that announce a new setting would therefore drop most introductions, so
 /// this recognizes the opposite — the far smaller and more formulaic set of phrasings the file uses when a
 /// no-op record is about a setting that already existed: that it became obsolete, that it graduated to another
-/// maturity tier, that an existing setting became settable per query, or that the record adds an alias.
+/// maturity tier, that an existing setting became settable per query, that it was renamed, or that the record adds
+/// an alias.
+///
+/// A rename is never an introduction: the setting existed before under another name, whether or not the history
+/// recorded under that name can be recovered — and where it cannot, claiming the rename version as the introducing
+/// one would be exactly the wrong answer, a version in which the setting demonstrably already existed.
 ///
 /// A record that adds an alias introduces the alias and not the setting it aliases — hence `documenting_an_alias`.
 bool reasonRecordsIntroduction(std::string_view reason, bool documenting_an_alias)
 {
     /// "Obsolete setting", "Old setting which popped up here being renamed", "Made this setting adjustable on a
-    /// per-query level", "became the Beta tier feature", "was moved to Beta", "is now Beta".
+    /// per-query level", "became the Beta tier feature", "was moved to Beta", "is now Beta", "Rename of
+    /// distributed_cache_read_alignment", "New name of `allow_experimental_delta_kernel_rs`".
     static const re2::RE2 concerns_an_existing_setting(
-        R"((?i)\bobsolete\b|\bdeprecated\b|\bold setting\b|made this setting|no longer|became (?:the\s)?\w+ tier|moved to beta|is now beta)");
+        R"((?i)\bobsolete\b|\bdeprecated\b|\bold setting\b|made this setting|no longer|became (?:the\s)?\w+ tier|moved to beta|is now beta|\brenam\w*|\bnew name of\b)");
 
     if (reasonRegistersAnAlias(reason))
         return documenting_an_alias;
