@@ -27,6 +27,7 @@ static void addSettingsChanges(
 
 const VersionToSettingsChangesMap & getSettingsChangesHistory()
 {
+    using CompatibilityMode = SettingsChangesHistory::SettingChange::CompatibilityMode;
     static VersionToSettingsChangesMap settings_changes_history;
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
@@ -1339,6 +1340,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
 const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 {
+    using CompatibilityMode = SettingsChangesHistory::SettingChange::CompatibilityMode;
     static VersionToSettingsChangesMap merge_tree_settings_changes_history;
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
@@ -1364,7 +1366,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"deduplication_hashes_cache_update_wait_ms", 100, 100, "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."},
             {"dead_blobs_to_delay_insert", 0, 100000, "New setting to artificially slow down inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
             {"dead_blobs_to_throw_insert", 0, 1000000, "New setting to reject inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
-            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "water_filling", "New setting which controls what algorithm is used by the merge coordinator to distribute merges between replicas", /*compatibility_blocker=*/true},
+            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "water_filling", "New setting which controls what algorithm is used by the merge coordinator to distribute merges between replicas", CompatibilityMode::Stop},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",

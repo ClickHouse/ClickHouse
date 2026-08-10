@@ -16,11 +16,17 @@ namespace SettingsChangesHistory
 {
     struct SettingChange
     {
+        enum class CompatibilityMode
+        {
+            PassThrough,
+            Stop,
+        };
+
         String name;
         Field previous_value;
         Field new_value;
         String reason;
-        bool compatibility_blocker = false;
+        CompatibilityMode compatibility_mode = CompatibilityMode::PassThrough;
     };
 
     using SettingsChanges = VectorWithMemoryTracking<SettingChange>;
