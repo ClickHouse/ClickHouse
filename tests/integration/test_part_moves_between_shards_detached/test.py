@@ -57,11 +57,12 @@ def drop_tables(name):
 
 
 def detached_rows(node, name, columns="name, disk"):
-    # A refused clone is retried, and each retry re-stages into detached/tmp-fetch_<part>, which is
-    # itself a system.detached_parts row. Published parts never carry a tmp- prefix, so drop those.
+    # Only published parts have a parsed, prefix-less name (reason = ''). A refused clone is
+    # retried, and each retry stages and then deletes directories under detached/ whose names
+    # carry a prefix or do not parse; those must not count as rows here.
     return node.query(
         f"SELECT {columns} FROM system.detached_parts WHERE database = currentDatabase()"
-        f" AND table = '{name}' AND NOT startsWith(name, 'tmp-') ORDER BY name, disk"
+        f" AND table = '{name}' AND reason = '' ORDER BY name, disk"
     ).strip()
 
 
