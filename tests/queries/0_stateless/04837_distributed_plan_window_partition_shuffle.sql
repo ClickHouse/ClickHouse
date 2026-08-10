@@ -33,7 +33,8 @@ EXPLAIN SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_
 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
     distributed_plan_default_shuffle_join_bucket_count = 8, distributed_plan_default_reader_bucket_count = 8,
-    optimize_read_in_order = 0, optimize_sorting_by_input_stream_properties = 1;
+    optimize_read_in_order = 0, optimize_sorting_by_input_stream_properties = 1,
+    distributed_plan_optimize_exchanges = 1;
 
 -- Negative control: without the exchange optimization the rule does not run, so the keyed-scatter
 -- signature must be absent from the plan. This also proves the signature detects the pre-rule shape.
@@ -49,7 +50,9 @@ FROM
 
 -- Order-insensitive content fingerprint of the distributed result vs the non-distributed plan.
 -- max_threads is pinned so the per-bucket partitioned sort fans out and the order-preserving
--- merge paths are exercised.
+-- merge paths are exercised. optimize_sorting_by_input_stream_properties and
+-- distributed_plan_optimize_exchanges are pinned so this executes the same pushed-down shape as
+-- the plan snapshot above, including the serialized `FinishSorting`.
 SELECT 'distributed result matches non-distributed:',
 (
     SELECT sum(cityHash64(a, v, s, roll, rn))
@@ -63,7 +66,8 @@ SELECT 'distributed result matches non-distributed:',
         SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
             distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
             distributed_plan_default_shuffle_join_bucket_count = 8, distributed_plan_default_reader_bucket_count = 8,
-            optimize_read_in_order = 0, max_threads = 8
+            optimize_read_in_order = 0, max_threads = 8, optimize_sorting_by_input_stream_properties = 1,
+            distributed_plan_optimize_exchanges = 1
     )
 ) =
 (
