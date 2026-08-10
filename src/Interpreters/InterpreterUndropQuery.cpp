@@ -3,6 +3,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/quoteString.h>
 #include <Databases/DatabaseOverlay.h>
@@ -90,7 +91,14 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
     }
 #endif
 
-    DatabaseCatalog::instance().undropTable(table_id);
+    QueryStatusPtr query_status = context->getProcessListElementSafe();
+    auto throw_if_cancelled = [&]()
+    {
+        if (query_status)
+            query_status->throwIfKilled();
+    };
+
+    DatabaseCatalog::instance().undropTable(table_id, throw_if_cancelled);
     return {};
 }
 

@@ -4,6 +4,10 @@
 #include <Access/ContextAccess.h>
 #include <Databases/DatabaseOverlay.h>
 #include <Databases/IDatabase.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -83,6 +87,13 @@ BlockIO InterpreterUpdateQuery::execute()
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them");
 
     FunctionNameNormalizer::visit(query_ptr.get());
+
+    /// Inline the bodies of SQL user-defined functions before the database is filled in, otherwise an
+    /// unqualified table inside a body is resolved later, in a context whose current database is not
+    /// the database of the updated table.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
 
     /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
@@ -92,7 +103,8 @@ BlockIO InterpreterUpdateQuery::execute()
     /// is the hidden virtual marker; on an engine where it is an ordinary physical column it is a normal
     /// update. Resolve the table best-effort (null for a non-local ON CLUSTER target) and fail closed.
     StoragePtr table_for_access;
-    if (auto table_id_for_access = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
+    auto resolved_table_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
+    if (resolved_table_id)
     {
         /// Reject UPDATE through a read-only Overlay facade by the database name alone, before the
         /// best-effort table lookup of the `_row_exists` prepass: resolving the table through the
@@ -100,14 +112,18 @@ BlockIO InterpreterUpdateQuery::execute()
         /// source's own startup or connection error - or answer differently for a missing name vs.
         /// an existing one - turning the facade into a source-table existence oracle (the same
         /// ordering rule as in InterpreterDropQuery).
-        if (DatabaseOverlay::tryGetReadonlyFacade(table_id_for_access.database_name))
+        if (DatabaseOverlay::tryGetReadonlyFacade(resolved_table_id.database_name))
             throw Exception(
                 ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
                 "Database {} is an Overlay facade (read-only). "
                 "Run UPDATE in an underlying database",
-                backQuote(table_id_for_access.database_name));
+                backQuote(resolved_table_id.database_name));
 
-        table_for_access = DatabaseCatalog::instance().tryGetTable(table_id_for_access, getContext());
+        /// The database has to be pinned before the access rights and the distributed dispatch are built
+        /// from it: otherwise they are expanded to the configured default database of each host, so the
+        /// rights that are checked and the table that is updated can name different databases.
+        update_query.setDatabase(resolved_table_id.database_name);
+        table_for_access = DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext());
     }
     const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(table_for_access, getContext());
 
@@ -129,6 +145,18 @@ BlockIO InterpreterUpdateQuery::execute()
 
     if (!update_query.cluster.empty())
     {
+        /// Substitute the database into table functions that use the current database implicitly, e.g.
+        /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with the
+        /// database of the session. The table identifiers are qualified on each host instead.
+        if (resolved_table_id)
+        {
+            AddDefaultDatabaseVisitor visitor(getContext(), resolved_table_id.getDatabaseName());
+            if (update_query.predicate)
+                visitor.substituteDatabaseInTableFunctions(*update_query.predicate);
+            if (update_query.assignments)
+                visitor.substituteDatabaseInTableFunctions(*update_query.assignments);
+        }
+
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -138,6 +166,8 @@ BlockIO InterpreterUpdateQuery::execute()
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Update queries are prohibited");
 
     getContext()->checkAccess(required_access);
+    /// Same database as `resolved_table_id` above, resolved again because the `ON CLUSTER` branch returns
+    /// before this point, and because this one must throw where that one returns empty. Do not collapse.
     auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
     update_query.setDatabase(table_id.database_name);
 
@@ -156,6 +186,35 @@ BlockIO InterpreterUpdateQuery::execute()
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
+    }
+
+    /// Expand CTEs before filling the default database, otherwise a CTE alias is qualified as if it
+    /// were a table.
+    if (update_query.predicate)
+    {
+        ASTPtr predicate = update_query.predicate->ptr();
+        ApplyWithSubqueryVisitor::visit(predicate);
+    }
+    if (update_query.assignments)
+    {
+        ASTPtr assignments = update_query.assignments->ptr();
+        ApplyWithSubqueryVisitor::visit(assignments);
+    }
+
+    /// Add default database to table identifiers that we can encounter in the update expression.
+    /// A separate visitor per expression: it remembers the names of the recursive common table
+    /// expressions it walked, and the two expressions have separate scopes.
+    if (update_query.predicate)
+    {
+        AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        ASTPtr predicate = update_query.predicate->ptr();
+        visitor.visit(predicate);
+    }
+    if (update_query.assignments)
+    {
+        AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        ASTPtr assignments = update_query.assignments->ptr();
+        visitor.visit(assignments);
     }
 
     MutationCommands commands;
