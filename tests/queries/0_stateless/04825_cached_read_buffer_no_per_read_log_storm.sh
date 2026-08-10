@@ -19,7 +19,7 @@ $CLICKHOUSE_CLIENT -q "
                          max_size = '512Mi', max_file_segment_size = '4Mi',
                          boundary_alignment = '1Mi', cache_on_write_operations = 1,
                          load_metadata_asynchronously = 0, disk = 'local_disk'),
-             min_bytes_for_wide_part = 0;
+             min_bytes_for_wide_part = 0, index_granularity = 8192;
     INSERT INTO t_cached_read_log SELECT number, randomPrintableASCII(200) FROM numbers(100000)
     SETTINGS max_insert_threads = 1;
 "
@@ -53,26 +53,31 @@ $CLICKHOUSE_CLIENT -q "
 " > /dev/null
 
 # send_logs_level=test makes the server evaluate the TEST-level logs (and hence the LogTest
-# ProfileEvent) regardless of the server's own log level.
-for verbose in 0 1
-do
-    $CLICKHOUSE_CLIENT --send_logs_level=test --query_id="04825_${CLICKHOUSE_DATABASE}_$verbose" -q "
-        SELECT sum(cityHash64(s)), sum(k) FROM t_cached_read_log
-        SETTINGS $read_settings, filesystem_cache_verbose_logging = $verbose
-    " > /dev/null 2>/dev/null
-done
+# ProfileEvent) regardless of the server's own log level. The default-off arm scans the whole table,
+# because only a large read count can show the absence of a storm; the verbose arm reads a small
+# slice, because there the messages really are emitted and the point is only their per-read rate.
+$CLICKHOUSE_CLIENT --send_logs_level=test --query_id="04825_${CLICKHOUSE_DATABASE}_0" -q "
+    SELECT sum(cityHash64(s)), sum(k) FROM t_cached_read_log
+    SETTINGS $read_settings, filesystem_cache_verbose_logging = 0
+" > /dev/null 2>/dev/null
+
+$CLICKHOUSE_CLIENT --send_logs_level=test --query_id="04825_${CLICKHOUSE_DATABASE}_1" -q "
+    SELECT sum(cityHash64(s)), sum(k) FROM (SELECT k, s FROM t_cached_read_log LIMIT 8192)
+    SETTINGS $read_settings, filesystem_cache_verbose_logging = 1
+" > /dev/null 2>/dev/null
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-# Default (setting off): LogTest is a handful of segment-level lines while thousands of cached reads
-# happen. Setting on: the per-refill lines are back, so LogTest exceeds the number of reads.
-# many_reads is what stops the test passing vacuously when nothing was read from the cache, and the
-# two arms must disagree - a run where both come out the same has not exercised the setting.
+# Default (setting off): a handful of segment-level lines against thousands of cached reads. Setting
+# on: the three per-refill lines are back, so the rate is about 3 messages per read - asserting the
+# rate rather than `logs > reads` keeps the arm from passing when only one of the three sites fires.
+# Both arms assert their own read count, so neither can pass by reading nothing from the cache.
 $CLICKHOUSE_CLIENT -q "
     SELECT
-        anyIf(reads, verbose = 0) > 1000 AS many_reads,
+        anyIf(reads, verbose = 0) > 1000 AS many_reads_by_default,
         anyIf(test_logs, verbose = 0) < 1000 AS few_test_logs_by_default,
-        anyIf(test_logs, verbose = 1) > anyIf(reads, verbose = 1) AS verbose_logging_restores_them
+        anyIf(reads, verbose = 1) > 50 AS many_reads_when_verbose,
+        anyIf(test_logs, verbose = 1) / anyIf(reads, verbose = 1) > 2.5 AS verbose_logging_restores_them
     FROM
     (
         SELECT

@@ -1519,8 +1519,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     bool skip_cache_on_disk_failure,
     LoggerPtr log)
 {
-    /// The check must stay outside LOG_TEST: the arguments are evaluated before the macro, and this
-    /// function runs once per buffer refill.
+    /// The check must stay outside LOG_TEST: once TEST logging is enabled the arguments are
+    /// evaluated and the message formatted, and this function runs once per buffer refill.
     if (info.cache_settings.verbose_logging)
         LOG_TEST(log, "Reading file segment: {}", getInfoForLog(&state, info, offset));
 
