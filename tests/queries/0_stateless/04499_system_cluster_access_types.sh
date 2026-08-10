@@ -4,6 +4,34 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+cluster="test_shard_localhost"
+unavailable_cluster="test_cluster_multiple_nodes_all_unavailable"
+
+# getServerPort() only knows ports whose listener bound, but isSelfHostID reads the configured
+# one, so take both. 0 is a safe filler: a cluster node can never have port 0.
+secure_port=$(${CLICKHOUSE_CLIENT} --query "SELECT getServerPort('tcp_port_secure')" 2>/dev/null || echo 0)
+[ -n "$secure_port" ] || secure_port=0
+secure_port_cfg=${CLICKHOUSE_PORT_TCP_SECURE:-0}
+[ -n "$secure_port_cfg" ] || secure_port_cfg=0
+routable_ports="tcpPort(), $secure_port, $secure_port_cfg"
+
+# An entry can only be picked up here if its port matches tcp_port or tcp_port_secure exactly,
+# so a port that is neither makes this host unreachable whatever its hostname resolves to.
+# Abort rather than continue: the no-table probes are host-global, so running them against a
+# routable cluster would touch every other test's tables. Checked before anything is created.
+n_routable=$(${CLICKHOUSE_CLIENT} --query "
+    SELECT countIf(port IN ($routable_ports)) + 1000 * (count() = 0)
+    FROM system.clusters WHERE cluster = '$unavailable_cluster'")
+if [ "$n_routable" = 0 ]; then
+    echo "ok"
+else
+    echo "FAIL: $unavailable_cluster has $n_routable node(s) reachable here (or is missing)"
+    exit 1
+fi
+${CLICKHOUSE_CLIENT} --query "
+    SELECT if(countIf(port IN ($routable_ports)) > 0, 'ok', 'FAIL: expected a routable replica in $cluster')
+    FROM system.clusters WHERE cluster = '$cluster'"
+
 table="t_04499"
 cleanup_user="cleanup_user_04499_$CLICKHOUSE_DATABASE"
 vparts_user="vparts_user_04499_$CLICKHOUSE_DATABASE"
@@ -43,39 +71,14 @@ ${CLICKHOUSE_CLIENT} --query "CREATE USER $wrong_global_user IDENTIFIED WITH no_
 ${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER ON *.* TO $wrong_global_user"
 ${CLICKHOUSE_CLIENT} --query "GRANT SYSTEM PULLING REPLICATION LOG ON *.* TO $wrong_global_user"
 
-cluster="test_shard_localhost"
-# The no-table form is host-global: it walks every database on the host. Route it to unreachable nodes
-# so the entry never executes here; the access check under test runs on the initiator before enqueue.
-unavailable_cluster="test_cluster_multiple_nodes_all_unavailable"
-
-# getServerPort() only knows ports whose listener bound, but isSelfHostID reads the configured
-# one, so take both. 0 is a safe filler: a cluster node can never have port 0.
-secure_port=$(${CLICKHOUSE_CLIENT} --query "SELECT getServerPort('tcp_port_secure')" 2>/dev/null || echo 0)
-[ -n "$secure_port" ] || secure_port=0
-secure_port_cfg=${CLICKHOUSE_PORT_TCP_SECURE:-0}
-[ -n "$secure_port_cfg" ] || secure_port_cfg=0
-routable_ports="tcpPort(), $secure_port, $secure_port_cfg"
-
-# An entry can only be picked up here if its port matches tcp_port or tcp_port_secure exactly,
-# so a port that is neither makes this host unreachable whatever its hostname resolves to.
-# Abort rather than continue: the no-table probes below are host-global, so running them
-# against a routable cluster would touch every other test's tables.
-n_routable=$(${CLICKHOUSE_CLIENT} --query "
-    SELECT countIf(port IN ($routable_ports)) + 1000 * (count() = 0)
-    FROM system.clusters WHERE cluster = '$unavailable_cluster'")
-if [ "$n_routable" = 0 ]; then
-    echo "ok"
-else
-    echo "FAIL: $unavailable_cluster has $n_routable node(s) reachable here (or is missing)"
-    exit 1
-fi
-${CLICKHOUSE_CLIENT} --query "
-    SELECT if(countIf(port IN ($routable_ports)) > 0, 'ok', 'FAIL: expected a routable replica in $cluster')
-    FROM system.clusters WHERE cluster = '$cluster'"
-
 run() { ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none "$@"; }
-# The unavailable nodes never report back, so do not wait for them.
-run_global() { run --distributed_ddl_task_timeout 0 "$@"; }
+# The no-table form is host-global: it walks every database on the host, so its cluster is not a
+# caller's choice. Append the unreachable one here so no probe can name a cluster of its own, and
+# keep any test hint last, after the clause. Those nodes never report back, so do not wait.
+run_global() {
+    local query="$1" hint="$2"; shift 2
+    run --distributed_ddl_task_timeout 0 --query "$query ON CLUSTER $unavailable_cluster $hint" "$@"
+}
 
 is_cloud=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
 
@@ -98,7 +101,7 @@ vparts_allowed() {
 # silent success in both builds instead of BAD_ARGUMENTS.
 vparts_global_allowed() {
     local out
-    out=$(run_global --user "$1" --query "$2" 2>&1)
+    out=$(run_global "$2" "" --user "$1" 2>&1)
     if [ -z "$out" ]; then
         echo "ok"
     else
@@ -122,15 +125,15 @@ run --user "$wrong_user" --query "SYSTEM STOP VIRTUAL PARTS UPDATE ON CLUSTER $c
 # The no-table check is a single global grant on the initiator, so these need ON *.* grants.
 
 # Holder of global SYSTEM CLEANUP is allowed.
-run_global --user "$cleanup_global_user" --query "SYSTEM START CLEANUP ON CLUSTER $unavailable_cluster" >/dev/null || exit 1
+run_global "SYSTEM START CLEANUP" "" --user "$cleanup_global_user" >/dev/null || exit 1
 echo "ok"
-vparts_global_allowed "$vparts_global_user" "SYSTEM START VIRTUAL PARTS UPDATE ON CLUSTER $unavailable_cluster"
+vparts_global_allowed "$vparts_global_user" "SYSTEM START VIRTUAL PARTS UPDATE"
 
 # Holder of only global SYSTEM PULLING REPLICATION LOG is now denied both no-table commands.
 # This is the discriminating case: the no-table branch is a single global check, so the old code
 # would have allowed this user via the global SYSTEM PULLING REPLICATION LOG grant; the fix denies it.
-run_global --user "$wrong_global_user" --query "SYSTEM STOP CLEANUP ON CLUSTER $unavailable_cluster -- { serverError ACCESS_DENIED }"
-run_global --user "$wrong_global_user" --query "SYSTEM STOP VIRTUAL PARTS UPDATE ON CLUSTER $unavailable_cluster -- { serverError ACCESS_DENIED }"
+run_global "SYSTEM STOP CLEANUP" "-- { serverError ACCESS_DENIED }" --user "$wrong_global_user"
+run_global "SYSTEM STOP VIRTUAL PARTS UPDATE" "-- { serverError ACCESS_DENIED }" --user "$wrong_global_user"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $cleanup_user, $vparts_user, $cleanup_global_user, $vparts_global_user, $wrong_user, $wrong_global_user"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE $table"
