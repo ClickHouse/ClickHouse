@@ -193,11 +193,14 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
         is instead followed by a source table or table function (`CREATE
         TABLE dst AS src ENGINE = MergeTree ... SETTINGS ...`), the storage
         clause -- including the new table's own `SETTINGS` -- may still
-        follow, so the scan continues. `COMMENT '...'` and the `EMPTY` /
-        `CLONE` markers are scanned over for the same reason: the grammar
-        requires an `AS` after `EMPTY` / `CLONE`, and it is that `AS` which
-        decides. Bracket depth is tracked so a column-level `COMMENT` inside
-        the schema parens does not confuse the scan."""
+        follow, so the scan continues. A top-level `COMMENT '...'`, in
+        contrast, ends the engine definition (`ParserCreateQuery.cpp` parses
+        the table comment after the storage clause), so a `SETTINGS` that
+        follows it is query-level -- return -1 there as well. The `EMPTY` /
+        `CLONE` markers are scanned over: the grammar requires an `AS` after
+        them, and it is that `AS` which decides. Bracket depth is tracked so a
+        column-level `COMMENT` inside the schema parens does not confuse the
+        scan."""
         i = 0
         n = len(text)
         quote = None
@@ -255,6 +258,14 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
             if depth == 0:
                 if is_word_at(text, i, "SETTINGS"):
                     return i
+                if is_word_at(text, i, "COMMENT"):
+                    # A top-level `COMMENT '...'` before any table-level
+                    # `SETTINGS` ends the engine definition, so a later
+                    # `SETTINGS` is a query-level clause (see
+                    # `03234_enable_secure_identifiers.sql`). The table has no
+                    # settings of its own -- leave the query unchanged and let
+                    # `perf.py` fail fast on the misplaced setting.
+                    return -1
                 if is_word_at(text, i, "AS"):
                     j = skip_whitespace_and_comments(text, i + len("AS"))
                     if j >= n or text[j] == "(" or is_word_at(text, j, "SELECT") or is_word_at(text, j, "WITH"):

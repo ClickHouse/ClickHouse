@@ -300,6 +300,33 @@ def test_no_table_settings_empty_as_select_query_settings_is_unchanged():
     assert strip_setting_from_query(query, SETTING) == query
 
 
+def test_no_table_settings_query_settings_after_table_comment_is_unchanged():
+    # A top-level `COMMENT '...'` ends the engine definition, so the SETTINGS
+    # after it is a query-level clause, not the table's own (this is exactly
+    # what `03234_enable_secure_identifiers.sql` relies on). Stripping it would
+    # silently rewrite the baseline DDL, so the query must be left unchanged
+    # and `perf.py` must fail fast on the misplaced setting.
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() COMMENT 'note' SETTINGS {SETTING} = 0"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == query
+    assert strip_setting_from_query(query, SETTING) == query
+
+
+def test_no_table_settings_query_settings_after_table_comment_with_as_select_is_unchanged():
+    # The same shape with a source `AS src` before the table comment: the
+    # `COMMENT` still ends the engine definition.
+    query = f"CREATE TABLE dst AS src ENGINE = MergeTree ORDER BY tuple() COMMENT 'note' SETTINGS {SETTING} = 0"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == query
+
+
+def test_table_settings_before_table_comment_is_still_stripped():
+    # The `COMMENT` boundary must only apply *before* a table-level SETTINGS
+    # clause: when the table has its own SETTINGS followed by a table comment,
+    # the setting is still stripped and the comment survives.
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING} = 0, index_granularity = 8192 COMMENT 'note'"
+    expected = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192 COMMENT 'note'"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected
+
+
 def test_table_settings_after_column_comment_is_still_found():
     # A column-level COMMENT inside the schema parens must not be mistaken for a
     # top-level trailing clause that ends the search early: the real table-level
