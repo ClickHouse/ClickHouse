@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <Common/logger_useful.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -36,6 +37,30 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace Setting
+{
+    extern const SettingsBool enable_materialized_cte;
+}
+
+namespace
+{
+constexpr UInt32 LOOKBACK_DELTA_SCALE = 9;
+
+Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 timestamp_scale)
+{
+    const auto high_precision_value = parseTimeSeriesDuration(value, LOOKBACK_DELTA_SCALE);
+    if (high_precision_value <= 0 || timestamp_scale >= LOOKBACK_DELTA_SCALE)
+        return high_precision_value;
+
+    const auto divisor = DecimalUtils::scaleMultiplier<Decimal64>(LOOKBACK_DELTA_SCALE - timestamp_scale);
+    auto timestamp_ticks = high_precision_value.value / divisor;
+    if (high_precision_value.value % divisor)
+        ++timestamp_ticks;
+
+    return Decimal64{timestamp_ticks};
+}
+}
+
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
     : WithMutableContext{context_}
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
@@ -56,6 +81,13 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
         = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
     UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
+
+    if (!params.lookback_delta_param.empty())
+    {
+        const auto lookback_delta = parsePrometheusLookbackDelta(params.lookback_delta_param, timestamp_scale);
+        if (lookback_delta > 0)
+            evaluation_settings.instant_selector_window = lookback_delta;
+    }
 
     if (params.type == Type::Instant)
     {
@@ -88,6 +120,13 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
+
+    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
+    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
+    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
+    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
+        getContext()->setSetting("enable_materialized_cte", true);
+
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     try

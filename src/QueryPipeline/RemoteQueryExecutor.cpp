@@ -916,10 +916,20 @@ void RemoteQueryExecutor::finish()
         /// executor as finished. Otherwise a RemoteSource whose output is closed before it sends
         /// its query (e.g. an empty-build ANY INNER JOIN that short-circuits the probe side) keeps
         /// re-entering its drain path via prepare()/work() and spins forever, because isFinished()
-        /// never becomes true. On Linux the async startup path always sends the query before this
-        /// point, so only the synchronous (non-Linux) send path is affected.
+        /// never becomes true.
         if (!sent_query)
         {
+            /// Also mark the executor cancelled, not just finished. `RemoteSource::work()` may
+            /// already be queued for execution (its `prepare()` ran before the output port was
+            /// closed), and both `sendQuery` and `sendQueryAsync` gate only on `was_cancelled` -
+            /// never on `finished`. Without this the query is still sent after we declared the
+            /// executor finished, and nothing releases it afterwards: `finish()` returns early
+            /// from here on, and the destructor's `isQueryPending()` is false because `finished`
+            /// is set, so the connection is returned to the pool without a `Cancel` packet and
+            /// without a disconnect. A parallel-replicas follower is then left blocked in
+            /// `receivePartitionMergeTreeReadTaskResponse` for the whole `receive_timeout`,
+            /// holding the table's shared lock and stalling a subsequent `DROP TABLE` (#109265).
+            was_cancelled = true;
             finished = true;
         }
         else if (was_cancelled && !finished && connections)
