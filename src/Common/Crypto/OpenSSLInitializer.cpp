@@ -15,6 +15,12 @@
 namespace DB
 {
 
+OpenSSLInitializer & OpenSSLInitializer::instance()
+{
+    static OpenSSLInitializer instance;
+    return instance;
+}
+
 #if USE_SSL
 std::atomic<bool> DB::OpenSSLInitializer::initialize_done{false};
 std::atomic<bool> DB::OpenSSLInitializer::cleanup_done{false};
