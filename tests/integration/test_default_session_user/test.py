@@ -871,3 +871,40 @@ def test_config_reload_http_handlers_reference_switch():
             pass
         time.sleep(1)
     assert response == b"fixed_handler_user\n"
+
+
+def test_config_reload_prometheus_keeper_metrics_only_switch():
+    # `prometheus.keeper_metrics_only` selects the handler factory baked into a composable
+    # `type = prometheus` listener: `KeeperPrometheusHandler-factory` exposes the keeper
+    # metrics without authentication, `PrometheusHandler-factory` also serves the
+    # authenticating time-series handlers. Flipping the mode changes nothing else in the
+    # configuration — neither the port nor the `prometheus.handlers` section — so the mode
+    # itself must be compared across the reload, otherwise the old factory would keep
+    # serving on the port until a full server restart.
+    #
+    # This test runs last: it flips node1's global mode for the rest of the session.
+    config_path = "/etc/clickhouse-server/config.d/config.xml"
+
+    assert scrape_prometheus_status(9108) == 200
+
+    node1.replace_in_config(
+        config_path,
+        "<keeper_metrics_only>true</keeper_metrics_only>",
+        "<keeper_metrics_only>false</keeper_metrics_only>",
+    )
+    node1.query("SYSTEM RELOAD CONFIG")
+
+    # `updateServers` runs within `SYSTEM RELOAD CONFIG`, so by now the decision to
+    # restart has been made and logged.
+    assert node1.contains_in_log(
+        "<prometheus.keeper_metrics_only> had been changed, will reload keeper-metrics-only prometheus protocol"
+    )
+
+    # The restarted listener serves the regular prometheus factory. node1 has no
+    # `prometheus.handlers` section, so it exposes metrics on the same path. The listener
+    # comes back asynchronously after the reload, so poll.
+    for _ in range(30):
+        if scrape_prometheus_status(9108) == 200:
+            break
+        time.sleep(1)
+    assert scrape_prometheus_status(9108) == 200

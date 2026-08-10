@@ -4457,6 +4457,7 @@ void Server::updateServers(
             bool has_host = false;
             bool is_http = false;
             bool is_non_keeper_prometheus = false;
+            bool is_prometheus = false;
             bool default_session_user_changed = false;
             String handlers_key = "http_handlers";
             String previous_handlers_key = handlers_key;
@@ -4507,12 +4508,16 @@ void Server::updateServers(
                         /// setting consumed when either the old or the new set consumes it. A change
                         /// of the section itself forces a restart below, like a change of an `http`
                         /// endpoint's `handlers` section.
-                        if (type == "prometheus" && !server_settings[ServerSetting::prometheus_keeper_metrics_only])
+                        if (type == "prometheus")
                         {
-                            is_non_keeper_prometheus = true;
-                            consumes_default_session_user = consumes_default_session_user
-                                || prometheusHandlersConsumeDefaultSessionUser(previous_config)
-                                || prometheusHandlersConsumeDefaultSessionUser(config);
+                            is_prometheus = true;
+                            if (!server_settings[ServerSetting::prometheus_keeper_metrics_only])
+                            {
+                                is_non_keeper_prometheus = true;
+                                consumes_default_session_user = consumes_default_session_user
+                                    || prometheusHandlersConsumeDefaultSessionUser(previous_config)
+                                    || prometheusHandlersConsumeDefaultSessionUser(config);
+                            }
                         }
                     }
 
@@ -4541,6 +4546,7 @@ void Server::updateServers(
                 /// dynamic_cast<> since HTTPServer is also used for prometheus and
                 /// internal replication communications.
                 is_http = server->getPortName() == "http_port" || server->getPortName() == "https_port";
+                is_prometheus = server->getPortName() == "prometheus.port";
             }
 
             if (!has_host)
@@ -4565,6 +4571,19 @@ void Server::updateServers(
             {
                 force_restart = true;
                 LOG_TRACE(log, "<prometheus.handlers> had been changed, will reload {}", server->getDescription());
+            }
+            /// `prometheus.keeper_metrics_only` selects the handler factory baked into a `prometheus`
+            /// listener: `KeeperPrometheusHandler-factory` exposes the keeper metrics without
+            /// authentication, while `PrometheusHandler-factory` also serves the authenticating
+            /// time-series handlers of `prometheus.handlers`. A change of the mode itself must restart
+            /// the listener in either direction — the port and the handler section may well stay the
+            /// same, and neither of the checks above can notice the switched factory then.
+            if (is_prometheus
+                && previous_config.getBool("prometheus.keeper_metrics_only", false)
+                    != server_settings[ServerSetting::prometheus_keeper_metrics_only])
+            {
+                force_restart = true;
+                LOG_TRACE(log, "<prometheus.keeper_metrics_only> had been changed, will reload {}", server->getDescription());
             }
             if (default_session_user_changed)
             {
