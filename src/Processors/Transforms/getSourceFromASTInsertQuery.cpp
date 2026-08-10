@@ -97,6 +97,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_reads_typed_json_value_tokens = false;
     bool format_reads_string_values_as_whole_text = false;
     bool format_reads_any_value_into_string_column = true;
+    bool format_reads_quoted_text_values = false;
     bool format_maps_columns_by_name = false;
     bool format_honors_column_name_matching_mode = false;
     bool format_reads_numeric_into_ipv4 = false;
@@ -130,6 +131,7 @@ String getInsertDataSchemaMismatchDescription(
         format_reads_typed_json_value_tokens = schema_reader->readsTypedJSONValueTokens();
         format_reads_string_values_as_whole_text = schema_reader->readsStringValuesAsWholeText();
         format_reads_any_value_into_string_column = schema_reader->readsAnyValueIntoStringColumn();
+        format_reads_quoted_text_values = schema_reader->readsQuotedTextValues();
         format_maps_columns_by_name = schema_reader->mapsColumnsByName();
         format_honors_column_name_matching_mode = schema_reader->honorsColumnNameMatchingMode();
         format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
@@ -413,10 +415,19 @@ String getInsertDataSchemaMismatchDescription(
         /// the string / binary BSON tags and rejects the numeric ones); `TSV` / `CSV` read the raw
         /// field verbatim into a `FixedString` column, so a number is accepted there and flagging it
         /// would be a false positive.
+        ///
+        /// A format that reads every field with the quoted-text deserializer (`MySQLDump`, see
+        /// `readsQuotedTextValues`) rejects a bare number in every destination whose `deserializeTextQuoted`
+        /// requires an opening quote — additionally `String`, `FixedString`, `Date` / `Date32` and `Enum`
+        /// (while `DateTime` / `DateTime64` read it as a Unix timestamp and `Decimal` / `Time` / `Time64`
+        /// read the number itself, so those stay compatible).
         if (inferred_is_numeric
             && (which_expected.isUUID() || which_expected.isIPv6()
                 || (which_expected.isIPv4() && !format_reads_numeric_into_ipv4)
-                || ((format_reads_typed_json_value_tokens || format_stores_typed_numeric_values) && which_expected.isFixedString())))
+                || ((format_reads_typed_json_value_tokens || format_stores_typed_numeric_values) && which_expected.isFixedString())
+                || (format_reads_quoted_text_values
+                    && (which_expected.isString() || which_expected.isFixedString() || which_expected.isDateOrDate32()
+                        || which_expected.isEnum()))))
             return false;
 
         /// The mirror image of the "inferred `String`" rule below: a `String` destination accepts values

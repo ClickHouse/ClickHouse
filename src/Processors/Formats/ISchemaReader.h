@@ -87,6 +87,21 @@ public:
     /// mismatch.
     virtual bool readsAnyValueIntoStringColumn() const { return true; }
 
+    /// True when the parser reads every field with the quoted-text deserializer
+    /// (`ISerialization::deserializeTextQuoted`), as `MySQLDump` does: there the on-wire form of a value
+    /// has to match what the destination type accepts, so an unquoted value — the only thing schema
+    /// inference can have derived a numeric type from — is rejected by every destination whose
+    /// quoted-text deserializer requires an opening quote: `String`, `FixedString`, `UUID`, `IPv4`,
+    /// `IPv6`, `Date` / `Date32` and `Enum`. (The other numeric-adjacent destinations do accept a bare
+    /// number there: `DateTime` / `DateTime64` read it as a Unix timestamp, and `Decimal` / `Time` /
+    /// `Time64` read the number itself.) Note that this is about the form of the value and not about
+    /// which types are read verbatim into a `String` column: a quoted value — from which inference
+    /// derives a `String`, a date or a `UUID` — is accepted by a `String` destination just as in the
+    /// other flat-text formats, so `readsAnyValueIntoStringColumn` stays true for such a format. A
+    /// caller comparing an inferred schema against an expected one uses this to flag an inferred
+    /// numeric type going into one of those destinations as a structure mismatch.
+    virtual bool readsQuotedTextValues() const { return false; }
+
     /// True when the parser maps the input's fields to destination columns by name rather than by
     /// position. Besides the inherently name-based formats (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...,
     /// which also return `hasStrictOrderOfColumns() == false`), this holds for a `*WithNames*` format
@@ -137,12 +152,13 @@ public:
     /// column — the binary formats that store typed values (`BSONEachRow`, `MsgPack`), `Avro`, and
     /// the formats that cast a decoded source column to the destination type (the columnar `Parquet` /
     /// `Arrow` / `ORC`, `Native` under `input_format_native_allow_types_conversion`) — accept e.g. `2`
-    /// there, as does `Values` through its expression-interpretation fallback
-    /// (`input_format_values_interpret_expressions`). The flat-text row formats (`TSV`, `CSV`, `TSKV`,
-    /// `CustomSeparated`, `Template`, `Regexp`, `Form`) instead hand the raw field to the `Bool` deserializers
+    /// there, as does `Values`, whose expression fallback converts the literal to the destination type
+    /// like `CAST` does. The flat-text row formats (`TSV`, `CSV`, `TSKV`, `CustomSeparated`, `Template`,
+    /// `Regexp`, `Form`) instead hand the raw field to the `Bool` deserializers
     /// (`SerializationBool`), which accept only the configured `bool_true_representation` /
     /// `bool_false_representation` and the fixed literal forms (`1` / `0`, `true` / `false`, ...) — so
-    /// they return false. The typed-token JSON formats are equally strict
+    /// they return false, and so does `MySQLDump`, whose `deserializeTextQuoted` accepts those forms and
+    /// a quoted representation but no other number. The typed-token JSON formats are equally strict
     /// (`SerializationBool::deserializeTextJSON` accepts only `true` / `false` and `1` / `0`), but a
     /// caller already identifies them via `readsTypedJSONValueTokens`, so they keep the default. A
     /// caller comparing an inferred schema against an expected one uses this (together with the actual
