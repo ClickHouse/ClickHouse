@@ -219,7 +219,7 @@ void ThreadGroup::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & l
         std::lock_guard lock(mutex);
         shared_data.logs_queue_ptr = logs_queue;
         shared_data.client_logs_level = logs_level;
-        companion = async_callback_group;
+        companion = async_callback_group.lock();
     }
 
     /// Keep the async-callback companion of a borrowed group in sync (see `getAsyncCallbackGroup`).

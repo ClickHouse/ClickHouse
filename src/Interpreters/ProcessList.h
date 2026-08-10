@@ -343,10 +343,10 @@ struct ProcessListForUser
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
 
-    /// Owning `ThreadGroup`s of queries that already left the process list but were still referenced
-    /// at that point: borrowed-scope async work may keep charging such a group - and, through its
-    /// `memory_tracker` parent, `user_memory_tracker` - past the query's removal (an async-callback
-    /// companion group holds the owning group alive, see `ThreadGroup::getAsyncCallbackGroup`).
+    /// `ThreadGroup`s of queries that already left the process list while an async-callback companion
+    /// still charged them: borrowed-scope async work may keep charging such a group - and, through its
+    /// `memory_tracker` parent, `user_memory_tracker` - past the query's removal (the companion holds
+    /// its whole accounting chain alive, see `ThreadGroup::getAsyncCallbackGroup`).
     /// While any of them survives, `user_memory_tracker` must not be reset: that would clear the
     /// `max_memory_usage_for_user` limits in the exact post-query window the companion covers.
     /// Guarded by `ProcessList::mutex`, like `queries`.
@@ -367,12 +367,8 @@ struct ProcessListForUser
 
     /// Resets the trackers unless a lingering query group can still charge them (see above).
     /// A reset skipped here is retried when the user's next query is inserted or removed.
-    void resetTrackersIfUnreferenced()
-    {
-        std::erase_if(lingering_query_groups, [](const auto & group) { return group.expired(); });
-        if (lingering_query_groups.empty())
-            resetTrackers();
-    }
+    /// Defined out of line: it needs the complete `ThreadGroup`.
+    void resetTrackersIfUnreferenced();
 };
 
 

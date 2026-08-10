@@ -311,6 +311,80 @@ TEST(BorrowedThreadGroupLifetime, AsyncWorkFromNestedBorrowedScopeChargesUltimat
     t.join();
 }
 
+TEST(BorrowedThreadGroupLifetime, AsyncWorkFromFlushAsyncInsertScopeFollowsReparentedAccounting)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+
+        auto pool = makeSingleThreadPool();
+
+        /// The outer query that ran `SYSTEM FLUSH ASYNC INSERT QUEUE`, and the borrowed group of the
+        /// flush itself. The flush builds its own process list entry for the original insert's user, and
+        /// `ProcessList::insert` then reparents the *current* group's `memory_tracker` onto that user's
+        /// tracker and raises `max_memory_usage` on it - i.e. the borrowed group's accounting chain is
+        /// re-pointed after the group was constructed. Emulate exactly that here.
+        auto outer_query = std::make_shared<ThreadGroup>(context, 0);
+
+        /// Declared before the borrowed group so it outlives everything pointing at it.
+        MemoryTracker insert_user_tracker(VariableContext::User);
+        insert_user_tracker.setDescription("User");
+
+        auto flush = ThreadGroup::createForFlushAsyncInsertQueue(context, outer_query);
+        flush->memory_tracker.setParent(&insert_user_tracker);
+        constexpr Int64 user_limit = 16 << 20;
+        insert_user_tracker.setOrRaiseHardLimit(user_limit);
+
+        struct Result
+        {
+            bool limit_enforced = false;
+            Int64 charged_to_outer_query = 0;
+        };
+
+        CurrentThread::attachToGroupIfDetached(flush);
+        auto runner = threadPoolCallbackRunnerUnsafe<Result>(*pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+        auto future = runner([outer_query]
+        {
+            /// Comfortably above both the user limit and any per-thread untracked-memory batching.
+            constexpr Int64 allocation = 64 << 20;
+            Result result;
+            const Int64 before = outer_query->memory_tracker.get();
+            try
+            {
+                std::ignore = CurrentMemoryTracker::alloc(allocation);
+                std::ignore = CurrentMemoryTracker::free(allocation);
+            }
+            catch (...)
+            {
+                result.limit_enforced = true;
+            }
+            result.charged_to_outer_query = outer_query->memory_tracker.get() - before;
+            return result;
+        }, Priority{});
+        CurrentThread::detachFromGroupIfNotDetached();
+
+        auto result = future.get();
+        pool->wait();
+
+        /// Late async work of the flush must obey the limits of the identity the flush runs as, not the
+        /// ones of whoever happened to trigger it.
+        EXPECT_TRUE(result.limit_enforced)
+            << "async work of an async-insert flush must obey the flush query's own memory limits";
+        EXPECT_LT(result.charged_to_outer_query, 32 << 20)
+            << "async work of an async-insert flush must not be charged to the outer caller's query";
+
+        /// Both groups of the chain must stay alive while that async work may charge them.
+        std::weak_ptr<ThreadGroup> outer_query_weak = outer_query;
+        std::weak_ptr<ThreadGroup> flush_weak = flush;
+        flush.reset();
+        outer_query.reset();
+        EXPECT_TRUE(flush_weak.expired());
+        EXPECT_TRUE(outer_query_weak.expired());
+    });
+    t.join();
+}
+
 TEST(BorrowedThreadGroupLifetime, ChildDoesNotKeepParentAlive)
 {
     std::thread t([&]

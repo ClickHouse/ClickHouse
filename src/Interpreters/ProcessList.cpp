@@ -499,12 +499,16 @@ ProcessListEntry::~ProcessListEntry()
     /// reads entries lock-free via raw pointers and relies on them never being erased.
     if (user_process_list.queries.empty())
     {
-        /// If the query's owning `ThreadGroup` is referenced beyond `process_list_element_ptr`
-        /// (e.g. by an async-callback companion of a borrowed group, see
-        /// `ThreadGroup::getAsyncCallbackGroup`), late async work may still charge it - and,
-        /// through its `memory_tracker` parent, `user_memory_tracker`. Defer the reset then:
-        /// resetting would clear the `max_memory_usage_for_user` limits for exactly that work.
-        if (process_list_element_ptr->thread_group && process_list_element_ptr->thread_group.use_count() > 1)
+        /// If an async-callback companion of a borrowed group still charges the query's `ThreadGroup`
+        /// (see `ThreadGroup::getAsyncCallbackGroup`), late async work may still charge it - and,
+        /// through its `memory_tracker` parent, `user_memory_tracker`. Defer the reset then: resetting
+        /// would clear the `max_memory_usage_for_user` limits for exactly that work.
+        /// The condition is deliberately narrow (a live companion, not just any extra `shared_ptr`):
+        /// on the ordinary server path this entry is destroyed while the query thread is still attached
+        /// to the group (`BlockIO::~BlockIO` clears `process_list_entries` before the handler's
+        /// `QueryScope` detaches), so counting references would defer the reset after every query and
+        /// leave `system.user_processes` and the per-user peak memory stale.
+        if (process_list_element_ptr->thread_group && process_list_element_ptr->thread_group->hasLiveAsyncCallbackCompanions())
             user_process_list.lingering_query_groups.emplace_back(process_list_element_ptr->thread_group);
         user_process_list.resetTrackersIfUnreferenced();
     }
@@ -984,6 +988,18 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
             user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(shared_temp_data),
                 std::move(temporary_data_on_disk_settings));
     }
+}
+
+
+void ProcessListForUser::resetTrackersIfUnreferenced()
+{
+    std::erase_if(lingering_query_groups, [](const auto & weak_group)
+    {
+        auto group = weak_group.lock();
+        return !group || !group->hasLiveAsyncCallbackCompanions();
+    });
+    if (lingering_query_groups.empty())
+        resetTrackers();
 }
 
 

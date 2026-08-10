@@ -22,11 +22,12 @@ ThreadGroupPtr getCurrentThreadGroup();
 /// Like `getCurrentThreadGroup`, but never returns a borrowed group (see `ThreadGroup`): a borrowed
 /// group is only valid while its parent query is alive, and async work may outlive that query.
 /// For a borrowed group it returns the group's async-callback companion, which preserves the query's
-/// cancellation predicates and metadata and charges the owning query group's accounting chain (keeping
-/// it alive, so query/user memory limits still apply). Async work scheduled from a borrowed scope
-/// (materialized/window view processing, async insert flush, `EXPLAIN ANALYZE`) is thus accounted to
-/// the query, but not to the borrowed group itself — per-scope diagnostics derived from the borrowed
-/// group (e.g. `peak_memory_usage` in `system.query_views_log`) exclude such async allocations.
+/// cancellation predicates and metadata and charges the borrowed group's own accounting chain (keeping
+/// every group of that chain alive, so query/user memory limits still apply). Async work scheduled from
+/// a borrowed scope (materialized/window view processing, async insert flush, `EXPLAIN ANALYZE`) is thus
+/// accounted just like the scope's synchronous work; only allocations that outlive the borrowed scope
+/// are missing from per-scope diagnostics derived from it (e.g. `peak_memory_usage` in
+/// `system.query_views_log`), because those figures are recorded when the scope ends.
 ThreadGroupPtr getCurrentThreadGroupForAsyncCallback();
 
 /**
