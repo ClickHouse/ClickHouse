@@ -2143,7 +2143,14 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 drop_ctx->makeQueryContext();
                 drop_ctx->setCurrentQueryId(toString(UUIDHelpers::generateV4()));
                 String drop_query = fmt::format("DROP DATABASE IF EXISTS `{}` SYNC", restoring_database_name);
-                executeQuery(drop_query, drop_ctx);
+                /// This is server-generated implementation SQL cleaning up the temporary restoring
+                /// database, not a user query: it must be marked `internal` like the paired
+                /// `CREATE DATABASE` in `restoreDatabaseFromKeeperPath`. `drop_ctx` is a copy of the
+                /// global context and therefore inherits the `system_profile`, so without the flag a
+                /// non-empty default `query_rules` could rewrite or reject this cleanup query,
+                /// leaving the temporary database behind or failing `SYSTEM DROP REPLICA` for an
+                /// unrelated reason.
+                executeQuery(drop_query, drop_ctx, QueryFlags{.internal = true});
             });
             auto database = restoreDatabaseFromKeeperPath(
                 /*zookeeper_name=*/query.zk_name,
