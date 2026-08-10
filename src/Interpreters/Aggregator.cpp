@@ -3920,41 +3920,35 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 
     auto merge_count_variant = [&]<typename State>(State & state)
     {
-        /// The inline-count merge reads each cell's count out of the mapped slot, so it exists only for map
-        /// methods; a set method has no aggregates and therefore never sets `is_simple_count`. A lambda
-        /// cannot be overloaded, so this one is guarded rather than specialized like its neighbours.
-        if constexpr (MapAggregationState<State>)
+        chassert(aggregate_columns_data.size() == 1);
+        if (!arena_for_keys)
+            arena_for_keys = aggregates_pool;
+        const auto & other_aggregated_counts = *aggregate_columns_data[0];
+        if (no_more_keys)
         {
-            chassert(aggregate_columns_data.size() == 1);
-            if (!arena_for_keys)
-                arena_for_keys = aggregates_pool;
-            const auto & other_aggregated_counts = *aggregate_columns_data[0];
-            if (no_more_keys)
+            for (size_t row = row_begin; row < row_end; row++)
             {
-                for (size_t row = row_begin; row < row_end; row++)
-                {
-                    auto find_result = state.findKey(data, row, *arena_for_keys);
+                auto find_result = state.findKey(data, row, *arena_for_keys);
 
-                    if (find_result.isFound())
-                        getInlineCountState(find_result.getMapped()) += getCountState(other_aggregated_counts[row]);
-                    else if (overflow_row)
-                        getCountState(overflow_row) += getCountState(other_aggregated_counts[row]);
-                }
+                if (find_result.isFound())
+                    getInlineCountState(find_result.getMapped()) += getCountState(other_aggregated_counts[row]);
+                else if (overflow_row)
+                    getCountState(overflow_row) += getCountState(other_aggregated_counts[row]);
             }
-            else
+        }
+        else
+        {
+            for (size_t row = row_begin; row < row_end; row++)
             {
-                for (size_t row = row_begin; row < row_end; row++)
-                {
-                    /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.
-                    /// The same thing does not fail when cross-compiling from a x86_64 host.
-                    /// Furthermore, arena_for_keys is set to be a pointer to the last member of aggregates_pools,
-                    /// which is always initialized to have at least 1 arena.
-                    auto emplace_result = state.emplaceKey(data, row, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
-                    if (emplace_result.isInserted())
-                        getInlineCountState(emplace_result.getMapped()) = getCountState(other_aggregated_counts[row]);
-                    else
-                        getInlineCountState(emplace_result.getMapped()) += getCountState(other_aggregated_counts[row]);
-                }
+                /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.
+                /// The same thing does not fail when cross-compiling from a x86_64 host.
+                /// Furthermore, arena_for_keys is set to be a pointer to the last member of aggregates_pools,
+                /// which is always initialized to have at least 1 arena.
+                auto emplace_result = state.emplaceKey(data, row, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
+                if (emplace_result.isInserted())
+                    getInlineCountState(emplace_result.getMapped()) = getCountState(other_aggregated_counts[row]);
+                else
+                    getInlineCountState(emplace_result.getMapped()) += getCountState(other_aggregated_counts[row]);
             }
         }
     };
@@ -3964,7 +3958,11 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
         if (is_simple_count)
         {
-            merge_count_variant(state);
+            /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
+            /// Guarding the call rather than the lambda keeps the lambda from being instantiated for one -
+            /// its body reads the count out of a mapped slot that a set cell does not have.
+            if constexpr (MapAggregationMethod<Method>)
+                merge_count_variant(state);
         }
         else
         {
@@ -3988,7 +3986,11 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
         if (is_simple_count)
         {
-            merge_count_variant(state);
+            /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
+            /// Guarding the call rather than the lambda keeps the lambda from being instantiated for one -
+            /// its body reads the count out of a mapped slot that a set cell does not have.
+            if constexpr (MapAggregationMethod<Method>)
+                merge_count_variant(state);
         }
         else
         {
