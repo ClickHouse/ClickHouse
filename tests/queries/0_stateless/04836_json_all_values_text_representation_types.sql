@@ -86,7 +86,7 @@ DROP TABLE IF EXISTS t_json_all_values_array_dynamic;
 CREATE TABLE t_json_all_values_array_dynamic
 (
     data JSON(tags Array(Dynamic)),
-    INDEX idx_values JSONAllValues(data) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+    INDEX idx_values JSONAllValues(data) TYPE text(tokenizer = ngrams(3)) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY tuple()
