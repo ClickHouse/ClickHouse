@@ -1,8 +1,9 @@
-text	2
-text global	2
-tokenbf_v1	2
-tokenbf_v1 global	2
-ngrambf_v1	2
-ngrambf_v1 global	2
+text	Granules: 2/250
+text global	Granules: 2/250
+tokenbf_v1	Granules: 2/250
+tokenbf_v1 global	Granules: 2/250
+ngrambf_v1	Granules: 29/250
+ngrambf_v1 global	Granules: 29/250
+tokenbf_v1 global, transform_null_in = 0	Granules: 2/250
 text null in set	11
 text null in set, transform_null_in = 0	1

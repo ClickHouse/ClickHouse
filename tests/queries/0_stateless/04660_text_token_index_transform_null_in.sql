@@ -13,12 +13,16 @@ INSERT INTO t_tokenbf SELECT if(number % 100 = 7, NULL, 'a' || toString(number))
 CREATE TABLE t_ngrambf (a Nullable(String), b String, INDEX i b TYPE ngrambf_v1(3, 256, 2, 0)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
 INSERT INTO t_ngrambf SELECT if(number % 100 = 7, NULL, 'a' || toString(number)), 'word' || toString(number) FROM numbers(1000);
 
-SELECT 'text', count() FROM t_text WHERE x IN ('word5', 'word500') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
-SELECT 'text global', count() FROM t_text WHERE x GLOBAL IN ('word5', 'word500') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
-SELECT 'tokenbf_v1', count() FROM t_tokenbf WHERE (a, b) IN (('a5', 'word5'), ('a500', 'word500')) SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
-SELECT 'tokenbf_v1 global', count() FROM t_tokenbf WHERE b GLOBAL IN ('word5', 'word500') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
-SELECT 'ngrambf_v1', count() FROM t_ngrambf WHERE (a, b) IN (('a5', 'word5'), ('a500', 'word500')) SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
-SELECT 'ngrambf_v1 global', count() FROM t_ngrambf WHERE b GLOBAL IN ('word5', 'word500') SETTINGS force_data_skipping_indices = 'i', transform_null_in = 1;
+SELECT 'text', trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_text WHERE x IN ('word5', 'word500') SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
+SELECT 'text global', trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_text WHERE x GLOBAL IN ('word5', 'word500') SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
+SELECT 'tokenbf_v1', trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tokenbf WHERE (a, b) IN (('a5', 'word5'), ('a500', 'word500')) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
+SELECT 'tokenbf_v1 global', trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tokenbf WHERE b GLOBAL IN ('word5', 'word500') SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
+SELECT 'ngrambf_v1', trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngrambf WHERE (a, b) IN (('a5', 'word5'), ('a500', 'word500')) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
+SELECT 'ngrambf_v1 global', trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngrambf WHERE b GLOBAL IN ('word5', 'word500') SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%';
+
+-- `globalIn` was admitted but never mapped to an RPN function, so it did not prune even at
+-- transform_null_in = 0.
+SELECT 'tokenbf_v1 global, transform_null_in = 0', trim(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_tokenbf WHERE b GLOBAL IN ('word5', 'word500') SETTINGS transform_null_in = 0) WHERE explain LIKE '%Granules: %/%';
 
 -- A NULL in the set matches the column's NULL rows, which the indexes cannot express, so the index
 -- must be refused and all NULL rows returned.
