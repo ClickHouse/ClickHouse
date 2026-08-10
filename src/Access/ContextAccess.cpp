@@ -1146,10 +1146,10 @@ void ContextAccess::checkCanAdministerDefaultRoles() const
             "and such sessions cannot administer roles");
 }
 
-void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
+bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
 {
     if (isGranted(context, flags, parameter))
-        return;
+        return true;
 
     if (!to_check_by_filter.empty())
     {
@@ -1158,10 +1158,19 @@ void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const Acce
         for (const auto & filter : filters)
         {
             if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
-                return;
+                return true;
         }
     }
 
+    return false;
+}
+
+void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
+{
+    if (isGrantedWithFilter(context, flags, parameter, to_check_by_filter))
+        return;
+
+    /// Not granted: let the regular check produce the exception with a proper message.
     checkAccess(context, flags, parameter);
 }
 
