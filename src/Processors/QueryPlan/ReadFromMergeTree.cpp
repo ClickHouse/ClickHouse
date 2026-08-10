@@ -2881,7 +2881,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         && query_info_.prewhere_info->prewhere_actions.isSuitableForConstantFolding())
     {
         auto header = query_info_.prewhere_info->prewhere_actions.updateHeader(
-            StorageSnapshot(data, metadata_snapshot).getSampleBlockForColumns(result.column_names_to_read));
+            StorageSnapshot(data, metadata_snapshot).getSampleBlockForColumns(
+                query_info_.prewhere_info->prewhere_actions.getRequiredColumnsNames()));
         const auto & filter_column = header.getByName(query_info_.prewhere_info->prewhere_column_name).column;
         if (filter_column && ConstantFilterDescription(*filter_column).always_false)
             return std::make_shared<AnalysisResult>(std::move(result));
