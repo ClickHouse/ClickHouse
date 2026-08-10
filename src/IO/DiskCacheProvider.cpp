@@ -548,14 +548,14 @@ ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
     return read(sub);
 }
 
-CacheWriter::CacheSegmentPin DiskCacheWriter::pin(size_t frontier) const
+bool DiskCacheWriter::frontierInPartial(size_t frontier) const
 {
-    /// `frontier` is a file-level half-open lower bound. Find the segment in the
-    /// held holder containing object-local `(frontier - object_file_offset)` and
-    /// return a bare `FileSegmentPtr` into the holder as the pin (keeps it
-    /// non-evictable; the holder still owns it for continued appends).
+    /// True if `frontier` lands inside a held segment still being filled - PARTIAL with some
+    /// committed bytes. `frontier` is file-level; shift to object-local. Diagnostic only: the
+    /// holder keeps such a segment non-releasable, so it survives eviction / a cache drop; this
+    /// just gates the read-ahead pause failpoint.
     if (!holder || frontier < object_file_offset)
-        return nullptr;
+        return false;
     const size_t frontier_obj = frontier - object_file_offset;
 
     for (const auto & segment : *holder)
@@ -563,27 +563,13 @@ CacheWriter::CacheSegmentPin DiskCacheWriter::pin(size_t frontier) const
         const auto & seg_range = segment->range();
         if (!seg_range.contains(frontier_obj))
             continue;
-
-        /// A DOWNLOADING segment is pinnable too: a claim holds the downloader role for
-        /// its whole lifetime and releases it only after the collect, so the pin decision
-        /// can race the release - the same partial segment shows as DOWNLOADING or
-        /// PARTIALLY_DOWNLOADED depending on thread timing. The pin is a plain holder
-        /// reference; taken while still DOWNLOADING it protects the partial across the
-        /// following plan rebuild with no unprotected gap.
         const auto state = segment->state();
         const bool partial = state == FileSegmentState::DOWNLOADING
                           || state == FileSegmentState::PARTIALLY_DOWNLOADED
                           || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
-        if (!partial)
-            return nullptr;
-        if (segment->getCurrentWriteOffset() <= seg_range.left)
-            return nullptr;
-        if (segment->isDetached())
-            return nullptr;
-
-        return std::static_pointer_cast<void>(segment);
+        return partial && segment->getCurrentWriteOffset() > seg_range.left && !segment->isDetached();
     }
-    return nullptr;
+    return false;
 }
 
 bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset)

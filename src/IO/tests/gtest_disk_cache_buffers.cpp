@@ -370,11 +370,10 @@ TEST_F(DiskCacheBuffers, BypassNoWriters)
 }
 
 
-/// (f) pin(frontier): nullptr for empty / at-boundary / fully-downloaded segments,
-/// non-null (a FileSegmentPtr into the held holder) for a partially-downloaded
-/// segment with a committed prefix; the pin keeps it non-evictable (use_count
-/// reflects the extra owner).
-TEST_F(DiskCacheBuffers, PinFrontier)
+/// (f) frontierInPartial(frontier): false for an empty segment, true once the segment holds a
+/// PARTIALLY_DOWNLOADED committed prefix. Diagnostic that gates the read-ahead pause failpoint;
+/// the plan's writer holder is what keeps such a segment non-releasable across eviction / a drop.
+TEST_F(DiskCacheBuffers, FrontierInPartial)
 {
     auto provider = makeProvider();
     auto object = makeObject("obj_f", kSegmentSize);
@@ -383,32 +382,20 @@ TEST_F(DiskCacheBuffers, PinFrontier)
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
-    // EMPTY segment: nothing to pin.
-    EXPECT_EQ(writer.pin(0), nullptr);
+    // EMPTY segment: no partial in flight.
+    EXPECT_FALSE(writer.frontierInPartial(0));
 
-    // Partially fill so a committed prefix exists and the segment stays PARTIAL.
+    // Partially fill: a committed prefix exists and the segment stays PARTIAL across windows.
     const size_t half = kSegmentSize / 2;
     ASSERT_EQ(claimedWrite(writer, makeChain(0, half, 'P')), half);
 
-    // At-boundary frontier (== range().left) → cwo > left holds, so a pin at the
-    // segment start is valid; a pin at the committed frontier is also valid since
-    // it is still inside the segment.
-    auto pin_start = writer.pin(0);
-    EXPECT_NE(pin_start, nullptr);
-    auto pin_mid = writer.pin(half);
-    EXPECT_NE(pin_mid, nullptr);
+    // The frontier now lands inside a partial segment, at its start and at the committed frontier.
+    EXPECT_TRUE(writer.frontierInPartial(0));
+    EXPECT_TRUE(writer.frontierInPartial(half));
 
-    // Both frontiers fall in the SAME single segment, so the two pins alias the
-    // very same `FileSegment`, and each pin is a real extra owner (holder + pin).
-    EXPECT_EQ(pin_start.get(), pin_mid.get());
-    EXPECT_GE(std::static_pointer_cast<FileSegment>(pin_start).use_count(), 2L);
-
-    // The pin is a FileSegmentPtr aliased as void; releasing it must not break the
-    // buffer. Keep it while completing the fill.
+    // The writer still completes the segment across a second window.
     ASSERT_EQ(claimedWrite(writer, makeChain(half, kSegmentSize - half, 'Q')), kSegmentSize - half);
     EXPECT_TRUE(writer.complete());
-    pin_start.reset();
-    pin_mid.reset();
 
     // Finalize the buffer → the segment becomes DOWNLOADED and now probes as a
     // hit (no miss, no writer - a resident range is served by a reader).

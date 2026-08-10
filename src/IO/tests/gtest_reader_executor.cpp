@@ -509,8 +509,8 @@ private:
 /// Held write buffer over a block-aligned miss range in `MockCacheProvider`. `write`
 /// stores whole blocks into the mock store (first-writer-wins, mirroring the legacy
 /// `put`), advancing `committed` even when the bytes were already present (so
-/// `complete` converges). `read` serves the committed prefix; `pin` is a no-op (the
-/// block mock has no evictable in-flight segment).
+/// `complete` converges). `read` serves the committed prefix; `frontierInPartial` is a no-op
+/// (the block mock has no evictable in-flight segment).
 class MockCacheWriter : public CacheWriter
 {
 public:
@@ -2015,8 +2015,8 @@ namespace
 /// between windows. Mirrors `DiskCacheProvider`'s status miss-head behavior:
 ///   - partially downloaded segment -> miss head at current write offset,
 ///   - empty/evicted segment        -> miss head at segment start.
-/// Honors pinning via the write buffer's `pin` using FileCache's releasable()
-/// rule (use_count()==1).
+/// Honors the FileCache releasable() rule: a segment a caller still holds (`use_count > 1`)
+/// is non-evictable; `evictReleasable` drops only the unheld ones.
 class EvictableSegmentMockCache : public DB::tests::SpanProbeMockBase
 {
 public:
@@ -2033,9 +2033,9 @@ public:
     String name() const override { return "EvictableSegmentMock"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
-    /// Evict every segment not currently pinned by a caller; a re-download re-fills
-    /// the bytes from scratch, so drop the stored bytes alongside the frontier.
-    void evictUnpinned()
+    /// Evict every segment not currently held by a caller (releasable: `use_count == 1`); a
+    /// re-download re-fills the bytes from scratch, so drop the stored bytes alongside the frontier.
+    void evictReleasable()
     {
         for (auto & [idx, live] : liveness)
             if (live.use_count() == 1)
@@ -2069,8 +2069,8 @@ public:
     /// idx -> the genuine committed bytes for `[seg_start, seg_start + downloaded[idx])`;
     /// reads return these (no fabricated placeholder). Length tracks `downloaded[idx]`.
     std::unordered_map<size_t, String> bytes;
-    /// idx -> liveness token; an extra ref (held by the executor's pin) makes
-    /// the segment non-evictable.
+    /// idx -> liveness token; an extra ref (held by a caller's write/read buffer) makes
+    /// the segment non-evictable, mirroring FileCache's holder-keeps-it-releasable rule.
     std::unordered_map<size_t, std::shared_ptr<int>> liveness;
     std::vector<std::pair<ByteRange, size_t>> put_log;
     /// idx -> how many times a write buffer was opened for this segment. A segment
@@ -2135,10 +2135,10 @@ private:
 };
 
 /// Held write buffer over ONE aligned (segment) miss range. `write` appends into the
-/// segment append-only at the live `cwo` (with `reject_put` and the `livenessFor`
-/// token), advancing `committed`. `read` serves the genuine committed-prefix bytes.
-/// `pin(frontier)`: a partially-downloaded segment returns its liveness token (so it
-/// survives `evictUnpinned` while the executor holds it).
+/// segment append-only at the live `cwo` (with `reject_put`), holding a `livenessFor` token
+/// so the held segment survives `evictReleasable`, advancing `committed`. `read` serves the
+/// genuine committed-prefix bytes. `frontierInPartial` reports whether `frontier` lands in a
+/// partially-downloaded segment.
 class EvictableSegmentWriteBuffer : public CacheWriter
 {
 public:
@@ -2213,14 +2213,12 @@ public:
         return result;
     }
 
-    CacheSegmentPin pin(size_t frontier) const override
+    bool frontierInPartial(size_t frontier) const override
     {
         const size_t seg = cache.segmentSize();
         const size_t idx = frontier / seg;
         const size_t dl = cache.downloaded.contains(idx) ? cache.downloaded[idx] : 0;
-        if (dl == 0 || dl >= seg)
-            return nullptr;   // nothing partial to pin
-        return std::static_pointer_cast<void>(cache.livenessFor(idx));
+        return dl != 0 && dl < seg;   // some bytes committed, not full -> partial in flight
     }
 
 private:
@@ -2327,8 +2325,8 @@ TEST(ReaderExecutor, HitRunHealsStaleView)
     ASSERT_EQ(got.size(), seg);
 
     /// The sweep drops segment 1 - its plan-held VIEW carries no liveness token, so the
-    /// bytes vanish under the hit classification (segment 0 survives: its writer pins).
-    cache->evictUnpinned();
+    /// bytes vanish under the hit classification (segment 0 survives: its writer holds it).
+    cache->evictReleasable();
 
     consume(executor.readNextWindow());   /// [4096,8192): the stale hit - must heal, not EOF
     while (true)
@@ -2374,8 +2372,8 @@ TEST(ReaderExecutor, SequentialMidReadEvictionHealsByRefetch)
 
     /// Windows 1-4: [0,4000). The 4000-byte cell dwarfs the 1000-byte window, so the
     /// fetch is window-capped and the cell fills PROGRESSIVELY through the plan-held
-    /// writer, completing with the fourth window - complete, hence unpinned and
-    /// evictable.
+    /// writer, completing with the fourth window - complete, hence no longer held and
+    /// releasable.
     for (int w = 0; w < 4; ++w)
     {
         auto chain = executor->readNextWindow();
@@ -2385,9 +2383,9 @@ TEST(ReaderExecutor, SequentialMidReadEvictionHealsByRefetch)
     ASSERT_EQ(cache->downloaded[0], 4000u) << "the cell completes across the windows";
     EXPECT_EQ(result, content);
 
-    /// Eviction pressure drops the COMPLETE (unpinned) cell; re-reading must heal by
+    /// Eviction pressure drops the COMPLETE (releasable) cell; re-reading must heal by
     /// re-fetching, never truncate or serve stale bytes.
-    cache->evictUnpinned();
+    cache->evictReleasable();
     ASSERT_EQ(cache->downloaded[0], 0u) << "a complete cell is evictable";
 
     executor->seek(0);
@@ -2403,76 +2401,6 @@ TEST(ReaderExecutor, SequentialMidReadEvictionHealsByRefetch)
     EXPECT_EQ(result, content);   /// healed by refetch - no corruption / no missing bytes
     /// Destroy the executor so it flushes `stats` into the thread group's ProfileEvents.
     executor.reset();
-}
-
-TEST(ReaderExecutor, PrefetchConsumeRebuildsPinAcrossSegmentBoundary)
-{
-    TestThreadGroup tg;
-
-    /// Windows >= 2 arrive via the machine COLLECT path, where the foreground
-    /// rebuilds the Strategy-A pin under the new frontier. Two 2000-byte
-    /// segments, window 1000: W3 is the first window of segment 1 - the collect
-    /// must re-pin that fresh partial segment, or an eviction sweep right after
-    /// drops it. The INLINE pool runs each worker (its inline cache write AND the
-    /// next look-ahead) synchronously, so `downloaded[1]` is deterministic at the
-    /// eviction point (with a real pool the look-ahead write may not have landed
-    /// yet - the segment would be partially filled, which the pin also survives,
-    /// but the byte assert would race).
-    String content(4000, 'Q');
-    auto source = std::make_shared<MemorySourceReader>(
-        std::unordered_map<String, String>{{"file", content}});
-    StoredObjects objects;
-    objects.emplace_back("file", "", 4000);
-
-    auto cache = std::make_shared<EvictableSegmentMockCache>(2000);
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-    caches.push_back(cache);
-
-    auto pool = std::make_shared<SyncPrefetchPool>();
-    auto limit = std::make_shared<LongConnectionLimit>(10);
-    ReaderExecutor::Options executor_options;
-    executor_options.window_size = 1000;
-    executor_options.min_bytes_for_seek = 0;
-    executor_options.prefetch_pool = pool;
-    executor_options.long_connection_limit = limit;
-    /// Pin the fill-ahead lead to one window so the prefetch advances window-by-window: this
-    /// test validates the cross-segment-boundary pin rebuild on the COLLECT path, which needs a
-    /// fresh PARTIAL segment 1 at W3 - the larger default lead would fetch the whole file at once.
-    executor_options.fill_ahead_lead = 1000;
-    auto executor = std::make_unique<ReaderExecutor>(source, objects, caches, executor_options);
-
-    String result;
-    auto consume = [&](ChainedBuffers chain)
-    {
-        for (const auto & node : chain.getNodes())
-            result.append(node.data(), node.size);
-    };
-
-    /// W1 [0,1000) sync (no machine in flight yet) -> launches the machine for [1000,2000).
-    consume(executor->readNextWindow());
-    /// W2 [1000,2000) collect -> fills segment 0 to 2000 (full).
-    consume(executor->readNextWindow());
-    /// W3 [2000,3000) collect -> first window of segment 1: fills it to cwo=1000 (partial)
-    /// and must RE-PIN it at collect; launches the machine for [3000,4000).
-    consume(executor->readNextWindow());
-
-    /// Evict everything unpinned. The collect pinned segment 1 at W3 when it was a fresh
-    /// partial segment (cwo=1000); the look-ahead worker for [3000,4000) then filled its
-    /// second half INLINE at launch (the worker writes its led segments on the fetch thread),
-    /// so it is fully downloaded now - but the pin (held until the machine's reap) keeps it
-    /// resident through the eviction sweep.
-    cache->evictUnpinned();
-    EXPECT_EQ(cache->downloaded[1], 2000u) << "consume-path pin did not protect the in-flight segment";
-
-    /// Finish and verify no corruption.
-    while (true)
-    {
-        auto chain = executor->readNextWindow();
-        if (chain.empty())
-            break;
-        consume(std::move(chain));
-    }
-    EXPECT_EQ(result, content);
 }
 
 TEST(ReaderExecutor, SegmentFetchedOnceAcrossSmallWindows)
@@ -2528,120 +2456,6 @@ TEST(ReaderExecutor, SegmentFetchedOnceAcrossSmallWindows)
     executor.reset();
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 8000)
         << "the source was re-read";
-}
-
-TEST(ReaderExecutor, PinReleasedOnSeek)
-{
-    String content(8000, 'Q');
-    auto source = std::make_shared<MemorySourceReader>(
-        std::unordered_map<String, String>{{"file", content}});
-    StoredObjects objects;
-    objects.emplace_back("file", "", 8000);
-
-    auto cache = std::make_shared<EvictableSegmentMockCache>(4000);  /// two segments
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-    caches.push_back(cache);
-
-    auto pool = std::make_shared<SyncPrefetchPool>();
-    ReaderExecutor::Options executor_options;
-    executor_options.window_size = 1000;
-    executor_options.min_bytes_for_seek = 0;
-    executor_options.prefetch_pool = pool;
-    executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-    /// One-window lead: the look-ahead machine enters segment 1 one window at a
-    /// time, so the collect at the boundary pins a genuinely PARTIAL segment 1
-    /// (an in-flight pin exists only while a cell is mid-fill - the pump's
-    /// cursor fetches complete their cell and pin nothing).
-    executor_options.fill_ahead_lead = 1000;
-    ReaderExecutor executor(source, objects, caches, executor_options);
-
-    String got;
-    auto consume = [&](ChainedBuffers chain)
-    {
-        for (const auto & node : chain.getNodes())
-            got.append(node.data(), node.size);
-    };
-
-    /// Consume through segment 0 and the first window of segment 1: the machine
-    /// collect at the boundary pinned the in-flight partial segment 1.
-    for (int i = 0; i < 5; ++i)
-    {
-        auto chain = executor.readNextWindow();
-        ASSERT_FALSE(chain.empty());
-        consume(std::move(chain));
-    }
-    EXPECT_EQ(got, content.substr(0, got.size()));
-    cache->evictUnpinned();
-    ASSERT_GT(cache->downloaded[1], 0u) << "in-flight partial segment 1 must be pinned";
-    ASSERT_LT(cache->downloaded[1], 4000u) << "segment 1 must still be mid-fill for the pin to matter";
-
-    executor.seek(0);                                     /// far seek: pin released
-    cache->evictUnpinned();
-    EXPECT_EQ(cache->downloaded[1], 0u)
-        << "pin should be released on seek, allowing eviction of segment 1";
-
-    auto chain = executor.readNextWindow();                /// [0,1000) re-fetches
-    ASSERT_FALSE(chain.empty());
-    String after;
-    for (const auto & node : chain.getNodes())
-        after.append(node.data(), node.size);
-    EXPECT_EQ(after, content.substr(0, after.size()));
-}
-
-TEST(ReaderExecutor, PutFailedTakesNoPin)
-{
-    String content(4000, 'Q');
-    auto source = std::make_shared<MemorySourceReader>(
-        std::unordered_map<String, String>{{"file", content}});
-    StoredObjects objects;
-    objects.emplace_back("file", "", 4000);
-
-    auto cache = std::make_shared<EvictableSegmentMockCache>(4000);
-    cache->reject_put[0] = true;            /// segment 0 never accepts writes
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-    caches.push_back(cache);
-
-    ReaderExecutor::Options executor_options;
-    executor_options.window_size = 1000;
-    executor_options.min_bytes_for_seek = 0;
-    executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
-    ReaderExecutor executor(source, objects, caches, executor_options);
-
-    auto chain = executor.readNextWindow();   /// [0,1000)
-    ASSERT_FALSE(chain.empty());
-    String got;
-    for (const auto & node : chain.getNodes())
-        got.append(node.data(), node.size);
-    EXPECT_EQ(got, content.substr(0, got.size()));   /// data still correct from source
-    EXPECT_FALSE(cache->liveness.contains(0));        /// nothing downloaded -> no pin token
-}
-
-TEST(ReaderExecutor, TransientReadDoesNotPin)
-{
-    String content(4000, 'Q');
-    auto source = std::make_shared<MemorySourceReader>(
-        std::unordered_map<String, String>{{"file", content}});
-    StoredObjects objects;
-    objects.emplace_back("file", "", 4000);
-
-    auto cache = std::make_shared<EvictableSegmentMockCache>(4000);
-    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
-    caches.push_back(cache);
-
-    ReaderExecutor::Options executor_options;
-    executor_options.window_size = 1000;
-    executor_options.min_bytes_for_seek = 0;
-    ReaderExecutor executor(source, objects, caches, executor_options);
-    auto transient = executor.makeTransientForReadAt(0, /*read_size=*/4000);
-    ASSERT_TRUE(transient != nullptr);
-    auto chain = transient->readNextWindow();
-    ASSERT_FALSE(chain.empty());
-
-    /// A `readBigAt` transient does not pin its in-flight segment (it reads its
-    /// bounded extent once and is destroyed, so protecting a partial segment serves
-    /// nothing), so nothing survives an eviction sweep.
-    cache->evictUnpinned();
-    EXPECT_EQ((cache->downloaded.contains(0) ? cache->downloaded[0] : 0u), 0u);
 }
 
 namespace
@@ -3963,15 +3777,14 @@ TEST(ReaderExecutor, MemoryBackedFileBufferIsReadFully)
 }
 
 /// End-to-end: drive the REAL `ReaderExecutor` over a REAL `DiskCacheProvider`
-/// backed by a REAL `FileCache`, force real eviction between windows, and
-/// assert the source connection is opened exactly once (no reset, no re-read).
+/// backed by a REAL `FileCache`, force real eviction between windows, and assert
+/// the streamed bytes survive intact (opened once, no reset, no re-read).
 ///
-/// The other pin tests use a MOCK cache (`EvictableSegmentMockCache`). This test
-/// closes the gap: it proves the executor's in-flight pin keeps the
-/// partially-downloaded segment non-releasable through an eviction flood that
-/// targets the REAL FileCache LRU/reserve machinery — exercising the real
-/// `DiskCacheWriter`/`CacheWriter::pin` path the mock can only approximate.
-TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsPinnedSegment)
+/// It proves the plan's writer holder keeps the partially-downloaded in-flight
+/// segment non-releasable through an eviction flood that targets the REAL FileCache
+/// LRU/reserve machinery: the held `FileSegmentPtr` drives `use_count >= 2`, so
+/// `FileSegmentMetadata::releasable()` is false and the LRU sweep skips it.
+TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsHeldSegment)
 {
     DB::ServerUUID::setRandomForUnitTests();
 
@@ -4019,7 +3832,7 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsPinnedSegment)
     settings[DB::FileCacheSetting::max_file_segment_size] = 8 * 1024;
     /// Alignment == segment size keeps the streamed segment PARTIALLY_DOWNLOADED
     /// across windows (a smaller alignment would shrink it to DOWNLOADED on
-    /// complete, removing the state the pin protects).
+    /// complete, removing the partial in-flight state the holder keeps non-releasable).
     settings[DB::FileCacheSetting::boundary_alignment] = 8 * 1024;
     settings[DB::FileCacheSetting::load_metadata_asynchronously] = false;
     settings[DB::FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
@@ -4097,8 +3910,8 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsPinnedSegment)
         flood(round++);   // eviction pressure before the next window
     }
 
-    /// The streamed segment stayed pinned through every flood, so its bytes were
-    /// served intact rather than re-read or lost to eviction.
+    /// The streamed segment stayed held (non-releasable) through every flood, so its bytes
+    /// were served intact rather than re-read or lost to eviction.
     EXPECT_EQ(result, content);
 }
 

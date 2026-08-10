@@ -46,9 +46,9 @@ namespace DB::ErrorCodes
 
 namespace DB::FailPoints
 {
-    /// Pauses after a sequential window has filled and pinned its in-flight
-    /// FileCache segment, so a test can drop/evict the cache and verify the
-    /// pinned segment survives. No-op unless enabled via `SYSTEM ENABLE FAILPOINT`.
+    /// Pauses after a sequential window has filled a partial in-flight FileCache
+    /// segment, so a test can drop/evict the cache and verify the held segment
+    /// survives (kept non-releasable by the plan's writer). No-op unless enabled.
     extern const char reader_executor_pause_after_window[];
     /// Pauses after a cache handle reported a hit but before `get` reads it, so a
     /// test can drop the cache in that window and verify the hit is still honored
@@ -268,7 +268,7 @@ ReaderExecutor::~ReaderExecutor()
 /// One window of bytes, or empty at EOF. At EOF an in-flight prefetch is drained FIRST: an
 /// unknown-size worker can latch `reached_eof` on a short read while still holding the file's
 /// final bytes, so reporting EOF before draining it would drop them. Only with nothing in
-/// flight is EOF reported (releasing the fill pin). Otherwise the plan is brought up to date
+/// flight is EOF reported. Otherwise the plan is brought up to date
 /// and the position's window is served - a resident run streamed from the held cache handle, or an
 /// in-flight / synchronous gap fetch.
 ChainedBuffers ReaderExecutor::readNextWindow()
@@ -286,9 +286,6 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     if (atEnd() && !machine)
     {
         LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
-        /// Drop the in-flight fill pin at EOF instead of waiting for the caller to drop the
-        /// `PipelineReadBuffer`; a subsequent seek-back re-establishes it.
-        fill_lane.pin.reset();
         return {};
     }
 
@@ -347,10 +344,6 @@ ChainedBuffers ReaderExecutor::finishWindow(ChainedBuffers chain)
         chain.range().size, chain.getNodes().size(), position);
 
     /// Unknown-size EOF is latched by a short read here, not the pre-read gate, and the caller
-    /// stops on the empty chain without a follow-up call - so drop the in-flight fill pin now
-    /// rather than leaking it.
-    if (reached_eof)
-        fill_lane.pin.reset();
 
     prefetch();
 
@@ -416,9 +409,6 @@ void ReaderExecutor::seek(size_t new_position)
     /// post-seek plan's predicted reads feed from here.
     fetch_tracker.recordSeek(new_physical);
 
-    /// A seek away from the current frontier strands the in-flight fill segment;
-    /// drop its pin (the next window re-establishes it).
-    fill_lane.pin.reset();
 
     position = new_position;
     reached_eof = false;
@@ -820,24 +810,16 @@ void ReaderExecutor::collectInFlightInto()
     }
 
     /// The worker committed its led bytes per tile, so the collect has no window to
-    /// assemble - the display serves the cells. What remains here: pin the in-flight
-    /// segment at the frontier the fetch actually reached (an interrupted or
-    /// residue-capped step stops short of the window end), retry the refused residue
+    /// assemble - the display serves the cells. What remains here: retry the refused residue
     /// into the writers (a role a sibling held at fetch time may be free now; evicted
     /// space may have opened), and hand the caller what is STILL homeless - the bank is
     /// its only route to the display.
-    if (!reached_eof && !is_transient)
-    {
-        fill_lane.pin = writerPinAt(std::min(m->physical_window.end(), fetched_end));
-
-        /// Test hook: pause here while the in-flight segment is pinned, so a test can
-        /// drop/evict the cache and observe that the pinned segment survives. No-op
-        /// unless enabled.
-        if (fill_lane.pin)
-            FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_window);
-    }
-    else
-        fill_lane.pin.reset();
+    /// Test hook: pause when the fetch frontier lands inside a partial segment, so a test can
+    /// drop the cache and observe that the plan's writer holder keeps the partial non-releasable
+    /// (it survives). No-op unless the failpoint is enabled.
+    if (!reached_eof && !is_transient
+        && frontierInPartial(std::min(m->physical_window.end(), fetched_end)))
+        FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_window);
 
     ChainedBuffers residue = std::move(m->fetched);
     runPutStep(*m, residue);   /// `m` stays alive - the still-refused scan below reads its views
@@ -886,15 +868,6 @@ static size_t coveredPrefixEnd(const IntervalSet & cov, ByteRange range)
 {
     auto gaps = cov.subtract(range);
     return gaps.empty() ? range.end() : gaps.front().offset;
-}
-
-/// Pin the in-flight segment under `frontier` if `writer` covers it - the one
-/// statement of the pin rule; the writer lists differ per call site.
-static CacheWriter::CacheSegmentPin pinIfCovering(CacheWriter * writer, size_t frontier)
-{
-    if (writer && frontier >= writer->range().offset && frontier < writer->range().end())
-        return writer->pin(frontier);
-    return {};
 }
 
 /// Cell-edge fetch shaping: the widest `into` cell STRICTLY containing `pos`
@@ -1743,22 +1716,7 @@ void ReaderExecutor::runPutStep(const FetchMachine & m, const ChainedBuffers & a
 
     try
     {
-        const size_t fill_end = assembled.empty()
-            ? m.physical_window.offset
-            : std::min(m.physical_window.end(), assembled.range().end());
         pushChainToWriters(m.writer_views, m.physical_window, assembled, stats);
-        /// Pin the partial segment under the just-written frontier (the lane's slot):
-        /// the collect pinned BEFORE this fill landed, so a fresh segment was not pinnable
-        /// there. A `readBigAt` transient reads its bounded extent once and is destroyed,
-        /// so it pins NOTHING (mirrors the collect's `!is_transient` guard) - else its
-        /// cell survives an eviction sweep that should drop it.
-        if (!is_transient)
-            for (const auto & view : m.writer_views)
-                if (auto pin = pinIfCovering(view.writer, fill_end))
-                {
-                    fill_lane.pin = std::move(pin);
-                    break;
-                }
     }
     catch (...)
     {
@@ -2717,14 +2675,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// is nothing deferred to drain here.
     chassert(!machine);
 
-    /// Reset the in-flight segment pin BEFORE tearing down the held buffers
-    /// (`[CF-plan-rebuild]`): the pin aliases a held write buffer's own bare segment ref,
-    /// so dropping it first makes `~DiskCacheWriter` the LAST owner and
-    /// `FileSegment::complete` effective (otherwise a PARTIALLY_DOWNLOADED segment would
-    /// stay un-shrunk and the next writer upgrade would alias the same segment in two
-    /// buffers). The pin is re-established through the NEW buffer at the next collect.
-    fill_lane.pin.reset();
-
     /// Release the PREVIOUS plan's held buffers FIRST: each held write buffer's
     /// destructor finalizes its segments (`FileSegment::complete`) and each `~CacheView`
     /// runs the deferred LRU-bump - AFTER those writes, since the bump is sequenced last
@@ -3061,13 +3011,14 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
     return ByteRange{physical_start, want};
 }
 
-CacheWriter::CacheSegmentPin ReaderExecutor::writerPinAt(size_t frontier) const
+bool ReaderExecutor::frontierInPartial(size_t frontier) const
 {
     for (const auto & buf : read_plan.tiers)
         for (const auto & w : buf.view->misses())
-            if (auto pin = pinIfCovering(w.writer.get(), frontier))
-                return pin;
-    return {};
+            if (w.writer && frontier >= w.writer->range().offset && frontier < w.writer->range().end()
+                && w.writer->frontierInPartial(frontier))
+                return true;
+    return false;
 }
 
 // ─── Machine lifecycle ─────────────────────────────────────────────────────

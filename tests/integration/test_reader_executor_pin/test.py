@@ -1,15 +1,16 @@
-"""In-flight segment pin of the `ReaderExecutor` (`use_reader_executor`) against
-`SYSTEM DROP FILESYSTEM CACHE`.
+"""In-flight segment protection of the `ReaderExecutor` (`use_reader_executor`)
+against `SYSTEM DROP FILESYSTEM CACHE`.
 
-While a sequential scan is paused mid-window with its in-flight FileCache segment
-pinned, a concurrent cache drop must NOT evict that segment (it is non-releasable
-while pinned). Once the scan finishes and the pin is released, a drop clears the
-cache, and the scan returns correct results despite the mid-scan drop.
+While a sequential scan is paused mid-window with a partially-filled FileCache
+segment still held by the plan's writer, a concurrent cache drop must NOT evict
+that segment: a held segment is non-releasable (`use_count > 1`), so the drop
+(`removeAllReleasable`) skips it. Once the scan finishes and the plan releases
+it, a drop clears the cache, and the scan returns correct results despite the
+mid-scan drop.
 
 The pause is injected via the `reader_executor_pause_after_window` failpoint,
-which fires only when a segment is actually pinned. A pin exists only when a
-read-ahead machine's window ends strictly inside a partially filled cache
-segment, which requires (a) prefetch machines to run at all - the executor
+which fires only when the fetch frontier lands strictly inside a partially filled
+cache segment (`frontierInPartial`), which requires (a) prefetch machines to run at all - the executor
 suppresses them under high memory pressure, which is why this scenario lives in
 an integration test on a dedicated node rather than a stateless test on a shared
 pressured server - and (b) geometry where a fetch cut lands mid-segment:

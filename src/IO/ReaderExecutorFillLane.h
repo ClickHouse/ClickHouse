@@ -24,9 +24,6 @@ public:
     /// degrades to a one-shot: "the foreground holds no connection mid-flight" is lane
     /// state, not a chassert at every collect site.
     std::optional<LongConnection> conn;
-    /// Pin on the partial segment under the fill frontier (plan-scoped: dropped BEFORE
-    /// the plan's writers tear down - the pin aliases a held write buffer's segment).
-    CacheWriter::CacheSegmentPin pin;
     bool conn_lent = false;
 
     void lend(ReaderExecutorFetchMachine & m)

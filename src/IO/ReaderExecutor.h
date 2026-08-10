@@ -794,7 +794,7 @@ private:
     /// Pin the partial segment under `frontier` from the first held write
     /// buffer whose `range` contains it and whose `pin` is non-null. Empty
     /// when nothing partial is there.
-    CacheWriter::CacheSegmentPin writerPinAt(size_t frontier) const;
+    bool frontierInPartial(size_t frontier) const;
 
     // ─── Machine lifecycle ───────────────────────────────────────────────
 

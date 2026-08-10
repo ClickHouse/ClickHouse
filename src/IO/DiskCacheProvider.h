@@ -123,7 +123,7 @@ public:
     ChainedBuffers read(ByteRange sub) override;
     FillClaim claim(ByteRange window) override;
     ChainedBuffers waitAndReadSiblingLed(ByteRange sub) override;
-    CacheWriter::CacheSegmentPin pin(size_t frontier) const override;
+    bool frontierInPartial(size_t frontier) const override;
 
 private:
     bool tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset);
