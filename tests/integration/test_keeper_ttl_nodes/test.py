@@ -164,6 +164,11 @@ def test_many_nodes_with_different_ttls():
         node1_zk = get_fake_zk(cluster, "node1")
         node2_zk = get_fake_zk(cluster, "node2")
 
+        # Created before the nodes below, so it is a collection candidate for every garbage
+        # collector pass that can select any of them: an engine removing a node before its
+        # destroy_time removes this one too, and the waits below cannot finish first.
+        node1_zk.create("/canary", b"canary", ttl=600000)
+
         # Ten nodes with distinct TTLs; each must be collected. The relative expiry order is
         # asserted at exact instants in CoordinationTest.TestTTLSiblingExpiryOrdering, since
         # observing it here would race the collector. Keep ttl_step_ms low: the longest TTL is
@@ -172,16 +177,17 @@ def test_many_nodes_with_different_ttls():
         for i in range(10):
             node1_zk.create(f"/n{i}", str(i).encode(), ttl=ttl_step_ms * (i + 1))
 
-        # Created last and awaited on both replicas, so each has applied the creates above and a
-        # later absence means collected rather than not-yet-applied. Its TTL is far past this
-        # test's upper bound, so an engine collecting before destroy_time removes it too.
-        node1_zk.create("/sentinel", b"sentinel", ttl=600000)
-        wait_nodes_exist([node1_zk, node2_zk], ["/sentinel"])
+        # Created last and awaited on both replicas, so each has applied every create above and a
+        # later absence means collected rather than not-yet-applied.
+        node1_zk.create("/barrier", b"barrier", ttl=600000)
+        wait_nodes_exist([node1_zk, node2_zk], ["/barrier"])
 
         wait_nodes_gone([node1_zk, node2_zk], [f"/n{i}" for i in range(10)])
 
-        assert node1_zk.exists("/sentinel")
-        assert node2_zk.exists("/sentinel")
+        assert node1_zk.exists("/canary")
+        assert node2_zk.exists("/canary")
+        assert node1_zk.exists("/barrier")
+        assert node2_zk.exists("/barrier")
     finally:
         cluster.shutdown()
         if node1_zk:
@@ -209,13 +215,20 @@ def test_sibling_ttl_independence():
         node1_zk = get_fake_zk(cluster, "node1")
         node2_zk = get_fake_zk(cluster, "node2")
         node1_zk.create("/root", b"root")
+
+        # Created before the TTL children below, so it is a collection candidate for every garbage
+        # collector pass that can select either of them: an engine removing a node before its
+        # destroy_time removes this one too. Kept outside /root so it cannot interact with the
+        # child count of the subtree under test.
+        node1_zk.create("/canary", b"canary", ttl=600000)
+
         node1_zk.create("/root/a", b"a", ttl=1000)
         node1_zk.create("/root/b", b"b", ttl=3000)
 
-        # See the same node in test_many_nodes_with_different_ttls. Kept outside /root so it
-        # cannot interact with the child count of the subtree under test.
-        node1_zk.create("/sentinel", b"sentinel", ttl=600000)
-        wait_nodes_exist([node1_zk, node2_zk], ["/sentinel"])
+        # Created last and awaited on both replicas, so each has applied every create above and a
+        # later absence means collected rather than not-yet-applied.
+        node1_zk.create("/barrier", b"barrier", ttl=600000)
+        wait_nodes_exist([node1_zk, node2_zk], ["/barrier"])
 
         # Both TTL children must be collected on both replicas. Their relative expiry order is
         # asserted at exact instants in CoordinationTest.TestTTLSiblingExpiryOrdering; asserting
@@ -225,8 +238,10 @@ def test_sibling_ttl_independence():
         # A node created without a TTL has no destroy_time, so no delay can make it disappear.
         assert node1_zk.exists("/root")
         assert node2_zk.exists("/root")
-        assert node1_zk.exists("/sentinel")
-        assert node2_zk.exists("/sentinel")
+        assert node1_zk.exists("/canary")
+        assert node2_zk.exists("/canary")
+        assert node1_zk.exists("/barrier")
+        assert node2_zk.exists("/barrier")
     finally:
         cluster.shutdown()
         if node1_zk:
