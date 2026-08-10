@@ -948,7 +948,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
         /*content=*/statement,
         fsync_metadata);
 
-    /// Makes the metadata replace below durable (#111348). tmp and final share one directory.
+    /// The replace below changes one directory entry; tmp and final share that directory.
     SyncGuardPtr metadata_dir_sync_guard;
     if (fsync_metadata)
         metadata_dir_sync_guard = default_db_disk->getDirectorySyncGuard(metadata_file_path.parent_path().string());

@@ -745,9 +745,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     const bool managed_by_shared_catalog = false;
 #endif
 
-    /// Makes the `<db>.sql` unlink below durable (#111348). Must be opened here, before the
-    /// destructive shutdown()/drop() (which for DatabaseReplicated already drops Keeper metadata),
-    /// so a directory-open failure can still reattach; the guard fsyncs on scope exit.
+    /// Must be opened before the destructive shutdown()/drop() below, which for
+    /// DatabaseReplicated already drops the Keeper metadata: while it is still only this open
+    /// that can fail, the database can be reattached.
     SyncGuardPtr metadata_dir_sync_guard;
     if (drop && !managed_by_shared_catalog && local_context->getSettingsRef()[Setting::fsync_metadata])
     {
@@ -875,7 +875,7 @@ void DatabaseCatalog::updateMetadataFile(const String & database_name, const AST
 
     try
     {
-        /// Makes the metadata replace below durable (#111348). tmp and final share one directory.
+        /// The replace below changes one directory entry; tmp and final share that directory.
         SyncGuardPtr metadata_dir_sync_guard;
         if (fsync_metadata)
             metadata_dir_sync_guard = default_db_disk->getDirectorySyncGuard(metadata_file_path.parent_path().string());
@@ -1525,10 +1525,8 @@ void DatabaseCatalog::undropTable(StorageID table_id, bool fsync_metadata, std::
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
         String table_metadata_path = getPathForMetadata(it_dropped_table->table_id);
 
-        /// UNDROP is the inverse of the DROP commit rename: make it durable too, so the table
-        /// does not silently revert to the dropped state after a power loss (see #111348). Sync
-        /// the source (`metadata_dropped`) and target (the database metadata) directories; the
-        /// guards fsync on scope exit, after the move below.
+        /// The move below changes an entry in both the source (`metadata_dropped`) and the
+        /// target (the database metadata) directory.
         std::vector<SyncGuardPtr> dir_sync_guards;
         if (fsync_metadata)
         {

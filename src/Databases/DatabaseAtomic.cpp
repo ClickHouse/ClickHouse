@@ -38,15 +38,9 @@ namespace Setting
 
 namespace
 {
-    /// Opens directory sync guards for the given (deduplicated) disk-relative directory paths.
-    /// A metadata rename only changes a directory entry, which is durable on the storage device
-    /// only once the directory itself is fsync'd; without that an acknowledged Atomic DDL can
-    /// silently revert after a power loss (see #111348). The caller holds the returned guards
-    /// across the rename; each fdatasyncs its directory on destruction. The fds are opened here
-    /// (before the rename, and before any ZooKeeper commit) so an open failure surfaces before
-    /// the commit point rather than after it. Same primitive the part-commit path uses for
-    /// `fsync_part_directory` (`DataPartStorageOnDiskBase::doRename`). Returns an empty vector
-    /// (no-op) for disks without directory sync support (e.g. object storage).
+    /// Each returned guard fdatasyncs one of `dirs` on destruction, so the caller must hold them
+    /// across the rename whose directory entries must become durable. Opening the fds here keeps
+    /// a failure before the caller's commit point. Empty for disks without directory sync support.
     std::vector<SyncGuardPtr> makeDirectorySyncGuards(const DiskPtr & disk, const std::vector<String> & dirs)
     {
         std::vector<SyncGuardPtr> guards;
@@ -256,15 +250,9 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
         const String dropped_dir = parentDir(table_metadata_path_drop);
         db_disk->createDirectories(dropped_dir);
 
-        /// Sync every directory whose entry the rename changes so DROP survives a power loss
-        /// (see #111348): the source directory (loses the table `.sql`), the target
-        /// `metadata_dropped` (gains it), and `metadata_dropped`'s own parent -- the latter
-        /// because on a custom metadata disk `metadata_dropped` may have been created without
-        /// its directory entry being fsync'd (e.g. by an earlier `fsync_metadata = 0` drop),
-        /// so making only its contents durable could still lose the directory itself.
-        /// Guards are opened before the rename (and before the ZooKeeper commit, so a rare
-        /// directory-open failure does not widen the local-vs-ZooKeeper desync window the
-        /// NOTE below warns about) and fsync on scope exit.
+        /// The rename below changes an entry in all three directories: the source loses the
+        /// table `.sql`, `metadata_dropped` gains it, and `metadata_dropped`'s own entry may
+        /// itself not be durable yet, so syncing only its contents could still lose it.
         std::vector<SyncGuardPtr> dir_sync_guards;
         if (fsync_metadata)
             dir_sync_guards = makeDirectorySyncGuards(
@@ -836,8 +824,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     auto old_metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
     auto new_metadata_file_path = DatabaseCatalog::getMetadataFilePath(new_name);
     auto default_db_disk = getContext()->getDatabaseDisk();
-    /// Makes the `<db>.sql` rename below durable (#111348). Same-name-space source and target
-    /// dedup to a single guard.
+    /// Both database `.sql` files live in the same directory, which dedups to a single guard.
     std::vector<SyncGuardPtr> db_dir_sync_guards;
     if (query_context->getSettingsRef()[Setting::fsync_metadata])
         db_dir_sync_guards = makeDirectorySyncGuards(
