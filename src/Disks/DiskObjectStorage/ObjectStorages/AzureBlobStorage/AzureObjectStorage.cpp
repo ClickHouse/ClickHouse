@@ -331,7 +331,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
         std::move(scheduler));
 }
 
-UInt64 AzureObjectStorage::getWriteBufferMemoryCeiling() const
+UInt64 AzureObjectStorage::getWriteBufferMemoryCeiling(const WriteSettings & write_settings) const
 {
     /// On the ADLS Gen2 endpoint, writeObject returns a WriteBufferFromAzureDataLakeStorage: a single
     /// buffer sized by buf_size (see its constructor forwarding to WriteBufferFromFileBase), flushed
@@ -346,9 +346,17 @@ UInt64 AzureObjectStorage::getWriteBufferMemoryCeiling() const
     /// getMultipartUploadMemory from the same allocation settings and in-flight limit the writer itself uses
     /// - so a strict_upload_part_size disk (a fixed-size allocation policy) and an unlimited
     /// max_inflight_parts_for_one_file are both accounted for. These come from this storage's own request
-    /// settings (background writes do not apply query/session settings).
+    /// settings (background writes do not apply query/session settings). The in-flight limit is the
+    /// EFFECTIVE one: writeObject hands the writer a parallel-upload scheduler only when
+    /// azure_allow_parallel_part_upload is set, and without one every upload runs inline, so the writer
+    /// cannot hold the configured number of detached buffers at once (see getEffectiveMaxInflightParts).
+    /// That flag comes from the write settings of the writer's caller, not from the disk configuration.
     const auto settings_ptr = settings.get();
-    return getMultipartUploadMemory(getUploadBufferAllocationSettings(*settings_ptr), settings_ptr->max_inflight_parts_for_one_file)
+    return getMultipartUploadMemory(
+               getUploadBufferAllocationSettings(*settings_ptr),
+               getEffectiveMaxInflightParts(
+                   settings_ptr->max_inflight_parts_for_one_file,
+                   patchSettings(write_settings).azure_allow_parallel_part_upload))
         .ceiling;
 }
 

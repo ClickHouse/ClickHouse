@@ -85,6 +85,10 @@ namespace Setting
     extern const SettingsUInt64 azure_max_upload_part_size;
     extern const SettingsUInt64 azure_strict_upload_part_size;
     extern const SettingsUInt64 azure_max_inflight_parts_for_one_file;
+    extern const SettingsUInt64 min_insert_block_size_rows;
+    extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsBool s3_allow_parallel_part_upload;
+    extern const SettingsBool azure_allow_parallel_part_upload;
 }
 
 /// Do not start to merge parts, if free space is less than sum size of parts times specified coefficient.
@@ -1032,16 +1036,22 @@ UInt64 estimateNeededMemoryForMerge(
         s3_allocation.min_size = query_settings[Setting::s3_min_upload_part_size];
         s3_allocation.max_size = query_settings[Setting::s3_max_upload_part_size];
         s3_allocation.max_single_size = query_settings[Setting::s3_max_single_part_upload_size];
-        const auto s3_memory
-            = getMultipartUploadMemory(s3_allocation, query_settings[Setting::s3_max_inflight_parts_for_one_file]);
+        const auto s3_memory = getMultipartUploadMemory(
+            s3_allocation,
+            getEffectiveMaxInflightParts(
+                query_settings[Setting::s3_max_inflight_parts_for_one_file],
+                query_settings[Setting::s3_allow_parallel_part_upload]));
 
         BufferAllocationPolicy::Settings azure_allocation;
         azure_allocation.strict_size = query_settings[Setting::azure_strict_upload_part_size];
         azure_allocation.min_size = query_settings[Setting::azure_min_upload_part_size];
         azure_allocation.max_size = query_settings[Setting::azure_max_upload_part_size];
         azure_allocation.max_single_size = query_settings[Setting::azure_max_single_part_upload_size];
-        const auto azure_memory
-            = getMultipartUploadMemory(azure_allocation, query_settings[Setting::azure_max_inflight_parts_for_one_file]);
+        const auto azure_memory = getMultipartUploadMemory(
+            azure_allocation,
+            getEffectiveMaxInflightParts(
+                query_settings[Setting::azure_max_inflight_parts_for_one_file],
+                query_settings[Setting::azure_allow_parallel_part_upload]));
 
         remote_write_buffer_size = std::max<UInt64>(
             {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, s3_memory.ceiling, azure_memory.ceiling});
@@ -1378,7 +1388,7 @@ UInt64 estimateNeededMemoryForMerge(
     /// getSettings(&projection.settings_changes). So this resolution is parameterized by the effective
     /// settings and the written columns, and the projection pricing below instantiates it again with the
     /// projection's own settings and columns instead of reusing the parent table's size.
-    const auto resolve_local_write_buffer_size = [&](const MergeTreeSettings & writer_settings,
+    const auto resolve_max_compress_block_size = [&](const MergeTreeSettings & writer_settings,
                                                      const NamesAndTypesList & written_columns,
                                                      const ColumnsDescription & written_columns_description)
     {
@@ -1401,9 +1411,14 @@ UInt64 estimateNeededMemoryForMerge(
             max_compress_block_size = std::max(
                 max_compress_block_size, std::min<UInt64>(column_override, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE));
         }
-        return 2 * max_compress_block_size;
+        return max_compress_block_size;
     };
-    const UInt64 local_write_buffer_size = resolve_local_write_buffer_size(settings, output_columns, columns_description);
+
+    /// One output stream writes through a compressor block of max_compress_block_size and a file buffer the
+    /// writer creates at that same size (the stream's own writeFile call), so its worst case is twice the
+    /// block size.
+    const UInt64 base_max_compress_block_size = resolve_max_compress_block_size(settings, output_columns, columns_description);
+    const UInt64 local_write_buffer_size = 2 * base_max_compress_block_size;
 
     /// Worst case: every stream allocates all of its buffers in full. A zero remote_write_buffer_size
     /// means the output is not written through multipart upload buffers (a local disk, a known remote disk
@@ -1448,22 +1463,43 @@ UInt64 estimateNeededMemoryForMerge(
     /// non-adaptive stream the adaptive initial size under-reserves its eagerly allocated full-size buffers.
     const UInt64 min_columns_for_adaptive = settings[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer];
     const bool adaptive_for_dynamic_subcolumns = settings[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns];
-    const UInt64 adaptive_eager_buffers_per_stream = 2 * settings[MergeTreeSetting::adaptive_write_buffer_initial_size];
+    /// The buffers ONE stream allocates before any data flows through it: its compressor block, plus the
+    /// file buffer its writer opens. On multipart object storage that file buffer does not start at the
+    /// stream's own size: WriteBufferFromS3 / WriteBufferFromAzureBlobStorage cap their initial buffer at
+    /// DBMS_DEFAULT_BUFFER_SIZE (their constructors hand min(buf_size, DBMS_DEFAULT_BUFFER_SIZE) to
+    /// WriteBufferFromFileBase) and only grow it with the data written into it, so charging the full block
+    /// size for it over-reserves every stream by (max_compress_block_size - 1 MiB) as soon as a background
+    /// profile or a column-level override raises the block size above 1 MiB - on a wide object-storage
+    /// merge enough to close the admission gate on merges that fit. A zero remote_write_buffer_size means
+    /// the output is not written through such a writer at all (a local disk, a remote disk without multipart
+    /// upload buffers such as HDFS or the Azure ADLS Gen2 endpoint, or the pre-disk-selection guess), and
+    /// there the file buffer really is opened at the stream's full size.
+    const auto eager_stream_buffers = [&](UInt64 compress_block_size)
+    {
+        const UInt64 file_buffer_size = remote_write_buffer_size != 0
+            ? std::min<UInt64>(compress_block_size, DBMS_DEFAULT_BUFFER_SIZE)
+            : compress_block_size;
+        return compress_block_size + file_buffer_size;
+    };
+    const UInt64 adaptive_eager_buffers_per_stream
+        = eager_stream_buffers(settings[MergeTreeSetting::adaptive_write_buffer_initial_size]);
     const auto non_adaptive_stream_count = [&](const WriterStreamCounts & counts, size_t writer_columns) -> size_t
     {
         if (min_columns_for_adaptive != 0 && writer_columns >= min_columns_for_adaptive)
             return 0;
         return adaptive_for_dynamic_subcolumns ? counts.non_adaptive : counts.total;
     };
-    /// non_adaptive_buffer_size is the writer's own per-stream size: the parent table's for the base
-    /// output, the projection's own for a rebuilt projection whose definition overrides
-    /// max_compress_block_size. The adaptive sizes are not per-writer - none of the settings behind them
-    /// is allowed in a projection's WITH SETTINGS (see ALLOWED_PROJECTION_SETTINGS), so every writer
-    /// resolves them from the table settings.
-    const auto eager_write_buffers = [&](const WriterStreamCounts & counts, size_t writer_columns, UInt64 non_adaptive_buffer_size) -> UInt64
+    /// non_adaptive_compress_block_size is the writer's own max_compress_block_size: the parent table's for
+    /// the base output, the projection's own for a rebuilt projection whose definition overrides it. The
+    /// adaptive sizes are not per-writer - none of the settings behind them is allowed in a projection's
+    /// WITH SETTINGS (see ALLOWED_PROJECTION_SETTINGS), so every writer resolves them from the table
+    /// settings.
+    const auto eager_write_buffers
+        = [&](const WriterStreamCounts & counts, size_t writer_columns, UInt64 non_adaptive_compress_block_size) -> UInt64
     {
         const size_t non_adaptive = non_adaptive_stream_count(counts, writer_columns);
-        return non_adaptive * non_adaptive_buffer_size + (counts.total - non_adaptive) * adaptive_eager_buffers_per_stream;
+        return non_adaptive * eager_stream_buffers(non_adaptive_compress_block_size)
+            + (counts.total - non_adaptive) * adaptive_eager_buffers_per_stream;
     };
 
     /// A stream whose data volume this estimate cannot derive from the source parts - a rebuilt projection,
@@ -1519,7 +1555,7 @@ UInt64 estimateNeededMemoryForMerge(
 
     const UInt64 default_filled_term = 3 * default_filled_value_bytes;
 
-    const UInt64 output_data_bound = eager_write_buffers(output_stream_counts, output_columns.size(), local_write_buffer_size)
+    const UInt64 output_data_bound = eager_write_buffers(output_stream_counts, output_columns.size(), base_max_compress_block_size)
         + 3 * sum_input_bytes_uncompressed
         + default_filled_term;
 
@@ -1679,7 +1715,9 @@ UInt64 estimateNeededMemoryForMerge(
                     gathering_streams_total += column_stream_counts.total;
                     max_gathering_column_streams = std::max(max_gathering_column_streams, column_stream_counts.total);
                     max_gathering_column_eager_buffers
-                        = std::max(max_gathering_column_eager_buffers, eager_write_buffers(column_stream_counts, 1, local_write_buffer_size));
+                        = std::max(
+                            max_gathering_column_eager_buffers,
+                            eager_write_buffers(column_stream_counts, 1, base_max_compress_block_size));
 
                     UInt64 column_uncompressed = 0;
                     for (const auto & part : source_and_patch_parts)
@@ -1701,9 +1739,10 @@ UInt64 estimateNeededMemoryForMerge(
                 /// can be the ones kept alive), so its eager buffers are priced at the full non-adaptive
                 /// size - the direction that can only over-price, and bounded by
                 /// max_merge_delayed_streams_for_parallel_write.
-                const UInt64 vertical_data_bound = eager_write_buffers(merging_stream_counts, merging_columns.size(), local_write_buffer_size)
+                const UInt64 vertical_data_bound
+                    = eager_write_buffers(merging_stream_counts, merging_columns.size(), base_max_compress_block_size)
                     + max_gathering_column_eager_buffers
-                    + delayed_streams * local_write_buffer_size
+                    + delayed_streams * eager_stream_buffers(base_max_compress_block_size)
                     + 3 * (merging_uncompressed + max_gathering_column_uncompressed)
                     + default_filled_term;
 
@@ -1866,8 +1905,9 @@ UInt64 estimateNeededMemoryForMerge(
                 /// The temp-part writer's per-stream buffers are sized by the projection's own
                 /// max_compress_block_size and by the projection columns' own column-level overrides
                 /// (the projection metadata carries them), not by the parent table's.
-                const UInt64 projection_local_write_buffer_size = resolve_local_write_buffer_size(
+                const UInt64 projection_max_compress_block_size = resolve_max_compress_block_size(
                     projection_settings, projection_column_list, projection.metadata->getColumns());
+                const UInt64 projection_local_write_buffer_size = 2 * projection_max_compress_block_size;
 
                 /// A temporary projection part is written as Wide only when it is big enough:
                 /// writeTempProjectionPart passes the projected block's size to choosePartFormat, which picks
@@ -1934,13 +1974,60 @@ UInt64 estimateNeededMemoryForMerge(
                     const UInt64 missing_rows = countRowsMissingColumn(future_part.parts, part_source_name(required_column));
                     if (missing_rows == 0)
                         continue;
-                    const auto column = columns_description.tryGetColumn(GetColumnsOptions::AllPhysical, required_column);
+                    /// A rebuilt projection can require an input that is NOT a physical table column, and
+                    /// the merge synthesizes it for the rows of every part that does not store it just the
+                    /// same: a commit-order projection requires the persisted `_block_number` /
+                    /// `_block_offset` virtuals, which parts written before those settings were enabled do
+                    /// not store (they are in output_columns, appended above, not in the metadata's
+                    /// columns), and a projection can require a SUBCOLUMN (SELECT json.a), which
+                    /// AllPhysical alone does not resolve either. Leaving those out would keep
+                    /// projection_uncompressed_bytes below the volume the rebuild really writes - one value
+                    /// per merged row - and could misclassify the temporary parts as Compact, shrinking both
+                    /// the writer and the read-back term for the path the merge actually executes.
+                    auto column = columns_description.tryGetColumn(
+                        GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), required_column);
+                    if (!column)
+                        column = output_columns.tryGetByName(required_column);
                     if (column && column->type->haveMaximumSizeOfValue())
                         projection_uncompressed_bytes += missing_rows * column->type->getMaximumSizeOfValueInMemory();
                 }
 
+                /// One rebuild does NOT write one temporary part: MergeTask squashes the calculated
+                /// projection blocks (min_insert_block_size_rows / min_insert_block_size_bytes, see
+                /// ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock) and calls
+                /// writeTempProjectionPart once per squashed chunk, so writeProjectionPartImpl runs
+                /// choosePartFormat on THAT chunk's own bytes and rows. Deciding the format from the whole
+                /// rebuilt volume would price a rebuild that flushes into many small chunks - a low
+                /// min_insert_block_size_rows / min_insert_block_size_bytes - as a set of Wide temp parts
+                /// while every one of them is really written Compact through a single shared stream, and on a
+                /// semi-structured (JSON / Dynamic) projection that is the per-substream over-reservation
+                /// that saturates merges_mutations_memory_usage_soft_limit and starves concurrent merges (it
+                /// is multiplied by max_parts_to_merge_in_one_level in the read-back term below). Size one
+                /// chunk instead: the projected volume scaled down to whichever squash threshold the flush
+                /// hits first, both thresholds honoring 0 as "no limit". A chunk can overshoot its threshold
+                /// by the last block added to the accumulator, so a genuinely Wide chunk can still be priced
+                /// as Compact right at the boundary - the same safe direction the projected volume itself is
+                /// approximated in (a single merge is always admitted; the growth is data the reactive
+                /// background_memory_tracker sees).
+                UInt64 projection_chunk_bytes = projection_uncompressed_bytes;
+                UInt64 projection_chunk_rows = projection_rows;
+                const auto scale_chunk_down = [&](UInt64 numerator, UInt64 denominator)
+                {
+                    projection_chunk_bytes = static_cast<UInt64>(
+                        static_cast<double>(projection_chunk_bytes) * static_cast<double>(numerator) / static_cast<double>(denominator));
+                    projection_chunk_rows = static_cast<UInt64>(
+                        static_cast<double>(projection_chunk_rows) * static_cast<double>(numerator) / static_cast<double>(denominator));
+                };
+                const auto & query_settings = context->getSettingsRef();
+                const UInt64 min_insert_block_size_rows = query_settings[Setting::min_insert_block_size_rows];
+                const UInt64 min_insert_block_size_bytes = query_settings[Setting::min_insert_block_size_bytes];
+                if (min_insert_block_size_rows != 0 && projection_chunk_rows > min_insert_block_size_rows)
+                    scale_chunk_down(min_insert_block_size_rows, projection_chunk_rows);
+                if (min_insert_block_size_bytes != 0 && projection_chunk_bytes > min_insert_block_size_bytes)
+                    scale_chunk_down(min_insert_block_size_bytes, projection_chunk_bytes);
+
                 const auto temp_projection_format = future_part.parts.front()->storage.choosePartFormat(
-                    projection_uncompressed_bytes, projection_rows, future_part.part_info.level, &projection);
+                    projection_chunk_bytes, projection_chunk_rows, future_part.part_info.level, &projection);
                 const bool temp_projection_is_compact = temp_projection_format.part_type == MergeTreeDataPartType::Compact;
                 const size_t projection_streams = temp_projection_is_compact ? 1 : projection_wide_stream_counts.total;
 
@@ -1977,9 +2064,9 @@ UInt64 estimateNeededMemoryForMerge(
                 /// sees the temp-part writer's own columns list - the projection's columns); a Compact
                 /// temp part's single shared stream is non-adaptive.
                 const UInt64 projection_eager_write_buffers = temp_projection_is_compact
-                    ? projection_local_write_buffer_size
+                    ? eager_stream_buffers(projection_max_compress_block_size)
                     : eager_write_buffers(
-                          projection_wide_stream_counts, projection.sample_block.columns(), projection_local_write_buffer_size);
+                          projection_wide_stream_counts, projection.sample_block.columns(), projection_max_compress_block_size);
                 const UInt64 projection_data_bound = projection_eager_write_buffers
                     + 3 * 2 * projection_uncompressed_bytes;
                 projection_memory += std::min(projection_worst_case, projection_data_bound)
@@ -1991,7 +2078,7 @@ UInt64 estimateNeededMemoryForMerge(
     return input_memory + output_memory + projection_memory;
 }
 
-DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk)
+DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk, const WriteSettings & write_settings)
 {
     /// Unwrap decorator disks (encrypted, read-only, ...) down to the disk they delegate to: they forward
     /// object-storage writes to the wrapped disk (see DiskEncrypted::getObjectStorage), so a wrapped
@@ -2006,7 +2093,7 @@ DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk)
         if (auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(current.get()))
         {
             const auto object_storage = object_storage_disk->getObjectStorage();
-            return DiskWriteBufferMemory{.ceiling = object_storage->getWriteBufferMemoryCeiling()};
+            return DiskWriteBufferMemory{.ceiling = object_storage->getWriteBufferMemoryCeiling(write_settings)};
         }
     }
     return {};

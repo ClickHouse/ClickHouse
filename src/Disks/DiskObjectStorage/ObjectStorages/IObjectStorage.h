@@ -415,7 +415,10 @@ public:
     /// does not buffer writes in memory in a settings-dependent size (the estimator then falls back to the
     /// global defaults), and MultipartUploadMemory::UNLIMITED when no finite ceiling exists because the
     /// storage allows unlimited in-flight upload parts.
-    virtual UInt64 getWriteBufferMemoryCeiling() const { return 0; }
+    /// `write_settings` are the settings the writer will be created with: unlike the multipart sizes, whether
+    /// part uploads may run in parallel comes from them (see `writeObject`), and a writer without a parallel
+    /// upload scheduler cannot keep several detached buffers alive at once (getEffectiveMaxInflightParts).
+    virtual UInt64 getWriteBufferMemoryCeiling(const WriteSettings & /*write_settings*/) const { return 0; }
 
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 

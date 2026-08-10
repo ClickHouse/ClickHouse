@@ -8,6 +8,7 @@ namespace DB
 
 struct FutureMergedMutatedPart;
 struct MergeTreeSettings;
+struct WriteSettings;
 
 namespace CompactionStatistics
 {
@@ -100,8 +101,12 @@ UInt64 estimateNeededMemoryForMerge(
   * disk reports the same sizes as a bare one. Pass the result into estimateNeededMemoryForMerge as
   * remote_write_buffer_memory once the destination disk is known, so the reservation reflects the disk's
   * own multipart upload sizes rather than the query/session settings that a background writer ignores.
+  * Whether the writer may upload parts in parallel is the exception: that comes from the write settings the
+  * writer is created with (the merge context's), and a writer without a parallel upload scheduler runs its
+  * uploads inline and cannot hold the configured number of detached buffers at once, so pass the same write
+  * settings the merge will write with.
   */
-DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk);
+DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk, const WriteSettings & write_settings);
 
 /** Estimate approximate amount of disk space needed to be free before schedule such merge.
   */

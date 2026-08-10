@@ -209,6 +209,36 @@ TEST(MultipartUploadMemory, UnlimitedInflightPartsHaveNoCeiling)
     EXPECT_EQ(strict_memory.ceiling, MultipartUploadMemory::UNLIMITED);
 }
 
+TEST(MultipartUploadMemory, WithoutParallelPartUploadTheCeilingIsTwoBuffers)
+{
+    /// `S3ObjectStorage::writeObject` / `AzureObjectStorage::writeObject` give the writer a thread-pool
+    /// scheduler only when `s3_allow_parallel_part_upload` / `azure_allow_parallel_part_upload` is set.
+    /// Without one the writer's TaskTracker runs every upload inline (TaskTracker::syncRunner), so an upload
+    /// is done - and its buffer released - before the writer resumes filling the next one, and the peak is
+    /// the same as with an in-flight limit of one: one detached buffer plus the buffer being filled. The
+    /// configured limit, however large or unlimited, cannot be reached, so pricing it would reserve memory
+    /// the writer can never allocate.
+    BufferAllocationPolicy::Settings settings;
+    settings.max_single_size = 32 * 1024 * 1024;
+    settings.min_size = 16 * 1024 * 1024;
+    settings.max_size = 5ULL * 1024 * 1024 * 1024;
+
+    for (const UInt64 configured_inflight : {0UL, 1UL, 4UL, 100UL})
+    {
+        const UInt64 effective = getEffectiveMaxInflightParts(configured_inflight, /*parallel_part_upload_allowed=*/false);
+        EXPECT_EQ(effective, 1u);
+
+        const auto memory = getMultipartUploadMemory(settings, effective);
+        EXPECT_EQ(memory.ceiling, 2 * 5ULL * 1024 * 1024 * 1024);
+        EXPECT_GE(memory.ceiling, liveBuffersUpperBound(settings, effective, 2000));
+
+        /// With parallel upload allowed the configured limit is used as it stands - unlimited included.
+        EXPECT_EQ(getEffectiveMaxInflightParts(configured_inflight, /*parallel_part_upload_allowed=*/true), configured_inflight);
+    }
+
+    EXPECT_EQ(getMultipartUploadMemory(settings, getEffectiveMaxInflightParts(0, true)).ceiling, MultipartUploadMemory::UNLIMITED);
+}
+
 TEST(MultipartUploadMemory, AbsurdInflightLimitSaturatesInsteadOfWrappingAround)
 {
     BufferAllocationPolicy::Settings settings;

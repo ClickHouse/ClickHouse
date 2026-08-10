@@ -62,4 +62,15 @@ struct MultipartUploadMemory
 /// yields MultipartUploadMemory::UNLIMITED as the ceiling.
 MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Settings & settings, UInt64 max_inflight_parts_for_one_file);
 
+/// The in-flight part limit a multipart writer effectively runs with. `S3ObjectStorage::writeObject` /
+/// `AzureObjectStorage::writeObject` pass a thread-pool scheduler to the writer only when
+/// `s3_allow_parallel_part_upload` / `azure_allow_parallel_part_upload` is set; without one the writer's
+/// `TaskTracker` runs every upload inline on `add` (`TaskTracker::syncRunner`), so an upload is finished -
+/// and its buffer freed - before the writer returns to filling the next one. The peak is then the same as
+/// with an in-flight limit of one (one detached buffer coexisting with the buffer being filled, see
+/// MultipartUploadMemory::ceiling), however large - or unlimited, that is zero - the configured limit is.
+/// Without this, a background profile that disables parallel part upload would be priced at the configured
+/// limit, or at UNLIMITED, for memory the writer can never allocate.
+UInt64 getEffectiveMaxInflightParts(UInt64 max_inflight_parts_for_one_file, bool parallel_part_upload_allowed);
+
 }

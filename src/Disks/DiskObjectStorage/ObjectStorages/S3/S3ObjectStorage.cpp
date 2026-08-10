@@ -341,17 +341,23 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         disk_write_settings);
 }
 
-UInt64 S3ObjectStorage::getWriteBufferMemoryCeiling() const
+UInt64 S3ObjectStorage::getWriteBufferMemoryCeiling(const WriteSettings & write_settings) const
 {
     /// Every upload buffer WriteBufferFromS3 can hold at once, derived by getMultipartUploadMemory from the
     /// same allocation settings and in-flight limit the writer itself uses - so a strict_upload_part_size
     /// disk (a fixed-size allocation policy) and an unlimited max_inflight_parts_for_one_file are both
     /// accounted for. These come from this storage's own request settings (background writes do not apply
-    /// query/session settings, see writeObject above).
+    /// query/session settings, see writeObject above). The in-flight limit is the EFFECTIVE one: writeObject
+    /// hands the writer a parallel-upload scheduler only when s3_allow_parallel_part_upload is set, and
+    /// without one every upload runs inline, so the writer cannot hold the configured number of detached
+    /// buffers at once (see getEffectiveMaxInflightParts). That flag comes from the write settings of the
+    /// writer's caller, not from the disk configuration.
     const auto & request_settings = s3_settings.get()->request_settings;
     return getMultipartUploadMemory(
                getUploadBufferAllocationSettings(request_settings),
-               request_settings[S3RequestSetting::max_inflight_parts_for_one_file])
+               getEffectiveMaxInflightParts(
+                   request_settings[S3RequestSetting::max_inflight_parts_for_one_file],
+                   IObjectStorage::patchSettings(write_settings).s3_allow_parallel_part_upload))
         .ceiling;
 }
 

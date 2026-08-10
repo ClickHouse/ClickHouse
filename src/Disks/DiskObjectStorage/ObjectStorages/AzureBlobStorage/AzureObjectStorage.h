@@ -124,7 +124,7 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    UInt64 getWriteBufferMemoryCeiling() const override;
+    UInt64 getWriteBufferMemoryCeiling(const WriteSettings & write_settings) const override;
 
 
     const AzureBlobStorage::ConnectionParams & getConnectionParameters() const

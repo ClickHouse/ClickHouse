@@ -100,9 +100,13 @@ bool MergeProjectionPartsTask::executeStep()
             child_merge_list_element->parent_progress = &parent_merge_list_element->current_projection_progress;
         }
 
+        /// The read-back merge of the temporary projection parts runs with the same frozen table settings
+        /// snapshot as the merge that produced them (the nested MergeTask applies the projection's own
+        /// WITH SETTINGS on top), so it cannot pick up a concurrent ALTER ... MODIFY SETTING either.
         auto tmp_part_merge_task = mutator->mergePartsToTemporaryPart(
             projection_future_part,
             projection.metadata,
+            base_data_settings,
             merge_entry,
             std::move(child_merge_list_element),
             *table_lock_holder,

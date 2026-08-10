@@ -263,6 +263,14 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// It will live until the whole task is being destroyed
     table_lock_holder = storage.lockForShare(RWLockImpl::NO_QUERY, (*storage_settings_ptr)[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
 
+    /// The MergeTree settings the merge will run with, frozen once here - under the table share lock the
+    /// merge itself holds - and used for everything the merge does: its context (makeQueryContextForMerge),
+    /// its up-front memory reservation, and MergeTask's own writer decisions. Reading them again later, as
+    /// MergeTask does by default, would let a concurrent ALTER ... MODIFY SETTING (a replicated
+    /// ALTER_METADATA entry executed on this replica) change `max_compress_block_size`, the projection
+    /// decisions or the vertical-merge rules after this reservation priced the merge.
+    const auto merge_data_settings = storage.getSettings();
+
     auto future_merged_part = std::make_shared<FutureMergedMutatedPart>();
     future_merged_part->assign(parts, patch_parts, entry.new_part_format);
 
@@ -358,7 +366,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// will actually run with. A non-default background_profile can raise max_read_buffer_size_* or the
     /// object-storage multipart sizes above the storage/global settings, and the reservation must reflect it.
     task_context = Context::createCopy(storage.getContext()->getBackgroundContext());
-    task_context->makeQueryContextForMerge(*storage.getSettings());
+    task_context->makeQueryContextForMerge(*merge_data_settings);
     task_context->setCurrentQueryId(getQueryId());
 
     /// Reserve memory for the merge's input/output IO buffers up front (see MergeMemoryReservation).
@@ -391,8 +399,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// disagree with the merge about whether a TTL boundary has passed.
     memory_reservation = MergeMemoryReservation::reserve(
         CompactionStatistics::estimateNeededMemoryForMerge(
-            *future_merged_part, metadata_snapshot, task_context, *storage_settings_ptr, mutations_snapshot, entry.create_time,
-            output_disk->isRemote(), CompactionStatistics::getDiskWriteBufferMemory(output_disk),
+            *future_merged_part, metadata_snapshot, task_context, *merge_data_settings, mutations_snapshot, entry.create_time,
+            output_disk->isRemote(), CompactionStatistics::getDiskWriteBufferMemory(output_disk, task_context->getWriteSettings()),
             entry.deduplicate, entry.cleanup));
 
     /// Account TTL merge
@@ -416,6 +424,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
             future_merged_part,
             metadata_snapshot,
+            merge_data_settings,
             merge_mutate_entry.get(),
             {} /* projection_merge_list_element */,
             table_lock_holder,

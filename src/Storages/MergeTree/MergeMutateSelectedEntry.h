@@ -14,6 +14,8 @@ struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct FutureMergedMutatedPart;
 using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
+struct MergeTreeSettings;
+using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 
 struct CurrentlyMergingPartsTagger
@@ -65,6 +67,13 @@ struct MergeMutateSelectedEntry
     /// let it pick up a different background_profile / read buffer sizes / max_compress_block_size
     /// than the reservation was priced with. Unset for a mutation entry.
     ContextMutablePtr merge_context;
+    /// For a merge entry: the MergeTree settings the merge runs with, read once at selection time. The
+    /// up-front memory reservation is estimated against these exact settings, and MergeTask must use the
+    /// same snapshot rather than re-reading the live ones in its constructor: a concurrent
+    /// ALTER ... MODIFY SETTING would otherwise change `max_compress_block_size`, the projection
+    /// decisions or the vertical-merge rules after the merge was admitted at the old price. Unset for a
+    /// mutation entry.
+    MergeTreeSettingsPtr data_settings;
     bool finalized{false};
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,

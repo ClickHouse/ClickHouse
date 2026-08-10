@@ -1605,6 +1605,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPart
         global_ctx->time_of_merge,
         global_ctx->new_data_part,
         global_ctx->space_reservation,
+        global_ctx->base_data_settings,
         !global_ctx->projection ? (*global_ctx->merge_entry)->ptr() : nullptr
     );
 }
@@ -2224,7 +2225,8 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             global_ctx->data,
             global_ctx->mutator,
             global_ctx->merges_blocker,
-            global_ctx->ttl_merges_blocker));
+            global_ctx->ttl_merges_blocker,
+            global_ctx->base_data_settings));
     }
 
     /// merge projections with _part_offset first so that we can release offset mapping earlier.

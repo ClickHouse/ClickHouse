@@ -112,7 +112,10 @@ public:
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
-    UInt64 getWriteBufferMemoryCeiling() const override { return object_storage->getWriteBufferMemoryCeiling(); }
+    UInt64 getWriteBufferMemoryCeiling(const WriteSettings & write_settings) const override
+    {
+        return object_storage->getWriteBufferMemoryCeiling(write_settings);
+    }
 
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }

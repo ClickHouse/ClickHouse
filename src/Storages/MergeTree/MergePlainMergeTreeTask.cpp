@@ -151,9 +151,13 @@ void MergePlainMergeTreeTask::prepare()
     /// reservation priced as an ordinary one. The replicated path pins the clock the same way, via
     /// entry.create_time (see MergeFromLogEntryTask); rows whose TTL expires while the merge is queued
     /// are removed by a later TTL merge.
+    /// ... and with the MergeTree settings snapshot taken at selection time, for the same reason: the
+    /// reservation priced the merge's writer decisions against those settings, so a concurrent
+    /// ALTER ... MODIFY SETTING must not change them while the merge waits in the queue.
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
         future_part,
         metadata_snapshot,
+        merge_mutate_entry->data_settings,
         merge_list_entry.get(),
         {} /* projection_merge_list_element */,
         table_lock_holder,

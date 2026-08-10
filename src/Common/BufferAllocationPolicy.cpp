@@ -100,6 +100,13 @@ BufferAllocationPolicyPtr BufferAllocationPolicy::create(BufferAllocationPolicy:
     return std::make_unique<ExpBufferAllocationPolicy>(settings_);
 }
 
+UInt64 getEffectiveMaxInflightParts(UInt64 max_inflight_parts_for_one_file, bool parallel_part_upload_allowed)
+{
+    if (parallel_part_upload_allowed)
+        return max_inflight_parts_for_one_file;
+    return 1;
+}
+
 MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Settings & settings, UInt64 max_inflight_parts_for_one_file)
 {
     MultipartUploadMemory result;

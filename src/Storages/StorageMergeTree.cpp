@@ -1759,18 +1759,13 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// largest multipart write buffers among the remote disks (a zero ceiling - every remote disk
             /// is e.g. HDFS without multipart buffers - correctly degrades to the local per-stream
             /// estimate). The tagger's actual disk choice below then only keeps or lowers the reservation.
-            bool output_may_be_on_remote_disk = false;
-            std::optional<CompactionStatistics::DiskWriteBufferMemory> admission_write_buffer_memory;
-            for (const auto & disk : getStoragePolicy()->getDisks())
-            {
-                if (!disk->isRemote())
-                    continue;
-                output_may_be_on_remote_disk = true;
-                const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk);
-                if (!admission_write_buffer_memory)
-                    admission_write_buffer_memory.emplace();
-                admission_write_buffer_memory->ceiling = std::max(admission_write_buffer_memory->ceiling, disk_write_buffer_memory.ceiling);
-            }
+            /// The MergeTree settings the merge runs with: read ONCE here and carried to the task through
+            /// the selected entry, so the merge (MergeTask reads them for max_compress_block_size, the
+            /// projection decisions, the vertical-merge rules, ...) cannot observe a different value than
+            /// this estimate priced. A concurrent ALTER ... MODIFY SETTING would otherwise change them
+            /// between this selection and the moment a queued merge finally constructs its MergeTask - the
+            /// same selection-vs-execution drift already pinned for the context and for time_of_merge.
+            const MergeTreeSettingsPtr data_settings = getSettings();
 
             /// Estimate the reservation against the same context the merge will actually run under: a copy of
             /// the background context with the merge query settings applied. A non-default background_profile
@@ -1780,7 +1775,25 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             /// queue cannot pick up different settings than this estimate priced - the same
             /// selection-vs-execution pinning as time_of_merge below.
             auto merge_context = Context::createCopy(getContext()->getBackgroundContext());
-            merge_context->makeQueryContextForMerge(*getSettings());
+            merge_context->makeQueryContextForMerge(*data_settings);
+
+            /// Whether a multipart writer may upload its parts in parallel comes from the write settings of
+            /// the merge's own context (unlike the multipart sizes, which come from the disk configuration):
+            /// without a parallel upload scheduler the writer uploads inline and holds far fewer buffers.
+            const auto merge_write_settings = merge_context->getWriteSettings();
+
+            bool output_may_be_on_remote_disk = false;
+            std::optional<CompactionStatistics::DiskWriteBufferMemory> admission_write_buffer_memory;
+            for (const auto & disk : getStoragePolicy()->getDisks())
+            {
+                if (!disk->isRemote())
+                    continue;
+                output_may_be_on_remote_disk = true;
+                const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk, merge_write_settings);
+                if (!admission_write_buffer_memory)
+                    admission_write_buffer_memory.emplace();
+                admission_write_buffer_memory->ceiling = std::max(admission_write_buffer_memory->ceiling, disk_write_buffer_memory.ceiling);
+            }
 
             /// The timestamp the merge runs with (MergeTask's time_of_merge): captured once here and
             /// carried to the task through the selected entry, so the merge evaluates its TTL boundaries
@@ -1811,7 +1824,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             const auto mutations_snapshot = getMutationsSnapshotUnlocked(mutations_params, /*patch_parts=*/ {}, lock);
 
             const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
-                *future_part, metadata_snapshot, merge_context, *getSettings(), mutations_snapshot, time_of_merge,
+                *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
                 output_may_be_on_remote_disk, admission_write_buffer_memory, deduplicate, cleanup);
 
             std::optional<MergeMemoryReservation> memory_reservation;
@@ -1861,8 +1874,8 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             {
                 memory_reservation = MergeMemoryReservation::reserve(
                     CompactionStatistics::estimateNeededMemoryForMerge(
-                        *future_part, metadata_snapshot, merge_context, *getSettings(), mutations_snapshot, time_of_merge,
-                        actual_output_on_remote_disk, CompactionStatistics::getDiskWriteBufferMemory(actual_disk),
+                        *future_part, metadata_snapshot, merge_context, *data_settings, mutations_snapshot, time_of_merge,
+                        actual_output_on_remote_disk, CompactionStatistics::getDiskWriteBufferMemory(actual_disk, merge_write_settings),
                         deduplicate, cleanup));
             }
 
@@ -1871,6 +1884,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             auto selected_entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
             selected_entry->time_of_merge = time_of_merge;
             selected_entry->merge_context = merge_context;
+            selected_entry->data_settings = data_settings;
             return selected_entry;
         }
         catch (...)

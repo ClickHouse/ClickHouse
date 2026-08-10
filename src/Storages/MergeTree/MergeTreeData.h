@@ -1226,6 +1226,13 @@ public:
     /// When `settings_changes` is provided, apply the overrides on top of the table settings.
     MergeTreeSettingsPtr getSettings(const SettingsChanges * settings_changes = nullptr) const;
 
+    /// The same overrides `getSettings` applies, but on top of an already captured settings snapshot
+    /// instead of the live table settings. Used by operations that must observe one snapshot from start to
+    /// finish - a merge prices its memory reservation against the settings it will later run with, so it
+    /// freezes them at selection time and applies a projection's `WITH SETTINGS` to that frozen copy.
+    MergeTreeSettingsPtr applySettingsChanges(
+        const MergeTreeSettingsPtr & base_settings, const SettingsChanges * settings_changes) const;
+
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
     /// Whether the per-part metadata version is stored in the engine's metadata storage instead of
