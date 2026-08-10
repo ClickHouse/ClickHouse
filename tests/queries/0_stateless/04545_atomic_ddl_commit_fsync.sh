@@ -16,27 +16,39 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# DirectorySync for a query, or -1 if the query_log row is not found yet.
-directory_sync() {
-    local query_id="$1"
-    $CLICKHOUSE_CLIENT -m --param_query_id "$query_id" -q "
+# DirectorySync per query_id; an unset entry means no query_log row was found.
+declare -A directory_sync
+
+# `system flush logs` is server-wide and serializes against every concurrently running test,
+# so a whole batch of query_ids is read through a single flush.
+collect_directory_sync() {
+    local ids="['$1'"; shift
+    for id in "$@"; do ids+=",'$id'"; done
+    ids+="]"
+
+    local query_id got
+    while IFS=$'\t' read -r query_id got; do
+        [[ -n "$query_id" ]] && directory_sync["$query_id"]="$got"
+    done < <($CLICKHOUSE_CLIENT -m --param_ids "$ids" -q "
         system flush logs query_log;
-        select ProfileEvents['DirectorySync']
+        select query_id, argMax(ProfileEvents['DirectorySync'], event_time_microseconds)
         from system.query_log
         where
             event_date >= yesterday() and event_time >= now() - 600 and
             current_database = currentDatabase() and
-            query_id = {query_id:String} and
+            has({ids:Array(String)}, query_id) and
             type = 'QueryFinish'
-        order by event_time_microseconds desc
-        limit 1;
-    "
+        group by query_id
+        -- Aggregation must stay local: a randomized parallel-replicas setting would make this
+        -- read require a configured cluster.
+        settings enable_parallel_replicas = 0
+        format TSV;
+    ")
 }
 
 check_ge() {
     local query_id="$1" expected="$2" what="$3"
-    local got
-    got=$(directory_sync "$query_id")
+    local got="${directory_sync[$query_id]-}"
     if [[ "${got:--1}" -lt "$expected" ]]; then
         echo "$what: DirectorySync=$got, expected >= $expected" >&2
         return 1
@@ -143,6 +155,10 @@ $CLICKHOUSE_CLIENT -m -q "
 $CLICKHOUSE_CLIENT --query_id "$rename_xdb_id" --fsync_metadata 1 -q \
     "rename table dbsrc_${tag}.x to ${CLICKHOUSE_DATABASE}.x_${tag}"
 
+collect_directory_sync "$create_id" "$alter_id" "$rename_id" "$exchange_id" "$drop_id" \
+    "$undrop_id" "$create_db_id" "$altercomment_db_id" "$rename_db_id" "$drop_db_id" \
+    "$rename_xdb_id"
+
 check_ge "$create_id"          1 "CREATE"            || exit 2
 check_ge "$alter_id"           1 "ALTER"             || exit 3
 check_ge "$rename_id"          1 "RENAME"            || exit 4
@@ -160,8 +176,7 @@ check_ge "$rename_xdb_id"      2 "RENAME CROSS-DB"   || exit 21
 # silently dropping any one of the `if (fsync_metadata)` gates later fails this test.
 check_nofsync() {
     local query_id="$1" what="$2"
-    local got
-    got=$(directory_sync "$query_id")
+    local got="${directory_sync[$query_id]-}"
     if [[ "$got" != "0" ]]; then
         echo "fsync_metadata=0 not honored on $what: DirectorySync=$got" >&2
         return 1
@@ -192,6 +207,10 @@ $CLICKHOUSE_CLIENT --query_id "$nofsync_renamedb_id" --fsync_metadata 0 -q \
     "rename database db3_${tag} to db4_${tag}"
 $CLICKHOUSE_CLIENT --query_id "$nofsync_dropdb_id" --fsync_metadata 0 -q \
     "drop database db4_${tag} sync"
+
+collect_directory_sync "$nofsync_create_id" "$nofsync_alter_id" "$nofsync_rename_id" \
+    "$nofsync_drop_id" "$nofsync_undrop_id" "$nofsync_createdb_id" \
+    "$nofsync_altercommentdb_id" "$nofsync_renamedb_id" "$nofsync_dropdb_id"
 
 check_nofsync "$nofsync_create_id"         "CREATE"                 || exit 12
 check_nofsync "$nofsync_alter_id"          "ALTER"                  || exit 17
