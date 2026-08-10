@@ -3821,12 +3821,21 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
     MutationCommands result;
     UInt64 part_data_version = part->info.getDataVersion();
 
-    for (const auto & [mutation_version, commands] : mutations_by_version | std::views::reverse)
+    for (const auto & [mutation_version, mutation] : mutations_by_version | std::views::reverse)
     {
         if (mutation_version <= part_data_version)
             break;
 
-        addSupportedCommands(*commands, mutation_version, result);
+        /// A transactional mutation is applied only to the parts visible to its transaction's
+        /// snapshot: `selectPartsToMutate` skips every other part as `VERSION_NOT_VISIBLE`, so such a
+        /// part is never mutated on disk and must not be mutated on the fly either. Otherwise a
+        /// `SELECT ... SETTINGS apply_mutations_on_fly = 1` would return data of a mutation that
+        /// never touched this part - for example a part with a smaller data version committed by
+        /// another transaction after this mutation's snapshot.
+        if (mutation.visibility && !part->version->isVisible(mutation.visibility->snapshot, mutation.visibility->tid))
+            continue;
+
+        addSupportedCommands(*mutation.commands, mutation_version, result);
     }
 
     std::reverse(result.begin(), result.end());
@@ -3839,9 +3848,11 @@ NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
     if (!hasDataMutations() && !hasAlterMutations())
         return res;
 
-    for (const auto & [version, commands] : mutations_by_version)
+    /// Deliberately ignores the per-mutation visibility: this is a superset of the columns that may
+    /// be updated, and it is only used to decide which columns have to be read.
+    for (const auto & [version, mutation] : mutations_by_version)
     {
-        auto names = commands->getAllUpdatedColumns();
+        auto names = mutation.commands->getAllUpdatedColumns();
         std::move(names.begin(), names.end(), std::inserter(res, res.end()));
     }
     return res;
@@ -3876,7 +3887,21 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
         /// Required commands will be copied later only for specific parts.
         if (version <= max_mutation_version && MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, *entry.commands))
         {
-            mutations_snapshot.emplace(version, entry.commands);
+            /// Remember which parts a transactional mutation is allowed to touch, exactly as
+            /// `getVisibleDataPartsVectorForMutationStatus` and the visibility gate in
+            /// `selectPartsToMutate` resolve it: the live transaction's snapshot while it runs, and
+            /// the snapshot recorded in the entry's transaction id once the transaction is gone
+            /// (a dead entry is already skipped above, so the remaining case is a committed one).
+            std::optional<MutationsSnapshot::MutationVisibility> visibility;
+            if (!entry.tid.isNonTransactional())
+            {
+                if (auto txn = tryGetLiveTransactionForMutation(entry))
+                    visibility.emplace(MutationsSnapshot::MutationVisibility{txn->getSnapshot(), txn->tid});
+                else
+                    visibility.emplace(MutationsSnapshot::MutationVisibility{entry.tid.start_csn, entry.tid});
+            }
+
+            mutations_snapshot.emplace(version, MutationsSnapshot::MutationInSnapshot{entry.commands, std::move(visibility)});
             incrementMutationsCounters(mutations_snapshot_counters, *entry.commands);
         }
     }

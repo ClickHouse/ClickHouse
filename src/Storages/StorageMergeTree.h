@@ -371,7 +371,23 @@ private:
 
     struct MutationsSnapshot final : public MutationsSnapshotBase
     {
-        using MutationsByVersion = std::map<UInt64, std::shared_ptr<const MutationCommands>>;
+        /// The snapshot a transactional mutation sees: it can only ever be applied to the data parts
+        /// visible in `snapshot` to `tid`, which is exactly the visibility gate `selectPartsToMutate`
+        /// applies when it picks the parts to mutate.
+        struct MutationVisibility
+        {
+            CSN snapshot;
+            TransactionID tid;
+        };
+
+        struct MutationInSnapshot
+        {
+            std::shared_ptr<const MutationCommands> commands;
+            /// Not set for a non-transactional mutation, which applies to every part.
+            std::optional<MutationVisibility> visibility;
+        };
+
+        using MutationsByVersion = std::map<UInt64, MutationInSnapshot>;
         MutationsByVersion mutations_by_version;
 
         MutationsSnapshot() = default;
