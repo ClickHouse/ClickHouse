@@ -758,6 +758,8 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     /// set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table entries.
     refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
     refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+    /// Nothing waits for this table afterwards, so keep the drop below asynchronous.
+    refresh_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
 
     auto query_scope = QueryScope::create(refresh_context);
 
