@@ -14,8 +14,9 @@ SETTINGS
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
     apply_patches_on_merge = 0,
-    cleanup_delay_period = 1000,
-    max_cleanup_delay_period = 1000;
+    -- The test asserts the patch part with data version 2 in every parts listing, but once
+    -- `APPLY PATCHES` raises the regular parts to version 3 the cleanup thread is free to drop it.
+    remove_unused_patch_parts = 0;
 
 INSERT INTO t_shared SELECT number, number FROM numbers(20);
 INSERT INTO t_shared SELECT number, number FROM numbers(20, 10);
