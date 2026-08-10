@@ -350,8 +350,10 @@ std::optional<UInt128> computeTableModificationHashForConsistency(const StorageI
     /// probe a table the current user is allowed to read; otherwise bail out so the cache is bypassed
     /// (fail closed) and the query is rejected later by the normal access check with the usual error.
     /// SELECT access is granted when at least one column is readable, matching `InterpreterSelectQuery`.
-    /// For a view with `SQL SECURITY DEFINER` the invoker may legitimately lack access to the underlying
-    /// tables; the recursion below then bails out and the feature is conservatively disabled.
+    /// "The current user" is the user of the context the read will actually run under: a view with
+    /// `SQL SECURITY DEFINER` / `NONE` recurses into here with its own effective context, so the tables
+    /// behind it are probed with the grants (and row policies) the read applies, not the invoker's. See
+    /// `StorageView::getModificationHash`.
     {
         const auto access = context->getAccess();
         bool can_read = access->isGranted(AccessType::SELECT, resolved_id.database_name, resolved_id.table_name);

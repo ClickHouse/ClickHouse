@@ -985,9 +985,17 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
 
     try
     {
-        /// `computeTableModificationHashForConsistency` checks the invoker's `SELECT` access on the target
-        /// table and folds its identity (including the UUID, so that a re-created target is distinguished).
-        auto target_hash = computeTableModificationHashForConsistency(getTargetTableId(), query_context);
+        /// `readImpl` reads the target table under `getSQLSecurityOverriddenContext`, so sample it under the
+        /// same context: for `SQL SECURITY DEFINER` / `NONE` the rows the view returns are the ones the
+        /// effective reader sees. Hashing under the caller context instead would miss an `ALTER ROW POLICY`
+        /// on the definer, which changes what `SELECT ... FROM mv` returns while the target table's data -
+        /// and therefore a caller-context hash - stays the same. See `StorageView::getModificationHash` for
+        /// the full reasoning, including why this is not a leak of the definer's data.
+        auto effective_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+
+        /// `computeTableModificationHashForConsistency` checks the effective reader's `SELECT` access on the
+        /// target table and folds its identity (including the UUID, so a re-created target is distinguished).
+        auto target_hash = computeTableModificationHashForConsistency(getTargetTableId(), effective_context);
         if (!target_hash)
             return {};
 

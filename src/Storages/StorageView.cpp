@@ -467,7 +467,24 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         if (!inner_query)
             return {};
 
-        auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, query_context);
+        /// Reading a view runs its stored SELECT under `getSQLSecurityOverriddenContext`, so for
+        /// `SQL SECURITY DEFINER` / `NONE` the rows the view returns are the rows the *effective* reader
+        /// sees, not the ones the invoker would see. Sample the tables behind the view under that same
+        /// context, otherwise the hash answers a different question than the read:
+        /// `computeTableModificationHashForConsistency` fails closed on a non-trivial `SELECT` row policy of
+        /// the reading context, and under `DEFINER` it is the definer's policies - not the invoker's - that
+        /// shape the result, so an `ALTER ROW POLICY` for the definer would change what the view returns
+        /// while a caller-context hash stayed the same (a stale cache hit / a skipped refresh). It also
+        /// makes the check follow the definer's grants, which is what the read is allowed by.
+        /// For `INVOKER` (and for a view without a security clause) this is a plain copy of the caller
+        /// context, so nothing changes there.
+        /// Exposing the resulting hash is not a leak of the definer's data: every caller checks the
+        /// invoker's `SELECT` access on the view itself first (`computeTableModificationHashForConsistency`
+        /// and the `system.tables` fill path), and a caller that may read the view already observes those
+        /// changes in the rows it gets back.
+        auto effective_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+
+        auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, effective_context);
         if (!referenced_tables_hash)
             return {};
 
