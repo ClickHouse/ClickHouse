@@ -93,10 +93,16 @@ TEST_P(SuiteC, case_three) {}
 TYPED_TEST(SuiteD, case_four) {}
 TYPED_TEST_P(SuiteE, case_five) {}
 
+GTEST_TEST(SuiteG, case_six) {}        // `TEST` is #define'd to this
+GTEST_TEST_F(SuiteH, case_seven) {}    // `TEST_F` is #define'd to this
+
    TEST_F  (  SuiteF , spaced ) {}     // odd spacing must still match
 // TEST(CommentedOut, nope) {}         // commented-out line must be ignored
+// GTEST_TEST(CommentedOutG, nope) {}  // commented-out line must be ignored
 MY_TEST(NotAMacro, nope) {}            // macro as a substring must not match
+MY_GTEST_TEST(AlsoNotAMacro, nope) {}  // macro as a substring must not match
 EXPECT_TEST(AlsoNot, nope);            // macro as a substring must not match
+GTEST_TEST_(SuiteX, nope) {}           // trailing underscore is a different token
 TEST(SuiteA, duplicate_suite) {}       // duplicate suite collapses
 """
 
@@ -111,6 +117,8 @@ def test_derive_test_suites_all_macro_forms(tmp_path):
         "SuiteD",
         "SuiteE",
         "SuiteF",
+        "SuiteG",
+        "SuiteH",
     ]
 
 
