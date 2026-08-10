@@ -374,6 +374,11 @@ public:
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
 
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        return nested_func->getArgumentsThatCanBeOnlyNull();
+    }
+
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function,
         const DataTypes & arguments,
