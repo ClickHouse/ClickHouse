@@ -1,0 +1,224 @@
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteBufferFromString.h>
+#include <Storages/Statistics/Statistics.h>
+#include <Storages/StatisticsDescription.h>
+#include <base/defines.h>
+
+#include <benchmark/benchmark.h>
+
+#include "config.h"
+
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+using namespace DB;
+
+namespace
+{
+
+constexpr size_t benchmark_rows = 65536;
+
+enum class ColumnKind
+{
+    UInt64 = 0,
+    String = 1,
+    NullableUInt64 = 2,
+};
+
+DataTypePtr makeDataType(ColumnKind kind)
+{
+    switch (kind)
+    {
+        case ColumnKind::UInt64: return std::make_shared<DataTypeUInt64>();
+        case ColumnKind::String: return std::make_shared<DataTypeString>();
+        case ColumnKind::NullableUInt64: return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
+    }
+
+    UNREACHABLE();
+}
+
+ColumnPtr makeColumn(ColumnKind kind, size_t rows)
+{
+    switch (kind)
+    {
+        case ColumnKind::UInt64: {
+            auto column = ColumnUInt64::create(rows);
+            auto & data = column->getData();
+            for (size_t row = 0; row < rows; ++row)
+                data[row] = static_cast<UInt64>(row * 13 + row % 17);
+            return column;
+        }
+        case ColumnKind::String: {
+            auto column = ColumnString::create();
+            column->reserve(rows);
+            for (size_t row = 0; row < rows; ++row)
+            {
+                const std::string value = "statistics_serialization_" + std::to_string(row % 1000);
+                column->insertData(value.data(), value.size());
+            }
+            return column;
+        }
+        case ColumnKind::NullableUInt64: {
+            auto nested = ColumnUInt64::create(rows);
+            auto & nested_data = nested->getData();
+            auto null_map = ColumnUInt8::create(rows);
+            auto & null_map_data = null_map->getData();
+
+            for (size_t row = 0; row < rows; ++row)
+            {
+                nested_data[row] = static_cast<UInt64>(row * 13 + row % 17);
+                null_map_data[row] = row % 10 == 0;
+            }
+
+            return ColumnNullable::create(std::move(nested), std::move(null_map));
+        }
+    }
+
+    UNREACHABLE();
+}
+
+ColumnStatisticsPtr makeStatistics(const std::vector<StatisticsType> & types, const DataTypePtr & data_type)
+{
+    ColumnStatisticsDescription description;
+    description.data_type = data_type;
+    for (auto type : types)
+        description.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, false));
+    return MergeTreeStatisticsFactory::instance().get(description);
+}
+
+ColumnStatisticsPtr buildStatistics(const std::vector<StatisticsType> & types, ColumnKind kind, size_t rows)
+{
+    auto data_type = makeDataType(kind);
+    auto column = makeColumn(kind, rows);
+    auto statistics = makeStatistics(types, data_type);
+    statistics->build(column);
+    return statistics;
+}
+
+size_t serializedSize(const ColumnStatisticsPtr & statistics)
+{
+    String data;
+    WriteBufferFromString buffer(data);
+    statistics->serialize(buffer);
+    buffer.finalize();
+    return data.size();
+}
+
+void benchmarkSerialize(benchmark::State & state, const std::vector<StatisticsType> & types, ColumnKind kind)
+{
+    auto statistics = buildStatistics(types, kind, benchmark_rows);
+    const size_t bytes = serializedSize(statistics);
+
+    String data;
+    data.reserve(bytes);
+
+    for (auto _ : state)
+    {
+        data.clear();
+        WriteBufferFromString buffer(data);
+        statistics->serialize(buffer);
+        buffer.finalize();
+        benchmark::DoNotOptimize(data.data());
+        benchmark::ClobberMemory();
+    }
+
+    state.SetItemsProcessed(static_cast<int64_t>(state.iterations()));
+    state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * static_cast<int64_t>(bytes));
+}
+
+void benchmarkBuild(benchmark::State & state, const std::vector<StatisticsType> & types, ColumnKind kind)
+{
+    auto data_type = makeDataType(kind);
+    auto column = makeColumn(kind, benchmark_rows);
+    const auto column_bytes = column->byteSize();
+
+    for (auto _ : state)
+    {
+        auto statistics = makeStatistics(types, data_type);
+        statistics->build(column);
+        benchmark::DoNotOptimize(statistics->getNumRows());
+        benchmark::ClobberMemory();
+    }
+
+    state.SetItemsProcessed(static_cast<int64_t>(state.iterations()) * static_cast<int64_t>(benchmark_rows));
+    state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * static_cast<int64_t>(column_bytes));
+}
+
+}
+
+static void BM_StatisticsSerializeBasicUInt64(benchmark::State & state)
+{
+    benchmarkSerialize(state, {StatisticsType::Basic}, ColumnKind::UInt64);
+}
+
+static void BM_StatisticsBuildBasicUInt64(benchmark::State & state)
+{
+    benchmarkBuild(state, {StatisticsType::Basic}, ColumnKind::UInt64);
+}
+
+static void BM_StatisticsSerializeMinMaxUInt64(benchmark::State & state)
+{
+    benchmarkSerialize(state, {StatisticsType::MinMax}, ColumnKind::UInt64);
+}
+
+static void BM_StatisticsBuildMinMaxUInt64(benchmark::State & state)
+{
+    benchmarkBuild(state, {StatisticsType::MinMax}, ColumnKind::UInt64);
+}
+
+static void BM_StatisticsSerializeBasicString(benchmark::State & state)
+{
+    benchmarkSerialize(state, {StatisticsType::Basic}, ColumnKind::String);
+}
+
+static void BM_StatisticsBuildBasicString(benchmark::State & state)
+{
+    benchmarkBuild(state, {StatisticsType::Basic}, ColumnKind::String);
+}
+
+static void BM_StatisticsSerializeBasicNullableUInt64(benchmark::State & state)
+{
+    benchmarkSerialize(state, {StatisticsType::Basic}, ColumnKind::NullableUInt64);
+}
+
+static void BM_StatisticsBuildBasicNullableUInt64(benchmark::State & state)
+{
+    benchmarkBuild(state, {StatisticsType::Basic}, ColumnKind::NullableUInt64);
+}
+
+#if USE_DATASKETCHES
+static void BM_StatisticsSerializeCountMinSketchUInt64(benchmark::State & state)
+{
+    benchmarkSerialize(state, {StatisticsType::CountMinSketch}, ColumnKind::UInt64);
+}
+
+static void BM_StatisticsBuildCountMinSketchUInt64(benchmark::State & state)
+{
+    benchmarkBuild(state, {StatisticsType::CountMinSketch}, ColumnKind::UInt64);
+}
+
+#endif
+
+BENCHMARK(BM_StatisticsSerializeBasicUInt64);
+BENCHMARK(BM_StatisticsBuildBasicUInt64);
+
+BENCHMARK(BM_StatisticsSerializeMinMaxUInt64);
+BENCHMARK(BM_StatisticsBuildMinMaxUInt64);
+
+BENCHMARK(BM_StatisticsSerializeBasicString);
+BENCHMARK(BM_StatisticsBuildBasicString);
+
+BENCHMARK(BM_StatisticsSerializeBasicNullableUInt64);
+BENCHMARK(BM_StatisticsBuildBasicNullableUInt64);
+
+#if USE_DATASKETCHES
+BENCHMARK(BM_StatisticsSerializeCountMinSketchUInt64);
+BENCHMARK(BM_StatisticsBuildCountMinSketchUInt64);
+#endif
