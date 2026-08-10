@@ -25,7 +25,7 @@ function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name" 2>/dev/null || true
     wait || true
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_timeout_sync SYNC; DROP TABLE IF EXISTS t_lwu_timeout_auto SYNC; DROP TABLE IF EXISTS t_lwu_cancel SYNC" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_timeout_sync SYNC; DROP TABLE IF EXISTS t_lwu_timeout_auto SYNC; DROP TABLE IF EXISTS t_lwu_cas SYNC; DROP TABLE IF EXISTS t_lwu_cancel SYNC" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -49,12 +49,15 @@ function start_holder()
     wait_for_block_allocated "/zookeeper/$CLICKHOUSE_DATABASE/$table_name/block_numbers/all" "block-0000000001"
 }
 
-# Server-side duration and lock try count of the query tagged with $1.
+# Server-side duration, lock try count and lost-CAS retry count of the query tagged with $1.
 function query_stats()
 {
     $CLICKHOUSE_CLIENT --query "
         SYSTEM FLUSH LOGS query_log;
-        SELECT query_duration_ms, ProfileEvents['PatchesAcquireLockTries']
+        SELECT
+            query_duration_ms,
+            ProfileEvents['PatchesAcquireLockTries'],
+            ProfileEvents['PatchesAcquireLockBadVersionRetries']
         FROM system.query_log
         WHERE current_database = currentDatabase() AND log_comment = '$1' AND type != 'QueryStart'
         ORDER BY event_time_microseconds DESC LIMIT 1;
@@ -110,16 +113,17 @@ function run()
         $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name"
     done
 
-    # A huge but valid timeout must still WAIT for the lock. Deriving a deadline by adding the
-    # timeout to a steady_clock reading overflows here and yields an already-expired deadline,
-    # which would fail on the first try instead.
+    # A timeout far larger than the hold must still WAIT for the lock rather than give up at once.
+    # Values near INT64_MAX / 1e6 are deliberately not used: the outer table lock converts the same
+    # setting to a nanosecond deadline (RWLock.cpp) and overflows first, which is a pre-existing
+    # limitation of every lock_acquire_timeout consumer and outside the scope of this change.
     start_holder "$table_name" "$mode"
 
     tag="lwu57-$mode-huge-$CLICKHOUSE_DATABASE"
     $CLICKHOUSE_CLIENT --query "
         SET enable_lightweight_update = 1;
         UPDATE $table_name SET v = 400 WHERE s = 'xx'
-        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 10000000000, log_comment = '$tag';
+        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 1000000, log_comment = '$tag';
     "
     read -r duration_ms _ <<< "$(query_stats "$tag")"
     echo "$mode huge-timeout succeeded waited $(( duration_ms >= 500 ))"
@@ -186,7 +190,7 @@ function run_churn()
     kill $churn_pid 2>/dev/null || true
     wait $churn_pid 2>/dev/null || true
 
-    read -r _ tries <<< "$(query_stats "$tag")"
+    read -r _ tries _ <<< "$(query_stats "$tag")"
     # One try to find the conflict, one to acquire after it clears. A watch on the parent directory
     # instead wakes once per churn commit and needs an order of magnitude more.
     echo "churn succeeded tries_bounded $(( tries >= 1 && tries <= 5 ))"
@@ -265,7 +269,77 @@ function run_cancel()
     $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
 }
 
+# Losing the parent-version CAS means some unrelated update committed, so there is no node to watch
+# and the retry backs off a fixed amount instead of spinning on Keeper. The writers below touch
+# pairwise-disjoint columns, so none of them ever finds a column conflict: every one goes straight to
+# the CAS, and whoever overlaps another's read-then-CAS window loses it.
+function run_cas_contention()
+{
+    table_name="t_lwu_cas"
+    local writers=6
+
+    local cols="" vals=""
+    for k in $(seq 0 $((writers - 1)))
+    do
+        cols="$cols, c$k UInt64"
+        vals="$vals, 0"
+    done
+
+    $CLICKHOUSE_CLIENT --query "
+        SET insert_keeper_fault_injection_probability = 0.0;
+        DROP TABLE IF EXISTS $table_name SYNC;
+
+        CREATE TABLE $table_name (id UInt64 $cols)
+        ENGINE = ReplicatedMergeTree('/zookeeper/{database}/$table_name/', '1')
+        ORDER BY id
+        SETTINGS
+            enable_block_number_column = 1,
+            enable_block_offset_column = 1;
+
+        INSERT INTO $table_name SELECT number $vals FROM numbers(5);
+    "
+
+    tag="lwu57-cas-$CLICKHOUSE_DATABASE"
+    for k in $(seq 0 $((writers - 1)))
+    do
+        (
+            end=$((SECONDS + 4))
+            while [[ $SECONDS -lt $end ]]
+            do
+                $CLICKHOUSE_CLIENT --query "
+                    SET enable_lightweight_update = 1;
+                    UPDATE $table_name SET c$k = c$k + 1 WHERE id = 1
+                    SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 60, log_comment = '$tag';
+                " 2>/dev/null || true
+            done
+        ) &
+    done
+    wait
+
+    # Every retry sleeps 50 ms inside the lock acquisition, which is what
+    # PatchesAcquireLockMicroseconds measures, so acquiring must have taken at least that long. An
+    # inequality implied by the sleep itself, not a tuned threshold. The first condition also guards
+    # against a vacuous pass: without any retry the second one holds trivially.
+    $CLICKHOUSE_CLIENT --query "
+        SYSTEM FLUSH LOGS query_log;
+        SELECT
+            'cas reached ' || if(countIf(retries > 0) > 0, 'true', 'false')
+                || ' backed_off ' || if(minIf(acquire_us - retries * 50000, retries > 0) >= 0, 'true', 'false')
+        FROM
+        (
+            SELECT
+                toInt64(ProfileEvents['PatchesAcquireLockBadVersionRetries']) AS retries,
+                toInt64(ProfileEvents['PatchesAcquireLockMicroseconds']) AS acquire_us
+            FROM system.query_log
+            WHERE current_database = currentDatabase() AND log_comment = '$tag' AND type = 'QueryFinish'
+        );
+    "
+
+    $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
+}
+
 run "sync"
 run "auto"
 run_churn
+run_cas_contention
 run_cancel

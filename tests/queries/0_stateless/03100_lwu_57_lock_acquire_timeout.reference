@@ -7,4 +7,5 @@ auto 60000 succeeded
 auto huge-timeout succeeded waited 1
 auto zero-timeout uncontended succeeded
 churn succeeded tries_bounded 1
+cas reached true backed_off true
 cancel interrupted 1 promptly 1

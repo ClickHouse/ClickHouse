@@ -25,6 +25,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event PatchesAcquireLockTries;
+    extern const Event PatchesAcquireLockBadVersionRetries;
     extern const Event PatchesAcquireLockMicroseconds;
 }
 
@@ -56,15 +57,21 @@ Int64 getRemainingMs(const Stopwatch & watch, Int64 timeout_ms)
     return std::max<Int64>(timeout_ms - static_cast<Int64>(watch.elapsedMilliseconds()), 0);
 }
 
-/// Waits for at most one chunk; the caller's loop re-evaluates state and waits again if needed.
-/// Throws if the query was cancelled or exceeded max_execution_time - Poco::Event observes neither,
-/// so an unchunked wait would ignore KILL QUERY for the whole timeout.
-void waitInterruptibly(const ContextPtr & context, Poco::Event & event, Int64 remaining_ms)
+/// Waits for the watch the caller registered on `event`, in chunks that poll cancellation in
+/// between: Poco::Event observes neither KILL QUERY nor max_execution_time. The watch is registered
+/// once, because a timed out tryWait deregisters nothing and re-registering per chunk would leave a
+/// live callback per chunk on the same node. The event is deliberately not reset between chunks: the
+/// watch is one-shot, so a discarded signal is the only wakeup this wait would ever have got.
+void waitInterruptibly(const ContextPtr & context, Poco::Event & event, const Stopwatch & watch, Int64 timeout_ms)
 {
-    if (auto query_status = context->getProcessListElementSafe())
-        query_status->checkTimeLimit();
+    for (auto remaining_ms = getRemainingMs(watch, timeout_ms); remaining_ms > 0; remaining_ms = getRemainingMs(watch, timeout_ms))
+    {
+        if (auto query_status = context->getProcessListElementSafe())
+            query_status->checkTimeLimit();
 
-    event.tryWait(static_cast<long>(std::min(max_wait_chunk_ms, remaining_ms)));
+        if (event.tryWait(static_cast<long>(std::min(max_wait_chunk_ms, remaining_ms))))
+            return;
+    }
 }
 
 zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
@@ -103,7 +110,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
         /// The watch is one-shot, so a fresh event is required for every wait.
         auto lock_event = std::make_shared<Poco::Event>();
         if (zookeeper->exists(lock_path, nullptr, lock_event))
-            waitInterruptibly(context, *lock_event, remaining_ms);
+            waitInterruptibly(context, *lock_event, acquire_watch, lock_acquire_timeout);
     }
 }
 
@@ -182,7 +189,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
 
             /// The node may be gone already, in which case the event would never be set.
             if (zookeeper->tryGet(conflicting_path, conflicting_data, nullptr, conflict_event))
-                waitInterruptibly(context, *conflict_event, remaining_ms);
+                waitInterruptibly(context, *conflict_event, acquire_watch, lock_acquire_timeout);
 
             continue;
         }
@@ -207,6 +214,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
             if (auto query_status = context->getProcessListElementSafe())
                 query_status->checkTimeLimit();
 
+            ProfileEvents::increment(ProfileEvents::PatchesAcquireLockBadVersionRetries);
             std::this_thread::sleep_for(std::chrono::milliseconds(std::min(bad_version_backoff_ms, remaining_ms)));
             continue;
         }
