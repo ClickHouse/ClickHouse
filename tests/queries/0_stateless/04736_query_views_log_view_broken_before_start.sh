@@ -7,7 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 dangling="${CLICKHOUSE_DATABASE}_dangling_definer"
 present="${CLICKHOUSE_DATABASE}_present_definer"
 
-$CLICKHOUSE_CLIENT -nm -q "
+# Both views fail on purpose, and the server logs each failure at warning level,
+# which the client forwards to stderr and clickhouse-test treats as a failure.
+$CLICKHOUSE_CLIENT --send_logs_level=error -nm -q "
 DROP USER IF EXISTS ${dangling}, ${dangling}_gone, ${present};
 
 CREATE USER ${dangling};
