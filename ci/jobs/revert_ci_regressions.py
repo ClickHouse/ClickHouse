@@ -1908,10 +1908,25 @@ def kill_agent_processes() -> None:
     `/proc` -- its environment, its working directory -- would hand it every
     path the moment the agent starts. What holds is absence: nothing of the
     agent's user runs before a workspace is handed over, and nothing after
-    it is taken back. `pkill` exits 1 when there was nothing to kill, which
-    is the expected case, not a failure."""
+    it is taken back.
+
+    `pkill` exits 1 when there was nothing to kill, which is the expected
+    case, not a failure -- but the 1 that may pass has to be `pkill`'s own.
+    `sudo` exits 1 for its own failures too: a `pkill` it cannot execute, a
+    rule that stopped matching. Those are precisely the failures this guard
+    exists for, so judging the status after `sudo` has returned -- where the
+    two are indistinguishable -- would turn them into a silent no-op and let
+    a survivor of the previous attempt watch the next agent. The status is
+    judged inside the privileged shell instead, while it is still `pkill`'s:
+    1 becomes success, and everything else -- a `pkill` error, a shell that
+    could not run it, `sudo`'s own 1 -- fails the check, so `run_agent`
+    raises and hands no workspace over."""
+    kill = (
+        f"pkill -KILL -U {AGENT_USER}; status=$?; "
+        f'[ "$status" -eq 1 ] && exit 0; exit "$status"'
+    )
     Shell.check(
-        f"sudo -n pkill -KILL -U {AGENT_USER}; [ $? -le 1 ]",
+        f"sudo -n /bin/sh -c {shlex.quote(kill)}",
         verbose=True,
         strict=True,
     )
