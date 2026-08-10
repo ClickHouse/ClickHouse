@@ -97,7 +97,11 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
     ActionsDAG actions_dag(columns);
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag));
 
-    auto new_key_condition = std::make_unique<KeyCondition>(filter_dag, context, column_names, expression);
+    /// Part pruning is analysis only: it may use an `IN` set that is already built, but must never
+    /// execute a subquery to obtain one.
+    auto new_key_condition = std::make_unique<KeyCondition>(
+        filter_dag, context, column_names, expression,
+        /* single_point_ */ false, /* skip_analysis_ */ false, /* require_ready_sets_ */ true);
 
     if (new_key_condition->alwaysUnknownOrTrue())
     {
