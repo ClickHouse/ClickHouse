@@ -49,4 +49,13 @@ bool resolveUseUncompressedCacheForMergeTreeRead(
     bool has_uncompressed_cache,
     bool extra_parts_on_remote_disk = false);
 
+/// Whether the automatic mode is enabled but an explicit `use_uncompressed_cache = 0` opts out of it.
+///
+/// The opt-out is carried only by the `changed` flag of a setting whose value equals the default, and that
+/// flag does not survive a secondary query: the leaf server turns the forwarded settings back into
+/// `SettingsChanges` and clamps them to its constraints, which drops every change whose value already equals
+/// the leaf's current value. So the initiator has to resolve the opt-out itself and switch
+/// `enable_automatic_use_uncompressed_cache` off in the settings it sends to the shards or replicas.
+bool automaticUncompressedCacheIsOverriddenByOptOut(const Settings & settings);
+
 }

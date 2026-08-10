@@ -32,6 +32,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/UncompressedCacheUtils.h>
 #include <Processors/QueryPlan/ParallelReplicasSplitStep.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -64,6 +65,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool enable_automatic_use_uncompressed_cache;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsUInt64 limit;
@@ -169,6 +171,14 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         /// Set as unchanged to avoid sending to remote server.
         new_settings[Setting::max_concurrent_queries_for_user].changed = false;
         new_settings[Setting::max_memory_usage_for_user].changed = false;
+    }
+
+    /// An explicit `use_uncompressed_cache = 0` does not survive the settings round-trip to a secondary
+    /// query (see `automaticUncompressedCacheIsOverriddenByOptOut`), so resolve the opt-out here.
+    if (automaticUncompressedCacheIsOverriddenByOptOut(settings))
+    {
+        new_settings[Setting::enable_automatic_use_uncompressed_cache] = false;
+        new_settings[Setting::enable_automatic_use_uncompressed_cache].changed = true;
     }
 
     if (settings[Setting::force_optimize_skip_unused_shards_nesting] && settings[Setting::force_optimize_skip_unused_shards])
@@ -567,6 +577,11 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
             "Disabling 'parallel_replicas_support_projection'. Currently, it's not supported for queries with parallel replicas over distributed tables");
         context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
     }
+
+    /// Same as for distributed queries: the explicit `use_uncompressed_cache = 0` opt-out is lost on the
+    /// replica, so turn the automatic mode off before the settings are sent there.
+    if (automaticUncompressedCacheIsOverriddenByOptOut(settings))
+        context_mutable->setSetting("enable_automatic_use_uncompressed_cache", Field{false});
 
     return context_mutable;
 }

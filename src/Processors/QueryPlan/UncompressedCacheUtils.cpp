@@ -64,4 +64,11 @@ bool resolveUseUncompressedCacheForMergeTreeRead(
         auto_enable_supported);
 }
 
+bool automaticUncompressedCacheIsOverriddenByOptOut(const Settings & settings)
+{
+    return settings[Setting::enable_automatic_use_uncompressed_cache]
+        && settings[Setting::use_uncompressed_cache].changed
+        && !settings[Setting::use_uncompressed_cache];
+}
+
 }
