@@ -22,6 +22,10 @@ public:
     /// increasing-offset order.
     VectorWithMemoryTracking<ByteRange> subtract(ByteRange r) const;
 
+    /// Returns the set's coverage WITHIN `r` (`set ∩ r`), as disjoint sub-ranges in
+    /// increasing-offset order - the complement of `subtract`: what IS covered, clamped to `r`.
+    VectorWithMemoryTracking<ByteRange> intersect(ByteRange r) const;
+
     /// Remove `r`'s bytes from the set, trimming/splitting any overlapping intervals.
     void remove(ByteRange r);
 

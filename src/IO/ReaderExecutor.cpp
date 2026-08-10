@@ -1019,19 +1019,22 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         m.published_cv.notify_all();
     });
 
-    /// Claim the FileCache downloader roles over the window's fill-target writers (recorded
-    /// at launch). Runs WE win (`to_fetch`) this worker fetches+writes inline below while the
-    /// claims stay open - it is the downloader, on THIS thread. Runs a sibling already leads
-    /// go to `sibling_led`: the worker SKIPS them (the foreground, seeing `m.contended`,
-    /// revokes to the sync path at collect, which serves them from the sibling's fill), which
-    /// dedups concurrent cold populate - each segment is fetched once across executors. The
-    /// claims' destructors complete-and-release exactly the roles won here, so an interrupted
-    /// fetch can never leak a segment DOWNLOADING (which would abort the writer's holder dtor
-    /// on `chassert(!is_last_holder)` - the foreground teardown cannot reset a foreign
-    /// downloader).
-    VectorWithMemoryTracking<ByteRange> led_misses;   /// the uncommitted tails WE won -> fetch here
-    IntervalSet available_cov;      /// committed prefixes: read from cache, ACCOUNTED as covered - never fetched
-    IntervalSet writer_coverage;    /// union of fill-target writer overlaps in the window
+    /// Claim the FileCache downloader roles over the fill-target writers (recorded at launch);
+    /// the window decomposition follows. We fetch+write the tails we win inline below while the
+    /// claims stay open - THIS thread is their downloader - which dedups concurrent cold populate
+    /// to one fetch per segment across executors. The claims' destructors complete-and-release
+    /// exactly the roles won here, so an interrupted fetch never leaks a segment DOWNLOADING
+    /// (which would abort the writer's holder dtor on `chassert(!is_last_holder)` - the foreground
+    /// teardown cannot reset a foreign downloader).
+    /// Split the window across the fill-target writers into disjoint roles:
+    ///   available - already committed, the serve reads it from cache (never fetched here);
+    ///   to_fetch  - the uncommitted tail whose downloader role WE hold, fetched below, plus any
+    ///               BYPASS gap (a window byte no writer covers: not dedupable, fetch it plainly);
+    ///   contended - the rest: a tail a sibling leads. `resolved` accumulates available ∪ to_fetch,
+    ///               so whatever is left of the window is contended.
+    IntervalSet to_fetch;      /// won tails + bypass gaps -> fetched on this thread
+    IntervalSet resolved;      /// available ∪ to_fetch = everything NOT contended
+    IntervalSet writer_coverage;
     VectorWithMemoryTracking<CacheWriter::FillClaim> claims;
     for (const auto & view : m.writer_views)
     {
@@ -1044,45 +1047,36 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         writer_coverage.add(ByteRange{lo, hi - lo});
         auto fill_claim = view.writer->claim(ByteRange{lo, hi - lo});
         for (const auto & r : fill_claim.available)
-            available_cov.add(r);
+            resolved.add(r);
         for (const auto & r : fill_claim.to_fetch)
-            led_misses.push_back(r);
+        {
+            to_fetch.add(r);
+            resolved.add(r);
+        }
         claims.push_back(std::move(fill_claim));
     }
-
-    /// A window byte no fill-target writer covers cannot be deduped (no cache tier populates
-    /// it): fetch it plainly.
     for (const auto & g : writer_coverage.subtract(window))
-        led_misses.push_back(g);
+    {
+        to_fetch.add(g);
+        resolved.add(g);
+    }
 
-    /// CONTENDED = the window minus what is `available` (committed, read from cache) and what we
-    /// fetch: the uncommitted tails a sibling leads. We neither fetch nor wait on them - `available`
-    /// is progress accepted as-is; a leftover contended gap records contention so the collect
-    /// revokes to the sync path (a sparse window must not be assembled here) and the foreground
-    /// resolves it.
-    IntervalSet resolved = available_cov;
-    for (const auto & r : led_misses)
-        resolved.add(r);
+    /// A leftover contended gap records contention so the collect revokes to the sync path (a
+    /// sparse window must not be assembled here); the foreground resolves it. `available` is
+    /// accepted as progress - we neither fetch nor wait on contended bytes.
     const auto contended = resolved.subtract(window);
     m.contended = !contended.empty();
 
     /// "Stop at the first loss" (inline serve only): fetch just the contiguous prefix up to the
-    /// first contended byte; the serve returns that prefix short and the next read resolves the
-    /// boundary. A pool worker fetches the whole led set (fetch_bound = window end).
+    /// first contended byte; the serve returns it short and the next read resolves the boundary.
+    /// A pool worker fetches the whole set (fetch_bound = window end).
     size_t fetch_bound = window.end();
     if (m.inline_serve)
         for (const auto & c : contended)
             fetch_bound = std::min(fetch_bound, c.offset);
 
-    /// Coalesce the led ranges into a DISJOINT set clamped to the window (overlapping tier
-    /// writers can elect the same bytes; round-trip through `IntervalSet`).
-    IntervalSet led_set;
-    for (const auto & r : led_misses)
-        led_set.add(r);
-    IntervalSet non_led;
-    for (const auto & g : led_set.subtract(window))
-        non_led.add(g);
-    VectorWithMemoryTracking<ByteRange> led_disjoint = non_led.subtract(window);
+    /// The disjoint fetch runs, clamped to the window.
+    const auto led_disjoint = to_fetch.intersect(window);
 
     /// Fetch the led runs on this worker thread via the machine's own connection, then write
     /// them inline (we hold the claims). A WIDE sibling-led hole between two led runs breaks
@@ -1286,21 +1280,14 @@ void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterVie
         writeSliceToWriter(view.writer, window, chain, out_stats);
 }
 
-/// The committed parts of `window` within `writer`'s cell. The double subtraction is forced
-/// by `IntervalSet` exposing only `add`/`subtract`: `committed().subtract(clamped)` is the
-/// UNcommitted part of the clamp, and subtracting that from the clamp recovers the committed
-/// parts.
+/// The committed parts of `window` within `writer`'s cell.
 static VectorWithMemoryTracking<ByteRange> committedPartsIn(const CacheWriter & writer, ByteRange window)
 {
     const size_t lo = std::max(writer.range().offset, window.offset);
     const size_t hi = std::min(writer.range().end(), window.end());
     if (lo >= hi)
         return {};
-    const ByteRange clamped{lo, hi - lo};
-    IntervalSet uncommitted;
-    for (const auto & gap : writer.committed().subtract(clamped))
-        uncommitted.add(gap);
-    return uncommitted.subtract(clamped);
+    return writer.committed().intersect(ByteRange{lo, hi - lo});
 }
 
 VectorWithMemoryTracking<ByteRange> ReaderExecutor::uncommittedIn(
@@ -2109,25 +2096,24 @@ void ReaderExecutor::interruptAndCollectMachine()
 
 bool ReaderExecutor::waitSiblingFills(ByteRange window)
 {
-    /// Dedup + late hits + our own leading worker's progress: wait on any cell a LIVE
-    /// writer is filling (a completed one returns immediately), bounded to the cursor
-    /// WINDOW. Bytes our committed cells do not hold (a sibling's download) are BANKED -
-    /// the bank is their only route to the display - and their cache-read credit is folded
-    /// here (the bank serve adds no counters). Bytes our own worker committed meanwhile
-    /// are dropped: the serve reads and counts them from the cells, once. A bypass gap
-    /// has no fill-target writer: no-op there. TRUE = the display can now serve the
-    /// window's first byte.
+    /// Wait on any cell a LIVE writer (ours or a sibling) is still filling, bounded to the cursor
+    /// window, then BANK the bytes a sibling delivered - the bank is their only route to the
+    /// display. Our own committed bytes are left to Display::read (which serves and counts them
+    /// from the cells, once). TRUE = the window's first byte can now serve.
     ChainedBuffers waited;
-    IntervalSet wait_cov = display.coverage(window);
-    display.wait(window, waited, wait_cov);
+    IntervalSet already_coverable = display.coverage(window);
+    display.wait(window, waited, already_coverable);
     if (waited.empty())
         return false;
 
-    const IntervalSet committed = display.committedCoverage(window);
+    /// Keep only the SIBLING bytes: `committed()` is each writer's OWN ledger, so a sibling's
+    /// commits are absent from it - what the wait delivered minus our committed coverage is
+    /// exactly the sibling's, and banking our own would double-serve against Display::read.
+    const IntervalSet our_committed = display.committedCoverage(window);
     ChainedBuffers sibling_bytes;
-    for (const auto & iv : waited.getIntervals())
-        for (const auto & gap : committed.subtract(iv))
-            sibling_bytes.append(waited.slice(gap));
+    for (const auto & delivered : waited.getIntervals())
+        for (const auto & sib : our_committed.subtract(delivered))
+            sibling_bytes.append(waited.slice(sib));
     if (!sibling_bytes.empty())
     {
         stats.add(Stats::BytesFromFilesystemCache, sibling_bytes.totalBytes());

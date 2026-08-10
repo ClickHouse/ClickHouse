@@ -53,6 +53,26 @@ VectorWithMemoryTracking<ByteRange> IntervalSet::subtract(ByteRange r) const
     return out;
 }
 
+VectorWithMemoryTracking<ByteRange> IntervalSet::intersect(ByteRange r) const
+{
+    VectorWithMemoryTracking<ByteRange> out;
+    if (r.size == 0)
+        return out;
+    const size_t rs = r.offset;
+    const size_t re = r.end();
+    for (const auto & i : intervals)
+    {
+        if (i.end() <= rs)
+            continue;
+        if (i.offset >= re)
+            break;
+        const size_t lo = std::max(rs, i.offset);
+        const size_t hi = std::min(re, i.end());
+        out.push_back({lo, hi - lo});
+    }
+    return out;
+}
+
 void IntervalSet::remove(ByteRange r)
 {
     if (r.size == 0)
