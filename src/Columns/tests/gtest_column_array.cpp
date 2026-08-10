@@ -31,23 +31,39 @@ ColumnArray::MutablePtr createArray(std::vector<UInt64> data_values, std::vector
     return ColumnArray::create(std::move(data), std::move(offsets));
 }
 
+/// The part of the column that appending empty values must leave alone.
+size_t nestedSize(const ColumnArray & column) { return column.getData().size(); }
+size_t nestedSize(const ColumnString & column) { return column.getChars().size(); }
+
+/// What the peak arms assert on, read off the column while it is still alive.
+struct Grown
+{
+    Int64 peak = 0;
+    size_t size = 0;
+    size_t nested_size = 0;
+    UInt64 last_offset = 0;
+};
+
 /// Appending `length` empty values only grows the offsets, so pre-sizing them to the final size costs one
 /// reallocation. A push_back loop instead walks the doubling chain, and Allocator::realloc charges the new
 /// block before releasing the old one, so its last step holds both at once. Peak is what separates the two:
-/// the final capacity is identical. Returns the peak the tracker observed while `body` ran.
+/// the final capacity is identical.
 ///
-/// `body` runs in a dedicated thread so current_thread starts as nullptr, independent of whatever
-/// ThreadStatus other gtests in unit_tests_dbms left behind -- and so this file leaves none behind either.
-template <typename F>
-Int64 peakOf(F && body)
+/// `create` must return the column by value, because the whole measurement happens on a dedicated thread:
+/// current_thread starts as nullptr there whatever other gtests in unit_tests_dbms left behind, and this
+/// file leaves none behind either. The column is destroyed on that same thread, so the frees are charged
+/// where the allocations were -- a free on another thread subtracts from that thread's tracker instead.
+/// Only the numbers come back out.
+template <typename Create>
+Grown grow(size_t length, Create && create)
 {
-    Int64 peak = 0;
+    Grown grown;
 
     std::thread measured([&]
     {
         ThreadStatus thread_status;
         auto & thread_tracker = CurrentThread::get().memory_tracker;
-        /// An own tracker between the thread and the total one, so only what `body` allocates is measured.
+        /// An own tracker between the thread and the total one, so only what the column allocates is measured.
         MemoryTracker scope_tracker(&total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/false);
         MemoryTracker * prev_parent = thread_tracker.getParent();
         Int64 prev_untracked_limit = CurrentThread::get().untracked_memory_limit;
@@ -66,14 +82,21 @@ Int64 peakOf(F && body)
         CurrentThread::get().untracked_memory_limit = 1;
         thread_tracker.setParent(&scope_tracker);
 
-        body();
+        {
+            auto column = create();
+            column->insertManyDefaults(length);
+
+            grown.peak = scope_tracker.getPeak();
+            grown.size = column->size();
+            grown.nested_size = nestedSize(*column);
+            grown.last_offset = column->getOffsets().back();
+        }
 
         CurrentThread::flushUntrackedMemory();
-        peak = scope_tracker.getPeak();
     });
     measured.join();
 
-    return peak;
+    return grown;
 }
 
 /// Large enough that the offsets array (8 bytes per element) dwarfs everything else the body allocates.
@@ -104,21 +127,19 @@ TEST(ColumnArray, OffsetsConsistentWithNestedColumn)
 
 TEST(ColumnArray, InsertManyDefaultsPreSizesOffsets)
 {
-    auto column = ColumnArray::create(ColumnUInt64::create());
-
-    Int64 peak = peakOf([&] { column->insertManyDefaults(elements); });
+    auto grown = grow(elements, [] { return ColumnArray::create(ColumnUInt64::create()); });
 
     /// Control, asserted first: the offsets really were appended, and the nested column was left alone.
-    ASSERT_EQ(column->size(), elements);
-    ASSERT_EQ(column->getData().size(), 0u);
-    ASSERT_EQ(column->getOffsets().back(), 0u);
+    ASSERT_EQ(grown.size, elements);
+    ASSERT_EQ(grown.nested_size, 0u);
+    ASSERT_EQ(grown.last_offset, 0u);
 
     /// Asserted before the upper bound: holding the offsets needs at least their size, so a tracker that
-    /// recorded nothing leaves `peak` at 0 and would satisfy any upper bound, old implementation included.
-    ASSERT_GE(peak, offsets_bytes) << "tracker recorded nothing";
+    /// recorded nothing leaves the peak at 0 and would satisfy any upper bound, old implementation included.
+    ASSERT_GE(grown.peak, offsets_bytes) << "tracker recorded nothing";
 
     /// One reallocation peaks at the final size; the doubling chain peaks at ~1.5x it.
-    EXPECT_LT(peak, offsets_bytes * 5 / 4) << "peak " << peak << " vs offsets " << offsets_bytes;
+    EXPECT_LT(grown.peak, offsets_bytes * 5 / 4) << "peak " << grown.peak << " vs offsets " << offsets_bytes;
 }
 
 TEST(ColumnArray, InsertManyDefaultsKeepsOffsetsAfterNonEmptyArrays)
@@ -156,18 +177,16 @@ TEST(ColumnArray, InsertManyDefaultsGrowsOffsetsGeometrically)
 
 TEST(ColumnString, InsertManyDefaultsPreSizesOffsets)
 {
-    auto column = ColumnString::create();
-
-    Int64 peak = peakOf([&] { column->insertManyDefaults(elements); });
+    auto grown = grow(elements, [] { return ColumnString::create(); });
 
     /// Control, asserted first: the offsets really were appended, and no characters were written.
-    ASSERT_EQ(column->size(), elements);
-    ASSERT_EQ(column->getChars().size(), 0u);
-    ASSERT_EQ(column->getOffsets().back(), 0u);
+    ASSERT_EQ(grown.size, elements);
+    ASSERT_EQ(grown.nested_size, 0u);
+    ASSERT_EQ(grown.last_offset, 0u);
 
-    ASSERT_GE(peak, offsets_bytes) << "tracker recorded nothing";
+    ASSERT_GE(grown.peak, offsets_bytes) << "tracker recorded nothing";
 
-    EXPECT_LT(peak, offsets_bytes * 5 / 4) << "peak " << peak << " vs offsets " << offsets_bytes;
+    EXPECT_LT(grown.peak, offsets_bytes * 5 / 4) << "peak " << grown.peak << " vs offsets " << offsets_bytes;
 }
 
 TEST(ColumnString, InsertManyDefaultsKeepsOffsetsAfterNonEmptyStrings)
