@@ -1,0 +1,17 @@
+SystemUserQueryLog
+query_log denied
+1	0
+String
+Array(String)	Array(UInt64)	Array(String)	Array(String)
+0
+1
+1
+1
+1
+1
+1
+1
+1
+create denied
+rename denied
+drop denied
