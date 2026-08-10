@@ -3941,6 +3941,34 @@ TEST_F(FileCacheTest, QueryLimitUnchargesSegmentsEvictedByAnotherQuery)
     ASSERT_TRUE(cached_after_eviction);
 }
 
+TEST_F(FileCacheTest, QueryLimitUnchargeDoesNotUnderflow)
+{
+    /// The reserve-ahead surplus given back on file segment completion belongs to the whole
+    /// segment, so it can be larger than what this query reserved of it (another query may have
+    /// reserved the rest). Uncharging must not underflow the per-query accounting.
+    ServerUUID::setRandomForUnitTests();
+    DB::ThreadStatus thread_status;
+
+    const std::string query_id = "query_id_uncharge_underflow";
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(query_id);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    QueryLimitFixture fixture(
+        "query_limit_underflow", cache_base_path3, query_id,
+        /* max_download_size_per_query */20, /* reserve_granularity */0);
+    ASSERT_TRUE(fixture.holder != nullptr);
+
+    ASSERT_TRUE(fixture.reserveAndDownload(0, 10, 10, cache_base_path3));
+
+    /// A surplus larger than the 10 bytes this query is charged for the segment.
+    fixture.cache->decrementQueryLimitSize(DB::FileCacheKey::fromPath("query_limit_key"), 0, 1000);
+
+    /// The budget is intact (not wrapped around), so 10 more bytes still fit into the limit.
+    ASSERT_TRUE(fixture.reserveAndDownload(100, 10, 10, cache_base_path3));
+}
+
 TEST_F(FileCacheTest, QueryLimitIsCumulative)
 {
     /// `max_download_size_per_query` is a budget for the whole query, not for a single

@@ -82,23 +82,27 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     if (query_id.empty())
         return nullptr;
 
-    std::lock_guard lock(query_map_mutex);
-    auto [it, inserted] = query_map.emplace(query_id, nullptr);
-    /// query_id is reusable, so an entry of a finished query must not be inherited by a new one.
-    if (!inserted && it->second->isQueryFinished())
+    /// Declared before the lock, so that a replaced context is destroyed after it is released.
+    QueryContextPtr doomed;
     {
-        it->second.reset();
-        inserted = true;
-    }
+        std::lock_guard lock(query_map_mutex);
+        auto [it, inserted] = query_map.emplace(query_id, nullptr);
+        /// query_id is reusable, so an entry of a finished query must not be inherited by a new one.
+        if (!inserted && it->second->isQueryFinished())
+        {
+            doomed = std::move(it->second);
+            inserted = true;
+        }
 
-    if (inserted)
-    {
-        it->second = std::make_shared<QueryContext>(
-            settings.max_download_size_per_query,
-            !settings.skip_download_if_exceeds_per_query_cache_write_limit);
-    }
+        if (inserted)
+        {
+            it->second = std::make_shared<QueryContext>(
+                settings.max_download_size_per_query,
+                !settings.skip_download_if_exceeds_per_query_cache_write_limit);
+        }
 
-    return it->second;
+        return it->second;
+    }
 }
 
 FileCacheQueryLimit::QueryContext::QueryContext(
@@ -151,8 +155,15 @@ void FileCacheQueryLimit::QueryContext::tryDecrementSize(const Key & key, size_t
 {
     std::lock_guard records_lock(records_mutex);
     auto record = records.find({key, offset});
-    if (record != records.end())
-        record->second->decrementSize(size);
+    if (record == records.end())
+        return;
+
+    /// `size` is the surplus of the whole file segment, which can also cover reserve-ahead of
+    /// other queries which downloaded parts of it, while this record holds only what this query
+    /// reserved itself. Uncharging more than that would underflow the per-query accounting.
+    const size_t to_decrement = std::min<size_t>(size, record->second->getEntry()->size);
+    if (to_decrement)
+        record->second->decrementSize(to_decrement);
 }
 
 IFileCachePriority::IteratorPtr FileCacheQueryLimit::QueryContext::tryGet(
