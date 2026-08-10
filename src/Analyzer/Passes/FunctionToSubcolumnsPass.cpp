@@ -1289,6 +1289,16 @@ void FunctionToSubcolumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPt
     first_visitor.visit(query_tree_node);
     auto identifiers_to_optimize = first_visitor.getIdentifiersToOptimize();
 
+    if (only_filter_clauses)
+    {
+        /// Restrict all rewrites to WHERE/PREWHERE: rewrites in other clauses could
+        /// change the block header, which must stay stable when the query is executed
+        /// on a shard of a distributed query.
+        identifiers_to_optimize.filter_only.insert(
+            identifiers_to_optimize.everywhere.begin(), identifiers_to_optimize.everywhere.end());
+        identifiers_to_optimize.everywhere.clear();
+    }
+
     if (identifiers_to_optimize.empty())
         return;
 

@@ -24,6 +24,7 @@
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -261,9 +262,31 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     if (select_query_options.ignore_ast_optimizations
         || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
         query_tree_pass_manager.runOnlyResolve(query_tree);
+
+        /// A query executed on a shard of a distributed query skips optimization passes (see above),
+        /// and the initiator cannot apply the optimization to subcolumns either, because it does not
+        /// know the real schema and the indexes of the tables on shards
+        /// (StorageDistributed::supportsOptimizationToSubcolumns returns false).
+        /// Rewrites inside WHERE and PREWHERE cannot change the header, so they are safe to apply
+        /// here, where the storage metadata is known. Without this, e.g. `map['key']` reads the
+        /// whole Map on every shard instead of a single key subcolumn.
+        bool is_query_on_shard = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+            || select_query_options.is_local_plan_for_distributed_query
+            || select_query_options.build_logical_plan;
+
+        if (is_query_on_shard && !select_query_options.is_create_view)
+        {
+            QueryTreePassManager function_to_subcolumns_pass_manager(context);
+            function_to_subcolumns_pass_manager.addPass(std::make_shared<FunctionToSubcolumnsPass>(/*only_filter_clauses=*/ true));
+            function_to_subcolumns_pass_manager.run(query_tree);
+        }
+    }
     else
+    {
         query_tree_pass_manager.run(query_tree);
+    }
 
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);

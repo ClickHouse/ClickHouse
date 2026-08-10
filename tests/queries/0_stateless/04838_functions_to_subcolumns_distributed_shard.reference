@@ -1,0 +1,34 @@
+correctness
+10000
+10000
+10000
+10000
+10000
+10000
+0
+3334
+10000
+10000
+header stability
+vvvvv
+0	1429
+1	1429
+2	1429
+3	1429
+4	1428
+5	1428
+6	1428
+0	1429
+1	1429
+2	1429
+3	1429
+4	1428
+5	1428
+6	1428
+0
+1
+read amplification
+04838_map_dist_local	1	1
+04838_map_dist_plan	1	1
+04838_map_dist_remote	1	1
+04838_arr_dist	1

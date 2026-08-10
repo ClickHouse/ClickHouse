@@ -20,12 +20,22 @@ namespace DB
 class FunctionToSubcolumnsPass final : public IQueryTreePass
 {
 public:
+    FunctionToSubcolumnsPass() = default;
+
+    /// With only_filter_clauses, rewrites are applied only inside WHERE and PREWHERE.
+    /// Used for queries executed on shards of distributed queries: rewrites in other
+    /// clauses could change the block header expected by the initiator, while rewrites
+    /// inside WHERE/PREWHERE cannot.
+    explicit FunctionToSubcolumnsPass(bool only_filter_clauses_) : only_filter_clauses(only_filter_clauses_) {}
+
     String getName() override { return "FunctionToSubcolumns"; }
 
     String getDescription() override { return "Rewrite function to subcolumns, for example tupleElement(column, subcolumn) into column.subcolumn"; }
 
     void run(QueryTreeNodePtr & query_tree_node, ContextPtr context) override;
 
+private:
+    const bool only_filter_clauses = false;
 };
 
 }
