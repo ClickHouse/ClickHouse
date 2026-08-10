@@ -956,7 +956,8 @@ void KeeperServer::collectLeaderMetrics()
     {
         if (leader_unavailable_since_ms != 0 && raft_instance->is_leader())
         {
-            sum_leader_unavailable_time_ms += now_ms - leader_unavailable_since_ms;
+            last_leader_unavailable_time_ms = now_ms - leader_unavailable_since_ms;
+            sum_leader_unavailable_time_ms += *last_leader_unavailable_time_ms;
             ++cnt_leader_unavailable_time;
         }
         leader_unavailable_since_ms = 0;
@@ -972,7 +973,9 @@ void KeeperServer::finishLeaderElectionMetrics()
     if (election_since_ms == 0)
         return;
 
-    sum_election_time_ms += getNowMonotonicMs() - election_since_ms;
+    const UInt64 now_ms = getNowMonotonicMs();
+    last_leader_election_time_ms = now_ms - election_since_ms;
+    sum_election_time_ms += *last_leader_election_time_ms;
     ++cnt_election_time;
     election_since_ms = 0;
 }
@@ -1601,8 +1604,10 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
             std::lock_guard lock(leader_unavailable_metrics_mutex);
             result.sum_leader_unavailable_time_ms = sum_leader_unavailable_time_ms;
             result.cnt_leader_unavailable_time = cnt_leader_unavailable_time;
+            result.last_leader_unavailable_time_ms = last_leader_unavailable_time_ms;
             result.sum_election_time_ms = sum_election_time_ms;
             result.cnt_election_time = cnt_election_time;
+            result.last_leader_election_time_ms = last_leader_election_time_ms;
         }
 
         auto counts = getRespondingCounts();

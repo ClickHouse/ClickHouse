@@ -115,8 +115,10 @@ private:
     UInt64 election_since_ms = 0;
     UInt64 sum_leader_unavailable_time_ms = 0;
     UInt64 cnt_leader_unavailable_time = 0;
+    std::optional<UInt64> last_leader_unavailable_time_ms;
     UInt64 sum_election_time_ms = 0;
     UInt64 cnt_election_time = 0;
+    std::optional<UInt64> last_leader_election_time_ms;
     int32_t leader_unavailable_poll_interval_ms = 0;
     std::optional<nuraft::ptr<nuraft::delayed_task>> leader_unavailable_polling_task;
 
