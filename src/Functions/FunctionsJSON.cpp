@@ -114,16 +114,21 @@ public:
                                 "The first argument of function {} should be a string containing JSON or a JSON object, illegal type: "
                                 "{}", String(Name::name), first_column.type->getName());
 
-            /// For JSON/Object type input with at least one path key: use subcolumn extraction
-            /// (constant string keys only).
-            /// The root form without any path key has no subcolumn to read, so each row is serialized
-            /// back to JSON text and handled by the string implementation below. This makes
-            /// `JSONExtractRaw(json_column)` behave exactly like `JSONExtractRaw` on the equivalent
-            /// JSON string instead of silently returning a default value.
+            /// For JSON/Object type input, the value at a constant string path is read directly as a
+            /// subcolumn, which is what the value-extracting functions need and is much cheaper than
+            /// going through the document.
+            /// Every other call shape serializes each row back to JSON text and is handled by the string
+            /// implementation below, so that a `JSON` column always gives the same answer as the
+            /// equivalent JSON string. This covers the root form without any path key, which has no
+            /// subcolumn to read, the functions that navigate the document rather than read one value out
+            /// of it, and the paths that a subcolumn name cannot express - integer indices and
+            /// non-constant keys.
             ColumnsWithTypeAndName arguments_holder;
             if (is_object_input)
             {
-                if (Impl<JSONParser>::getNumberOfIndexArguments(arguments) != 0)
+                const size_t num_path_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
+                if (supportsObjectSubcolumnExtraction() && num_path_arguments != 0
+                    && arePathArgumentsConstantStrings(arguments, num_path_arguments, input_rows_count))
                     return runForObjectColumn<Name, Impl, case_insensitive>(arguments, result_type, input_rows_count, format_settings);
 
                 auto string_type = std::make_shared<DataTypeString>();
@@ -202,6 +207,47 @@ public:
         }
 
     private:
+        /// The `JSON`-object fast path reads the value stored at the requested path as a subcolumn and
+        /// casts it to the function's result type. That is what the value-extracting functions need, and
+        /// only they: the remaining ones have to look at the document structure, and a cast of the stored
+        /// value to their result type is either silently wrong or impossible.
+        /// `JSONLength` and `JSONType` would return the type's default (`0` and `Null`) for a value that
+        /// is a real object or array, and the structural extractors return an `Array(...)`, which
+        /// `accurateCastOrNull` rejects outright with `ILLEGAL_TYPE_OF_ARGUMENT`.
+        /// Those functions go through the JSON text of the row instead.
+        static constexpr bool supportsObjectSubcolumnExtraction()
+        {
+            constexpr std::string_view name = Name::name;
+            return name == "JSONHas"
+                || name == "JSONExtract" || name == "JSONExtractCaseInsensitive"
+                || name == "JSONExtractInt" || name == "JSONExtractIntCaseInsensitive"
+                || name == "JSONExtractUInt" || name == "JSONExtractUIntCaseInsensitive"
+                || name == "JSONExtractFloat" || name == "JSONExtractFloatCaseInsensitive"
+                || name == "JSONExtractBool" || name == "JSONExtractBoolCaseInsensitive"
+                || name == "JSONExtractString" || name == "JSONExtractStringCaseInsensitive"
+                || name == "JSONExtractRaw" || name == "JSONExtractRawCaseInsensitive";
+        }
+
+        /// A subcolumn of a `JSON` column is named by a dotted path of literal keys, so it can only be
+        /// used when every path argument is a constant string. The accepted shapes mirror the ones
+        /// `runForObjectColumn` reads: a `ColumnConst`, or, during constant folding of a scalar query, a
+        /// single-row column that is effectively constant but not wrapped in `ColumnConst`.
+        static bool arePathArgumentsConstantStrings(
+            const ColumnsWithTypeAndName & arguments, size_t num_path_arguments, size_t input_rows_count)
+        {
+            for (size_t i = 1; i <= num_path_arguments; ++i)
+            {
+                const auto & argument = arguments[i];
+                if (!isString(argument.type) || !argument.column)
+                    return false;
+                if (typeid_cast<const ColumnConst *>(argument.column.get()))
+                    continue;
+                if (input_rows_count > 1 || argument.column->empty())
+                    return false;
+            }
+            return true;
+        }
+
         /// Serialize a `JSON`/`Object` column back to its JSON text representation.
         /// An internal `castColumn` to `String` cannot be used here: internal casts are created without a
         /// context and therefore serialize with default `FormatSettings`, which would drop the caller's
@@ -1518,7 +1564,7 @@ Checks for the existence of the provided value(s) in the JSON document.
         )";
         FunctionDocumentation::Syntax syntax = "JSONHas(json[ ,indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"[ ,indices_or_keys, ...]", "A list of zero or more arguments.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the value exists in `json`, otherwise `0`", {"UInt8"}};
@@ -1548,7 +1594,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
 Checks that the string passed is valid JSON.
         )";
         FunctionDocumentation::Syntax syntax = "isValidJSON(json)";
-        FunctionDocumentation::Arguments argument = {{"json", "JSON string to validate", {"String"}}};
+        FunctionDocumentation::Arguments argument = {{"json", "JSON string to validate, or a `JSON` object.", {"String", "JSON"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string is valid JSON, otherwise `0`.", {"UInt8"}};
         FunctionDocumentation::Examples example = {
         {
@@ -1599,7 +1645,7 @@ If the value does not exist or has the wrong type, `0` will be returned.
         )";
         FunctionDocumentation::Syntax syntax = "JSONLength(json [, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"[, indices_or_keys, ...]", "Optional. A list of zero or more arguments.", {"String", "(U)Int8/16/32/64"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the length of the JSON array or JSON object, otherwise returns `0` if the value does not exist or has the wrong type.", {"UInt64"}};
@@ -1628,7 +1674,7 @@ Returns the key of a JSON object field by its index (1-based). If the JSON is pa
         )";
         FunctionDocumentation::Syntax syntax = "JSONKey(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "Optional list of indices or keys specifying a path to a nested element. Each argument can be either a string (access by key) or an integer (access by index starting from 1).", {"String", "Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the key name at the specified position in the JSON object.", {"String"}};
@@ -1653,7 +1699,7 @@ Return the type of a JSON value. If the value does not exist, `Null=0` will be r
         )";
         FunctionDocumentation::Syntax syntax = "JSONType(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"json[, indices_or_keys, ...]", "A list of zero or more arguments, each of which can be either string or integer.", {"String", "(U)Int8/16/32/64"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the type of a JSON value as a string, otherwise if the value doesn't exist it returns `Null=0`", {"Enum"}};
@@ -1685,7 +1731,7 @@ Parses JSON and extracts a value of Int type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractInt(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an Int value if it exists, otherwise returns `0`.", {"Int64"}};
@@ -1715,7 +1761,7 @@ Parses JSON and extracts a value of UInt type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractUInt(json [, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a UInt value if it exists, otherwise returns `0`.", {"UInt64"}};
@@ -1745,7 +1791,7 @@ Parses JSON and extracts a value of Float type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractFloat(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a Float value if it exists, otherwise returns `0`.", {"Float64"}};
@@ -1775,7 +1821,7 @@ Parses JSON and extracts a value of Bool type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractBool(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a Bool value if it exists, otherwise returns `0`.", {"Bool"}};
@@ -1805,7 +1851,7 @@ Parses JSON and extracts a value of String type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractString(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a String value if it exists, otherwise returns an empty string.", {"String"}};
@@ -1834,7 +1880,7 @@ Parses JSON and extracts a value with given ClickHouse data type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtract(json[, indices_or_keys, ...], return_type)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}},
             {"return_type", "ClickHouse data type to return.", {"String"}}
         };
@@ -1865,7 +1911,7 @@ Parses key-value pairs from a JSON where the values are of the given ClickHouse 
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValues(json[, indices_or_keys, ...], value_type)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}},
             {"value_type", "ClickHouse data type of the values.", {"String"}}
         };
@@ -1896,7 +1942,7 @@ Returns a part of JSON as unparsed string.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractRaw(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the part of JSON as an unparsed string. If the part does not exist or has a wrong type, an empty string will be returned.", {"String"}};
@@ -1926,7 +1972,7 @@ Returns an array with elements of JSON array, each represented as unparsed strin
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractArrayRaw(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of strings with JSON array elements. If the part is not an array or does not exist, an empty array will be returned.", {"Array(String)"}};
@@ -1956,7 +2002,7 @@ Returns an array of tuples with keys and values from a JSON object. All values a
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesRaw(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples with parsed key-value pairs where values are unparsed strings.", {"Array(Tuple(String, String))"}};
@@ -1985,7 +2031,7 @@ Parses a JSON string and extracts the keys.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeys(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with the keys of the JSON object.", {"Array(String)"}};
@@ -2018,7 +2064,7 @@ Parses JSON and extracts a value of Int type using case-insensitive key matching
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractIntCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the extracted Int value, 0 if not found or cannot be converted.", {"Int64"}};
@@ -2040,7 +2086,7 @@ Parses JSON and extracts a value of UInt type using case-insensitive key matchin
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractUIntCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -2064,7 +2110,7 @@ Parses JSON and extracts a value of Float type using case-insensitive key matchi
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractFloatCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -2088,7 +2134,7 @@ Parses JSON and extracts a boolean value using case-insensitive key matching. Th
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractBoolCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -2112,7 +2158,7 @@ Parses JSON and extracts a string using case-insensitive key matching. This func
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractStringCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -2137,7 +2183,7 @@ Parses JSON and extracts a value of the given ClickHouse data type using case-in
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractCaseInsensitive(json [, indices_or_keys...], return_type)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}},
             {"return_type", "The ClickHouse data type to extract", {"String"}}
         };
@@ -2160,7 +2206,7 @@ Parses key-value pairs from JSON using case-insensitive key matching. This funct
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesCaseInsensitive(json [, indices_or_keys...], value_type)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}},
             {"value_type", "The ClickHouse data type of the values", {"String"}}
         };
@@ -2182,7 +2228,7 @@ Returns part of the JSON as an unparsed string using case-insensitive key matchi
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse, or a JSON object. When a `JSON` object is passed, only constant string keys are supported; integer indices and non-constant keys are not.", {"String", "JSON"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -2206,7 +2252,7 @@ Returns an array with elements of JSON array, each represented as unparsed strin
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractArrayRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the array. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -2230,7 +2276,7 @@ Extracts raw key-value pairs from JSON using case-insensitive key matching. This
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -2254,7 +2300,7 @@ Parses a JSON string and extracts the keys using case-insensitive key matching t
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {

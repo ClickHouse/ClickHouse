@@ -59,3 +59,20 @@ empty key rows	2
 empty key rows	3	other	other
 escaped dots root	{"a.b":42}	{"a.b":42}
 escaped dots root keys	['a.b']	1
+nav length	2	2
+nav type object	Object	Object
+nav type nested	Array	Array
+nav keys	['b','d']	['b','d']
+nav keys and values	[('b',1),('d',2)]	[('b',1),('d',2)]
+nav keys and values raw	[('b','1')]	[('b','1')]
+nav array raw	['1','2']	['1','2']
+nav keys ci	['b']	['b']
+nav array raw ci	['1','2']	['1','2']
+nav keys and values raw ci	[('b','1')]	[('b','1')]
+nav keys and values ci	[('b',1)]	[('b',1)]
+index array	20	20
+index raw	10	10
+index key	a	a
+nonconst key	1	1	1	1
+nonconst key	2	1	1	1
+nonconst key	3	1	1	1

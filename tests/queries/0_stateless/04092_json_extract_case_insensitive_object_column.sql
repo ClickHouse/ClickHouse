@@ -147,3 +147,41 @@ SET json_type_escape_dots_in_keys = 1;
 SELECT 'escaped dots root', JSONExtractRaw('{"a.b": 42}'::JSON), JSONExtractRawCaseInsensitive('{"a.b": 42}'::JSON);
 SELECT 'escaped dots root keys', JSONExtractKeys('{"a.b": 42}'::JSON), JSONLength('{"a.b": 42}'::JSON);
 SET json_type_escape_dots_in_keys = 0;
+
+-- Every call shape on a `JSON` column returns what the same call returns on the equivalent JSON
+-- string. The functions that navigate the document instead of reading one value out of it
+-- (`JSONLength` and `JSONType` at a path, and the structural extractors) used to return a silent
+-- default or to fail with `ILLEGAL_TYPE_OF_ARGUMENT` on a `JSON` column.
+SELECT 'nav length', JSONLength('{"a": {"b": 1, "d": [1, 2]}}'::JSON, 'a'), JSONLength('{"a": {"b": 1, "d": [1, 2]}}', 'a');
+SELECT 'nav type object', JSONType('{"a": {"b": 1}}'::JSON, 'a'), JSONType('{"a": {"b": 1}}', 'a');
+SELECT 'nav type nested', JSONType('{"a": {"d": [1, 2]}}'::JSON, 'a', 'd'), JSONType('{"a": {"d": [1, 2]}}', 'a', 'd');
+SELECT 'nav keys', JSONExtractKeys('{"a": {"b": 1, "d": 2}}'::JSON, 'a'), JSONExtractKeys('{"a": {"b": 1, "d": 2}}', 'a');
+SELECT 'nav keys and values', JSONExtractKeysAndValues('{"a": {"b": 1, "d": 2}}'::JSON, 'a', 'Int64'), JSONExtractKeysAndValues('{"a": {"b": 1, "d": 2}}', 'a', 'Int64');
+SELECT 'nav keys and values raw', JSONExtractKeysAndValuesRaw('{"a": {"b": 1}}'::JSON, 'a'), JSONExtractKeysAndValuesRaw('{"a": {"b": 1}}', 'a');
+SELECT 'nav array raw', JSONExtractArrayRaw('{"a": [1, 2]}'::JSON, 'a'), JSONExtractArrayRaw('{"a": [1, 2]}', 'a');
+-- The case-insensitive structural variants match their keys on a `JSON` column too.
+SELECT 'nav keys ci', JSONExtractKeysCaseInsensitive('{"Nested": {"b": 1}}'::JSON, 'NESTED'), JSONExtractKeysCaseInsensitive('{"Nested": {"b": 1}}', 'NESTED');
+SELECT 'nav array raw ci', JSONExtractArrayRawCaseInsensitive('{"Arr": [1, 2]}'::JSON, 'ARR'), JSONExtractArrayRawCaseInsensitive('{"Arr": [1, 2]}', 'ARR');
+SELECT 'nav keys and values raw ci', JSONExtractKeysAndValuesRawCaseInsensitive('{"Nested": {"b": 1}}'::JSON, 'NESTED'), JSONExtractKeysAndValuesRawCaseInsensitive('{"Nested": {"b": 1}}', 'NESTED');
+SELECT 'nav keys and values ci', JSONExtractKeysAndValuesCaseInsensitive('{"Nested": {"b": 1}}'::JSON, 'NESTED', 'Int64'), JSONExtractKeysAndValuesCaseInsensitive('{"Nested": {"b": 1}}', 'NESTED', 'Int64');
+
+-- An integer index addresses a member of an array or an object; a subcolumn name cannot express it,
+-- so these call shapes read the JSON text of the row.
+SELECT 'index array', JSONExtractInt('{"a": [10, 20]}'::JSON, 'a', 2), JSONExtractInt('{"a": [10, 20]}', 'a', 2);
+SELECT 'index raw', JSONExtractRaw('{"a": [10, 20]}'::JSON, 'a', 1), JSONExtractRaw('{"a": [10, 20]}', 'a', 1);
+SELECT 'index key', JSONKey('{"a": 1}'::JSON, 1), JSONKey('{"a": 1}', 1);
+
+-- Path keys that are not constant are resolved per row, and are matched case-insensitively by the
+-- case-insensitive variants.
+DROP TABLE IF EXISTS t_04092_nonconst;
+CREATE TABLE t_04092_nonconst (id UInt32, j JSON, s String, k String) ENGINE = Memory;
+INSERT INTO t_04092_nonconst VALUES
+    (1, '{"Name": "alice", "age": 30}', '{"Name": "alice", "age": 30}', 'Name'),
+    (2, '{"name": "bob", "age": 40}', '{"name": "bob", "age": 40}', 'age'),
+    (3, '{"other": 1}', '{"other": 1}', 'missing');
+SELECT 'nonconst key', id,
+    JSONExtractRaw(j, k) = JSONExtractRaw(s, k),
+    JSONHas(j, k) = JSONHas(s, k),
+    JSONExtractRawCaseInsensitive(j, upper(k)) = JSONExtractRawCaseInsensitive(s, upper(k))
+FROM t_04092_nonconst ORDER BY id;
+DROP TABLE t_04092_nonconst;
