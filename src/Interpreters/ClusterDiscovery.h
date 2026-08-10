@@ -42,6 +42,13 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix = "remote_servers");
 
+    /// Throws if discovery subtrees under `config_prefix` are invalid. No side effects.
+    /// Call before committing Clusters / clusters_config so a bad reload cannot partially apply.
+    static void validateConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        ContextPtr context,
+        const String & config_prefix = "remote_servers");
+
     ClusterPtr getCluster(const String & cluster_name) const;
     std::unordered_map<String, ClusterPtr> getClusters() const;
 
@@ -184,9 +191,10 @@ private:
         String getFullPath() const { return zk_name + ":" + zk_path; }
     };
 
-    ParsedDiscoveryConfig parseDiscoveryConfig(
+    static ParsedDiscoveryConfig parseDiscoveryConfig(
         const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix) const;
+        ContextPtr context,
+        const String & config_prefix);
 
     void applyParsedConfig(ParsedDiscoveryConfig && parsed);
     void addStaticCluster(ParsedStaticDiscovery && parsed);

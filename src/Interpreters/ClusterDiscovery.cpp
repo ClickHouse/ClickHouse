@@ -179,7 +179,8 @@ private:
 
 ClusterDiscovery::ParsedDiscoveryConfig ClusterDiscovery::parseDiscoveryConfig(
     const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix) const
+    ContextPtr context,
+    const String & config_prefix)
 {
     ParsedDiscoveryConfig result;
 
@@ -252,6 +253,15 @@ ClusterDiscovery::ParsedDiscoveryConfig ClusterDiscovery::parseDiscoveryConfig(
     return result;
 }
 
+void ClusterDiscovery::validateConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    ContextPtr context,
+    const String & config_prefix)
+{
+    /// Discard result; throws on invalid discovery subtrees.
+    parseDiscoveryConfig(config, context, config_prefix);
+}
+
 ClusterDiscovery::ClusterDiscovery(
     const Poco::Util::AbstractConfiguration & config,
     ContextPtr context_,
@@ -265,7 +275,7 @@ ClusterDiscovery::ClusterDiscovery(
 {
     LOG_DEBUG(log, "Cluster discovery is enabled");
 
-    auto parsed = parseDiscoveryConfig(config, config_prefix);
+    auto parsed = parseDiscoveryConfig(config, context, config_prefix);
 
     for (auto & static_cluster : parsed.static_clusters)
         addStaticCluster(std::move(static_cluster));
@@ -573,7 +583,7 @@ void ClusterDiscovery::updateFromConfig(
     const String & config_prefix)
 {
     LOG_DEBUG(log, "Scheduling cluster discovery config update");
-    auto parsed = parseDiscoveryConfig(config, config_prefix);
+    auto parsed = parseDiscoveryConfig(config, context, config_prefix);
     {
         std::lock_guard lock(pending_config_mutex);
         pending_config_update = std::move(parsed);

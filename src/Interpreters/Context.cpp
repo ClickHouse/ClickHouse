@@ -6468,15 +6468,6 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
     ClusterDiscovery * discovery_just_created_ptr = nullptr;
     {
         std::lock_guard lock(shared->clusters_mutex);
-        bool discovery_just_created = false;
-        if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery)
-        {
-            if (!shared->cluster_discovery)
-            {
-                shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
-                discovery_just_created = true;
-            }
-        }
 
         /// Do not update clusters if this part of config wasn't changed.
         /// Note: clusters_config must be checked for null separately from clusters, because
@@ -6490,6 +6481,24 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         const bool remote_servers_unchanged
             = shared->clusters && shared->clusters_config
             && isSameConfiguration(*config, *shared->clusters_config, config_name);
+
+        const bool discovery_enabled
+            = ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery;
+
+        /// Validate discovery before creating the object or committing Clusters so a bad reload
+        /// cannot leave clusters_config advanced while discovery stays on the previous view.
+        if (discovery_enabled && !remote_servers_unchanged)
+            ClusterDiscovery::validateConfig(*config, getGlobalContext(), config_name);
+
+        bool discovery_just_created = false;
+        if (discovery_enabled)
+        {
+            if (!shared->cluster_discovery)
+            {
+                shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
+                discovery_just_created = true;
+            }
+        }
 
         if (!remote_servers_unchanged)
         {
