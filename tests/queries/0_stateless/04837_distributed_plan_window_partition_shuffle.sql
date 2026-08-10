@@ -3,13 +3,9 @@
 
 -- A PARTITION BY window under make_distributed_plan=1 is parallelized: the "any" scatter feeding the
 -- window's sort is retargeted to hash by the partition columns and the window runs per bucket below a
--- sorted gather (`tryPushWindowBelowSortedGather`). The reference pins the full distributed EXPLAIN;
--- result content is checked as a fingerprint against the non-distributed plan. The delivered global
--- order is asserted at scale by 04836_distributed_plan_window_partition_order.
---
--- The settings each plan or result depends on are pinned per query; all other settings stay
--- randomized. The checking queries themselves run without make_distributed_plan, because they read
--- from EXPLAIN and scalar subqueries, which are not serializable for remote execution.
+-- sorted gather (`tryPushWindowBelowSortedGather`). The reference pins the full distributed EXPLAIN,
+-- and the two result lines at the end (distributed and local) must show the same value. The delivered
+-- global order is asserted at scale by 04836_distributed_plan_window_partition_order.
 
 DROP TABLE IF EXISTS t_window_shuffle;
 
@@ -24,62 +20,47 @@ INSERT INTO t_window_shuffle SELECT number % 10, number FROM numbers(40);
 INSERT INTO t_window_shuffle SELECT number % 10, number + 1000000 FROM numbers(40);
 INSERT INTO t_window_shuffle SELECT number % 10, number + 2000000 FROM numbers(40);
 
--- The window runs per bucket: below the sorted gather, above the exchange keyed by the partition
--- column ("scatter by (a)", collapsed with the read gather into a shuffle).
--- optimize_sorting_by_input_stream_properties is pinned because it decides whether the ORDER BY sort
--- above the window becomes a `FinishSorting`, which the pinned plan shape includes.
-SELECT '-- distributed plan: window below the sorted gather, above a partition-keyed exchange';
-EXPLAIN SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shuffle ORDER BY a, v
-SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
+-- optimize_sorting_by_input_stream_properties decides whether the ORDER BY sort above the window
+-- becomes a `FinishSorting`, which the pinned plan shape includes. max_rows_to_group_by must be 0,
+-- otherwise make_distributed_plan declines plans with an aggregation.
+SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
     distributed_plan_default_shuffle_join_bucket_count = 8, distributed_plan_default_reader_bucket_count = 8,
     optimize_read_in_order = 0, optimize_sorting_by_input_stream_properties = 1,
-    distributed_plan_optimize_exchanges = 1;
+    distributed_plan_optimize_exchanges = 1, max_threads = 8, max_rows_to_group_by = 0;
 
--- Negative control: without the exchange optimization the rule does not run, so the keyed-scatter
--- signature must be absent from the plan. This also proves the signature detects the pre-rule shape.
-SELECT 'window stays gathered without exchange optimization:', countIf(explain LIKE '%scatter by%') = 0
+-- The window runs per bucket: below the sorted gather, above the exchange keyed by the partition
+-- column ("scatter by (a)", collapsed with the read gather into a shuffle).
+SELECT '-- distributed plan: window below the sorted gather, above a partition-keyed exchange';
+EXPLAIN SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shuffle ORDER BY a, v;
+
+-- Negative control: without the exchange optimization the rule does not run, so the plan is still
+-- distributed (it has a gather) but has no keyed scatter. The checking query itself runs local.
+SELECT 'window stays gathered without exchange optimization:',
+    countIf(explain LIKE '%scatter by%') = 0 AND countIf(explain LIKE '%GatherExchange%') > 0
 FROM
 (
     EXPLAIN SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shuffle ORDER BY a, v
-    SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
-        distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
-        distributed_plan_default_shuffle_join_bucket_count = 8, distributed_plan_default_reader_bucket_count = 8,
-        optimize_read_in_order = 0, distributed_plan_optimize_exchanges = 0
-);
+    SETTINGS make_distributed_plan = 1, distributed_plan_optimize_exchanges = 0
+)
+SETTINGS make_distributed_plan = 0;
 
--- Order-insensitive content fingerprint of the distributed result vs the non-distributed plan.
--- max_threads is pinned so the per-bucket partitioned sort fans out and the order-preserving
--- merge paths are exercised. optimize_sorting_by_input_stream_properties and
--- distributed_plan_optimize_exchanges are pinned so this executes the same pushed-down shape as
--- the plan snapshot above, including the serialized `FinishSorting`.
-SELECT 'distributed result matches non-distributed:',
+-- The same windows computed distributed and local; both lines must show the same value.
+SELECT sum(cityHash64(a, v, s, roll, rn)) FROM
 (
-    SELECT sum(cityHash64(a, v, s, roll, rn))
-    FROM
-    (
-        SELECT a, v,
-            sum(v) OVER (PARTITION BY a ORDER BY v) AS s,
-            sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll,
-            row_number() OVER (PARTITION BY a ORDER BY v) AS rn
-        FROM t_window_shuffle
-        SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
-            distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
-            distributed_plan_default_shuffle_join_bucket_count = 8, distributed_plan_default_reader_bucket_count = 8,
-            optimize_read_in_order = 0, max_threads = 8, optimize_sorting_by_input_stream_properties = 1,
-            distributed_plan_optimize_exchanges = 1
-    )
-) =
-(
-    SELECT sum(cityHash64(a, v, s, roll, rn))
-    FROM
-    (
-        SELECT a, v,
-            sum(v) OVER (PARTITION BY a ORDER BY v) AS s,
-            sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll,
-            row_number() OVER (PARTITION BY a ORDER BY v) AS rn
-        FROM t_window_shuffle
-    )
+    SELECT a, v,
+        sum(v) OVER (PARTITION BY a ORDER BY v) AS s,
+        sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll,
+        row_number() OVER (PARTITION BY a ORDER BY v) AS rn
+    FROM t_window_shuffle
 );
+SELECT sum(cityHash64(a, v, s, roll, rn)) FROM
+(
+    SELECT a, v,
+        sum(v) OVER (PARTITION BY a ORDER BY v) AS s,
+        sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll,
+        row_number() OVER (PARTITION BY a ORDER BY v) AS rn
+    FROM t_window_shuffle
+) SETTINGS make_distributed_plan = 0;
 
 DROP TABLE t_window_shuffle;

@@ -16,4 +16,5 @@ GatherExchange (sorted by (a ASC, v ASC))
                   Parts: 3 | Granules: 3
                   Output: a, v
 window stays gathered without exchange optimization:	1
-distributed result matches non-distributed:	1
+17673460911174582527
+17673460911174582527
