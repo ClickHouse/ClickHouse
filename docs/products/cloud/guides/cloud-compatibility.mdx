@@ -7,6 +7,8 @@ keywords: ['ClickHouse Cloud', 'compatibility']
 doc_type: 'guide'
 ---
 
+import CloudUnsupportedFeatures from '/snippets/_cloud_unsupported_features.mdx';
+
 This guide provides an overview of what to expect functionally and operationally in ClickHouse Cloud. While ClickHouse Cloud is based on the open-source ClickHouse distribution, there may be some differences in architecture and implementation. You may find this blog on [how we built ClickHouse Cloud](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year) interesting and relevant to read as background.
 
 ## ClickHouse Cloud architecture {#clickhouse-cloud-architecture}
@@ -39,7 +41,7 @@ ClickHouse Cloud is a highly-available, replicated service by default, built on 
 
 `Replicated*` engines are converted to the same `Shared*` equivalents. The substitution is visible in `SHOW CREATE TABLE`, which reports the `Shared*` engine even though your statement specified the plain variant.
 
-The following engines are also supported and used as written:
+The following table engines are also supported and used as written. The supported `MySQL` table engine is distinct from the unsupported `MySQL` database engine:
 
 - URL
 - View
@@ -122,6 +124,10 @@ ClickHouse Cloud is tuned for variable workloads, and for that reason most syste
 
 ### Advanced security administration {#advanced-security-administration}
 As part of creating the ClickHouse service, we create a default database, and the default user that has broad permissions to this database. This initial user can create additional users and assign their permissions to this database. Beyond this, the ability to enable the following security features within the database using Kerberos, LDAP, or SSL X.509 certificate authentication aren't supported at this time.
+
+## List of unsupported features {#list-of-unsupported-features}
+
+<CloudUnsupportedFeatures />
 
 ## Roadmap {#roadmap}
 

@@ -41,6 +41,7 @@
                   "pages": [
                     "products/cloud/features/autoscaling/overview",
                     "products/cloud/features/autoscaling/vertical",
+                    "products/cloud/features/autoscaling/horizontal-autoscaling",
                     "products/cloud/features/autoscaling/horizontal",
                     "products/cloud/features/autoscaling/make-before-break",
                     "products/cloud/features/autoscaling/idling",
@@ -208,8 +209,7 @@
               "expanded": false,
               "group": "Migration",
               "pages": [
-                "products/cloud/guides/migration/upload-a-csv-file",
-                "products/cloud/guides/migration/oss-to-cloud-backup-restore"
+                "products/cloud/guides/migration/upload-a-csv-file"
               ]
             },
             {
@@ -339,6 +339,9 @@
     },
     {
       "$ref": "../bring-your-own-cloud/navigation.json"
+    },
+    {
+      "sourceRef": "ClickHouse/airgap-docs"
     }
   ],
   "icon": "/images/icons/icon-clickhouse-cloud.svg",
