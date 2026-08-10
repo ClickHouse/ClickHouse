@@ -113,6 +113,10 @@ TEST(ColumnArray, InsertManyDefaultsPreSizesOffsets)
     ASSERT_EQ(column->getData().size(), 0u);
     ASSERT_EQ(column->getOffsets().back(), 0u);
 
+    /// Asserted before the upper bound: holding the offsets needs at least their size, so a tracker that
+    /// recorded nothing leaves `peak` at 0 and would satisfy any upper bound, old implementation included.
+    ASSERT_GE(peak, offsets_bytes) << "tracker recorded nothing";
+
     /// One reallocation peaks at the final size; the doubling chain peaks at ~1.5x it.
     EXPECT_LT(peak, offsets_bytes * 5 / 4) << "peak " << peak << " vs offsets " << offsets_bytes;
 }
@@ -160,6 +164,8 @@ TEST(ColumnString, InsertManyDefaultsPreSizesOffsets)
     ASSERT_EQ(column->size(), elements);
     ASSERT_EQ(column->getChars().size(), 0u);
     ASSERT_EQ(column->getOffsets().back(), 0u);
+
+    ASSERT_GE(peak, offsets_bytes) << "tracker recorded nothing";
 
     EXPECT_LT(peak, offsets_bytes * 5 / 4) << "peak " << peak << " vs offsets " << offsets_bytes;
 }
