@@ -565,6 +565,17 @@ void HTTPHandler::processQuery(
     {
         const auto & framing = current_output_format.getFraming();
 
+        /// Latch the fail-close guard for framed responses here as well, not only in
+        /// `set_query_result`. On the exception path `executeQuery` deliberately swallows a failure
+        /// of the `set_result_details` callback (see the
+        /// `execute_query_calling_empty_set_result_func_on_exception` failpoint and the `04629`
+        /// test), so the callback may never run even though the response is about to be written
+        /// through a framing format. Without this, a second failure - while writing the exception
+        /// packet or while closing the response - would make `trySendExceptionToClient` miss the
+        /// framed fast path and append a plain `__exception__` block after a partial packet stream.
+        if (framing)
+            used_output.framed = true;
+
         /// With a framing format, the exception is always written as a separate packet, because the
         /// client parses the response as a stream of packets. Otherwise the exception is written into
         /// the output format if the format supports it and the corresponding setting is enabled.

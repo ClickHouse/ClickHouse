@@ -286,6 +286,15 @@ void IFramingFormat::writeJSONStringValidUTF8(std::string_view s, WriteBuffer & 
 {
     WriteBufferValidUTF8 validating_buf(buf);
     writeJSONString(s, validating_buf, settings);
+
+    /// The last bytes of the string stay buffered inside the validating buffer until it is flushed,
+    /// and its destructor catches and suppresses any exception from `finalize` (see
+    /// `WriteBufferValidUTF8::~WriteBufferValidUTF8`). Here it writes straight into the live response
+    /// stream, so relying on the destructor would swallow a failure to write the tail of a `log`,
+    /// `profile_events` or `exception` string: the packet would be left truncated on the wire while
+    /// `emitToOut` clears `writing` and the stream keeps going. Flush explicitly so such a failure
+    /// propagates into the fail-close path instead.
+    validating_buf.finalize();
 }
 
 void IFramingFormat::writeLogRowJSON(const Block & block, size_t row_num, WriteBuffer & buf) const
