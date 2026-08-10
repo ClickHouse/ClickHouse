@@ -21,6 +21,9 @@ SELECT count() FROM t_114026 PREWHERE (k, s) IN (SELECT number, toString(number 
 -- A subquery inside PREWHERE still rewrites its own IN; only the PREWHERE predicate itself does not
 SELECT count() FROM t_114026 PREWHERE s IN (SELECT s FROM t_114026 WHERE k IN (SELECT number FROM numbers(3))) SETTINGS rewrite_in_to_join = 1, allow_experimental_correlated_subqueries = 1;
 
+-- Lambda-wrapped IN (subquery) inside PREWHERE (child expression scope propagation test)
+SELECT count() FROM t_114026 PREWHERE arrayExists(x -> x IN (SELECT number FROM numbers(10)), [k]) SETTINGS rewrite_in_to_join = 1, allow_experimental_correlated_subqueries = 1;
+
 -- An explicit correlated EXISTS in PREWHERE is genuinely unsupported; it must be reported
 -- honestly instead of as `Unknown function exists`
 SELECT count() FROM t_114026 PREWHERE EXISTS (SELECT 1 FROM numbers(10) WHERE number = k) SETTINGS allow_experimental_correlated_subqueries = 1; -- { serverError ILLEGAL_PREWHERE }
