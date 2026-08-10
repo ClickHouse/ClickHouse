@@ -156,7 +156,7 @@ public:
     /// unserializable rather than have a worker silently rebuild it as an ordinary partitioned sort.
     bool isSerializable() const override
     {
-        return type == Type::Full && scatter_partitions == 0;
+        return (type == Type::Full || type == Type::FinishSorting) && scatter_partitions == 0;
     }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);

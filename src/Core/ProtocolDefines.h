@@ -79,10 +79,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// written only when omitting it could corrupt two-level distributed merging - failing closed on an explicit
 /// error instead of silently mixing the two hash methods, whose two-level bucket numbering differs.
 /// Version 6 lets a `PARTITION BY` window's feeding sort be shipped under `make_distributed_plan`:
-/// `SortingStep` now serializes a non-empty `partition_by_description`, and `GatherSendStep` now
-/// serializes `maintain_sort_description` and merge-sorts its input streams instead of an unordered
-/// `resize(1)` when set. Each is gated by its own constant below, since an older peer would misparse the
-/// stream, not merely reject an unknown step name as with version 4.
+/// `SortingStep` now serializes a non-empty `partition_by_description` plus a trailing flags byte that
+/// carries a `FinishSorting` conversion, and `GatherSendStep` now serializes `maintain_sort_description`
+/// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Each is gated by its
+/// own constant below, since an older peer would misparse the stream, not merely reject an unknown step
+/// name as with version 4.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 6;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
