@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Random settings limits: max_threads=(1, 3)
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,7 +25,7 @@ PR="file('${CLICKHOUSE_TEST_UNIQUE_NAME}/right.csv', 'CSV', 'a UInt32, rm String
 run() {
     printf "SELECT '-- %s';\n" "$1"
     for analyzer in 0 1; do
-        printf 'SET enable_analyzer = %s;\n%s;\n' "$analyzer" "$2"
+        printf '%s SETTINGS enable_analyzer = %s;\n' "$2" "$analyzer"
     done
 }
 
