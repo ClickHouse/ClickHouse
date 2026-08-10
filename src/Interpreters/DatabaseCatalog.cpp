@@ -260,14 +260,14 @@ void DatabaseCatalog::createBackgroundTasks()
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec])
     {
         auto cleanup_task_holder
-            = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
+            = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
     }
 
-    auto drop_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
+    auto drop_task_holder = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
 
-    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
+    auto reload_disks_task_holder = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
     reload_disks_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(reload_disks_task_holder));
 }
 
@@ -1464,7 +1464,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         (*drop_task)->schedule();
 }
 
-void DatabaseCatalog::undropTable(StorageID table_id)
+void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> throw_if_cancelled)
 {
     auto db_disk = getDatabase(table_id.database_name)->getDisk();
 
@@ -1527,7 +1527,11 @@ void DatabaseCatalog::undropTable(StorageID table_id)
     /// It's unsafe to create another instance while the old one exists
     /// We cannot wait on shared_ptr's refcount, so it's busy wait
     while (!isSharedPtrUnique(dropped_table.table))
+    {
+        if (throw_if_cancelled)
+            throw_if_cancelled(); /// throws QUERY_WAS_CANCELLED if the query has been killed
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     dropped_table.table.reset();
 
     auto ast_attach = make_intrusive<ASTCreateQuery>();
