@@ -1,3 +1,4 @@
+import fcntl
 import glob
 import os
 import platform
@@ -54,6 +55,13 @@ class ClickHouseProc:
     # Per-table wall-clock cap for dump_system_tables (seconds). One stuck dump
     # must not exhaust the job's 9000s budget and get the whole job SIGKILLed.
     DUMP_SYSTEM_TABLE_TIMEOUT = 600
+    # Lock wait after SIGTRAP. Must exceed the fault-signal handler's pre-core
+    # prologue (up to 300x1s for the reporting thread, then 3s to flush logs)
+    # plus core writing, or the escalation below truncates the core it asks for.
+    STOP_LOCK_WAIT_TIMEOUT_TRAP = 600
+    # Lock wait after SIGKILL. The kernel drops the flock with the open file
+    # description as the process dies, so this only absorbs scheduling delay.
+    STOP_LOCK_WAIT_TIMEOUT_KILL = 5
 
     def __init__(
         self,
@@ -745,6 +753,78 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
+    @staticmethod
+    def _status_lock_free(run_path):
+        """Whether `clickhouse local --path run_path` could lock `status`.
+
+        Takes the same `flock(LOCK_EX|LOCK_NB)` as `StatusFile`, so this is that
+        predicate rather than a proxy for it. A missing file, or a stale one whose
+        holder is dead, is free; only a live holder is not.
+        """
+        try:
+            fd = os.open(f"{run_path}/status", os.O_RDONLY)
+        except OSError as ex:
+            return isinstance(ex, FileNotFoundError)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return True
+        except OSError:
+            return False
+        finally:
+            os.close(fd)
+
+    @classmethod
+    def _wait_status_lock_free(cls, run_path, timeout):
+        deadline = time.monotonic() + timeout
+        while not cls._status_lock_free(run_path):
+            if time.monotonic() >= deadline:
+                return False
+            Utils.sleep(1)
+        return True
+
+    @classmethod
+    def _kill(cls, pid, sig, run_path, timeout):
+        try:
+            os.kill(pid, sig)
+        except OSError as ex:
+            print(f"WARNING: Cannot send signal {sig} to {pid}: {ex}")
+        return cls._wait_status_lock_free(run_path, timeout)
+
+    @classmethod
+    def _force_release_status_lock(cls, pid, run_path):
+        """Make `run_path/status` lockable again, so its tables can still be dumped.
+
+        `pid` must be the one from the pid file, never a `Popen.pid`: with
+        `shell=True` that is a `sh -c` wrapper, and the server forks a watchdog
+        under it, so signalling it leaves the lock holder running.
+        """
+        if cls._status_lock_free(run_path):
+            return
+        # Fail closed: signal only a pid the lock holder itself vouches for, so a
+        # reused pid belonging to an unrelated process is never touched.
+        first_line = Shell.get_output(f"head -1 {run_path}/status").strip()
+        if first_line != f"PID: {pid}":
+            print(f"WARNING: {run_path}/status disowns pid {pid}: {first_line!r}")
+        else:
+            print(
+                f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
+            )
+            if cls._kill(
+                pid, signal.SIGTRAP, run_path, cls.STOP_LOCK_WAIT_TIMEOUT_TRAP
+            ):
+                return
+            print(f"WARNING: Process {pid} survived SIGTRAP - sending SIGKILL")
+            if cls._kill(
+                pid, signal.SIGKILL, run_path, cls.STOP_LOCK_WAIT_TIMEOUT_KILL
+            ):
+                return
+        print(f"WARNING: {run_path}/status is still locked")
+        Info().add_workflow_warning(
+            f"Failed to release the status file lock in {run_path},"
+            " system tables of that replica are lost, see job.log"
+        )
+
     def stop_server(self, force=False):
         """Gracefully stop only the ClickHouse server processes.
 
@@ -770,22 +850,24 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     proc.terminate()
                     try:
                         proc.wait(timeout=10)
-                        continue
                     except subprocess.TimeoutExpired:
-                        pass
+                        # Callers of this path dump their logs before stopping, so
+                        # no `clickhouse local` waits on this lock afterwards.
+                        print(
+                            f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
+                        )
+                        proc.send_signal(signal.SIGTRAP)
+                        try:
+                            proc.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                    continue
                 elif Shell.check(
                     f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
                     continue
-                print(
-                    f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
-                )
-                proc.send_signal(signal.SIGTRAP)
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
+                self._force_release_status_lock(pid, run_path)
 
         return self
 
