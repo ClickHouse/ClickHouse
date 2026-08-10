@@ -1062,6 +1062,8 @@ void ClusterDiscovery::startImpl()
     try
     {
         auto component_guard = Coordination::setCurrentComponent("ClusterDiscovery::start");
+        /// Apply any queued reload before the first init attempt (same rationale as runMainThread).
+        consumePendingConfigUpdate();
         initialUpdate();
     }
     catch (...)
@@ -1123,6 +1125,11 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     using namespace std::chrono_literals;
 
     constexpr auto force_update_interval = 2min;
+
+    /// Pending reloads must be applied before retrying init. Otherwise a worker that keeps
+    /// failing initialUpdate (bad Keeper path, etc.) never reaches the loop body consumer and
+    /// updateFromConfig stays stuck while ensureWorkerStarted no-ops on the running thread.
+    consumePendingConfigUpdate();
 
     if (!is_initialized)
         initialUpdate();

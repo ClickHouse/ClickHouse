@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -38,6 +40,32 @@ CONFIG_ENABLED = """
 </clickhouse>
 """
 
+CONFIG_BAD_AUX_KEEPER = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_pending_during_init>
+            <discovery>
+                <path>missing_aux_keeper:/clickhouse/discovery/test_pending_during_init</path>
+            </discovery>
+        </test_pending_during_init>
+    </remote_servers>
+</clickhouse>
+"""
+
+CONFIG_GOOD_AFTER_BAD_INIT = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_pending_during_init>
+            <discovery>
+                <path>/clickhouse/discovery/test_pending_during_init</path>
+            </discovery>
+        </test_pending_during_init>
+    </remote_servers>
+</clickhouse>
+"""
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -46,6 +74,30 @@ def start_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def test_reload_applies_while_initial_update_is_failing(start_cluster):
+    """Pending config must be consumed before retrying initialUpdate, or a fix reload is stuck."""
+    for node in nodes.values():
+        node.replace_config(CONFIG_PATH, CONFIG_BAD_AUX_KEEPER)
+        node.query("SYSTEM RELOAD CONFIG", password="passwordAbc")
+
+    # Let the worker retry failed init on the obsolete auxiliary keeper.
+    time.sleep(2)
+
+    for node in nodes.values():
+        node.replace_config(CONFIG_PATH, CONFIG_GOOD_AFTER_BAD_INIT)
+        node.query("SYSTEM RELOAD CONFIG", password="passwordAbc")
+
+    check_on_cluster(
+        list(nodes.values()),
+        len(nodes),
+        cluster_name="test_pending_during_init",
+        what="count()",
+        msg="Corrective reload was not applied while discovery init was failing",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
 
 
 def test_enable_discovery_after_startup_starts_worker(start_cluster):
