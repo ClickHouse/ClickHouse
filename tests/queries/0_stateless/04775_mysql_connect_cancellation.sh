@@ -37,10 +37,13 @@ report()
 
 # Run a query in the background and cancel it once it is really inside the MySQL connect.
 # Echoes the elapsed milliseconds; the error text is left in ${CLICKHOUSE_TMP}/${name}.err.
-# Returns non-zero if the query never started, in which case the caller must not judge it.
+# With wait_connect = 1 the cancellation is held back until the pool has entered a connection
+# attempt, which arms that inspect what the connect did must ask for.
+# Returns 1 if the query never started and 2 if the connect never began; in both cases the
+# fixture is broken and the caller must not judge the arm.
 run_and_cancel()
 {
-    local name=$1 query=$2
+    local name=$1 query=$2 wait_connect=${3:-0}
     local query_id="${CLICKHOUSE_DATABASE}_${name}"
     local start_ms end_ms
 
@@ -64,11 +67,48 @@ run_and_cancel()
         return 1
     fi
 
+    # A visible process row does not mean a connect has begun: the row is inserted before the
+    # interpreter that triggers analysis is constructed, so a cancellation can land ahead of the
+    # pool. The pool logs one line per attempt from inside the attempt itself, past the check
+    # that rejects an already cancelled query, so that line is the proof the connect started.
+    if [ "${wait_connect}" = "1" ]; then
+        local connecting=0
+        for _ in {1..200}; do
+            ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+            # system.text_log is MergeTree backed, so the randomized parallel replicas settings
+            # apply to reads of it. Pin them off per query rather than tagging the whole test.
+            if [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.text_log
+                    WHERE query_id = '${query_id}' AND logger_name = 'mysqlxx::Pool'
+                      AND message LIKE 'Connecting to%'
+                    SETTINGS enable_parallel_replicas = 0")" = "1" ]; then
+                connecting=1
+                break
+            fi
+            sleep 0.1
+        done
+        if [ "${connecting}" = "0" ]; then
+            ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null"
+            wait "${client_pid}" 2>/dev/null
+            return 2
+        fi
+    fi
+
     ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${query_id}' SYNC FORMAT Null"
     wait "${client_pid}" 2>/dev/null
     end_ms=$(date +%s%3N)
 
     echo "$((end_ms - start_ms))"
+}
+
+# Report a broken fixture, distinguishing the two stages so the cause is legible.
+report_fixture_failure()
+{
+    local name=$1 rc=$2
+    if [ "${rc}" = "2" ]; then
+        echo "${name} connect never started"
+    else
+        echo "${name} query never appeared in system.processes"
+    fi
 }
 
 # Cancel a query that is inside the MySQL connect, and report how long it took to come back.
@@ -97,16 +137,16 @@ kill_arm kill_three_tries "connect_timeout = 100, connection_max_tries = 3"
 kill_arm kill_unbounded_timeout "connect_timeout = 0, connection_max_tries = 1"
 
 # The per-attempt check must stop the retry loop, not merely shorten each attempt. The pool logs
-# one line per completed retry, so count them: attempt 1 is already under way when the
-# cancellation arrives and legitimately logs its line, and retries 2 and 3 must not happen.
-# Expect exactly 1, never 0.
+# one line per completed retry, so count them. Waiting for the connect to start makes 1 exact
+# rather than lucky: attempt 1 is guaranteed under way when the cancellation arrives, so it
+# legitimately logs its line, while retries 2 and 3 must not run at all.
 KILL_RETRY_NAME=kill_retry_count
-if ELAPSED_MS=$(run_and_cancel "${KILL_RETRY_NAME}" \
-        "SELECT * FROM mysql(${MYSQL_ARGS}, SETTINGS connect_timeout = 100, connection_max_tries = 3)"); then
+ELAPSED_MS=$(run_and_cancel "${KILL_RETRY_NAME}" \
+    "SELECT * FROM mysql(${MYSQL_ARGS}, SETTINGS connect_timeout = 100, connection_max_tries = 3)" 1)
+RC=$?
+if [ "${RC}" = "0" ]; then
     rm -f "${CLICKHOUSE_TMP}/${KILL_RETRY_NAME}.err"
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
-    # system.text_log is MergeTree backed, so the randomized parallel replicas settings apply to
-    # reads of it. Pin them off per query rather than tagging the whole test.
     RETRIES=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.text_log
         WHERE query_id = '${CLICKHOUSE_DATABASE}_${KILL_RETRY_NAME}'
           AND message LIKE 'Connection to mysql failed%times'
@@ -117,7 +157,7 @@ if ELAPSED_MS=$(run_and_cancel "${KILL_RETRY_NAME}" \
         echo "${KILL_RETRY_NAME} wrong retries: ${RETRIES}"
     fi
 else
-    echo "${KILL_RETRY_NAME} query never appeared in system.processes"
+    report_fixture_failure "${KILL_RETRY_NAME}" "${RC}"
 fi
 
 # A MySQL engine table connects from inside the pipeline (MySQLWithFailoverSource) instead of
@@ -126,11 +166,13 @@ fi
 ENGINE_NAME=kill_engine_table
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_DATABASE}.mysql_engine_tbl (x Int32)
     ENGINE = MySQL(${MYSQL_ARGS}) SETTINGS connect_timeout = 100, connection_max_tries = 1"
-if ELAPSED_MS=$(run_and_cancel "${ENGINE_NAME}" "SELECT * FROM ${CLICKHOUSE_DATABASE}.mysql_engine_tbl"); then
+ELAPSED_MS=$(run_and_cancel "${ENGINE_NAME}" "SELECT * FROM ${CLICKHOUSE_DATABASE}.mysql_engine_tbl" 1)
+RC=$?
+if [ "${RC}" = "0" ]; then
     ERROR=$(cat "${CLICKHOUSE_TMP}/${ENGINE_NAME}.err")
     rm -f "${CLICKHOUSE_TMP}/${ENGINE_NAME}.err"
-    # Prove the arm really went through the storage rather than repeating the table function:
-    # only the engine path logs under the StorageMySQL logger.
+    # Distinguish this arm from the table function above: only the engine path plans through
+    # StorageMySQL. That the connect itself happened is already guaranteed by the wait.
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
     VIA_STORAGE=$(${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.text_log
         WHERE query_id = '${CLICKHOUSE_DATABASE}_${ENGINE_NAME}' AND logger_name LIKE 'StorageMySQL%'
@@ -141,7 +183,7 @@ if ELAPSED_MS=$(run_and_cancel "${ENGINE_NAME}" "SELECT * FROM ${CLICKHOUSE_DATA
         echo "${ENGINE_NAME} did not reach the MySQL engine path"
     fi
 else
-    echo "${ENGINE_NAME} query never appeared in system.processes"
+    report_fixture_failure "${ENGINE_NAME}" "${RC}"
 fi
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.mysql_engine_tbl"
 
