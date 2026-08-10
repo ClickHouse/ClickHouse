@@ -23,7 +23,7 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
 
@@ -57,7 +57,7 @@ namespace
     }
 
     SQLQueryPiece makeScalarLikeTimestampResult(
-        const PQT::Function * function_node,
+        const PrometheusQueryTree::Function * function_node,
         const SQLQueryPiece & argument,
         ConverterContext & context)
     {
@@ -85,11 +85,11 @@ namespace
 
     struct InstantSelectorArgument
     {
-        const PQT::InstantSelector * instant_selector = nullptr;
-        const PQT::Offset * offset = nullptr;
+        const PrometheusQueryTree::InstantSelector * instant_selector = nullptr;
+        const PrometheusQueryTree::Offset * offset = nullptr;
     };
 
-    InstantSelectorArgument getInstantSelectorArgument(const PQT::Function * function_node)
+    InstantSelectorArgument getInstantSelectorArgument(const PrometheusQueryTree::Function * function_node)
     {
         const auto & function_arguments = function_node->getArguments();
         if (function_arguments.size() != 1)
@@ -97,21 +97,21 @@ namespace
 
         const auto * argument_node = function_arguments[0];
         if (argument_node->node_type == NodeType::InstantSelector)
-            return {static_cast<const PQT::InstantSelector *>(argument_node), nullptr};
+            return {static_cast<const PrometheusQueryTree::InstantSelector *>(argument_node), nullptr};
 
         if (argument_node->node_type == NodeType::Offset)
         {
-            const auto * offset = static_cast<const PQT::Offset *>(argument_node);
+            const auto * offset = static_cast<const PrometheusQueryTree::Offset *>(argument_node);
             const auto * expression = offset->getExpression();
             if (expression->node_type == NodeType::InstantSelector)
-                return {static_cast<const PQT::InstantSelector *>(expression), offset};
+                return {static_cast<const PrometheusQueryTree::InstantSelector *>(expression), offset};
         }
 
         return {};
     }
 
     SQLQueryPiece makeTimestampResultForInstantSelector(
-        const PQT::Function * function_node,
+        const PrometheusQueryTree::Function * function_node,
         const InstantSelectorArgument & selector_argument,
         ConverterContext & context)
     {
@@ -209,7 +209,7 @@ bool isFunctionTimestamp(std::string_view function_name)
 }
 
 
-SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyFunctionTimestamp(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(function_node, arguments, context);
 

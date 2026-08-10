@@ -10,6 +10,6 @@ struct ConverterContext;
 
 bool isClampFunction(std::string_view function_name);
 
-SQLQueryPiece applyClampFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+SQLQueryPiece applyClampFunction(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

@@ -51,7 +51,7 @@ namespace
     }
 
     void checkArgumentTypes(
-        const PQT::Function * function_node,
+        const PrometheusQueryTree::Function * function_node,
         const std::vector<SQLQueryPiece> & arguments,
         const ConverterContext & context,
         const ImplInfo & impl_info)
@@ -176,7 +176,7 @@ bool isClampFunction(std::string_view function_name)
 }
 
 
-SQLQueryPiece applyClampFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyClampFunction(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & function_name = function_node->function_name;
     const auto * impl_info = getImplInfo(function_name);

@@ -10,6 +10,6 @@ struct ConverterContext;
 
 bool isFunctionTimestamp(std::string_view function_name);
 
-SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+SQLQueryPiece applyFunctionTimestamp(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

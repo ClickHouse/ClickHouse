@@ -178,7 +178,7 @@ SQLQueryPiece applyFunctionOverRange(
     std::optional<NodeEvaluationRange> fixed_argument_range;
     if (argument.store_method == StoreMethod::RAW_DATA && argument.node->node_type == NodeType::Offset)
     {
-        const auto * offset_node = static_cast<const PQT::Offset *>(argument.node);
+        const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(argument.node);
         if (offset_node->at_timestamp)
             fixed_argument_range = context.node_range_getter.get(offset_node->getExpression());
     }
