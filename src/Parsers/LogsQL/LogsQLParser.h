@@ -116,8 +116,12 @@ private:
     };
 
     /// Saves and restores the query-scoped state around a recursive `parseQuery`,
-    /// so that a subquery (which inherits the state of its parent on entry) cannot
-    /// leak its own time range, offset, bucket, or global filter into the parent.
+    /// so that a subquery cannot leak its own time range, offset, bucket, or global
+    /// filter into the parent. A subquery inherits only the real query options
+    /// (`options_time_offset_ns` and `options_global_filter`), which apply to a query
+    /// and all its subqueries. The `_time` bounds and the stats bucket of the parent
+    /// are cleared instead: they are only used as the denominator of `rate()`, and the
+    /// subquery does not get the parent's `_time` predicate or `GROUP BY` bucket.
     struct QueryScopeGuard
     {
         LogsQLParser & parser;
@@ -131,7 +135,7 @@ private:
         ASTPtr saved_current_stats_time_bucket_seconds_expr;
         bool saved_current_stats_time_bucket_is_calendar;
 
-        explicit QueryScopeGuard(LogsQLParser & parser_);
+        QueryScopeGuard(LogsQLParser & parser_, bool is_subquery);
         ~QueryScopeGuard();
     };
 

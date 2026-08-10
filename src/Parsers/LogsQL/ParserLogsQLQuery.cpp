@@ -40,7 +40,20 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 break;
         }
 
-        Tokens set_tokens(probe, raw_end, max_query_size, /*skip_insignificant=*/ true);
+        /// The `max_query_size` budget is measured from the raw query begin, so the
+        /// LogsQL comments and whitespace skipped above count toward it: the token
+        /// stream of the escape gets only what is left of the budget. When the prefix
+        /// alone has already exhausted it, a single byte is left, so that no token can
+        /// fit and the escape is rejected in favour of the LogsQL path, which reports
+        /// `Max query size exceeded`.
+        size_t set_max_query_size = max_query_size;
+        if (max_query_size)
+        {
+            const size_t skipped = probe > raw_begin ? static_cast<size_t>(probe - raw_begin) : 0;
+            set_max_query_size = skipped < max_query_size ? max_query_size - skipped : 1;
+        }
+
+        Tokens set_tokens(probe, raw_end, set_max_query_size, /*skip_insignificant=*/ true);
         Pos set_pos(set_tokens, pos);
         ASTPtr set_node;
         ParserSetQuery set_parser;

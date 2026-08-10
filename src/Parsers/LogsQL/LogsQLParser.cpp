@@ -139,7 +139,7 @@ LogsQLParser::IncreaseDepth::~IncreaseDepth()
     --parser.depth;
 }
 
-LogsQLParser::QueryScopeGuard::QueryScopeGuard(LogsQLParser & parser_)
+LogsQLParser::QueryScopeGuard::QueryScopeGuard(LogsQLParser & parser_, bool is_subquery)
     : parser(parser_)
     , saved_options_time_offset_ns(parser_.options_time_offset_ns)
     , saved_options_global_filter(parser_.options_global_filter)
@@ -151,6 +151,21 @@ LogsQLParser::QueryScopeGuard::QueryScopeGuard(LogsQLParser & parser_)
     , saved_current_stats_time_bucket_seconds_expr(parser_.current_stats_time_bucket_seconds_expr)
     , saved_current_stats_time_bucket_is_calendar(parser_.current_stats_time_bucket_is_calendar)
 {
+    /// A subquery is a self-contained query: it does not get the parent's `_time`
+    /// predicate in its `WHERE`, nor the parent's `_time` bucket in its `GROUP BY`.
+    /// These members only drive the denominator of `rate()` and `rate_sum()`, so
+    /// inheriting them would divide the subquery's counters by a window it never
+    /// applied. Only `options_time_offset_ns` and `options_global_filter` are inherited.
+    if (is_subquery)
+    {
+        parser.query_time_lower_bound_expr = nullptr;
+        parser.query_time_lower_bound_ns.reset();
+        parser.query_time_upper_bound_expr = nullptr;
+        parser.query_time_upper_bound_ns.reset();
+        parser.current_stats_time_bucket_ns.reset();
+        parser.current_stats_time_bucket_seconds_expr = nullptr;
+        parser.current_stats_time_bucket_is_calendar = false;
+    }
 }
 
 LogsQLParser::QueryScopeGuard::~QueryScopeGuard()
@@ -212,7 +227,7 @@ ASTPtr LogsQLParser::parse()
 LogsQLParser::Layer LogsQLParser::parseQuery(bool is_subquery)
 {
     IncreaseDepth depth_guard(*this);
-    QueryScopeGuard scope_guard(*this);
+    QueryScopeGuard scope_guard(*this, is_subquery);
 
     parseQueryOptions();
 
