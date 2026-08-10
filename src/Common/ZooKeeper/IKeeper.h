@@ -822,11 +822,13 @@ public:
     /// If an exception is thrown inside the callback, the session will expire,
     ///  and all other callbacks will be called with "Session expired" error.
 
+    /// ttl == 0 means no TTL. A TTL node must not be ephemeral.
     virtual void create(
         const String & path,
         const String & data,
         bool is_ephemeral,
         bool is_sequential,
+        int64_t ttl,
         const ACLs & acls,
         CreateCallback callback) = 0;
 

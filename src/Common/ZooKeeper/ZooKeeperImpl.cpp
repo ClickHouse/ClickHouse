@@ -1822,6 +1822,7 @@ void ZooKeeper::create(
     const String & data,
     bool is_ephemeral,
     bool is_sequential,
+    int64_t ttl,
     const ACLs & acls,
     CreateCallback callback)
 {
@@ -1830,6 +1831,8 @@ void ZooKeeper::create(
     request.data = data;
     request.is_ephemeral = is_ephemeral;
     request.is_sequential = is_sequential;
+    request.include_ttl = ttl != 0;
+    request.ttl = ttl;
 
     ACLs final_acls = acls.empty() ? default_acls : acls;
 

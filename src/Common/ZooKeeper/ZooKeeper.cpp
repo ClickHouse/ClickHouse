@@ -491,7 +491,7 @@ Coordination::Error ZooKeeper::tryGetChildrenWatch(
     return code;
 }
 
-Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
+Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created, int64_t ttl)
 {
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
@@ -508,7 +508,7 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
     }
 
-    auto future_result = asyncTryCreateNoThrow(path, data, mode);
+    auto future_result = asyncTryCreateNoThrow(path, data, mode, ttl);
 
     if (!waitForFutureWithProgress(future_result))
     {
@@ -527,16 +527,16 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
     return code;
 }
 
-std::string ZooKeeper::create(const std::string & path, const std::string & data, int32_t mode)
+std::string ZooKeeper::create(const std::string & path, const std::string & data, int32_t mode, int64_t ttl)
 {
     std::string path_created;
-    check(tryCreate(path, data, mode, path_created), path);
+    check(tryCreate(path, data, mode, path_created, ttl), path);
     return path_created;
 }
 
-Coordination::Error ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
+Coordination::Error ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created, int64_t ttl)
 {
-    Coordination::Error code = createImpl(path, data, mode, path_created);
+    Coordination::Error code = createImpl(path, data, mode, path_created, ttl);
 
     if (code == Coordination::Error::ZNOTREADONLY && exists(path))
         return Coordination::Error::ZNODEEXISTS;
@@ -550,16 +550,16 @@ Coordination::Error ZooKeeper::tryCreate(const std::string & path, const std::st
     return code;
 }
 
-Coordination::Error ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode)
+Coordination::Error ZooKeeper::tryCreate(const std::string & path, const std::string & data, int32_t mode, int64_t ttl)
 {
     std::string path_created;
-    return tryCreate(path, data, mode, path_created);
+    return tryCreate(path, data, mode, path_created, ttl);
 }
 
 void ZooKeeper::createIfNotExists(const std::string & path, const std::string & data)
 {
     std::string path_created;
-    Coordination::Error code = createImpl(path, data, CreateMode::Persistent, path_created);
+    Coordination::Error code = createImpl(path, data, CreateMode::Persistent, path_created, /* ttl= */ 0);
 
     if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNODEEXISTS)
         return;
@@ -611,7 +611,7 @@ void ZooKeeper::createAncestors(const std::string & path)
 
     while (true)
     {
-        Coordination::Error code = createImpl(current_node, data, CreateMode::Persistent, path_created);
+        Coordination::Error code = createImpl(current_node, data, CreateMode::Persistent, path_created, /* ttl= */ 0);
         if (code == Coordination::Error::ZNONODE)
         {
             /// The parent node doesn't exist. Save the current node and try with the parent
@@ -1605,11 +1605,11 @@ std::future<Coordination::CreateResponse> ZooKeeper::asyncCreate(const std::stri
             promise->set_value(response);
     };
 
-    impl->create(path, data, mode & 1, mode & 2, {}, std::move(callback));
+    impl->create(path, data, mode & 1, mode & 2, /* ttl= */ 0, {}, std::move(callback));
     return future;
 }
 
-std::future<Coordination::CreateResponse> ZooKeeper::asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode)
+std::future<Coordination::CreateResponse> ZooKeeper::asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode, int64_t ttl)
 {
     auto promise = std::make_shared<std::promise<Coordination::CreateResponse>>();
     auto future = promise->get_future();
@@ -1619,7 +1619,7 @@ std::future<Coordination::CreateResponse> ZooKeeper::asyncTryCreateNoThrow(const
         promise->set_value(response);
     };
 
-    impl->create(path, data, mode & 1, mode & 2, {}, std::move(callback));
+    impl->create(path, data, mode & 1, mode & 2, ttl, {}, std::move(callback));
     return future;
 }
 

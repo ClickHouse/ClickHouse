@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, zookeeper
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -50,15 +50,19 @@ function shared_native_and_http_tests()
     wait_for "$(finished_in_query_log "$insert_id")"
     $CLICKHOUSE_CLIENT -q "SELECT count() FROM t"
     $CLICKHOUSE_CLIENT -q "SELECT memory_usage > 0, length(ProfileEvents) > 0 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$insert_id' AND type = 'QueryFinish'"
+    wait_for "count() = 1 FROM system.background_queries WHERE query_id = '$insert_id' AND status = 'Finished'"
+    $CLICKHOUSE_CLIENT -q "SELECT user = currentUser(), host != '', query != '', exception_code, exception = '', finish_time >= submit_time FROM system.background_queries WHERE query_id = '$insert_id'"
 
     echo '--- a long-running background query is visible and attributed in system.processes, and KILL QUERY kills it'
     local victim_id="victim_${run}_${CLICKHOUSE_DATABASE}"
     $run "INSERT INTO t SETTINGS max_block_size = 1 SELECT number FROM numbers(600) WHERE NOT ignore(sleepEachRow(0.1))" "$victim_id"
     wait_for "count() = 1 FROM system.processes WHERE query_id = '$victim_id' AND user = currentUser() AND current_database = currentDatabase() AND read_rows > 0"
-    echo "attributed in system.processes"
+    wait_for "count() = 1 FROM system.background_queries WHERE query_id = '$victim_id' AND status = 'Running' AND finish_time IS NULL"
+    echo "attributed in system.processes and system.background_queries"
     out=$($run "KILL QUERY WHERE query_id = '$victim_id' SYNC")
     [[ -z "$out" ]] && echo "no output"
     wait_for "count() = 1 FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$victim_id' AND type = 'ExceptionWhileProcessing' AND exception_code = 394"
+    wait_for "count() = 1 FROM system.background_queries WHERE query_id = '$victim_id' AND status = 'Failed' AND exception_code = 394 AND exception != ''"
     echo "killed"
 
     echo '--- SELECT in background discards the result'

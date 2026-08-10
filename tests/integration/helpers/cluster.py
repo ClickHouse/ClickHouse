@@ -3737,6 +3737,7 @@ class ClickHouseCluster:
                                     "check_stat",
                                     "try_remove",
                                     "list_with_stat_and_data",
+                                    "create_ttl",
                                 ]:
                                     ff_config.write(
                                         f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"

@@ -20,6 +20,7 @@
         <digest_enabled>1</digest_enabled>
 
         <coordination_settings>
+            <write_snapshot_version>8</write_snapshot_version>
             <operation_timeout_ms>10000</operation_timeout_ms>
             <session_timeout_ms>15000</session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>

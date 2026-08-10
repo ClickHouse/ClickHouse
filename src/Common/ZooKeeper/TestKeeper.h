@@ -51,6 +51,7 @@ public:
             const String & data,
             bool is_ephemeral,
             bool is_sequential,
+            int64_t ttl,
             const ACLs & acls,
             CreateCallback callback) override;
 

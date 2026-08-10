@@ -462,7 +462,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         if (CannotAllocateThreadFaultInjector::injectFault())
             return on_error("fault injected");
 
-        auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || shutdown; };
+        auto pred = [this] { return !queue_size || scheduled_jobs < queue_size || finished; };
 
         /// Wait for available threads or timeout
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set. Even if the value is zero.
@@ -473,8 +473,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         else
             job_finished.wait(lock, pred);
 
-        if (shutdown)
-            return on_error("shutdown");
+        if (finished)
+            return on_error("finished");
 
         /// We must not allocate memory or perform operations that could throw exceptions after adding a job to the queue,
         /// because if an exception occurs, it may leave the job in the queue without notifying any threads.
@@ -583,7 +583,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 template <typename Thread>
 void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
 {
-    if (shutdown)
+    if (finished)
         return;
 
     /// Start new threads while there are more scheduled jobs in the queue and the limit `max_threads` is not reached.
@@ -691,13 +691,29 @@ ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 }
 
 template <typename Thread>
+void ThreadPoolImpl<Thread>::finishNoLock()
+{
+    finished = true;
+
+    /// Wake up all idle threads so they can see it and exit gracefully.
+    wakeUpAllIdleThreadsNoLock();
+}
+
+template <typename Thread>
+void ThreadPoolImpl<Thread>::finish()
+{
+    std::lock_guard lock(mutex);
+    finishNoLock();
+}
+
+template <typename Thread>
 void ThreadPoolImpl<Thread>::finalize()
 {
     {
         std::lock_guard lock(mutex);
-        shutdown = true;
+        finishNoLock();
 
-        /// scheduleImpl doesn't check for shutdown outside the critical section,
+        /// scheduleImpl doesn't check for `finished` outside the critical section,
         /// so we set remaining_pool_capacity to a large negative value
         /// (e.g., -MAX_THEORETICAL_THREAD_COUNT) to signal that no new threads are needed.
         /// This effectively prevents any new threads from being started during shutdown.
@@ -706,9 +722,6 @@ void ThreadPoolImpl<Thread>::finalize()
         /// Disable thread self-removal from `threads`. Otherwise, if threads remove themselves,
         /// the thread.join() operation will fail later in this function.
         threads_remove_themselves = false;
-
-        /// Wake up all idle threads so they can see shutdown and exit gracefully.
-        wakeUpAllIdleThreadsNoLock();
     }
 
     /// Join all threads before clearing the list
@@ -844,10 +857,10 @@ size_t ThreadPoolImpl<Thread>::active() const
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::finished() const
+bool ThreadPoolImpl<Thread>::isFinished() const
 {
     std::lock_guard lock(mutex);
-    return shutdown;
+    return finished;
 }
 
 
@@ -990,7 +1003,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                         parent_pool.first_exception = exception_from_job;
                     if (parent_pool.shutdown_on_exception)
                     {
-                        parent_pool.shutdown = true;
+                        parent_pool.finished = true;
 
                         // Prevent new thread creation, as explained in finalize.
                         parent_pool.remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
@@ -1001,8 +1014,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 --parent_pool.scheduled_jobs;
 
                 parent_pool.job_finished.notify_all();
-                if (parent_pool.shutdown)
-                    parent_pool.wakeUpAllIdleThreadsNoLock(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+                if (parent_pool.finished)
+                    parent_pool.wakeUpAllIdleThreadsNoLock(); /// `finished` was set, wake up other threads so they can finish themselves.
             }
 
             /// LIFO idle thread scheduling: link this thread into the intrusive
@@ -1028,7 +1041,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// wait. When the worker wakes via the LIFO path the notifier has
             /// already popped it and `removeIdleThreadNoLock` is a no-op.
             while (parent_pool.jobs.empty()
-                && !parent_pool.shutdown
+                && !parent_pool.finished
                 && parent_pool.threads.size() <= std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads))
             {
                 idle_wakeup_flag = false;
@@ -1037,7 +1050,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 {
                     return idle_wakeup_flag
                         || !parent_pool.jobs.empty()
-                        || parent_pool.shutdown
+                        || parent_pool.finished
                         || parent_pool.threads.size() > std::min(parent_pool.max_threads, parent_pool.scheduled_jobs + parent_pool.max_free_threads);
                 });
 
@@ -1065,8 +1078,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 std::is_same_v<Thread, GlobalThreadType> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
                 job_data->elapsedMicroseconds());
 
-            /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
-            if (parent_pool.shutdown)
+            /// We don't run jobs after `finished` is set, but we have to properly dequeue all jobs and finish them.
+            if (parent_pool.finished)
             {
                 {
                     ALLOW_ALLOCATIONS_IN_SCOPE;

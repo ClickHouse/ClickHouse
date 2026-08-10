@@ -246,15 +246,16 @@ public:
 
     /// Create a znode.
     /// Throw an exception if something went wrong.
-    std::string create(const std::string & path, const std::string & data, int32_t mode);
+    /// ttl == 0 means no TTL. A TTL node must not be ephemeral.
+    std::string create(const std::string & path, const std::string & data, int32_t mode, int64_t ttl = 0);
 
     /// Does not throw in the following cases:
     /// * The parent for the created node does not exist
     /// * The parent is ephemeral.
     /// * The node already exists.
     /// In case of other errors throws an exception.
-    Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
-    Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode);
+    Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode, std::string & path_created, int64_t ttl = 0);
+    Coordination::Error tryCreate(const std::string & path, const std::string & data, int32_t mode, int64_t ttl = 0);
 
     /// Create a Persistent node.
     /// Does nothing if the node already exists.
@@ -521,7 +522,7 @@ public:
     using FutureCreate = std::future<Coordination::CreateResponse>;
     FutureCreate asyncCreate(const std::string & path, const std::string & data, int32_t mode);
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureCreate asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode);
+    FutureCreate asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode, int64_t ttl = 0);
 
     using FutureGet = std::future<Coordination::GetResponse>;
     FutureGet asyncGet(const std::string & path);
@@ -639,7 +640,7 @@ private:
     void updateAvailabilityZones();
 
     /// The following methods don't any throw exceptions but return error codes.
-    Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
+    Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created, int64_t ttl);
     Coordination::Error removeImpl(const std::string & path, int32_t version);
     Coordination::Error getImpl(
         const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback);

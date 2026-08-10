@@ -48,6 +48,7 @@
             <async_replication>1</async_replication>
             <!-- we want all logs for complex problems investigation -->
             <reserved_log_items>1000000000000000</reserved_log_items>
+            <write_snapshot_version>8</write_snapshot_version>
         </coordination_settings>
 
         <feature_flags>
@@ -56,6 +57,7 @@
             <check_not_exists>1</check_not_exists>
             <create_if_not_exists>1</create_if_not_exists>
             <remove_recursive>1</remove_recursive>
+            <create_ttl>1</create_ttl>
         </feature_flags>
 
         <raft_configuration>
