@@ -1763,8 +1763,6 @@ struct MutationContext
 
     HardlinkedFiles hardlinked_files;
 
-    bool need_prefix = true;
-
     scope_guard temporary_directory_lock;
 
     bool checkOperationIsNotCanceled() const
@@ -2112,7 +2110,6 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
 
     auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
         *ctx->data,
-        ctx->log,
         result,
         projection,
         ctx->new_data_part.get(),
@@ -3281,8 +3278,7 @@ MutateTask::MutateTask(
     const MergeTreeTransactionPtr & txn,
     MergeTreeData & data_,
     MergeTreeDataMergerMutator & mutator_,
-    PartitionActionBlocker & merges_blocker_,
-    bool need_prefix_)
+    PartitionActionBlocker & merges_blocker_)
     : ctx(std::make_shared<MutationContext>())
 {
     ctx->data = &data_;
@@ -3300,7 +3296,6 @@ MutateTask::MutateTask(
     ctx->storage_columns = metadata_snapshot_->getColumns().getAllPhysical();
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
-    ctx->need_prefix = need_prefix_;
 }
 
 
@@ -3793,9 +3788,6 @@ bool MutateTask::prepare()
             files_to_copy_instead_of_hardlinks.insert(IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
 
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
-        std::string prefix;
-        if (ctx->need_prefix)
-            prefix = "tmp_clone_";
 
         IDataPartStorage::ClonePartParams clone_params
         {
@@ -3810,7 +3802,7 @@ bool MutateTask::prepare()
 
         {
             std::tie(part, lock) = ctx->data->cloneAndLoadDataPart(
-                ctx->source_part, prefix, ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
+                ctx->source_part, "tmp_clone_", ctx->future_part->part_info, ctx->metadata_snapshot, clone_params, ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
             part->getDataPartStorage().beginTransaction();
             ctx->temporary_directory_lock = std::move(lock);
         }
@@ -3929,28 +3921,12 @@ bool MutateTask::prepare()
     }
     ctx->disk = single_disk_volume->getDisk();
 
-    std::string prefix;
-    if (ctx->need_prefix)
-        prefix = TEMP_DIRECTORY_PREFIX;
+    String tmp_part_dir_name = TEMP_DIRECTORY_PREFIX + ctx->future_part->name;
 
-    String tmp_part_dir_name = prefix + ctx->future_part->name;
-    ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
+    /// The name is deterministic, so claim it and reclaim a leftover of an interrupted mutation.
+    ctx->temporary_directory_lock = ctx->data->claimTemporaryPartDirectory(ctx->disk, tmp_part_dir_name);
 
-    /// Reclaim a stale leftover temporary directory (a mutation interrupted or rolled back and retried
-    /// with the same deterministic name) BEFORE constructing the part storage. Otherwise packed storage
-    /// seeds its archive reader and snapshots the mark layout from the leftover data.packed, and
-    /// finalizeWriter later carries every logical file the new mutation did not rewrite into the new
-    /// part. The temporary-directory lock above guarantees no concurrent operation owns this name.
-    {
-        auto relative_tmp_dir = fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name;
-        if (ctx->disk->existsDirectory(relative_tmp_dir))
-        {
-            LOG_WARNING(ctx->log, "Removing old temporary directory {}", (fs::path(ctx->disk->getPath()) / relative_tmp_dir).string());
-            ctx->disk->removeRecursive(relative_tmp_dir);
-        }
-    }
-
-    auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
+    auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings(), PartDirIntent::CreateFresh);
     builder.withPartFormat(ctx->future_part->part_format);
     builder.withPartInfo(ctx->future_part->part_info);
 
