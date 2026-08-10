@@ -38,7 +38,7 @@ report()
 # Run a query in the background and cancel it once it is really inside the MySQL connect.
 # Echoes the elapsed milliseconds; the error text is left in ${CLICKHOUSE_TMP}/${name}.err.
 # With wait_connect = 1 the cancellation is held back until the pool has entered a connection
-# attempt, which arms that inspect what the connect did must ask for.
+# attempt, which every arm that cancels a connect must ask for.
 # Returns 1 if the query never started and 2 if the connect never began; in both cases the
 # fixture is broken and the caller must not judge the arm.
 run_and_cancel()
@@ -112,13 +112,18 @@ report_fixture_failure()
 }
 
 # Cancel a query that is inside the MySQL connect, and report how long it took to come back.
+# Every arm here asks for the connect-stage wait: cancelling before the pool is entered yields
+# the same QUERY_WAS_CANCELLED these arms assert, so without the wait they could pass on a build
+# where the connect is not cancellable at all.
 kill_arm()
 {
     local name=$1 settings=$2
-    local elapsed_ms error
+    local elapsed_ms error rc
 
-    if ! elapsed_ms=$(run_and_cancel "${name}" "SELECT * FROM mysql(${MYSQL_ARGS}, SETTINGS ${settings})"); then
-        echo "${name} query never appeared in system.processes"
+    elapsed_ms=$(run_and_cancel "${name}" "SELECT * FROM mysql(${MYSQL_ARGS}, SETTINGS ${settings})" 1)
+    rc=$?
+    if [ "${rc}" != "0" ]; then
+        report_fixture_failure "${name}" "${rc}"
         return
     fi
 
@@ -128,10 +133,12 @@ kill_arm()
 }
 
 # One try: the check before the final error is the only cancellation checkpoint left, so this
-# arm pins the error identity. Without it the cancellation surfaces as ALL_CONNECTION_TRIES_FAILED.
+# arm pins the error identity of a cancellation that really landed inside an attempt. Without it
+# the cancellation surfaces as ALL_CONNECTION_TRIES_FAILED.
 kill_arm kill_one_try "connect_timeout = 100, connection_max_tries = 1"
 # Three tries: latency alone does not pin the per-attempt check, because the sliced wait already
-# bounds each attempt to a fraction of a second. kill_retry_count below is what pins it.
+# bounds each attempt to a fraction of a second, and the first attempt is under way by then.
+# kill_retry_count below is what pins it.
 kill_arm kill_three_tries "connect_timeout = 100, connection_max_tries = 3"
 # connect_timeout = 0 means wait indefinitely, which must stay killable and must not fail early.
 kill_arm kill_unbounded_timeout "connect_timeout = 0, connection_max_tries = 1"
