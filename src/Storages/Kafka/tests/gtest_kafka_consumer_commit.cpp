@@ -31,20 +31,14 @@ cppkafka::Consumer makeConsumerAgainstUnreachableBroker()
 /// Pins the deadline. cppkafka's own `commit` waits on librdkafka's reply queue with no timeout, and
 /// against unreachable brokers no reply op arrives, so the call never returns and the streaming task
 /// holding the consumer stops its table until the server restarts. A `DB::Exception` escaping here
-/// fails the test too, which is what pins the event wiring.
+/// fails the test too, which is what pins the event wiring. Without the deadline these tests hang
+/// rather than fail - the call under test is the one that never returns.
 TEST(KafkaCommitWithTimeout, CurrentAssignmentRespectsTheDeadline)
 {
     auto consumer = makeConsumerAgainstUnreachableBroker();
 
     Stopwatch watch;
-    try
-    {
-        StorageKafkaUtils::commitWithTimeout(consumer, nullptr, 3000ms);
-    }
-    catch (const cppkafka::HandleException &)
-    {
-    }
-
+    EXPECT_THROW(StorageKafkaUtils::commitWithTimeout(consumer, nullptr, 3000ms), cppkafka::HandleException);
     EXPECT_LT(watch.elapsedMilliseconds(), 15000);
 }
 
@@ -56,14 +50,7 @@ TEST(KafkaCommitWithTimeout, ExplicitOffsetsRespectTheDeadline)
     const cppkafka::TopicPartitionList offsets{cppkafka::TopicPartition{"gtest_kafka_commit_topic", 0, 42}};
 
     Stopwatch watch;
-    try
-    {
-        StorageKafkaUtils::commitWithTimeout(consumer, &offsets, 3000ms);
-    }
-    catch (const cppkafka::HandleException &)
-    {
-    }
-
+    EXPECT_THROW(StorageKafkaUtils::commitWithTimeout(consumer, &offsets, 3000ms), cppkafka::HandleException);
     EXPECT_LT(watch.elapsedMilliseconds(), 15000);
 }
 
