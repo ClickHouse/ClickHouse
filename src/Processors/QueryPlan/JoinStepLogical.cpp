@@ -1575,19 +1575,37 @@ static QueryPlanNode buildPhysicalJoinImpl(
     JoinActionRef on_clause_condition = concatConditions(join_expression);
     JoinActionRef residual_filter_condition = concatConditions(join_operator.residual_filter);
 
-    /// Only a physical join that performs the lookup itself emits the right columns already
-    /// converted to `Nullable`. The block nested loop operator reads the prepared storage as an
-    /// ordinary stream and pads unmatched rows with the type's default, so for it the conversion
-    /// has to stay where every other right input has it: in the right pre-join actions.
-    const bool storage_lookup_adds_nullable = bool(prepared_join_storage) && !use_block_nested_loop;
+    /// The block nested loop operator evaluates the whole ON condition itself, so `canPushDownFromOn`
+    /// is bypassed for it: turning the condition into a filter over the join result is exactly the
+    /// cartesian product materialization the operator exists to avoid.
+    const bool build_mixed_join_expression = on_clause_condition
+        && (is_disjunctive_condition || use_block_nested_loop || !canPushDownFromOn(join_operator));
+
+    /// A prepared storage delivers its columns already converted to `Nullable`, so the conversion is
+    /// dropped from the right-side expression below and the aliased `Nullable` node is what the join
+    /// is expected to output. The exceptions are the joins that read the prepared storage as an
+    /// ordinary stream and apply `join_use_nulls` themselves.
+    ///
+    /// The block nested loop operator is one: it pads unmatched rows with the type's default, so for
+    /// it the conversion has to stay where every other right input has it: in the right pre-join
+    /// actions.
+    ///
+    /// A mixed join expression is the other, for a key-value storage: it is evaluated during the
+    /// join, over the right columns as they were stored, and only the hash family evaluates it at all.
+    /// `DirectKeyValueJoin` declines a mixed condition, so such a join always runs an algorithm that
+    /// reads the key-value storage as an ordinary stream. Handing it a pre-converted right side would
+    /// shadow the non-`Nullable` columns the mixed condition is built on with same-named `Nullable`
+    /// ones, and `HashJoin`, which resolves those columns by name, would then evaluate the condition
+    /// over mismatched column types.
+    const bool right_nullable_from_prepared_storage = prepared_join_storage && !use_block_nested_loop
+        && !(prepared_join_storage.storage_key_value && build_mixed_join_expression);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
     for (const auto * action : actions_after_join)
     {
         if (action->type == ActionsDAG::ActionType::ALIAS)
         {
-            //bool remove_right_nullable = prepared_join_storage && use_nulls && isLeftOrFull(join_operator.kind);
-            if (storage_lookup_adds_nullable && JoinActionRef(action, expression_actions).fromRight())
+            if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
                 /// StorageJoin should convert to nullable by itself.
             }
@@ -1629,10 +1647,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     ExpressionActionsPtr ie_join_residual_condition;
     ExpressionActionsPtr block_nested_loop_condition;
-    /// The block nested loop operator evaluates the whole ON condition itself, so `canPushDownFromOn`
-    /// is bypassed for it: turning the condition into a filter over the join result is exactly the
-    /// cartesian product materialization the operator exists to avoid.
-    if (on_clause_condition && (is_disjunctive_condition || use_block_nested_loop || !canPushDownFromOn(join_operator)))
+    if (build_mixed_join_expression)
     {
         auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
         auto on_clause_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);
@@ -1661,7 +1676,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         if (action->type == ActionsDAG::ActionType::ALIAS)
         {
-            if (storage_lookup_adds_nullable && JoinActionRef(action, expression_actions).fromRight())
+            if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
             {
                 /// x (Alias) -> toNullable(x) -> x (Input)
                 action = action->children.at(0)->children.at(0);
@@ -1713,7 +1728,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     ActionsDAG left_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromLeft() || node.fromNone(); }));
     ActionsDAG right_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromRight(); }));
 
-    if (storage_lookup_adds_nullable && prepared_join_storage.storage_key_value)
+    if (logical_lookup && prepared_join_storage.storage_key_value && right_nullable_from_prepared_storage)
     {
         right_dag.mergeInplace(
             JoinExpressionActions::getSubDAG(
