@@ -66,4 +66,23 @@ ColumnPtr FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl
         x, y, tuple_size, input_rows_count);
 }
 
+template <>
+ColumnPtr FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeArrayLexicographic(
+    const ColumnWithTypeAndName & column_type_name0,
+    const ColumnWithTypeAndName & column_type_name1,
+    size_t input_rows_count) const
+{
+    FunctionOverloadResolverPtr equals_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
+    FunctionOverloadResolverPtr order_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionLess>(params));
+
+    return executeArrayLexicographicLessGreaterImpl(
+        equals_resolver,
+        order_resolver,
+        column_type_name0,
+        column_type_name1,
+        input_rows_count);
+}
+
 }
