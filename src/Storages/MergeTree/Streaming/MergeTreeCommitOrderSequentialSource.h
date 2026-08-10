@@ -24,6 +24,7 @@ class MergeTreeCommitOrderSequentialSource final : public IProcessor
     Status handleReconfiguration();
     Status handleBoundedReconfiguration();
     void handlePipelineEnd();
+    void surfaceFinalCursor();
 
 public:
     MergeTreeCommitOrderSequentialSource(

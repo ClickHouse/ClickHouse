@@ -5,6 +5,9 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -113,6 +116,40 @@ namespace
         for (const auto & column : select_query_output_columns)
             if (!target_table_columns.has(column.name))
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", column.name);
+    }
+
+    /// Attach `STREAM BOUNDED UNORDERED [CURSOR {...}]` to the single source table of an incremental refresh's
+    /// SELECT, so each refresh reads only the safe snapshot committed since `stream_cursor` (null on the first refresh).
+    void injectIncrementalStreamModifier(const ASTPtr & select_with_union, const CursorTreeNodePtr & stream_cursor)
+    {
+        auto * union_query = select_with_union->as<ASTSelectWithUnionQuery>();
+        if (!union_query || !union_query->list_of_selects || union_query->list_of_selects->children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a single SELECT query");
+
+        auto * select = union_query->list_of_selects->children[0]->as<ASTSelectQuery>();
+        if (!select)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a plain SELECT query");
+
+        auto tables = select->tables();
+        if (!tables || tables->children.size() != 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires exactly one source table (no joins)");
+
+        auto * table_element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
+        if (!table_element || !table_element->table_expression)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh requires a source table");
+
+        auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
+        if (!table_expr || !table_expr->database_and_table_name)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incremental refresh source must be a table, not a subquery or table function");
+
+        auto stream_settings = make_intrusive<ASTStreamSettings>();
+        stream_settings->setSubscribeForUpdates(false);   /// BOUNDED: read the first safe snapshot and finish.
+        stream_settings->setUnordered(true);               /// UNORDERED: skip the commit-order sort.
+        if (stream_cursor)
+            stream_settings->setCursor(stream_cursor);
+
+        table_expr->stream_settings = stream_settings;
+        table_expr->children.push_back(stream_settings);
     }
 }
 
@@ -650,7 +687,8 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
 }
 
 std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
-StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const
+StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,
+    bool incremental, const CursorTreeNodePtr & stream_cursor) const
 {
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
@@ -658,6 +696,9 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     auto view_metadata = getInMemoryMetadataPtr(refresh_context, false);
     auto select_query = view_metadata->getSelectQuery().select_query->clone();
     InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);
+
+    if (incremental)
+        injectIncrementalStreamModifier(select_query, stream_cursor);
 
     if (!append)
     {

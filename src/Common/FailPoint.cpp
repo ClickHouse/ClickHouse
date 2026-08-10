@@ -159,6 +159,7 @@ static struct InitFiu
     PAUSEABLE(refresh_mv_pause_before_exchange) \
     PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
     REGULAR(refresh_mv_skip_execution) \
+    REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \

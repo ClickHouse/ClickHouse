@@ -27,6 +27,7 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
+#include <Core/Streaming/StreamingCursorResult.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Exception.h>
@@ -410,11 +411,25 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfigur
     // Finish after the first completed snapshot, or once the first enrichment shows nothing (more) to read.
     if (subscription->updatesCount() > 0 && (finished_snapshots > 0 || result == Status::Async))
     {
+        surfaceFinalCursor();
         outputs.front().finish();
         return Status::Finished;
     }
 
     return result;
+}
+
+void MergeTreeCommitOrderSequentialSource::surfaceFinalCursor()
+{
+    auto streaming_cursor_result = context->getStreamingCursorResult();
+    if (!streaming_cursor_result)
+        return;
+
+    StreamingCursorResult::PartitionCursors cursors;
+    for (const auto & [partition_id, position] : last_emitted_positions)
+        cursors[partition_id] = {{"block_number", position.block_number}, {"block_offset", position.block_offset}};
+
+    streaming_cursor_result->merge(cursors);
 }
 
 void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()

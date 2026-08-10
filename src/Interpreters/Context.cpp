@@ -1366,6 +1366,7 @@ ContextData::ContextData(const ContextData &o) :
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),
     merge_tree_transaction_holder(o.merge_tree_transaction_holder),
+    streaming_cursor_result(o.streaming_cursor_result),
     remote_read_query_throttler(o.remote_read_query_throttler),
     remote_write_query_throttler(o.remote_write_query_throttler),
     local_read_query_throttler(o.local_read_query_throttler),
@@ -4205,6 +4206,18 @@ std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
 std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
 {
     return const_cast<Context *>(this)->getBackupsInMemory();
+}
+
+void Context::setStreamingCursorResult(std::shared_ptr<StreamingCursorResult> result)
+{
+    std::lock_guard lock(mutex);
+    streaming_cursor_result = std::move(result);
+}
+
+std::shared_ptr<StreamingCursorResult> Context::getStreamingCursorResult() const
+{
+    std::lock_guard lock(mutex);
+    return streaming_cursor_result;
 }
 
 

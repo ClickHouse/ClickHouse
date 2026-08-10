@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
+#include <Core/Streaming/StreamingCursorResult.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -66,6 +67,7 @@ namespace ServerSetting
 namespace RefreshSetting
 {
     extern const RefreshSettingsBool all_replicas;
+    extern const RefreshSettingsBool refresh_incremental;
     extern const RefreshSettingsInt64 refresh_retries;
     extern const RefreshSettingsUInt64 refresh_retry_initial_backoff_ms;
     extern const RefreshSettingsUInt64 refresh_retry_max_backoff_ms;
@@ -73,6 +75,7 @@ namespace RefreshSetting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int REFRESH_FAILED;
@@ -98,6 +101,8 @@ namespace FailPoints
     /// Pauses the refresh thread after the insert pipeline finished but before the target-table
     /// exchange, so a test can deterministically hit the post-insert window where the executor is
     /// already gone and only the interrupt_execution flag can stop the exchange.
+    /// Throws after an incremental refresh appends its snapshot but before the cursor is persisted, to exercise at-least-once replay.
+    extern const char refresh_mv_incremental_fail_after_append[];
     extern const char refresh_mv_pause_before_exchange[];
     /// Pauses the refresh thread AFTER the pre-exchange interrupt re-check has already passed (the
     /// executor_mutex was read and released) but BEFORE the exchange, so a test can deterministically
@@ -1216,6 +1221,7 @@ void RefreshTask::executeRefresh()
     Stopwatch stopwatch;
     int32_t root_znode_version = execution.znode.version;
     String error_message;
+    String cursor_after_refresh;
     std::optional<UUID> new_table_uuid;
 
     String log_comment = fmt::format("refresh of {}", view->getStorageID().getFullTableName());
@@ -1236,7 +1242,7 @@ void RefreshTask::executeRefresh()
     try
     {
         CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message);
+        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, cursor_after_refresh);
     }
     catch (...)
     {
@@ -1260,6 +1266,7 @@ void RefreshTask::executeRefresh()
         znode.last_success_time = start_time_seconds;
         znode.last_success_duration = std::chrono::milliseconds(stopwatch.elapsedMilliseconds());
         znode.last_success_table_uuid = *new_table_uuid;
+        znode.cursor = cursor_after_refresh;
         if (now > znode.last_success_end_time)
             znode.last_success_end_time = now;
         else
@@ -1278,7 +1285,7 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, String & out_cursor)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1302,6 +1309,24 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
     {
         refresh_context = view->createRefreshContext(log_comment);
 
+        const bool incremental = refresh_settings[RefreshSetting::refresh_incremental];
+        if (incremental && !refresh_append)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SETTINGS refresh_incremental = 1 requires APPEND");
+
+        /// For incremental refresh, resume the source stream from the last persisted cursor and attach a
+        /// holder that the reading source fills with the new cursor (read back after the query succeeds).
+        CursorTreeNodePtr stream_cursor;
+        if (incremental)
+        {
+            /// The injected `STREAM BOUNDED UNORDERED` source requires streaming queries and the analyzer.
+            refresh_context->setSetting("enable_streaming_queries", Field(UInt64{1}));
+            refresh_context->setSetting("enable_analyzer", Field(UInt64{1}));
+
+            if (!execution.znode.cursor.empty())
+                stream_cursor = streamingCursorToTree(deserializeStreamingCursor(execution.znode.cursor));
+            refresh_context->setStreamingCursorResult(std::make_shared<StreamingCursorResult>());
+        }
+
         syncDependenciesForRefresh(deps, refresh_context);
 
         if (!refresh_append)
@@ -1317,7 +1342,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             query_for_logging = "(create target table)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
             QueryScope query_scope;
-            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_append, refresh_context, table_to_drop);
+            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_append, refresh_context, table_to_drop, incremental, stream_cursor);
             new_table_id = refresh_query->table_id;
 
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
@@ -1397,6 +1422,12 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             query_span = nullptr;
         }
 
+        fiu_do_on(FailPoints::refresh_mv_incremental_fail_after_append,
+        {
+            if (incremental)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Injected failure after incremental append (test)");
+        });
+
         /// Exchange tables.
         if (!refresh_append)
         {
@@ -1458,6 +1489,10 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
 
     if (table_to_drop.has_value())
         view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
+
+    /// Incremental refresh: read the cursor the streaming source advanced to and persist it (Part C).
+    if (auto streaming_cursor_result = refresh_context->getStreamingCursorResult())
+        out_cursor = serializeStreamingCursor(streaming_cursor_result->get());
 
     return new_table_id.uuid;
 }
@@ -2079,6 +2114,8 @@ String RefreshTask::CoordinationZnode::toString() const
     last_success_dependencies.writeText(out);
     out << "\n";
 
+    out << "cursor: " << escape << cursor << "\n";
+
     return out.str();
 }
 
@@ -2168,6 +2205,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
 
     optional_field("last_success_end_time_ns", last_success_end_time);
     optional_field("last_success_dependencies", last_success_dependencies);
+    optional_field("cursor", cursor);
 
     if (!next_field_name.empty())
     {

@@ -310,6 +310,7 @@ class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
 
 class QueryMetadataCache;
+class StreamingCursorResult;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
@@ -706,6 +707,9 @@ protected:
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
 
     std::shared_ptr<BackupsInMemoryHolder> backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
+
+    /// Final per-partition streaming cursor produced by a `STREAM [BOUNDED]` read; shared with the reading sources.
+    std::shared_ptr<StreamingCursorResult> streaming_cursor_result;
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -1233,6 +1237,10 @@ public:
     void cancelAllBackupsAndRestores() const;
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
+
+    /// Attach a holder that reading sources fill with the final `STREAM [BOUNDED]` cursor (see StreamingCursorResult).
+    void setStreamingCursorResult(std::shared_ptr<StreamingCursorResult> result);
+    std::shared_ptr<StreamingCursorResult> getStreamingCursorResult() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(
