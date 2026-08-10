@@ -60,10 +60,10 @@ std::vector<UInt64> storedValues(const BlockNestedLoopJoinDataPtr & data)
     for (size_t index = 0; index < data->getNumBlocks(); ++index)
     {
         auto block = reader.read(index);
-        EXPECT_EQ(block->selector.size(), data->getBlockNumRows(index));
+        EXPECT_EQ(block->num_rows, data->getBlockNumRows(index));
         const auto & column = assert_cast<const ColumnUInt64 &>(*block->columns.at(0));
-        for (size_t i = 0; i < block->selector.size(); ++i)
-            result.push_back(column.getElement(block->selector[i]));
+        for (size_t i = 0; i < block->num_rows; ++i)
+            result.push_back(column.getElement(i));
     }
     return result;
 }
@@ -250,9 +250,9 @@ TEST(BlockNestedLoopJoinData, ConcurrentInsertsKeepEveryRow)
     for (size_t index = 0; index < data->getNumBlocks(); ++index)
     {
         auto block = reader.read(index);
-        ASSERT_LT(block->block_no, seen.size());
-        EXPECT_FALSE(seen[block->block_no]);
-        seen[block->block_no] = true;
+        ASSERT_LT(block->index, seen.size());
+        EXPECT_FALSE(seen[block->index]);
+        seen[block->index] = true;
     }
 }
 

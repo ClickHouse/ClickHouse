@@ -8,6 +8,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 
+#include <algorithm>
 #include <limits>
 #include <numeric>
 #include <utility>
@@ -101,25 +102,6 @@ size_t estimateRowBytes(const Columns & columns, size_t num_rows)
     return (bytes + num_rows - 1) / num_rows;
 }
 
-/// What one row of the padded half of an outer join's output costs. A type's default value is not
-/// always cheap - a `FixedString(N)` default is as wide as a matched one - and nothing but the
-/// column itself says what it costs, so the cost is measured on a sample of defaults.
-size_t estimateDefaultRowBytes(const Block & header, size_t begin, size_t end)
-{
-    /// Enough rows for the per-row cost to outweigh a column's fixed overhead.
-    constexpr size_t SAMPLE_ROWS = 128;
-
-    Columns columns;
-    columns.reserve(end - begin);
-    for (size_t i = begin; i < end; ++i)
-    {
-        auto column = header.getByPosition(i).type->createColumn();
-        column->insertManyDefaults(SAMPLE_ROWS);
-        columns.push_back(std::move(column));
-    }
-    return estimateRowBytes(columns, SAMPLE_ROWS);
-}
-
 /// How many rows one output chunk may hold under both limits, for rows of about `row_bytes` each.
 size_t outputChunkRowLimit(size_t max_block_size, size_t max_block_bytes, size_t row_bytes)
 {
@@ -188,9 +170,6 @@ BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Block nested loop join output header [{}] is not the concatenation of its inputs [{}] and [{}]",
             output_header->dumpStructure(), probe_header->dumpStructure(), data->getHeader()->dumpStructure());
-
-    if (keep_unmatched_probe_rows)
-        padded_build_row_bytes = estimateDefaultRowBytes(*data->getHeader(), 0, data->getHeader()->columns());
 
     for (const auto & required_column : predicate.actions->getRequiredColumnsWithTypes())
         predicate_input_header.insert(ColumnWithTypeAndName(nullptr, required_column.type, required_column.name));
@@ -354,15 +333,11 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
     if (!current_build_block)
     {
         current_build_block = build_reader.read(build_block_cursor);
-        /// The store builds every block over the whole of its columns, which is what makes a build
-        /// row's position in the block the same as its index into the block's columns - the equality
-        /// the match flags and the unmatched-build-rows scan are both indexed by.
-        chassert(current_build_block->selector.isContinuousRange() && current_build_block->selector.getRange().first == 0);
-        build_row_bytes = estimateRowBytes(current_build_block->columns, current_build_block->selector.size());
+        build_row_bytes = estimateRowBytes(current_build_block->columns, current_build_block->num_rows);
     }
 
     const auto & block = *current_build_block;
-    const size_t block_rows = block.selector.size();
+    const size_t block_rows = block.num_rows;
     /// The tile is sized in pairs, independently of the output limit: it bounds the columns the
     /// condition is evaluated on, while the output chunk is cut to `max_block_size` when the
     /// accumulated pairs are materialized. Both sides are windowed, so a probe chunk larger than the
@@ -385,16 +360,16 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
         build_values.resize_exact(tile_rows);
 
         /// The tile is probe-row major: pair `i * tile_build_rows + j` is the `i`-th probe row still
-        /// in the walk against the `j`-th build row of the tile.
-        for (size_t j = 0; j < tile_build_rows; ++j)
-            build_values[j] = block.selector[build_row_cursor + j];
+        /// in the walk against the `j`-th build row of the tile. A build row's index into the
+        /// block's columns is its position in the block, so the first row's indexes are the
+        /// sub-range itself and every later row repeats them.
+        std::iota(build_values.begin(), build_values.begin() + tile_build_rows, UInt64(build_row_cursor));
         for (size_t i = 0; i < tile_probe_rows; ++i)
         {
             const size_t offset = i * tile_build_rows;
             if (i != 0)
-                memcpy(&build_values[offset], build_values.data(), tile_build_rows * sizeof(UInt64));
-            for (size_t j = 0; j < tile_build_rows; ++j)
-                probe_values[offset + j] = active_probe_rows[probe_window_cursor + i];
+                std::copy_n(build_values.begin(), tile_build_rows, build_values.begin() + offset);
+            std::fill_n(probe_values.begin() + offset, tile_build_rows, active_probe_rows[probe_window_cursor + i]);
         }
     }
 
@@ -418,32 +393,12 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Block nested loop join condition returned {} rows for a tile of {} candidate pairs", num_rows, tile_rows);
 
-    size_t num_matched = 0;
-    ColumnPtr matched_probe;
-    ColumnPtr matched_build;
-
-    ConstantFilterDescription constant_condition(*condition.at(0));
-    if (constant_condition.always_true)
-    {
-        num_matched = tile_rows;
-        matched_probe = probe_tile;
-        matched_build = build_tile;
-    }
-    else if (!constant_condition.always_false)
-    {
-        /// A NULL condition value is not a match, which is what `FilterDescription` makes of the
-        /// null map of a `Nullable` condition column.
-        FilterDescription matched(*condition.at(0));
-        num_matched = matched.countBytesInFilter();
-        if (num_matched != 0)
-        {
-            matched_probe = matched.filter(*probe_tile, num_matched);
-            matched_build = matched.filter(*build_tile, num_matched);
-        }
-    }
-
-    if (num_matched != 0)
-        appendMatchedPairs(*matched_probe, *matched_build, num_matched);
+    /// A NULL condition value is not a match, which is what `FilterDescription` makes of the null
+    /// map of a `Nullable` condition column; it also materializes a `Const`, `LowCardinality` or
+    /// `Sparse` one.
+    FilterDescription matched(*condition.at(0));
+    if (const size_t num_matched = matched.countBytesInFilter(); num_matched != 0)
+        appendMatchedPairs(*matched.filter(*probe_tile, num_matched), *matched.filter(*build_tile, num_matched), num_matched);
 
     /// The build rows are only left behind once every probe row still in the walk has been matched
     /// against them. That keeps the order a pair is seen in - and with it which pair a strictness
@@ -707,9 +662,9 @@ Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
 {
     auto indexes = ColumnUInt64::create();
     auto & unmatched = indexes->getData();
-    /// The build side of these rows is padded with the type defaults, whose cost is the same for
-    /// every row of the chunk but is not always negligible.
-    const size_t limit = maxOutputChunkRows(probe_row_bytes + padded_build_row_bytes);
+    /// The byte limit counts the probe side alone: what the padded build columns cost is a matter of
+    /// their defaults, which for most types is nothing worth measuring.
+    const size_t limit = maxOutputChunkRows(probe_row_bytes);
     while (unmatched_probe_cursor < probe_num_rows && unmatched.size() < limit)
     {
         if (!probe_row_matched[unmatched_probe_cursor])
@@ -786,7 +741,6 @@ BlockNestedLoopUnmatchedBuildRowsTransform::BlockNestedLoopUnmatchedBuildRowsTra
     , data(std::move(data_))
     , build_reader(data)
     , num_probe_columns(probeColumnCount(getPort().getHeader(), *data->getHeader()))
-    , padded_probe_row_bytes(estimateDefaultRowBytes(getPort().getHeader(), 0, num_probe_columns))
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
     , stream_index(stream_index_)
@@ -848,9 +802,9 @@ Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
         }
 
         auto block = build_reader.read(block_index);
+        /// The byte limit counts the build side alone; the padded probe columns are defaults.
         const size_t limit = outputChunkRowLimit(
-            max_block_size, max_block_bytes,
-            padded_probe_row_bytes + estimateRowBytes(block->columns, block_rows));
+            max_block_size, max_block_bytes, estimateRowBytes(block->columns, block_rows));
 
         auto indexes = ColumnUInt64::create();
         auto & unmatched = indexes->getData();

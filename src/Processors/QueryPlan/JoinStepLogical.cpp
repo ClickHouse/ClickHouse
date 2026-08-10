@@ -1356,6 +1356,8 @@ static void constructBlockNestedLoopJoinStep(
         .min_bytes_to_compress = join_settings.cross_join_min_bytes_to_compress,
         .max_bytes_in_memory = join_settings.getEffectiveMaxBytesBeforeExternalJoin(),
         .tmp_data = std::move(tmp_data),
+        .temporary_files_codec = join_settings.temporary_files_codec,
+        .temporary_files_buffer_size = join_settings.temporary_files_buffer_size,
     };
 
     SizeLimits size_limits(join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode);

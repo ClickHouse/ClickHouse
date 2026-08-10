@@ -2,6 +2,7 @@
 #include <Core/Block.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/Transforms/BlockNestedLoopJoinData.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 
 #include <optional>
@@ -9,6 +10,14 @@
 namespace ProfileEvents
 {
     extern const Event JoinBuildTableRowCount;
+    extern const Event ExternalJoinCompressedBytes;
+    extern const Event ExternalJoinUncompressedBytes;
+    extern const Event ExternalJoinWritePart;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForJoin;
 }
 
 namespace DB
@@ -47,16 +56,14 @@ namespace
 
 /// The same rows, with every column decompressed. A block that was never compressed is returned as
 /// it is, so this is cheap to call on a store that outgrew nothing.
-BuildBlockPtr decompressBuildBlock(const StoredBlock & stored_block)
+BuildBlockPtr decompressBuildBlock(const BuildBlock & build_block)
 {
     Columns columns;
-    columns.reserve(stored_block.columns.size());
-    for (const auto & column : stored_block.columns)
+    columns.reserve(build_block.columns.size());
+    for (const auto & column : build_block.columns)
         columns.push_back(column->decompress());
 
-    auto result = std::make_shared<StoredBlock>(std::move(columns), ScatteredBlock::Selector(stored_block.selector.size()));
-    result->block_no = stored_block.block_no;
-    return result;
+    return std::make_shared<const BuildBlock>(BuildBlock{std::move(columns), build_block.num_rows, build_block.index});
 }
 
 /// The same rows with every column that shrinks replaced by its compressed form, or `nullopt` when
@@ -64,12 +71,12 @@ BuildBlockPtr decompressBuildBlock(const StoredBlock & stored_block)
 /// that decompresses to that very column; keeping the wrapper would make every read materialize the
 /// block anew - and charge the reader for memory it does not retain, cutting its output chunks
 /// short - for no saving at all.
-std::optional<StoredBlock> compressBuildBlock(const StoredBlock & stored_block)
+std::optional<BuildBlock> compressBuildBlock(const BuildBlock & build_block)
 {
     Columns columns;
-    columns.reserve(stored_block.columns.size());
+    columns.reserve(build_block.columns.size());
     bool any_compressed = false;
-    for (const auto & column : stored_block.columns)
+    for (const auto & column : build_block.columns)
     {
         auto compressed_column = column->compress(/*force_compression=*/ false);
         if (compressed_column->byteSize() >= column->byteSize())
@@ -82,9 +89,36 @@ std::optional<StoredBlock> compressBuildBlock(const StoredBlock & stored_block)
     if (!any_compressed)
         return {};
 
-    return StoredBlock(std::move(columns), ScatteredBlock::Selector(stored_block.selector.size()));
+    return BuildBlock{std::move(columns), build_block.num_rows, build_block.index};
 }
 
+/// The same settings, with the spill directed at a scope of the store's own, so that the bytes and
+/// the files it writes are counted as a join's external data the way `GraceHashJoin` counts its own.
+BlockNestedLoopStoreSettings withJoinTemporaryDataScope(BlockNestedLoopStoreSettings settings)
+{
+    if (!settings.tmp_data)
+        return settings;
+
+    settings.tmp_data = settings.tmp_data->childScope(
+        {
+            .current_metric = CurrentMetrics::TemporaryFilesForJoin,
+            .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
+            .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
+            .num_files = ProfileEvents::ExternalJoinWritePart,
+        },
+        settings.temporary_files_buffer_size,
+        settings.temporary_files_codec);
+    return settings;
+}
+
+}
+
+size_t BuildBlock::allocatedBytes() const
+{
+    size_t bytes = 0;
+    for (const auto & column : columns)
+        bytes += column->allocatedBytes();
+    return bytes;
 }
 
 BlockNestedLoopJoinData::BlockNestedLoopJoinData(
@@ -97,7 +131,7 @@ BlockNestedLoopJoinData::BlockNestedLoopJoinData(
     , kind(kind_)
     , strictness(strictness_)
     , size_limits(size_limits_)
-    , store_settings(std::move(store_settings_))
+    , store_settings(withJoinTemporaryDataScope(std::move(store_settings_)))
     , needs_match_flags(needsBuildSideMatchFlags(kind_, strictness_))
 {
 }
@@ -131,8 +165,8 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
     for (auto & column : columns)
         column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
 
-    StoredBlock stored_block(std::move(columns), ScatteredBlock::Selector(num_rows));
-    const size_t block_bytes = stored_block.allocatedBytes();
+    BuildBlock build_block{std::move(columns), num_rows, /*index=*/ 0};
+    const size_t block_bytes = build_block.allocatedBytes();
 
     const size_t rows_in_join = total_rows.fetch_add(num_rows, std::memory_order_relaxed) + num_rows;
     const size_t bytes_in_join = total_bytes.fetch_add(block_bytes, std::memory_order_relaxed) + block_bytes;
@@ -142,11 +176,11 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
     /// stays in memory or is spilled, so it is speculative: a block that turns out to be spilled is
     /// written out uncompressed and the compressed copy is dropped. A store that has already started
     /// spilling never compresses again, since every later block goes to disk as well.
-    std::optional<StoredBlock> compressed_block;
+    std::optional<BuildBlock> compressed_block;
     if (getNumSpilledBlocks() == 0
         && ((store_settings.min_rows_to_compress != 0 && rows_in_join >= store_settings.min_rows_to_compress)
             || (store_settings.min_bytes_to_compress != 0 && bytes_in_join >= store_settings.min_bytes_to_compress)))
-        compressed_block = compressBuildBlock(stored_block);
+        compressed_block = compressBuildBlock(build_block);
 
     {
         std::lock_guard lock(mutex);
@@ -165,12 +199,12 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
             /// What is still in memory goes out first, so that the file order stays the index order.
             if (!tmp_stream)
                 spillInMemoryBlocksLocked();
-            spillBlock(entry, stored_block);
+            spillBlock(entry, build_block);
         }
         else if (compressed_block)
             storeBlock(entry, index, std::move(*compressed_block), /*compressed=*/ true, block_bytes);
         else
-            storeBlock(entry, index, std::move(stored_block), /*compressed=*/ false, block_bytes);
+            storeBlock(entry, index, std::move(build_block), /*compressed=*/ false, block_bytes);
     }
 
     ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
@@ -179,25 +213,25 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
 }
 
 void BlockNestedLoopJoinData::storeBlock(
-    BuildBlockEntry & entry, size_t index, StoredBlock stored_block, bool compressed, size_t uncompressed_bytes)
+    BuildBlockEntry & entry, size_t index, BuildBlock build_block, bool compressed, size_t uncompressed_bytes)
 {
-    stored_block.block_no = static_cast<UInt32>(index);
+    build_block.index = index;
     entry.compressed = compressed;
 
-    const size_t stored_bytes = stored_block.allocatedBytes();
-    entry.block = std::make_shared<const StoredBlock>(std::move(stored_block));
+    const size_t stored_bytes = build_block.allocatedBytes();
+    entry.block = std::make_shared<const BuildBlock>(std::move(build_block));
 
     in_memory_bytes.fetch_add(stored_bytes, std::memory_order_relaxed);
     if (uncompressed_bytes > getMaxInMemoryBlockBytes())
         max_in_memory_block_bytes.store(uncompressed_bytes, std::memory_order_relaxed);
 }
 
-void BlockNestedLoopJoinData::spillBlock(BuildBlockEntry & entry, const StoredBlock & stored_block)
+void BlockNestedLoopJoinData::spillBlock(BuildBlockEntry & entry, const BuildBlock & build_block)
 {
     if (!tmp_stream)
         tmp_stream = std::make_unique<TemporaryBlockStreamHolder>(build_header, store_settings.tmp_data);
 
-    (*tmp_stream)->write(build_header->cloneWithColumns(stored_block.columns));
+    (*tmp_stream)->write(build_header->cloneWithColumns(build_block.columns));
     entry.spill_ordinal = num_spilled_blocks.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -251,8 +285,7 @@ void BlockNestedLoopJoinData::setBuildSideTotals(Block totals)
 
 const Block & BlockNestedLoopJoinData::getBuildSideTotals() const
 {
-    assertFinished("the build side totals");
-    return TSA_SUPPRESS_WARNING_FOR_READ(build_side_totals);
+    return finishedState("the build side totals").build_side_totals;
 }
 
 void BlockNestedLoopJoinData::finish()
@@ -262,23 +295,31 @@ void BlockNestedLoopJoinData::finish()
     if (finished.load(std::memory_order_relaxed))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join build side is finished twice");
 
-    row_offsets.resize(blocks.size() + 1);
+    auto state = std::make_unique<FinishedState>();
+    state->blocks = std::move(blocks);
+    state->build_side_totals = std::move(build_side_totals);
+    state->tmp_stream = std::move(tmp_stream);
+
+    state->row_offsets.resize(state->blocks.size() + 1);
     size_t offset = 0;
-    for (size_t i = 0; i < blocks.size(); ++i)
+    for (size_t i = 0; i < state->blocks.size(); ++i)
     {
-        row_offsets[i] = offset;
-        offset += blocks[i].num_rows;
+        state->row_offsets[i] = offset;
+        offset += state->blocks[i].num_rows;
     }
-    row_offsets.back() = offset;
+    state->row_offsets.back() = offset;
     chassert(offset == total_rows.load(std::memory_order_relaxed));
 
     if (needs_match_flags && offset != 0)
         matched_flags = std::make_unique<std::atomic_bool[]>(offset);
 
     /// Nothing more will be written, and the readers can only be created once it is flushed.
-    if (tmp_stream)
-        tmp_stream->finishWriting();
+    if (state->tmp_stream)
+        state->tmp_stream->finishWriting();
 
+    finished_state = std::move(state);
+    /// Publishes everything written above, `matched_flags` included, to every reader that has seen
+    /// `isFinished`.
     finished.store(true, std::memory_order_release);
 }
 
@@ -302,16 +343,18 @@ bool BlockNestedLoopJoinData::isBuildRowMatched(size_t global_row) const
     return matched_flags[global_row].load(std::memory_order_relaxed);
 }
 
-void BlockNestedLoopJoinData::assertFinished(const char * what) const
+const BlockNestedLoopJoinData::FinishedState & BlockNestedLoopJoinData::finishedState(const char * what) const
 {
+    /// The acquire that pairs with the release in `finish`: everything that call wrote is visible
+    /// from here on, which is what lets the state below be read with no lock at all.
     if (!isFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join build side is not finished, cannot read {}", what);
+    return *finished_state;
 }
 
 size_t BlockNestedLoopJoinData::getNumBlocks() const
 {
-    assertFinished("the stored blocks");
-    return TSA_SUPPRESS_WARNING_FOR_READ(blocks).size();
+    return finishedState("the stored blocks").blocks.size();
 }
 
 size_t BlockNestedLoopJoinData::getBlockNumRows(size_t index) const
@@ -321,14 +364,12 @@ size_t BlockNestedLoopJoinData::getBlockNumRows(size_t index) const
 
 const BlockNestedLoopJoinData::BuildBlockEntry & BlockNestedLoopJoinData::getBlockEntry(size_t index) const
 {
-    assertFinished("the stored blocks");
-    return TSA_SUPPRESS_WARNING_FOR_READ(blocks).at(index);
+    return finishedState("the stored blocks").blocks.at(index);
 }
 
 TemporaryBlockStreamReaderHolder BlockNestedLoopJoinData::createSpillReadStream() const
 {
-    assertFinished("the spilled blocks");
-    const auto & stream = TSA_SUPPRESS_WARNING_FOR_READ(tmp_stream);
+    const auto & stream = finishedState("the spilled blocks").tmp_stream;
     if (!stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join build side has no spilled blocks");
     return stream->getReadStream();
@@ -336,8 +377,7 @@ TemporaryBlockStreamReaderHolder BlockNestedLoopJoinData::createSpillReadStream(
 
 const std::vector<size_t> & BlockNestedLoopJoinData::getRowOffsets() const
 {
-    assertFinished("the row offsets");
-    return TSA_SUPPRESS_WARNING_FOR_READ(row_offsets);
+    return finishedState("the row offsets").row_offsets;
 }
 
 bool BlockNestedLoopJoinData::isBlockSharedInMemory(size_t index) const
@@ -405,9 +445,7 @@ BuildBlockPtr BuildSideBlockReader::readSpilledBlock(size_t index, size_t spill_
             "Block nested loop join read back {} rows for the spilled block {}, expected {}",
             block.rows(), index, data->getBlockNumRows(index));
 
-    auto stored_block = std::make_shared<StoredBlock>(block.getColumns(), ScatteredBlock::Selector(block.rows()));
-    stored_block->block_no = static_cast<UInt32>(index);
-    return stored_block;
+    return std::make_shared<const BuildBlock>(BuildBlock{block.getColumns(), block.rows(), index});
 }
 
 BlockNestedLoopBuildTransform::BlockNestedLoopBuildTransform(

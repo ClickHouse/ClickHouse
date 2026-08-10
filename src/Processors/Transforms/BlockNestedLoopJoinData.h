@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
-#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -30,10 +30,22 @@ bool needsBuildSideMatchFlags(JoinKind kind, JoinStrictness strictness);
 /// with the probe side's column defaults.
 bool keepsUnmatchedBuildRows(JoinKind kind, JoinStrictness strictness);
 
-/// A build block ready for matching. Held by shared pointer because a block that was compressed or
-/// spilled is decompressed or read back into one that only lives as long as the output rows still
-/// pointing into it.
-using BuildBlockPtr = std::shared_ptr<const StoredBlock>;
+/// A build block ready for matching. The store never scatters a block, so a row's index into the
+/// columns is also its position in the block - the equality the match flags and the
+/// unmatched-build-rows scan are both indexed by.
+struct BuildBlock
+{
+    Columns columns;
+    size_t num_rows = 0;
+    /// The block's position in the store, which the global row numbering is built from.
+    size_t index = 0;
+
+    size_t allocatedBytes() const;
+};
+
+/// Held by shared pointer because a block that was compressed or spilled is decompressed or read
+/// back into one that only lives as long as the output rows still pointing into it.
+using BuildBlockPtr = std::shared_ptr<const BuildBlock>;
 
 /// How the materialized build side is kept as it grows: compressed in memory, then streamed to disk.
 struct BlockNestedLoopStoreSettings
@@ -46,7 +58,13 @@ struct BlockNestedLoopStoreSettings
     /// `max_bytes_before_external_join`; 0 leaves spilling to the query memory tracker alone.
     size_t max_bytes_in_memory = 0;
     /// Where the spilled blocks go. Without it the build side stays in memory whatever its size.
+    /// The store opens a child scope of its own on top of it, so that what it writes is accounted
+    /// as a join's temporary data rather than as the query's in general.
     TemporaryDataOnDiskScopePtr tmp_data;
+    /// How the spilled blocks are written, from `temporary_files_codec` and the buffer size the
+    /// other joins use for theirs.
+    String temporary_files_codec;
+    UInt64 temporary_files_buffer_size = 0;
 };
 
 /// The materialized build side of a block nested loop join, shared by every build and probe stream.
@@ -146,16 +164,29 @@ private:
         size_t spill_ordinal = 0;
     };
 
-    void assertFinished(const char * what) const;
+    /// What the store hands out once the build phase is over: the build phase's own members, moved
+    /// here by `finish`, plus the row numbering it computes. Read with no mutex and no annotation -
+    /// the release store to `finished` publishes it, and no writer is left after that edge.
+    struct FinishedState
+    {
+        std::vector<BuildBlockEntry> blocks;
+        std::vector<size_t> row_offsets;
+        Block build_side_totals;
+        std::unique_ptr<TemporaryBlockStreamHolder> tmp_stream;
+    };
+
+    /// The published state; throws while the build phase is still going. The only way to read it,
+    /// so the acquire side of the edge is crossed exactly once per access and in one place.
+    const FinishedState & finishedState(const char * what) const;
 
     /// Keeps the block in memory. `uncompressed_bytes` is what it takes once decompressed, which is
     /// the shape the spill writes it out in.
-    void storeBlock(BuildBlockEntry & entry, size_t index, StoredBlock stored_block, bool compressed, size_t uncompressed_bytes)
+    void storeBlock(BuildBlockEntry & entry, size_t index, BuildBlock build_block, bool compressed, size_t uncompressed_bytes)
         TSA_REQUIRES(mutex);
     /// Writes the block out and leaves `entry` pointing at it by its position in the file. Blocks
     /// are written in increasing index order, which is what makes one forward pass enough to read
     /// any of them back.
-    void spillBlock(BuildBlockEntry & entry, const StoredBlock & stored_block) TSA_REQUIRES(mutex);
+    void spillBlock(BuildBlockEntry & entry, const BuildBlock & build_block) TSA_REQUIRES(mutex);
     /// Writes out every block that is still in memory, in index order.
     void spillInMemoryBlocksLocked() TSA_REQUIRES(mutex);
 
@@ -171,14 +202,18 @@ private:
     const BlockNestedLoopStoreSettings store_settings;
     const bool needs_match_flags;
 
+    /// The build phase's state, which every build stream appends to concurrently. `finish` moves all
+    /// of it into `finished_state` and nothing reads it here afterwards, so the annotation covers
+    /// every access there is and needs no exception anywhere.
     mutable std::mutex mutex;
     std::vector<BuildBlockEntry> blocks TSA_GUARDED_BY(mutex);
-    std::vector<size_t> row_offsets TSA_GUARDED_BY(mutex);
     Block build_side_totals TSA_GUARDED_BY(mutex);
-
     /// Exists from the first spill on; every later block is written to it as well, so that the
     /// build side never goes back to growing in memory once it has proved too large for it.
     std::unique_ptr<TemporaryBlockStreamHolder> tmp_stream TSA_GUARDED_BY(mutex);
+
+    /// Written once by `finish`, under the mutex and before the release store to `finished`.
+    std::unique_ptr<const FinishedState> finished_state;
 
     /// One flag per build row, indexed by global row number; allocated by `finish` and only for the
     /// kinds that need it.
@@ -188,7 +223,7 @@ private:
     /// unmatched scan comes from the pipeline instead - a probe stream finishes its output port
     /// only after its last write, and `DelayedPortsProcessor` observes that finish before it lets
     /// the unmatched stage produce a single row. `finished` orders the allocation itself the same
-    /// way it orders `blocks` and `row_offsets`.
+    /// way it orders `finished_state`.
     std::unique_ptr<std::atomic_bool[]> matched_flags;
 
     std::atomic<size_t> total_rows{0};
