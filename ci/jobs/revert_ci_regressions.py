@@ -192,6 +192,15 @@ COMMITS_QUERY_LIMIT = 2000
 # Table in the CI database that records the investigations. It joins with
 # `checks`: `test_name`, `check_names`, `commit_shas`, `report_url` and
 # `offending_pull_request_number` all carry values from there.
+#
+# The engine takes its ZooKeeper path and replica name explicitly. The
+# argument-less form expands the server's `default_replica_path`, which
+# carries the `{uuid}` macro, and the CI database rejects that outside an
+# `ON CLUSTER` query or a `Replicated` database ("Macro 'uuid' in engine
+# arguments is only supported when the UUID is explicitly specified" -- how
+# the first live run of this job failed). The path mirrors the convention
+# the `checks` table itself uses: a per-table root with the `{shard}` and
+# `{replica}` macros.
 INVESTIGATION_TABLE = "checks_investigated"
 
 INVESTIGATION_TABLE_DDL = f"""\
@@ -216,7 +225,7 @@ CREATE TABLE IF NOT EXISTS {INVESTIGATION_TABLE}
     `revert_pull_request_number` UInt32 COMMENT 'The revert that was created and merged, 0 if none',
     `reintroduce_pull_request_number` UInt32 COMMENT 'The draft pull request reintroducing the change, 0 if none'
 )
-ENGINE = ReplicatedMergeTree
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{INVESTIGATION_TABLE}/{{shard}}', '{{replica}}')
 ORDER BY (investigation_time, test_name)
 """
 
