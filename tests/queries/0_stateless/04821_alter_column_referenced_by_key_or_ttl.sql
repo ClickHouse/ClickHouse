@@ -39,6 +39,14 @@ ALTER TABLE test CLEAR COLUMN c IN PARTITION 'nonsense'; -- { serverError TYPE_M
 ALTER TABLE test CLEAR COLUMN c IN PARTITION 1;
 DROP TABLE test;
 
+-- A column can be put into the key by the same ALTER that drops it. It is not a key column yet, so
+-- the drop is not rejected up front and the error comes from the recalculation of the key
+CREATE TABLE test (a UInt64) ENGINE = MergeTree ORDER BY a;
+ALTER TABLE test ADD COLUMN b UInt64, MODIFY ORDER BY (a, b), DROP COLUMN b; -- { serverError UNKNOWN_IDENTIFIER }
+ALTER TABLE test ADD COLUMN b UInt64, MODIFY ORDER BY (a, b);
+ALTER TABLE test DROP COLUMN b; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE test;
+
 -- A column used only in a TTL expression is not a key column, so it is rejected later, when the
 -- expression is recalculated. The drop is allowed together with a rewrite of the TTL
 CREATE TABLE test (d Date, e Date, a UInt64) ENGINE = MergeTree ORDER BY a TTL d + INTERVAL 1 DAY;
