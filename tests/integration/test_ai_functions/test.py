@@ -151,6 +151,20 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"api_key = 'test-key'"
         )
         instance.query(
+            f"CREATE NAMED COLLECTION ai_tool_calls AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/tool_calls', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_anthropic_pause_turn AS "
+            f"provider = 'anthropic', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/anthropic/pause_turn', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
+        instance.query(
             f"CREATE NAMED COLLECTION ai_refusal AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/refusal', "
@@ -417,6 +431,39 @@ def test_generate_content_filter_response_graceful(started_cluster):
         settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""
+
+
+def test_generate_tool_calls_response_throw(started_cluster):
+    """OpenAI's `finish_reason="tool_calls"` means the model wants the caller to run a tool, so the
+    HTTP 200 carries no final answer. It must be rejected, not returned as empty output."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_tool_calls'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
+    assert "tool_calls" in error
+    # ContentFilter raises the same error code with the same reason string, so pin the arm's wording.
+    assert "further caller action" in error
+
+
+def test_generate_tool_calls_response_graceful(started_cluster):
+    result = instance.query(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_tool_calls'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
+
+
+def test_generate_anthropic_pause_turn_throw(started_cluster):
+    """Anthropic's `stop_reason="pause_turn"` is a paused multi-turn generation, the same
+    "HTTP 200 but not a final answer" case as OpenAI's `tool_calls`."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_anthropic_pause_turn'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
+    assert "pause_turn" in error
+    assert "further caller action" in error
 
 
 def test_generate_refusal_response_throw(started_cluster):

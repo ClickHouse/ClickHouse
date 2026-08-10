@@ -31,6 +31,8 @@ Endpoints:
       withheld). Exercises the incomplete-response rejection path.
   POST /v1/chat/unknown_reason       — HTTP 200 with an unrecognized `finish_reason`; must be
       accepted as complete, not misclassified as truncation.
+  POST /v1/chat/tool_calls           — HTTP 200 with `finish_reason="tool_calls"`: the model wants
+      the caller to run a tool, so this is not a final answer and must be rejected.
   POST /v1/chat/refusal              — HTTP 200 structured-output safety refusal: `message.refusal`
       is populated, `content` is null and `finish_reason` stays "stop". Exercises the refusal
       rejection path, which a `finish_reason`-only check would accept as a complete empty answer.
@@ -38,6 +40,8 @@ Endpoints:
       a complete answer that must NOT be rejected as truncated.
   POST /v1/anthropic/max_tokens      — Anthropic-shaped HTTP 200 with `stop_reason="max_tokens"`,
       a truncated answer that must be rejected.
+  POST /v1/anthropic/pause_turn      — Anthropic-shaped HTTP 200 with `stop_reason="pause_turn"`: a
+      paused multi-turn generation, also not a final answer and must be rejected.
   POST /v1/anthropic/context_window  — Anthropic-shaped HTTP 200 with
       `stop_reason="model_context_window_exceeded"`, also a truncated answer, but one whose remedy is
       the opposite of the `max_tokens` case.
@@ -267,6 +271,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, make_success_response(user_msg, finish_reason="content_filter"))
             return
 
+        if parsed.path == "/v1/chat/tool_calls":
+            # HTTP 200 with `finish_reason="tool_calls"`: the model is asking the caller to run a
+            # tool, so there is no final answer here. Must be rejected rather than returned empty.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_success_response(user_msg, finish_reason="tool_calls"))
+            return
+
         if parsed.path == "/v1/chat/refusal":
             # Structured-output safety refusal: OpenAI returns the explanation in `message.refusal`
             # with a null `content`, and leaves `finish_reason` as "stop" because the generation
@@ -295,6 +306,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # rejected.
             user_msg = extract_user_message(body)
             self._send_json(200, make_anthropic_response(user_msg, stop_reason="max_tokens"))
+            return
+
+        if parsed.path == "/v1/anthropic/pause_turn":
+            # Anthropic-shaped 200 with `stop_reason="pause_turn"`: the generation is paused mid
+            # multi-turn exchange, so it is not a completed answer and must be rejected.
+            user_msg = extract_user_message(body)
+            self._send_json(200, make_anthropic_response(user_msg, stop_reason="pause_turn"))
             return
 
         if parsed.path == "/v1/anthropic/context_window":
