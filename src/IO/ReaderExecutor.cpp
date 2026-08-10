@@ -370,8 +370,9 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
 ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve)
 {
     chassert(!cache_chain.empty());
-    /// Resolve the window START across tiers (front = fastest): a hit serves one block from cache,
-    /// an all-miss fetches the covering cell(s) and populates. Coarse fetch, fine serve.
+    /// Resolve the whole window across tiers (front = fastest) and act on the run covering the head:
+    /// a hit serves one block from cache, an all-miss fetches the covering cell(s) and populates.
+    /// Coarse fetch, fine serve.
     const auto start_piece = offset_map.map(ByteRange{window_offset, 1});
     chassert(!start_piece.empty());
     const StoredObject & object = start_piece.front().object;
@@ -388,7 +389,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         stats.add(Stats::CacheGetRequests);
         /// `resolve` returns the window's residency in offset order; the first run reaching past
         /// `window_offset` is the one covering it (coverage is contiguous from the ask start).
-        auto resolutions = cache->resolve(object, object_file_offset, ByteRange{window_offset, 1});
+        auto resolutions = cache->resolve(object, object_file_offset, ByteRange{window_offset, max_serve});
         for (auto & r : resolutions)
         {
             if (r.range.end() <= window_offset)

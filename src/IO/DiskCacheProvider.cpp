@@ -2,7 +2,6 @@
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Interpreters/FileCache/FileSegment.h>
-#include <Interpreters/FileCache/FileCacheUtils.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ErrnoException.h>
@@ -658,7 +657,7 @@ DiskCacheProvider::DiskCacheProvider(
 /// `getOrSet` - the cache's `splitRange` shapes virgin segments (cells = segments), hits carry
 /// readers, misses carry OPEN writers on one shared holder. READ-ONLY / bypass
 /// (`read_if_exists_otherwise_bypass`): `cache->get` only - existing segments, gaps and tails as
-/// boundary-aligned writer-less misses, nothing created.
+/// exact writer-less misses, nothing created.
 VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
     const StoredObject & object, size_t object_file_offset, ByteRange range)
 {
@@ -675,37 +674,34 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
     auto resolved_origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
     /// READ-ONLY / bypass (`cache->get`): existing segments only - hits at their committed extent,
-    /// gaps and uncommitted tails as boundary-aligned writer-less misses. Nothing created/reserved/
-    /// evicted, so a bypass read (a merge) never perturbs the cache (the executor serves misses from source).
+    /// gaps and uncommitted tails as writer-less misses over their EXACT (unrounded) extent within
+    /// the ask. The bypass side never fills, so a miss carries no fill-cell geometry - it only tells
+    /// the executor which bytes to read from source. Nothing created/reserved/evicted, so a bypass
+    /// read (a merge) never perturbs the cache.
     if (!populatesOnMiss())
     {
-        const size_t boundary = cache_settings.boundary_alignment.value_or(cache->getBoundaryAlignment());
-        const size_t ask_start = FileCacheUtils::roundDownToMultiple(ask_lo_obj, boundary);
-        const size_t ask_end = std::min(FileCacheUtils::roundUpToMultiple(ask_hi_obj, boundary), object_size);
-
         auto holder = std::make_shared<FileSegmentsHolder>();
-        if (ask_end > ask_start)
+        if (ask_hi_obj > ask_lo_obj)
             if (auto got = cache->get(
-                    resolved_key, ask_start, ask_end - ask_start,
+                    resolved_key, ask_lo_obj, ask_hi_obj - ask_lo_obj,
                     /*file_segments_limit=*/0, resolved_origin.user_id))
                 holder = std::shared_ptr<FileSegmentsHolder>(std::move(got));
         auto book = std::make_shared<DiskCacheTouchBook>(holder, object_file_offset);
 
-        /// Boundary-align each writer-less miss (clamped to the object end); the
-        /// bypass side never fills, so misses carry no fill-cell geometry.
+        /// The exact uncached extent, clamped to the ask; no rounding since nothing is filled here.
         auto emit_miss = [&](size_t lo_obj, size_t hi_obj)
         {
-            const size_t a_off = FileCacheUtils::roundDownToMultiple(lo_obj, boundary);
-            const size_t a_end = std::min(FileCacheUtils::roundUpToMultiple(hi_obj, boundary), object_size);
-            if (a_end <= a_off)
+            const size_t lo = std::max(lo_obj, ask_lo_obj);
+            const size_t hi = std::min(hi_obj, ask_hi_obj);
+            if (hi <= lo)
                 return;
             ICacheProvider::Resolution miss;
             miss.kind = ICacheProvider::Resolution::Kind::Miss;
-            miss.range = ByteRange{a_off + object_file_offset, a_end - a_off};
+            miss.range = ByteRange{lo + object_file_offset, hi - lo};
             out.push_back(std::move(miss));
         };
 
-        size_t walk = ask_start;
+        size_t walk = ask_lo_obj;
         for (const auto & segment_ptr : *holder)
         {
             const auto & seg_range = segment_ptr->range();
@@ -728,8 +724,8 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
                 emit_miss(committed_end, seg_end);
             walk = std::max(walk, seg_end);
         }
-        if (walk < ask_end)
-            emit_miss(walk, ask_end);
+        if (walk < ask_hi_obj)
+            emit_miss(walk, ask_hi_obj);
         return out;
     }
 
