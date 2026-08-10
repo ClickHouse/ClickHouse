@@ -1099,3 +1099,60 @@ def test_concurrent_create_drop_race_condition(cluster):
                         node.query(f"DROP NAMED COLLECTION IF EXISTS {coll}")
             except Exception:
                 pass
+
+
+def test_drop_while_used_by_lazily_loaded_table(cluster):
+    """A table of a database with `lazy_load_tables = 1` is attached as a `StorageTableProxy` and its
+    real storage is built only on the first access, so the engine arguments are not resolved at
+    startup. The dependency on the named collection they name must be registered from the metadata
+    anyway, otherwise `DROP NAMED COLLECTION` is allowed while the table still references it: the
+    first access to the table then fails, and if the table is detached, the `ATTACH` replayed at the
+    next start fails and the server does not start."""
+    node = cluster.instances["node"]
+
+    node.query("DROP DATABASE IF EXISTS lazy_db")
+    node.query("DROP NAMED COLLECTION IF EXISTS lazy_collection")
+
+    node.query("CREATE DATABASE lazy_db ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+    node.query(
+        "CREATE NAMED COLLECTION lazy_collection AS url = 'http://localhost:8123', format = 'CSV'"
+    )
+    node.query("CREATE TABLE lazy_db.t (x UInt32) ENGINE = URL(lazy_collection)")
+
+    # The restart forgets everything that was registered while the table was created, and brings the
+    # table back as a proxy that was never accessed.
+    node.restart_clickhouse()
+
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_db' AND name = 't'"
+        ).strip()
+        == "TableProxy"
+    )
+
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_collection"
+    )
+
+    node.query("DETACH TABLE lazy_db.t")
+    assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
+        "DROP NAMED COLLECTION lazy_collection"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.named_collections WHERE name = 'lazy_collection'"
+        ).strip()
+        == "1"
+    )
+
+    # The collection is released once the metadata that references it is gone.
+    node.query("ATTACH TABLE lazy_db.t")
+    node.query("DROP TABLE lazy_db.t")
+    node.query("DROP NAMED COLLECTION lazy_collection")
+    assert (
+        node.query(
+            "SELECT count() FROM system.named_collections WHERE name = 'lazy_collection'"
+        ).strip()
+        == "0"
+    )
+    node.query("DROP DATABASE lazy_db")
