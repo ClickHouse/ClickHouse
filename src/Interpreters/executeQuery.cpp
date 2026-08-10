@@ -138,7 +138,6 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
-    extern const Event QueryPlanCachePreAnalysisHits;
     extern const Event QueryPlanCacheValidationMisses;
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
@@ -168,7 +167,6 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
-    extern const SettingsBool allow_experimental_query_plan_cache;
     extern const SettingsBool enable_query_plan_cache;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
@@ -257,7 +255,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
     extern const int INCORRECT_DATA;
-    extern const int UNKNOWN_TABLE;
 }
 
 namespace FailPoints
@@ -1780,7 +1777,6 @@ static BlockIO executeQueryImpl(
         /// and when the analyzer is off.
         QueryPlanCachePtr query_plan_cache = context->getQueryPlanCache();
         const bool can_use_query_plan_cache = query_plan_cache != nullptr
-            && settings[Setting::allow_experimental_query_plan_cache]
             && settings[Setting::enable_query_plan_cache]
             && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
@@ -1907,7 +1903,7 @@ static BlockIO executeQueryImpl(
                                 validated_cache_entry->metadata_snapshot,
                                 cached_entry->selected_columns);
 
-                            checkStoragesSupportTransactionsForQueryPlanCacheHit(context, validated_cache_entry->storage_bindings);
+                            checkStorageSupportsTransactionsForQueryPlanCacheHit(context, validated_cache_entry->storage);
 
                             if (context->getCurrentTransaction() && settings[Setting::throw_on_unsupported_query_inside_transaction]
                                 && settings[Setting::apply_mutations_on_fly])
@@ -1916,7 +1912,12 @@ static BlockIO executeQueryImpl(
                                     "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
 
                             auto plan = materializePlan(
-                                cached_entry->serialized_plan, context, std::move(validated_cache_entry->storage_bindings));
+                                cached_entry->serialized_plan,
+                                context,
+                                std::move(validated_cache_entry->table_name),
+                                std::move(validated_cache_entry->storage),
+                                std::move(validated_cache_entry->storage_snapshot),
+                                std::move(validated_cache_entry->table_lock));
 
                             /// Restore query-access logging skipped with analyzer construction.
                             if (!internal && context->hasQueryContext())
@@ -1925,7 +1926,6 @@ static BlockIO executeQueryImpl(
 
                             interpreter = std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
 
-                            ProfileEvents::increment(ProfileEvents::QueryPlanCachePreAnalysisHits);
                             query_plan_cache_hit = true;
                         }
                         else
@@ -1971,10 +1971,11 @@ static BlockIO executeQueryImpl(
                             serialized_plan.finalize();
                             QueryPlanCacheEntry entry;
                             entry.serialized_plan = serialized_plan.str();
-                            entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(interpreter_with_analyzer->getPlanner().getPlannerContext());
+                            const auto planner_context = interpreter_with_analyzer->getPlanner().getPlannerContext();
+                            entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(planner_context);
                             entry.read_columns = getReadColumnsForQueryPlanCacheEntry(plan_copy);
                             entry.dependencies = buildQueryPlanCacheDependencies(
-                                *query_plan_cache_lookup_context, plan_copy, context, entry.selected_columns);
+                                *query_plan_cache_lookup_context, plan_copy, planner_context, entry.selected_columns);
                             query_plan_cache->set(query_plan_cache_lookup_context->key, std::move(entry));
                         }
                         catch (const Exception & e)
@@ -2431,7 +2432,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// Disable query plan cache for fuzzed queries: the fuzzer randomly mutates ASTs
             /// and may ALTER tables between runs, making cached plans unsafe (type mismatches
             /// in filter expressions can cause Bad cast exceptions during optimization).
-            fuzz_context->setSetting("allow_experimental_query_plan_cache", Field(false));
+            fuzz_context->setSetting("enable_query_plan_cache", Field(false));
 
             /// Limit resources for each fuzzed query to prevent runaway execution.
             fuzz_context->setSetting("max_execution_time", Field(UInt64(10)));

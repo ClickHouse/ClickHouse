@@ -1,7 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: resets the global query plan cache and inspects system.query_log.
 
-SET allow_experimental_query_plan_cache = 1;
 SET enable_query_plan_cache = 1;
 SET allow_experimental_analyzer = 1;
 SET enable_parallel_replicas = 0;
@@ -27,7 +26,6 @@ SELECT
     log_comment,
     ProfileEvents['QueryPlanCacheHits'],
     ProfileEvents['QueryPlanCacheMisses'],
-    ProfileEvents['QueryPlanCachePreAnalysisHits'],
     ProfileEvents['QueryPlanCacheValidationMisses']
 FROM system.query_log
 WHERE type = 'QueryFinish'

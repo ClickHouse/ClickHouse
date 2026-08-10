@@ -66,7 +66,9 @@ struct QueryPlanCacheStorageDependency
     String engine_name;
     std::vector<QueryPlanCacheColumnDependency> columns;
     String sorting_key;
+    String partition_key;
     String primary_key;
+    String sampling_key;
     std::vector<bool> sorting_key_reverse_flags;
 
     bool operator==(const QueryPlanCacheStorageDependency & other) const = default;
@@ -112,7 +114,9 @@ struct QueryPlanCacheEntryWeight
             weight += dependency.table_name.size();
             weight += dependency.engine_name.size();
             weight += dependency.sorting_key.size();
+            weight += dependency.partition_key.size();
             weight += dependency.primary_key.size();
+            weight += dependency.sampling_key.size();
             weight += dependency.sorting_key_reverse_flags.size();
             for (const auto & column : dependency.columns)
             {
@@ -133,7 +137,6 @@ private:
 
 public:
     using Cache = Base;
-    using typename Base::KeyMapped;
     using typename Base::MappedPtr;
 
     QueryPlanCache(size_t max_size_in_bytes, size_t max_entries);
@@ -146,7 +149,6 @@ public:
     void clear();
     size_t sizeInBytes() const;
     size_t count() const;
-    std::vector<KeyMapped> dump() const;
 
 private:
     mutable std::mutex configuration_mutex;

@@ -6,10 +6,10 @@
 (200,12,22,6)
 (300,13,23,7)
 (400,14,24,8)
-qpc_incompatible_alias	1	0	0	1
-qpc_incompatible_alias_hit	1	0	1	0
-qpc_incompatible_default	1	0	0	1
-qpc_incompatible_engine	1	0	0	1
-qpc_incompatible_materialized	1	0	0	1
-qpc_incompatible_ordering	1	0	0	1
-qpc_incompatible_type	1	0	0	1
+qpc_incompatible_alias	1	0	1
+qpc_incompatible_alias_hit	1	0	0
+qpc_incompatible_default	1	0	1
+qpc_incompatible_engine	1	0	1
+qpc_incompatible_materialized	1	0	1
+qpc_incompatible_ordering	1	0	1
+qpc_incompatible_type	1	0	1

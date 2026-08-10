@@ -23,15 +23,21 @@ Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner
 Names getReadColumnsForQueryPlanCacheEntry(const QueryPlan & plan);
 
 std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
-    const QueryPlanCacheLookupContext & lookup_context, const QueryPlan & plan, const ContextPtr & context, const Names & selected_columns);
+    const QueryPlanCacheLookupContext & lookup_context,
+    const QueryPlan & plan,
+    const PlannerContextPtr & planner_context,
+    const Names & selected_columns);
 
 struct ValidatedQueryPlanCacheEntry
 {
     StorageID storage_id = StorageID::createEmpty();
+    String table_name;
     Names selected_columns;
     Names read_columns;
     StorageMetadataPtr metadata_snapshot;
-    std::vector<QueryPlanStorageBinding> storage_bindings;
+    StoragePtr storage;
+    StorageSnapshotPtr storage_snapshot;
+    TableLockHolder table_lock;
 };
 
 std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildSnapshot(
@@ -40,6 +46,6 @@ std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildS
 void checkAccessForQueryPlanCacheHit(
     const ContextPtr & context, const StorageID & storage_id, const StorageMetadataPtr & metadata_snapshot, const Names & selected_columns);
 
-void checkStoragesSupportTransactionsForQueryPlanCacheHit(
-    const ContextPtr & context, const std::vector<QueryPlanStorageBinding> & storage_bindings);
+void checkStorageSupportsTransactionsForQueryPlanCacheHit(
+    const ContextPtr & context, const StoragePtr & storage);
 }

@@ -1,5 +1,5 @@
 ---
-description: 'Guide to using and configuring the experimental query plan cache feature in ClickHouse'
+description: 'Guide to using and configuring the query plan cache feature in ClickHouse'
 sidebar_label: 'Query plan cache'
 sidebar_position: 66
 slug: /operations/query-plan-cache
@@ -8,15 +8,15 @@ doc_type: 'guide'
 ---
 
 :::note
-The query plan cache is experimental. To use it, both `allow_experimental_query_plan_cache` and `enable_query_plan_cache` must be set to `1`. Only queries that also run with [enable_analyzer](/operations/settings/settings#enable_analyzer) (default) are eligible.
+The query plan cache is experimental. To use it, set `enable_query_plan_cache` to `1`. Only queries that also run with [enable_analyzer](/operations/settings/settings#enable_analyzer) (default) are eligible.
 :::
 
 ## Background and motivation {#background-and-motivation}
 
-For repeated `SELECT` queries against the same table, ClickHouse spends a non-trivial amount of time on query planning: AST parsing produces an analyzer tree, the analyzer resolves names and types, and the planner produces a `QueryPlan` from which the executable pipeline is built.
+For repeated `SELECT` queries against the same table, ClickHouse may spend a non-trivial amount of time on query planning: AST parsing produces an analyzer tree, the analyzer resolves names and types, and the planner produces a query plan from which the executable pipeline is built.
 On simple OLTP-style workloads (single-table dashboard queries, prepared-statement-style traffic, lightweight point lookups), the planning step itself can dominate end-to-end latency.
 
-The query plan cache stores the serialized `QueryPlan` produced by the analyzer-based planner, keyed by the query AST and the planner-affecting subset of the session settings.
+The query plan cache stores the serialized query plan produced by the analyzer-based planner, keyed by the query AST and the planner-affecting subset of the session settings.
 On a subsequent identical query, ClickHouse still parses the SQL text to build the cache lookup key. If a matching entry is found and its dependencies are still valid, ClickHouse skips analysis and planning, deserializes the cached plan, re-binds it to the current table snapshot, and re-validates access rights before execution.
 
 Unlike the [query cache](query-cache.md), which caches query *results*, the query plan cache caches only the *plan*: every cache hit still executes the query and reads up-to-date data.
@@ -24,45 +24,34 @@ This makes the query plan cache transactionally consistent — there is no risk 
 
 ## How it works {#how-it-works}
 
-When a `SELECT` query is admitted, the cached plan is built in two stages so that it can be reused across the table snapshots that exist at insert time vs. lookup time:
+When a `SELECT` query is admitted, the cached plan is built in two stages so that it can be reused with newer compatible table snapshots:
 
-- *Universalize*: before serialization, every `ReadFromMergeTree` (and similar storage-bound steps) is replaced with a storage-independent `ReadFromTableStep` that carries only the `StorageID` and the columns to read. Storage-specific state (parts, marks, prewhere actions) is stripped.
-- *Materialize*: on a cache hit, the universalized plan is deserialized and `resolveStorages` rebinds each `ReadFromTableStep` to the current `IStorage` snapshot, restoring a directly executable `QueryPlan`.
+- *Universalize*: before serialization, storage-specific read state such as parts and marks is replaced with a logical table read that retains the required columns and query modifiers.
+- *Materialize*: on a cache hit, ClickHouse validates the current table definition, acquires a current snapshot, and rebuilds the storage reads to produce an executable query plan.
 
-The lookup key is built before query analysis. A found entry is treated as a candidate and is executed only after dependency validation succeeds. The validation checks storage identity, table metadata, row policy fingerprints, selected columns, and relevant settings. If validation fails, ClickHouse falls back to normal analysis and planning.
+The lookup key is built before query analysis. A found entry is treated as a candidate and is executed only after dependency validation succeeds. Validation compares the current storage engine, the exact descriptions of columns used by the plan, and the sorting, partitioning, primary-key, and sampling properties against the cached read contract. If that contract is incompatible, ClickHouse performs normal analysis and planning and replaces the entry.
 
 The cache key includes:
 
-- A 128-bit hash of the normalized query AST.
+- The exact canonical representation of the normalized query AST. A 128-bit AST hash is used only to accelerate lookup; equality never relies on the hash alone.
 - A 64-bit hash of the planner-affecting session settings (resource limits, output formatting, logging settings, and a few cache-related settings are excluded — see [`isSettingIgnoredInQueryPlanCache`](https://github.com/ClickHouse/ClickHouse/blob/master/src/Interpreters/Cache/QueryPlanCache.cpp)).
-- For each table referenced in the query: the table's metadata version (or, for non-replicated tables, a content hash over column names + types + sorting/partition/primary key expressions).
-- The hash of the SELECT row policy expression, if any.
-- The current user identity and the sorted list of currently active role IDs.
 
-`SYSTEM DROP QUERY PLAN CACHE` invalidates the cache eagerly. Schema changes, role changes, and row policy changes invalidate cache entries lazily — the next lookup will compute a different key and miss.
+The key does not contain a user identity or table UUID, so compatible plans can be shared across users and across a compatible `DROP TABLE` followed by `CREATE TABLE` of the same logical table. Every hit revalidates `SELECT` privileges for the current user and binds the plan to the current storage snapshot. `SYSTEM DROP QUERY PLAN CACHE` invalidates the cache eagerly.
 
 ## Configuration settings and usage {#configuration-settings-and-usage}
 
-Two session settings together gate the feature:
+The experimental session setting [`enable_query_plan_cache`](/operations/settings/settings#enable_query_plan_cache) controls the feature and defaults to `0`.
 
-- [`allow_experimental_query_plan_cache`](/operations/settings/settings#allow_experimental_query_plan_cache) — experimental gate (default `0`).
-- [`enable_query_plan_cache`](/operations/settings/settings#enable_query_plan_cache) — per-query toggle once the gate is enabled (default `0`).
-
-A third setting controls per-user accounting:
-
-- [`query_plan_cache_size_in_bytes_quota`](/operations/settings/settings#query_plan_cache_size_in_bytes_quota) — admission quota in bytes for the current user. `0` means unlimited.
-
-The maximum total cache size and entry count are controlled by the server-level settings `query_plan_cache.max_size_in_bytes` and `query_plan_cache.max_entries`. Both can be reloaded at runtime via `SYSTEM RELOAD CONFIG`.
+The maximum total cache size and entry count are controlled by the server-level settings `query_plan_cache.max_size_in_bytes` and `query_plan_cache.max_entries`. The default maximum size is `100 MiB`. Both settings can be reloaded at runtime via `SYSTEM RELOAD CONFIG`.
 
 Example:
 
 ```sql
 SELECT a, b FROM hits WHERE EventDate = '2024-01-01'
-SETTINGS allow_experimental_query_plan_cache = 1,
-         enable_query_plan_cache = 1;
+SETTINGS enable_query_plan_cache = 1;
 ```
 
-The first execution serializes and stores the plan. Subsequent executions of the same query (same AST, same planner-relevant settings, same user/roles, same schema version) skip planning and reuse the cached plan.
+The first execution serializes and stores the plan. Subsequent executions of the same query with the same canonical AST and planner-relevant settings can skip planning when the current storage dependency contract is compatible.
 
 ## Eligibility {#eligibility}
 
@@ -73,23 +62,24 @@ A query is admitted to the cache only if **all** of the following hold:
 - [`enable_analyzer`](/operations/settings/settings#enable_analyzer) is `1` (the default).
 - The query does not run with parallel replicas (`enable_parallel_replicas = 0`).
 - The query does not contain non-deterministic functions (`now`, `rand`, etc.) or subqueries.
+- No row policy applies to the current user for the table. Queries with any applicable row policy, including an always-true policy, bypass the plan cache.
 
 Queries that fail any check are still executed normally; they simply do not interact with the cache.
 
 ## Limitations and invalidation {#limitations-and-invalidation}
 
-- **Schema changes** invalidate cached plans for the affected table on the next lookup. For replicated tables this happens via the table's `metadata_version`; for non-replicated tables a content hash over the column list and key expressions is used.
-- **Row policy changes** invalidate plans on the next lookup because the policy's expression hash is part of the key.
-- **User and role changes**: cache entries are scoped to the user identity and the set of currently active roles. A user with different active roles will produce a different key and never share cached plans.
+- **Schema changes** are checked against the columns and key properties used by the cached read. Changes to an unrelated column can remain compatible, while changes to a required column type, default expression, storage engine, sorting key, partition key, primary key, or sampling key reject the candidate.
+- **Row policies** are not supported by the experimental cache. A query with an applicable policy does not look up or populate the cache.
+- **Users and roles** are not part of the key. Plans can be shared across users, but table- and column-level `SELECT` privileges are checked for the current user on every hit.
 - **Server restart** clears the cache — entries are not persisted to disk.
-- **Access rights** are re-checked on every cache hit; revoking `SELECT` after the plan is cached causes the next attempt to fail with `ACCESS_DENIED`.
+- **Access rights** are re-checked on every cache hit. The current user must retain `SELECT` on all columns selected by query semantics, or on at least one column for queries such as `SELECT count()` that do not select a storage column.
 
 ## Administration {#administration}
 
 To inspect cache state at runtime:
 
 - The number of cache entries and the total bytes used are exposed in [`system.metrics`](/operations/system-tables/metrics) as `QueryPlanCacheEntries` and `QueryPlanCacheBytes`.
-- Hit/miss counters since server start are exposed in [`system.events`](/operations/system-tables/events) as `QueryPlanCacheHits` and `QueryPlanCacheMisses`. `QueryPlanCacheHits` means a candidate entry was found. `QueryPlanCachePreAnalysisHits` counts validated hits that skipped analyzer construction. `QueryPlanCacheValidationMisses` and `QueryPlanCacheStaleMisses` count candidate entries that were rejected before execution.
+- Hit/miss counters since server start are exposed in [`system.events`](/operations/system-tables/events) as `QueryPlanCacheHits` and `QueryPlanCacheMisses`. `QueryPlanCacheHits` means a candidate entry was found, while `QueryPlanCacheValidationMisses` counts candidates rejected by dependency validation.
 
 To clear the cache:
 

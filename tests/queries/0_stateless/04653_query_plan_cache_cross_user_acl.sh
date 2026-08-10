@@ -15,7 +15,7 @@ table="qpc_acl_${suffix}"
 test_start_table="qpc_acl_test_start_${suffix}"
 query_id_shared="qpc_acl_shared_${suffix}"
 query_id_count="qpc_acl_count_${suffix}"
-settings="--allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 --allow_experimental_analyzer=1 --enable_parallel_replicas=0 --optimize_trivial_count_query=0"
+settings="--enable_query_plan_cache=1 --allow_experimental_analyzer=1 --enable_parallel_replicas=0 --optimize_trivial_count_query=0"
 
 cleanup()
 {
@@ -60,7 +60,6 @@ ${CLICKHOUSE_CLIENT} --query "
         if(query_id = '${query_id_shared}', 'shared', 'count') AS execution,
         ProfileEvents['QueryPlanCacheHits'],
         ProfileEvents['QueryPlanCacheMisses'],
-        ProfileEvents['QueryPlanCachePreAnalysisHits'],
         ProfileEvents['QueryPlanCacheValidationMisses']
     FROM system.query_log
     WHERE type = 'QueryFinish'

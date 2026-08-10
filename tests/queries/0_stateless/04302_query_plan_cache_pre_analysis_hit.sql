@@ -1,7 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: uses global query plan cache and system.query_log.
 
-SET allow_experimental_query_plan_cache = 1;
 SET enable_query_plan_cache = 1;
 SET allow_experimental_analyzer = 1;
 SET enable_parallel_replicas = 0;
@@ -23,7 +22,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     log_comment,
-    ProfileEvents['QueryPlanCachePreAnalysisHits'] AS pre_analysis_hits,
+    ProfileEvents['QueryPlanCacheHits'] AS hits,
     ProfileEvents['QueryPlanCacheValidationMisses'] AS validation_misses,
     notEmpty(columns) AS has_query_columns
 FROM system.query_log

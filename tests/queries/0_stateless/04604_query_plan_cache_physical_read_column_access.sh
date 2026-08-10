@@ -28,13 +28,13 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SELECT(a), SELECT(b) ON ${table} TO ${user}"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY PLAN CACHE"
 
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT count() FROM ${table} FORMAT Null" \
-    --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 \
+    --enable_query_plan_cache=1 \
     --enable_parallel_replicas=0 --optimize_trivial_count_query=0
 
 ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(b) ON ${table} FROM ${user}"
 
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT count() FROM ${table} FORMAT Null" \
-    --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 \
+    --enable_query_plan_cache=1 \
     --enable_parallel_replicas=0 --optimize_trivial_count_query=0
 
 echo "ACCESS_ALLOWED"

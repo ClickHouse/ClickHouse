@@ -22,7 +22,6 @@ QUERY = """
     GROUP BY a, b
     ORDER BY a, b
     SETTINGS
-        allow_experimental_query_plan_cache = 1,
         enable_query_plan_cache = {enable_cache},
         max_threads = 4,
         max_threads_min_free_memory_per_thread = {min_free_per_thread}
@@ -53,7 +52,6 @@ def query_with_profile_events(enable_cache, min_free_per_thread):
         SELECT
             ProfileEvents['QueryPlanCacheHits'],
             ProfileEvents['QueryPlanCacheMisses'],
-            ProfileEvents['QueryPlanCachePreAnalysisHits'],
             ProfileEvents['QueryPlanCacheValidationMisses']
         FROM system.query_log
         WHERE query_id = '{query_id}'
@@ -131,8 +129,8 @@ def test_cached_plan_across_dynamic_max_threads(started_cluster):
 
         assert low_seed == ground_truth
         assert high_hit == ground_truth
-        assert low_seed_events == (0, 1, 0, 0)
-        assert high_hit_events == (1, 0, 1, 0)
+        assert low_seed_events == (0, 1, 0)
+        assert high_hit_events == (1, 0, 0)
 
         node.query("SYSTEM DROP QUERY PLAN CACHE")
         high_seed, high_seed_events = query_with_profile_events(
@@ -145,8 +143,8 @@ def test_cached_plan_across_dynamic_max_threads(started_cluster):
 
         assert high_seed == ground_truth
         assert low_hit == ground_truth
-        assert high_seed_events == (0, 1, 0, 0)
-        assert low_hit_events == (1, 0, 1, 0)
+        assert high_seed_events == (0, 1, 0)
+        assert low_hit_events == (1, 0, 0)
     finally:
         node.query("SYSTEM FREE MEMORY")
         node.query("DROP TABLE IF EXISTS query_plan_cache_dynamic_threads")

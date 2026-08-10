@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_plan_cache_stream VALUES (1), (2), (
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY PLAN CACHE"
 
 settings="--enable_streaming_queries=1 --use_skip_indexes_on_data_read=0 \
-    --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 \
+    --enable_query_plan_cache=1 \
     --allow_experimental_analyzer=1 --enable_parallel_replicas=0"
 
 # Bounded STREAM read returns the existing rows and finishes. Run it twice: if it

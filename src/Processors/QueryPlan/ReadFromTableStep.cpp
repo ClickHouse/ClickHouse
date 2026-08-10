@@ -44,13 +44,13 @@ void ReadFromTableStep::initializePipeline(QueryPipelineBuilder &, const BuildQu
 /// `Analyzer/TableExpressionModifiers.h` (transitively included via `ReadFromTableStep.h`).
 
 /// Serialization flags for ReadFromTableStep.
-static constexpr UInt8 FLAG_HAS_FINAL = 1;
-static constexpr UInt8 FLAG_HAS_SAMPLE_SIZE = 2;
-static constexpr UInt8 FLAG_HAS_SAMPLE_OFFSET = 4;
-static constexpr UInt8 FLAG_PARALLEL_REPLICAS = 8;
-static constexpr UInt8 FLAG_HAS_PREWHERE = 16;
-static constexpr UInt8 FLAG_HAS_ROW_LEVEL_FILTER = 32;
-static constexpr UInt8 FLAG_HAS_NODE_NAME_TO_INPUT_COLUMN = 64;
+static constexpr UInt8 FLAG_HAS_FINAL = 1 << 0;
+static constexpr UInt8 FLAG_HAS_SAMPLE_SIZE = 1 << 1;
+static constexpr UInt8 FLAG_HAS_SAMPLE_OFFSET = 1 << 2;
+static constexpr UInt8 FLAG_PARALLEL_REPLICAS = 1 << 3;
+static constexpr UInt8 FLAG_HAS_PREWHERE = 1 << 4;
+static constexpr UInt8 FLAG_HAS_ROW_LEVEL_FILTER = 1 << 5;
+static constexpr UInt8 FLAG_HAS_NODE_NAME_TO_INPUT_COLUMN = 1 << 6;
 static constexpr UInt64 READ_FROM_TABLE_FILTERS_SERIALIZATION_VERSION = 1;
 static constexpr UInt64 READ_FROM_TABLE_NODE_NAME_MAPPING_SERIALIZATION_VERSION = 2;
 

@@ -24,7 +24,7 @@ namespace DB
 bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
 {
     /// Cache control: settings that select or sidestep the cache itself.
-    return setting_name == "allow_experimental_query_plan_cache" || setting_name == "enable_query_plan_cache"
+    return setting_name == "enable_query_plan_cache"
         || setting_name.starts_with("query_cache_")
         || setting_name.ends_with("_query_cache")
         /// Output formatting: applied after the plan and never baked into a plan step.
@@ -110,11 +110,6 @@ size_t QueryPlanCache::sizeInBytes() const
 size_t QueryPlanCache::count() const
 {
     return Base::count();
-}
-
-std::vector<QueryPlanCache::KeyMapped> QueryPlanCache::dump() const
-{
-    return Base::dump();
 }
 
 UInt64 SemanticSettings::computeHash(const Settings & settings)

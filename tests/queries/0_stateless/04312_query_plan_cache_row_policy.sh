@@ -40,7 +40,7 @@ ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table} TO
 ${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY ${policy_true} ON ${CLICKHOUSE_DATABASE}.${table} AS RESTRICTIVE USING 1 TO ${role}"
 ${CLICKHOUSE_CLIENT} --query "CREATE ROW POLICY ${policy_filter} ON ${CLICKHOUSE_DATABASE}.${table} AS RESTRICTIVE USING a = 1 TO ${role}"
 
-settings="--allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 --allow_experimental_analyzer=1 --enable_parallel_replicas=0"
+settings="--enable_query_plan_cache=1 --allow_experimental_analyzer=1 --enable_parallel_replicas=0"
 
 ${CLICKHOUSE_CLIENT} --user "${user}" --query_id "${query_id_first}" ${settings} --query "SELECT a FROM ${table} ORDER BY a"
 ${CLICKHOUSE_CLIENT} --user "${user}" --query_id "${query_id_second}" ${settings} --query "SELECT a FROM ${table} ORDER BY a"
@@ -51,7 +51,6 @@ ${CLICKHOUSE_CLIENT} --query "
         if(query_id = '${query_id_first}', 'first', 'second') AS execution,
         ProfileEvents['QueryPlanCacheHits'],
         ProfileEvents['QueryPlanCacheMisses'],
-        ProfileEvents['QueryPlanCachePreAnalysisHits'],
         ProfileEvents['QueryPlanCacheValidationMisses']
     FROM system.query_log
     WHERE type = 'QueryFinish'

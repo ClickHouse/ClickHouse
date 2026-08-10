@@ -127,25 +127,14 @@ static ASTPtr wrapWithUnion(ASTPtr select)
     return select_with_union;
 }
 
-static QueryPlanStorageBinding * findStorageBinding(
-    const String & table_name,
-    std::vector<QueryPlanStorageBinding> * storage_bindings)
-{
-    if (!storage_bindings)
-        return nullptr;
-
-    for (auto & binding : *storage_bindings)
-        if (binding.table_name == table_name)
-            return &binding;
-
-    return nullptr;
-}
-
 static QueryPlanResourceHolder replaceReadingFromTable(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     const ContextPtr & context,
-    std::vector<QueryPlanStorageBinding> * storage_bindings)
+    const String * bound_table_name,
+    const StoragePtr * bound_storage,
+    const StorageSnapshotPtr * bound_snapshot,
+    TableLockHolder * bound_table_lock)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
@@ -162,15 +151,16 @@ static QueryPlanResourceHolder replaceReadingFromTable(
 
     if (reading_from_table)
     {
-        if (auto * binding = findStorageBinding(reading_from_table->getTable(), storage_bindings))
+        if (bound_storage)
         {
-            storage = binding->storage;
-            snapshot = binding->snapshot;
-        }
-        else if (storage_bindings && !storage_bindings->empty())
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "Cached query plan references unexpected table {}", reading_from_table->getTable());
+            if (reading_from_table->getTable() != *bound_table_name)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Cached query plan references unexpected table {}",
+                    reading_from_table->getTable());
+
+            storage = *bound_storage;
+            snapshot = *bound_snapshot;
         }
         else
         {
@@ -242,11 +232,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(
     }
 
     TableLockHolder table_lock;
-    if (reading_from_table)
-    {
-        if (auto * binding = findStorageBinding(reading_from_table->getTable(), storage_bindings))
-            table_lock = std::move(binding->table_lock);
-    }
+    if (reading_from_table && bound_storage && bound_table_lock)
+        table_lock = std::move(*bound_table_lock);
 
     if (!table_lock)
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -365,11 +352,20 @@ static QueryPlanResourceHolder replaceReadingFromTable(
 
 void QueryPlan::resolveStorages(const ContextPtr & context)
 {
-    resolveStorages(context, {});
+    resolveStorages(context, {}, {}, {}, {});
 }
 
-void QueryPlan::resolveStorages(const ContextPtr & context, std::vector<QueryPlanStorageBinding> storage_bindings)
+void QueryPlan::resolveStorages(
+    const ContextPtr & context,
+    String bound_table_name,
+    StoragePtr bound_storage,
+    StorageSnapshotPtr bound_snapshot,
+    TableLockHolder bound_table_lock)
 {
+    const String * bound_table_name_ptr = bound_storage ? &bound_table_name : nullptr;
+    const StoragePtr * bound_storage_ptr = bound_storage ? &bound_storage : nullptr;
+    const StorageSnapshotPtr * bound_snapshot_ptr = bound_storage ? &bound_snapshot : nullptr;
+
     std::stack<QueryPlan::Node *> stack;
     stack.push(getRootNode());
     while (!stack.empty())
@@ -387,7 +383,14 @@ void QueryPlan::resolveStorages(const ContextPtr & context, std::vector<QueryPla
             stack.push(child);
 
         if (node->children.empty())
-            addResources(replaceReadingFromTable(*node, nodes, context, &storage_bindings));
+            addResources(replaceReadingFromTable(
+                *node,
+                nodes,
+                context,
+                bound_table_name_ptr,
+                bound_storage_ptr,
+                bound_snapshot_ptr,
+                &bound_table_lock));
     }
 }
 

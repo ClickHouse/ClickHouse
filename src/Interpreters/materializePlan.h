@@ -29,6 +29,9 @@ namespace DB
 QueryPlan materializePlan(
     std::string_view serialized_bytes,
     const ContextPtr & context,
-    std::vector<QueryPlanStorageBinding> storage_bindings = {});
+    String bound_table_name,
+    StoragePtr bound_storage,
+    StorageSnapshotPtr bound_snapshot,
+    TableLockHolder bound_table_lock);
 
 }

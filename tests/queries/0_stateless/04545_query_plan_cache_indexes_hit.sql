@@ -1,4 +1,3 @@
-SET allow_experimental_query_plan_cache = 1;
 SET enable_query_plan_cache = 1;
 SET allow_experimental_analyzer = 1;
 SET enable_parallel_replicas = 0;

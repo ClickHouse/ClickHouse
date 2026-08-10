@@ -4,6 +4,7 @@
 #include <Access/Common/RowPolicyDefs.h>
 #include <Access/ContextAccess.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -118,7 +119,9 @@ std::optional<QueryPlanCacheStorageDependency> buildStorageDependency(
     dependency.table_name = table_name;
     dependency.engine_name = storage->getName();
     dependency.sorting_key = formatKeyExpression(metadata->sorting_key.expression_list_ast);
+    dependency.partition_key = formatKeyExpression(metadata->partition_key.expression_list_ast);
     dependency.primary_key = formatKeyExpression(metadata->primary_key.expression_list_ast);
+    dependency.sampling_key = formatKeyExpression(metadata->sampling_key.expression_list_ast);
     dependency.sorting_key_reverse_flags = metadata->sorting_key.reverse_flags;
 
     std::set<String> unique_names(column_names.begin(), column_names.end());
@@ -259,10 +262,16 @@ Names getReadColumnsForQueryPlanCacheEntry(const QueryPlan & plan)
 }
 
 std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
-    const QueryPlanCacheLookupContext & lookup_context, const QueryPlan & plan, const ContextPtr & context, const Names & selected_columns)
+    const QueryPlanCacheLookupContext & lookup_context,
+    const QueryPlan & plan,
+    const PlannerContextPtr & planner_context,
+    const Names & selected_columns)
 {
     if (!plan.isInitialized())
         return {};
+
+    if (!planner_context)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query plan cache requires a planner context");
 
     std::map<String, std::set<String>> columns_by_table;
     std::stack<const QueryPlan::Node *> stack;
@@ -286,15 +295,26 @@ std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
     if (columns_by_table.size() != 1 || columns_by_table.begin()->first != expected_table_name)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query plan cache only supports one direct table dependency");
 
-    auto storage = DatabaseCatalog::instance().tryGetTable(lookup_context.storage_id, context);
-    if (!storage)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} no longer exists", expected_table_name);
+    const auto & table_expression_data = planner_context->getTableExpressionNodeToData();
+    if (table_expression_data.size() != 1)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Query plan cache only supports one planned table expression, got {}",
+            table_expression_data.size());
+
+    const auto * table_node = table_expression_data.begin()->first->as<TableNode>();
+    if (!table_node)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query plan cache requires a direct table node");
+
+    const auto & storage = table_node->getStorage();
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+    if (!storage || !storage_snapshot)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Query plan cache requires a resolved storage snapshot");
 
     auto & dependency_columns = columns_by_table.begin()->second;
     dependency_columns.insert(selected_columns.begin(), selected_columns.end());
     Names names(dependency_columns.begin(), dependency_columns.end());
-    auto metadata = storage->getInMemoryMetadataPtr(context, false);
-    auto dependency = buildStorageDependency(expected_table_name, storage, metadata, names);
+    auto dependency = buildStorageDependency(expected_table_name, storage, storage_snapshot->metadata, names);
     if (!dependency)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot capture all dependencies for table {}", expected_table_name);
 
@@ -337,15 +357,13 @@ std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildS
 
     ValidatedQueryPlanCacheEntry result;
     result.storage_id = lookup_context.storage_id;
+    result.table_name = cached_dependency.table_name;
     result.selected_columns = entry.selected_columns;
     result.read_columns = entry.read_columns;
     result.metadata_snapshot = metadata_snapshot;
-    result.storage_bindings.push_back(QueryPlanStorageBinding{
-        .table_name = cached_dependency.table_name,
-        .storage = std::move(storage),
-        .snapshot = std::move(storage_snapshot),
-        .table_lock = std::move(table_lock),
-    });
+    result.storage = std::move(storage);
+    result.storage_snapshot = std::move(storage_snapshot);
+    result.table_lock = std::move(table_lock);
     return result;
 }
 
@@ -371,8 +389,8 @@ void checkAccessForQueryPlanCacheHit(
     context->checkAccess(AccessType::SELECT, storage_id, selected_columns);
 }
 
-void checkStoragesSupportTransactionsForQueryPlanCacheHit(
-    const ContextPtr & context, const std::vector<QueryPlanStorageBinding> & storage_bindings)
+void checkStorageSupportsTransactionsForQueryPlanCacheHit(
+    const ContextPtr & context, const StoragePtr & storage)
 {
     if (!context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
         return;
@@ -380,15 +398,12 @@ void checkStoragesSupportTransactionsForQueryPlanCacheHit(
     if (!context->getCurrentTransaction())
         return;
 
-    for (const auto & binding : storage_bindings)
-    {
-        if (binding.storage && !binding.storage->supportsTransactions())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Storage {} (table {}) does not support transactions",
-                binding.storage->getName(),
-                binding.storage->getStorageID().getNameForLogs());
-    }
+    if (storage && !storage->supportsTransactions())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Storage {} (table {}) does not support transactions",
+            storage->getName(),
+            storage->getStorageID().getNameForLogs());
 }
 
 }

@@ -56,14 +56,6 @@ struct DeserializedSetsRegistry;
 
 class SettingsChanges;
 
-struct QueryPlanStorageBinding
-{
-    String table_name;
-    StoragePtr storage;
-    StorageSnapshotPtr snapshot;
-    TableLockHolder table_lock;
-};
-
 /// Options from EXPLAIN PLAN query.
 /// Options from EXPLAIN queries based on plan.
 struct ExplainPlanOptions
@@ -140,7 +132,12 @@ public:
     bool isSerialized() const;
 
     void resolveStorages(const ContextPtr & context);
-    void resolveStorages(const ContextPtr & context, std::vector<QueryPlanStorageBinding> storage_bindings);
+    void resolveStorages(
+        const ContextPtr & context,
+        String bound_table_name,
+        StoragePtr bound_storage,
+        StorageSnapshotPtr bound_snapshot,
+        TableLockHolder bound_table_lock);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that

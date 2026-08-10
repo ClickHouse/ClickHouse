@@ -9,7 +9,10 @@ namespace DB
 QueryPlan materializePlan(
     std::string_view serialized_bytes,
     const ContextPtr & context,
-    std::vector<QueryPlanStorageBinding> storage_bindings)
+    String bound_table_name,
+    StoragePtr bound_storage,
+    StorageSnapshotPtr bound_snapshot,
+    TableLockHolder bound_table_lock)
 {
     /// Reconstruct plan skeleton from binary bytes.
     /// Leaf nodes are `ReadFromTableStep` (storage-agnostic
@@ -27,7 +30,12 @@ QueryPlan materializePlan(
     /// `QueryProcessingStage::FetchColumns`, which performs
     /// part selection and creates `ReadFromMergeTree` against
     /// the current data snapshot.
-    plan.resolveStorages(context, std::move(storage_bindings));
+    plan.resolveStorages(
+        context,
+        std::move(bound_table_name),
+        std::move(bound_storage),
+        std::move(bound_snapshot),
+        std::move(bound_table_lock));
 
     return plan;
 }

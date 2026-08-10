@@ -5791,8 +5791,8 @@ Possible values:
 - 1 - Enabled
 )", 0) \
     \
-    DECLARE(Bool, allow_experimental_query_plan_cache, false, R"(
-Allows using the experimental query plan cache feature. Actual cache usage is controlled by `enable_query_plan_cache`.
+    DECLARE(Bool, enable_query_plan_cache, false, R"(
+If turned on, eligible `SELECT` queries may cache their query plan to skip repeated planning on subsequent identical queries.
 Only single-table non-distributed queries with `allow_experimental_analyzer = 1` are eligible.
 
 Possible values:
@@ -5800,14 +5800,6 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", EXPERIMENTAL) \
-    DECLARE(Bool, enable_query_plan_cache, false, R"(
-If turned on together with `allow_experimental_query_plan_cache`, `SELECT` queries may cache their query plan to skip repeated planning on subsequent identical queries.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
 Minimum time of delay between 2 background compaction operations.
 )", 0) \

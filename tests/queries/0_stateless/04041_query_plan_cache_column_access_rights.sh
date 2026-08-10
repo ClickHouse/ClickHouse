@@ -20,7 +20,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP QUERY PLAN CACHE"
 
 # First query as the test user: populates the cache (miss)
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT a FROM t_plan_cache_column_acl FORMAT Null" \
-    --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 --allow_experimental_analyzer=1
+    --enable_query_plan_cache=1 --allow_experimental_analyzer=1
 
 # Revoke access only to the queried column. Access to another column remains.
 ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(a) ON ${CLICKHOUSE_DATABASE}.t_plan_cache_column_acl FROM ${user}"
@@ -29,7 +29,7 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(a) ON ${CLICKHOUSE_DATABASE}.t_plan_
 # Buffer client output before grepping to avoid SIGPIPE: `grep -m1` closes the pipe
 # while clickhouse-client is still writing log lines to stderr, which trips pipefail.
 output=$(${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT a FROM t_plan_cache_column_acl FORMAT Null" \
-    --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 --allow_experimental_analyzer=1 2>&1 || true)
+    --enable_query_plan_cache=1 --allow_experimental_analyzer=1 2>&1 || true)
 echo "$output" | grep -o 'ACCESS_DENIED' | head -n1
 
 # Cleanup
