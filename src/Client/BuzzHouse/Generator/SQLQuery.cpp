@@ -150,7 +150,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
     this->levels[this->current_level].rels.emplace_back(rel);
 }
 
-static void matchQueryAliases(const uint32_t ncols, Select * osel, Select * nsel)
+static void matchQueryAliases(const uint32_t ncols, Select & osel, Select * nsel)
 {
     /// Make sure aliases match
     SelectStatementCore * ssc = nsel->mutable_select_core();
@@ -171,7 +171,7 @@ static void matchQueryAliases(const uint32_t ncols, Select * osel, Select * nsel
             ->set_column(ncname);
         jtf->add_col_aliases()->set_column(ncname);
     }
-    jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->set_allocated_sel(osel);
+    jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->mutable_sel()->Swap(&osel);
 }
 
 void StatementGenerator::generateDerivedTable(
@@ -183,8 +183,8 @@ void StatementGenerator::generateDerivedTable(
     std::optional<String> recursive,
     Select * sel)
 {
-    /// Owned here until `matchQueryAliases` hands it over to `sel`, so that an exception escaping `generateSelect` does not leak it.
-    std::unique_ptr<Select> osel(sel->New());
+    /// Built on the stack so an exception escaping `generateSelect` cannot leak it; `matchQueryAliases` swaps it into `sel`.
+    Select osel;
     std::unordered_map<uint32_t, QueryLevel> levels_backup;
     std::unordered_map<uint32_t, std::unordered_map<String, SQLRelation>> ctes_backup;
 
@@ -204,7 +204,7 @@ void StatementGenerator::generateDerivedTable(
 
     this->current_level++;
     this->levels[this->current_level] = QueryLevel(this->current_level);
-    generateSelect(rg, false, false, ncols, allowed_clauses, recursive, osel.get());
+    generateSelect(rg, false, false, ncols, allowed_clauses, recursive, &osel);
     this->current_level--;
 
     if (backup)
@@ -221,7 +221,7 @@ void StatementGenerator::generateDerivedTable(
         }
     }
 
-    matchQueryAliases(ncols, osel.release(), sel);
+    matchQueryAliases(ncols, osel, sel);
     chassert(rel.cols.empty());
     for (uint32_t i = 0; i < ncols; i++)
     {
@@ -2431,7 +2431,11 @@ void StatementGenerator::generateSelect(
             generateSelect(rg, false, false, ncols, allowed_clauses, std::nullopt, tsel->mutable_sel());
             if (recursive.has_value())
             {
-                matchQueryAliases(ncols, tsel->release_sel(), tsel->mutable_sel());
+                /// Move the generated query out, then rebuild `sel` as a wrapper around it
+                Select osel;
+
+                osel.Swap(tsel->mutable_sel());
+                matchQueryAliases(ncols, osel, tsel->mutable_sel());
             }
         }
         this->width++;
