@@ -4,6 +4,7 @@
 
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -31,6 +32,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
 
 namespace
 {
@@ -355,8 +361,10 @@ TEST(BorrowedThreadGroupLifetime, AsyncWorkFromFlushAsyncInsertScopeFollowsRepar
                 std::ignore = CurrentMemoryTracker::alloc(allocation);
                 std::ignore = CurrentMemoryTracker::free(allocation);
             }
-            catch (...)
+            catch (const Exception & e)
             {
+                if (e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                    throw;
                 result.limit_enforced = true;
             }
             result.charged_to_outer_query = outer_query->memory_tracker.get() - before;
