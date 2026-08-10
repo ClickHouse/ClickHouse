@@ -1,5 +1,4 @@
 #include <Storages/Statistics/StatisticsUniqV2.h>
-#include <base/scope_guard.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -38,9 +37,6 @@ StatisticsUniqV2::~StatisticsUniqV2()
 
 void StatisticsUniqV2::build(const ColumnPtr & column)
 {
-    /// The sketch is mutated incrementally and can throw part way through, so reset in one place.
-    SCOPE_EXIT({ cached_cardinality_plus_one.store(0, std::memory_order_relaxed); });
-
     const IColumn * raw_column_ptr = nullptr;
 
     /// For sparse and low cardinality columns an extra default
@@ -63,9 +59,6 @@ void StatisticsUniqV2::build(const ColumnPtr & column)
 
 void StatisticsUniqV2::merge(const StatisticsPtr & other_stats)
 {
-    /// The sketch is mutated incrementally and can throw part way through, so reset in one place.
-    SCOPE_EXIT({ cached_cardinality_plus_one.store(0, std::memory_order_relaxed); });
-
     const StatisticsUniqV2 * other = typeid_cast<const StatisticsUniqV2 *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
 }
@@ -89,9 +82,6 @@ void StatisticsUniqV2::serialize(WriteBuffer & buf)
 
 void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
-    /// A read can throw after the container switch has already mutated the state, so reset in one place.
-    SCOPE_EXIT({ cached_cardinality_plus_one.store(0, std::memory_order_relaxed); });
-
     bool is_null = false;
     readBinary(is_null, buf);
 

@@ -1,5 +1,4 @@
 #include <Storages/Statistics/StatisticsUniq.h>
-#include <base/scope_guard.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -28,9 +27,6 @@ StatisticsUniq::~StatisticsUniq()
 
 void StatisticsUniq::build(const ColumnPtr & column)
 {
-    /// The sketch is mutated incrementally and can throw part way through, so reset in one place.
-    SCOPE_EXIT({ cached_cardinality_plus_one.store(0, std::memory_order_relaxed); });
-
     const IColumn * raw_column_ptr = nullptr;
 
     /// For sparse and low cardinality columns an extra default
@@ -53,9 +49,6 @@ void StatisticsUniq::build(const ColumnPtr & column)
 
 void StatisticsUniq::merge(const StatisticsPtr & other_stats)
 {
-    /// The sketch is mutated incrementally and can throw part way through, so reset in one place.
-    SCOPE_EXIT({ cached_cardinality_plus_one.store(0, std::memory_order_relaxed); });
-
     const StatisticsUniq * other = typeid_cast<const StatisticsUniq *>(other_stats.get());
     collector->merge(data, other->data, arena.get());
 }
@@ -79,9 +72,6 @@ void StatisticsUniq::serialize(WriteBuffer & buf)
 
 void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
-    /// Several exits below, plus a partially applied state if a read throws, so reset in one place.
-    SCOPE_EXIT({ cached_cardinality_plus_one.store(0, std::memory_order_relaxed); });
-
     bool is_null = false;
     readBinary(is_null, buf);
     auto nested_func = collector->getNestedFunction();

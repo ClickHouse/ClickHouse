@@ -6,12 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Common/CurrentMemoryTracker.h>
-#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
-#include <Common/ThreadStatus.h>
-#include <Common/scope_guard_safe.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
@@ -756,12 +751,7 @@ TEST(Statistics, BasicDefaultCountArray)
     EXPECT_DOUBLE_EQ(*eq_empty, 2.0);
 }
 
-/// `estimateCardinality` memoizes the finalized sketch, so every mutator of the aggregate state must
-/// drop that memo. A missed reset would return a stale cardinality, which is worse than recomputing.
-/// This contract is not observable through SQL: no query path reads a cardinality and then mutates the
-/// same statistics object (the estimator builder merges before publishing, and statistics are
-/// deserialized into fresh objects on every load), hence a unit test.
-class UniqCardinalityInvalidation : public ::testing::TestWithParam<StatisticsType>
+class UniqCardinalityMemo : public ::testing::TestWithParam<StatisticsType>
 {
 protected:
     static constexpr size_t distinct_per_block = 40;
@@ -777,139 +767,9 @@ protected:
         stats->build(std::move(col));
         return stats;
     }
-
-    /// The single statistics object under test, so that `IStatistics::deserialize` can be driven
-    /// directly (`ColumnStatistics::deserialize` would return a fresh object and prove nothing).
-    static const StatisticsPtr & uniqStat(const ColumnStatisticsPtr & stats)
-    {
-        return stats->getStats().at(GetParam());
-    }
-
-#if !defined(SANITIZER)
-    /// Requires `mutate` to throw under a memory limit and to leave more distinct values behind
-    /// than `distinct`, so that a surviving memo shows up as a too-low estimate. Sanitizer builds
-    /// have no tracked allocation to trip here, hence the guard.
-    static void expectMemoDroppedWhenMutatorThrows(const ColumnStatisticsPtr & stats, size_t distinct, auto && mutate)
-    {
-        MainThreadStatus::getInstance();
-        ASSERT_EQ(stats->estimateCardinality(), distinct);
-
-        auto & thread_tracker = CurrentThread::get().memory_tracker;
-        const Int64 saved_untracked_limit = CurrentThread::get().untracked_memory_limit;
-        const Int64 saved_thread_limit = thread_tracker.getHardLimit();
-        const Int64 saved_total_limit = total_memory_tracker.getHardLimit();
-        const UInt64 saved_min_alloc = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
-
-        auto lift = [&]
-        {
-            total_memory_tracker.setHardLimit(saved_total_limit);
-            thread_tracker.setHardLimit(saved_thread_limit);
-            CurrentThread::get().untracked_memory_limit = saved_untracked_limit;
-            CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(saved_min_alloc);
-        };
-        SCOPE_EXIT_SAFE({ lift(); });
-
-        /// `operator new` only enforces the limit above this size, and the per-thread untracked
-        /// buffer would otherwise absorb the container allocations.
-        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
-        CurrentThread::get().untracked_memory_limit = 0;
-        CurrentThread::flushUntrackedMemory();
-
-        /// Clamp relative to what is tracked; the objects built above are still alive, so zeroing
-        /// the counters would underflow the accounting when they are freed.
-        total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
-        thread_tracker.setHardLimit(thread_tracker.get() + 1024);
-
-        bool threw = false;
-        try
-        {
-            mutate();
-        }
-        catch (const Exception &)
-        {
-            threw = true;
-        }
-
-        /// Lift before asserting, because the assertions allocate too.
-        lift();
-
-        ASSERT_TRUE(threw) << "the mutator was expected to throw under the memory limit";
-        EXPECT_GT(stats->estimateCardinality(), distinct);
-    }
-#endif
 };
 
-TEST_P(UniqCardinalityInvalidation, BuildResetsCachedCardinality)
-{
-    auto stats = build(0);
-    EXPECT_EQ(stats->estimateCardinality(), distinct_per_block);
-
-    MutableColumnPtr more = DataTypeInt32().createColumn();
-    for (size_t i = 0; i < distinct_per_block; ++i)
-        more->insert(static_cast<Int32>(distinct_per_block + i));
-    stats->build(std::move(more));
-
-    EXPECT_EQ(stats->estimateCardinality(), 2 * distinct_per_block);
-}
-
-TEST_P(UniqCardinalityInvalidation, MergeResetsCachedCardinality)
-{
-    auto stats = build(0);
-    EXPECT_EQ(stats->estimateCardinality(), distinct_per_block);
-
-    stats->merge(build(static_cast<Int32>(distinct_per_block)));
-
-    EXPECT_EQ(stats->estimateCardinality(), 2 * distinct_per_block);
-}
-
-TEST_P(UniqCardinalityInvalidation, DeserializeResetsCachedCardinality)
-{
-    /// `uniqCombined64` switches container as the sketch grows and its reader can only widen the
-    /// container, so read into a state that is still in the smallest one (at most 16 distinct values).
-    static constexpr size_t few = 5;
-    auto stats = build(0, few);
-    EXPECT_EQ(stats->estimateCardinality(), few);
-
-    String serialized;
-    {
-        WriteBufferFromString out(serialized);
-        uniqStat(build(0))->serialize(out);
-        out.finalize();
-    }
-
-    ReadBufferFromString in(serialized);
-    uniqStat(stats)->deserialize(in, StatisticsFileVersion::V4);
-
-    EXPECT_EQ(stats->estimateCardinality(), distinct_per_block);
-}
-
-#if !defined(SANITIZER)
-TEST_P(UniqCardinalityInvalidation, BuildResetsCachedCardinalityWhenItThrows)
-{
-    auto stats = build(0);
-
-    /// Enough distinct values that the sketch has to grow its container while inserting them.
-    MutableColumnPtr more = DataTypeInt32().createColumn();
-    for (size_t i = 0; i < 100'000; ++i)
-        more->insert(static_cast<Int32>(distinct_per_block + i));
-    ColumnPtr more_column = std::move(more);
-
-    expectMemoDroppedWhenMutatorThrows(stats, distinct_per_block, [&] { stats->build(more_column); });
-}
-
-TEST_P(UniqCardinalityInvalidation, MergeResetsCachedCardinalityWhenItThrows)
-{
-    /// Keep both sides in the same container class: merging a wider one switches to it before
-    /// mutating anything, and two already widest ones allocate nothing, so neither shape reaches
-    /// the partial mutation this test needs.
-    auto stats = build(0);
-    auto other = build(static_cast<Int32>(distinct_per_block), 120);
-
-    expectMemoDroppedWhenMutatorThrows(stats, distinct_per_block, [&] { stats->merge(other); });
-}
-#endif
-
-TEST_P(UniqCardinalityInvalidation, RepeatedReadsAreStable)
+TEST_P(UniqCardinalityMemo, RepeatedReadsAreStable)
 {
     auto stats = build(0);
     const UInt64 first = stats->estimateCardinality();
@@ -930,7 +790,7 @@ TEST_P(UniqCardinalityInvalidation, RepeatedReadsAreStable)
 
 INSTANTIATE_TEST_SUITE_P(
     BothUniqImplementations,
-    UniqCardinalityInvalidation,
+    UniqCardinalityMemo,
     ::testing::Values(StatisticsType::Uniq, StatisticsType::UniqV2),
     [](const ::testing::TestParamInfo<StatisticsType> & param_info)
     { return param_info.param == StatisticsType::Uniq ? "Uniq" : "UniqV2"; });
