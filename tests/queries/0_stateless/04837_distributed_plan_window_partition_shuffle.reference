@@ -1,0 +1,19 @@
+-- distributed plan: window below the sorted gather, above a partition-keyed exchange
+Output: a, v, sum(v) OVER (PARTITION BY a ORDER BY v ASC)
+
+GatherExchange (sorted by (a ASC, v ASC))
+└──Sorting (Sorting for ORDER BY)
+   │  Prefix sort description: a ASC, v ASC
+   │  Result sort description: a ASC, v ASC
+   └──Window (Window step for window \'PARTITION BY a ORDER BY v ASC\')
+      │  Window: (PARTITION BY a ORDER BY v ASC)
+      │  Functions: sum(v) OVER (PARTITION BY a ORDER BY v ASC)
+      └──Sorting (Sorting for window \'PARTITION BY a ORDER BY v ASC\')
+         │  Sort description: a ASC, v ASC
+         └──ShuffleExchange (scatter by (a))
+            └──ReadFromMergeTree (default.t_window_shuffle)
+                  Read type: Default
+                  Parts: 3 | Granules: 3
+                  Output: a, v
+window stays gathered without exchange optimization:	1
+distributed result matches non-distributed:	1
