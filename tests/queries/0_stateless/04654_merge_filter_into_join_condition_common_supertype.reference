@@ -6,6 +6,9 @@ inner	CAST(a AS Nullable(Int32)) = b	0
 cross		1
 1	1
 2	2
+-- a condition over different types is not merged into a `Join` table engine
+inner	1
+1	1	1
 -- CROSS JOIN from correlated subquery with condition `Int32` = `Nullable(Int32)`
 0	2
 1	1

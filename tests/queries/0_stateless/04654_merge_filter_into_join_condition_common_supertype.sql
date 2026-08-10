@@ -12,10 +12,12 @@ SET query_plan_optimize_join_order_limit = 10;
 CREATE TABLE t1 (a Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t2 (b Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t3 (c UInt64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tj (a Int32, d Nullable(Int32)) ENGINE = Join(ALL, INNER, a);
 
 INSERT INTO t1 VALUES (1), (2), (3);
 INSERT INTO t2 VALUES (1), (NULL), (2);
 INSERT INTO t3 VALUES (1), (2);
+INSERT INTO tj VALUES (1, 1), (2, 5);
 
 SELECT '-- `Int32` = `Nullable(Int32)` has common supertype `Nullable(Int32)`';
 SELECT
@@ -38,6 +40,16 @@ FROM (
 );
 
 SELECT * FROM (SELECT * FROM t1 INNER JOIN t3 ON 1) WHERE a = c ORDER BY ALL;
+
+SELECT '-- a condition over different types is not merged into a `Join` table engine';
+SELECT
+    extract(arrayStringConcat(groupArray(explain), '\n'), 'Type: (\\w+)') AS join_kind,
+    countIf(explain LIKE '%Filter column:%') AS filters_above_join
+FROM (
+    EXPLAIN SELECT * FROM t1 ALL INNER JOIN tj ON t1.a = tj.a WHERE t1.a = tj.d
+);
+
+SELECT * FROM t1 ALL INNER JOIN tj ON t1.a = tj.a WHERE t1.a = tj.d ORDER BY ALL;
 
 SELECT '-- CROSS JOIN from correlated subquery with condition `Int32` = `Nullable(Int32)`';
 SELECT

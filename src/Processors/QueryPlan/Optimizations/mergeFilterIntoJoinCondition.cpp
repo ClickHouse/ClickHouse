@@ -149,7 +149,8 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     const std::string & filter_name,
     const Names & left_stream_available_columns,
     const Names & right_stream_available_columns,
-    const bool allow_dynamic_type_in_join_keys
+    const bool allow_dynamic_type_in_join_keys,
+    const bool require_equal_types
 )
 {
     auto * predicate = const_cast<ActionsDAG::Node *>(filter_dag.tryFindInOutputs(filter_name));
@@ -190,9 +191,10 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
                 continue;
             }
 
-            /// We can't push equality condition into JOIN if types do not have a common super type
+            /// We can't push equality condition into JOIN if types do not have a common super type or if the join requires
+            /// equal types (prepared storage join).
             if (!lhs->result_type->equals(*rhs->result_type)
-                && !tryGetLeastSupertype(DataTypes{lhs->result_type, rhs->result_type}))
+                && (require_equal_types || !tryGetLeastSupertype(DataTypes{lhs->result_type, rhs->result_type})))
             {
                 rejected_conjuncts.push_back(conjunct);
                 continue;
@@ -307,13 +309,19 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 
     const bool allow_dynamic_type_in_join_keys = join_step->getJoinSettings().allow_dynamic_type_in_join_keys;
 
+    /// Merging a condition whose operands have different types adds a cast that makes the key `_CAST(key, ...)`.
+    /// This can make prepared join storage fail because it no longer recognizes the key.
+    const bool require_equal_types = child_node->children.size() == 2
+        && typeid_cast<JoinStepLogicalLookup *>(child_node->children.back()->step.get()) != nullptr;
+
     auto & filter_dag = filter_step->getExpression();
     auto [equality_predicates, trivial_filter] = extractActionsForJoinCondition(
         filter_dag,
         filter_step->getFilterColumnName(),
         left_stream_available_columns,
         right_stream_available_columns,
-        allow_dynamic_type_in_join_keys);
+        allow_dynamic_type_in_join_keys,
+        require_equal_types);
 
     if (equality_predicates.empty())
         return 0;
