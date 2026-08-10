@@ -607,6 +607,12 @@ def check_settings_changes_history():
     the same to every record of that block at once, without touching a single entry line, so
     such a change reports the whole block.
 
+    A record RENAMED in place - removed and re-added in the same block, identical apart from the
+    setting name - is reported under the new name only (see `parse_settings_history_changes`).
+    The old name cannot be demanded here: the setting is gone, and 03999_stateless_settings_history
+    rejects a documented name that no longer exists, so requiring it would leave no history file
+    that satisfies both guards.
+
     Runs only when that file changed; the list of changed setting names is provided by the
     store_data.py workflow hook (which parses the PR / merge-queue diff). Returns "" on
     success or a non-empty error string on failure (consumed by Result.from_commands_run).
@@ -726,7 +732,9 @@ def check_settings_changes_history():
             f"an entry for each under the '{current_version}' block (older blocks may keep their "
             f"entries for backports). If this is a correction of what an older release recorded "
             f"and not a default change made here, split it into a change that touches only "
-            f"{path}:\n" + "\n".join(sorted(set(violations)))
+            f"{path}. If you RENAMED a setting, keep its record in the same block and change "
+            f"only the name in it - the values and the reason text must stay identical for the "
+            f"rename to be recognized:\n" + "\n".join(sorted(set(violations)))
         )
     return ""
 

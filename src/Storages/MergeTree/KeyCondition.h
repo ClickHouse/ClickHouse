@@ -454,7 +454,8 @@ public:
     ///
     /// NOTE: we also need to examine special functions that generate atoms. For
     /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
-    /// on a given regular expression, which is relaxed for simplicity.
+    /// on a given regular expression. Such an atom is relaxed unless the regular
+    /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
 
     bool isSinglePoint() const { return single_point; }
