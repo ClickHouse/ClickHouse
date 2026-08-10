@@ -98,4 +98,10 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetada
     }
 }
 
+void ObjectStorageQueueExclusiveFileMetadata::debugFinalizeProcessed() {}
+
+void ObjectStorageQueueExclusiveFileMetadata::debugFinalizeResetProcessing() {}
+
+void ObjectStorageQueueExclusiveFileMetadata::debugFinalizeFailed() {}
+
 }

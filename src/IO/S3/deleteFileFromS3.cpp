@@ -199,15 +199,19 @@ void deleteFilesFromS3(
                     /// Mixed success/error response - some objects were removed, and some were not.
                     /// We need to extract more detailed information from the outcome.
                     UnorderedSetWithMemoryTracking<std::string_view> removed_keys;
+                    UnorderedSetWithMemoryTracking<std::string_view> removed_keys_for_log;
                     String not_found_keys;
                     std::exception_ptr other_error;
 
                     for (const auto & chunk : current_chunk)
+                    {
                         removed_keys.insert(chunk.GetKey());
+                        removed_keys_for_log.insert(chunk.GetKey());
+                    }
 
                     for (const auto & err : errors)
                     {
-                        removed_keys.erase(err.GetKey());
+                        removed_keys_for_log.erase(err.GetKey());
 
                         auto error_type = static_cast<Aws::S3::S3Errors>(Aws::S3::S3ErrorMapper::GetErrorForName(err.GetCode().c_str()).GetErrorType());
                         if (if_exists && S3::isNotFoundError(error_type))
@@ -218,6 +222,8 @@ void deleteFilesFromS3(
                         }
                         else
                         {
+                            removed_keys.erase(err.GetKey());
+
                             if (!other_error)
                                 other_error = std::make_exception_ptr(
                                     S3Exception{error_type, "{} (Code: {}) while removing object with path {} from S3",
@@ -225,17 +231,20 @@ void deleteFilesFromS3(
                         }
                     }
 
-                    if (!removed_keys.empty())
+                    if (!removed_keys.empty() && successful_keys)
+                    {
+                        for (const auto & key : removed_keys)
+                            successful_keys->emplace_back(key);
+                    }
+
+                    if (!removed_keys_for_log.empty())
                     {
                         String removed_keys_comma_separated;
-                        for (const auto & key : removed_keys)
+                        for (const auto & key : removed_keys_for_log)
                         {
                             if (!removed_keys_comma_separated.empty())
                                 removed_keys_comma_separated += ", ";
                             removed_keys_comma_separated += key;
-
-                            if (successful_keys)
-                                successful_keys->emplace_back(key);
                         }
                         LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", removed_keys_comma_separated);
                     }

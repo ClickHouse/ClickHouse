@@ -182,6 +182,7 @@ public:
     void finalizeFailed(const std::string & exception_message);
     /// Do some work after prepared requests reset processing without marking as failed.
     void finalizeResetProcessing();
+
     /// Whether prepareFailedRequests just reset processing
     /// without actually marking the file as failed.
     bool wasProcessingResetWithoutFailure() const { return processing_reset_without_failure; }
@@ -220,6 +221,10 @@ protected:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
     }
     virtual void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
+
+    virtual void debugFinalizeProcessed();
+    virtual void debugFinalizeFailed();
+    virtual void debugFinalizeResetProcessing();
 
     const std::string path;
     const std::string zookeeper_name;
