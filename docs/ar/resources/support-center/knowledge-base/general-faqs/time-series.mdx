@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/time-series
+title: 'هل يمكنني استخدام ClickHouse كقاعدة بيانات للسلاسل الزمنية؟'
+toc_hidden: true
+toc_priority: 101
+description: 'صفحة توضّح كيفية استخدام ClickHouse كقاعدة بيانات للسلاسل الزمنية'
+doc_type: 'guide'
+keywords: ['سلاسل زمنية', 'بيانات زمنية', 'حالة استخدام', 'تحليلات قائمة على الوقت', 'timeseries']
+---
+
+*ملاحظة: يُرجى الاطلاع على المدوّنة [Working with Time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse) لمزيد من الأمثلة على استخدام ClickHouse في تحليل السلاسل الزمنية.*
+
+يُعد ClickHouse حلًا عامًا لتخزين البيانات لأحمال عمل [OLAP](/ar/resources/support-center/knowledge-base/general-faqs/olap)، في حين توجد العديد من [أنظمة إدارة قواعد بيانات السلاسل الزمنية](https://clickhouse.com/engineering-resources/what-is-time-series-database) المتخصصة. ومع ذلك، فإن [تركيز ClickHouse على سرعة تنفيذ الاستعلامات](/ar/get-started/about/why-clickhouse-is-so-fast) يتيح له التفوق على الأنظمة المتخصصة في كثير من الحالات. وهناك العديد من اختبارات الأداء المستقلة حول هذا الموضوع، لذا لن نجري أيًا منها هنا. بدلًا من ذلك، سنركّز على ميزات ClickHouse المهمة التي ينبغي استخدامها إذا كانت هذه هي حالة استخدامك.
+
+أولًا، هناك **[codecs متخصصة](/ar/reference/statements/create/table#specialized-codecs)** لضغط بيانات السلاسل الزمنية النموذجية، سواء كانت خوارزميات شائعة مثل `DoubleDelta` و`Gorilla` أو خوارزميات خاصة بـ ClickHouse مثل `T64`.
+
+ثانيًا، غالبًا ما تستهدف استعلامات السلاسل الزمنية البيانات الحديثة فقط، مثل بيانات لا يتجاوز عمرها يومًا أو أسبوعًا. ومن المنطقي استخدام خوادم تحتوي على أقراص NVMe/SSD سريعة وأقراص HDD عالية السعة. تتيح ميزة [TTL](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) في ClickHouse تهيئة الاحتفاظ بالبيانات الحديثة والنشطة على الأقراص السريعة، ثم نقلها تدريجيًا إلى أقراص أبطأ مع تقادمها. كما يمكن أيضًا إجراء rollup أو إزالة البيانات الأقدم إذا كانت متطلباتك تستدعي ذلك.
+
+ومع أن هذا يتعارض مع فلسفة ClickHouse في تخزين البيانات الخام ومعالجتها، يمكنك استخدام [materialized views](/ar/reference/statements/create/view) لتلبية متطلبات أكثر تشددًا من حيث latency أو التكلفة.

@@ -1,0 +1,229 @@
+---
+title: 'BYOC Observability'
+slug: /cloud/reference/byoc/observability
+sidebarTitle: 'Observability'
+keywords: ['BYOC', 'السحابة', 'سحابتك الخاصة', 'Observability', 'المراقبة', 'Prometheus', 'Grafana']
+description: 'راقب نشر ClickHouse بنموذج BYOC وتتبّعه باستخدام لوحات المعلومات المضمّنة ومقاييس Prometheus'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تتضمن عمليات النشر من نوع BYOC إمكانات شاملة لـ observability، ما يتيح لك مراقبة خدمات ClickHouse عبر حزمة مراقبة Prometheus مخصصة، ونقاط نهاية مباشرة للمقاييس من خوادم ClickHouse. وتبقى جميع بيانات observability داخل حسابك السحابي، مما يمنحك تحكمًا كاملًا في البنية التحتية للمراقبة.
+
+<div id="prometheus-monitoring">
+  ## أساليب المراقبة باستخدام Prometheus
+</div>
+
+يوفّر BYOC طريقتين رئيسيتين لجمع المقاييس وعرضها باستخدام Prometheus:
+
+1. **الاتصال بحزمة Prometheus المضمّنة**: الوصول إلى مثيل Prometheus مركزي ومثبّت مسبقًا يعمل داخل مجموعة Kubernetes الخاصة بـ BYOC.
+2. **جمع مقاييس ClickHouse مباشرةً**: وجّه نشر Prometheus لديك إلى نقطة النهاية `/metrics_all` التي توفّرها كل خدمة ClickHouse.
+
+<div id="monitoring-approaches-comparison">
+  ### مقارنة أساليب المراقبة
+</div>
+
+| الإمكانية                    | حزمة Prometheus المضمّنة                                                      | الجمع المباشر للمقاييس من خدمات ClickHouse                                           |
+| ---------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **نطاق المقاييس**            | تجمع المقاييس من ClickHouse وKubernetes والخدمات الداعمة (رؤية كاملة للعنقود) | مقاييس من خوادم ClickHouse الفردية فقط                                               |
+| **عملية الإعداد**            | تتطلب إعداد وصول عبر شبكة خاصة (مثلًا عبر موازن تحميل خاص)                    | ما عليك سوى تهيئة Prometheus لجمع المقاييس من نقطة نهاية ClickHouse العامة أو الخاصة |
+| **كيفية الاتصال**            | عبر موازن التحميل الخاص داخل VPC/شبكتك                                        | نقطة النهاية نفسها التي تستخدمها للوصول إلى قاعدة البيانات                           |
+| **المصادقة**                 | لا حاجة إليها (لأن الوصول مقيّد بالشبكة الخاصة)                               | تستخدم بيانات اعتماد خدمة ClickHouse                                                 |
+| **المتطلبات المسبقة للشبكة** | موازن تحميل خاص واتصال شبكي مناسب                                             | متاحة لأي شبكة يمكنها الوصول إلى نقطة نهاية ClickHouse الخاصة بك                     |
+| **الأنسب لـ**                | مراقبة شاملة للبنية التحتية والخدمات                                          | المراقبة والتكامل على مستوى الخدمة                                                   |
+| **كيفية التكامل**            | هيّئ federation في Prometheus الخارجي لاستيعاب مقاييس العنقود                 | أضف نقاط نهاية مقاييس ClickHouse مباشرةً إلى تهيئة Prometheus                        |
+
+**التوصية**: بالنسبة إلى معظم حالات الاستخدام، نوصي بالتكامل مع حزمة Prometheus المضمّنة، لأنها توفّر مقاييس شاملة من جميع المكوّنات في نشر BYOC لديك (خدمات ClickHouse، وعنقود Kubernetes، والخدمات الداعمة)، بدلًا من الاكتفاء بمقاييس خادم ClickHouse فقط. 
+
+<div id="builtin-prometheus-stack">
+  ## حزمة Prometheus المدمجة في BYOC
+</div>
+
+ينشر ClickHouse BYOC حزمة مراقبة Prometheus متكاملة داخل عنقود Kubernetes لديك، بما في ذلك Prometheus وGrafana وAlertManager، وThanos اختياريًا لتخزين المقاييس على المدى الطويل. تجمع هذه الحزمة المقاييس من:
+
+* خوادم ClickHouse وClickHouse Keeper
+* عنقود Kubernetes ومكونات النظام
+* عُقد البنية التحتية الأساسية
+
+<div id="accessing-prometheus-stack">
+  ### الوصول إلى حزمة Prometheus
+</div>
+
+للاتصال بحزمة Prometheus المدمجة:
+
+1. **تواصل مع ClickHouse Support** لتمكين موازن التحميل الخاص لبيئة BYOC لديك.
+2. **اطلب عنوان URL لنقطة نهاية Prometheus** من ClickHouse Support.
+3. **تحقّق من توفر الاتصال عبر الشبكة الخاصة** مع نقطة نهاية Prometheus—عادةً من خلال VPC peering أو أي إعداد آخر للشبكة الخاصة.
+
+تختلف تنسيقات نقاط النهاية حسب نوع الاتصال:
+
+| الاتصال           | تنسيق نقطة النهاية                                                             |
+| ----------------- | ------------------------------------------------------------------------------ |
+| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| PrivateLink       | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
+
+<Note>
+  لا يمكن الوصول إلى عنوان URL الخاص بحزمة Prometheus إلا عبر اتصالات الشبكة الخاصة، ولا يتطلب مصادقة. ويقتصر الوصول على الشبكات التي يمكنها الوصول إلى VPC الخاصة ببيئة BYOC لديك عبر VPC peering أو خيارات الاتصال الخاصة الأخرى.
+</Note>
+
+<div id="prometheus-stack-integration">
+  ### التكامل مع أدوات المراقبة لديك
+</div>
+
+يمكنك الاستفادة من حزمة Prometheus الخاصة بـ BYOC ضمن بيئة المراقبة لديك بعدة طرق:
+
+**الخيار 1: الاستعلام عن واجهة برمجة تطبيقات Prometheus**
+
+* يمكنك الوصول مباشرةً إلى نقطة نهاية واجهة برمجة تطبيقات Prometheus من منصة المراقبة المفضلة لديك أو من لوحات المعلومات المخصصة.
+* استخدم استعلامات PromQL لاستخراج المقاييس التي تحتاجها وتجميعها وعرضها بصريًا.
+* هذا الخيار مثالي لإنشاء لوحات معلومات مخصصة أو مسارات تنبيه.
+
+نقطة نهاية استعلام Prometheus `/query`:
+
+```text
+https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com/query
+```
+
+**الخيار 2: استخدام federation للمقاييس إلى Prometheus الخاص بك**
+
+* اضبط مثيل Prometheus الخارجي لديك لإجراء federation (السحب) للمقاييس من حزمة Prometheus الخاصة بـ ClickHouse BYOC.
+* يتيح لك ذلك توحيد جمع المقاييس ومركزيته عبر بيئات أو عناقيد متعددة.
+* مثال على إعداد federation في Prometheus:
+
+```yaml
+scrape_configs:
+  - job_name: 'federate-clickhouse-byoc'
+    scrape_interval: 15s
+    honor_labels: true
+    metrics_path: '/federate'
+    params:
+      'match[]':
+        - '{job="clickhouse"}'
+        - '{job="kubernetes"}'
+    static_configs:
+      - targets:
+        - 'prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com'
+```
+
+<div id="direct-prometheus-integration">
+  ## تكامل Prometheus مع خدمة ClickHouse
+</div>
+
+توفّر خدمات ClickHouse نقطة نهاية للمقاييس متوافقة مع Prometheus، ويمكنك جمع المقاييس منها مباشرةً باستخدام مثيل Prometheus الخاص بك. يوفّر هذا النهج مقاييس خاصة بـ ClickHouse، لكنه لا يشمل مقاييس Kubernetes أو مقاييس الخدمات المساندة.
+
+<div id="metrics-endpoint">
+  ### الوصول إلى نقطة نهاية المقاييس
+</div>
+
+تتوفّر نقطة نهاية المقاييس على المسار `/metrics_all` في نقطة نهاية خدمة ClickHouse الخاصة بك:
+
+```bash
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+```
+
+**استجابة نموذجية:**
+
+```bash
+# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes The amount of bytes stored on disk `s3disk` in system database
+# TYPE ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes gauge
+ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes{hostname="c-jet-ax-16-server-43d5baj-0"} 62660929
+# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts The number of broken detached parts
+# TYPE ClickHouse_CustomMetric_NumberOfBrokenDetachedParts gauge
+ClickHouse_CustomMetric_NumberOfBrokenDetachedParts{hostname="c-jet-ax-16-server-43d5baj-0"} 0
+# HELP ClickHouse_CustomMetric_TotalNumberOfErrors The total number of errors on server since the last restart
+# TYPE ClickHouse_CustomMetric_TotalNumberOfErrors gauge
+ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj-0"} 9
+```
+
+<div id="authentication">
+  ### المصادقة
+</div>
+
+تتطلب نقطة نهاية المقاييس المصادقة باستخدام بيانات اعتماد ClickHouse. نوصي باستخدام المستخدم `default` أو إنشاء مستخدم مخصص بأقل الأذونات اللازمة خصيصًا لكشط المقاييس.
+
+**الأذونات المطلوبة:**
+
+* إذن `REMOTE` للاتصال بالخدمة
+* أذونات `SELECT` على جداول النظام ذات الصلة
+
+**مثال على إعداد المستخدم:**
+
+```sql
+CREATE USER scrapping_user IDENTIFIED BY 'secure_password';
+GRANT REMOTE ON *.* TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_custom_metrics_tables TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_database_replicated_recovery_time TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_failed_mutations TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_group TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_shared_catalog_recovery_time TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_dictionary_table_read_only_duration_seconds TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_view_error_metrics TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_view_histograms TO scrapping_user;
+GRANT SELECT ON system._custom_metrics_view_metrics_and_events TO scrapping_user;
+GRANT SELECT(description, metric, value) ON system.asynchronous_metrics TO scrapping_user;
+GRANT SELECT ON system.custom_metrics TO scrapping_user;
+GRANT SELECT(name, value) ON system.errors TO scrapping_user;
+GRANT SELECT(description, event, value) ON system.events TO scrapping_user;
+GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO scrapping_user;
+GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
+```
+
+<div id="configuring-prometheus">
+  ### تهيئة Prometheus
+</div>
+
+هيّئ مثيل Prometheus لديك لجمع المقاييس من نقطة نهاية مقاييس ClickHouse:
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+    scheme: https
+    metrics_path: "/metrics_all"
+    basic_auth:
+      username: <username>
+      password: <password>
+    honor_labels: true
+```
+
+استبدل:
+
+* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` بنقطة نهاية الخدمة الفعلية لديك
+* `<username>` و `<password>` ببيانات اعتماد مستخدم scraping الخاص بك
+
+<div id="clickhouse-mixin">
+  ## ClickHouse Mixin
+</div>
+
+للفرق التي تريد مجموعة جاهزة من لوحات المعلومات، يوفّر ClickHouse ‏**ClickHouse Mixin** لـ Prometheus. وهي لوحة معلومات Grafana جاهزة ومصممة خصيصًا لمراقبة عناقيد ClickHouse.
+
+<div id="setup-grafana-mixin">
+  ### إعداد Grafana واستيراد ClickHouse Mix-in
+</div>
+
+بمجرد دمج مثيل Prometheus لديك مع حزمة مراقبة ClickHouse، يمكنك عرض المقاييس في Grafana باتباع الخطوات التالية:
+
+1. **إضافة Prometheus كمصدر بيانات في Grafana**
+   انتقل إلى &quot;Data sources&quot; في الشريط الجانبي لـ Grafana، وانقر على &quot;Add data source&quot;، ثم اختر &quot;Prometheus&quot;. أدخل عنوان URL الخاص بمثيل Prometheus وأي بيانات اعتماد مطلوبة لإجراء الاتصال.
+
+<Image img="/images/cloud/reference/byoc-mixin-1.webp" size="lg" alt="BYOC Mixin 1" background="black" />
+
+<Image img="/images/cloud/reference/byoc-mixin-2.webp" size="lg" alt="BYOC Mixin 2" background="black" />
+
+<Image img="/images/cloud/reference/byoc-mixin-3.webp" size="lg" alt="BYOC Mixin 3" background="black" />
+
+2. **استيراد لوحة معلومات ClickHouse**
+   في Grafana، انتقل إلى قسم لوحات المعلومات واختر &quot;Import&quot;. يمكنك إما رفع ملف JSON الخاص بلوحة المعلومات أو لصق محتواه مباشرةً. يمكنك الحصول على ملف JSON من مستودع ClickHouse mixin:
+   [ملف JSON للوحة معلومات ClickHouse Mix-in](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
+
+<Image img="/images/cloud/reference/byoc-mixin-4.webp" size="lg" alt="BYOC Mixin 4" background="black" />
+
+3. **استعراض المقاييس**
+   بمجرد استيراد لوحة المعلومات وتهيئتها باستخدام مصدر بيانات Prometheus لديك، ستتمكن من رؤية مقاييس في الوقت الفعلي من خدمات ClickHouse Cloud الخاصة بك.
+
+<Image img="/images/cloud/reference/byoc-mixin-5.webp" size="lg" alt="BYOC Mixin 5" background="black" />

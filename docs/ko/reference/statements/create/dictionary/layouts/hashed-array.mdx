@@ -1,0 +1,64 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hashed-array
+title: 'hashed_array 딕셔너리 레이아웃 유형'
+sidebarTitle: 'hashed_array'
+description: '속성 배열을 사용하는 해시 테이블로 딕셔너리를 메모리에 저장합니다.'
+doc_type: 'reference'
+---
+
+<div id="hashed_array">
+  ## hashed_array
+</div>
+
+이 딕셔너리는 전체가 메모리에 저장됩니다. 각 속성은 배열에 저장됩니다. 키 속성은 값이 속성 배열의 인덱스인 해시 테이블 형태로 저장됩니다. 이 딕셔너리에는 어떤 식별자든 사용할 수 있으며, 요소 수도 제한 없이 포함할 수 있습니다. 실제로 키 수는 수천만 개에 이를 수 있습니다.
+
+딕셔너리 키의 유형은 [UInt64](/ko/reference/data-types/int-uint)입니다.
+
+모든 유형의 소스가 지원됩니다. 업데이트할 때는 데이터(파일 또는 테이블의 데이터)를 전체 읽어들입니다.
+
+구성 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED_ARRAY([SHARDS 1]))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <layout>
+      <hashed_array>
+      </hashed_array>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_hashed_array">
+  ## complex_key_hashed_array
+</div>
+
+이 저장소 유형은 복합 [키](/ko/reference/statements/create/dictionary/attributes#composite-key)에 사용됩니다. [hashed&#95;array](#hashed_array)와 유사합니다.
+
+구성 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <layout>
+      <complex_key_hashed_array />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

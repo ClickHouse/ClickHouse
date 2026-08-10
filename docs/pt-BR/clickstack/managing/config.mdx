@@ -1,0 +1,480 @@
+---
+slug: /use-cases/observability/clickstack/config
+title: 'Opções de configuração'
+description: 'Opções de configuração do ClickStack - a stack de observabilidade do ClickHouse'
+keywords: ['configuração do ClickStack', 'configuração de observabilidade', 'configurações do HyperDX', 'configuração do collector', 'variáveis de ambiente']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+As opções de configuração a seguir estão disponíveis para cada componente do ClickStack:
+
+<div id="modifying-settings">
+  ## Configurações para distribuições de código aberto
+</div>
+
+<div id="docker">
+  ### Docker
+</div>
+
+Se estiver usando [All in One](/pt-BR/clickstack/deployment/all-in-one), [HyperDX Only](/pt-BR/clickstack/deployment/hyperdx-only) ou [Local Mode](/pt-BR/clickstack/deployment/local-mode-only), basta informar a configuração desejada por meio de uma variável de ambiente, por exemplo.
+
+```shell
+docker run  -e HYPERDX_LOG_LEVEL='debug' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+```
+
+<div id="docker-compose">
+  ### Docker Compose
+</div>
+
+Se você estiver usando o guia de implantação do [Docker Compose](/pt-BR/clickstack/deployment/docker-compose), poderá usar o arquivo [`.env`](https://github.com/hyperdxio/hyperdx/blob/main/.env) para modificar as configurações.
+
+Como alternativa, sobrescreva explicitamente as configurações no arquivo [`docker-compose.yaml`](https://github.com/hyperdxio/hyperdx/blob/main/docker-compose.yml), por exemplo.
+
+Exemplo:
+
+```yaml
+services:
+  app:
+    environment:
+      HYPERDX_API_KEY: ${HYPERDX_API_KEY}
+      HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+      # ... outras configurações
+```
+
+<div id="helm">
+  ### Helm
+</div>
+
+<div id="customizing-values">
+  #### Personalizar values (opcional)
+</div>
+
+Você pode personalizar as configurações usando as flags `--set`, por exemplo.
+
+```shell
+helm install my-hyperdx hyperdx/hdx-oss-v2 \
+  --set replicaCount=2 \
+  --set resources.limits.cpu=500m \
+  --set resources.limits.memory=512Mi \
+  --set resources.requests.cpu=250m \
+  --set resources.requests.memory=256Mi \
+  --set ingress.enabled=true \
+  --set ingress.annotations."kubernetes\.io/ingress\.class"=nginx \
+  --set ingress.hosts[0].host=hyperdx.example.com \
+  --set ingress.hosts[0].paths[0].path=/ \
+  --set ingress.hosts[0].paths[0].pathType=ImplementationSpecific \
+  --set env[0].name=CLICKHOUSE_USER \
+  --set env[0].value=abc
+```
+
+Como alternativa, edite o `values.yaml`. Para obter os valores padrão:
+
+```shell
+helm show values hyperdx/hdx-oss-v2 > values.yaml
+```
+
+Exemplo de configuração:
+
+```yaml
+replicaCount: 2
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  hosts:
+    - host: hyperdx.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  env:
+    - name: CLICKHOUSE_USER
+      value: abc
+```
+
+<div id="hyperdx">
+  ## Aplicação da ClickStack UI (HyperDX)
+</div>
+
+<div id="datasource-settings">
+  ### Configurações da fonte de dados
+</div>
+
+A UI do ClickStack depende de o usuário definir uma fonte para cada um dos tipos/pilares de dados de observabilidade:
+
+* `Logs`
+* `Traces`
+* `Metrics`
+* `Sessions`
+
+Essa configuração pode ser feita no aplicativo em `Team Settings -> Sources`, como mostrado abaixo para logs:
+
+<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="Configuração de fonte do HyperDX" size="md" />
+
+Cada uma dessas fontes exige que pelo menos uma tabela seja especificada na criação, além de um conjunto de colunas que permite ao HyperDX consultar os dados.
+
+Se você estiver usando o [schema padrão do OpenTelemetry (OTel)](/pt-BR/guides/use-cases/observability/build-your-own/integrating-opentelemetry#out-of-the-box-schema) distribuído com o ClickStack, essas colunas poderão ser inferidas automaticamente para cada uma das fontes. Se estiver [modificando o schema](#clickhouse) ou usando um schema personalizado, será necessário especificar e atualizar esses mapeamentos.
+
+<Note>
+  O schema padrão do ClickHouse distribuído com o ClickStack é o schema criado pelo [ClickHouse exporter para o OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). Esses nomes de colunas correspondem à especificação oficial do OTel documentada [aqui](https://opentelemetry.io/docs/specs/otel/logs/data-model/).
+</Note>
+
+As configurações a seguir estão disponíveis para cada fonte:
+
+<div id="logs">
+  #### Logs
+</div>
+
+| Configuração                     | Descrição                                                                                                                                                               | Obrigatório | Inferido no schema padrão | Valor inferido                                     |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------- | -------------------------------------------------- |
+| `Name`                           | Nome da fonte.                                                                                                                                                          | Sim         | Não                       | –                                                  |
+| `Section`                        | Rótulo opcional para agrupar fontes no seletor de fontes. Fontes que compartilham uma seção aparecem juntas, e a busca considera o nome da seção além do nome da fonte. | Não         | Não                       | –                                                  |
+| `Server Connection`              | Nome da conexão com o servidor.                                                                                                                                         | Sim         | Não                       | `Default`                                          |
+| `Database`                       | Nome do banco de dados do ClickHouse.                                                                                                                                   | Sim         | Sim                       | `default`                                          |
+| `Table`                          | Nome da tabela de destino. Defina como `otel_logs` se o schema padrão for usado.                                                                                        | Sim         | Não                       |                                                    |
+| `Timestamp Column`               | Coluna de data e hora ou expressão que faz parte da sua chave primária.                                                                                                 | Sim         | Sim                       | `TimestampTime`                                    |
+| `Default Select`                 | Colunas mostradas nos resultados padrão da busca.                                                                                                                       | Sim         | Sim                       | `Timestamp`, `ServiceName`, `SeverityText`, `Body` |
+| `Service Name Expression`        | Expressão ou coluna para o nome do serviço.                                                                                                                             | Sim         | Sim                       | `ServiceName`                                      |
+| `Log Level Expression`           | Expressão ou coluna para o nível de log.                                                                                                                                | Sim         | Sim                       | `SeverityText`                                     |
+| `Body Expression`                | Expressão ou coluna para a mensagem de log.                                                                                                                             | Sim         | Sim                       | `Body`                                             |
+| `Log Attributes Expression`      | Expressão ou coluna para atributos de log personalizados.                                                                                                               | Sim         | Sim                       | `LogAttributes`                                    |
+| `Resource Attributes Expression` | Expressão ou coluna para atributos no nível do recurso.                                                                                                                 | Sim         | Sim                       | `ResourceAttributes`                               |
+| `Displayed Timestamp Column`     | Coluna de timestamp usada na exibição na UI.                                                                                                                            | Sim         | Sim                       | `ResourceAttributes`                               |
+| `Correlated Metric Source`       | Fonte de métricas correlacionada (por exemplo, métricas do HyperDX).                                                                                                    | Não         | Não                       | –                                                  |
+| `Correlated Trace Source`        | Fonte de traces correlacionada (por exemplo, traces do HyperDX).                                                                                                        | Não         | Não                       | –                                                  |
+| `Trace Id Expression`            | Expressão ou coluna usada para extrair o trace ID.                                                                                                                      | Sim         | Sim                       | `TraceId`                                          |
+| `Span Id Expression`             | Expressão ou coluna usada para extrair o span ID.                                                                                                                       | Sim         | Sim                       | `SpanId`                                           |
+| `Implicit Column Expression`     | Coluna usada para busca de texto completo se nenhum campo for especificado (estilo Lucene). Normalmente, o corpo do log.                                               | Sim         | Sim                       | `Body`                                             |
+| `Highlighted Attributes`         | Expressões ou colunas exibidas ao abrir os detalhes do log. Expressões que retornam URLs serão mostradas como links.                                                    | Não         | Não                       | –                                                  |
+| `Highlighted Trace Attributes`   | Expressões ou colunas extraídas de cada log em um trace, exibidas acima do waterfall do trace. Expressões que retornam URLs serão mostradas como links.                 | Não         | Não                       | –                                                  |
+
+<div id="traces">
+  #### Traces
+</div>
+
+| Configuração                     | Descrição                                                                                                                                                              | Obrigatório | Inferido no schema padrão | Valor inferido                                                                                        |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `Name`                           | Nome da fonte.                                                                                                                                                         | Sim         | Não                       | –                                                                                                     |
+| `Section`                        | Rótulo opcional para agrupar fontes no seletor de fontes. Fontes que compartilham uma seção aparecem juntas, e a busca encontra o nome da seção além do nome da fonte. | Não         | Não                       | –                                                                                                     |
+| `Server Connection`              | Nome da conexão com o servidor.                                                                                                                                        | Sim         | Não                       | `Default`                                                                                             |
+| `Database`                       | Nome do banco de dados do ClickHouse.                                                                                                                                  | Sim         | Sim                       | `default`                                                                                             |
+| `Table`                          | Nome da tabela de destino. Defina como `otel_traces` se estiver usando o schema padrão.                                                                                | Sim         | Sim                       | -                                                                                                     |
+| `Timestamp Column`               | Coluna de data e hora ou expressão que faz parte da sua primary key.                                                                                                   | Sim         | Sim                       | `Timestamp`                                                                                           |
+| `Timestamp`                      | Alias de `Timestamp Column`.                                                                                                                                           | Sim         | Sim                       | `Timestamp`                                                                                           |
+| `Default Select`                 | Colunas exibidas nos resultados de busca padrão.                                                                                                                       | Sim         | Sim                       | `Timestamp, ServiceName as service, StatusCode as level, round(Duration / 1e6) as duration, SpanName` |
+| `Duration Expression`            | expressão usada para calcular a duração do span.                                                                                                                       | Sim         | Sim                       | `Duration`                                                                                            |
+| `Duration Precision`             | Precisão da expressão de duração (por exemplo, nanossegundos, microssegundos).                                                                                         | Sim         | Sim                       | ns                                                                                                    |
+| `Trace Id Expression`            | expressão ou coluna para IDs de trace.                                                                                                                                 | Sim         | Sim                       | `TraceId`                                                                                             |
+| `Span Id Expression`             | expressão ou coluna para IDs de span.                                                                                                                                  | Sim         | Sim                       | `SpanId`                                                                                              |
+| `Parent Span Id Expression`      | expressão ou coluna para IDs de spans pai.                                                                                                                             | Sim         | Sim                       | `ParentSpanId`                                                                                        |
+| `Span Name Expression`           | expressão ou coluna para nomes de span.                                                                                                                                | Sim         | Sim                       | `SpanName`                                                                                            |
+| `Span Kind Expression`           | expressão ou coluna para o tipo de span (por exemplo, client, server).                                                                                                 | Sim         | Sim                       | `SpanKind`                                                                                            |
+| `Correlated Log Source`          | Opcional. Fonte de logs vinculada (por exemplo, logs do HyperDX).                                                                                                      | Não         | Não                       | –                                                                                                     |
+| `Correlated Session Source`      | Opcional. Fonte de sessão vinculada.                                                                                                                                   | Não         | Não                       | –                                                                                                     |
+| `Correlated Metric Source`       | Opcional. Fonte de métricas correlacionada (por exemplo, métricas do HyperDX).                                                                                         | Não         | Não                       | –                                                                                                     |
+| `Status Code Expression`         | expressão para o código de status do span.                                                                                                                             | Sim         | Sim                       | `StatusCode`                                                                                          |
+| `Status Message Expression`      | expressão para a mensagem de status do span.                                                                                                                           | Sim         | Sim                       | `StatusMessage`                                                                                       |
+| `Service Name Expression`        | expressão ou coluna para o nome do serviço.                                                                                                                            | Sim         | Sim                       | `ServiceName`                                                                                         |
+| `Resource Attributes Expression` | expressão ou coluna para atributos no nível do recurso.                                                                                                                | Sim         | Sim                       | `ResourceAttributes`                                                                                  |
+| `Event Attributes Expression`    | expressão ou coluna para atributos de evento.                                                                                                                          | Sim         | Sim                       | `SpanAttributes`                                                                                      |
+| `Span Events Expression`         | expressão para extrair eventos de span. Normalmente, uma coluna do tipo `Nested`. Isso permite renderizar stack traces de exceção com SDK de linguagem compatíveis.    | Sim         | Sim                       | `Events`                                                                                              |
+| `Implicit Column Expression`     | Coluna usada para busca de texto completo quando nenhum field é especificado (estilo Lucene). Normalmente, o corpo do log.                                             | Sim         | Sim                       | `SpanName`                                                                                            |
+| `Highlighted Attributes`         | Expressões ou colunas exibidas ao abrir os detalhes do span. Expressões que retornam URLs serão mostradas como links.                                                  | Não         | Não                       | –                                                                                                     |
+| `Highlighted Trace Attributes`   | Expressões ou colunas extraídas de cada span em um trace, exibidas acima do waterfall do trace. Expressões que retornam URLs serão mostradas como links.               | Não         | Não                       | –                                                                                                     |
+
+<div id="metrics">
+  #### Métricas
+</div>
+
+| Configuração            | Descrição                                                                                                                                                                      | Obrigatório | Inferido no schema padrão | Valor inferido           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------------------------- | ------------------------ |
+| `Name`                  | Nome da fonte.                                                                                                                                                                 | Sim         | Não                       | –                        |
+| `Section`               | Rótulo opcional para agrupar fontes no seletor de fontes. Fontes que compartilham uma seção aparecem juntas, e a busca também considera o nome da seção além do nome da fonte. | Não         | Não                       | –                        |
+| `Server Connection`     | Nome da conexão com o servidor.                                                                                                                                                | Sim         | Não                       | `Default`                |
+| `Database`              | Nome do banco de dados do ClickHouse.                                                                                                                                          | Sim         | Sim                       | `default`                |
+| `Gauge Table`           | Tabela que armazena métricas do tipo gauge.                                                                                                                                    | Sim         | Não                       | `otel_metrics_gauge`     |
+| `Histogram Table`       | Tabela que armazena métricas do tipo histograma.                                                                                                                               | Sim         | Não                       | `otel_metrics_histogram` |
+| `Sum Table`             | Tabela que armazena métricas do tipo soma (counter).                                                                                                                           | Sim         | Não                       | `otel_metrics_sum`       |
+| `Correlated Log Source` | Opcional. Fonte de logs vinculada (por exemplo, logs do HyperDX).                                                                                                              | Não         | Não                       | –                        |
+
+<div id="settings">
+  #### Sessões
+</div>
+
+| Configuração                     | Descrição                                                                                                                                                                      | Obrigatório | Inferido no schema padrão | Valor inferido       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | ------------------------- | -------------------- |
+| `Name`                           | Nome da fonte.                                                                                                                                                                 | Sim         | Não                       | –                    |
+| `Section`                        | Rótulo opcional para agrupar fontes no seletor de fontes. Fontes que compartilham uma seção aparecem juntas, e a busca também considera o nome da seção além do nome da fonte. | Não         | Não                       | –                    |
+| `Server Connection`              | Nome da conexão com o servidor.                                                                                                                                                | Sim         | Não                       | `Default`            |
+| `Database`                       | Nome do banco de dados do ClickHouse.                                                                                                                                          | Sim         | Sim                       | `default`            |
+| `Table`                          | Tabela de destino para os dados de sessão. Nome da tabela de destino. Defina como `hyperdx_sessions` se estiver usando o schema padrão.                                        | Sim         | Sim                       | -                    |
+| `Timestamp Column`               | Coluna de data/hora ou expressão que faz parte da sua chave primária.                                                                                                          | Sim         | Sim                       | `TimestampTime`      |
+| `Log Attributes Expression`      | Expressão para extrair atributos de log dos dados de sessão.                                                                                                                   | Sim         | Sim                       | `LogAttributes`      |
+| `LogAttributes`                  | Alias ou referência de campo usada para armazenar atributos de log.                                                                                                            | Sim         | Sim                       | `LogAttributes`      |
+| `Resource Attributes Expression` | Expressão para extrair metadados no nível de recurso.                                                                                                                          | Sim         | Sim                       | `ResourceAttributes` |
+| `Correlated Trace Source`        | Opcional. Fonte de traces correlacionada para correlação de sessões.                                                                                                           | Não         | Não                       | –                    |
+| `Implicit Column Expression`     | Coluna usada para busca de texto completo quando nenhum campo é especificado (por exemplo, parsing de consulta no estilo Lucene).                                              | Sim         | Sim                       | `Body`               |
+
+<div id="highlighted-attributes">
+  #### Atributos destacados
+</div>
+
+Atributos destacados e Atributos de trace destacados podem ser configurados em fontes de dados de logs e traces.
+
+* Atributos destacados são colunas ou expressões exibidas para cada log ou span ao visualizar os detalhes do log ou do span.
+* Atributos de trace destacados são colunas ou expressões consultadas de cada log ou span em um trace e exibidas acima do waterfall do trace.
+
+Esses atributos são definidos na configuração da fonte e podem ser expressões SQL arbitrárias. Se a expressão SQL retornar um valor no formato de uma URL, o atributo será exibido como um link. Valores vazios não são exibidos.
+
+Por exemplo, esta trace fonte foi configurada com um Atributo destacado e um Atributo de trace destacado:
+
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="Configuração de Atributos destacados" size="md" />
+
+Esses atributos são exibidos no painel lateral após clicar em um log ou span:
+
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="Atributos destacados" size="md" />
+
+Ao clicar em um atributo, são fornecidas opções para usá-lo como valor de busca. Se a expressão Lucene opcional for fornecida na configuração do atributo, a expressão Lucene será usada para a busca em vez da expressão SQL.
+
+<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="Busca de Atributos destacados" size="md" />
+
+<div id="correlated-sources">
+  ### Fontes correlacionadas
+</div>
+
+Para habilitar a correlação completa entre fontes no ClickStack, você precisa configurar fontes correlacionadas para logs, traces, métricas e sessões. Isso permite que o HyperDX associe dados relacionados e forneça um contexto mais rico ao exibir eventos.
+
+* `Logs`: podem ser correlacionados com traces e métricas.
+* `Traces`: podem ser correlacionados com logs, sessões e métricas.
+* `Metrics`: podem ser correlacionadas com logs.
+* `Sessions`: podem ser correlacionadas com traces.
+
+Configurar essas correlações habilita vários recursos. Por exemplo, o HyperDX pode exibir logs relevantes ao lado de um trace ou destacar anomalias de métricas vinculadas a uma sessão.
+
+Por exemplo, abaixo está a fonte de Logs configurada com fontes correlacionadas:
+
+<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="Fonte correlacionada do HyperDX" size="md" />
+
+<div id="application-configuration-settings">
+  ### Configurações do aplicativo
+</div>
+
+<Info>
+  **HyperDX no ClickHouse Cloud**
+
+  Essas configurações não podem ser alteradas quando o HyperDX é gerenciado no ClickHouse Cloud.
+</Info>
+
+* `HYPERDX_API_KEY`
+  * **Padrão:** Nenhum (obrigatório)
+  * **Descrição:** Chave de autenticação da API do HyperDX.
+  * **Orientações:**
+  * Obrigatória para telemetria e logging
+  * Em ambiente de desenvolvimento local, pode ser qualquer valor não vazio
+  * Para produção, use uma chave segura e exclusiva
+  * Pode ser obtida na página Team Settings após a criação da conta
+
+* `HYPERDX_LOG_LEVEL`
+  * **Padrão:** `info`
+  * **Descrição:** Define o nível de verbosidade do logging.
+  * **Opções:** `debug`, `info`, `warn`, `error`
+  * **Orientação:**
+  * Use `debug` para solução de problemas detalhada
+  * Use `info` para operação normal
+  * Use `warn` ou `error` em produção para reduzir o volume de logs
+
+* `HYPERDX_API_PORT`
+  * **Padrão:** `8000`
+  * **Descrição:** Porta do servidor de API do HyperDX.
+  * **Orientação:**
+  * Verifique se essa porta está disponível no seu host
+  * Altere-a se houver conflito de portas
+  * Deve corresponder à porta definida nas configurações do cliente de API
+
+* `HYPERDX_APP_PORT`
+  * **Padrão:** `8000`
+  * **Descrição:** Porta do aplicativo de frontend do HyperDX.
+  * **Orientação:**
+  * Certifique-se de que essa porta esteja disponível no host
+  * Altere se houver conflito de porta
+  * Deve estar acessível pelo navegador
+
+* `HYPERDX_APP_URL`
+  * **Padrão:** `http://localhost`
+  * **Descrição:** URL base da aplicação front-end.
+  * **Orientação:**
+  * Defina seu domínio em produção
+  * Inclua o protocolo (http/https)
+  * Não inclua a barra no final
+
+* `MONGO_URI`
+  * **Padrão:** `mongodb://db:27017/hyperdx`
+  * **Descrição:** String de conexão do MongoDB.
+  * **Orientação:**
+  * Use o valor padrão para desenvolvimento local com Docker
+  * Para produção, use uma string de conexão segura
+  * Inclua autenticação, se necessário
+  * Exemplo: `mongodb://user:pass@host:port/db`
+
+* `MINER_API_URL`
+  * **Padrão:** `http://miner:5123`
+  * **Descrição:** URL do serviço de mineração de padrões de log.
+  * **Orientação:**
+  * Use o valor padrão para desenvolvimento local com Docker
+  * Em produção, defina a URL do seu serviço miner
+  * Deve estar acessível a partir do serviço de API
+
+* `FRONTEND_URL`
+  * **Padrão:** `http://localhost:3000`
+  * **Descrição:** URL do aplicativo frontend.
+  * **Orientação:**
+  * Use o valor padrão para desenvolvimento local
+  * Defina seu domínio em produção
+  * Deve estar acessível pelo serviço de API
+
+* `OTEL_SERVICE_NAME`
+  * **Padrão:** `hdx-oss-api`
+  * **Descrição:** Nome do serviço para a instrumentação do OpenTelemetry.
+  * **Orientação:**
+  * Use um nome descritivo para seu serviço HyperDX. Aplicável se o HyperDX fizer autoinstrumentação.
+  * Ajuda a identificar o serviço HyperDX nos dados de telemetria
+
+* `NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT`
+  * **Padrão:** `http://localhost:4318`
+  * **Descrição:** endpoint do collector do OpenTelemetry.
+  * **Orientação:**
+  * Relevante para a auto-instrumentação do HyperDX.
+  * Use o padrão para desenvolvimento local
+  * Defina como a URL do seu collector em produção
+  * Deve estar acessível a partir do seu serviço HyperDX
+
+* `USAGE_STATS_ENABLED`
+  * **Padrão:** `true`
+  * **Descrição:** Ativa ou desativa a coleta de estatísticas de uso.
+  * **Orientação:**
+  * Defina como `false` para desativar o rastreamento de uso
+  * Útil para implantações com requisitos rigorosos de privacidade
+  * O padrão é `true` para melhorar o produto
+
+* `IS_OSS`
+  * **Padrão:** `true`
+  * **Descrição:** Indica se está sendo executado no modo OSS.
+  * **Orientação:**
+  * Mantenha como `true` para implantações de código aberto
+  * Defina como `false` para implantações Enterprise
+  * Afeta a disponibilidade de funcionalidades
+
+* `IS_LOCAL_MODE`
+  * **Padrão:** `false`
+  * **Descrição:** Indica se está sendo executado em modo local.
+  * **Orientação:**
+  * Defina como `true` para desenvolvimento local
+  * Desativa determinados recursos de produção
+  * Útil para testes e desenvolvimento
+
+* `EXPRESS_SESSION_SECRET`
+  * **Padrão:** `hyperdx is cool 👋`
+  * **Descrição:** Segredo usado no gerenciamento de sessão do Express.
+  * **Orientação:**
+  * Altere em produção
+  * Use uma string aleatória e forte
+  * Mantenha em segredo e em segurança
+
+* `ENABLE_SWAGGER`
+  * **Padrão:** `false`
+  * **Descrição:** Ativa ou desativa a documentação da API do Swagger.
+  * **Orientações:**
+  * Defina como `true` para habilitar a documentação da API
+  * Útil para desenvolvimento e testes
+  * Desative em produção
+
+* `BETA_CH_OTEL_JSON_SCHEMA_ENABLED`
+  * **Padrão:** `false`
+  * **Descrição:** Habilita suporte Beta para o tipo JSON no HyperDX. Veja também [`OTEL_AGENT_FEATURE_GATE_ARG`](#otel-collector) para habilitar o suporte a JSON no OTel collector.
+  * **Orientação:**
+    * Habilita um **recurso beta**. Schemas tipados como JSON **não são recomendados** para workloads típicos de observabilidade. Consulte [Map vs JSON type](/pt-BR/clickstack/ingesting-data/schema/map-vs-json) para ver a comparação e quando cada um é mais apropriado.
+    * Defina como `true` para habilitar o suporte a JSON na ClickStack UI.
+
+<div id="otel-collector">
+  ## collector OpenTelemetry
+</div>
+
+Consulte [&quot;ClickStack OpenTelemetry Collector&quot;](/pt-BR/clickstack/ingesting-data/collector) para mais detalhes.
+
+* `CLICKHOUSE_ENDPOINT`
+  * **Padrão:** *None (obrigatório)* se for uma imagem standalone. Se for uma distribuição All-in-one ou Docker Compose, isso é definido para a instância integrada do ClickHouse.
+  * **Descrição:** A URL HTTPS da instância do ClickHouse para a qual os dados de telemetria serão exportados.
+  * **Orientação:**
+    * Deve ser um endpoint HTTPS completo, incluindo a porta (por exemplo, `https://clickhouse.example.com:8443`)
+    * Obrigatório para que o collector envie dados ao ClickHouse
+
+* `CLICKHOUSE_USER`
+  * **Padrão:** `default`
+  * **Descrição:** Nome de usuário usado para autenticar na instância do ClickHouse.
+  * **Orientação:**
+    * Certifique-se de que o usuário tenha permissões `INSERT` e `CREATE TABLE`
+    * Recomenda-se criar um usuário dedicado para ingestão
+
+* `CLICKHOUSE_PASSWORD`
+  * **Padrão:** *None (obrigatório se a autenticação estiver habilitada)*
+  * **Descrição:** Senha do usuário do ClickHouse especificado.
+  * **Orientação:**
+    * Obrigatório se a conta de usuário tiver uma senha definida
+    * Armazene com segurança por meio de secrets em implantações de produção
+
+* `HYPERDX_LOG_LEVEL`
+  * **Padrão:** `info`
+  * **Descrição:** Nível de verbosidade de log do collector.
+  * **Orientação:**
+    * Aceita valores como `debug`, `info`, `warn`, `error`
+    * Use `debug` durante a solução de problemas
+
+* `OPAMP_SERVER_URL`
+  * **Padrão:** *None (obrigatório)* se for uma imagem standalone. Se for uma distribuição All-in-one ou Docker Compose, isso aponta para a instância implantada do HyperDX.
+  * **Descrição:** URL do servidor OpAMP usado para gerenciar o collector (por exemplo, uma instância do HyperDX). Por padrão, essa é a porta `4320`.
+  * **Orientação:**
+    * Deve apontar para sua instância do HyperDX
+    * Habilita configuração dinâmica e ingestão segura
+    * Se omitido, a ingestão segura é desabilitada, a menos que um valor de `OTLP_AUTH_TOKEN` seja especificado.
+
+* `OTLP_AUTH_TOKEN`
+  * **Padrão:** *None*. Usado somente para imagem standalone.
+  * **Descrição:** Permite especificar um token de autenticação OTLP. Se definido, toda a comunicação exige esse bearer token.
+  * **Orientação:**
+    * Recomendado se estiver usando a imagem standalone do collector em produção.
+
+* `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`
+  * **Padrão:** `default`
+  * **Descrição:** Banco de dados do ClickHouse no qual o collector grava dados de telemetria.
+  * **Orientação:**
+    * Defina se estiver usando um nome do banco de dados personalizado
+    * Certifique-se de que o usuário especificado tenha acesso a este banco de dados
+
+* `OTEL_AGENT_FEATURE_GATE_ARG`
+  * **Padrão:** `<empty string>`
+  * **Descrição:** Habilita feature flags no collector. Se definido como `--feature-gates=clickhouse.json`, habilita suporte Beta para o tipo JSON no collector, garantindo que schemas sejam criados com esse tipo. Consulte também [`BETA_CH_OTEL_JSON_SCHEMA_ENABLED`](#hyperdx) para habilitar o suporte a JSON no HyperDX.
+  * **Orientação:**
+    * Habilita um **recurso beta**. Schemas tipados como JSON **não são recomendados** para workloads típicas de observabilidade. Consulte [Map vs JSON type](/pt-BR/clickstack/ingesting-data/schema/map-vs-json) para ver a comparação e quando cada um é apropriado.
+    * Defina como `--feature-gates=clickhouse.json` para criar novas tabelas usando o tipo JSON.
+
+<div id="clickhouse">
+  ## ClickHouse
+</div>
+
+O ClickStack Open Source vem com uma configuração padrão do ClickHouse projetada para operar em escala de vários terabytes, mas os usuários podem modificá-la e otimizá-la conforme sua carga de trabalho.
+
+Para ajustar o ClickHouse com eficácia, é importante entender conceitos-chave de armazenamento, como [partes](/pt-BR/concepts/core-concepts/parts), [partições](/pt-BR/concepts/core-concepts/partitions), [shards e réplicas](/pt-BR/guides/oss/deployment-and-scaling/shards) e como as [mesclagens](/pt-BR/concepts/core-concepts/merges) ocorrem durante a inserção. Recomendamos revisar os fundamentos de [índices primários](/pt-BR/concepts/core-concepts/primary-indexes), [índices secundários esparsos](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes) e índices de salto de dados, além de técnicas de [gerenciamento do ciclo de vida dos dados](/pt-BR/guides/use-cases/observability/build-your-own/managing-data), por exemplo, usando TTL.
+
+O ClickStack oferece suporte à [personalização do schema](/pt-BR/guides/use-cases/observability/build-your-own/schema-design) — você pode modificar tipos de coluna, extrair novos campos (por exemplo, de logs), aplicar codecs e dicionários, e acelerar consultas usando projeções.
+
+Além disso, visões materializadas podem ser usadas para [transformar ou filtrar dados durante a ingestão](/pt-BR/guides/use-cases/observability/build-your-own/schema-design#materialized-columns), desde que os dados sejam gravados na tabela de origem da visão e a aplicação leia da tabela de destino. Visões materializadas também podem ser usadas para [acelerar consultas nativamente](/pt-BR/clickstack/managing/materialized-views) no ClickStack.
+
+Para mais detalhes, consulte a documentação do ClickHouse sobre design de schema, estratégias de indexação e melhores práticas de gerenciamento de dados — a maior parte delas se aplica diretamente a implantações do ClickStack.

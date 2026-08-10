@@ -1,0 +1,247 @@
+{
+  "icon": "/images/icons/icon-clickstack.svg",
+  "item": "ClickStack",
+  "pages": [
+    "ar/clickstack/index",
+    {
+      "expanded": true,
+      "group": "ابدأ الاستخدام",
+      "pages": [
+        {
+          "expanded": true,
+          "group": "أدلة البدء السريع",
+          "pages": [
+            "ar/clickstack/getting-started/managed",
+            "ar/clickstack/getting-started/oss"
+          ],
+          "root": "ar/clickstack/getting-started/index"
+        },
+        {
+          "group": "مجموعات بيانات نموذجية",
+          "pages": [
+            "ar/clickstack/example-datasets/sample-data",
+            "ar/clickstack/example-datasets/kubernetes",
+            "ar/clickstack/example-datasets/local-data",
+            "ar/clickstack/example-datasets/remote-demo-data",
+            "ar/clickstack/example-datasets/session-replay",
+            "ar/clickstack/example-datasets/chrome-extension",
+            "ar/clickstack/example-datasets/otelgen"
+          ],
+          "root": "ar/clickstack/example-datasets/index"
+        },
+        "ar/clickstack/architecture",
+        "ar/clickstack/faq"
+      ],
+      "root": "ar/clickstack/overview"
+    },
+    {
+      "group": "الميزات",
+      "pages": [
+        {
+          "group": "النشر",
+          "pages": [
+            {
+              "group": "المصدر المفتوح",
+              "pages": [
+                "ar/clickstack/deployment/all-in-one",
+                {
+                  "group": "Helm",
+                  "pages": [
+                    {
+                      "group": "v2.x",
+                      "pages": [
+                        "ar/clickstack/deployment/helm-configuration",
+                        "ar/clickstack/deployment/helm-deployment-options",
+                        "ar/clickstack/deployment/helm-cloud",
+                        "ar/clickstack/deployment/helm-additional-manifests",
+                        "ar/clickstack/deployment/helm-upgrade"
+                      ],
+                      "root": "ar/clickstack/deployment/helm"
+                    },
+                    {
+                      "group": "v1.x (متروك)",
+                      "pages": [
+                        "ar/clickstack/deployment/helm-configuration-v1",
+                        "ar/clickstack/deployment/helm-deployment-options-v1",
+                        "ar/clickstack/deployment/helm-cloud-v1"
+                      ],
+                      "root": "ar/clickstack/deployment/helm-v1"
+                    }
+                  ]
+                },
+                "ar/clickstack/deployment/docker-compose",
+                "ar/clickstack/deployment/hyperdx-only",
+                "ar/clickstack/deployment/local-mode-only",
+                "ar/clickstack/deployment/clickhouse-embedded"
+              ],
+              "root": "ar/clickstack/deployment/oss"
+            },
+            "ar/clickstack/deployment/managed"
+          ],
+          "root": "ar/clickstack/deployment/overview"
+        },
+        "ar/clickstack/features/search",
+        {
+          "group": "لوحات المعلومات",
+          "pages": [
+            "ar/clickstack/features/dashboards/dashboard-templates",
+            "ar/clickstack/features/dashboards/sql-visualizations",
+            "ar/clickstack/features/dashboards/row-click-drilldowns"
+          ],
+          "root": "ar/clickstack/features/dashboards/overview"
+        },
+        "ar/clickstack/notebooks",
+        "ar/clickstack/text-to-chart",
+        "ar/clickstack/features/event-patterns",
+        "ar/clickstack/features/event-deltas",
+        "ar/clickstack/features/alerts",
+        "ar/clickstack/service-maps",
+        "ar/clickstack/features/session-replay",
+        "ar/clickstack/mcp",
+        {
+          "group": "Demo Days",
+          "pages": [
+            {
+              "group": "2026",
+              "pages": [
+                "ar/clickstack/demo-days/2026/2026-07-10",
+                "ar/clickstack/demo-days/2026/2026-07-02",
+                "ar/clickstack/demo-days/2026/2026-06-12",
+                "ar/clickstack/demo-days/2026/2026-06-05",
+                "ar/clickstack/demo-days/2026/2026-05-29",
+                "ar/clickstack/demo-days/2026/2026-05-22",
+                "ar/clickstack/demo-days/2026/2026-05-15",
+                "ar/clickstack/demo-days/2026/2026-05-08",
+                "ar/clickstack/demo-days/2026/2026-04-17",
+                "ar/clickstack/demo-days/2026/2026-04-10",
+                "ar/clickstack/demo-days/2026/2026-04-03"
+              ]
+            }
+          ],
+          "root": "ar/clickstack/demo-days/index"
+        }
+      ]
+    },
+    {
+      "expanded": true,
+      "group": "إدارة ClickStack",
+      "pages": [
+        "ar/clickstack/managing/admin",
+        "ar/clickstack/managing/config",
+        "ar/clickstack/managing/estimating-resources",
+        "ar/clickstack/managing/materialized-views",
+        "ar/clickstack/managing/performance-tuning",
+        "ar/clickstack/managing/production",
+        "ar/clickstack/managing/rbac",
+        "ar/clickstack/managing/ttl"
+      ],
+      "root": "ar/clickstack/managing/overview"
+    },
+    {
+      "group": "الأدلة",
+      "pages": [
+        {
+          "group": "إدخال البيانات",
+          "pages": [
+            "ar/clickstack/ingesting-data/overview",
+            "ar/clickstack/ingesting-data/opentelemetry",
+            "ar/clickstack/ingesting-data/vector",
+            "ar/clickstack/ingesting-data/collector",
+            "ar/clickstack/ingesting-data/schemas",
+            "ar/clickstack/ingesting-data/schema/map-vs-json",
+            "ar/clickstack/ingesting-data/trace-sampling",
+            {
+              "group": "التكاملات",
+              "pages": [
+                "ar/clickstack/integration-examples/nginx-logs",
+                "ar/clickstack/integration-examples/nginx-traces",
+                "ar/clickstack/integration-examples/redis-logs",
+                "ar/clickstack/integration-examples/redis-metrics",
+                "ar/clickstack/integration-examples/cloudwatch",
+                "ar/clickstack/integration-examples/aws-lambda",
+                {
+                  "group": "سجلات المضيف",
+                  "pages": [
+                    "ar/clickstack/integration-examples/host-logs",
+                    "ar/clickstack/integration-examples/host-logs/ec2"
+                  ]
+                },
+                "ar/clickstack/integration-examples/jvm-metrics",
+                "ar/clickstack/integration-examples/kafka-metrics",
+                "ar/clickstack/integration-examples/kubernetes",
+                "ar/clickstack/integration-examples/mysql",
+                "ar/clickstack/integration-examples/nodejs-traces",
+                "ar/clickstack/integration-examples/postgres-logs",
+                "ar/clickstack/integration-examples/postgres-metrics",
+                "ar/clickstack/integration-examples/systemd",
+                "ar/clickstack/integration-examples/temporal",
+                "ar/clickstack/integration-examples/cloudflare",
+                "ar/clickstack/integration-examples/kafka-logs",
+                "ar/clickstack/integration-examples/mongodb-logs"
+              ],
+              "root": "ar/clickstack/integration-examples/index"
+            },
+            {
+              "group": "حزم SDK للغات",
+              "pages": [
+                "ar/clickstack/ingesting-data/sdks/browser",
+                "ar/clickstack/ingesting-data/sdks/nodejs",
+                "ar/clickstack/ingesting-data/sdks/python",
+                "ar/clickstack/ingesting-data/sdks/golang",
+                "ar/clickstack/ingesting-data/sdks/java",
+                "ar/clickstack/ingesting-data/sdks/ruby",
+                "ar/clickstack/ingesting-data/sdks/elixir",
+                "ar/clickstack/ingesting-data/sdks/deno",
+                "ar/clickstack/ingesting-data/sdks/nestjs",
+                "ar/clickstack/ingesting-data/sdks/nextjs",
+                "ar/clickstack/ingesting-data/sdks/react-native",
+                "ar/clickstack/ingesting-data/sdks/aws-lambda"
+              ],
+              "root": "ar/clickstack/ingesting-data/sdks/index"
+            }
+          ],
+          "root": "ar/clickstack/ingesting-data/index"
+        },
+        {
+          "expanded": true,
+          "group": "أدلة الترحيل",
+          "pages": [
+            {
+              "group": "الترحيل من Elastic",
+              "pages": [
+                "ar/clickstack/migration/elastic/intro",
+                "ar/clickstack/migration/elastic/concepts",
+                "ar/clickstack/migration/elastic/types",
+                "ar/clickstack/migration/elastic/search",
+                "ar/clickstack/migration/elastic/migrating-data",
+                "ar/clickstack/migration/elastic/migrating-agents",
+                "ar/clickstack/migration/elastic/migrating-sdks"
+              ],
+              "root": "ar/clickstack/migration/elastic/index"
+            },
+            "ar/clickstack/migration/datadog/index"
+          ],
+          "root": "ar/clickstack/migration/index"
+        }
+      ]
+    },
+    {
+      "expanded": true,
+      "group": "شركاء التكامل",
+      "pages": [
+        "ar/clickstack/integration-partners/bindplane",
+        "ar/clickstack/integration-partners/odigos"
+      ],
+      "root": "ar/clickstack/integration-partners/index"
+    },
+    {
+      "expanded": true,
+      "group": "مرجع واجهة برمجة التطبيقات",
+      "openapi": {
+        "directory": "ar/clickstack/api-reference",
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
+      },
+      "root": "ar/clickstack/api-reference"
+    }
+  ]
+}

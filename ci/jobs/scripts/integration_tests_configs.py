@@ -43,6 +43,18 @@ TEST_CONFIGS = [
     ),
     TC("test_random_inserts/", False, "standard replicated inserts test; cluster is fully isolated"),
     TC("test_server_overload/", True, "uses taskset to pin ClickHouse to specific CPU cores; sensitive to concurrent CPU load"),
+    TC(
+        "test_keeper_snapshot_chunked_transfer/",
+        False,
+        "18-node Keeper+S3 cluster; concurrent --dist=each copies OOM the ASAN runner",
+        dist_each_sequential=True,
+    ),
+    TC(
+        "test_wasm_parser/",
+        True,
+        "two full-LTO builds of the parser; saturates the runner and would slow every "
+        "co-scheduled test down",
+    ),
     TC("test_storage_kafka/", False, "each cluster has its own Kafka container and Docker network"),
     TC("test_storage_rabbitmq/", False, "each cluster has its own RabbitMQ container; tests use unique exchange/db names"),
     TC("test_storage_kerberized_kafka/", False, "each cluster has its own Kafka container and Docker network"),
@@ -127,6 +139,7 @@ IMAGES_ENV = {
     "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
     "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
     "clickhouse/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",
+    "clickhouse/wasm-builder": "DOCKER_WASM_BUILDER_TAG",
     "clickhouse/arrowflight-server-test": "DOCKER_ARROWFLIGHT_SERVER_TAG",
     "clickhouse/mysql-php-client": "DOCKER_MYSQL_PHP_CLIENT_TAG",
     "clickhouse/nginx-dav": "DOCKER_NGINX_DAV_TAG",
@@ -222,7 +235,7 @@ test_named_collections_encrypted2/test.py	355884
 test_backup_restore_on_cluster/test.py	355552
 test_refreshable_mat_view_replicated/test.py	355015
 test_lost_part_during_startup/test.py	354182
-test_scheduler/test.py	351404
+test_scheduler_io/test.py	351404
 test_ytsaurus/test_tables.py	349422
 test_mysql_database_engine/test.py	348017
 test_storage_iceberg_schema_evolution/test_evolved_schema_simple.py	343043

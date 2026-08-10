@@ -1,0 +1,130 @@
+---
+description: 'La fonction de table `eval` évalue une expression constante en chaîne de requête, puis exécute la requête `SELECT` obtenue.'
+sidebarTitle: 'eval'
+slug: /sql-reference/table-functions/eval
+title: 'eval'
+doc_type: 'reference'
+---
+
+La fonction de table `eval` évalue son argument en chaîne de requête, puis exécute cette chaîne comme une seule requête `SELECT`.
+
+Cette fonction de table est expérimentale et désactivée par défaut. Activez-la avec le paramètre `allow_experimental_eval_table_function` :
+
+```sql
+SET allow_experimental_eval_table_function = 1;
+```
+
+Cela nécessite également l’analyseur ([`enable_analyzer`](/fr/reference/settings/session-settings#allow_experimental_analyzer), activé par défaut).
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+eval(expression)
+eval(SELECT ...)
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+* `expression` — Une expression constante qui renvoie une chaîne de requête. Les paramètres de requête et les sous-requêtes scalaires sont autorisés.
+* `SELECT ...` — Une requête `SELECT` qui renvoie une chaîne de requête. Cette forme est un raccourci syntaxique pour une sous-requête scalaire : `eval(SELECT ...)` est équivalent à `eval((SELECT ...))`. La requête doit donc renvoyer exactement une ligne et une colonne.
+
+La valeur de l&#39;expression doit être de l&#39;un des types suivants :
+
+* `String`
+* `Nullable(String)`
+* `LowCardinality(String)`
+* `LowCardinality(Nullable(String))`
+
+Si la valeur est `NULL`, `eval` lève une exception.
+
+<div id="returned-value">
+  ## Valeur renvoyée
+</div>
+
+Renvoie le résultat de la requête `SELECT` générée sous forme de table.
+
+Le schéma de sortie est déterminé lors de l’analyse de la fonction de table `eval`, de sorte que les requêtes externes peuvent faire référence aux noms et aux types réels des colonnes de la requête générée.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Évaluez une expression constante :
+
+```sql
+SELECT * FROM eval('SEL' || 'ECT 1 AS x');
+```
+
+Résultat :
+
+```text
+┌─x─┐
+│ 1 │
+└───┘
+```
+
+Utilisez un paramètre de requête :
+
+```sql
+SET param_q = 'SELECT 2 AS y';
+SELECT * FROM eval({q:String});
+```
+
+Résultat :
+
+```text
+┌─y─┐
+│ 2 │
+└───┘
+```
+
+Évalue une requête `SELECT` en entrée et renvoie le texte de la requête :
+
+```sql
+SELECT * FROM eval(SELECT 'SELECT 3 AS z');
+```
+
+Résultat :
+
+```text
+┌─z─┐
+│ 3 │
+└───┘
+```
+
+Utilisez le schéma généré dans la requête externe :
+
+```sql
+SELECT x + 1 FROM eval('SELECT 4 AS x');
+```
+
+Résultat :
+
+```text
+┌─plus(x, 1)─┐
+│          5 │
+└────────────┘
+```
+
+<div id="restrictions">
+  ## Restrictions
+</div>
+
+* `eval` fonctionne uniquement avec l’analyseur de requêtes (`enable_analyzer = 1`).
+* La requête générée doit être une unique requête `SELECT`, sans options de sortie telles que `INTO OUTFILE` ou `FORMAT`. `eval` n’exécute pas plusieurs instructions.
+* La requête générée doit être autonome : elle est résolue dans sa propre portée et ne peut pas référencer les alias `WITH` ni les colonnes de la requête externe.
+* La requête générée ne peut pas réutiliser la fonction de table `eval`.
+* `eval` ne peut pas être utilisé comme argument d’une autre fonction de table, telle que `remote('host', eval(...))`. Pour exécuter la requête générée sur un serveur distant, encapsulez-la dans `view` : `remote('host', view(SELECT * FROM eval(...)))`.
+* L’argument est évalué une seule fois lors de l’analyse de la requête, et non une fois par ligne ou par bloc.
+* Le journal des requêtes de la requête externe enregistre la requête d’origine qui contient `eval` ; la requête `SELECT` générée n’est pas enregistrée comme une requête utilisateur distincte.
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [fonction de table `view`](/fr/reference/functions/table-functions/view)
+* paramètre `allow_experimental_eval_table_function`

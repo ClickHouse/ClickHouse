@@ -50,6 +50,68 @@ SELECT trimLeft(explain) AS explain FROM (
     SETTINGS vector_search_with_rescoring = 1)
 WHERE (explain LIKE '%_distance%');
 
+SELECT '-- Test that rescoring evaluates the distance only for candidate rows.';
+
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, throwIf(id = 4, 'Expected rescoring to skip non-candidate rows')
+FROM tab
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 1
+SETTINGS vector_search_with_rescoring = 1;
+
+SELECT '-- Test that rescoring preserves candidates from multiple vector index granules.';
+
+DROP TABLE IF EXISTS tab_multi_granule;
+
+CREATE TABLE tab_multi_granule(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_multi_granule VALUES (0, [10.0, 0.0]), (1, [11.0, 0.0]), (2, [0.0, 0.0]), (3, [0.1, 0.0]), (4, [0.2, 0.0]), (5, [0.3, 0.0]), (6, [12.0, 0.0]), (7, [13.0, 0.0]);
+
+WITH [0.0, 0.0] AS reference_vec
+SELECT id
+FROM tab_multi_granule
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 4
+SETTINGS vector_search_with_rescoring = 0;
+
+WITH [0.0, 0.0] AS reference_vec
+SELECT id
+FROM tab_multi_granule
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 4
+SETTINGS vector_search_with_rescoring = 1;
+
+DROP TABLE tab_multi_granule;
+
+SELECT '-- Test that FINAL keeps rows added by exact-mode skip-index recovery.';
+
+DROP TABLE IF EXISTS tab_final;
+
+CREATE TABLE tab_final
+(
+    id UInt64,
+    ver UInt64,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 100000000
+)
+ENGINE = ReplacingMergeTree(ver)
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab_final VALUES (1, 1, [0.0, 0.0]), (10, 1, [500.0, 0.0]), (11, 1, [600.0, 0.0]);
+INSERT INTO tab_final VALUES (1, 2, [100.0, 0.0]), (2, 1, [0.1, 0.0]), (3, 1, [700.0, 0.0]);
+
+WITH [0.0, 0.0] AS reference_vec
+SELECT id, ver, vec
+FROM tab_final FINAL
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 1
+SETTINGS vector_search_with_rescoring = 1,
+         use_skip_indexes = 1,
+         use_skip_indexes_if_final = 1,
+         use_skip_indexes_if_final_exact_mode = 1;
+
+DROP TABLE tab_final;
+
 SELECT 'Test "SELECT id, vec" without and with rescoring';
 
 -- SELECTing vec explicitly disables the optimization

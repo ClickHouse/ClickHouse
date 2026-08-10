@@ -11,6 +11,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
@@ -18,6 +19,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
@@ -44,6 +46,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/MaterializedView/RefreshSet.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -98,6 +102,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -148,16 +153,17 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsBool stop_refreshable_materialized_views_on_startup;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
-    extern const ServerSettingsUInt64 max_database_num_to_throw;
-    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
-    extern const ServerSettingsUInt64 max_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_view_num_to_throw;
+}
+
+namespace FailPoints
+{
+    extern const char create_or_replace_before_rename[];
 }
 
 namespace ErrorCodes
@@ -212,10 +218,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
+    auto db_num_limit = getContext()->getGlobalContext()->getMaxDatabaseNumToThrow();
     if (db_num_limit > 0 && !internal)
     {
-        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true}).size();
+        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true}).size();
         std::initializer_list<std::string_view> system_databases =
         {
             DatabaseCatalog::TEMPORARY_DATABASE,
@@ -333,7 +339,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode);
+    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode, internal);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -577,14 +583,15 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
 {
     /// First, deduce implicit types.
 
     /** all default_expressions as a single expression list,
      *  mixed with conversion-columns for each explicitly specified type */
 
-    DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
+    DefaultExpressionsInfo default_expr_info;
+    default_expr_info.expr_list = make_intrusive<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
 
     /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the initiator.
@@ -622,7 +629,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!default_expr_info.expr_list->children.empty()
         && (default_expr_info.has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
     {
-        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_);
+        /// Ordinary views never evaluate column defaults over an insert block, so a default over a
+        /// virtual column is inert there and must not be rejected.
+        NameSet insert_time_default_columns;
+        if (check_defaults_over_virtual_columns)
+            insert_time_default_columns = default_expr_info.insert_time_default_columns;
+        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_, insert_time_default_columns);
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
@@ -769,7 +781,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
+            /// An ordinary view and an external-target (`TO`) materialized view never evaluate their own
+            /// column defaults over an insert block (a `TO` MV forwards inserts to the target using the
+            /// target metadata), so a default over a virtual column is inert there and must not be rejected.
+            const bool check_defaults_over_virtual_columns
+                = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
+            properties.columns = getColumnsDescription(
+                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
         }
 
         if (create.columns_list->indices)
@@ -1221,6 +1239,54 @@ namespace
         storage.set(storage.engine, engine_ast);
     }
 
+    /// Merge the storage settings of the source table (in `CREATE TABLE x AS y`) into the settings
+    /// explicitly specified for the new table. The explicitly specified settings take precedence;
+    /// the rest are inherited from the source table.
+    void mergeStorageSettings(ASTStorage & storage, const ASTSetQuery * source_settings)
+    {
+        if (!source_settings || source_settings->changes.empty())
+            return;
+
+        if (!storage.settings)
+        {
+            storage.set(storage.settings, source_settings->clone());
+            return;
+        }
+
+        for (const auto & change : source_settings->changes)
+            storage.settings->changes.insertSetting(change.name, change.value);
+    }
+
+    /// Inherit the storage definition of the source table (in `CREATE TABLE x AS y <storage_clauses>` without
+    /// an explicit ENGINE) into the partial storage definition of the new table. The engine and every storage
+    /// clause (PARTITION BY, PRIMARY KEY, ORDER BY, SAMPLE BY, TTL, UNIQUE KEY) that was not explicitly
+    /// specified for the new table is taken from the source; explicitly specified clauses (and individual
+    /// SETTINGS) take precedence. This preserves the full inheritance of plain `CREATE TABLE x AS y` (engine,
+    /// keys, TTL, ...) while still allowing individual clauses and settings to be overridden, and it also
+    /// works when the source is a materialized view whose inherited engine lives in its inner storage.
+    void inheritStorageFromSource(ASTStorage & storage, const ASTStorage & source)
+    {
+        /// We only reach this for `CREATE TABLE x AS y <storage_clauses>` without an explicit ENGINE.
+        chassert(!storage.engine);
+        if (source.engine)
+            storage.set(storage.engine, source.engine->clone());
+
+        if (!storage.partition_by && source.partition_by)
+            storage.set(storage.partition_by, source.partition_by->clone());
+        if (!storage.primary_key && source.primary_key)
+            storage.set(storage.primary_key, source.primary_key->clone());
+        if (!storage.order_by && source.order_by)
+            storage.set(storage.order_by, source.order_by->clone());
+        if (!storage.sample_by && source.sample_by)
+            storage.set(storage.sample_by, source.sample_by->clone());
+        if (!storage.ttl_table && source.ttl_table)
+            storage.set(storage.ttl_table, source.ttl_table->clone());
+        if (!storage.unique_key && source.unique_key)
+            storage.set(storage.unique_key, source.unique_key->clone());
+
+        mergeStorageSettings(storage, source.settings);
+    }
+
     void setNullTableEngine(ASTStorage & storage)
     {
         storage.forEachPointerToChild([](IAST ** ptr, boost::intrusive_ptr<IAST> *)
@@ -1232,6 +1298,20 @@ namespace
         engine_ast->name = "Null";
         engine_ast->setNoEmptyArgs(true);
         storage.set(storage.engine, engine_ast);
+    }
+
+    /// For external tables with the `restore_replace_external_engines_to_null` setting we replace external
+    /// engines with the `Null` table engine. This must run after the engine has been resolved, whether it
+    /// was specified explicitly or inherited from the source table of `CREATE TABLE x AS y` (both the partial
+    /// storage clause and the plain `AS` forms inherit the source engine, so both must be replaced).
+    void replaceExternalEngineWithNullIfNeeded(ASTStorage & storage, bool enabled)
+    {
+        if (enabled
+            && storage.engine
+            && StorageFactory::instance().getStorageFeatures(storage.engine->name).source_access_type)
+        {
+            setNullTableEngine(storage);
+        }
     }
 
     void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
@@ -1346,30 +1426,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
     }
 
-    if (create.storage)
-    {
-        /// This table already has a storage definition.
-        if (!create.storage->engine)
-        {
-            /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
-            setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_table_engine].value);
-        }
-        /// For external tables with restore_replace_external_engine_to_null setting we replace external engines to
-        /// Null table engine.
-        else if (getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
-        {
-            if (StorageFactory::instance().getStorageFeatures(create.storage->engine->name).source_access_type)
-            {
-                setNullTableEngine(*create.storage);
-            }
-        }
-        return;
-    }
-
     /// We'll try to extract a storage definition from clause `AS`:
-    ///     CREATE TABLE table_name AS other_table_name
+    ///     CREATE TABLE table_name AS other_table_name [storage_clauses]
+    /// It is needed both when no storage clause is specified at all and when storage clauses such as
+    /// PARTITION BY, ORDER BY or SETTINGS are specified without an explicit ENGINE: in the latter case
+    /// the engine and the settings are inherited from `other_table_name`.
     boost::intrusive_ptr<ASTStorage> storage_def;
-    if (!create.as_table.empty())
+    if (!create.as_table.empty() && (!create.storage || !create.storage->engine))
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
@@ -1406,8 +1469,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         else if (as_create.as_table_function)
         {
-            create.set(create.as_table_function, as_create.as_table_function->ptr());
-            return;
+            /// The source table is backed by a table function. Forward the table function only when no storage
+            /// clauses were specified for the new table; otherwise keep the explicit storage definition.
+            if (!create.storage)
+            {
+                create.set(create.as_table_function, as_create.as_table_function->ptr());
+                return;
+            }
         }
         else if (as_create.storage)
         {
@@ -1418,6 +1486,32 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
         }
+    }
+
+    if (create.storage)
+    {
+        /// This table already has a (possibly partial) storage definition.
+        if (!create.storage->engine)
+        {
+            if (storage_def && storage_def->engine)
+            {
+                /// `CREATE TABLE x AS y [storage_clauses]` without an explicit ENGINE: inherit the engine of `y`
+                /// together with every storage clause (keys, TTL, ...) that was not explicitly specified, and
+                /// merge its settings under the explicitly specified ones (the latter take precedence).
+                inheritStorageFromSource(*create.storage, *storage_def);
+            }
+            else
+            {
+                /// Some part of storage definition (such as PARTITION BY) is specified, but ENGINE is not: just set default one.
+                setDefaultTableEngine(*create.storage, getContext()->getSettingsRef()[Setting::default_table_engine].value);
+            }
+        }
+
+        /// For external tables with the restore_replace_external_engines_to_null setting we replace external
+        /// engines with the Null table engine, whether the engine was specified explicitly or inherited.
+        replaceExternalEngineWithNullIfNeeded(
+            *create.storage, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
+        return;
     }
 
     if (!storage_def)
@@ -1431,7 +1525,15 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_materialized_view)
         create.setTargetInnerEngine(ViewTarget::To, storage_def);
     else
+    {
+        /// A plain `CREATE TABLE x AS y` without any storage clause reaches here with the engine inherited from
+        /// the source table. The external-engine replacement must run for it too, consistently with the partial
+        /// storage clause path above; otherwise `CREATE TABLE x AS url_src` would keep the external engine while
+        /// `CREATE TABLE x AS url_src ORDER BY ...` becomes Null.
+        replaceExternalEngineWithNullIfNeeded(
+            *storage_def, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
         create.set(create.storage, storage_def);
+    }
 }
 
 void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const
@@ -1707,7 +1809,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
 
@@ -1717,7 +1819,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
         }
@@ -1741,7 +1843,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.isView())
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -1854,6 +1956,31 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return doCreateOrReplaceTable(create, properties, mode);
     }
 
+    /// A plain `CREATE TABLE ... AS SELECT` (no REPLACE) on an Atomic database is executed by creating a
+    /// temporary table, running the populating INSERT SELECT into it, and only then atomically publishing it
+    /// under the final name with a RENAME. If the SELECT is denied (or fails for any other reason), the
+    /// temporary table is dropped, so a denied query leaves no empty orphan table behind (issue #26746: a
+    /// retry used to report `TABLE_ALREADY_EXISTS` instead of the access error). This reuses the same
+    /// create-temporary-then-publish machinery as CREATE OR REPLACE (doCreateOrReplaceTable). On non-Atomic
+    /// databases (getUUID() == Nil, e.g. Ordinary) we keep the previous behavior: the table is created first
+    /// and an orphan is left if the INSERT SELECT fails. Materialized/window views are excluded (they can own
+    /// an inner table and carry source-view dependencies, so they keep the previous behavior for now).
+    ///
+    /// As a consequence, the final table name is only registered by the publishing RENAME, so the populating
+    /// `SELECT` runs while the destination does not yet exist. A `SELECT` that references the destination
+    /// itself -- directly (`CREATE TABLE dst ... AS SELECT * FROM dst`) or indirectly (e.g. via
+    /// `system.tables`) -- therefore no longer observes it as an already-created empty table the way the
+    /// previous create-then-populate order did. This narrow, intentional visibility change (the table becomes
+    /// visible only once fully populated) is covered by
+    /// `04547_create_as_select_destination_not_visible_during_populate`.
+    if (create.isCreateQueryWithImmediateInsertSelect()
+        && !create.is_materialized_view && !create.is_window_view
+        && database && database->getUUID() != UUIDHelpers::Nil)
+    {
+        chassert(!ddl_guard);
+        return doCreateOrReplaceTable(create, properties, mode);
+    }
+
     /// Actually creates table
     bool created = doCreateTable(create, properties, ddl_guard, mode);
     ddl_guard.reset();
@@ -1869,9 +1996,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
-void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
+void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
+
+    /// Re-check inferred column types only for a fresh, persisted table: the pre-construction check
+    /// does not see inferred columns, and ATTACH/RESTORE, temporary tables and views/dictionaries are
+    /// not subject to this check on load.
+    if (mode <= LoadingStrictnessLevel::CREATE && !is_temporary && !storage.isView() && !storage.isDictionary())
+        checkAllTypesAreAllowedInTable(metadata_snapshot->getColumns().getAll());
+
     if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -1907,11 +2041,11 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 try
 {
     validateVirtualColumns(storage, context);
-    checkForUnsupportedColumns(storage, mode, context);
+    checkForUnsupportedColumns(storage, mode, context, is_temporary);
 }
 catch (...)
 {
@@ -1953,7 +2087,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateStorage(*res, mode, getContext());
+            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2119,6 +2253,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
+        if (create.sql_security)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SQL SECURITY is not supported for tables created from a table function");
+
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
@@ -2130,6 +2267,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// and because storage lifetime is bigger than query context lifetime.
         res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
+
+        /// The table is permanent, so it must hold its named collection (if any) the same way a table
+        /// engine does: `DROP NAMED COLLECTION` is blocked while the table exists.
+        if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
+            NamedCollectionFactory::instance().addDependency(collection_name, res->getStorageID());
     }
     else
     {
@@ -2150,7 +2292,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext());
+    validateStorage(*res, mode, getContext(), create.isTemporary());
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -2208,34 +2350,53 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
 void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create) const
 {
-    auto check_and_throw = [&](auto setting, CurrentMetrics::Metric metric, String setting_name, String entity_name)
-        {
-            UInt64 num_limit = getContext()->getGlobalContext()->getServerSettings()[setting];
-            UInt64 attached_count = CurrentMetrics::get(metric);
-            if (num_limit > 0 && attached_count >= num_limit)
-                throw Exception(ErrorCodes::TOO_MANY_TABLES,
-                                "Too many {}. "
-                                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
-                                entity_name, setting_name, num_limit, attached_count);
-        };
+    auto check_and_throw = [&](UInt64 num_limit, CurrentMetrics::Metric metric, String setting_name, String entity_name)
+    {
+        UInt64 attached_count = CurrentMetrics::get(metric);
+        if (num_limit > 0 && attached_count >= num_limit)
+            throw Exception(
+                ErrorCodes::TOO_MANY_TABLES,
+                "Too many {}. "
+                "The limit (server configuration parameter `{}`) is set to {}, the current number is {}",
+                entity_name,
+                setting_name,
+                num_limit,
+                attached_count);
+    };
 
     String engine_name = create.storage && create.storage->engine ? create.storage->engine->name : "";
     bool is_replicated = engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
 
+    auto global_context = getContext()->getGlobalContext();
     if (create.is_dictionary)
-        check_and_throw(ServerSetting::max_dictionary_num_to_throw, CurrentMetrics::AttachedDictionary, "max_dictionary_num_to_throw", "dictionaries");
+        check_and_throw(
+            global_context->getMaxDictionaryNumToThrow(),
+            CurrentMetrics::AttachedDictionary,
+            "max_dictionary_num_to_throw",
+            "dictionaries");
     else if (create.isView())
-        check_and_throw(ServerSetting::max_view_num_to_throw, CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
+        check_and_throw(global_context->getMaxViewNumToThrow(), CurrentMetrics::AttachedView, "max_view_num_to_throw", "views");
     else if (is_replicated)
-        check_and_throw(ServerSetting::max_replicated_table_num_to_throw, CurrentMetrics::AttachedReplicatedTable, "max_replicated_table_num_to_throw", "replicated tables");
+        check_and_throw(
+            global_context->getMaxReplicatedTableNumToThrow(),
+            CurrentMetrics::AttachedReplicatedTable,
+            "max_replicated_table_num_to_throw",
+            "replicated tables");
     else
-        check_and_throw(ServerSetting::max_table_num_to_throw, CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
+        check_and_throw(global_context->getMaxTableNumToThrow(), CurrentMetrics::AttachedTable, "max_table_num_to_throw", "tables");
 }
 
 
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                                                        const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
+    /// This function creates the table under a temporary name, populates it, and then atomically publishes it
+    /// under the final name. It serves both REPLACE / CREATE OR REPLACE (publish via EXCHANGE / rename) and a
+    /// plain `CREATE TABLE ... AS SELECT` (no REPLACE; publish via a plain RENAME that fails if the target
+    /// exists). The plain-create case is routed here (only for Atomic databases) so a denied or failing
+    /// populating INSERT SELECT leaves no empty orphan table behind (issue #26746).
+    const bool is_plain_create = !create.replace_table && !create.create_or_replace && !create.replace_view;
+
     /// Replicated database requires separate contexts for each DDL query
     ContextPtr current_context = getContext();
     if (auto txn = current_context->getZooKeeperMetadataTransaction())
@@ -2244,13 +2405,60 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     create_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
 
     /// Before actually creating/replacing the table, check if it will lead to cyclic dependencies.
-    checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
+    /// For a plain create this check runs later, after the existence fast path below: a
+    /// `CREATE TABLE IF NOT EXISTS` over an existing table must be a no-op even when the (new, unused)
+    /// definition would fail create-only validation, mirroring the check order of `doCreateTable`.
+    if (!is_plain_create)
+        checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
 
-    auto make_drop_context = [&]() -> ContextMutablePtr
+    auto make_drop_context = [&](bool bypass_size_guard) -> ContextMutablePtr
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
+        if (bypass_size_guard)
+        {
+            drop_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+            drop_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        }
         return drop_context;
+    };
+
+    /// The temporary table is an implementation detail: renaming it to the final name and dropping it on
+    /// failure are internal operations that must not require the user to hold RENAME/DROP privileges on it.
+    /// A plain `CREATE TABLE ... AS SELECT` only requires CREATE + INSERT (+ SELECT on the sources, still
+    /// checked by the populating INSERT SELECT below, which runs as the user), so those internal steps run
+    /// with a full-access context derived from the global context -- mirroring how inner tables of a
+    /// materialized view are dropped (see `InterpreterDropQuery::executeDropQuery`). Settings and any
+    /// Replicated-database ZooKeeper transaction are propagated so the operations behave and replicate
+    /// correctly. This is used only for the plain-create case; REPLACE keeps running as the user (its
+    /// required access already includes DROP).
+    ///
+    /// `bypass_size_guard` additionally zeroes `max_table_size_to_drop` / `max_partition_size_to_drop`. The
+    /// size guard is meaningful only for user-visible tables; a populated-then-abandoned temporary table can
+    /// exceed it, and its cleanup DROP must always succeed or the temporary table would be stranded. Pass it
+    /// for the cleanup DROPs; the publishing RENAME does not consult these settings, so it does not need it
+    /// (this mirrors the `bypass_size_guard` argument of `make_drop_context` used by REPLACE).
+    auto make_internal_context = [&](bool bypass_size_guard) -> ContextMutablePtr
+    {
+        ContextMutablePtr internal_context = Context::createCopy(current_context->getGlobalContext());
+        internal_context->makeQueryContext();
+        internal_context->setSettings(current_context->getSettingsRef());
+        /// The settings copied above can make the internal DROPs below wait; the element is the only way out.
+        internal_context->setProcessListElement(current_context->getProcessListElementSafe());
+        internal_context->setDDLOrOnClusterInternal(true);
+        if (bypass_size_guard)
+        {
+            internal_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+            internal_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        }
+        if (auto txn = current_context->getZooKeeperMetadataTransaction())
+        {
+            internal_context->setQueryKindReplicatedDatabaseInternal();
+            internal_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+            internal_context->initZooKeeperMetadataTransaction(txn, /*attach_existing=*/true);
+        }
+        return internal_context;
     };
 
     auto ast_drop = make_intrusive<ASTDropQuery>();
@@ -2261,13 +2469,88 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (database->getUUID() == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                             "{} query is supported only for Atomic databases",
-                            create.create_or_replace
-                ? (create.is_materialized_view ? "CREATE OR REPLACE MATERIALIZED VIEW"
-                    : (create.isView() ? "CREATE OR REPLACE VIEW" : "CREATE OR REPLACE TABLE"))
-                : "REPLACE TABLE");
+                            is_plain_create
+                ? "CREATE ... AS SELECT via a temporary table"
+                : (create.create_or_replace
+                    ? (create.is_materialized_view ? "CREATE OR REPLACE MATERIALIZED VIEW"
+                        : (create.isView() ? "CREATE OR REPLACE VIEW" : "CREATE OR REPLACE TABLE"))
+                    : "REPLACE TABLE"));
+
+        /// For a plain create the final name must not already exist (as an active table, as a dictionary, or
+        /// reserved by a detached table). Check it up front, before the create-only validations below (table
+        /// name length, cyclic dependencies) and before authorizing or running the populating SELECT, so that
+        /// (a) an `IF NOT EXISTS` create on a taken name is a no-op that does not run (and does not require
+        /// access to) the SELECT and does not fail validations that only matter when a table is actually
+        /// created (mirroring `doCreateTable`, where the existence check precedes them), and (b) a plain
+        /// create over a taken name fails fast, with the same error `doCreateTable` reports, before the
+        /// (potentially expensive) populate. This mirrors the full existence handling of `doCreateTable`
+        /// (`isTableExist` plus the detached-name `checkMetadataFilenameAvailability` branch), not just the
+        /// active-table probe. This check is not under the table DDL guard, so it can race with a concurrent
+        /// create; the final RENAME below re-establishes correctness (it fails if the target appeared
+        /// meanwhile, which for `IF NOT EXISTS` is a no-op).
+        if (is_plain_create)
+        {
+            if (database->isTableExist(table_to_replace_name, current_context))
+            {
+                if (create.if_not_exists)
+                    return {};
+                /// Preserve the established error contract: a name already used by a dictionary reports
+                /// `DICTIONARY_ALREADY_EXISTS`, not `TABLE_ALREADY_EXISTS` (mirrors `doCreateTable` and
+                /// `02973_dictionary_table_exception_fix`).
+                if (database->getTable(table_to_replace_name, current_context)->isDictionary())
+                    throw Exception(ErrorCodes::DICTIONARY_ALREADY_EXISTS, "Dictionary {}.{} already exists",
+                        backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(table_to_replace_name));
+                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists",
+                    backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(table_to_replace_name));
+            }
+            else if (!create.attach)
+            {
+                /// The final name may still be reserved by a table in a detached / detached-permanently state:
+                /// its metadata file is present even though `isTableExist` is false. Mirror `doCreateTable` so
+                /// that `IF NOT EXISTS` is a no-op and a plain create fails with the metadata-name availability
+                /// error -- both before the populate. Otherwise a no-op could run the SELECT, raise a source
+                /// `ACCESS_DENIED`, or trigger scalar-subquery side effects, and a plain create could surface a
+                /// source-query failure instead of the existing detached-name error, before the RENAME finally
+                /// discovers the collision.
+                try
+                {
+                    database->checkMetadataFilenameAvailability(table_to_replace_name);
+                }
+                catch (const Exception &)
+                {
+                    if (create.if_not_exists)
+                        return {};
+                    throw;
+                }
+            }
+        }
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(table_to_replace_name);
+    }
+
+    if (is_plain_create)
+        checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
+
+    /// A non-APPEND refreshable materialized view exclusively owns its target table. The replacement is
+    /// built while the view being replaced still owns it, so reject only when a different view owns it.
+    /// Gate this like the constructor-side guard, which only applies to non-APPEND refreshable views.
+    if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append)
+    {
+        auto target_table_id = create.getTargetTableID(ViewTarget::To);
+        if (!target_table_id.empty())
+        {
+            if (target_table_id.database_name.empty())
+                target_table_id.database_name = create.getDatabase();
+            if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(target_table_id))
+            {
+                auto owner_view_id = task->getInfo().view_id;
+                if (owner_view_id != StorageID{create.getDatabase(), table_to_replace_name})
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table {} is already a target of another refreshable materialized view: {}",
+                        target_table_id.getFullTableName(), owner_view_id.getFullTableName());
+            }
+        }
     }
 
     {
@@ -2297,6 +2580,21 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ast_drop->kind = ASTDropQuery::Drop;
     }
 
+    /// The populating INSERT SELECT runs against the internal temporary table, so its (random) name is
+    /// recorded in this query's access info and would surface in `system.query_log` `tables`. The temporary
+    /// table is an implementation detail whose random name is meaningless to the user and would make the log
+    /// non-deterministic, so scrub it. This must run on every exit after the populate may have touched the
+    /// temporary table -- the successful publish, the `IF NOT EXISTS` lost-race no-op, and any failure or
+    /// rethrow -- because `executeQuery.cpp` copies the access info into the log for failed queries too, so a
+    /// denied or failing `CREATE ... AS SELECT` would otherwise leak the internal name. The final table name is
+    /// added to the log independently, from the query's target (see `IInterpreter::extendQueryLogElem`).
+    auto scrub_temp_table_from_query_log = [&]()
+    {
+        if (create.isCreateQueryWithImmediateInsertSelect() && getContext()->hasQueryContext())
+            getContext()->getQueryContext()->removeQueryAccessInfoTable(
+                StorageID{create.getDatabase(), create.getTable()}.getFullTableName());
+    };
+
     bool created = false;
     bool renamed = false;
     try
@@ -2311,8 +2609,27 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// If table has dependencies - add them to the graph
         addTableDependencies(create, query_ptr, getContext());
 
+        /// For a plain `CREATE TABLE ... AS SELECT` the populate below runs against the internal temporary
+        /// table, so `InterpreterInsertQuery` would authorize `INSERT` on the random `_tmp_replace_*` name
+        /// rather than the final name. That would regress table-scoped grants: before this PR the plain-create
+        /// path checked `INSERT` on the final name directly, so `CREATE TABLE` + `INSERT ON db.dst` (not a
+        /// wildcard grant) was sufficient. To preserve that contract, authorize `INSERT` on the final name up
+        /// front -- as the user, over the columns that will be inserted -- and then skip the redundant
+        /// target-`INSERT` check on the temporary name inside the populate. The source `SELECT` access is
+        /// still checked by the populate as the user. REPLACE keeps its prior behavior: it never required
+        /// `INSERT` on the final name (only DROP/CREATE), so it does not get the up-front check or the skip.
+        if (is_plain_create && create.isCreateQueryWithImmediateInsertSelect())
+        {
+            auto temp_table = DatabaseCatalog::instance().getTable(
+                StorageID{create.getDatabase(), create.getTable(), create.uuid}, current_context);
+            auto temp_metadata = temp_table->getInMemoryMetadataPtr(current_context, false);
+            const Names insert_columns = temp_metadata->getSampleBlockNonMaterialized().getNames();
+            current_context->checkAccess(
+                AccessType::INSERT, StorageID{create.getDatabase(), table_to_replace_name}, insert_columns);
+        }
+
         /// Try fill temporary table
-        BlockIO fill_io = fillTableIfNeeded(create);
+        BlockIO fill_io = fillTableIfNeeded(create, /*skip_target_insert_access_check=*/is_plain_create);
         /// For queries like 'CREATE OR REPLACE TABLE ... AS SELECT * INSERT' might take a long time,
         /// passing this callback allows tcp sessions to send progress, stats and logs.
         /// It prevents getting socket timeout as well.
@@ -2336,7 +2653,15 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         auto ast_rename = make_intrusive<ASTRenameQuery>(ASTRenameQuery::Elements{std::move(elem)});
         ast_rename->dictionary = create.is_dictionary;
-        if (create.create_or_replace || create.replace_view)
+        if (is_plain_create)
+        {
+            /// Plain CREATE ... AS SELECT: the target must not exist. A plain RENAME asserts this and fails
+            /// with TABLE_ALREADY_EXISTS if a concurrent query created the target while we were populating the
+            /// temporary table (handled below for IF NOT EXISTS).
+            ast_rename->exchange = false;
+            ast_rename->rename_if_cannot_exchange = false;
+        }
+        else if (create.create_or_replace || create.replace_view)
         {
             /// CREATE OR REPLACE TABLE/VIEW
             /// Will execute ordinary RENAME instead of EXCHANGE if the target table does not exist
@@ -2350,16 +2675,74 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ast_rename->exchange = true;
         }
 
-        InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
-        interpreter_rename.execute();
+        FailPointInjection::pauseFailPoint(FailPoints::create_or_replace_before_rename);
+
+        /// The size check runs once inside the rename's `DDLGuard`s via `setPreSwapCheck`.
+        /// If it throws, no rename happens and the catch block below drops the temp. For a plain create the
+        /// rename publishes an internal temporary table under the final name, so it runs with a full-access
+        /// context (the user is not required to hold RENAME/DROP on the temporary table); REPLACE keeps
+        /// running as the user.
+        ContextPtr rename_context = is_plain_create ? ContextPtr{make_internal_context(/*bypass_size_guard=*/false)} : current_context;
+        InterpreterRenameQuery interpreter_rename{ast_rename, rename_context};
+        interpreter_rename.setPreSwapCheck(
+            [&current_context](const StorageID & to_drop_id)
+            {
+                if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
+                {
+                    /// The replaced table is dropped after the swap, under an internal temporary name that
+                    /// grants cannot cover, so check the drop privilege for its kind here, on its real name.
+                    AccessType drop_access = AccessType::DROP_TABLE;
+                    if (to_drop->isView())
+                        drop_access = AccessType::DROP_VIEW;
+                    else if (to_drop->isDictionary())
+                        drop_access = AccessType::DROP_DICTIONARY;
+                    current_context->checkAccess(drop_access, to_drop_id);
+                    to_drop->checkTableSizeBelowDropLimit(current_context);
+                }
+            });
+        try
+        {
+            interpreter_rename.execute();
+        }
+        catch (const Exception & e)
+        {
+            /// A concurrent query created the target while we were populating the temporary table. For a plain
+            /// `CREATE TABLE IF NOT EXISTS ... AS SELECT` this is a no-op: drop the temporary table and return
+            /// without error. For a plain create without IF NOT EXISTS (and for REPLACE) the error propagates.
+            if (is_plain_create && create.if_not_exists && e.code() == ErrorCodes::TABLE_ALREADY_EXISTS)
+            {
+                InterpreterDropQuery(ast_drop, make_internal_context(/*bypass_size_guard=*/true)).execute();
+                scrub_temp_table_from_query_log();
+                create.setTable(table_to_replace_name);
+                return {};
+            }
+            throw;
+        }
         renamed = true;
 
-        if (!interpreter_rename.renamedInsteadOfExchange())
+        if (!is_plain_create && !interpreter_rename.renamedInsteadOfExchange())
         {
-            /// Target table was replaced with new one, drop old table
-            auto drop_context = make_drop_context();
+            /// After the exchange the temporary name holds the replaced table, which may be of a different
+            /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
+            if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
+                ast_drop->is_dictionary = replaced->isDictionary();
+            /// `pre_swap_check` already authorized this drop against the replaced table's real name.
+            /// The temporary name cannot be covered by grants, so skip the access check on it.
+            ast_drop->no_access_check = true;
+            /// `pre_swap_check` also gated the size; bypass to avoid double-consuming
+            /// the `force_drop_table` flag inside `Context::checkCanBeDropped`.
+            auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
+
+        /// The replacement view's refresher was created paused so it could not touch the target
+        /// before the rename. Resume it now, unless stop_refreshable_materialized_views_on_startup
+        /// keeps refreshable views stopped, in which case it stays stopped like a plain CREATE.
+        if (!current_context->getGlobalContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+            for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
+                task->start();
+
+        scrub_temp_table_from_query_log();
 
         create.setTable(table_to_replace_name);
 
@@ -2367,10 +2750,15 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     }
     catch (...)
     {
-        /// Drop temporary table if it was successfully created, but was not renamed to target name
+        /// Drop the temp table we just created if it was not renamed to the target name.
+        /// Bypassing the size guard is safe here: the temp name is unique to this call. For a plain create
+        /// use a full-access context (also size-guard-bypassed): the user is not required to hold DROP on the
+        /// internal temporary table (its cleanup must not turn a denied source SELECT into an ACCESS_DENIED on
+        /// the temporary table), and the cleanup must succeed even after the temporary table has grown past
+        /// `max_table_size_to_drop`, or a late failure would strand it.
         if (created && !renamed)
         {
-            auto drop_context = make_drop_context();
+            auto drop_context = is_plain_create ? make_internal_context(/*bypass_size_guard=*/true) : make_drop_context(/*bypass_size_guard=*/true);
             try
             {
                 InterpreterDropQuery(ast_drop, drop_context).execute();
@@ -2380,6 +2768,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
             }
         }
+        /// The temporary name is still set on `create` here (it is reset to the final name only on the success
+        /// and lost-race-no-op paths), so scrub it before the error propagates and gets logged.
+        scrub_temp_table_from_query_log();
         throw;
     }
 }
@@ -2401,7 +2792,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateStorage(*res, mode, getContext());
+        validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
         return res;
     };
 
@@ -2417,7 +2808,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     return fillTableIfNeeded(create);
 }
 
-BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
+BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.isCreateQueryWithImmediateInsertSelect())
@@ -2432,14 +2823,15 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         else
             insert->select = create.select->clone();
 
-        return InterpreterInsertQuery(
-                   insert,
-                   getContext(),
-                   getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
-                   /* no_squash */ false,
-                   /* no_destination */ false,
-                   /* async_isnert */ false)
-            .execute();
+        InterpreterInsertQuery interpreter(
+            insert,
+            getContext(),
+            getContext()->getSettingsRef()[Setting::insert_allow_materialized_columns],
+            /* no_squash */ false,
+            /* no_destination */ false,
+            /* async_isnert */ false);
+        interpreter.setSkipTargetInsertAccessCheck(skip_target_insert_access_check);
+        return interpreter.execute();
     }
 
     /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.
@@ -2743,7 +3135,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion to replicated is supported only for Atomic databases");
 
-    if (!create.storage || !create.storage->engine || create.storage->engine->name.find("MergeTree") == std::string::npos)
+    if (!create.storage || !create.storage->engine || !create.storage->engine->name.contains("MergeTree"))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion is supported only for MergeTree family engines");
 
@@ -2825,12 +3217,25 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                 if (!disk->existsDirectory(part_path))
                     continue;
 
-                /// Try to remove txn_version.txt file
-                String txn_file = fs::path(part_path) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
-                if (disk->existsFile(txn_file))
+                /// Remove the committed metadata file (`txn_version.txt`) and any leftover
+                /// temporary file (`txn_version.txt.tmp`). A `.tmp` file can legitimately linger
+                /// on a part (for example, hardlinked onto a mutated part from its source during
+                /// a merge/mutation race on object storage). If it is left behind here, the part
+                /// is later misread as a rolled-back transaction (see
+                /// `VersionMetadataOnDisk::loadMetadata`) and wrongly discarded as `Outdated`,
+                /// which resurrects pre-mutation data after `ATTACH AS REPLICATED`.
+                /// Remove the temporary file first so the cleanup is fail-closed: if removing the
+                /// main file then throws, the part is left with a valid `txn_version.txt` (still a
+                /// committed part) rather than the dangerous tmp-only state described above.
+                for (const auto * file_name : {VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME,
+                                               VersionMetadata::TXN_VERSION_METADATA_FILE_NAME})
                 {
-                    disk->removeFile(txn_file);
-                    total_removed++;
+                    String txn_file = fs::path(part_path) / file_name;
+                    if (disk->existsFile(txn_file))
+                    {
+                        disk->removeFile(txn_file);
+                        total_removed++;
+                    }
                 }
             }
         }

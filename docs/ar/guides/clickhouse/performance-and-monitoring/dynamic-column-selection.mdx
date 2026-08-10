@@ -1,0 +1,210 @@
+---
+slug: /guides/developer/dynamic-column-selection
+sidebarTitle: 'التحديد الديناميكي للأعمدة'
+title: 'التحديد الديناميكي للأعمدة'
+description: 'استخدم لغات استعلام بديلة في ClickHouse'
+doc_type: 'guide'
+keywords: ['التحديد الديناميكي للأعمدة', 'التعبيرات النمطية', 'مُعدِّل APPLY', 'استعلامات متقدمة', 'دليل المطور']
+---
+
+تُعدّ [ميزة التحديد الديناميكي للأعمدة](/ar/reference/statements/select/index#dynamic-column-selection) من ميزات ClickHouse القوية لكنها غير مستغلة بما يكفي، إذ تتيح لك تحديد الأعمدة باستخدام التعبيرات النمطية بدلًا من تسمية كل عمود على حدة. ويمكنك أيضًا تطبيق الدوال على الأعمدة المطابقة باستخدام المُعدِّل `APPLY`، مما يجعلها مفيدة للغاية في مهام تحليل البيانات وتحويلها.
+
+سنتعلّم كيفية استخدام هذه الميزة بالاستعانة بـ[مجموعة بيانات سيارات الأجرة في نيويورك](/ar/get-started/sample-datasets/nyc-taxi)، والتي يمكنك العثور عليها أيضًا في [ClickHouse SQL playground](https://sql.clickhouse.com?query=LS0gRGF0YXNldCBjb250YWluaW5nIHRheGkgcmlkZSBkYXRhIGluIE5ZQyBmcm9tIDIwMDkuIE1vcmUgaW5mbyBoZXJlOiBodHRwczovL2NsaWNraG91c2UuY29tL2RvY3MvZW4vZ2V0dGluZy1zdGFydGVkL2V4YW1wbGUtZGF0YXNldHMvbnljLXRheGkKU0VMRUNUICogRlJPTSBueWNfdGF4aS50cmlwcyBMSU1JVCAxMDA).
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/moabRqqHNo4?si=jgmInV-u3UxtLvMS" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen />
+</Frame>
+
+<div id="selecting-columns">
+  ## تحديد الأعمدة التي تطابق نمطًا
+</div>
+
+لنبدأ بحالة شائعة: تحديد الأعمدة التي تحتوي على `_amount` فقط من مجموعة بيانات سيارات الأجرة في مدينة نيويورك. بدلًا من إدخال اسم كل عمود يدويًا، يمكننا استخدام التعبير `COLUMNS` مع تعبير منتظم:
+
+```sql
+FROM nyc_taxi.trips
+SELECT COLUMNS('.*_amount')
+LIMIT 10;
+```
+
+> [جرّب هذا الاستعلام في SQL playground](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudCcpCkZST00gbnljX3RheGkudHJpcHMKTElNSVQgMTA7\&run_query=true)
+
+يعرض هذا الاستعلام أول 10 صفوف، ولكن للأعمدة فقط التي تتطابق أسماؤها مع النمط `.*_amount` (أي أحرف متبوعة بـ &quot;&#95;amount&quot;).
+
+```text
+    ┌─fare_amount─┬─tip_amount─┬─tolls_amount─┬─total_amount─┐
+ 1. │           9 │          0 │            0 │          9.8 │
+ 2. │           9 │          0 │            0 │          9.8 │
+ 3. │         3.5 │          0 │            0 │          4.8 │
+ 4. │         3.5 │          0 │            0 │          4.8 │
+ 5. │         3.5 │          0 │            0 │          4.3 │
+ 6. │         3.5 │          0 │            0 │          4.3 │
+ 7. │         2.5 │          0 │            0 │          3.8 │
+ 8. │         2.5 │          0 │            0 │          3.8 │
+ 9. │           5 │          0 │            0 │          5.8 │
+10. │           5 │          0 │            0 │          5.8 │
+    └─────────────┴────────────┴──────────────┴──────────────┘
+```
+
+لنفترض أننا نريد أيضًا إرجاع الأعمدة التي تتضمن المصطلحين `fee` أو `tax`.
+يمكننا تحديث التعبير النمطي ليشملهما أيضًا:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax')
+FROM nyc_taxi.trips
+ORDER BY rand() 
+LIMIT 3;
+```
+
+> [جرّب هذا الاستعلام في SQL playground](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykKRlJPTSBueWNfdGF4aS50cmlwcwpPUkRFUiBCWSByYW5kKCkgCkxJTUlUIDM7\&run_query=true)
+
+```text
+   ┌─fare_amount─┬─mta_tax─┬─tip_amount─┬─tolls_amount─┬─ehail_fee─┬─total_amount─┐
+1. │           5 │     0.5 │          1 │            0 │         0 │          7.8 │
+2. │        12.5 │     0.5 │          0 │            0 │         0 │         13.8 │
+3. │         4.5 │     0.5 │       1.66 │            0 │         0 │         9.96 │
+   └─────────────┴─────────┴────────────┴──────────────┴───────────┴──────────────┘
+```
+
+<div id="selecting-multiple-patterns">
+  ## اختيار أنماط متعددة
+</div>
+
+يمكننا دمج عدة أنماط للأعمدة ضمن استعلام واحد:
+
+```sql
+SELECT 
+    COLUMNS('.*_amount'),
+    COLUMNS('.*_date.*')
+FROM nyc_taxi.trips
+LIMIT 5;
+```
+
+> [جرّب هذا الاستعلام في SQL playground](https://sql.clickhouse.com?query=U0VMRUNUIAogICAgQ09MVU1OUygnLipfYW1vdW50JyksCiAgICBDT0xVTU5TKCcuKl9kYXRlLionKQpGUk9NIG55Y190YXhpLnRyaXBzCkxJTUlUIDU7\&run_query=true)
+
+```text
+   ┌─fare_amount─┬─tip_amount─┬─tolls_amount─┬─total_amount─┬─pickup_date─┬─────pickup_datetime─┬─dropoff_date─┬────dropoff_datetime─┐
+1. │           9 │          0 │            0 │          9.8 │  2001-01-01 │ 2001-01-01 00:01:48 │   2001-01-01 │ 2001-01-01 00:15:47 │
+2. │           9 │          0 │            0 │          9.8 │  2001-01-01 │ 2001-01-01 00:01:48 │   2001-01-01 │ 2001-01-01 00:15:47 │
+3. │         3.5 │          0 │            0 │          4.8 │  2001-01-01 │ 2001-01-01 00:02:08 │   2001-01-01 │ 2001-01-01 01:00:02 │
+4. │         3.5 │          0 │            0 │          4.8 │  2001-01-01 │ 2001-01-01 00:02:08 │   2001-01-01 │ 2001-01-01 01:00:02 │
+5. │         3.5 │          0 │            0 │          4.3 │  2001-01-01 │ 2001-01-01 00:02:26 │   2001-01-01 │ 2001-01-01 00:04:49 │
+   └─────────────┴────────────┴──────────────┴──────────────┴─────────────┴─────────────────────┴──────────────┴─────────────────────┘
+```
+
+<div id="applying-functions">
+  ## تطبيق الدوال على جميع الأعمدة
+</div>
+
+يمكننا أيضًا استخدام المُعدِّل [`APPLY`](/ar/reference/statements/select/index) لتطبيق الدوال على جميع الأعمدة.
+على سبيل المثال، إذا أردنا العثور على القيمة القصوى لكل واحد من تلك الأعمدة، فيمكننا تنفيذ الاستعلام التالي:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(max)
+FROM nyc_taxi.trips;
+```
+
+> [جرّب هذا الاستعلام في SQL playground](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkobWF4KQpGUk9NIG55Y190YXhpLnRyaXBzOw\&run_query=true)
+
+```text
+   ┌─max(fare_amount)─┬─max(mta_tax)─┬─max(tip_amount)─┬─max(tolls_amount)─┬─max(ehail_fee)─┬─max(total_amount)─┐
+1. │           998310 │     500000.5 │       3950588.8 │           7999.92 │           1.95 │         3950611.5 │
+   └──────────────────┴──────────────┴─────────────────┴───────────────────┴────────────────┴───────────────────┘
+```
+
+أو ربما نرغب في رؤية المتوسط بدلًا من ذلك:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(avg)
+FROM nyc_taxi.trips
+```
+
+> [جرّب هذا الاستعلام في SQL playground](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkoYXZnKQpGUk9NIG55Y190YXhpLnRyaXBzOw\&run_query=true)
+
+```text
+   ┌─avg(fare_amount)─┬───────avg(mta_tax)─┬────avg(tip_amount)─┬──avg(tolls_amount)─┬──────avg(ehail_fee)─┬──avg(total_amount)─┐
+1. │ 11.8044154834777 │ 0.4555942672733423 │ 1.3469850969211845 │ 0.2256511991414463 │ 3.37600560437412e-9 │ 14.423323722271563 │
+   └──────────────────┴────────────────────┴────────────────────┴────────────────────┴─────────────────────┴────────────────────┘
+```
+
+تحتوي هذه القيم على الكثير من المنازل العشرية، لكن لحسن الحظ يمكننا معالجة ذلك بربط الدوال معًا. في هذه الحالة، سنستخدم الدالة `avg`، تليها الدالة `round`:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(avg) APPLY(round)
+FROM nyc_taxi.trips;
+```
+
+> [جرّب هذا الاستعلام في SQL playground](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkoYXZnKSBBUFBMWShyb3VuZCkKRlJPTSBueWNfdGF4aS50cmlwczs\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount))─┬─round(avg(mta_tax))─┬─round(avg(tip_amount))─┬─round(avg(tolls_amount))─┬─round(avg(ehail_fee))─┬─round(avg(total_amount))─┐
+1. │                      12 │                   0 │                      1 │                        0 │                     0 │                       14 │
+   └─────────────────────────┴─────────────────────┴────────────────────────┴──────────────────────────┴───────────────────────┴──────────────────────────┘
+```
+
+لكن ذلك يقرّب المتوسطات إلى أعداد صحيحة. وإذا أردنا التقريب إلى منزلتين عشريتين مثلًا، فيمكننا فعل ذلك أيضًا. وإلى جانب قبول الدوال، فإن المُعدِّل `APPLY` يقبل أيضًا تعبير لامبدا، مما يمنحنا المرونة لجعل الدالة round تقرّب قيم المتوسط إلى منزلتين عشريتين:
+
+```sql
+SELECT COLUMNS('.*_amount|fee|tax') APPLY(avg) APPLY(x -> round(x, 2))
+FROM nyc_taxi.trips;
+```
+
+> [جرّب هذا الاستعلام في SQL playground](https://sql.clickhouse.com?query=U0VMRUNUIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgQVBQTFkgYXZnIEFQUExZIHggLT4gcm91bmQoeCwgMikKRlJPTSBueWNfdGF4aS50cmlwcw\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount), 2)─┬─round(avg(mta_tax), 2)─┬─round(avg(tip_amount), 2)─┬─round(avg(tolls_amount), 2)─┬─round(avg(ehail_fee), 2)─┬─round(avg(total_amount), 2)─┐
+1. │                       11.8 │                   0.46 │                      1.35 │                        0.23 │                        0 │                       14.42 │
+   └────────────────────────────┴────────────────────────┴───────────────────────────┴─────────────────────────────┴──────────────────────────┴─────────────────────────────┘
+```
+
+<div id="replacing-columns">
+  ## استبدال الأعمدة
+</div>
+
+الأمور تسير على ما يرام حتى الآن. لكن لنفترض أننا نريد تعديل إحدى القيم مع إبقاء القيم الأخرى كما هي. على سبيل المثال، قد نرغب في مضاعفة المبلغ الإجمالي وقسمة ضريبة MTA على 1.1. يمكننا فعل ذلك باستخدام المُعدِّل [`REPLACE`](/ar/reference/statements/select/index)، الذي يستبدل عمودًا مع إبقاء الأعمدة الأخرى كما هي.
+
+```sql
+FROM nyc_taxi.trips 
+SELECT 
+  COLUMNS('.*_amount|fee|tax')
+  REPLACE(
+    total_amount*2 AS total_amount,
+    mta_tax/1.1 AS mta_tax
+  ) 
+  APPLY(avg)
+  APPLY(col -> round(col, 2));
+```
+
+> [جرّب هذا الاستعلام في SQL playground](https://sql.clickhouse.com?query=RlJPTSBueWNfdGF4aS50cmlwcyAKU0VMRUNUIAogIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykKICBSRVBMQUNFKAogICAgdG90YWxfYW1vdW50KjIgQVMgdG90YWxfYW1vdW50LAogICAgbXRhX3RheC8xLjEgQVMgbXRhX3RheAogICkgCiAgQVBQTFkoYXZnKQogIEFQUExZKGNvbCAtPiByb3VuZChjb2wsIDIpKTs\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount), 2)─┬─round(avg(di⋯, 1.1)), 2)─┬─round(avg(tip_amount), 2)─┬─round(avg(tolls_amount), 2)─┬─round(avg(ehail_fee), 2)─┬─round(avg(mu⋯nt, 2)), 2)─┐
+1. │                       11.8 │                     0.41 │                      1.35 │                        0.23 │                        0 │                    28.85 │
+   └────────────────────────────┴──────────────────────────┴───────────────────────────┴─────────────────────────────┴──────────────────────────┴──────────────────────────┘
+```
+
+<div id="excluding-columns">
+  ## استبعاد الأعمدة
+</div>
+
+يمكننا أيضًا استبعاد حقل باستخدام المُعدِّل [`EXCEPT`](/ar/reference/statements/select/index). على سبيل المثال، لإزالة العمود `tolls_amount`، نكتب الاستعلام التالي:
+
+```sql
+FROM nyc_taxi.trips 
+SELECT 
+  COLUMNS('.*_amount|fee|tax') EXCEPT(tolls_amount)
+  REPLACE(
+    total_amount*2 AS total_amount,
+    mta_tax/1.1 AS mta_tax
+  ) 
+  APPLY(avg)
+  APPLY(col -> round(col, 2));
+```
+
+> [جرّب هذا الاستعلام في SQL playground](https://sql.clickhouse.com?query=RlJPTSBueWNfdGF4aS50cmlwcyAKU0VMRUNUIAogIENPTFVNTlMoJy4qX2Ftb3VudHxmZWV8dGF4JykgRVhDRVBUKHRvbGxzX2Ftb3VudCkKICBSRVBMQUNFKAogICAgdG90YWxfYW1vdW50KjIgQVMgdG90YWxfYW1vdW50LAogICAgbXRhX3RheC8xLjEgQVMgbXRhX3RheAogICkgCiAgQVBQTFkoYXZnKQogIEFQUExZKGNvbCAtPiByb3VuZChjb2wsIDIpKTs\&run_query=true)
+
+```text
+   ┌─round(avg(fare_amount), 2)─┬─round(avg(di⋯, 1.1)), 2)─┬─round(avg(tip_amount), 2)─┬─round(avg(ehail_fee), 2)─┬─round(avg(mu⋯nt, 2)), 2)─┐
+1. │                       11.8 │                     0.41 │                      1.35 │                        0 │                    28.85 │
+   └────────────────────────────┴──────────────────────────┴───────────────────────────┴──────────────────────────┴──────────────────────────┘
+```

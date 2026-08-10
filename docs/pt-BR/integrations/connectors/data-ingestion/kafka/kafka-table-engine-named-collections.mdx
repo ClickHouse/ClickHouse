@@ -1,0 +1,241 @@
+---
+title: 'Integrando o ClickHouse ao Kafka usando coleções nomeadas'
+description: 'Como usar coleções nomeadas para conectar o ClickHouse ao Kafka'
+keywords: ['coleção nomeada', 'como fazer', 'kafka']
+slug: /integrations/data-ingestion/kafka/kafka-table-engine-named-collections
+doc_type: 'guide'
+---
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+Neste guia, vamos ver como conectar o ClickHouse ao Kafka usando coleções nomeadas. Usar o arquivo de configuração para coleções nomeadas oferece várias vantagens:
+
+* Gerenciamento centralizado e mais simples das configurações.
+* As configurações podem ser alteradas sem modificar as definições SQL das tabelas.
+* Fica mais fácil revisar e solucionar problemas de configuração ao inspecionar um único arquivo de configuração.
+
+Este guia foi testado com Apache Kafka 3.4.1 e ClickHouse 24.5.1.
+
+<div id="assumptions">
+  ## Premissas
+</div>
+
+Este documento pressupõe que você tenha:
+
+1. Um cluster Kafka em funcionamento.
+2. Um cluster ClickHouse configurado e em execução.
+3. Conhecimento básico de SQL e familiaridade com as configurações do ClickHouse e do Kafka.
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+Certifique-se de que o usuário que está criando a coleção nomeada tenha as permissões de acesso necessárias:
+
+```xml
+<access_management>1</access_management>
+<named_collection_control>1</named_collection_control>
+<show_named_collections>1</show_named_collections>
+<show_named_collections_secrets>1</show_named_collections_secrets>
+```
+
+Consulte o [Guia de gerenciamento de usuários](/pt-BR/concepts/features/security/access-rights) para obter mais detalhes sobre como habilitar o controle de acesso.
+
+<div id="configuration">
+  ## Configuração
+</div>
+
+Adicione a seção a seguir ao arquivo `config.xml` do ClickHouse:
+
+```xml
+<!-- Coleções nomeadas para integração com Kafka -->
+<named_collections>
+    <cluster_1>
+        <!-- Parâmetros do motor Kafka do ClickHouse -->
+        <kafka_broker_list>c1-kafka-1:9094,c1-kafka-2:9094,c1-kafka-3:9094</kafka_broker_list>
+        <kafka_topic_list>cluster_1_clickhouse_topic</kafka_topic_list>
+        <kafka_group_name>cluster_1_clickhouse_consumer</kafka_group_name>
+        <kafka_format>JSONEachRow</kafka_format>
+        <kafka_commit_every_batch>0</kafka_commit_every_batch>
+        <kafka_num_consumers>1</kafka_num_consumers>
+        <kafka_thread_per_consumer>1</kafka_thread_per_consumer>
+
+        <!-- Configuração estendida do Kafka -->
+        <kafka>
+            <security_protocol>SASL_SSL</security_protocol>
+            <enable_ssl_certificate_verification>false</enable_ssl_certificate_verification>
+            <sasl_mechanism>PLAIN</sasl_mechanism>
+            <sasl_username>kafka-client</sasl_username>
+            <sasl_password>kafkapassword1</sasl_password>
+            <debug>all</debug>
+            <auto_offset_reset>latest</auto_offset_reset>
+        </kafka>
+    </cluster_1>
+
+    <cluster_2>
+        <!-- Parâmetros do motor Kafka do ClickHouse -->
+        <kafka_broker_list>c2-kafka-1:29094,c2-kafka-2:29094,c2-kafka-3:29094</kafka_broker_list>
+        <kafka_topic_list>cluster_2_clickhouse_topic</kafka_topic_list>
+        <kafka_group_name>cluster_2_clickhouse_consumer</kafka_group_name>
+        <kafka_format>JSONEachRow</kafka_format>
+        <kafka_commit_every_batch>0</kafka_commit_every_batch>
+        <kafka_num_consumers>1</kafka_num_consumers>
+        <kafka_thread_per_consumer>1</kafka_thread_per_consumer>
+
+        <!-- Configuração estendida do Kafka -->
+        <kafka>
+            <security_protocol>SASL_SSL</security_protocol>
+            <enable_ssl_certificate_verification>false</enable_ssl_certificate_verification>
+            <sasl_mechanism>PLAIN</sasl_mechanism>
+            <sasl_username>kafka-client</sasl_username>
+            <sasl_password>kafkapassword2</sasl_password>
+            <debug>all</debug>
+            <auto_offset_reset>latest</auto_offset_reset>
+        </kafka>
+    </cluster_2>
+</named_collections>
+```
+
+<div id="configuration-notes">
+  ### Observações sobre a configuração
+</div>
+
+1. Ajuste os endereços do Kafka e as configurações relacionadas para que correspondam à configuração do seu cluster Kafka.
+2. A seção anterior a `<kafka>` contém os parâmetros do motor Kafka do ClickHouse. Para ver a lista completa de parâmetros, consulte [parâmetros do motor Kafka](/pt-BR/reference/engines/table-engines/integrations/kafka).
+3. A seção dentro de `<kafka>` contém opções avançadas de configuração do Kafka. Para ver mais opções, consulte a [configuração do librdkafka](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
+4. Este exemplo usa o protocolo de segurança `SASL_SSL` e o mecanismo `PLAIN`. Ajuste essas configurações de acordo com a configuração do seu cluster Kafka.
+
+<div id="creating-tables-and-databases">
+  ## Criando tabelas e bancos de dados
+</div>
+
+Crie os bancos de dados e as tabelas necessários no seu cluster do ClickHouse. Se estiver executando o ClickHouse em um único nó, omita a parte referente ao cluster no comando SQL e use qualquer outro engine em vez de `ReplicatedMergeTree`.
+
+<div id="create-the-database">
+  ### Criar o banco de dados
+</div>
+
+```sql
+CREATE DATABASE kafka_testing ON CLUSTER LAB_CLICKHOUSE_CLUSTER;
+```
+
+<div id="create-kafka-tables">
+  ### Criar tabelas do Kafka
+</div>
+
+Crie a primeira tabela do Kafka para o primeiro cluster Kafka:
+
+```sql
+CREATE TABLE kafka_testing.first_kafka_table ON CLUSTER LAB_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+)
+ENGINE = Kafka(cluster_1);
+```
+
+Crie a segunda tabela do Kafka para o segundo cluster do Kafka:
+
+```sql
+CREATE TABLE kafka_testing.second_kafka_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+)
+ENGINE = Kafka(cluster_2);
+```
+
+<div id="create-replicated-tables">
+  ### Criar tabelas replicadas
+</div>
+
+Crie uma tabela para a primeira tabela do Kafka:
+
+```sql
+CREATE TABLE kafka_testing.first_replicated_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+) ENGINE = ReplicatedMergeTree()
+ORDER BY id;
+```
+
+Crie uma tabela para a segunda tabela do Kafka:
+
+```sql
+CREATE TABLE kafka_testing.second_replicated_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+) ENGINE = ReplicatedMergeTree()
+ORDER BY id;
+```
+
+<div id="create-materialized-views">
+  ### Criar visões materializadas
+</div>
+
+Crie uma visão materializada para inserir dados da primeira tabela do Kafka na primeira tabela replicada:
+
+```sql
+CREATE MATERIALIZED VIEW kafka_testing.cluster_1_mv ON CLUSTER STAGE_CLICKHOUSE_CLUSTER TO first_replicated_table AS
+SELECT 
+    id,
+    first_name,
+    last_name
+FROM first_kafka_table;
+```
+
+Crie uma visão materializada para inserir dados da segunda tabela Kafka na segunda tabela replicada:
+
+```sql
+CREATE MATERIALIZED VIEW kafka_testing.cluster_2_mv ON CLUSTER STAGE_CLICKHOUSE_CLUSTER TO second_replicated_table AS
+SELECT 
+    id,
+    first_name,
+    last_name
+FROM second_kafka_table;
+```
+
+<div id="verifying-the-setup">
+  ## Verificando a configuração
+</div>
+
+Agora você deve ver os grupos de consumidores correspondentes nos seus clusters do Kafka:
+
+* `cluster_1_clickhouse_consumer` em `cluster_1`
+* `cluster_2_clickhouse_consumer` em `cluster_2`
+
+Execute as consultas a seguir em qualquer um dos nós do ClickHouse para ver os dados em ambas as tabelas:
+
+```sql
+SELECT * FROM first_replicated_table LIMIT 10;
+```
+
+```sql
+SELECT * FROM second_replicated_table LIMIT 10;
+```
+
+<div id="note">
+  ### Observação
+</div>
+
+Neste guia, os dados ingeridos em ambos os tópicos do Kafka são os mesmos. No seu caso, eles seriam diferentes. Você pode adicionar quantos clusters Kafka quiser.
+
+Saída de exemplo:
+
+```response
+┌─id─┬─first_name─┬─last_name─┐
+│  0 │ FirstName0 │ LastName0 │
+│  1 │ FirstName1 │ LastName1 │
+│  2 │ FirstName2 │ LastName2 │
+└────┴────────────┴───────────┘
+```
+
+Isso conclui a configuração para integrar o ClickHouse ao Kafka usando coleção nomeada. Ao centralizar as configurações do Kafka no arquivo `config.xml` do ClickHouse, você pode gerenciá-las e ajustá-las com mais facilidade, garantindo uma integração mais simples e eficiente.

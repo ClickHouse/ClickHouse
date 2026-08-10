@@ -327,15 +327,6 @@ void BackupWriterAzureBlobStorage::removeFiles(const Strings & file_names)
 
 }
 
-void BackupWriterAzureBlobStorage::removeFilesBatch(const Strings & file_names)
-{
-    StoredObjects objects;
-    for (const auto & file_name : file_names)
-        objects.emplace_back(fs::path(blob_path) / file_name);
-
-    object_storage->removeObjectsIfExist(objects);
-}
-
 }
 
 #endif

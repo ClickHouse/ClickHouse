@@ -489,6 +489,8 @@ ProcessListEntry::~ProcessListEntry()
     parent.have_space.notify_all();
 
     /// If there are no more queries for the user, then we will reset memory tracker.
+    /// The `user_to_queries` entry is intentionally kept (do not erase it here): `getUserInfo`
+    /// reads entries lock-free via raw pointers and relies on them never being erased.
     if (user_process_list.queries.empty())
         user_process_list.resetTrackers();
 }
@@ -626,7 +628,7 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
         {
             String additional_error_part;
             if (elapsed_ns)
-                additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
+                additional_error_part = fmt::format("elapsed {:.3f} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time_ms);
@@ -986,14 +988,22 @@ ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) cons
 
 ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
 {
+    /// Snapshot each user outside the lock (with sharded `User` counters `getInfo(true)` is
+    /// O(num_events * cpus)). Safe: `user_to_queries` entries are never erased (see the comment in
+    /// `ProcessListEntry`'s destructor) and `unordered_map` keeps element pointers valid across
+    /// inserts, so they outlive the lock; `getInfo` reads only atomics.
+    std::vector<std::pair<String, const ProcessListForUser *>> users;
+    {
+        LockAndBlocker lock(mutex);
+        users.reserve(user_to_queries.size());
+        for (const auto & [user, user_queries] : user_to_queries)
+            users.emplace_back(user, &user_queries);
+    }
+
     UserInfo per_user_infos;
-
-    LockAndBlocker lock(mutex);
-
-    per_user_infos.reserve(user_to_queries.size());
-
-    for (const auto & [user, user_queries] : user_to_queries)
-        per_user_infos.emplace(user, user_queries.getInfo(get_profile_events));
+    per_user_infos.reserve(users.size());
+    for (const auto & [user, user_queries] : users)
+        per_user_infos.emplace(user, user_queries->getInfo(get_profile_events));
 
     return per_user_infos;
 }

@@ -100,23 +100,28 @@ namespace
 
 String withOrdinalEnding(size_t argument_index)
 {
-    const size_t argument_number = argument_index + 1;
-    const size_t last_two_digits = argument_number % 100;
-
-    if (last_two_digits >= 11 && last_two_digits <= 13)
-        return std::to_string(argument_number) + "th";
-
-    switch (argument_number % 10)
+    /// `i` is a zero-based argument index; produce the ordinal for the human-facing position `n = i + 1`
+    /// (1st, 2nd, 3rd, 4th, ...). The teens 11, 12, 13 use "th" despite ending in 1, 2, 3.
+    const size_t n = argument_index + 1;
+    const char * suffix = "th";
+    if (n % 100 < 11 || n % 100 > 13)
     {
-        case 1:
-            return std::to_string(argument_number) + "st";
-        case 2:
-            return std::to_string(argument_number) + "nd";
-        case 3:
-            return std::to_string(argument_number) + "rd";
-        default:
-            return std::to_string(argument_number) + "th";
+        switch (n % 10)
+        {
+            case 1:
+                suffix = "st";
+                break;
+            case 2:
+                suffix = "nd";
+                break;
+            case 3:
+                suffix = "rd";
+                break;
+            default:
+                break;
+        }
     }
+    return std::to_string(n) + suffix;
 }
 
 void validateArgumentsImpl(
@@ -470,6 +475,43 @@ bool isDecimalOrNullableDecimal(const DataTypePtr & type)
 bool isLowCardinalityType(const IDataType & type)
 {
     return typeid_cast<const DataTypeLowCardinality *>(&type) != nullptr;
+}
+
+bool hasLowCardinalityTypes(const ColumnsWithTypeAndName & args)
+{
+    for (const auto & column : args)
+    {
+        /// recursiveRemoveLowCardinality returns the very same type object when nothing was removed.
+        if (column.type && recursiveRemoveLowCardinality(column.type).get() != column.type.get())
+            return true;
+    }
+    return false;
+}
+
+bool allArgumentColumnsAreConstant(const ColumnsWithTypeAndName & args)
+{
+    for (const auto & column : args)
+    {
+        if (!column.column || !isColumnConst(*column.column))
+            return false;
+    }
+    return true;
+}
+
+bool convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
+{
+    bool converted = false;
+    for (auto & column : args)
+    {
+        auto column_without_low_cardinality = recursiveRemoveLowCardinality(column.column);
+        auto type_without_low_cardinality = recursiveRemoveLowCardinality(column.type);
+
+        converted |= type_without_low_cardinality.get() != column.type.get();
+
+        column.column = std::move(column_without_low_cardinality);
+        column.type = std::move(type_without_low_cardinality);
+    }
+    return converted;
 }
 
 /// Note that, for historical reasons, most of the functions use the first argument size to determine which is the

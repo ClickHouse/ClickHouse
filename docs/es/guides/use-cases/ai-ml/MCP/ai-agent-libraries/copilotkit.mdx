@@ -1,0 +1,107 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/copilotkit
+sidebarTitle: 'Integrar CopilotKit'
+title: 'Cómo crear un AI Agent con CopilotKit y el servidor MCP de ClickHouse'
+description: 'Aprende a crear una aplicación con agentes usando datos almacenados en ClickHouse con ClickHouse MCP y CopilotKit'
+keywords: ['ClickHouse', 'MCP', 'copilotkit']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Este es un ejemplo de cómo crear una aplicación con agentes usando datos almacenados en
+ClickHouse. Usa el [servidor MCP de ClickHouse](https://github.com/ClickHouse/mcp-clickhouse)
+para consultar datos en ClickHouse y generar gráficos a partir de ellos.
+
+Se usa [CopilotKit](https://github.com/CopilotKit/CopilotKit) para crear la UI
+y proporcionar una interfaz de chat al usuario.
+
+<Info>
+  **Código de ejemplo**
+
+  El código de este ejemplo se puede encontrar en el [repositorio de ejemplos](https://github.com/ClickHouse/examples/edit/main/ai/mcp/copilotkit).
+</Info>
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* `Node.js >= 20.14.0`
+* `uv >= 0.1.0`
+
+<div id="install-dependencies">
+  ## Instalar dependencias
+</div>
+
+Clona el proyecto en tu entorno local: `git clone https://github.com/ClickHouse/examples` y
+ve al directorio `ai/mcp/copilotkit`.
+
+Omite esta sección y ejecuta el script `./install.sh` para instalar las dependencias. Si
+prefieres instalar las dependencias manualmente, sigue las instrucciones a continuación.
+
+<div id="install-dependencies-manually">
+  ## Instalar dependencias manualmente
+</div>
+
+1. Instala las dependencias:
+
+Ejecuta `npm install` para instalar las dependencias de Node.
+
+2. Instala mcp-clickhouse:
+
+Crea una nueva carpeta `external` y clona en ella el repositorio de mcp-clickhouse.
+
+```sh
+mkdir -p external
+git clone https://github.com/ClickHouse/mcp-clickhouse external/mcp-clickhouse
+```
+
+Instala las dependencias de Python y añade la herramienta de línea de comandos fastmcp.
+
+```sh
+cd external/mcp-clickhouse
+uv sync
+uv add fastmcp
+```
+
+<div id="configure-the-application">
+  ## Configura la aplicación
+</div>
+
+Copia el archivo `env.example` a `.env` y edítalo para añadir tu `ANTHROPIC_API_KEY`.
+
+<div id="use-your-own-llm">
+  ## Usa tu propio LLM
+</div>
+
+Si prefieres usar un proveedor de LLM distinto de Anthropic, puedes modificar el
+runtime de Copilotkit para usar un adaptador de LLM diferente.
+[Aquí](https://docs.copilotkit.ai/guides/bring-your-own-llm) tienes una lista de proveedores
+compatibles.
+
+<div id="use-your-own-clickhouse-cluster">
+  ## Usa tu propio clúster de ClickHouse
+</div>
+
+De forma predeterminada, el ejemplo está configurado para conectarse al
+[clúster de demostración de ClickHouse](https://sql.clickhouse.com/). También puedes usar tu
+propio clúster de ClickHouse configurando las siguientes variables de entorno:
+
+* `CLICKHOUSE_HOST`
+* `CLICKHOUSE_PORT`
+* `CLICKHOUSE_USER`
+* `CLICKHOUSE_PASSWORD`
+* `CLICKHOUSE_SECURE`
+
+<div id="run-the-application">
+  ## Ejecuta la aplicación
+</div>
+
+Ejecuta `npm run dev` para iniciar el servidor de desarrollo.
+
+Puedes probar el Agent usando un prompt como este:
+
+> &quot;Muéstrame la evolución del precio en
+> Manchester durante los últimos 10 años.&quot;
+
+Abre [http://localhost:3000](http://localhost:3000) en tu navegador para ver
+el resultado.

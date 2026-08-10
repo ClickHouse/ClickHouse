@@ -1,0 +1,80 @@
+---
+description: 'Documentación de la sentencia SET'
+sidebarTitle: 'SET'
+slug: /sql-reference/statements/set
+title: 'Sentencia SET'
+doc_type: 'reference'
+---
+
+```sql
+SET param = value
+```
+
+Asigna `value` al [SETTING](/es/concepts/features/configuration/settings/overview) `param` de la sesión actual. No se pueden cambiar las [SETTINGS del servidor](/es/reference/settings/server-settings/settings) de esta manera.
+
+También puede establecer todos los valores del perfil de SETTING especificado en una sola consulta.
+
+```sql
+SET profile = 'profile-name-from-the-settings-file'
+```
+
+Para las SETTINGS booleanas establecidas en true, puede usar una sintaxis abreviada omitiendo la asignación del valor. Cuando solo se especifica el nombre de la SETTING, se establece automáticamente en `1` (true).
+
+```sql
+-- Estas son equivalentes:
+SET force_index_by_date = 1
+SET force_index_by_date
+```
+
+<div id="set-time-zone">
+  ## SET TIME ZONE
+</div>
+
+```sql
+SET TIME ZONE [=] 'timezone'
+```
+
+Establece la zona horaria de la sesión. Es un alias de `SET session_timezone = 'timezone'`, incluido para ofrecer compatibilidad con PostgreSQL y otras bases de datos SQL.
+
+Muchos clientes SQL, ORM y controladores JDBC ejecutan automáticamente `SET TIME ZONE` al conectarse. Esta sintaxis permite que esas herramientas funcionen con ClickHouse sin necesidad de adaptaciones específicas.
+
+```sql
+SET TIME ZONE 'UTC';
+SET TIME ZONE 'Europe/Amsterdam';
+SET TIME ZONE 'America/New_York';
+
+-- Verificar la zona horaria de la sesión actual
+SELECT getSetting('session_timezone');
+```
+
+El valor de la zona horaria debe ser un nombre válido de la [base de datos de zonas horarias de IANA](https://www.iana.org/time-zones). Un nombre de zona horaria no válido provocará un error.
+
+Para obtener más información sobre la SETTING `session_timezone`, consulta [session&#95;timezone](/es/reference/settings/session-settings#session_timezone).
+
+<div id="setting-query-parameters">
+  ## Configuración de parámetros de consulta
+</div>
+
+La instrucción `SET` también se puede usar para definir parámetros de consulta anteponiendo `param_` al nombre del parámetro.
+Los parámetros de consulta permiten escribir consultas genéricas con marcadores de posición que se sustituyen por valores reales en el momento de la ejecución.
+
+```sql
+SET param_name = value
+```
+
+Para usar un parámetro de consulta en tu consulta, indícalo con la sintaxis `{name: datatype}`:
+
+```sql
+SET param_id = 42;
+SET param_name = 'John';
+
+SELECT * FROM users
+WHERE id = {id: UInt32}
+AND name = {name: String};
+```
+
+Los parámetros de consulta son especialmente útiles cuando es necesario ejecutar la misma consulta varias veces con valores diferentes.
+
+Para obtener información más detallada sobre los parámetros de consulta, incluido su uso con el tipo `Identifier`, consulta [Definición y uso de parámetros de consulta](/es/reference/syntax#defining-and-using-query-parameters).
+
+Para obtener más información, consulta [Configuración](/es/reference/settings/session-settings).

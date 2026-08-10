@@ -1,0 +1,23 @@
+---
+description: 'Documentação da cláusula FORMAT'
+sidebarTitle: 'FORMAT'
+slug: /sql-reference/statements/select/format
+title: 'Cláusula FORMAT'
+doc_type: 'reference'
+---
+
+O ClickHouse oferece suporte a uma ampla variedade de [formatos de serialização](/pt-BR/reference/formats/index) que podem ser usados, entre outras finalidades, nos resultados de consultas. Há várias maneiras de escolher um formato para a saída de `SELECT`; uma delas é especificar `FORMAT format` ao final da consulta para obter os dados resultantes no formato desejado.
+
+Um formato específico pode ser usado por conveniência, integração com outros sistemas ou ganho de desempenho.
+
+<div id="default-format">
+  ## Formato padrão
+</div>
+
+Se a cláusula `FORMAT` for omitida, será usado o formato padrão, que depende tanto das configurações quanto da interface usada para acessar o servidor ClickHouse. Para a [interface HTTP](/pt-BR/concepts/features/interfaces/http) e o [cliente de linha de comando](/pt-BR/concepts/features/interfaces/client) no modo batch, o formato padrão é `TabSeparated`. Para o cliente de linha de comando no modo interativo, o formato padrão é `PrettyCompact` (ele gera tabelas compactas legíveis para humanos).
+
+<div id="implementation-details">
+  ## Detalhes de implementação
+</div>
+
+Ao usar o cliente de linha de comando, os dados são sempre transmitidos pela rede em um formato interno eficiente (`Native`). O cliente interpreta de forma independente a cláusula `FORMAT` da consulta e formata os dados por si só (aliviando, assim, a rede e o servidor da carga adicional).

@@ -49,6 +49,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
+    extern const SettingsSnappyMode snappy_mode;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
@@ -130,6 +131,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.delimiter = settings[Setting::format_csv_delimiter];
     format_settings.csv.tuple_delimiter = settings[Setting::format_csv_delimiter];
     format_settings.csv.empty_as_default = settings[Setting::input_format_csv_empty_as_default];
+    format_settings.csv.missing_nullable_as_empty_string = settings[Setting::input_format_csv_missing_nullable_as_empty_string];
     format_settings.csv.enum_as_number = settings[Setting::input_format_csv_enum_as_number];
     format_settings.csv.null_representation = settings[Setting::format_csv_null_representation];
     format_settings.csv.arrays_as_nested_csv = settings[Setting::input_format_csv_arrays_as_nested_csv];
@@ -147,6 +149,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.hive_text.collection_items_delimiter = settings[Setting::input_format_hive_text_collection_items_delimiter];
     format_settings.hive_text.map_keys_delimiter = settings[Setting::input_format_hive_text_map_keys_delimiter];
     format_settings.hive_text.allow_variable_number_of_columns = settings[Setting::input_format_hive_text_allow_variable_number_of_columns];
+    format_settings.hive_text.rows_delimiter = settings[Setting::format_hive_text_rows_delimiter];
     format_settings.custom.escaping_rule = settings[Setting::format_custom_escaping_rule];
     format_settings.custom.field_delimiter = settings[Setting::format_custom_field_delimiter];
     format_settings.custom.result_after_delimiter = settings[Setting::format_custom_result_after_delimiter];
@@ -160,6 +163,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.date_time_input_format = settings[Setting::date_time_input_format];
     format_settings.date_time_output_format = settings[Setting::date_time_output_format];
     format_settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = settings[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands];
+    format_settings.read_datetime_number_as_raw_value = settings[Setting::input_format_read_datetime_number_as_raw_value];
     format_settings.interval_output_format = settings[Setting::interval_output_format];
     format_settings.input_format_ipv4_default_on_conversion_error = settings[Setting::input_format_ipv4_default_on_conversion_error];
     format_settings.input_format_ipv6_default_on_conversion_error = settings[Setting::input_format_ipv6_default_on_conversion_error];
@@ -220,7 +224,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.preserve_order = settings[Setting::input_format_parquet_preserve_order];
     format_settings.parquet.filter_push_down = settings[Setting::input_format_parquet_filter_push_down];
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
+    format_settings.parquet.dictionary_filter_push_down = settings[Setting::input_format_parquet_dictionary_filter_push_down];
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
+    format_settings.parquet.spatial_filter_push_down = settings[Setting::input_format_parquet_spatial_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
 
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
@@ -349,7 +355,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.orc.output_row_index_stride = settings[Setting::output_format_orc_row_index_stride];
     format_settings.orc.output_dictionary_key_size_threshold = settings[Setting::output_format_orc_dictionary_key_size_threshold];
     format_settings.orc.output_compression_block_size = settings[Setting::output_format_orc_compression_block_size];
-    format_settings.orc.use_fast_decoder = settings[Setting::input_format_orc_use_fast_decoder];
     format_settings.orc.filter_push_down = settings[Setting::input_format_orc_filter_push_down];
     format_settings.orc.reader_time_zone_name = settings[Setting::input_format_orc_reader_time_zone_name];
     format_settings.orc.writer_time_zone_name = settings[Setting::output_format_orc_writer_time_zone_name];
@@ -377,6 +382,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.sql_insert.table_name = settings[Setting::output_format_sql_insert_table_name];
     format_settings.sql_insert.use_replace = settings[Setting::output_format_sql_insert_use_replace];
     format_settings.sql_insert.quote_names = settings[Setting::output_format_sql_insert_quote_names];
+    format_settings.precise_float_parsing = settings[Setting::precise_float_parsing];
     format_settings.try_infer_integers = settings[Setting::input_format_try_infer_integers];
     format_settings.try_infer_dates = settings[Setting::input_format_try_infer_dates];
     format_settings.try_infer_datetimes = settings[Setting::input_format_try_infer_datetimes];
@@ -392,6 +398,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.binary.decode_types_in_binary_format = settings[Setting::input_format_binary_decode_types_in_binary_format];
     format_settings.binary.write_json_as_string = settings[Setting::output_format_binary_write_json_as_string];
     format_settings.binary.read_json_as_string = settings[Setting::input_format_binary_read_json_as_string];
+    format_settings.binary.max_binary_type_complexity = settings[Setting::input_format_binary_max_type_complexity];
     format_settings.native.allow_types_conversion = settings[Setting::input_format_native_allow_types_conversion];
     format_settings.native.encode_types_in_binary_format = settings[Setting::output_format_native_encode_types_in_binary_format];
     format_settings.native.decode_types_in_binary_format = settings[Setting::input_format_native_decode_types_in_binary_format];
@@ -739,7 +746,11 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     {
         if (!res)
             res = wrapReadBufferReference(buf);
-        res = wrapReadBufferWithCompressionMethod(std::move(res), compression, static_cast<int>(settings[Setting::zstd_window_log_max]));
+        res = wrapReadBufferWithCompressionMethod(
+            std::move(res),
+            compression,
+            static_cast<int>(settings[Setting::zstd_window_log_max]),
+            settings[Setting::snappy_mode]);
     }
 
     return res;

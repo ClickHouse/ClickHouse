@@ -1,0 +1,114 @@
+---
+description: 'Руководство по сборке ClickHouse из исходного кода на macOS'
+sidebarTitle: 'Сборка на macOS для macOS'
+slug: /development/build-osx
+title: 'Сборка на macOS для macOS'
+keywords: ['macOS', 'Mac', 'сборка']
+doc_type: 'guide'
+---
+
+<Info>
+  **Это руководство по сборке предназначено для участников, которые вносят изменения в сам ClickHouse.**
+
+  Если вы не изменяете исходный код ClickHouse, можно установить готовую сборку ClickHouse, как описано в [Быстрый старт](/ru/get-started/setup/install).
+</Info>
+
+ClickHouse можно собрать на macOS x86&#95;64 (Intel) и arm64 (Apple Silicon), начиная с macOS 10.15 (Catalina).
+
+В качестве компилятора поддерживается только Clang из Homebrew.
+
+<div id="install-prerequisites">
+  ## Установите необходимые компоненты
+</div>
+
+Сначала ознакомьтесь с [общей документацией по предварительным требованиям](/ru/resources/develop-contribute/introduction/developer-instruction).
+
+Затем установите [Homebrew](https://brew.sh/) и выполните
+
+Затем выполните:
+
+```bash
+brew update
+brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils nasm bash rust rustup
+```
+
+<Note>
+  Apple по умолчанию использует регистронезависимую файловую систему. Хотя это обычно не влияет на компиляцию (особенно при сборке с нуля), это может вызывать проблемы при файловых операциях, таких как `git mv`.
+  Для серьёзной разработки на macOS убедитесь, что исходный код хранится на дисковом томе с чувствительностью к регистру, см., например, [эти инструкции](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
+</Note>
+
+<div id="build-clickhouse">
+  ## Сборка ClickHouse
+</div>
+
+Для сборки необходимо использовать компилятор Clang из Homebrew:
+
+```bash
+cd ClickHouse
+mkdir build
+export PATH=$(brew --prefix llvm)/bin:$PATH
+cmake -S . -B build
+cmake --build build
+# Итоговый бинарный файл будет создан по пути: build/programs/clickhouse
+```
+
+<Note>
+  Если при компоновке возникает ошибка `ld: archive member '/' not a mach-o file in ...`, возможно,
+  потребуется использовать llvm-ar, задав флаг `-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar`.
+</Note>
+
+<div id="caveats">
+  ## Важные замечания
+</div>
+
+Если вы планируете запускать `clickhouse-server`, обязательно увеличьте значение системной переменной `maxfiles`.
+
+<Note>
+  Для этого потребуются права sudo.
+</Note>
+
+Для этого создайте файл `/Library/LaunchDaemons/limit.maxfiles.plist` со следующим содержимым:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>limit.maxfiles</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>launchctl</string>
+      <string>limit</string>
+      <string>maxfiles</string>
+      <string>524288</string>
+      <string>524288</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ServiceIPC</key>
+    <false/>
+  </dict>
+</plist>
+```
+
+Установите для файла правильные права доступа:
+
+```bash
+sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+Убедитесь, что файл корректен:
+
+```bash
+plutil /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+Загрузите файл (или перезагрузите систему):
+
+```bash
+sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+Чтобы проверить, всё ли работает, используйте команды `ulimit -n` или `launchctl limit maxfiles`.

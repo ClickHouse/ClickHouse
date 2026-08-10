@@ -10,6 +10,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <Formats/FormatSettings.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -32,6 +33,27 @@ namespace ErrorCodes
 
 namespace
 {
+
+template <typename Container, typename Compare>
+void sortAndKeepTop(Container & container, size_t limit, Compare compare)
+{
+    if (container.size() <= limit)
+    {
+        std::sort(container.begin(), container.end(), compare);
+        return;
+    }
+
+    if (limit == 0)
+    {
+        container.clear();
+        return;
+    }
+
+    auto nth = container.begin() + limit;
+    std::nth_element(container.begin(), nth, container.end(), compare);
+    container.resize(limit);
+    std::sort(container.begin(), container.end(), compare);
+}
 
 /// Static default format settings to avoid creating it every time.
 const FormatSettings & getFormatSettings()
@@ -250,7 +272,9 @@ void ColumnDynamic::insert(const Field & x)
     }
 
     /// If we cannot insert field into current variant column, extend it with new variant for this field from its type.
-    auto field_data_type = applyVisitor(FieldToDataType(), x);
+    /// Use LeastSupertypeOnError::Dynamic so that arrays with incompatible element types (e.g. ["text", {"k":1}])
+    /// are typed as Array(Dynamic) rather than throwing NO_COMMON_TYPE. Dynamic can hold any element value.
+    auto field_data_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), x);
     auto field_data_type_name = field_data_type->getName();
     if (addNewVariant(field_data_type, field_data_type_name))
     {
@@ -315,10 +339,22 @@ void ColumnDynamic::get(size_t n, Field & res) const
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & variant_col = getVariantColumn();
-    /// Check if value is not in shared variant.
-    if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
+    const auto discr = variant_col.globalDiscriminatorAt(n);
+    if (discr == ColumnVariant::NULL_DISCRIMINATOR)
     {
-        variant_col.getValueNameImpl(name_buf, n, options);
+        if (options.notFull(name_buf))
+            name_buf << "NULL";
+        return;
+    }
+
+    /// Include the type name in the result so values of different types get different names.
+    if (options.notFull(name_buf))
+        name_buf << getTypeNameAt(n) << '_';
+
+    /// Check if value is not in shared variant.
+    if (discr != getSharedVariantDiscriminator())
+    {
+        variant_col.getVariantByGlobalDiscriminator(discr).getValueNameImpl(name_buf, variant_col.offsetAt(n), options);
         return;
     }
 
@@ -824,6 +860,8 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     in.ignore(type_and_value_size);
 
     ReadBufferFromMemory buf(type_and_value);
+    /// Decoding of values stored in the column is not limited by input_format_binary_max_type_complexity:
+    /// it can happen during background operations where we don't want to throw.
     auto variant_type = decodeDataType(buf);
     auto variant_name = variant_type->getName();
     /// If we already have such variant, just deserialize it into corresponding variant column.
@@ -1246,14 +1284,11 @@ void ColumnDynamic::prepareVariantsForSquashing(const VectorWithMemoryTracking<C
                 variants_with_sizes.emplace_back(total_variant_sizes[variant_name], variant);
         }
 
-        std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
+        size_t variants_to_add = result_variants.size() <= max_dynamic_types ? max_dynamic_types + 1 - result_variants.size() : 0;
+        sortAndKeepTop(variants_with_sizes, variants_to_add, std::greater<>());
         /// Add the most frequent variants until we reach max_dynamic_types.
         for (const auto & [_, new_variant] : variants_with_sizes)
-        {
-            if (!canAddNewVariant(result_variants.size()))
-                break;
             result_variants.push_back(new_variant);
-        }
 
         result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
     }
@@ -1376,19 +1411,15 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
             if (variant_name != getSharedVariantTypeName())
                 variants_with_sizes.emplace_back(total_sizes[variant_name], variant_name, variant);
         }
-        std::sort(variants_with_sizes.begin(), variants_with_sizes.end(), std::greater());
+        sortAndKeepTop(variants_with_sizes, max_dynamic_types, std::greater<>());
 
         /// Take first max_dynamic_types variants from sorted list.
         DataTypes result_variants;
         result_variants.reserve(max_dynamic_types + 1); /// +1 for shared variant.
         /// Add shared variant.
         result_variants.push_back(getSharedVariantDataType());
-        for (const auto & [size, variant_name, variant_type] : variants_with_sizes)
-        {
-            /// Add variant to the resulting variants list until we reach max_dynamic_types.
-            if (canAddNewVariant(result_variants.size()))
-                result_variants.push_back(variant_type);
-        }
+        for (const auto & variant_with_size : variants_with_sizes)
+            result_variants.push_back(std::get<2>(variant_with_size));
 
         result_variant_type = std::make_shared<DataTypeVariant>(result_variants);
     }
@@ -1528,9 +1559,9 @@ void ColumnDynamic::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking
         candidates_with_sizes.reserve(shared_variant_candidates.size());
         for (const auto & [variant_name, size] : shared_variant_candidates)
             candidates_with_sizes.emplace_back(size, variant_name);
-        std::sort(candidates_with_sizes.begin(), candidates_with_sizes.end(), std::greater());
-        for (size_t i = 0; i < Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE; ++i)
-            new_statistics.shared_variants_statistics.emplace(candidates_with_sizes[i].second, candidates_with_sizes[i].first);
+        sortAndKeepTop(candidates_with_sizes, Statistics::MAX_SHARED_VARIANT_STATISTICS_SIZE, std::greater<>());
+        for (const auto & [size, variant_name] : candidates_with_sizes)
+            new_statistics.shared_variants_statistics.emplace(variant_name, size);
     }
 
     statistics = std::make_shared<const Statistics>(std::move(new_statistics));

@@ -1,0 +1,139 @@
+---
+description: '在 ClickHouse 中使用 OpenTelemetry 进行分布式链路追踪和指标采集的指南'
+sidebarTitle: '使用 OpenTelemetry 对 ClickHouse 进行链路追踪'
+slug: /operations/opentelemetry
+title: '使用 OpenTelemetry 对 ClickHouse 进行链路追踪'
+doc_type: 'guide'
+---
+
+[OpenTelemetry](https://opentelemetry.io/) 是一种开放标准，用于从分布式应用程序中收集链路追踪和指标。ClickHouse 对 OpenTelemetry 提供了一定的支持。
+
+<div id="supplying-trace-context-to-clickhouse">
+  ## 向 ClickHouse 传递 trace 上下文
+</div>
+
+ClickHouse 接受 W3C [Trace Context 建议](https://www.w3.org/TR/trace-context/)中定义的 trace 上下文 HTTP 请求头。它也接受通过原生协议传递的 trace 上下文，该协议用于 ClickHouse 服务器之间或客户端与服务器之间的通信。进行手动测试时，可以使用 `--opentelemetry-traceparent` 和 `--opentelemetry-tracestate` 标志，向 `clickhouse-client` 传入符合 Trace Context 建议的 trace 上下文请求头。
+
+如果未提供父 trace 上下文，或者提供的 trace 上下文不符合上述 W3C 标准，ClickHouse 可以启动一个新的 trace，其概率由 [opentelemetry&#95;start&#95;trace&#95;probability](/zh/reference/settings/session-settings#opentelemetry_start_trace_probability) 设置控制。
+
+<div id="propagating-the-trace-context">
+  ## 传播 trace 上下文
+</div>
+
+在以下情况下，trace 上下文 会传递到下游服务：
+
+* 向远程 ClickHouse 服务器发起查询时，例如使用 [Distributed](/zh/reference/engines/table-engines/special/distributed) 表引擎时。
+
+* [url](/zh/reference/functions/table-functions/url) 表函数。trace 上下文 信息会通过 HTTP 请求头 发送。
+
+<div id="tracing-clickhouse-keeper-requests">
+  ## 追踪 ClickHouse Keeper 请求
+</div>
+
+ClickHouse 支持对 [ClickHouse Keeper](/zh/guides/oss/deployment-and-scaling/keeper/index) 请求进行 OpenTelemetry 追踪 (ClickHouse 的兼容 ZooKeeper 语义的协调服务) 。该功能可让你详细了解 Keeper 操作的整个生命周期，从客户端提交请求到服务端处理。
+
+<div id="enabling-keeper-tracing">
+  ### 启用 Keeper 追踪
+</div>
+
+要为 Keeper 请求启用追踪，请在 ZooKeeper/Keeper 客户端配置中设置以下参数：
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <node>
+            <host>keeper1</host>
+            <port>9181</port>
+        </node>
+        <!-- 启用 OpenTelemetry 追踪上下文传播 -->
+        <pass_opentelemetry_tracing_context>true</pass_opentelemetry_tracing_context>
+    </zookeeper>
+</clickhouse>
+```
+
+<div id="keeper-span-types">
+  ### Keeper Span 类型
+</div>
+
+启用 tracing 后，ClickHouse 会为客户端和服务端的 Keeper 操作创建 spans：
+
+**客户端 spans：**
+
+* `zookeeper.create` — 创建新节点
+* `zookeeper.get` — 获取节点数据
+* `zookeeper.set` — 设置节点数据
+* `zookeeper.remove` — 删除节点
+* `zookeeper.list` — 列出子节点
+* `zookeeper.exists` — 检查节点是否存在
+* `zookeeper.multi` — 以原子方式执行多个操作
+* `zookeeper.client.requests_queue` — 请求发送前在队列中等待的时间
+
+**服务端 spans (Keeper) ：**
+
+* `keeper.receive_request` — 接收并解析来自客户端的请求
+* `keeper.dispatcher.requests_queue` — dispatcher 中的请求排队
+* `keeper.write.pre_commit` — 在 Raft commit 之前预处理写入请求
+* `keeper.write.commit` — 在 Raft commit 之后处理写入请求
+* `keeper.read.wait_for_write` — 读取请求等待其依赖的写入完成
+* `keeper.read.process` — 处理读取请求
+* `keeper.dispatcher.responses_queue` — dispatcher 中的响应排队
+* `keeper.send_response` — 向客户端发送响应
+
+<div id="sampling-and-performance">
+  ### 采样与性能
+</div>
+
+为控制追踪开销，Keeper 实现了动态采样。采样率会根据请求大小在 1/10,000 到 1/10 之间自动调整。所有请求 (无论是否被采样) 都会将其耗时记录到直方图指标中，以便进行性能监控。
+
+<div id="tracing-the-clickhouse-itself">
+  ## 追踪 ClickHouse 自身
+</div>
+
+ClickHouse 会为每个查询以及查询执行的某些阶段 (例如查询计划或分布式查询) 创建 `trace spans`。
+
+为了让这些追踪信息发挥作用，必须将其导出到支持 OpenTelemetry 的监控系统，例如 [Jaeger](https://jaegertracing.io/) 或 [Prometheus](https://prometheus.io/)。ClickHouse 不依赖任何特定的监控系统，而是仅通过系统表提供追踪数据。标准[要求](https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/overview.md#span)的 OpenTelemetry trace span 信息存储在 [system.opentelemetry&#95;span&#95;log](/zh/reference/system-tables/opentelemetry_span_log) 表中。
+
+必须在服务器配置中启用该表，参见默认配置文件 `config.xml` 中的 `opentelemetry_span_log` 元素。该表默认已启用。
+
+标签或属性以两个并行数组的形式保存，分别包含键和值。使用 [ARRAY JOIN](/zh/reference/statements/select/array-join) 来处理它们。
+
+<div id="log-query-settings">
+  ## 日志查询设置
+</div>
+
+设置 [log&#95;query&#95;settings](/zh/reference/settings/session-settings) 允许记录查询执行期间对查询设置所做的更改。启用后，对查询设置进行的任何修改都会记录到 OpenTelemetry span 日志中。此功能在生产环境中尤其有用，可用于跟踪可能影响查询性能的配置变更。
+
+<div id="integration-with-monitoring-systems">
+  ## 与监控系统集成
+</div>
+
+目前，还没有现成的工具可将 ClickHouse 中的 tracing 数据导出到监控系统。
+
+在测试场景下，可以通过在 [system.opentelemetry&#95;span&#95;log](/zh/reference/system-tables/opentelemetry_span_log) 表上创建使用 [URL](/zh/reference/engines/table-engines/special/url) 引擎的 materialized view 来配置导出，这样可将收到的日志数据推送到 trace collector 的 HTTP 端点。例如，要将最基本的 span 数据以 Zipkin v2 JSON 格式推送到运行在 `http://localhost:9411` 的 Zipkin 实例：
+
+```sql
+CREATE MATERIALIZED VIEW default.zipkin_spans
+ENGINE = URL('http://127.0.0.1:9411/api/v2/spans', 'JSONEachRow')
+SETTINGS output_format_json_named_tuples_as_objects = 1,
+    output_format_json_array_of_rows = 1 AS
+SELECT
+    lower(hex(trace_id)) AS traceId,
+    CASE WHEN parent_span_id = 0 THEN '' ELSE lower(hex(parent_span_id)) END AS parentId,
+    lower(hex(span_id)) AS id,
+    operation_name AS name,
+    start_time_us AS timestamp,
+    finish_time_us - start_time_us AS duration,
+    cast(tuple('clickhouse'), 'Tuple(serviceName text)') AS localEndpoint,
+    cast(tuple(
+        attribute.values[indexOf(attribute.names, 'db.statement')]),
+        'Tuple("db.statement" text)') AS tags
+FROM system.opentelemetry_span_log
+```
+
+如果发生任何错误，出错的那部分日志数据会在无任何提示的情况下丢失。如果数据未到达，请查看服务器日志中的错误信息。
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[使用 ClickHouse 构建可观测性解决方案 (第 2 部分) ：链路追踪](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

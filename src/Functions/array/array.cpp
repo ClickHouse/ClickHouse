@@ -21,6 +21,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool allow_lossy_numeric_supertype;
 }
 
 /// array(c1, c2, ...) - create an array.
@@ -29,11 +30,16 @@ class FunctionArray final : public IFunction
 public:
     static constexpr auto name = "array";
 
-    explicit FunctionArray(bool use_variant_as_common_type_ = false) : use_variant_as_common_type(use_variant_as_common_type_) {}
+    explicit FunctionArray(bool use_variant_as_common_type_ = false, bool allow_lossy_numeric_supertype_ = false)
+        : use_variant_as_common_type(use_variant_as_common_type_)
+        , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
+    {}
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        const auto & settings = context->getSettingsRef();
+        return std::make_shared<FunctionArray>(
+            settings[Setting::use_variant_as_common_type], settings[Setting::allow_lossy_numeric_supertype]);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -49,9 +55,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (use_variant_as_common_type)
-            return std::make_shared<DataTypeArray>(getLeastSupertypeOrVariant(arguments));
+            return std::make_shared<DataTypeArray>(getLeastSupertypeOrVariant(arguments, allow_lossy_numeric_supertype));
 
-        return std::make_shared<DataTypeArray>(getLeastSupertype(arguments));
+        return std::make_shared<DataTypeArray>(getLeastSupertype(arguments, allow_lossy_numeric_supertype));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -89,10 +95,11 @@ public:
             column_ptrs[i] = columns_holder[i].get();
         }
 
-        /// Create and fill the result array.
-        auto out = ColumnArray::create(elem_type->createColumn());
-        IColumn & out_data = out->getData();
-        IColumn::Offsets & out_offsets = out->getOffsets();
+        /// Fill the nested column and the offsets, and only then create the result array.
+        auto out_data_column = elem_type->createColumn();
+        auto out_offsets_column = ColumnArray::ColumnOffsets::create();
+        IColumn & out_data = *out_data_column;
+        IColumn::Offsets & out_offsets = out_offsets_column->getData();
 
         /// Fill out_offsets
         out_offsets.resize_exact(input_rows_count);
@@ -109,7 +116,7 @@ public:
             out_data.insertRangeFrom(*column_ptrs[0], 0, input_rows_count);
         else
             execute(column_ptrs, out_data, input_rows_count);
-        return out;
+        return ColumnArray::create(std::move(out_data_column), std::move(out_offsets_column));
     }
 
 private:
@@ -296,6 +303,7 @@ private:
     }
 
     bool use_variant_as_common_type = false;
+    bool allow_lossy_numeric_supertype = false;
 };
 
 
