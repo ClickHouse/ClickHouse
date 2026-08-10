@@ -231,13 +231,27 @@ private:
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);
 
+    /// Which mutation of the shared on-disk state the lease check in front of it guards. Only
+    /// selects which test failpoints are armed — the lease check itself is the same everywhere.
+    enum class WriteStage : uint8_t
+    {
+        /// Nothing has been written by the current call yet.
+        FirstRecordOfBatch,
+        /// Appending another record of a batch whose earlier records are already written.
+        NextRecordOfBatch,
+        /// Rotating / dropping whole log files after a record of this batch was written. On
+        /// object storage without append support this finalizes the current numbered log file
+        /// and opens the next one with `WriteMode::Rewrite`, so it is a separate window in which
+        /// a stale writer could clobber the log sequence the next leader already owns.
+        RotationAfterRecord,
+    };
+
     /// Throw `TABLE_IS_READ_ONLY` if `may_write_shared_state` is set and reports the lease as
     /// no longer fresh. Called immediately before every mutation of the shared on-disk state —
-    /// per record inside `addPart`/`dropPart`, not only once per batch, because each record can
-    /// rotate whole shared log files on object storage without append support.
-    /// `records_written_in_batch` reports whether the current batch already wrote records; it
-    /// only arms the mid-batch test failpoint.
-    void assertMayWriteSharedState(bool records_written_in_batch = false) const;
+    /// per record inside `addPart`/`dropPart` and again before every rotation, not only once per
+    /// batch, because each record can rotate whole shared log files on object storage without
+    /// append support.
+    void assertMayWriteSharedState(WriteStage stage = WriteStage::FirstRecordOfBatch) const;
 };
 
 }

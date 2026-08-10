@@ -3151,3 +3151,75 @@ def test_dedup_log_write_fenced_per_record_mid_batch(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_DEDUP_BEFORE_ROTATE = "12345678-abcd-abcd-abcd-12345678ab35"
+
+
+def test_dedup_log_rotation_fenced_after_record(started_cluster):
+    """
+    Regression for the lease fence in front of the per-record rotation in
+    `MergeTreeDeduplicationLog::dropPart`. Writing the `DROP` record and rotating the log are two
+    separate mutations of the shared state: on the `S3` path (no append support)
+    `rotateAndDropIfNeeded` finalizes the current numbered log file and opens the next one with
+    `WriteMode::Rewrite`, so a lease that expires in the gap between the two used to leave a stale
+    leader finalizing and creating log files of a sequence the next leader already owns.
+
+    The `merge_tree_leader_election_stale_lease_dedup_log_before_rotate` failpoint fails the lease
+    re-check only in that gap — after a record of the batch has been written and before the
+    rotation that follows it. Without the fence in front of the rotation the `TRUNCATE` below
+    succeeds (the failpoint is never consulted); with it the command must be rejected. The
+    takeover reload then reconciles the partially written log against the part set, so
+    re-inserting the truncated data is accepted instead of being silently deduplicated.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_dedup_log_before_rotate"
+    table = "test_dedup_before_rotate"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DEDUP_BEFORE_ROTATE}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, non_replicated_deduplication_window = 100
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 1
+
+        # The retirement itself (covering empty parts) commits, then the deduplication-log batch
+        # stops on the simulated stale lease in the record-to-rotation gap: the client gets an
+        # error while the data is dropped and the block id survives in the shared log.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="Refusing to write the deduplication log"):
+                node1.query(f"TRUNCATE TABLE {table}")
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0, (
+            "TRUNCATE did not retire the partition"
+        )
+
+        # Reload from shared storage, as the next leader would after a failover. The takeover
+        # reconciliation must drop the surviving block id, so re-inserting the truncated data is
+        # accepted.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 1, (
+            "Re-inserting truncated data was silently deduplicated: the shared deduplication log "
+            "still held the block id of dropped data after the pre-rotation fence stop"
+        )
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
