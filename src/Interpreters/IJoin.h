@@ -189,6 +189,10 @@ public:
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }
 
+    /// Called by `JoiningTransform` when every probe stream has consumed its whole left input.
+    /// Not called when the probe is cut short (LIMIT, cancellation).
+    virtual void onProbePhaseFinish() { }
+
     /// Called by `FillingRightJoinSideTransform` after `onBuildPhaseFinish` if the join has
     /// a post build optimization step.
     virtual bool hasPostBuildPhase() const { return false; }

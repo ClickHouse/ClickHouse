@@ -275,6 +275,11 @@ void SpillingHashJoin::onBuildPhaseFinish()
     chosen_join->onBuildPhaseFinish();
 }
 
+void SpillingHashJoin::onProbePhaseFinish()
+{
+    chosen_join->onProbePhaseFinish();
+}
+
 void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
 {
     if (hash_join)

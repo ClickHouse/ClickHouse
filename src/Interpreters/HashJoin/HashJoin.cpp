@@ -1297,7 +1297,7 @@ HashJoin::~HashJoin()
                         {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params.build);
             }
 
-            if (stats_collecting_params.match.isCollectionAndUseEnabled())
+            if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished)
                 getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = getHashTableMatches()}, stats_collecting_params.match);
         }
     }

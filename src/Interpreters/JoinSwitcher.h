@@ -90,6 +90,8 @@ public:
 
     void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
 
+    void onProbePhaseFinish() override { join->onProbePhaseFinish(); }
+
     bool hasPostBuildPhase() const override { return join->hasPostBuildPhase(); }
 
     void runPostBuildPhase() override { join->runPostBuildPhase(); }

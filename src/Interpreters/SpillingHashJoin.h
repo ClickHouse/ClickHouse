@@ -105,6 +105,7 @@ public:
     bool hasDelayedBlocks() const override { return true; }
 
     void onBuildPhaseFinish() override;
+    void onProbePhaseFinish() override;
 
     void setEnableLazyColumnsIndexing(bool value) override;
 

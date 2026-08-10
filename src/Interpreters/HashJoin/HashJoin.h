@@ -187,6 +187,7 @@ public:
         size_t bucket_idx, size_t num_buckets) const override;
 
     void onBuildPhaseFinish() override;
+    void onProbePhaseFinish() override { probe_phase_finished = true; }
 
     bool hasPostBuildPhase() const override;
     void runPostBuildPhase() override;
@@ -608,6 +609,7 @@ private:
 
     const HashJoinStatsCollectingParams stats_collecting_params;
     bool build_phase_finished = false;
+    bool probe_phase_finished = false;
 
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
     mutable std::atomic<size_t> hash_table_matches{0};

@@ -48,7 +48,8 @@ public:
         size_t max_block_size_,
         bool on_totals_ = false,
         bool default_totals_ = false,
-        FinishCounterPtr finish_counter_ = nullptr);
+        FinishCounterPtr finish_counter_ = nullptr,
+        bool emit_non_joined_ = true);
 
     ~JoiningTransform() override;
 
@@ -71,9 +72,14 @@ private:
     bool has_virtual_row = false;
     bool stop_reading = false;
     bool process_non_joined = true;
+    bool is_drained = false;
+    bool is_last_drained = false;
 
     JoinPtr join;
     bool on_totals;
+    /// Whether this transform emits non-joined rows itself once all probe streams have drained.
+    /// False when separate `NonJoinedBlocksTransform` processors own the emission.
+    bool emit_non_joined;
     /// This flag means that we have manually added totals to our pipeline.
     /// It may happen in case if joined subquery has totals, but out string doesn't.
     /// We need to join default values with subquery totals if we have them, or return empty chunk is haven't.

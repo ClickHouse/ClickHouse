@@ -76,9 +76,13 @@ namespace
 
 using BlockHashes = std::vector<UInt64>;
 
-void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams & build_params, const DB::StatsCollectingParams & match_params)
+void updateStatistics(
+    const auto & hash_joins,
+    const DB::StatsCollectingParams & build_params,
+    const DB::StatsCollectingParams & match_params,
+    bool probe_phase_finished)
 {
-    if (match_params.isCollectionAndUseEnabled())
+    if (match_params.isCollectionAndUseEnabled() && probe_phase_finished)
     {
         const auto ht_matches = std::accumulate(
             hash_joins.begin(),
@@ -263,7 +267,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
         if (!build_phase_finished)
             return;
 
-        updateStatistics(hash_joins, stats_collecting_params.build, stats_collecting_params.match);
+        updateStatistics(hash_joins, stats_collecting_params.build, stats_collecting_params.match, probe_phase_finished);
 
         if (!hash_joins[0]->data->twoLevelMapIsUsed())
             return;

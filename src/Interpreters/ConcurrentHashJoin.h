@@ -100,6 +100,7 @@ public:
     }
 
     void onBuildPhaseFinish() override;
+    void onProbePhaseFinish() override { probe_phase_finished = true; }
 
     void setEnableLazyColumnsIndexing(bool value) override
     {
@@ -127,6 +128,7 @@ private:
     std::unique_ptr<ThreadPool> pool;
     std::vector<std::shared_ptr<InternalHashJoin>> hash_joins;
     bool build_phase_finished = false;
+    bool probe_phase_finished = false;
     std::once_flag row_store_init_flag;
 
     HashJoinStatsCollectingParams stats_collecting_params;
