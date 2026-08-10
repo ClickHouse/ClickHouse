@@ -93,6 +93,9 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_no_read;"
 
 # -------------------------------------------------------------------
 # Case 2: TTLDrop with projections — projections should be empty
+# remove_empty_parts = 0 keeps the empty part produced by the TTLDrop
+# merge active; otherwise the cleanup thread may drop it before the
+# projections check below sees it in system.parts.
 # -------------------------------------------------------------------
 echo "-- Case 2: TTLDrop with projections"
 
@@ -110,7 +113,8 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
-        min_bytes_for_wide_part = 1;
+        min_bytes_for_wide_part = 1,
+        remove_empty_parts = 0;
 
     SYSTEM STOP MERGES t_ttl_drop_proj;
 
