@@ -582,15 +582,14 @@ void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses
 {
     ASSERT_EQ(iteration, DB::CurrentThread::getProfileEvents()[metrics.failed]);
 
-    /// Tests pinning the entry path derive the deadline here, so a preemption between the
-    /// caller's clock reading and the guard below cannot consume it.
+    /// Tests pinning the entry path derive the deadline here, so it is alive by construction and
+    /// re-reading the clock below could only turn a preemption into a spurious skip.
     if (deadline_from_entry)
         deadline = now() + *deadline_from_entry;
-
-    /// The ban window can already be over when this is called: the caller's anchor is a lower
-    /// bound on the ban's own timestamp, so it may sit a whole DNS refresh earlier. Nothing can
-    /// be asserted about a ban that is provably expired, so skip instead of reporting a defect.
-    if (now() > deadline)
+    /// Otherwise the window can already be over: the caller's anchor is a lower bound on the ban's
+    /// own timestamp, so it may sit a whole DNS refresh earlier. Nothing can be asserted about a
+    /// ban that is provably expired, so skip instead of reporting a defect.
+    else if (now() > deadline)
         return;
 
     for (size_t i = 0; i < 100; ++i)
