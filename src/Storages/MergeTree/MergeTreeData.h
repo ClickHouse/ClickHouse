@@ -2161,12 +2161,15 @@ private:
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
+    /// @param retry_not_found - rethrow an object store not-found instead of marking the part
+    /// broken, so the caller's retry budget can absorb a transient one.
     LoadPartResult loadDataPart(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,
         MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex);
+        DB::SharedMutex & part_loading_mutex,
+        bool retry_not_found = false);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,

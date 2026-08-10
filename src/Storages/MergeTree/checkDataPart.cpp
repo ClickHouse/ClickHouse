@@ -146,6 +146,33 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
+bool isObjectStorageNotFoundException(std::exception_ptr exception_ptr)
+{
+    try
+    {
+        rethrow_exception(exception_ptr);
+    }
+#if USE_AWS_S3
+    catch (const S3Exception & s3_exception)
+    {
+        /// Deliberately narrower than S3::isNotFoundError, which also covers NO_SUCH_BUCKET:
+        /// a missing bucket is a whole-storage condition, not a per-object one.
+        auto code = s3_exception.getS3ErrorCode();
+        return code == Aws::S3::S3Errors::NO_SUCH_KEY || code == Aws::S3::S3Errors::RESOURCE_NOT_FOUND;
+    }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+    catch (const Azure::Core::RequestFailedException & e)
+    {
+        return e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound;
+    }
+#endif
+    catch (...)
+    {
+        return false;
+    }
+}
+
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,

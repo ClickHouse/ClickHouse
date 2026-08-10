@@ -1,3 +1,4 @@
+import io
 import logging
 import os
 import time
@@ -41,10 +42,19 @@ def run_endpoint(cluster):
     logging.info("S3 endpoint started")
 
 
-def fail_request(cluster, request, method=None):
+def fail_request(cluster, request, method=None, status=None, code=None, repeat=None):
     url = "http://resolver:8080/fail_request/{}".format(request)
     if method:
         url += "/{}".format(method)
+    params = []
+    if status is not None:
+        params.append("status={}".format(status))
+    if code is not None:
+        params.append("code={}".format(code))
+    if repeat is not None:
+        params.append("repeat={}".format(repeat))
+    if params:
+        url += "?" + "&".join(params)
     response = cluster.exec_in_container(
         cluster.get_container_id("resolver"),
         ["curl", "-s", url],
@@ -326,3 +336,106 @@ def test_retry_loading_parts(cluster):
     )
     assert node.query("SELECT * FROM s3_retry_loading_parts") == "42\n"
     node.query("DROP TABLE s3_retry_loading_parts")
+
+
+def create_not_found_table(node, name):
+    node.query(
+        """
+        CREATE TABLE {} (id Int64) ENGINE=MergeTree() ORDER BY id
+        SETTINGS storage_policy='s3_no_retries'
+        """.format(
+            name
+        )
+    )
+    node.query("INSERT INTO {} VALUES (42)".format(name))
+    assert node.query("SELECT count() FROM {}".format(name)) == "1\n"
+
+
+def detached_parts(node, name):
+    return node.query(
+        "SELECT count() FROM system.detached_parts WHERE table = '{}' AND reason = 'broken-on-start'".format(
+            name
+        )
+    ).strip()
+
+
+# A transient not-found must not cost the part: the object is still there, so the load is
+# retried and the part comes back intact.
+def test_transient_not_found_at_part_load(cluster):
+    node = cluster.instances["node"]
+    create_not_found_table(node, "s3_transient_not_found")
+
+    node.query("DETACH TABLE s3_transient_not_found")
+
+    retries_before = int(node.count_in_log("at try 0 with retryable error"))
+    fail_request(cluster, 5, "GET", status=404, code="NoSuchKey")
+    node.query("ATTACH TABLE s3_transient_not_found")
+    fail_request(cluster, 0)
+
+    assert node.query("SELECT count() FROM s3_transient_not_found") == "1\n"
+    assert detached_parts(node, "s3_transient_not_found") == "0"
+    assert int(node.count_in_log("at try 0 with retryable error")) > retries_before
+
+    node.query("DROP TABLE s3_transient_not_found")
+
+
+# Control: without a fault nothing is retried and nothing is detached.
+def test_no_fault_at_part_load(cluster):
+    node = cluster.instances["node"]
+    create_not_found_table(node, "s3_no_fault_load")
+
+    retries_before = int(node.count_in_log("at try 0 with retryable error"))
+    node.query("DETACH TABLE s3_no_fault_load")
+    node.query("ATTACH TABLE s3_no_fault_load")
+
+    assert node.query("SELECT count() FROM s3_no_fault_load") == "1\n"
+    assert detached_parts(node, "s3_no_fault_load") == "0"
+    assert int(node.count_in_log("at try 0 with retryable error")) == retries_before
+
+    node.query("DROP TABLE s3_no_fault_load")
+
+
+# Control: a not-found that outlives the retry budget is treated as genuine absence and
+# still detaches the part, exactly as before. Same outcome with and without the fix, so
+# this arm cannot fail on the buggy build - it guards the bound on the new retry.
+def test_persistent_not_found_at_part_load(cluster):
+    node = cluster.instances["node"]
+    create_not_found_table(node, "s3_persistent_not_found")
+
+    node.query("DETACH TABLE s3_persistent_not_found")
+
+    fail_request(cluster, 5, "GET", status=404, code="NoSuchKey", repeat=3)
+    node.query("ATTACH TABLE s3_persistent_not_found")
+    fail_request(cluster, 0)
+
+    assert node.query("SELECT count() FROM s3_persistent_not_found") == "0\n"
+    assert detached_parts(node, "s3_persistent_not_found") == "1"
+
+    node.query("DROP TABLE s3_persistent_not_found")
+
+
+# Control: a corrupt part is still detached - the new retry is scoped to not-found and did
+# not widen to every load failure.
+def test_corrupted_part_still_detached(cluster):
+    node = cluster.instances["node"]
+    create_not_found_table(node, "s3_corrupted_part")
+
+    data_path = node.query(
+        "SELECT data_paths[1] FROM system.tables WHERE name = 's3_corrupted_part'"
+    ).strip()
+    remote_path = node.query(
+        "SELECT remote_path FROM system.remote_data_paths "
+        "WHERE path || local_path = '{}' || 'all_1_1_0/checksums.txt'".format(data_path)
+    ).strip()
+
+    node.query("DETACH TABLE s3_corrupted_part")
+    garbage = b"garbage"
+    cluster.minio_client.put_object(
+        cluster.minio_bucket, remote_path, io.BytesIO(garbage), len(garbage)
+    )
+    node.query("ATTACH TABLE s3_corrupted_part")
+
+    assert node.query("SELECT count() FROM s3_corrupted_part") == "0\n"
+    assert detached_parts(node, "s3_corrupted_part") == "1"
+
+    node.query("DROP TABLE s3_corrupted_part")

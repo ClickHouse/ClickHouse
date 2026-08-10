@@ -17,9 +17,16 @@ def fail_request(_request_number, _method=None):
     if request_number > 0:
         cache["request_number"] = request_number
         cache["fail_method"] = _method.upper() if _method else None
+        # Optional query parameters; the defaults reproduce a single 500 ExpectedError.
+        cache["fail_status"] = int(request.query.get("status") or 500)
+        cache["fail_code"] = request.query.get("code") or "ExpectedError"
+        cache["fail_repeat"] = int(request.query.get("repeat") or 1)
     else:
         cache.pop("request_number", None)
         cache.pop("fail_method", None)
+        cache.pop("fail_status", None)
+        cache.pop("fail_code", None)
+        cache.pop("fail_repeat", None)
     return "OK"
 
 
@@ -61,10 +68,20 @@ def server(_bucket, _path):
             if request_number > 0:
                 cache["request_number"] = request_number
             else:
-                cache.pop("fail_method", None)
-                response.status = 500
+                # Once the counter reaches the target request, fail it `repeat` times in a
+                # row (repeat=1 clears the fault immediately, as it always did).
+                repeat = cache.get("fail_repeat", 1) - 1
+                if repeat > 0:
+                    cache["request_number"] = 1
+                    cache["fail_repeat"] = repeat
+                else:
+                    cache.pop("fail_method", None)
+                    cache.pop("fail_repeat", None)
+                response.status = cache.get("fail_status", 500)
                 response.content_type = "text/xml"
-                return '<?xml version="1.0" encoding="UTF-8"?><Error><Code>ExpectedError</Code><Message>Expected Error</Message><RequestId>txfbd566d03042474888193-00608d7537</RequestId></Error>'
+                return '<?xml version="1.0" encoding="UTF-8"?><Error><Code>{}</Code><Message>Expected Error</Message><RequestId>txfbd566d03042474888193-00608d7537</RequestId></Error>'.format(
+                    cache.get("fail_code", "ExpectedError")
+                )
 
         if cache.get("throttle_request_number", None):
             request_number = cache.pop("throttle_request_number") - 1
