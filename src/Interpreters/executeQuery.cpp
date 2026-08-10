@@ -454,7 +454,8 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
 
     if (auto query_joins_counters = context_ptr->getQueryJoinsCounters()) {
         element.used_number_of_joins = query_joins_counters->number_of_joins.load(std::memory_order_relaxed);
-        element.used_joins = query_joins_counters->getUsedJoins();
+        element.used_join_kinds = query_joins_counters->getJoinKinds();
+        element.used_join_strictness = query_joins_counters->getJoinStrictness();
     }
 
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
