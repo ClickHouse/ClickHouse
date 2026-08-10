@@ -102,6 +102,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -2266,6 +2267,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// and because storage lifetime is bigger than query context lifetime.
         res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
+
+        /// The table is permanent, so it must hold its named collection (if any) the same way a table
+        /// engine does: `DROP NAMED COLLECTION` is blocked while the table exists.
+        if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
+            NamedCollectionFactory::instance().addDependency(collection_name, res->getStorageID());
     }
     else
     {
@@ -2438,6 +2444,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ContextMutablePtr internal_context = Context::createCopy(current_context->getGlobalContext());
         internal_context->makeQueryContext();
         internal_context->setSettings(current_context->getSettingsRef());
+        /// The settings copied above can make the internal DROPs below wait; the element is the only way out.
+        internal_context->setProcessListElement(current_context->getProcessListElementSafe());
         internal_context->setDDLOrOnClusterInternal(true);
         if (bypass_size_guard)
         {
