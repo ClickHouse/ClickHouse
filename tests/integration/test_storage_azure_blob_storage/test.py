@@ -237,7 +237,7 @@ def test_partition_by(cluster):
     azure_query(
         node,
         f"CREATE TABLE test_partitioned_write ({table_format}) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'wildcard') "
+        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') "
         f"PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_write VALUES {values}")
@@ -258,7 +258,7 @@ def test_partition_by_string_column(cluster):
     azure_query(
         node,
         f"CREATE TABLE test_partitioned_string_write ({table_format}) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'wildcard') "
+        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') "
         f"PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_string_write VALUES {values}")
@@ -280,7 +280,7 @@ def test_partition_by_const_column(cluster):
     azure_query(
         node,
         f"CREATE TABLE test_partitioned_const_write ({table_format}) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'wildcard')"
+        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')"
         f" PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_const_write VALUES {values}")
@@ -825,7 +825,7 @@ def test_partition_by_tf(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
         f"'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', "
-        f"'CSV', 'auto', 'wildcard', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
+        f"'CSV', 'auto', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
         settings={"azure_truncate_on_insert": 1},
     )
 
@@ -845,7 +845,7 @@ def test_filter_using_file(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', 'cont', '{filename}', "
         f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', "
-        f"'wildcard', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
+        f"'{table_format}') PARTITION BY {partition_by} VALUES {values}",
         settings={"azure_truncate_on_insert": 1},
     )
 
@@ -1121,6 +1121,12 @@ def test_union_schema_inference_mode(cluster):
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference*.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') order by tuple(*) settings schema_inference_mode='union' format TSV",
     )
     assert result == "1\t\\N\n" "\\N\t2\n"
+    node.query("system drop schema cache for hdfs")
+    # The HDFS-scoped drop must not clear the Azure schema cache entries.
+    result = node.query(
+        "select count() from system.schema_inference_cache where storage = 'Azure' and source like '%test_union_schema_inference%'"
+    )
+    assert int(result) == 2
     result = azure_query(
         node,
         f"desc azureBlobStorage('{storage_account_url}', 'cont', 'test_union_schema_inference2.jsonl', '{account_name}', '{account_key}', 'auto', 'auto', 'auto') settings schema_inference_mode='union', describe_compact_output=1 format TSV",
@@ -1478,6 +1484,13 @@ def test_format_detection(cluster):
 
     assert result == expected_result
 
+    node.query("system drop schema cache for hdfs")
+    # The HDFS-scoped drop must not clear the Azure schema cache entries.
+    result = node.query(
+        "select count() from system.schema_inference_cache where storage = 'Azure' and source like '%test_format_detection%'"
+    )
+    assert int(result) > 0
+
     result = azure_query(
         node,
         f"select * from azureBlobStorage('{storage_account_url}', 'cont', 'test_format_detection{{0,1}}', '{account_name}', '{account_key}')",
@@ -1589,7 +1602,7 @@ def test_write_to_globbed_partitioned_path(cluster):
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
     error = azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_data_*_{{_partition_id}}', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', 'x UInt64') partition by 42 select 42 SETTINGS azure_truncate_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_data_*_{{_partition_id}}', '{account_name}', '{account_key}', 'CSV', 'auto', 'x UInt64') partition by 42 select 42 SETTINGS azure_truncate_on_insert=1",
         expect_error="true",
     )
 
@@ -1638,7 +1651,7 @@ def test_respect_object_existence_on_partitioned_write(cluster):
 
     error = azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard') partition by 42 select 42 settings azure_truncate_on_insert=0",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 42 settings azure_truncate_on_insert=0",
         expect_error="true",
     )
 
@@ -1646,7 +1659,7 @@ def test_respect_object_existence_on_partitioned_write(cluster):
 
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard') partition by 42 select 43 settings azure_truncate_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 43 settings azure_truncate_on_insert=1",
     )
 
     result = azure_query(
@@ -1658,7 +1671,7 @@ def test_respect_object_existence_on_partitioned_write(cluster):
 
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard') partition by 42 select 44 settings azure_truncate_on_insert=0, azure_create_new_file_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 44 settings azure_truncate_on_insert=0, azure_create_new_file_on_insert=1",
     )
 
     result = azure_query(
