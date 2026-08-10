@@ -9,14 +9,22 @@ from ci.jobs.scripts.workflow_hooks import team_notifications
         (["docs/reference/functions/array-functions.mdx"], ["docs"]),
         (
             ["docs/integrations/clickpipes/kafka/index.mdx"],
-            ["clickpipes", "docs"],
+            ["clickpipes"],
+        ),
+        (
+            ["docs/integrations/language-clients/python/index.mdx"],
+            ["integrations-ecosystem"],
+        ),
+        (
+            ["docs/integrations/connectors/data-ingestion/index.mdx"],
+            ["integrations-ecosystem"],
         ),
         (
             [
                 "docs/integrations/language-clients/python/index.mdx",
                 "docs/integrations/connectors/data-ingestion/index.mdx",
             ],
-            ["integrations-ecosystem", "docs"],
+            ["integrations-ecosystem"],
         ),
         (
             [
@@ -26,8 +34,14 @@ from ci.jobs.scripts.workflow_hooks import team_notifications
             [
                 "clickpipes",
                 "integrations-ecosystem",
-                "docs",
             ],
+        ),
+        (
+            [
+                "docs/integrations/clickpipes/home.mdx",
+                "docs/reference/functions/array-functions.mdx",
+            ],
+            ["clickpipes", "docs"],
         ),
         (
             [
@@ -70,7 +84,7 @@ def test_check_requests_docs_teams(monkeypatch):
     )
 
     assert team_notifications.check()
-    assert requested == ["clickpipes", "integrations-ecosystem", "docs"]
+    assert requested == ["clickpipes", "integrations-ecosystem"]
 
 
 def test_check_does_not_manage_docs_reviews_after_open(monkeypatch):
