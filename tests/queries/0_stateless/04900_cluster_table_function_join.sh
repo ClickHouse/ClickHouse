@@ -52,6 +52,12 @@ run "LIMIT BY the joined side" "SELECT a, lm, rm FROM $L AS x INNER JOIN $R AS y
 run "named WINDOW over the joined side" "SELECT a, count() OVER w FROM $L AS x INNER JOIN $R AS y USING (a) WINDOW w AS (PARTITION BY y.rm) ORDER BY a FORMAT CSV"
 run "LIMIT WITH TIES" "SELECT a, lm, rm FROM $L AS x INNER JOIN $R AS y USING (a) ORDER BY a LIMIT 2 WITH TIES FORMAT CSV"
 
+# An ARRAY JOIN before the join makes the join the third table element, not the second.
+run "ARRAY JOIN then INNER" "SELECT a, lm, e, rm FROM $L AS x ARRAY JOIN [1, 2] AS e INNER JOIN $R AS y USING (a) ORDER BY a, e FORMAT CSV"
+run "ARRAY JOIN then LEFT" "SELECT a, lm, e, rm FROM $L AS x ARRAY JOIN [1, 2] AS e LEFT JOIN $R AS y USING (a) ORDER BY a, e FORMAT CSV"
+run "ARRAY JOIN then CROSS" "SELECT count() FROM $L AS x ARRAY JOIN [1, 2] AS e CROSS JOIN $R AS y"
+run "ARRAY JOIN then a temporary table" "SELECT a, lm, e, tm FROM $L AS x ARRAY JOIN [1, 2] AS e INNER JOIN tt AS y USING (a) ORDER BY a, e FORMAT CSV"
+
 printf "SELECT '-- shapes that must not change';\n"
 run "single cluster function" "SELECT * FROM $L ORDER BY a FORMAT CSV"
 run "cluster JOIN plain file" "SELECT a, lm, rm FROM $L AS x INNER JOIN $PR AS y USING (a) ORDER BY a FORMAT CSV"

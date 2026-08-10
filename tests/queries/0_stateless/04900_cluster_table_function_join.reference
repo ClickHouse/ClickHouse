@@ -93,6 +93,44 @@
 2,"L2","R2"
 1,"L1","R1"
 2,"L2","R2"
+-- ARRAY JOIN then INNER
+1,"L1",1,"R1"
+1,"L1",2,"R1"
+2,"L2",1,"R2"
+2,"L2",2,"R2"
+3,"L3",1,"R3"
+3,"L3",2,"R3"
+1,"L1",1,"R1"
+1,"L1",2,"R1"
+2,"L2",1,"R2"
+2,"L2",2,"R2"
+3,"L3",1,"R3"
+3,"L3",2,"R3"
+-- ARRAY JOIN then LEFT
+1,"L1",1,"R1"
+1,"L1",2,"R1"
+2,"L2",1,"R2"
+2,"L2",2,"R2"
+3,"L3",1,"R3"
+3,"L3",2,"R3"
+1,"L1",1,"R1"
+1,"L1",2,"R1"
+2,"L2",1,"R2"
+2,"L2",2,"R2"
+3,"L3",1,"R3"
+3,"L3",2,"R3"
+-- ARRAY JOIN then CROSS
+30
+30
+-- ARRAY JOIN then a temporary table
+1,"L1",1,"T1"
+1,"L1",2,"T1"
+2,"L2",1,"T2"
+2,"L2",2,"T2"
+1,"L1",1,"T1"
+1,"L1",2,"T1"
+2,"L2",1,"T2"
+2,"L2",2,"T2"
 -- shapes that must not change
 -- single cluster function
 1,"L1"

@@ -14,6 +14,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <QueryPipeline/Pipe.h>
@@ -123,8 +124,16 @@ void IStorageCluster::read(
         /// Shards have no access to the other joined tables, so send only this storage's own
         /// single-table read; getQueryProcessingStage() stops at FetchColumns for such a query,
         /// so the initiator performs the JOIN.
-        if (auto * select_to_send = query_to_send->as<ASTSelectQuery>(); select_to_send && hasJoin(*select_to_send))
+        if (auto * select_to_send = query_to_send->as<ASTSelectQuery>(); select_to_send && select_to_send->hasJoin())
         {
+            /// A join may sit behind an ARRAY JOIN, but removeJoin() only inspects the second table
+            /// element, so drop the ARRAY JOIN ones first. The initiator applies them after the join.
+            auto & tables_to_send = select_to_send->tables()->children;
+            tables_to_send.erase(
+                std::remove_if(tables_to_send.begin(), tables_to_send.end(), [](const ASTPtr & table_element)
+                    { return table_element->as<ASTTablesInSelectQueryElement &>().array_join != nullptr; }),
+                tables_to_send.end());
+
             TreeRewriterResult rewriter_result = *interpreter.getQueryInfo().syntax_analyzer_result;
             removeJoin(*select_to_send, rewriter_result, context);
 
@@ -243,7 +252,7 @@ QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
 {
     /// A JOIN must be done on the initiator: shards receive the query with the joined tables
     /// removed (see removeJoin() in read()) because they cannot resolve them.
-    if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
+    if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && select->hasJoin())
         return QueryProcessingStage::FetchColumns;
 
     /// Only a follower reached by another node's cluster function (SECONDARY_QUERY) just fetches
