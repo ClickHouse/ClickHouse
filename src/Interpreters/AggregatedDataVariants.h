@@ -100,6 +100,12 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyHash64>>          nullable_serialized_hash64;
     std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyHash64>>          prealloc_serialized_hash64;
     std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKeyHash64>>  nullable_prealloc_serialized_hash64;
+    /// The nullable fixed-width keys need the better hash for the same reason as their non-nullable
+    /// counterparts. The packed forms reuse the plain `*Hash64` data: a nullable packed key carries its null
+    /// map inside the key, so only `has_nullable_keys` differs.
+    std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyHash64, true, true>> nullable_key64_hash64;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64, true>>       nullable_keys128_hash64;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64, true>>       nullable_keys256_hash64;
 
     /// Support for nullable keys.
     std::unique_ptr<AggregationMethodOneNumber<UInt8, AggregatedDataWithNullableUInt8Key, false, true>>         nullable_key8;
@@ -177,6 +183,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_serialized_hash64,          false) \
         M(prealloc_serialized_hash64,          false) \
         M(nullable_prealloc_serialized_hash64, false) \
+        M(nullable_key64_hash64,      false) \
+        M(nullable_keys128_hash64,    false) \
+        M(nullable_keys256_hash64,    false) \
         M(nullable_key8,             false) \
         M(nullable_key16,             false) \
         M(nullable_key32,             false) \
@@ -249,6 +258,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_serialized_hash64) \
         M(prealloc_serialized_hash64) \
         M(nullable_prealloc_serialized_hash64) \
+        M(nullable_key64_hash64) \
+        M(nullable_keys128_hash64) \
+        M(nullable_keys256_hash64) \
         M(low_cardinality_key8) \
         M(low_cardinality_key16) \
 
