@@ -462,7 +462,7 @@ StateFileOrError verifyStateFile(const String & content, const DiskPtr & disk, c
 
         if (read_checksum != hash.get64())
         {
-            LOG_ERROR(logger, "Invalid checksum while reading state from {}. Got {}, expected {}", path, hash.get64(), read_checksum);
+            LOG_ERROR(logger, "Invalid checksum while reading state from {}. Got {}, expected {}", path, read_checksum, hash.get64());
             return std::unexpected(StateFileError::CORRUPTED_DATA);
         }
 
