@@ -19,6 +19,10 @@ function cleanup()
 {
     ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$select_query_id' SYNC FORMAT Null"
     wait
+    # A timed-out UNDROP has already moved the metadata file back into the database without attaching
+    # the table, and DROP TABLE IF EXISTS does not clean that state up, so attach the table first.
+    # If there is no metadata to attach (the test failed earlier), the ATTACH error is expected.
+    ${CLICKHOUSE_CLIENT} --query "ATTACH TABLE IF NOT EXISTS t_undrop_timeout" >/dev/null 2>&1
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_undrop_timeout SYNC"
 }
 trap cleanup EXIT
@@ -29,16 +33,23 @@ trap cleanup EXIT
 # SELECT does not hold the local storage, and a randomized time limit would end it too early.
 ${CLICKHOUSE_CLIENT} --query_id "$select_query_id" --function_sleep_max_microseconds_per_block 60000000 \
     --enable_parallel_replicas 0 --max_execution_time 0 --query "
-    SELECT sleepEachRow(3) FROM t_undrop_timeout FORMAT Null
+    SELECT sleepEachRow(5) FROM t_undrop_timeout FORMAT Null
 " >/dev/null 2>&1 &
 
 # Without a running holder the UNDROP below would return instantly and the test would prove nothing.
+# Mere presence in `system.processes` is too weak: `executeQueryImpl` inserts the query into the
+# process list before it resolves the table (src/Interpreters/executeQuery.cpp), so the DROP below
+# could win that race and the SELECT would never hold the storage. Wait until the query has read
+# rows from the table and has been running for over a second, which means the pipeline is executing
+# on a storage it already holds.
 result=0
-for _ in {1..100}
+for _ in {1..300}
 do
-    result=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = '$select_query_id'")
+    result=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT count() FROM system.processes
+        WHERE query_id = '$select_query_id' AND read_rows > 0 AND elapsed > 1")
     [[ $result == "1" ]] && break
-    sleep 0.3
+    sleep 0.1
 done
 [[ $result == "1" ]] || { echo "the SELECT holding the storage is not running"; exit 1; }
 
