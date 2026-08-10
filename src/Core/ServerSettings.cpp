@@ -1606,15 +1606,17 @@ Port for exchanging data between ClickHouse servers over `<HTTPS>`.
 <interserver_https_port>9010</interserver_https_port>
 ```
 )", 0) \
-    DECLARE(String, include_from, "/etc/metrika.xml", R"(
+    DECLARE(String, include_from, "", R"(
 The path to the file with substitutions. Both XML and YAML formats are supported.
+
+Empty by default, which means that no substitutions file is used. Before version 26.8 the file `/etc/metrika.xml` was used implicitly whenever it existed; if you rely on it, specify the path explicitly.
 
 For more information, see the section [Configuration files](/operations/configuration-files).
 
 **Example**
 
 ```xml
-<include_from>/etc/metrica.xml</include_from>
+<include_from>/etc/clickhouse-server/substitutions.xml</include_from>
 ```
 )", 0) \
     DECLARE(String, tmp_path, "/var/lib/clickhouse/tmp/", R"(
