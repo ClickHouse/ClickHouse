@@ -773,6 +773,7 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     {
         modified_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
         modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+        modified_select.group_by_all = false;
     }
 
     auto select_list = make_intrusive<ASTExpressionList>();
@@ -798,6 +799,8 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     }
     else
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+        modified_select.order_by_all = false;
+        modified_select.group_by_all = false;
 
     const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
