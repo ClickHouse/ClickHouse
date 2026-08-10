@@ -36,7 +36,8 @@ private:
     size_t dynamic_argument_index;
     /// When true, throw an exception if a dynamic variant type is incompatible with the function.
     /// When false (default), return NULL for incompatible rows instead.
-    /// Read from `dynamic_throw_on_type_mismatch` setting via CurrentThread at construction time.
+    /// Resolved at construction time from the `dynamic_throw_on_type_mismatch` setting or the strictness
+    /// override pinned by the caller, see `TypeMismatchStrictness.h`.
     bool throw_on_type_mismatch = true;
 };
 
