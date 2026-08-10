@@ -422,6 +422,10 @@ namespace
             grpc_context.set_compression_level(transport_compression.level);
         }
 
+        /// Completes the outstanding operations of this call early. Their completion queue
+        /// tags are still delivered afterwards, see grpc::ServerContext::TryCancel().
+        void cancel() { grpc_context.TryCancel(); }
+
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
         {
@@ -1478,6 +1482,16 @@ namespace
 
     void Call::close()
     {
+        /// gRPC tags each operation with a pointer inside the responder, so the responder must
+        /// outlive every operation started on it.
+        if (responder && (reading_query_info.get() || sending_result.get()))
+        {
+            /// Without a terminal response the operations may never complete on their own.
+            if (!responder_finished)
+                responder->cancel();
+            reading_query_info.wait(false);
+            sending_result.wait(false);
+        }
         responder.reset();
         pipeline_executor.reset();
         pipeline = nullptr;
