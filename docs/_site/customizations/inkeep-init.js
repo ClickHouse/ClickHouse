@@ -155,11 +155,17 @@
       return;
     }
 
+    var initialQuery = new URLSearchParams(window.location.search).get('q') || '';
     var settings = {
       // Open straight to the search view. (canToggleView is honored by
       // SearchBar/ChatButton but NOT by ModalSearchAndChat, so we hide the
       // chat affordances via CSS below instead.)
       defaultView: 'search',
+      // A URL such as /docs/?q=MergeTree opens the modal and runs the search
+      // immediately, matching the old Docusaurus search-page behavior.
+      modalSettings: {
+        isOpen: Boolean(initialQuery),
+      },
       baseSettings: {
         apiKey: INKEEP_API_KEY,
         primaryBrandColor: '#fdff75',
@@ -243,6 +249,7 @@
       },
       searchSettings: {
         placeholder: 'Search ClickHouse docs...',
+        defaultQuery: initialQuery,
         // Wait 300ms after the last keystroke before firing a search request,
         // so fast typing issues one query instead of one per character.
         debounceTimeMs: 300,

@@ -18,6 +18,7 @@ from .gh import GH
 from .gh_auth import GHAuth
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
+from .host_metrics import HostMetricsCollector
 from .info import Info
 from .native_jobs import _check_and_link_open_issues, _is_praktika_job
 from .result import Result, ResultInfo
@@ -466,51 +467,63 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
-        with TeePopen(
-            cmd,
-            timeout=job.timeout,
-            preserve_stdio=preserve_stdio,
-            timeout_shell_cleanup=job.timeout_shell_cleanup,
-        ) as process:
-            Utils.timestamp()
+        # Sample whole-VM CPU/RAM usage in the background for the duration of the
+        # job (see HostMetricsCollector). Runs on the host, so metrics cover the
+        # whole VM even when the job itself runs inside Docker.
+        host_metrics_collector = HostMetricsCollector().start()
+        try:
+            with TeePopen(
+                cmd,
+                timeout=job.timeout,
+                preserve_stdio=preserve_stdio,
+                timeout_shell_cleanup=job.timeout_shell_cleanup,
+            ) as process:
+                Utils.timestamp()
 
-            exit_code = process.wait()
+                exit_code = process.wait()
+                host_metrics = host_metrics_collector.stop()
 
-            # When running Docker containers as root (non-rootless mode), any files
-            # created by the job will be owned by root.  Fix ownership here, before
-            # reading the result file or writing the host-side result, so that the
-            # host user can open them without a PermissionError.
-            if job.run_in_docker and not no_docker and from_root:
-                print("--- Fixing file ownership after running docker as root")
-                uid = os.getuid()
-                gid = os.getgid()
-                chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-                Shell.run(chown_cmd)
+                # When running Docker containers as root (non-rootless mode), any files
+                # created by the job will be owned by root.  Fix ownership here, before
+                # reading the result file or writing the host-side result, so that the
+                # host user can open them without a PermissionError.
+                if job.run_in_docker and not no_docker and from_root:
+                    print("--- Fixing file ownership after running docker as root")
+                    uid = os.getuid()
+                    gid = os.getgid()
+                    chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+                    Shell.run(chown_cmd)
 
-            result = Result.from_fs(job.name)
-            if exit_code != 0:
-                if not result.is_completed():
-                    if process.timeout_exceeded:
-                        print(
-                            f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
-                        )
-                        result.add_error(ResultInfo.TIMEOUT)
-                    elif result.is_running():
-                        info = f"Job killed, exit code [{exit_code}]"
-                        print(f"ERROR: {info}")
-                        result.add_error(info)
-                    else:
-                        info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
-                        print(f"ERROR: {info}")
-                        result.add_error(info)
-                    result.set_status(Result.Status.ERROR)
-                    result.set_info(
-                        process.get_latest_log(max_lines=20)
-                    )
-            result.dump()
-
-        print("INFO: disk status after running a job:")
-        Shell.run("df -h")
+                result = Result.from_fs(job.name)
+                if host_metrics:
+                    result.add_ext_key_value("metrics", host_metrics)
+                    # Flag over/under-utilized runners, but not for skipped jobs -
+                    # they did no real work, so their metrics are meaningless.
+                    if not result.is_skipped():
+                        for label, hint in HostMetricsCollector.classify(host_metrics):
+                            result.set_label(label, hint=hint)
+                if exit_code != 0:
+                    if not result.is_completed():
+                        if process.timeout_exceeded:
+                            print(
+                                f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
+                            )
+                            result.add_error(ResultInfo.TIMEOUT)
+                        elif result.is_running():
+                            info = f"Job killed, exit code [{exit_code}]"
+                            print(f"ERROR: {info}")
+                            result.add_error(info)
+                        else:
+                            info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
+                            print(f"ERROR: {info}")
+                            result.add_error(info)
+                        result.set_status(Result.Status.ERROR)
+                        result.set_info(process.get_latest_log(max_lines=20))
+                result.dump()
+        finally:
+            # Idempotent: a no-op if stop() already ran above; guarantees the
+            # sampling thread is always joined even if TeePopen raised.
+            host_metrics_collector.stop()
 
         return exit_code
 
@@ -611,6 +624,12 @@ class Runner:
                 print(f"Job provides s3 artifacts [{providing_artifacts}]")
                 artifact_links = []
                 s3_path = f"{Settings.S3_ARTIFACT_PATH}/{env.get_s3_prefix()}/{Utils.normalize_string(env.JOB_NAME)}"
+                # Every object uploaded to the artifact bucket must carry a
+                # "retention" tag: S3 lifecycle filters cannot match "objects
+                # without a tag", so untagged objects would be covered by no
+                # rule. Default to short retention; per-artifact tags (e.g.
+                # retention=long) override on the "retention" key.
+                default_tags = {"retention": "default"}
                 for artifact in providing_artifacts:
                     if artifact.compress_zst:
                         if isinstance(artifact.path, (tuple, list)):
@@ -640,11 +659,12 @@ class Runner:
                                     f"Artifact {artifact_path} not found"
                                 )
                             Shell.check(f"ls -l {artifact_path}", verbose=True)
+                            tags = {**default_tags, **(artifact.ext.get("tags") or {})}
                             for file_path in matched:
                                 link = S3.copy_file_to_s3(
                                     s3_path=s3_path,
                                     local_path=file_path,
-                                    tags=artifact.ext.get("tags"),
+                                    tags=tags,
                                 )
                                 result.set_link(link)
                                 artifact_links.append(link)
@@ -663,7 +683,9 @@ class Runner:
                     with open(artifact_report_file, "w", encoding="utf-8") as f:
                         json.dump(artifact_report, f)
                     link = S3.copy_file_to_s3(
-                        s3_path=s3_path, local_path=artifact_report_file
+                        s3_path=s3_path,
+                        local_path=artifact_report_file,
+                        tags=default_tags,
                     )
                     result.set_link(link)
 
@@ -1134,6 +1156,10 @@ class Runner:
                 print("=== Post run script finished ===")
 
             result.dump()
+
+        # After the post hooks, so the numbers describe the disk the next job inherits.
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
 
         if not res and not job.force_success:
             sys.exit(1)

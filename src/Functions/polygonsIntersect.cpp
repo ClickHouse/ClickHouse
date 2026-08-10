@@ -44,6 +44,7 @@ public:
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isSpatialPredicate() const override { return std::is_same_v<Point, CartesianPoint>; }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
@@ -115,7 +116,7 @@ REGISTER_FUNCTION(polygonsIntersect)
 {
     factory.registerFunction<FunctionpolygonsIntersect<CartesianPoint>>(FunctionDocumentation{
         .description = R"(
-        Returns true if the two [`Polygon`](sql-reference/data-types/geo#polygon) or [`MultiPolygon`](sql-reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
+        Returns true if the two [`Polygon`](/reference/data-types/geo#polygon) or [`MultiPolygon`](/reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
     )",
         .syntax = "polygonsIntersectCartesian(polygon1, polygon2)",
         .arguments
@@ -142,7 +143,7 @@ REGISTER_FUNCTION(polygonsIntersect)
 
     factory.registerFunction<FunctionpolygonsIntersect<SphericalPoint>>(FunctionDocumentation{
         .description = R"(
-        Returns true if the two [`Polygon`](sql-reference/data-types/geo#polygon) or [`MultiPolygon`](sql-reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
+        Returns true if the two [`Polygon`](/reference/data-types/geo#polygon) or [`MultiPolygon`](/reference/data-types/geo#multipolygon) intersect (share any common area or boundary).
     )",
         .syntax = "polygonsIntersectSpherical(polygon1, polygon2)",
         .arguments

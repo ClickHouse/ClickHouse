@@ -3503,12 +3503,19 @@ public:
         return (name_view == "minus" || name_view == "plus" || name_view == "multiply" || name_view == "divide" || name_view == "intDiv");
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left_point, const Field & right_point) const override
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left_point, const Field & right_point) const override
     {
         const std::string_view name_view = Name::name;
 
         // NaN breaks monotonicity for floating-point types.
         if (isNaNField(left_point) || isNaNField(right_point))
+            return {false, true, false, false};
+
+        // For compound types (Tuple, Array, etc.) monotonicity analysis is not applicable: the
+        // arithmetic is element-wise, while the comparison of a compound value is lexicographic,
+        // so an element-wise verdict says nothing about the order of the whole value. `type` is the
+        // varying argument's type; the result may be compound even when that argument is not.
+        if (isCompoundForMonotonicity(type) || (return_type && isCompoundForMonotonicity(*return_type)))
             return {false, true, false, false};
 
         // For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
@@ -3823,6 +3830,20 @@ public:
             }
         }
         return {false, true, false};
+    }
+
+    /// True for `Array`/`Tuple`/`Map`, looking through `Nullable` and `LowCardinality`
+    /// (`Nullable(Tuple)` is a reachable key type). Takes a reference rather than a `DataTypePtr`
+    /// because `getMonotonicityForRange` receives one, and `IDataType::getPtr()` throws for a type
+    /// that is not owned by a `shared_ptr`.
+    static bool isCompoundForMonotonicity(const IDataType & type)
+    {
+        const IDataType * unwrapped = &type;
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(unwrapped))
+            unwrapped = low_cardinality->getDictionaryType().get();
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(unwrapped))
+            unwrapped = nullable->getNestedType().get();
+        return isArray(*unwrapped) || isTuple(*unwrapped) || isMap(*unwrapped);
     }
 
     /// `intDiv` casts the dividend to a signed type when the divisor is signed (see `DivideIntegralImpl`),

@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
     <title>ClickHouse Query</title>
 
@@ -197,6 +198,14 @@
             font-family: Roboto Mono, Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
+            /* Disable iOS Safari's automatic text inflation ("text autosizing"). On iPhone it
+               rescales the font size of text blocks by a per-block multiplier, which it applies
+               differently to the `#query` textarea and the `#query-backdrop` div behind it. That
+               breaks the character-for-character alignment the syntax-highlighting overlay relies
+               on, so the colors slide out from under the text. iPad, macOS, and visionOS Safari do
+               not inflate, which is why highlighting looks correct there but not on iPhone. */
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
         }
 
         body
@@ -503,8 +512,14 @@
             justify-content: center;
             padding: 0.25rem 0.6rem;
             cursor: pointer;
+            /* Inherit the page font, not just its size: a native <button> otherwise falls
+               back to the system button font (see #databases-hide), whose `normal`
+               line-height differs from the .tab divs' page font. In Firefox that makes the
+               [+] glyph's line box taller, so the button — aligned to flex-end like the
+               tabs — sticks up above them. Inheriting the font makes its height match the
+               tabs exactly, as it already does in Chromium. */
+            font: inherit;
             font-weight: bold;
-            font-size: 100%;
             background: var(--element-background-color);
             color: var(--text-color);
             border: 1px solid var(--border-color);
@@ -1424,6 +1439,14 @@
             display: none;
         }
 
+        /* The two run buttons form a pair, so the space between them matches the space to the
+           left of the first one (#main's 0.5rem padding) rather than the 1rem gap that separates
+           the unrelated controls in #run_div. The margin adds to the flex gap, hence -0.5rem. */
+        #run + #run-all
+        {
+            margin-left: -0.5rem;
+        }
+
         #run:hover, #run:focus, #run-all:hover, #run-all:focus, #copy-div:hover, #copy-div:focus, #download-div:hover, #download-div:focus
         {
             color: var(--button-active-text-color);
@@ -1703,6 +1726,21 @@
         #server_info
         {
             color: var(--misc-text-color);
+        }
+
+        /* On touch devices, mobile Safari automatically zooms the whole page when the user
+           focuses a form control whose font is smaller than 16px. With the `device-width`
+           viewport above, our 11pt controls fall below that threshold, so tapping the query
+           editor would jump the page. Raise the typography of the controls to 16px, together
+           with every layer that must mirror the textarea's metrics character-for-character
+           (`#query-backdrop`, `#completion-mirror`, `.completion-entry`) and the `#url_status`
+           overlay that sits on the URL input, so the highlighting overlay stays aligned. */
+        @media (hover: none) and (pointer: coarse)
+        {
+            input, textarea, #query-backdrop, #completion-mirror, .completion-entry, #url_status
+            {
+                font-size: 16px;
+            }
         }
 
         /* Prevents a different color when Chromium auto-fills inputs from the list. */
@@ -4544,24 +4582,39 @@ async function ping(url) {
 }
 
 let ping_request_num = 0;
-function checkURL() {
+/// Bumped on every connection edit (url/user/password `input`, see `onCredentialInput` and the `url`
+/// listener below). A `checkURL(true)` ping arms a deferred `checkCredentials` on success, but that
+/// ping is asynchronous: the initial page-load ping (or one from an earlier commit) can resolve after
+/// the user has already resumed typing. Capturing the generation when the ping starts and re-checking
+/// it before probing invalidates such a stale chain, so it never sends the current, still-in-progress
+/// credentials to the server.
+let connection_generation = 0;
+/// `probe_credentials` additionally checks the credentials against the server once the ping succeeds.
+/// It is set for the initial load and for the connection commit (see `commitConnection`),
+/// but NOT for intermediate `url` keystrokes: `getServerStatus` puts the password in the request, so
+/// probing on every edit would send it to a half-typed or still-old endpoint before the connection
+/// tuple is committed.
+function checkURL(probe_credentials) {
     ++ping_request_num;
     const current_ping_request_num = ping_request_num;
+    const current_connection_generation = connection_generation;
     let elem = document.getElementById('url_status');
     elem.className = '';
     document.getElementById('server_info').innerText = '';
     ping(url_elem.value).then(status => {
         if (current_ping_request_num == ping_request_num) {
             elem.className = status ? 'ok' : 'fail';
-            if (status) {
+            /// Only probe if no connection edit happened since this ping was armed — otherwise the
+            /// probe would run against the current, still-in-progress fields (see `connection_generation`).
+            if (status && probe_credentials && current_connection_generation == connection_generation) {
                 checkCredentials();
             }
         }
     });
 };
 
-url_elem.addEventListener('input', checkURL);
-checkURL();
+url_elem.addEventListener('input', () => checkURL(false));
+checkURL(true);
 
 /// The `/docs` page lives on the ClickHouse server addressed by `url_elem.value`, which may differ from
 /// the page's own origin when `/play` is opened locally (`file://`) or pointed at a remote server.
@@ -5730,7 +5783,9 @@ function showImagePreview(url, owner) {
 /// following the cursor while it moves, and hide it when the cursor leaves. `owner` is the
 /// result element the link belongs to, so the preview can be torn down with that result.
 function attachImagePreview(link, url, owner) {
-    link.title = 'Ctrl+hover (Cmd+hover on Mac) to preview this image';
+    /// The gesture is opt-in, so it has to be discoverable: the tooltip shown while the
+    /// cursor rests on the link is what tells the user the modifier reveals a preview.
+    link.title = 'Ctrl/Cmd for preview';
     link.addEventListener('mouseenter', (event) => {
         image_preview_x = event.clientX;
         image_preview_y = event.clientY;
@@ -6029,9 +6084,31 @@ if (main_container && typeof ResizeObserver !== 'undefined') {
 }
 
 let check_credentials_request_num = 0;
+/// The connection tuple the credential indication was last checked against, or `null` while nothing
+/// has been checked yet. The commit on leaving the connection surface is licensed by the
+/// `connection_edited` latch, which is set from `input`; but `#user` and `#password` are
+/// browser-autofillable, and autofilling a saved login does not always fire `input` on them (the
+/// Documentation link above has to work around exactly the same thing). Relying on the latch alone
+/// would therefore keep the badge painted for the credentials the page was loaded with while the
+/// fields already hold different ones, and leaving the surface would not re-check them. Comparing the
+/// current tuple against the one that produced the indication catches a value change no matter what
+/// raised it, so autofill is committed like a typed edit.
+let checked_connection = null;
+function connectionTuple() {
+    return JSON.stringify([url_elem.value, user_elem.value, password_elem.value]);
+}
+/// The connection no longer matches what the indication reflects, so leaving the surface must
+/// re-check it. `connection_edited` still matters on its own: an edit that ends up back at the last
+/// checked tuple (typing and undoing) has already cleared the indication via `resetCredentialsStatus`,
+/// and the fields must be repainted.
+function connectionNeedsCheck() {
+    return connection_edited || checked_connection !== connectionTuple();
+}
 function checkCredentials() {
     ++check_credentials_request_num;
     const current_check_credentials_request_num = check_credentials_request_num;
+    /// The indication this request is about to produce belongs to the tuple it is sent with.
+    checked_connection = connectionTuple();
     getServerStatus(url_elem.value, user_elem.value, password_elem.value).then(json => {
         if (current_check_credentials_request_num == check_credentials_request_num) {
             if (json) {
@@ -6049,18 +6126,172 @@ function checkCredentials() {
     });
 }
 
+/// Clear the current indication and, crucially, invalidate any in-flight `checkCredentials`.
+/// Bumping the request number is what prevents the stale-response bug: `checkCredentials` guards
+/// its response against this counter, so without the bump a check started against an earlier
+/// (wrong or incomplete) value could still land and paint the field red after the user has
+/// already typed the correct credentials — with the green connection dot left untouched, since
+/// that is driven by the independent `checkURL` ping.
 function resetCredentialsStatus() {
+    ++check_credentials_request_num;
     [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.remove('fail'); });
 }
 
-user_elem.addEventListener('input', resetCredentialsStatus);
-password_elem.addEventListener('input', resetCredentialsStatus);
+/// While a connection field is being edited, clear any stale indication and invalidate any in-flight
+/// check (via `resetCredentialsStatus`), but do NOT probe the server on every keystroke.
+/// `getServerStatus` puts the credentials into the request, so probing incomplete input would emit
+/// login attempts with partial — and, for the password, secret — values (`?password=s`,
+/// `?password=se`, ...), polluting access logs and possibly tripping auth rate limits.
+///
+/// Instead the whole connection editing surface is treated as one edit session and the check runs
+/// once, when focus leaves that surface, using only the final, complete tuple. The surface is the
+/// `#inputs` block (url + user + password) when the inputs sit inline in the tool bar; but once a
+/// second query tab appears they are relocated behind the 🔑 button into the connection drop-down,
+/// and the surface becomes the whole `#connection-menu` (the 🔑 button plus the drop-down that now
+/// holds `#inputs`). Focus moving anywhere within that surface — between the fields, or out to the
+/// 🔑 button when the drop-down is toggled or closed with `Escape` (both hand focus back to it) — is
+/// still editing, not a commit; `connectionSurface` resolves the current surface so the boundary
+/// follows the inputs into and out of the drop-down.
+///
+/// Committing only on a real exit is what keeps the probe honest: probing earlier would misfire while
+/// the connection is still being assembled — moving between `user` and `password` sends a mismatched
+/// half-typed pair; moving on to `url`, or leaving focus in the drop-down chrome, would send the full
+/// final password to the *previous* server via `getServerStatus(old_url, ...)`, disclosing it there
+/// and logging a spurious failed login; and a `url` keystroke that happens to hit a reachable
+/// intermediate endpoint would send the credentials there. The commit runs `checkURL(true)`, which
+/// pings the url and only then probes the credentials, so an unreachable server leaves the fields
+/// neutral rather than blaming them. The commit is licensed by `connectionNeedsCheck`, so merely
+/// tabbing through the fields, without changing anything, emits no request. This subsumes the old
+/// paste handlers: a pasted value is committed by the following focus change just like typed input.
+///
+/// `focusout` bubbles, so a single document-level listener catches focus leaving any element of the
+/// surface (including the 🔑 button, which is not inside `#inputs`). Where focus lands cannot be read
+/// from this event's `relatedTarget`: closing the drop-down first blurs the focused field to `<body>`
+/// and only then hands focus to the 🔑 button, so `relatedTarget` here is a transient intermediate
+/// value. The decision is therefore deferred to the next microtask, once focus has come to rest, and
+/// made from the settled `document.activeElement` — if it is back inside the surface the session
+/// continues, otherwise the edit is committed.
+///
+/// One case still needs care: a pointer press on a non-focusable spot inside the surface — the status
+/// dot, or any gap — blurs the active field to `<body>` without leaving the connection UI, so the
+/// settled `activeElement` is `<body>` just as it would be for a genuine keyboard exit to nothing.
+/// `pointer_down_inside_inputs` records whether the active press landed inside the surface (captured
+/// at `focusout` time, before the `pointerup` that clears it), which tells the two apart. An
+/// internal-click blur is not a commit; but the field has already lost focus, so leaving the surface
+/// later raises no `focusout` for it. Remember it in `commit_deferred` and commit on the first later
+/// transition that really leaves the surface — a `pointerdown` outside it, a `focusin` outside it (a
+/// keyboard `Tab` away), or the drop-down closing without returning focus inside (see the `Escape`
+/// handler). A field regaining focus (`focusin` inside the surface) means editing resumed and the
+/// normal exit will commit, so the deferred flag is dropped then.
+///
+/// A blur caused by the page itself losing focus — clicking the browser address bar or another
+/// window — is not a commit either: the user may be mid-switch (e.g. typed the credentials for a new
+/// server and left to copy its URL), and committing would probe the *previous* server with the new
+/// password. The settled `activeElement` is `<body>` with no pointer press inside the surface, so it
+/// would fall through to the commit; `document.hasFocus()` (false once the page has lost focus) tells
+/// this apart from a keyboard exit to nothing. Defer it like the internal-click blur: the commit runs
+/// on the first later transition that really leaves the surface once focus is back in the page.
+function connectionSurface() {
+    /// Resolved live via `getElementById` (not the `const`s declared later in the file), so it is
+    /// safe to call from the handlers registered just below, which run before those declarations.
+    /// The 🔑 button is hidden in the single-tab inline layout; there the surface is `#inputs`.
+    return document.getElementById('connection-key').hidden
+        ? document.getElementById('inputs')
+        : document.getElementById('connection-menu');
+}
+let pointer_down_inside_inputs = false;
+let commit_deferred = false;
+document.addEventListener('pointerdown', (event) => {
+    pointer_down_inside_inputs = connectionSurface().contains(event.target);
+    /// A press outside the surface after a suppressed internal-click blur: the user has finished
+    /// editing the connection, but the field lost focus earlier so no `focusout` is coming — commit now.
+    if (!pointer_down_inside_inputs && commit_deferred) { commitConnection(); }
+});
+document.addEventListener('pointerup', () => { pointer_down_inside_inputs = false; });
+document.addEventListener('pointercancel', () => { pointer_down_inside_inputs = false; });
+let connection_edited = false;
+/// `connection_edited` means "the user has changed the connection in this editing session"; together
+/// with the `checked_connection` tuple comparison (see `connectionNeedsCheck`, which also catches a
+/// change that raised no `input` at all) it is what licenses the commit below to authenticate against
+/// the server. Only a real interaction may set
+/// it: `window.onpopstate` replays synthetic `input` events on these fields to reproduce the side
+/// effects of a connection change when a Back/Forward restores a different connection, and that
+/// replay clears the password (it is never persisted to history). Latching on it would leave the
+/// session marked as edited without the user having touched anything, so a later glance at the
+/// connection UI — merely focusing a field and leaving again — would commit and probe the restored
+/// server with an empty password: an authentication attempt the user never asked for, logged as a
+/// failed login there. Untrusted events still invalidate: they bump the generation (dropping any
+/// probe armed against the connection being navigated away from) and clear the stale badge, exactly
+/// as the replay intends; they just do not arm a commit. The restored connection's credentials are
+/// reported once the user re-enters the password, which is a real edit.
+function onCredentialInput(event) {
+    if (event.isTrusted) { connection_edited = true; }
+    ++connection_generation;
+    resetCredentialsStatus();
+}
+/// Re-check the credentials against the server using the final, complete connection tuple.
+function commitConnection() {
+    connection_edited = false;
+    commit_deferred = false;
+    /// A typed edit already cleared the indication on the first keystroke, but a value change that
+    /// raised no `input` (an autofilled saved login) did not: drop the badge left over from the
+    /// previous tuple instead of showing it until the new check answers.
+    resetCredentialsStatus();
+    checkURL(true);
+}
+document.addEventListener('focusout', (event) => {
+    const surface = connectionSurface();
+    /// Only concerned with focus leaving the connection surface itself.
+    if (!surface.contains(event.target)) { return; }
+    /// Capture whether the active pointer press landed inside the surface now, before the `pointerup`
+    /// that clears the flag runs (it fires before the deferred check below).
+    const pointer_was_inside = pointer_down_inside_inputs;
+    queueMicrotask(() => {
+        /// Focus settled back inside the surface — another field, or the 🔑 button after the drop-down
+        /// closed. Still editing the connection, so no probe.
+        if (connectionSurface().contains(document.activeElement)) { return; }
+        /// Blur to `<body>` caused by a pointer press on a non-focusable spot inside the surface: the
+        /// interaction stayed in the connection UI, so this is not a commit. Defer it to the next
+        /// transition that really leaves the surface.
+        if (pointer_was_inside) {
+            if (connectionNeedsCheck()) { commit_deferred = true; }
+            return;
+        }
+        /// The page itself lost focus (browser address bar, another window) — the user may be
+        /// mid-switch to a different server, so this is not a commit; defer it as above.
+        if (!document.hasFocus()) {
+            if (connectionNeedsCheck()) { commit_deferred = true; }
+            return;
+        }
+        if (!connectionNeedsCheck()) { return; }
+        commitConnection();
+    });
+});
+document.addEventListener('focusin', (event) => {
+    if (connectionSurface().contains(event.target)) {
+        /// A field (or the 🔑 button) regaining focus means editing resumed; the normal exit will
+        /// commit, so drop any deferred commit left over from an internal-click blur.
+        commit_deferred = false;
+    } else if (commit_deferred) {
+        /// Focus moved to an element outside the connection UI (a keyboard `Tab` away after an
+        /// internal-click blur left focus on `<body>`) — the deferred commit's real "finished editing"
+        /// transition, which the pointer path would otherwise miss.
+        commitConnection();
+    }
+});
+user_elem.addEventListener('input', onCredentialInput);
+password_elem.addEventListener('input', onCredentialInput);
 
-/// The password is usually copy-pasted.
-/// To not worry about extracting the clipboard data, but use the value instead,
-/// and not worry too much about input/paste race, add the timeout.
-user_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
-password_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
+/// A `url` edit may point at a different server, so an in-flight `checkCredentials` against the
+/// previous URL must not paint the fields. `checkURL` (registered on `url` `input` earlier) clears
+/// the connection dot while it re-pings, but the credential colour is independent, so also invalidate
+/// the stale check and clear the old indication here — otherwise the fields would keep the previous
+/// server's colour until the block is committed. Marking the connection edited makes that commit
+/// re-check the credentials against the new server even when only the `url` changed. (Registered
+/// after `check_credentials_request_num` is declared, so the initial synchronous `checkURL(true)`
+/// call above never reaches this before the counter exists.)
+/// Shares `onCredentialInput`'s handling, including its `isTrusted` gate on `connection_edited`.
+url_elem.addEventListener('input', onCredentialInput);
 
 
 function queryToColor(str) {
@@ -7894,7 +8125,15 @@ document.addEventListener('keydown', (e) => {
         /// visible focus target and the next Tab continues from the tab bar, not the page top.
         const refocus = connection_dropdown_elem.contains(document.activeElement);
         closeConnectionDropdown();
-        if (refocus) connection_key_elem.focus();
+        if (refocus) {
+            connection_key_elem.focus();
+        } else if (commit_deferred) {
+            /// Focus was already on `<body>` — an earlier internal-click blur inside the connection UI
+            /// deferred a commit. Closing the drop-down is the "finished editing" transition, so flush
+            /// that deferred commit here rather than waiting for a later pointer press a keyboard user
+            /// never makes.
+            commitConnection();
+        }
     }
 });
 
@@ -9085,19 +9324,35 @@ window.onpopstate = function(event) {
         /// the input listeners, so dispatch synthetic `input` events on the connection inputs — every
         /// registered listener (`checkURL`, `updateDocsURL`, `resetCredentialsStatus` and
         /// `resetConnectionScopedState`) then runs exactly as it would for a typed edit. These carry
-        /// `isTrusted === false`, so `markBootstrapDirty` ignores them; this navigation already marked
-        /// the workspace dirty above.
+        /// `isTrusted === false`, so `markBootstrapDirty` ignores them (this navigation already marked
+        /// the workspace dirty above), and so does the `connection_edited` latch in
+        /// `onCredentialInput` — the restore is not a user edit, and treating it as one would let a
+        /// later focus change commit and probe the restored server with the password cleared above.
         ///
         /// Guard the replay so `resetConnectionScopedState` skips its history restamp: the target tab
         /// state is not installed yet (`activeTabId`/`tab.query` are rebound below) and `history.state`
         /// is already the popped entry, so a restamp would corrupt this time-travel target with the
         /// leaving tab's newer state. `onpopstate` restores the entry/URL authoritatively itself.
+        /// The `isTrusted` gate keeps the replay from arming a *new* edit session, but an edit session
+        /// that was already in progress when the navigation happened must not survive it either: the
+        /// user may have typed a password for the connection being left, and the restore just replaced
+        /// the server/user and cleared that password. Committing that session afterwards — on the first
+        /// focus change that leaves the connection surface — would probe the restored server with an
+        /// empty password, the very spurious login this fix avoids. The edit targeted a connection that
+        /// no longer exists in the inputs, so drop both latches; the restored connection is re-checked
+        /// once the user re-enters its password.
+        connection_edited = false;
+        commit_deferred = false;
         restoring_connection_from_history = true;
         try {
             [url_elem, user_elem, password_elem].forEach(el => el.dispatchEvent(new Event('input')));
         } finally {
             restoring_connection_from_history = false;
         }
+        /// Same reason the latches are dropped: the fields hold a restored connection, not an edit, so
+        /// take it as the baseline the (now cleared) indication reflects. Otherwise the tuple would
+        /// differ from the last checked one and merely focusing a field and leaving again would commit.
+        checked_connection = connectionTuple();
     }
     const tab = resolveTabForState(event.state);
     /// Keep this history entry's identity in sync with the tab it actually resolves to, restamping
