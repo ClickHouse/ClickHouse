@@ -59,6 +59,17 @@ SELECT count() > 0 FROM system.columns_cache
 WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 't_columns_cache_acl'
 "
 
+# A column-scoped grant must expose only the granted column: the per-column
+# SHOW COLUMNS check hides the entries of every other column of the table.
+$CLICKHOUSE_CLIENT -q "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.t_columns_cache_acl FROM ${user}"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT(id) ON ${CLICKHOUSE_DATABASE}.t_columns_cache_acl TO ${user}"
+
+echo 'column-scoped grant sees columns:'
+$CLICKHOUSE_CLIENT --user "${user}" -q "
+SELECT arraySort(groupUniqArray(column)) FROM system.columns_cache
+WHERE database = '${CLICKHOUSE_DATABASE}' AND table = 't_columns_cache_acl'
+"
+
 $CLICKHOUSE_CLIENT -q "DROP USER ${user}"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_columns_cache_acl"
 $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"

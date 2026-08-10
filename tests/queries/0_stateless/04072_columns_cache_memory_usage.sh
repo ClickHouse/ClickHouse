@@ -117,12 +117,14 @@ ORDER BY event_time DESC
 LIMIT 1;
 ")
 
-# Calculate ratios (guard against empty values from missing query_log)
-BASELINE_MEMORY=${BASELINE_MEMORY:-0}
-COLD_CACHE_MEMORY=${COLD_CACHE_MEMORY:-0}
-WARM_CACHE_MEMORY=${WARM_CACHE_MEMORY:-0}
-
-if [[ "$BASELINE_MEMORY" -gt 0 ]]; then
+# Fail closed: all three measurements must exist and be positive. Without the
+# evidence there is nothing to compare, so the test must not claim success.
+if ! [[ "$BASELINE_MEMORY" =~ ^[0-9]+$ ]] || [[ "$BASELINE_MEMORY" -le 0 ]] \
+    || ! [[ "$COLD_CACHE_MEMORY" =~ ^[0-9]+$ ]] || [[ "$COLD_CACHE_MEMORY" -le 0 ]] \
+    || ! [[ "$WARM_CACHE_MEMORY" =~ ^[0-9]+$ ]] || [[ "$WARM_CACHE_MEMORY" -le 0 ]]
+then
+    echo "FAIL: missing memory measurements (baseline: '$BASELINE_MEMORY', cold: '$COLD_CACHE_MEMORY', warm: '$WARM_CACHE_MEMORY')"
+else
     COLD_RATIO=$(awk "BEGIN {printf \"%.2f\", ${COLD_CACHE_MEMORY} / ${BASELINE_MEMORY}}")
     WARM_RATIO=$(awk "BEGIN {printf \"%.2f\", ${WARM_CACHE_MEMORY} / ${BASELINE_MEMORY}}")
 
@@ -135,8 +137,6 @@ if [[ "$BASELINE_MEMORY" -gt 0 ]]; then
     else
         echo "FAIL: Memory usage grew significantly (cold ratio: $COLD_RATIO, warm ratio: $WARM_RATIO)"
     fi
-else
-    echo "PASS: O(1) memory maintained (ratios < 5)"
 fi
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE t_cache_memory;"
