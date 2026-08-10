@@ -38,6 +38,13 @@ std::optional<std::string> tryParseMongoRegularExpression(const rapidjson::Value
   */
 std::string applyMongoRegularExpressionOptions(std::string_view pattern, std::string_view options);
 
+/** An embedded document as a value of the `JSON` type: `CAST('{...}', 'JSON')`. This is how an
+  * embedded document that is a value rather than a set of paths - an element of an array, or the
+  * document `$push` appends - is written, and it matches the `JSON` column the wire insert path
+  * infers for the same shape.
+  */
+ASTPtr makeMongoJSONValue(const rapidjson::Value & value);
+
 }
 
 }

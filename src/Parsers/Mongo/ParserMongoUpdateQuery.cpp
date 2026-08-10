@@ -57,20 +57,27 @@ ASTPtr makeDefaultValue(const std::string & column)
   * the value of `{"$set": {"name": "$other"}}` is the string `$other` rather than a reference to
   * the column `other`, and `{"$inc": {"n": 1}}` adds the number one. So the value is a constant -
   * every scalar and the Extended JSON wrappers a driver sends for the types JSON cannot represent -
-  * or an array of them; a document is a subdocument, which only `$set` can write (see
-  * `flattenAssignedDocument`).
+  * or an array of them; a document at the top level of a `$set` is a subdocument and names columns
+  * (see `flattenAssignedDocument`).
+  *
+  * An embedded document that is a value rather than a set of paths - an element of an array, or
+  * the document `$push` and `$addToSet` append - becomes a `JSON` value, which is the shape the
+  * insert paths write into an `Array(JSON)` column. The arithmetic operators take no document:
+  * `documents_are_values` keeps their error message about the value they do accept.
   */
-ASTPtr parseUpdateValue(const rapidjson::Value & value, std::string_view operator_name)
+ASTPtr parseUpdateValue(const rapidjson::Value & value, std::string_view operator_name, bool documents_are_values)
 {
     if (value.IsArray())
     {
         auto array = makeASTFunction("array");
         for (const auto & element : value.GetArray())
-            array->arguments->children.push_back(parseUpdateValue(element, operator_name));
+            array->arguments->children.push_back(parseUpdateValue(element, operator_name, documents_are_values));
         return array;
     }
     if (auto constant = tryParseMongoConstant(value))
         return constant;
+    if (documents_are_values && value.IsObject())
+        return makeMongoJSONValue(value);
     throw Exception(
         ErrorCodes::NOT_IMPLEMENTED,
         "The value of '{}' must be a scalar, an array, or an Extended JSON wrapper of them",
@@ -95,11 +102,11 @@ std::vector<ASTPtr> parseAppendedValues(const rapidjson::Value & value, std::str
         if (!each.IsArray())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '$each' of '{}' must be an array", operator_name);
         for (const auto & element : each.GetArray())
-            values.push_back(parseUpdateValue(element, operator_name));
+            values.push_back(parseUpdateValue(element, operator_name, /* documents_are_values = */ true));
         return values;
     }
 
-    values.push_back(parseUpdateValue(value, operator_name));
+    values.push_back(parseUpdateValue(value, operator_name, /* documents_are_values = */ true));
     return values;
 }
 
@@ -123,18 +130,21 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
             if (it->value.IsObject() && !tryParseMongoConstant(it->value))
                 flattenAssignedDocument(column, it->value, assignments);
             else
-                assignments.push_back(makeAssignment(column, parseUpdateValue(it->value, name)));
+                assignments.push_back(makeAssignment(column, parseUpdateValue(it->value, name, /* documents_are_values = */ true)));
         }
         else if (name == "$unset")
             assignments.push_back(makeAssignment(column, makeDefaultValue(column)));
+        /// The arithmetic operators take a number, so an embedded document is not a value they can
+        /// write: they pass `documents_are_values = false` and keep the error message about what
+        /// they do accept.
         else if (name == "$inc")
-            assignments.push_back(makeAssignment(column, makeASTFunction("plus", field(), parseUpdateValue(it->value, name))));
+            assignments.push_back(makeAssignment(column, makeASTFunction("plus", field(), parseUpdateValue(it->value, name, false))));
         else if (name == "$mul")
-            assignments.push_back(makeAssignment(column, makeASTFunction("multiply", field(), parseUpdateValue(it->value, name))));
+            assignments.push_back(makeAssignment(column, makeASTFunction("multiply", field(), parseUpdateValue(it->value, name, false))));
         else if (name == "$min")
-            assignments.push_back(makeAssignment(column, makeASTFunction("least", field(), parseUpdateValue(it->value, name))));
+            assignments.push_back(makeAssignment(column, makeASTFunction("least", field(), parseUpdateValue(it->value, name, false))));
         else if (name == "$max")
-            assignments.push_back(makeAssignment(column, makeASTFunction("greatest", field(), parseUpdateValue(it->value, name))));
+            assignments.push_back(makeAssignment(column, makeASTFunction("greatest", field(), parseUpdateValue(it->value, name, false))));
         else if (name == "$currentDate")
         {
             /// The legal forms are `true` and `{"$type": "date"}`. `{"$type": "timestamp"}` asks
@@ -250,7 +260,7 @@ void flattenAssignedDocument(const std::string & prefix, const rapidjson::Value 
         if (it->value.IsObject() && !tryParseMongoConstant(it->value))
             flattenAssignedDocument(path, it->value, assignments);
         else
-            assignments.push_back(makeAssignment(path, parseUpdateValue(it->value, "$set")));
+            assignments.push_back(makeAssignment(path, parseUpdateValue(it->value, "$set", /* documents_are_values = */ true)));
     }
 }
 

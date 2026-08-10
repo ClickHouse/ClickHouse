@@ -44,8 +44,10 @@ std::string_view stringView(const rapidjson::Value & value)
 
 /** The value of one field of an inserted document: a constant - which covers every scalar and
   * the Extended JSON wrappers a driver sends for the types JSON cannot represent - or an array
-  * of such values. A document inside an array cannot become a column of its own the way a
-  * subdocument does, so it is rejected rather than silently reshaped.
+  * of such values. A document inside an array is a value, not a set of paths the way a
+  * subdocument of the document itself is, so it becomes a `JSON` value: that is the shape the
+  * wire insert path infers an `Array(JSON)` column for, and both surfaces write the same
+  * collection.
   */
 ASTPtr parseInsertedValue(const rapidjson::Value & value)
 {
@@ -58,6 +60,8 @@ ASTPtr parseInsertedValue(const rapidjson::Value & value)
     }
     if (auto constant = tryParseMongoConstant(value))
         return constant;
+    if (value.IsObject())
+        return makeMongoJSONValue(value);
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot translate a value of the inserted document into a constant");
 }
 

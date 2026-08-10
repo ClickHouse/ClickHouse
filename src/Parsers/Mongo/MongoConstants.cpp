@@ -9,6 +9,8 @@
 #include <Common/Exception.h>
 
 #include <fmt/format.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 namespace DB
 {
@@ -193,6 +195,15 @@ std::string applyMongoRegularExpressionOptions(std::string_view pattern, std::st
     if (flags.empty())
         return std::string(pattern);
     return "(?" + flags + ")" + std::string(pattern);
+}
+
+ASTPtr makeMongoJSONValue(const rapidjson::Value & value)
+{
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    value.Accept(writer);
+
+    return makeASTFunction("CAST", makeLiteral(Field(String(buffer.GetString(), buffer.GetSize()))), makeLiteral(Field(String("JSON"))));
 }
 
 }
