@@ -125,6 +125,14 @@ private:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
+    /// A value that the strict `deserializeTextQuoted` path of `ValuesBlockInputFormat::tryReadValue`
+    /// rejects is retried as an expression, and a bare numeric literal is then converted to the
+    /// destination type like `CAST` does — which accepts it for the `UInt32`-backed `IPv4`. Note that
+    /// this does not depend on `input_format_values_interpret_expressions`: the retry first goes
+    /// through `ConstantExpressionTemplate`, which parses and converts a literal on its own and is
+    /// used regardless of that setting (only a genuine expression needs the interpreter).
+    bool readsNumericValueIntoIPv4Column() const override { return true; }
+
     PeekableReadBuffer buf;
     ParserExpression parser;
     bool first_row = true;

@@ -123,7 +123,9 @@ public:
     /// `Avro` via the `TypeIndex::IPv4` arm of `insertNumber`), and the formats that cast a decoded
     /// source column to the requested destination type — the columnar `Parquet` / `Arrow` / `ORC`
     /// always, `Native` when `input_format_native_allow_types_conversion` is enabled — accept a
-    /// numeric column there too, since it casts cleanly into the `UInt32`-backed `IPv4`. A caller
+    /// numeric column there too, since it casts cleanly into the `UInt32`-backed `IPv4`. `Values` accepts
+    /// it as well: a value the strict quoted-text path rejects is retried as an expression, and the
+    /// literal is then converted to the destination type like `CAST` does. A caller
     /// comparing an inferred schema against an expected one uses this to avoid flagging an inferred
     /// numeric type going into an `IPv4` column as a structure mismatch for these formats. (`UUID`
     /// and `IPv6` still require binary data of the exact size in every format, so they stay a
