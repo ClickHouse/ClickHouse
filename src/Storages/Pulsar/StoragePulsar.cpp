@@ -434,9 +434,12 @@ size_t StoragePulsar::getPollMaxBatchSize() const
 
 size_t StoragePulsar::getMaxBlockSize() const
 {
-    return (*pulsar_settings)[PulsarSetting::pulsar_max_block_size].changed
-        ? (*pulsar_settings)[PulsarSetting::pulsar_max_block_size].value
-        : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
+    if ((*pulsar_settings)[PulsarSetting::pulsar_max_block_size].changed)
+        return (*pulsar_settings)[PulsarSetting::pulsar_max_block_size].value;
+
+    /// The derived default can round down to zero when there are more consumers than
+    /// `max_insert_block_size` rows, and a zero block size would stall every read.
+    return std::max<size_t>(1, getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
 }
 
 StreamingHandleErrorMode StoragePulsar::getStreamingHandleErrorMode() const
@@ -719,6 +722,11 @@ void registerStoragePulsar(StorageFactory & factory)
         if ((*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].changed
             && (*pulsar_settings)[PulsarSetting::pulsar_poll_max_batch_size].value < 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_poll_max_batch_size` must be at least 1");
+
+        /// `MessageQueueSink` advances the row only inside the per-message loop, so a zero limit
+        /// would make an `INSERT` into a row-based format spin without ever consuming a row.
+        if ((*pulsar_settings)[PulsarSetting::pulsar_max_rows_per_message].value < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_max_rows_per_message` must be at least 1");
 
         /// The mode is accepted by the generic `StreamingHandleErrorMode` parser but not implemented
         /// by this engine, so reject it up front instead of failing on the first broken message.

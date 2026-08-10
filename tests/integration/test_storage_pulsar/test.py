@@ -13,6 +13,13 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_pulsar=True,
 )
+# The block size derived from `max_insert_block_size` is a server-level setting, so a table with
+# more consumers than that value needs a separate instance to be exercised.
+instance_small_insert_block = cluster.add_instance(
+    "instance_small_insert_block",
+    user_configs=["configs/users_small_insert_block.xml"],
+    with_pulsar=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -27,10 +34,11 @@ def pulsar_cluster():
 @pytest.fixture(autouse=True)
 def drop_tables():
     yield
-    instance.query("DROP TABLE IF EXISTS test.view SYNC")
-    instance.query("DROP TABLE IF EXISTS test.consumer SYNC")
-    instance.query("DROP TABLE IF EXISTS test.pulsar_writer SYNC")
-    instance.query("DROP TABLE IF EXISTS test.pulsar_reader SYNC")
+    for node in (instance, instance_small_insert_block):
+        node.query("DROP TABLE IF EXISTS test.view SYNC")
+        node.query("DROP TABLE IF EXISTS test.consumer SYNC")
+        node.query("DROP TABLE IF EXISTS test.pulsar_writer SYNC")
+        node.query("DROP TABLE IF EXISTS test.pulsar_reader SYNC")
 
 
 def pulsar_table(name, topic, group, extra_settings=""):
@@ -474,6 +482,55 @@ def test_batch_size_zero_rejected(pulsar_cluster):
             )
         )
         assert "BAD_ARGUMENTS" in error
+
+
+def test_max_rows_per_message_zero_rejected(pulsar_cluster):
+    # `MessageQueueSink` advances the row only inside the per-message loop, so with
+    # `pulsar_max_rows_per_message = 0` an `INSERT` into a row-based format would spin
+    # forever without ever consuming a row instead of failing.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    error = instance.query_and_get_error(
+        pulsar_table(
+            "test.pulsar_writer",
+            "zero_rows_topic",
+            "zero_rows_group",
+            extra_settings=", pulsar_max_rows_per_message = 0",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+
+
+def test_more_consumers_than_max_insert_block_size(pulsar_cluster):
+    # Without an explicit `pulsar_max_block_size` the block size is derived as
+    # `max_insert_block_size / pulsar_num_consumers`. On this instance
+    # `max_insert_block_size` is 2, so the division rounds down to zero for four
+    # consumers, and reads must still make progress thanks to the clamp.
+    node = instance_small_insert_block
+    node.query("CREATE DATABASE IF NOT EXISTS test")
+    node.query(
+        pulsar_table(
+            "test.pulsar_reader",
+            "small_block_topic",
+            "small_block_group",
+            extra_settings=", pulsar_num_consumers = 4, pulsar_commit_on_select = 1",
+        )
+    )
+    node.query(
+        pulsar_table("test.pulsar_writer", "small_block_topic", "small_block_writer_group")
+    )
+
+    num_rows = 8
+    node.query(
+        f"INSERT INTO test.pulsar_writer SELECT number, number FROM numbers({num_rows})"
+    )
+
+    seen = set()
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline and len(seen) < num_rows:
+        for line in node.query("SELECT key, value FROM test.pulsar_reader").strip().splitlines():
+            seen.add(line)
+        time.sleep(0.2)
+    assert seen == {f"{i}\t{i}" for i in range(num_rows)}
 
 
 def test_macros_expansion(pulsar_cluster):
