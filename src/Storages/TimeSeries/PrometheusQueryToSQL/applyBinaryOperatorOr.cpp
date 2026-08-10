@@ -37,7 +37,9 @@ SQLQueryPiece applyBinaryOperatorOr(
     }
 
     left_argument = toVectorGrid(std::move(left_argument), context);
-    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::TABLE});
+    /// The left grid is read twice - by the per-group counting step (Step 1) and by the final merge join (Step 3) -
+    /// so it's added as a materialized CTE to be evaluated once.
+    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(left_argument.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
     String left = context.subqueries.back().name;
 
     right_argument = toVectorGrid(std::move(right_argument), context);
@@ -177,6 +179,8 @@ SQLQueryPiece applyBinaryOperatorOr(
             make_intrusive<ASTIdentifier>(Strings{step2, ColumnNames::Values})));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
+        /// If the left grid is not materialized (the setting `enable_materialized_cte` is disabled), it's evaluated
+        /// here a second time, which is still correct because group ids are the same within one query.
         builder.from_table = left;
         builder.join_kind = JoinKind::Full;
         builder.join_strictness = JoinStrictness::All;

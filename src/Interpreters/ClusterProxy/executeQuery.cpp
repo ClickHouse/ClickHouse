@@ -1237,6 +1237,10 @@ void executeQueryWithParallelReplicas(
     QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     QueryTreeNodePtr modified_query_tree = query_tree->clone();
+    /// Inline ALIAS columns before shipping the query, mirroring the Distributed/remote() path.
+    /// buildQueryTreeForShard below rebuilds a shipped table expression from names and types only, which
+    /// would drop an ALIAS column's expression and make the replica read it as physical.
+    inlineAliasColumns(modified_query_tree);
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
 
