@@ -59,7 +59,8 @@ def regenerate():
         f" && python3 {GENERATOR} --write --binary {BINARY} --docs-dir docs"
         f" && python3 utils/generate-system-tables-docs"
         f" --binary {BINARY} --docs-dir docs/reference/system-tables"
-        " && python3 utils/generate-async-metrics-docs",
+        " && python3 utils/generate-async-metrics-docs"
+        " && python3 docs/_site/scripts/update_reference_index.py",
         verbose=True,
     )
 
