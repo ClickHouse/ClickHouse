@@ -1,6 +1,8 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Common/Exception.h>
@@ -293,7 +295,7 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class ContextTimeSeriesTagsCollector;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class SessionTracker;
@@ -1502,7 +1504,7 @@ public:
     void allowSystemAllocateMemory(bool allow);
 
     /// See users_to_ignore_early_memory_limit_check in ServerSettings
-    std::shared_ptr<std::unordered_set<std::string>> getUsersToIgnoreEarlyMemoryLimitCheck() const;
+    std::shared_ptr<UnorderedSetWithMemoryTracking<std::string>> getUsersToIgnoreEarlyMemoryLimitCheck() const;
     void setUsersToIgnoreEarlyMemoryLimitCheck(std::string users);
 
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);

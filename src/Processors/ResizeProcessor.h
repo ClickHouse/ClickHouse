@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
 #include <queue>
 #include <unordered_map>
 #include <Processors/IProcessor.h>
@@ -36,8 +39,8 @@ private:
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
-    std::queue<OutputPort *> waiting_outputs;
-    std::queue<InputPort *> inputs_with_data;
+    QueueWithMemoryTracking<OutputPort *> waiting_outputs;
+    QueueWithMemoryTracking<InputPort *> inputs_with_data;
     bool initialized = false;
     bool is_reading_started = false;
 
@@ -55,8 +58,8 @@ private:
         Finished,
     };
 
-    std::unordered_map<const InputPort *, InputStatus> input_status;
-    std::unordered_map<const OutputPort *, OutputStatus> output_status;
+    UnorderedMapWithMemoryTracking<const InputPort *, InputStatus> input_status;
+    UnorderedMapWithMemoryTracking<const OutputPort *, OutputStatus> output_status;
 };
 
 /// This is an analog of ResizeProcessor, but it tries to bind one specific input to one specific output.
@@ -89,8 +92,8 @@ private:
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
-    std::queue<InputPort *> disabled_input_ports;
-    std::queue<OutputPort *> waiting_outputs;
+    QueueWithMemoryTracking<InputPort *> disabled_input_ports;
+    QueueWithMemoryTracking<OutputPort *> waiting_outputs;
     bool initialized = false;
 
     enum class OutputStatus : uint8_t
@@ -118,12 +121,12 @@ private:
         OutputStatus status;
     };
 
-    std::unordered_map<const InputPort *, InputPortState> input_port_state;
-    std::unordered_map<const OutputPort *, OutputPortState> output_port_state;
+    UnorderedMapWithMemoryTracking<const InputPort *, InputPortState> input_port_state;
+    UnorderedMapWithMemoryTracking<const OutputPort *, OutputPortState> output_port_state;
 
     /// This field contained chunks which were read for output which had became finished while reading was happening.
     /// They will be pushed to any next waiting output.
-    std::vector<Port::Data> abandoned_chunks;
+    VectorWithMemoryTracking<Port::Data> abandoned_chunks;
 };
 
 }

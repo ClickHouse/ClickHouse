@@ -1,4 +1,5 @@
 #include <Columns/ColumnSparse.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/SortCursor.h>
@@ -33,7 +34,7 @@ UInt64 computeWindowSize(UInt64 length, UInt64 offset)
 struct GroupingKeys
 {
     Names names;
-    std::vector<size_t> positions;
+    VectorWithMemoryTracking<size_t> positions;
 };
 
 GroupingKeys filterNonConstKeys(const SharedHeader & header, const Names & column_names)
@@ -267,7 +268,7 @@ Chunk NegativeLimitByTransform::generate()
         offset_rows_dropped = true;
         releaseHashTable(data);
         hash_method_context.reset();
-        std::vector<GroupWindow>{}.swap(group_windows);
+        VectorWithMemoryTracking<GroupWindow>{}.swap(group_windows);
     }
 
     if (candidate_list.empty())

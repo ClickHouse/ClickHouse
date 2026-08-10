@@ -1,4 +1,9 @@
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -104,8 +109,8 @@ static void addToNullableIfNeeded(
     JoinKind join_kind,
     bool use_nulls,
     const NameSet & required_output_columns,
-    std::vector<const ActionsDAG::Node *> & actions_after_join,
-    const std::unordered_map<String, const ActionsDAG::Node *> & changed_types)
+    ActionsDAG::NodeRawConstPtrs & actions_after_join,
+    const UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> & changed_types)
 {
     auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
 
@@ -158,7 +163,7 @@ JoinStepLogical::JoinStepLogical(
     JoinOperator join_operator_,
     JoinExpressionActions join_expression_actions_,
     const NameSet & required_output_columns_,
-    const std::unordered_map<String, const ActionsDAG::Node *> & changed_types,
+    const UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> & changed_types,
     bool use_nulls_,
     JoinSettings join_settings_,
     SortingStep::Settings sorting_settings_)
@@ -181,7 +186,7 @@ JoinStepLogical::JoinStepLogical(
     const SharedHeader & right_header_,
     JoinOperator join_operator_,
     JoinExpressionActions join_expression_actions_,
-    std::vector<const ActionsDAG::Node *> actions_after_join_,
+    ActionsDAG::NodeRawConstPtrs actions_after_join_,
     JoinSettings join_settings_,
     SortingStep::Settings sorting_settings_)
     : expression_actions(std::move(join_expression_actions_))
@@ -203,9 +208,9 @@ JoinStepLogical::JoinStepLogical(
 #endif
 }
 
-std::unordered_set<JoinTableSide> JoinStepLogical::typeChangingSides() const
+UnorderedSetWithMemoryTracking<JoinTableSide> JoinStepLogical::typeChangingSides() const
 {
-    std::unordered_set<JoinTableSide> result;
+    UnorderedSetWithMemoryTracking<JoinTableSide> result;
     for (const auto * node_after_join : actions_after_join)
     {
         if (node_after_join->type == ActionsDAG::ActionType::INPUT ||
@@ -233,7 +238,7 @@ void JoinStepLogical::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-static String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
+static String formatJoinCondition(const VectorWithMemoryTracking<JoinActionRef> & predicates)
 {
     return fmt::format("{}", fmt::join(predicates | std::views::transform([](const auto & x) { return x.getColumnName(); }), " AND "));
 }
@@ -297,9 +302,9 @@ String JoinStepLogical::getReadableRelationName() const
     return fmt::format("{} {} {}", left_relation.displayName(), joinTypePretty(join_operator), right_name);
 }
 
-std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
+VectorWithMemoryTracking<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
 {
-    std::vector<std::pair<String, String>> description;
+    VectorWithMemoryTracking<std::pair<String, String>> description;
 
     auto readable_relation_name = getReadableRelationName();
     if (!readable_relation_name.empty())
@@ -354,11 +359,11 @@ bool JoinStepLogical::canRemoveUnusedColumns() const
     /// columns by name instead of positions in TableJoin/HashJoin.
 
     /// Collect all INPUT nodes reachable from join condition nodes.
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    std::unordered_set<std::string_view> left_condition_input_names;
-    std::unordered_set<std::string_view> right_condition_input_names;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
+    UnorderedSetWithMemoryTracking<std::string_view> left_condition_input_names;
+    UnorderedSetWithMemoryTracking<std::string_view> right_condition_input_names;
 
-    std::vector<const ActionsDAG::Node *> stack;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> stack;
     for (const auto & join_action : join_operator.expression)
         stack.push_back(join_action.getNode());
     for (const auto & join_action : join_operator.residual_filter)
@@ -385,7 +390,7 @@ bool JoinStepLogical::canRemoveUnusedColumns() const
             stack.push_back(child);
     }
 
-    auto has_duplicated_condition_input = [](const Block & header, const std::unordered_set<std::string_view> & condition_names)
+    auto has_duplicated_condition_input = [](const Block & header, const UnorderedSetWithMemoryTracking<std::string_view> & condition_names)
     {
         for (const auto & name : condition_names)
         {
@@ -403,7 +408,7 @@ bool JoinStepLogical::canRemoveUnusedColumns() const
         && !has_duplicated_condition_input(*input_headers.at(1), right_condition_input_names);
 }
 
-JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
+JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & required_output_positions, bool remove_inputs)
 {
     auto & actions_dag = *expression_actions.getActionsDAG();
     const size_t original_input_count = actions_dag.getInputs().size();
@@ -412,10 +417,10 @@ JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(
 
     /// For JoinStepLogical, the output header maps directly to DAG outputs (no pass-throughs).
     /// Build a set of required DAG output positions.
-    std::set<size_t> required_positions_set(required_output_positions.begin(), required_output_positions.end());
+    SetWithMemoryTracking<size_t> required_positions_set(required_output_positions.begin(), required_output_positions.end());
 
     /// Track which original output positions survive (required + non-removable like dummy).
-    std::vector<size_t> kept_output_positions;
+    VectorWithMemoryTracking<size_t> kept_output_positions;
     kept_output_positions.reserve(required_output_positions.size());
 
     bool removed_any_output = false;
@@ -703,7 +708,7 @@ static bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<
     }
 }
 
-using NameViewToNodeMapping = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+using NameViewToNodeMapping = UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *>;
 
 
 struct JoinPlanningContext
@@ -771,11 +776,11 @@ static void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionR
     }
 }
 
-static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
-    std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
+static bool addJoinPredicatesToTableJoin(VectorWithMemoryTracking<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
+    VectorWithMemoryTracking<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
 {
     bool has_join_predicates = false;
-    std::vector<JoinActionRef> new_predicates;
+    VectorWithMemoryTracking<JoinActionRef> new_predicates;
 
     for (auto & pred : predicates)
     {
@@ -906,9 +911,9 @@ tryGetIEJoinKeyCondition(const JoinActionRef & condition)
 /// (the ON conditions of the other kinds affect matching: unmatched rows are emitted padded,
 /// not dropped).
 static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
-    std::vector<JoinActionRef> & join_expression,
+    VectorWithMemoryTracking<JoinActionRef> & join_expression,
     const JoinOperator & join_operator,
-    std::vector<JoinActionRef> & used_expressions,
+    VectorWithMemoryTracking<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context)
 {
@@ -920,8 +925,8 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
 
     /// Which two of the eligible conditions become the IEJoin conditions is a planner degree
     /// of freedom; fixed to the first two for now.
-    std::vector<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>> keys;
-    std::vector<JoinActionRef> residual_conditions;
+    VectorWithMemoryTracking<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>> keys;
+    VectorWithMemoryTracking<JoinActionRef> residual_conditions;
     for (const auto & condition : join_expression)
     {
         auto inequality = keys.size() < 2 ? tryGetIEJoinKeyCondition(condition) : std::nullopt;
@@ -988,7 +993,7 @@ using QueryPlanNode = QueryPlan::Node;
 using QueryPlanNodePtr = QueryPlanNode *;
 
 static JoinActionRef concatConditions(
-    std::vector<JoinActionRef> & conditions,
+    VectorWithMemoryTracking<JoinActionRef> & conditions,
     std::optional<JoinTableSide> side = {}
 )
 {
@@ -1005,7 +1010,7 @@ static JoinActionRef concatConditions(
 
     JoinActionRef result(nullptr);
 
-    std::vector<JoinActionRef> matching(conditions.begin(), matching_point.begin());
+    VectorWithMemoryTracking<JoinActionRef> matching(conditions.begin(), matching_point.begin());
     if (matching.empty())
         return result;
 
@@ -1019,9 +1024,9 @@ static JoinActionRef concatConditions(
 }
 
 static bool tryAddDisjunctiveConditions(
-    std::vector<JoinActionRef> & join_expressions,
+    VectorWithMemoryTracking<JoinActionRef> & join_expressions,
     TableJoin::Clauses & table_join_clauses,
-    std::vector<JoinActionRef> & used_expressions,
+    VectorWithMemoryTracking<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
     bool throw_on_error)
@@ -1034,11 +1039,11 @@ static bool tryAddDisjunctiveConditions(
         return false;
 
     size_t initial_clauses_num = table_join_clauses.size();
-    std::vector<JoinActionRef> disjunctive_conditions = join_expression.getArguments();
+    VectorWithMemoryTracking<JoinActionRef> disjunctive_conditions = join_expression.getArguments();
     bool has_residual_condition = false;
     for (const auto & expr : disjunctive_conditions)
     {
-        std::vector<JoinActionRef> join_condition = {expr};
+        VectorWithMemoryTracking<JoinActionRef> join_condition = {expr};
         if (expr.isFunction(JoinConditionOperator::And))
             join_condition = expr.getArguments();
 
@@ -1314,7 +1319,7 @@ static void constructIEJoinStep(
 }
 
 static QueryPlanNode buildPhysicalJoinImpl(
-    std::vector<QueryPlanNode *> children,
+    VectorWithMemoryTracking<QueryPlanNode *> children,
     JoinOperator join_operator,
     JoinExpressionActions expression_actions,
     JoinSettings join_settings,
@@ -1361,7 +1366,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         table_join->setJoinExpressionValue(join_expression_value);
     }
 
-    std::vector<JoinActionRef> used_expressions;
+    VectorWithMemoryTracking<JoinActionRef> used_expressions;
 
     JoinPlanningContext planning_context;
     planning_context.is_storage_join = bool(prepared_join_storage);
@@ -1515,7 +1520,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     const bool right_nullable_from_prepared_storage
         = prepared_join_storage && !(prepared_join_storage.storage_key_value && build_mixed_join_expression);
 
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
+    UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
     for (const auto * action : actions_after_join)
     {
         if (action->type == ActionsDAG::ActionType::ALIAS)
@@ -1535,7 +1540,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         actions_after_join_fold[action] = action;
     }
 
-    std::vector<const ActionsDAG::Node *> required_residual_nodes;
+    VectorWithMemoryTracking<const ActionsDAG::Node *> required_residual_nodes;
     auto collect_required_input_nodes = [&](const JoinActionRef & condition)
     {
         if (!condition)
@@ -1577,7 +1582,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     if (on_clause_condition)
     {
         /// ON-clause conditions of an inner-like join are equivalent to a filter after the join.
-        std::vector<JoinActionRef> filter_conditions;
+        VectorWithMemoryTracking<JoinActionRef> filter_conditions;
         filter_conditions.push_back(on_clause_condition);
         if (residual_filter_condition)
             filter_conditions.push_back(residual_filter_condition);
@@ -1608,7 +1613,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     /// we need to find corresponding duplicates in dag inputs, which will be different nodes.
     /// The queue is consumed across children, so it must not be rebuilt per child.
     const auto & dag_inputs = expression_actions.getActionsDAG()->getInputs();
-    std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> name_to_nodes;
+    UnorderedMapWithMemoryTracking<std::string_view, DequeWithMemoryTracking<const ActionsDAG::Node *>> name_to_nodes;
     for (const auto * node : dag_inputs)
         name_to_nodes[node->result_name].push_back(node);
 
@@ -1631,7 +1636,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
 
     {
-        std::unordered_set<const ActionsDAG::Node *> seen_used_expressions;
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> seen_used_expressions;
         auto it = std::remove_if(used_expressions.begin(), used_expressions.end(),
             [&](const JoinActionRef & x) { return !seen_used_expressions.insert(x.getNode()).second; });
         used_expressions.erase(it, used_expressions.end());
@@ -1837,7 +1842,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterAc
         return side == JoinTableSide::Left ? condition.fromLeft() || condition.fromNone() : condition.fromRight();
     };
 
-    auto conditions = std::ranges::to<std::vector>(join_expression | std::views::filter(belongs_to_side));
+    auto conditions = std::ranges::to<VectorWithMemoryTracking<JoinActionRef>>(join_expression | std::views::filter(belongs_to_side));
     if (conditions.empty())
         return {};
 
@@ -1941,9 +1946,9 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
     });
 }
 
-std::vector<JoinActionRef> JoinStepLogical::getInputActions() const
+VectorWithMemoryTracking<JoinActionRef> JoinStepLogical::getInputActions() const
 {
-    std::vector<JoinActionRef> input_actions;
+    VectorWithMemoryTracking<JoinActionRef> input_actions;
     const auto & raw_inputs = expression_actions.getActionsDAG()->getInputs();
     for (const auto * node : raw_inputs)
         input_actions.emplace_back(node, expression_actions);
@@ -1951,9 +1956,9 @@ std::vector<JoinActionRef> JoinStepLogical::getInputActions() const
 }
 
 
-std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
+VectorWithMemoryTracking<JoinActionRef> JoinStepLogical::getOutputActions() const
 {
-    std::vector<JoinActionRef> output_actions;
+    VectorWithMemoryTracking<JoinActionRef> output_actions;
     const auto & raw_outputs = expression_actions.getActionsDAG()->getOutputs();
     for (const auto * node : raw_outputs)
         output_actions.emplace_back(node, expression_actions);
@@ -1969,7 +1974,7 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
 
 static void serializeNodeList(
     WriteBuffer & out,
-    const std::unordered_map<const ActionsDAG::Node *, size_t> & node_to_id,
+    const UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> & node_to_id,
     const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     writeVarUInt(nodes.size(), out);

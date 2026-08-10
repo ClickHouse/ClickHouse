@@ -1,9 +1,9 @@
 #pragma once
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
+#include <Common/QueueWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Merges/Algorithms/FixedSizeDequeWithGaps.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <queue>
 
 namespace DB
 {
@@ -38,7 +38,7 @@ private:
     FixedSizeDequeWithGaps<RowRef> current_keys;
     Int8 sign_in_queue = 0;
 
-    std::queue<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
+    QueueWithMemoryTracking<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
     void insertGap(size_t gap_size);
     void insertRow(size_t skip_rows, const RowRef & row);

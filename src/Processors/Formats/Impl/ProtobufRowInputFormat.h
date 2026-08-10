@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_PROTOBUF
 #   include <Processors/Formats/IRowInputFormat.h>
@@ -55,7 +56,7 @@ private:
     void destroyReaderAndSerializer();
 
     std::unique_ptr<ProtobufReader> reader;
-    std::vector<size_t> missing_column_indices;
+    VectorWithMemoryTracking<size_t> missing_column_indices;
     const ProtobufSchemas::DescriptorHolder descriptor;
     std::unique_ptr<ProtobufSerializer> serializer;
 

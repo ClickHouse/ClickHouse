@@ -1,4 +1,6 @@
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -60,7 +62,7 @@ static void exposeNodesAsDAGOutputs(ActionsDAG & dag, const NameSet & names)
     if (names.empty())
         return;
 
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
     for (const auto & node : dag.getNodes())
     {
         if (names.contains(node.result_name) && !outputs.contains(&node))
@@ -131,7 +133,7 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
 /// filter has consumed it.
 static bool exposeInputAsDAGOutput(ActionsDAG & dag, const String & column_name)
 {
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
     bool added = false;
     for (const auto * input : dag.getInputs())
     {
@@ -777,11 +779,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             true_plan.getCurrentHeader(), lazy_plan.getCurrentHeader(), lazy_materializing_rows);
         join_lazy_columns->setPassThrough(true);
 
-        std::vector<QueryPlanPtr> join_plans;
+        VectorWithMemoryTracking<QueryPlanPtr> join_plans;
         join_plans.emplace_back(std::make_unique<QueryPlan>(std::move(true_plan)));
         join_plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
         true_plan = {};
-        true_plan.unitePlans(std::move(join_lazy_columns), {std::move(join_plans)});
+        true_plan.unitePlans(std::move(join_lazy_columns), std::move(join_plans));
 
         /// Apply row policy and prewhere as FilterSteps on top.
         const auto & query_info = reading_step->getQueryInfo();
@@ -828,11 +830,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         set_plan.getCurrentHeader(), false_plan.getCurrentHeader());
 
     QueryPlan result_plan;
-    std::vector<QueryPlanPtr> selector_plans;
+    VectorWithMemoryTracking<QueryPlanPtr> selector_plans;
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(set_plan)));
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(true_plan)));
     selector_plans.emplace_back(std::make_unique<QueryPlan>(std::move(false_plan)));
-    result_plan.unitePlans(std::move(input_selector), {std::move(selector_plans)});
+    result_plan.unitePlans(std::move(input_selector), std::move(selector_plans));
 
     /// If we split non-intersecting parts, union them with the entire result.
     /// Both true and false branches now handle only intersecting parts.
@@ -842,10 +844,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
             SharedHeaders{result_plan.getCurrentHeader(), split_result.non_intersecting_plan->getCurrentHeader()});
 
         QueryPlan combined;
-        std::vector<QueryPlanPtr> union_plans;
+        VectorWithMemoryTracking<QueryPlanPtr> union_plans;
         union_plans.emplace_back(std::make_unique<QueryPlan>(std::move(result_plan)));
         union_plans.emplace_back(std::move(split_result.non_intersecting_plan));
-        combined.unitePlans(std::move(union_step), {std::move(union_plans)});
+        combined.unitePlans(std::move(union_step), std::move(union_plans));
         result_plan = std::move(combined);
     }
 

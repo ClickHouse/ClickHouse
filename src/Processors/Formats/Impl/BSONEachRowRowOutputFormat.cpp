@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/BSONEachRowRowOutputFormat.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/BSONTypes.h>
@@ -115,7 +116,7 @@ static void writeBSONBigInteger(const IColumn & column, size_t row_num, const St
     writeBinaryLittleEndian(assert_cast<const ColumnType &>(column).getElement(row_num), buf);
 }
 
-size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, std::unordered_map<String, size_t> & nested_document_sizes)
+size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, UnorderedMapWithMemoryTracking<String, size_t> & nested_document_sizes)
 {
     size_t size = 1; // Field type
     size += name.size() + 1; // Field name and \0
@@ -274,7 +275,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
     }
 }
 
-void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, std::unordered_map<String, size_t> & nested_document_sizes)
+void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const DataTypePtr & data_type, size_t row_num, const String & name, const String & path, UnorderedMapWithMemoryTracking<String, size_t> & nested_document_sizes)
 {
     switch (data_type->getTypeId())
     {
@@ -516,7 +517,7 @@ void BSONEachRowRowOutputFormat::write(const Columns & columns, size_t row_num)
     size_t document_size = sizeof(BSONSizeT);
     /// Remember calculated sizes for nested documents (map document path -> size), so we won't need
     /// to recalculate it while serializing.
-    std::unordered_map<String, size_t> nested_document_sizes;
+    UnorderedMapWithMemoryTracking<String, size_t> nested_document_sizes;
     for (size_t i = 0; i != columns.size(); ++i)
         document_size += countBSONFieldSize(*columns[i], fields[i].type, row_num, fields[i].name, "$", nested_document_sizes);
     document_size += sizeof(BSON_DOCUMENT_END);

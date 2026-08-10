@@ -1,4 +1,8 @@
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/QueueWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Common/assert_cast.h>
@@ -78,7 +82,7 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
         return res;
     }
 
-    std::queue<const ActionsDAG::Node *> queue;
+    QueueWithMemoryTracking<const ActionsDAG::Node *> queue;
     queue.push(node);
 
     while (!queue.empty())
@@ -336,17 +340,17 @@ public:
         return findOrAdd(a) == findOrAdd(b);
     }
 
-    std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> getClasses()
+    UnorderedMapWithMemoryTracking<JoinActionRef, VectorWithMemoryTracking<JoinActionRef>> getClasses()
     {
-        std::unordered_map<JoinActionRef, std::vector<JoinActionRef>> classes;
+        UnorderedMapWithMemoryTracking<JoinActionRef, VectorWithMemoryTracking<JoinActionRef>> classes;
         for (auto & [ref, _] : parent)
             classes[findOrAdd(ref)].push_back(ref);
         return classes;
     }
 
-    std::vector<JoinActionRef> getClass(JoinActionRef ref)
+    VectorWithMemoryTracking<JoinActionRef> getClass(JoinActionRef ref)
     {
-        std::vector<JoinActionRef> res;
+        VectorWithMemoryTracking<JoinActionRef> res;
         JoinActionRef root = findOrAdd(ref);
         for (auto & [other_ref, _] : parent)
         {
@@ -357,8 +361,8 @@ public:
     }
 
 private:
-    std::unordered_map<JoinActionRef, JoinActionRef> parent;
-    std::unordered_map<JoinActionRef, size_t> rank;
+    UnorderedMapWithMemoryTracking<JoinActionRef, JoinActionRef> parent;
+    UnorderedMapWithMemoryTracking<JoinActionRef, size_t> rank;
 };
 
 using JoinActionRefPair = std::pair<JoinActionRef, JoinActionRef>;
@@ -371,9 +375,9 @@ struct JoinActionRefPairHash
     }
 };
 
-static std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
+static VectorWithMemoryTracking<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperator & join_operator)
 {
-    std::vector<JoinActionRefPair> joining_keys;
+    VectorWithMemoryTracking<JoinActionRefPair> joining_keys;
     for (const auto & predicate : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
@@ -394,10 +398,10 @@ static std::vector<JoinActionRefPair> getJoiningKeysForJoinStep(const JoinOperat
     return joining_keys;
 }
 
-static std::vector<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
+static VectorWithMemoryTracking<JoinActionRefPair> buildEquialentSetsForJoinStepLogical(
     EquivalentJoinKeySet & equivalent_sets,
     const JoinStepLogical * join_step,
-    const std::vector<QueryPlan::Node *> & child_nodes,
+    const VectorWithMemoryTracking<QueryPlan::Node *> & child_nodes,
     int lookup_depth = 0)
 {
     auto join_inputs = join_step->getInputActions();
@@ -508,9 +512,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste))
         return 0;
 
-    std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
-    std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_right_stream_column_to_left_stream_column;
-    std::vector<JoinActionRefPair> equivalent_expressions;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
+    UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> equivalent_right_stream_column_to_left_stream_column;
+    VectorWithMemoryTracking<JoinActionRefPair> equivalent_expressions;
 
     bool has_single_clause = table_join_ptr && table_join_ptr->getClauses().size() == 1;
     if (has_single_clause && !filled_join)
@@ -536,8 +540,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     {
         EquivalentJoinKeySet equivalent_sets;
         equivalent_expressions = buildEquialentSetsForJoinStepLogical(equivalent_sets, logical_join, child_node->children);
-        std::unordered_set<JoinActionRefPair, JoinActionRefPairHash> equivalent_expressions_set(equivalent_expressions.begin(), equivalent_expressions.end());
-        std::vector<JoinActionRefPair> extra_equivalent_expressions;
+        UnorderedSetWithMemoryTracking<JoinActionRefPair, JoinActionRefPairHash> equivalent_expressions_set(equivalent_expressions.begin(), equivalent_expressions.end());
+        VectorWithMemoryTracking<JoinActionRefPair> extra_equivalent_expressions;
         for (const auto & [lhs, rhs] : equivalent_expressions)
         {
             for (const auto & eq_expr : equivalent_sets.getClass(lhs))
@@ -624,7 +628,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
     Names equivalent_columns_to_push_down;
 
-    std::unordered_map<JoinActionRef, String> equivalent_expressions_alias;
+    UnorderedMapWithMemoryTracking<JoinActionRef, String> equivalent_expressions_alias;
     for (auto & [lhs, rhs] : equivalent_expressions)
     {
         const auto & lhs_original_name = lhs.getColumnName();
@@ -761,7 +765,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         /// row-changing carve-out, but they are re-evaluated by `JoinStepLogical`'s
         /// per-side Pre Join Actions above, causing duplicate row expansion.
         /// `mergeInplace` uses `list::splice`, so pointer identity stays valid.
-        std::unordered_set<const ActionsDAG::Node *> array_joins_from_pre_filter;
+        UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> array_joins_from_pre_filter;
         for (const auto & node : pre_filter_dag.getNodes())
         {
             if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
@@ -790,11 +794,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     auto get_required_pre_actions = [&](const auto & join_actions, const auto & filter_dag_inputs)
     {
         /// In case of duplicate names resolve them in corresponding order
-        std::unordered_map<std::string_view, size_t> filter_dag_inputs_map;
+        UnorderedMapWithMemoryTracking<std::string_view, size_t> filter_dag_inputs_map;
         for (const auto * node : filter_dag_inputs)
             filter_dag_inputs_map[node->result_name]++;
 
-        std::vector<JoinActionRef> required_actions;
+        VectorWithMemoryTracking<JoinActionRef> required_actions;
         for (const auto & join_action : join_actions)
         {
             auto it = filter_dag_inputs_map.find(join_action.getColumnName());
@@ -814,7 +818,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         if (logical_join)
         {
             const auto & filter_dag_inputs = join_filter_push_down_actions.left_stream_filter_to_push_down->getInputs();
-            std::vector<JoinActionRef> required_actions_from_join = get_required_pre_actions(logical_join->getOutputActions(), filter_dag_inputs);
+            VectorWithMemoryTracking<JoinActionRef> required_actions_from_join = get_required_pre_actions(logical_join->getOutputActions(), filter_dag_inputs);
             for (auto [lhs, _] : equivalent_expressions)
             {
                 if (auto it = equivalent_expressions_alias.find(lhs); it != equivalent_expressions_alias.end())
@@ -848,7 +852,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         if (logical_join)
         {
             const auto & filter_dag_inputs = join_filter_push_down_actions.right_stream_filter_to_push_down->getInputs();
-            std::vector<JoinActionRef> required_actions_from_join = get_required_pre_actions(logical_join->getOutputActions(), filter_dag_inputs);
+            VectorWithMemoryTracking<JoinActionRef> required_actions_from_join = get_required_pre_actions(logical_join->getOutputActions(), filter_dag_inputs);
             for (auto [_, rhs] : equivalent_expressions)
             {
                 if (auto it = equivalent_expressions_alias.find(rhs); it != equivalent_expressions_alias.end())
@@ -1128,7 +1132,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * array_join = typeid_cast<ArrayJoinStep *>(child.get()))
     {
         const auto & keys = array_join->getColumns();
-        std::unordered_set<std::string_view> keys_set(keys.begin(), keys.end());
+        UnorderedSetWithMemoryTracking<std::string_view> keys_set(keys.begin(), keys.end());
 
         const auto & array_join_header = array_join->getInputHeaders().front();
 

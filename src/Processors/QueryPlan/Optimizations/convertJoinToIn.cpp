@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Columns/ColumnSet.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
@@ -37,7 +38,7 @@ struct NamePair
     std::string_view rhs_name;
 };
 
-using NamePairs = std::vector<NamePair>;
+using NamePairs = VectorWithMemoryTracking<NamePair>;
 
 static InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
@@ -48,18 +49,18 @@ static InConversion buildInConversion(
     size_t max_size_for_index)
 {
     ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> lhs_outputs;
     for (const auto & output : lhs_dag.getOutputs())
         lhs_outputs.emplace(output->result_name, output);
 
     ActionsDAG rhs_dag(in_source->getCurrentHeader()->getColumnsWithTypeAndName());
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> rhs_outputs;
     for (const auto & output : rhs_dag.getOutputs())
         rhs_outputs.emplace(output->result_name, output);
 
     rhs_dag.getOutputs().clear();
 
-    std::vector<const ActionsDAG::Node *> left_columns;
+    ActionsDAG::NodeRawConstPtrs left_columns;
     for (const auto & name_pair : name_pairs)
     {
         auto it = lhs_outputs.find(name_pair.lhs_name);
@@ -162,7 +163,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         return 0;
 
     /// Only equality expressions are supported.
-    std::vector<std::pair<JoinActionRef, JoinActionRef>> key_pairs;
+    VectorWithMemoryTracking<std::pair<JoinActionRef, JoinActionRef>> key_pairs;
     for (const auto & predicate : join_operator.expression)
     {
         auto [op, lhs, rhs] = predicate.asBinaryPredicate();

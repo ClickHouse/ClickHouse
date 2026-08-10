@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/Statistics/Statistics.h>
@@ -382,7 +383,7 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
 }
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const
+void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const UnorderedSetWithMemoryTracking<String> & exclude_index_names) const
 {
     const auto & sorting_key_expr = global_ctx->metadata_snapshot->getSortingKey().expression;
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
@@ -761,7 +762,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const auto & merge_tree_settings = global_ctx->data_settings;
 
     /// Get list of skip indexes to exclude from merge
-    std::unordered_set<String> exclude_index_names;
+    UnorderedSetWithMemoryTracking<String> exclude_index_names;
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
     {
         auto exclude_indexes_string = (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
@@ -1897,7 +1898,7 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
 MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
 {
     /// Read from all parts
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
     /// Do not apply mask for lightweight delete in vertical merge, because it is applied in merging algorithm
     bool apply_deleted_mask = !global_ctx->vertical_lightweight_delete;
@@ -3219,7 +3220,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     }
 
     /// Read from all parts
-    std::vector<QueryPlanPtr> plans;
+    VectorWithMemoryTracking<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
     for (size_t i = 0; i < global_ctx->future_part->parts.size(); ++i)
     {
@@ -3307,7 +3308,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     /// Merge
     {
         Names sort_columns = global_ctx->metadata_snapshot->getSortingKeyColumns();
-        std::vector<bool> reverse_flags = global_ctx->metadata_snapshot->getSortingKeyReverseFlags();
+        auto reverse_flags = global_ctx->metadata_snapshot->getSortingKeyReverseFlags();
         sort_description.compile_sort_description = global_ctx->data->getContext()->getSettingsRef()[Setting::compile_sort_description];
         sort_description.min_count_to_compile_sort_description = global_ctx->data->getContext()->getSettingsRef()[Setting::min_count_to_compile_sort_description];
 

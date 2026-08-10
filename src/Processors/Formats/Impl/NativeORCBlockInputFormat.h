@@ -1,6 +1,10 @@
 #pragma once
 
 #include "config.h"
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_ORC
 
@@ -87,7 +91,7 @@ protected:
     void onCancel() noexcept override { is_stopped = 1; }
 
 private:
-    static std::vector<int> calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes);
+    static VectorWithMemoryTracking<int> calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- FormatSettings::orc::skip_stripes is std::unordered_set
 
     void prepareFileReader();
     bool prepareStripeReader();
@@ -100,18 +104,18 @@ private:
     std::shared_ptr<orc::SearchArgument> sargs;
 
     // indices of columns to read from ORC file
-    std::list<UInt64> include_indices;
+    std::list<UInt64> include_indices; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- orc::Reader::preBuffer takes std::list
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;
 
     const FormatSettings format_settings;
-    const std::unordered_set<int> & skip_stripes;
+    const std::unordered_set<int> & skip_stripes; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- FormatSettings::orc::skip_stripes is std::unordered_set
     const bool use_prefetch;
     const size_t min_bytes_for_seek;
     FormatFilterInfoPtr format_filter_info;
 
-    std::vector<int> selected_stripes;
+    VectorWithMemoryTracking<int> selected_stripes;
     size_t read_iterator{};
     size_t prefetch_iterator{};
 
@@ -143,7 +147,7 @@ public:
     using ORCColumnPtr = const orc::ColumnVectorBatch *;
     using ORCTypePtr = const orc::Type *;
     using ORCColumnWithType = std::pair<ORCColumnPtr, ORCTypePtr>;
-    using NameToColumnPtr = std::unordered_map<std::string, ORCColumnWithType>;
+    using NameToColumnPtr = UnorderedMapWithMemoryTracking<std::string, ORCColumnWithType>;
 
     ORCColumnToCHColumn(
         const Block & header_,

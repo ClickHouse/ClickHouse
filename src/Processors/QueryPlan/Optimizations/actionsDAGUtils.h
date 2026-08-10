@@ -1,12 +1,14 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
 
-using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
-using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
+using NodeSet = UnorderedSetWithMemoryTracking<const ActionsDAG::Node *>;
+using NodeMap = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, bool>;
 
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
@@ -43,7 +45,7 @@ struct MatchedTrees
         std::optional<Monotonicity> monotonicity;
     };
 
-    using Matches = std::unordered_map<const ActionsDAG::Node *, Match>;
+    using Matches = UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, Match>;
 };
 
 /// `max_size_for_sets_from_tuple_to_compare` bounds the cost of comparing `IN`-clause sets
@@ -86,9 +88,9 @@ void applyActionsToSortDescription(
 /// a consistent input substitution map cannot be constructed.
 ///
 /// The primary use case is to construct the input substitution map required by `ActionsDAG::foldActionsByProjection`.
-std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
+std::optional<UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, const ActionsDAG::Node *>> resolveMatchedInputs(
     const MatchedTrees::Matches & matches,
-    const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
 
 bool isInjectiveFunction(const ActionsDAG::Node * node);

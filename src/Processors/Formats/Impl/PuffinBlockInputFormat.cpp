@@ -1,4 +1,7 @@
 #include <algorithm>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <cstring>
 #include <limits>
 #include <optional>
@@ -277,7 +280,7 @@ void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_inde
 
 void parseStringValuedProperties(
     const Poco::JSON::Object::Ptr & props_obj,
-    std::map<String, String> * out,
+    MapWithMemoryTracking<String, String> * out,
     bool for_blob,
     size_t blob_index)
 {
@@ -328,7 +331,7 @@ void validateFileMetadataProperties(const Poco::JSON::Object::Ptr & footer_obj)
     parseStringValuedProperties(props_obj, /*out=*/nullptr, /*for_blob=*/false, /*blob_index=*/0);
 }
 
-std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_region_end)
+VectorWithMemoryTracking<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_region_end)
 {
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var root;
@@ -359,7 +362,7 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
     if (!blobs_arr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer field 'blobs' must be an array");
 
-    std::vector<PuffinBlob> blobs;
+    VectorWithMemoryTracking<PuffinBlob> blobs;
     for (size_t i = 0; i < blobs_arr->size(); ++i)
     {
         auto blob_obj = blobs_arr->getObject(static_cast<unsigned>(i));
@@ -410,7 +413,7 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
     return blobs;
 }
 
-std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size)
+VectorWithMemoryTracking<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size)
 {
     if (file_size < 16)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
@@ -495,7 +498,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
         checkMagic(result.data.data(), "header");
 
-        std::vector<UInt8> tmp(DEFAULT_BLOCK_SIZE);
+        VectorWithMemoryTracking<UInt8> tmp(DEFAULT_BLOCK_SIZE);
         while (!buf.eof())
         {
             size_t n = buf.read(reinterpret_cast<char *>(tmp.data()), tmp.size());
@@ -510,7 +513,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
 }
 
 String readPuffinBlobBytes(
-    const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read)
+    const PuffinBlob & blob, ReadBuffer & buf, const VectorWithMemoryTracking<UInt8> & data, bool seekable_read)
 {
     const size_t length = static_cast<size_t>(blob.length);
 
@@ -535,7 +538,7 @@ String readPuffinBlobBytes(
 }
 
 void readDeletionVectorEnvelopePrefix(
-    const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read, UInt8 header[8])
+    const PuffinBlob & blob, ReadBuffer & buf, const VectorWithMemoryTracking<UInt8> & data, bool seekable_read, UInt8 header[8])
 {
     if (!data.empty())
     {
@@ -554,7 +557,7 @@ void readDeletionVectorEnvelopePrefix(
 }
 
 String readDeletionVectorBlobBytes(
-    const PuffinBlob & blob, ReadBuffer & buf, const std::vector<UInt8> & data, bool seekable_read)
+    const PuffinBlob & blob, ReadBuffer & buf, const VectorWithMemoryTracking<UInt8> & data, bool seekable_read)
 {
     if (blob.length < 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob length is negative");
@@ -757,7 +760,7 @@ NamesAndTypesList getPuffinSchema()
 
 void checkPuffinFormatHeader(const Block & header, const NamesAndTypesList & expected_schema, const char * format_name)
 {
-    std::unordered_map<String, DataTypePtr> name_to_type;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> name_to_type;
     for (const auto & [name, type] : expected_schema)
         name_to_type[name] = type;
 
@@ -860,7 +863,7 @@ Chunk PuffinMetadataInputFormat::read()
     MutableColumnPtr col_props_arr = ColumnArray::create(std::move(col_props_tuple), std::move(col_props_offsets));
     MutableColumnPtr col_props = ColumnMap::create(std::move(col_props_arr));
 
-    std::unordered_map<String, MutableColumnPtr> built;
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> built;
     built.emplace("blob_type",         std::move(col_type));
     built.emplace("snapshot_id",       std::move(col_snap));
     built.emplace("sequence_number",   std::move(col_seq));
@@ -938,7 +941,7 @@ Chunk PuffinInputFormat::read()
         }
 
         const Block & out_header = getPort().getHeader();
-        std::unordered_map<String, MutableColumnPtr> built;
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> built;
         built.emplace("referenced_data_file", std::move(col_file));
         if (need_deleted_rows)
             built.emplace("deleted_rows", std::move(col_rows));

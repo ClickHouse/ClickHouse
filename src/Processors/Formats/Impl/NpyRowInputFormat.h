@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/NamesAndTypes.h>
@@ -16,7 +17,7 @@ class ReadBuffer;
 
 struct NumpyHeader
 {
-    std::vector<size_t> shape;
+    VectorWithMemoryTracking<size_t> shape;
     std::shared_ptr<NumpyDataType> numpy_type;
 };
 

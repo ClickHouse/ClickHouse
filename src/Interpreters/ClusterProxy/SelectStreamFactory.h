@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Client/ConnectionPool.h>
 #include <Core/QueryProcessingStage.h>
@@ -85,7 +86,7 @@ public:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        std::vector<QueryPlanPtr> & local_plans,
+        VectorWithMemoryTracking<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
@@ -98,7 +99,7 @@ public:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        std::vector<QueryPlanPtr> & local_plans,
+        VectorWithMemoryTracking<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
@@ -117,7 +118,7 @@ private:
         const StorageID & main_table,
         const ASTPtr & table_func_ptr,
         ContextPtr context,
-        std::vector<QueryPlanPtr> & local_plans,
+        VectorWithMemoryTracking<QueryPlanPtr> & local_plans,
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,

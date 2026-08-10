@@ -546,7 +546,7 @@ TEST_F(SSTFixture, WriteDenseIndexDescPrefixFallsBackToUnsorted)
         block,
         /*uk_names=*/Names{"k"},
         /*sort_names=*/Names{"k"},
-        /*sort_reverse_flags=*/std::vector<bool>{true},
+        /*sort_reverse_flags=*/VectorWithMemoryTracking<bool>{true},
         /*permutation=*/nullptr,
         /*max_encoded_size=*/256,
         getContext().context);

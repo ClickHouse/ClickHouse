@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Interpreters/Context_fwd.h>
 
@@ -52,7 +53,7 @@ public:
         const Block & block,
         const Names & uk_names,
         const Names & sort_names,
-        const std::vector<bool> & sort_reverse_flags,
+        const VectorWithMemoryTracking<bool> & sort_reverse_flags,
         const IColumn::Permutation * permutation,
         UInt64 max_encoded_size,
         ContextPtr context);

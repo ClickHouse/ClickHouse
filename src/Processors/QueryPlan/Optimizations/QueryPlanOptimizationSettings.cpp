@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -310,7 +311,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_min_probe_rows = from[Setting::join_runtime_filter_min_probe_rows];
     join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];
 
-    query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
+    {
+        auto algorithms = static_cast<std::vector<JoinOrderAlgorithm>>(from[Setting::query_plan_optimize_join_order_algorithm]); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        query_plan_optimize_join_order_algorithm.assign(algorithms.begin(), algorithms.end());
+    }
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 

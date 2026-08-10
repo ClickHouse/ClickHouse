@@ -278,7 +278,7 @@ else \
 WindowTransform::WindowTransform(SharedHeader input_header_,
         SharedHeader output_header_,
         const WindowDescription & window_description_,
-        const std::vector<WindowFunctionDescription> & functions)
+        const VectorWithMemoryTracking<WindowFunctionDescription> & functions)
     : IProcessor({input_header_}, {output_header_})
     , input(inputs.front())
     , output(outputs.front())
@@ -1190,7 +1190,7 @@ void WindowTransform::writeOutCurrentRow()
     }
 }
 
-static void assertSameColumns(const Columns & left_all, const Columns & right_all, const std::vector<UInt8> & columns_to_check)
+static void assertSameColumns(const Columns & left_all, const Columns & right_all, const VectorWithMemoryTracking<UInt8> & columns_to_check)
 {
     chassert(left_all.size() == right_all.size());
 

@@ -1,4 +1,6 @@
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -44,7 +46,7 @@ namespace QueryPlanOptimizations
 constexpr bool debug_logging_enabled = false;
 
 /// Plan-wide collector of the MergeTree reads to distribute (defined below; used by buildPlanFragment).
-static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node);
+static VectorWithMemoryTracking<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node);
 
 /// Side of a JOIN; `Left`/`Right` double as the join node's child indices.
 enum class JoinSide : size_t
@@ -363,7 +365,7 @@ private:
 /// reads are left local): the parallel-replicas coordinator drives every read of a shipped fragment and
 /// cannot distinguish duplicate announcements for one table, so such a union must not become a single
 /// distributed fragment (mirrors StorageView::getUnderlyingMergeTreeStorageForParallelReplicas).
-static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node)
+static VectorWithMemoryTracking<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node)
 {
     if (!node)
         return {};
@@ -377,14 +379,14 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
 
     if (typeid_cast<UnionStep *>(node->step.get()))
     {
-        std::vector<QueryPlan::Node *> reads;
+        VectorWithMemoryTracking<QueryPlan::Node *> reads;
         for (auto * child : node->children)
         {
             auto child_reads = collectReadsToDistribute(child);
             reads.insert(reads.end(), child_reads.begin(), child_reads.end());
         }
 
-        std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
+        UnorderedSetWithMemoryTracking<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
         for (auto * read_node : reads)
         {
             const auto & storage_id = typeid_cast<ReadFromMergeTree &>(*read_node->step).getMergeTreeData().getStorageID();
@@ -466,7 +468,7 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     if (planHasSubquerySet(root))
         return;
 
-    std::unordered_set<const QueryPlan::Node *> eligible;
+    UnorderedSetWithMemoryTracking<const QueryPlan::Node *> eligible;
     for (auto * node : collectReadsToDistribute(root))
         eligible.insert(node);
     if (eligible.empty())
@@ -490,7 +492,7 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
 
     /// Collect (parent, child index) of every eligible read first, then wrap — avoids mutating the tree
     /// while traversing it.
-    std::vector<std::pair<QueryPlan::Node *, size_t>> to_wrap;
+    VectorWithMemoryTracking<std::pair<QueryPlan::Node *, size_t>> to_wrap;
     Stack stack;
     traverseQueryPlan(
         stack,

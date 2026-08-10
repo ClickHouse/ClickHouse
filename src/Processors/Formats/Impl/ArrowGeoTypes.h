@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/WKB.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>
@@ -55,7 +56,7 @@ struct GeoColumnMetadata
 const std::string * extractGeoMetadata(std::shared_ptr<const arrow::KeyValueMetadata> metadata);
 #endif
 
-std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str);
+std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std::string * geo_json_str); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- geo metadata map, shared with ArrowIPC which keeps it std::unordered_map
 
 DataTypePtr getGeoDataType(GeoType type);
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_JEMALLOC
 
@@ -8,7 +9,7 @@
 #    include <optional>
 #    include <string>
 #    include <unordered_map>
-#    include <vector>
+#    include <Common/VectorWithMemoryTracking.h>
 #    include <Core/SettingsEnums.h>
 #    include <IO/ReadBufferFromFile.h>
 #    include <Processors/ISource.h>
@@ -67,7 +68,7 @@ private:
 
     /// For Symbolized mode streaming
     SymbolizedPhase symbolized_phase = SymbolizedPhase::CollectingAddresses;
-    std::vector<UInt64> addresses;        /// Collected addresses to symbolize
+    VectorWithMemoryTracking<UInt64> addresses;        /// Collected addresses to symbolize
     size_t current_address_index = 0;
 
     /// Track what we've output in header phases
@@ -79,8 +80,8 @@ private:
     /// For Collapsed mode: aggregated stacks streamed directly from the map
     struct CollapsedState
     {
-        std::unordered_map<std::string, UInt64> stack_to_metric;
-        std::unordered_map<std::string, UInt64>::const_iterator iter;
+        UnorderedMapWithMemoryTracking<std::string, UInt64> stack_to_metric;
+        UnorderedMapWithMemoryTracking<std::string, UInt64>::const_iterator iter;
 
         CollapsedState() = default;
         CollapsedState(const CollapsedState &) = delete;

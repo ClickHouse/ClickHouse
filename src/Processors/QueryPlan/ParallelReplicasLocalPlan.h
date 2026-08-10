@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
@@ -29,7 +30,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     QueryPlanStepPtr read_from_merge_tree,
     size_t replica_number);
 
-std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree);
+VectorWithMemoryTracking<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree);
 
 QueryPlanPtr createLocalPlanFragmentForParallelReplicas(
     ContextPtr context,
@@ -42,6 +43,6 @@ QueryPlanPtr createRemotePlanFragmentForParallelReplicas(
     QueryPlanPtr plan_fragment,
     ParallelReplicasReadingCoordinatorPtr coordinator,
     const ClusterPtr & cluster,
-    const std::vector<ConnectionPoolPtr> & connection_pool,
+    const VectorWithMemoryTracking<ConnectionPoolPtr> & connection_pool,
     std::optional<size_t> exclude_pool_index);
 }

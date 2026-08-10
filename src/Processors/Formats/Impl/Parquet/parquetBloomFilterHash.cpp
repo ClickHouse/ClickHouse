@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
@@ -168,13 +169,13 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::
     }
 }
 
-std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
+std::optional<VectorWithMemoryTracking<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor)
 {
     const IColumn * column = data_column;
     if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column))
         column = nullable_column->getNestedColumnPtr().get();
 
-    std::vector<uint64_t> hashes;
+    VectorWithMemoryTracking<uint64_t> hashes;
     /// Allocate the exact capacity up front rather than growing geometrically via `emplace_back`.
     /// The dictionary-filter pruning path budgets this vector as exactly `size() * sizeof(UInt64)`
     /// against `input_format_parquet_memory_high_watermark` (see `hashDictionaryValues`); a geometric

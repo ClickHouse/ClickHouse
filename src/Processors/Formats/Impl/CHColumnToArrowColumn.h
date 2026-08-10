@@ -1,5 +1,7 @@
 #pragma once
 #include "config.h"
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_ARROW || USE_PARQUET
 
@@ -43,7 +45,7 @@ public:
         const Chunk * chunk,
         const Settings & settings,
         std::optional<size_t> columns_num = std::nullopt,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt
+        const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id = std::nullopt
     );
 
     /// Because an arrow table can only have one dictionary per column, if the returned table is intended to be inserted into a larger table,
@@ -51,11 +53,11 @@ public:
     static std::shared_ptr<arrow::Table> calculateArrowTable(
         const ColumnsWithTypeAndName & header_columns,
         const std::string & format_name,
-        const std::vector<Chunk> & chunks,
+        const VectorWithMemoryTracking<Chunk> & chunks,
         const Settings & settings,
         size_t columns_num,
         std::shared_ptr<arrow::Schema> schema,
-        std::unordered_map<std::string, MutableColumnPtr> * cached_dictionary_values = nullptr);
+        UnorderedMapWithMemoryTracking<std::string, MutableColumnPtr> * cached_dictionary_values = nullptr);
 
 
     CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_);
@@ -74,7 +76,7 @@ public:
     void initializeArrowSchema(
         const Chunk * chunk = nullptr,
         std::optional<size_t> columns_num = std::nullopt,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt);
+        const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id = std::nullopt);
 
     /// Returns the arrow schema (if it's not initialized yet this function will initialize it from the header columns).
     /// Arrow schemas are immutable (all members of class arrow::Schema are const), so
@@ -83,9 +85,9 @@ public:
 
     void chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
-        const std::vector<Chunk> & chunk,
+        const VectorWithMemoryTracking<Chunk> & chunk,
         size_t columns_num,
-        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt);
+        const std::optional<UnorderedMapWithMemoryTracking<String, Int64>> & column_to_field_id = std::nullopt);
 
 private:
     ColumnsWithTypeAndName header_columns;
@@ -100,7 +102,7 @@ private:
     /// Map {column name : arrow dictionary}.
     /// To avoid converting dictionary from LowCardinality to Arrow
     /// Dictionary every chunk we save it and reuse.
-    std::unordered_map<std::string, MutableColumnPtr> dictionary_values;
+    UnorderedMapWithMemoryTracking<std::string, MutableColumnPtr> dictionary_values;
 };
 
 }

@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Columns/ColumnConst.h>
@@ -61,7 +64,7 @@ namespace DB::QueryPlanOptimizations
 /// ---- BEGIN: Predicate-implication helpers (shared logic with optimizeUseNormalProjection.cpp) ----
 
 /// Extract AND-connected conjuncts from an AST expression tree.
-static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
+static void extractConjunctsFromAST(const ASTPtr & expr, VectorWithMemoryTracking<ASTPtr> & result)
 {
     if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
     {
@@ -197,7 +200,7 @@ static bool doesQueryFilterImplyProjectionWhere(
         }
     }
 
-    std::vector<ASTPtr> proj_conjuncts;
+    VectorWithMemoryTracking<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
 
     const auto * filter_root = query_filter_node;
@@ -235,7 +238,7 @@ static const ActionsDAG::Node * buildResidualFilterNode(
 
     auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
 
-    std::vector<ASTPtr> proj_conjuncts;
+    VectorWithMemoryTracking<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
 
     /// Keep only query atoms that do NOT match any projection-WHERE conjunct.
@@ -269,7 +272,7 @@ static const ActionsDAG::Node * buildResidualFilterNode(
 
 /// ---- END: Predicate-implication helpers ----
 
-using DAGIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+using DAGIndex = UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *>;
 static DAGIndex buildDAGIndex(const ActionsDAG & dag)
 {
     DAGIndex index;
@@ -339,7 +342,7 @@ struct AggregateFunctionMatch
     DataTypes argument_types;
 };
 
-using AggregateFunctionMatches = std::vector<AggregateFunctionMatch>;
+using AggregateFunctionMatches = VectorWithMemoryTracking<AggregateFunctionMatch>;
 
 /// Here we try to match aggregate functions from the query to
 /// aggregate functions from projection.
@@ -353,7 +356,7 @@ static std::optional<AggregateFunctionMatches> matchAggregateFunctions(
     AggregateFunctionMatches res;
 
     /// Index (projection agg function name) -> pos
-    std::unordered_map<std::string, std::vector<size_t>> projection_aggregate_functions;
+    UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<size_t>> projection_aggregate_functions;
     for (size_t i = 0; i < info.aggregates.size(); ++i)
         projection_aggregate_functions[info.aggregates[i].function->getName()].push_back(i);
 
@@ -452,7 +455,7 @@ static void appendAggregateFunctions(
     const AggregateDescriptions & aggregates,
     const AggregateFunctionMatches & matched_aggregates)
 {
-    std::unordered_map<const AggregateDescription *, const ActionsDAG::Node *> inputs;
+    UnorderedMapWithMemoryTracking<const AggregateDescription *, const ActionsDAG::Node *> inputs;
 
     /// Just add all the aggregates to dag inputs.
     auto & proj_dag_outputs =  proj_dag.getOutputs();
@@ -498,7 +501,7 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
         return {};
 
     ActionsDAG::NodeRawConstPtrs query_key_nodes;
-    std::unordered_set<const ActionsDAG::Node *> proj_key_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> proj_key_nodes;
 
     {
         /// Just, filling the set above.
@@ -566,7 +569,7 @@ struct MinMaxProjectionCandidate
 
 struct AggregateProjectionCandidates
 {
-    std::vector<AggregateProjectionCandidate> real;
+    VectorWithMemoryTracking<AggregateProjectionCandidate> real;
     std::optional<MinMaxProjectionCandidate> minmax_projection;
 
     /// This flag means that DAG for projection candidate should be used in FilterStep.
@@ -594,7 +597,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     ContextPtr context = reading.getContext();
 
     const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
+    VectorWithMemoryTracking<const ProjectionDescription *> agg_projections;
 
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Aggregate)
@@ -712,7 +715,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     ContextPtr context = reading.getContext();
 
     const auto & projections = metadata->projections;
-    std::vector<const ProjectionDescription *> agg_projections;
+    VectorWithMemoryTracking<const ProjectionDescription *> agg_projections;
 
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Aggregate)
@@ -1128,7 +1131,7 @@ std::optional<String> optimizeUseAggregateProjections(
 
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
 
-        std::vector<char> state(agg_count->sizeOfData());
+        VectorWithMemoryTracking<char> state(agg_count->sizeOfData());
         AggregateDataPtr place = state.data();
         agg_count->create(place);
         SCOPE_EXIT_MEMORY_SAFE(agg_count->destroy(place));

@@ -1,6 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -26,7 +29,7 @@ struct StorageID;
 
 struct PreparedJoinStorage
 {
-    std::unordered_map<String, String> column_mapping;
+    UnorderedMapWithMemoryTracking<String, String> column_mapping;
 
     /// At most one of these fields is set
     std::shared_ptr<StorageJoin> storage_join;
@@ -59,7 +62,7 @@ public:
         JoinOperator join_operator_,
         JoinExpressionActions join_expression_actions_,
         const NameSet & required_output_columns_,
-        const std::unordered_map<String, const ActionsDAG::Node *> & changed_types,
+        const UnorderedMapWithMemoryTracking<String, const ActionsDAG::Node *> & changed_types,
         bool use_nulls_,
         JoinSettings join_settings_,
         SortingStep::Settings sorting_settings_);
@@ -69,7 +72,7 @@ public:
         const SharedHeader & right_header_,
         JoinOperator join_operator_,
         JoinExpressionActions join_expression_actions_,
-        std::vector<const ActionsDAG::Node *> actions_after_join_,
+        ActionsDAG::NodeRawConstPtrs actions_after_join_,
         JoinSettings join_settings_,
         SortingStep::Settings sorting_settings_);
 
@@ -93,8 +96,8 @@ public:
 
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
 
-    std::vector<JoinActionRef> getInputActions() const;
-    std::vector<JoinActionRef> getOutputActions() const;
+    VectorWithMemoryTracking<JoinActionRef> getInputActions() const;
+    VectorWithMemoryTracking<JoinActionRef> getOutputActions() const;
 
     std::pair<JoinExpressionActions, JoinOperator> detachExpressions()
     {
@@ -133,17 +136,17 @@ public:
         const QueryPlanOptimizationSettings & optimization_settings,
         QueryPlan::Nodes & nodes);
 
-    std::unordered_set<JoinTableSide> typeChangingSides() const;
+    UnorderedSetWithMemoryTracking<JoinTableSide> typeChangingSides() const;
 
     bool isOptimized() const { return optimized; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
     bool hasImpreciseEstimate() const { return imprecise_estimate; }
-    const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
+    const UnorderedMapWithMemoryTracking<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
 
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
-        std::unordered_map<String, ColumnStats> column_stats_ = {},
+        UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats_ = {},
         bool imprecise_estimate_ = false)
     {
         optimized = true;
@@ -177,7 +180,7 @@ public:
     void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
@@ -192,7 +195,7 @@ protected:
 
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
 
-    std::vector<std::pair<String, String>> describeJoinProperties() const;
+    VectorWithMemoryTracking<std::pair<String, String>> describeJoinProperties() const;
 
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
@@ -209,7 +212,7 @@ protected:
 
     bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};
-    std::unordered_map<String, ColumnStats> result_column_stats = {};
+    UnorderedMapWithMemoryTracking<String, ColumnStats> result_column_stats = {};
 
     /// True when the row count estimation used by join reordering was derived from the primary index
     /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).

@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/JSONCompactRowInputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
@@ -26,7 +27,7 @@ void JSONCompactRowInputFormat::readPrefix()
     if (format_settings.json.validate_types_from_metadata)
     {
         auto names_and_types = JSONUtils::readMetadataAndValidateHeader(*in, getPort().getHeader(), format_settings.json);
-        Names column_names;
+        VectorWithMemoryTracking<String> column_names;
         for (const auto & [name, type] : names_and_types)
             column_names.push_back(name);
         column_mapping->addColumns(column_names, column_indexes_by_names, format_settings);

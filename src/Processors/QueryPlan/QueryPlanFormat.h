@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/PreparedSets.h>
 
@@ -36,9 +37,9 @@ struct PrettyColumnName
         : expression(std::move(expression_)), annotation(std::move(annotation_)) {}
 };
 
-using PrettyColumnNameMap = std::unordered_map<String, PrettyColumnName>;
-using PrettyRuntimeFilterNameMap = std::unordered_map<String, RuntimeFilterInfo>;
-using PrettySetNameMap = std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing>;
+using PrettyColumnNameMap = UnorderedMapWithMemoryTracking<String, PrettyColumnName>;
+using PrettyRuntimeFilterNameMap = UnorderedMapWithMemoryTracking<String, RuntimeFilterInfo>;
+using PrettySetNameMap = UnorderedMapWithMemoryTracking<FutureSet::Hash, String, PreparedSets::Hashing>;
 
 struct PrettyNames
 {
@@ -51,7 +52,7 @@ struct PrettyNames
 /// Runtime-filter names are global ids and are shared across the tree (copied into every entry).
 struct PrettyNamesPerPlan
 {
-    std::unordered_map<const QueryPlan *, PrettyNames> names;
+    UnorderedMapWithMemoryTracking<const QueryPlan *, PrettyNames> names;
 };
 
 struct ExplainFormatSettings
@@ -82,7 +83,7 @@ namespace QueryPlanFormat
         const PrettyRuntimeFilterNameMap & runtime_filter_names,
         PrettySetNameMap & subquery_set_names,
         int parent_precedence = 0);
-    String formatColumnPretty(const String & column_name, const std::unordered_map<String, PrettyColumnName> & pretty_names);
+    String formatColumnPretty(const String & column_name, const UnorderedMapWithMemoryTracking<String, PrettyColumnName> & pretty_names);
     std::string_view getColumnAnnotation(const String & column_name, const ExplainFormatSettings & settings);
 
     PrettyNamesPerPlan buildPrettyNamesPerPlan(const QueryPlan & plan);

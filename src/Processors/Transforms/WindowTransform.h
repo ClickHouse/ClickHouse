@@ -1,10 +1,12 @@
 #pragma once
 
 #include <AggregateFunctions/WindowFunction.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Interpreters/WindowDescription.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <deque>
 
@@ -63,7 +65,7 @@ public:
             SharedHeader input_header_,
             SharedHeader output_header_,
             const WindowDescription & window_description_,
-            const std::vector<WindowFunctionDescription> &
+            const VectorWithMemoryTracking<WindowFunctionDescription> &
                 functions);
 
     ~WindowTransform() override;
@@ -223,16 +225,16 @@ public:
     WindowDescription window_description;
 
     // Indices of the PARTITION BY columns in block.
-    std::vector<size_t> partition_by_indices;
+    VectorWithMemoryTracking<size_t> partition_by_indices;
     // Indices of the ORDER BY columns in block;
-    std::vector<size_t> order_by_indices;
+    VectorWithMemoryTracking<size_t> order_by_indices;
 
     // Which input columns we actually read while computing the window functions: the PARTITION BY
     // and ORDER BY keys and the function arguments.
-    std::vector<UInt8> should_materialize;
+    VectorWithMemoryTracking<UInt8> should_materialize;
 
     // Per-window-function scratch spaces.
-    std::vector<WindowFunctionWorkspace> workspaces;
+    VectorWithMemoryTracking<WindowFunctionWorkspace> workspaces;
 
     // FIXME Reset it when the partition changes. We only save the temporary
     // states in it (probably?).
@@ -242,7 +244,7 @@ public:
     // they arrive, and discard the blocks we don't need anymore. The blocks
     // have an always-incrementing index. The index of the first block is in
     // `first_block_number`.
-    std::deque<WindowTransformBlock> blocks;
+    DequeWithMemoryTracking<WindowTransformBlock> blocks;
     UInt64 first_block_number = 0;
     // The next block we are going to pass to the consumer.
     UInt64 next_output_block_number = 0;

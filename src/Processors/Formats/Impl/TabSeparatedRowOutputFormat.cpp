@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
@@ -20,7 +21,7 @@ TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
 {
 }
 
-void TabSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
+void TabSeparatedRowOutputFormat::writeLine(const Names & values)
 {
     for (size_t i = 0; i < values.size(); ++i)
     {

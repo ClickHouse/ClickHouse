@@ -154,6 +154,12 @@ void logProcessorProfile(ContextPtr context, const VectorWithMemoryTracking<IPro
 
 void logProcessorProfile(ContextPtr context, const Processors & processors)
 {
+    /// Gather the profile data only when it is logged. Both of these allocate per processor, and
+    /// the containers are tracked, so collecting them for a query that does not log them could
+    /// fail on the memory limit for nothing.
+    if (!context->getSettingsRef()[Setting::log_processors_profiles])
+        return;
+
     String pipeline_dump;
     {
         WriteBufferFromString out(pipeline_dump);

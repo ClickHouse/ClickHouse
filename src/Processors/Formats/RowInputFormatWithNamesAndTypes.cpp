@@ -1,4 +1,6 @@
 #include <Common/Logger.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -33,7 +35,7 @@ namespace ErrorCodes
 
 namespace
 {
-    bool checkIfAllValuesAreTypeNames(const std::vector<String> & names)
+    bool checkIfAllValuesAreTypeNames(const VectorWithMemoryTracking<String> & names)
     {
         for (const auto & name : names)
         {
@@ -43,7 +45,7 @@ namespace
         return true;
     }
 
-    bool isSubsetOf(const std::unordered_set<std::string_view> & subset, const std::unordered_set<std::string_view> & set)
+    bool isSubsetOf(const UnorderedSetWithMemoryTracking<std::string_view> & subset, const UnorderedSetWithMemoryTracking<std::string_view> & set)
     {
         for (const auto & element : subset)
         {
@@ -94,8 +96,8 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
     /// Skip prefix before names and types.
     format_reader->skipPrefixBeforeHeader();
 
-    std::vector<String> column_names;
-    std::vector<String> type_names;
+    VectorWithMemoryTracking<String> column_names;
+    VectorWithMemoryTracking<String> type_names;
     if (with_names)
         column_names = format_reader->readNames();
 
@@ -154,7 +156,7 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readPrefix()
 }
 
 template <typename FormatReaderImpl>
-void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vector<String> & column_names_out, std::vector<String> & type_names_out)
+void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(VectorWithMemoryTracking<String> & column_names_out, VectorWithMemoryTracking<String> & type_names_out)
 {
     auto & read_buf = getReadBuffer();
     PeekableReadBuffer * peekable_buf = dynamic_cast<PeekableReadBuffer *>(&read_buf);
@@ -176,8 +178,8 @@ void RowInputFormatWithNamesAndTypes<FormatReaderImpl>::tryDetectHeader(std::vec
     /// that all values from this row is a subset of column names from provided header
     /// or column names from provided header is a subset of values from this row
     auto column_names = getPort().getHeader().getNames();
-    std::unordered_set<std::string_view> column_names_set(column_names.begin(), column_names.end());
-    std::unordered_set<std::string_view> first_row_values_set(first_row_values.begin(), first_row_values.end());
+    UnorderedSetWithMemoryTracking<std::string_view> column_names_set(column_names.begin(), column_names.end());
+    UnorderedSetWithMemoryTracking<std::string_view> first_row_values_set(first_row_values.begin(), first_row_values.end());
     if (!isSubsetOf(first_row_values_set, column_names_set) && !isSubsetOf(column_names_set, first_row_values_set))
     {
         /// Rollback to the beginning of the first row to parse it as data later.
@@ -454,11 +456,11 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
 
     format_reader->skipPrefixBeforeHeader();
 
-    std::vector<String> column_names;
+    VectorWithMemoryTracking<String> column_names;
     if (with_names)
         column_names = format_reader->readNames();
 
-    std::vector<String> data_type_names;
+    VectorWithMemoryTracking<String> data_type_names;
     if (with_types)
     {
         format_reader->skipRowBetweenDelimiter();
@@ -482,7 +484,8 @@ NamesAndTypesList FormatWithNamesAndTypesSchemaReader::readSchema()
     }
 
     if (!column_names.empty())
-        setColumnNames(column_names);
+        /// `IRowSchemaReader` keeps the column names as `Names`; the setter copied them anyway.
+        setColumnNames(Names(column_names.begin(), column_names.end()));
 
     /// We should determine types by reading rows with data. Use the implementation from IRowSchemaReader.
     return IRowSchemaReader::readSchema();
@@ -507,7 +510,7 @@ namespace
     }
 }
 
-void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names)
+void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(VectorWithMemoryTracking<String> & column_names, VectorWithMemoryTracking<String> & type_names)
 {
     auto first_row = readRowAndGetFieldsAndDataTypes();
 
@@ -559,7 +562,7 @@ void FormatWithNamesAndTypesSchemaReader::tryDetectHeader(std::vector<String> & 
     }
 
     /// Create default names c1,c2,... for better exception messages.
-    std::vector<String> default_colum_names;
+    VectorWithMemoryTracking<String> default_colum_names;
     default_colum_names.reserve(first_row_types.size());
     for (size_t i = 0; i != first_row_types.size(); ++i)
         default_colum_names.push_back("c" + std::to_string(i + 1));
@@ -614,9 +617,9 @@ std::optional<DataTypes> FormatWithNamesAndTypesSchemaReader::readRowAndGetDataT
     return readRowAndGetDataTypesImpl();
 }
 
-std::vector<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(const std::vector<String> & fields)
+VectorWithMemoryTracking<String> FormatWithNamesAndTypesSchemaReader::readNamesFromFields(const VectorWithMemoryTracking<String> & fields)
 {
-    std::vector<String> names;
+    VectorWithMemoryTracking<String> names;
     names.reserve(fields.size());
     auto escaping_rule = format_reader->getEscapingRule();
     for (const auto & field : fields)

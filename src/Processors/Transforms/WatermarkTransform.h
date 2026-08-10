@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
+#include <Common/SetWithMemoryTracking.h>
 
 namespace DB
 {
@@ -31,7 +32,7 @@ protected:
     UInt32 lateness_upper_bound = 0;
     UInt32 max_watermark = 0;
 
-    std::set<UInt32> late_signals;
+    SetWithMemoryTracking<UInt32> late_signals;
 };
 
 }

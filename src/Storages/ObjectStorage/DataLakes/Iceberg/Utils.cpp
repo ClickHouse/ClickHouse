@@ -1084,7 +1084,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
         SortDescription sort_description;
         Names sort_columns = sort_columns_key_description.column_names;
-        std::vector<bool> reverse_flags = sort_columns_key_description.reverse_flags;
+        const auto & reverse_flags = sort_columns_key_description.reverse_flags;
 
         auto transform_and_column_pairs = parseTransformAndColumnPairs(order_by);
         if (transform_and_column_pairs.size() != sort_columns.size())

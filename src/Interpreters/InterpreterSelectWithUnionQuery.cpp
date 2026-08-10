@@ -346,7 +346,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
     }
     else
     {
-        std::vector<std::unique_ptr<QueryPlan>> plans(num_plans);
+        VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans(num_plans);
         SharedHeaders headers(num_plans);
 
         for (size_t i = 0; i < num_plans; ++i)

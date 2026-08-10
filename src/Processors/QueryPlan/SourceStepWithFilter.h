@@ -78,7 +78,7 @@ public:
 private:
     /// Will be cleared after applyFilters() is called.
     ActionDAGNodes filter_nodes;
-    std::vector<ActionsDAG> filter_dags;
+    VectorWithMemoryTracking<ActionsDAG> filter_dags;
 
 protected:
     std::optional<size_t> limit;

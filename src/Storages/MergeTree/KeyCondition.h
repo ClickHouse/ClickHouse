@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
@@ -94,7 +95,7 @@ public:
 
     struct BloomFilterData
     {
-        using HashesForColumns = std::vector<std::vector<uint64_t>>;
+        using HashesForColumns = VectorWithMemoryTracking<VectorWithMemoryTracking<uint64_t>>;
         HashesForColumns hashes_per_column;
         /// Subset of RPNElement::key_columns.
         std::vector<std::size_t> key_columns;
@@ -104,7 +105,7 @@ public:
     {
         virtual ~BloomFilter() = default;
 
-        virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
+        virtual bool findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes) = 0;
     };
 
     using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
@@ -223,7 +224,7 @@ public:
     struct Description
     {
         /// Which columns from PK were used, in PK order.
-        std::vector<std::string> used_keys;
+        VectorWithMemoryTracking<std::string> used_keys;
         /// Condition which was applied, mostly human-readable.
         std::string condition;
     };
@@ -464,7 +465,7 @@ public:
     bool hasOnlyConjunctions() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
+                                std::function<std::optional<VectorWithMemoryTracking<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
 
     /// Split the KeyCondition into single-column conditions AND-ed together, plus a remaining
     /// multi-column KeyCondition.
@@ -474,7 +475,7 @@ public:
     /// as the original KeyCondition. E.g. when calling checkInHyperrectangle on the single-column
     /// KeyCondition-s, the passed hyperrectangle must have as many elements as the original key size,
     /// not just one element.
-    void extractSingleColumnConditions(std::vector<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const;
+    void extractSingleColumnConditions(VectorWithMemoryTracking<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const;
 
     /// List key columns that are actually used in the condition. E.g. condition `x AND y` doesn't use column `z`.
     std::unordered_set<size_t> getUsedColumns() const;

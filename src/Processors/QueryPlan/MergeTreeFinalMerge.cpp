@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/Exception.h>
 #include <Core/Settings.h>
@@ -143,7 +144,7 @@ namespace
 SortDescription buildFinalSortDescription(const StorageMetadataPtr & metadata_snapshot, const Settings & settings)
 {
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
+    auto reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     sort_description.compile_sort_description = settings[Setting::compile_sort_description];
     sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
@@ -180,7 +181,7 @@ Pipe buildFullFinalMergePipe(
 }
 
 Pipe buildDistributedFinalPipe(
-    const std::vector<DistributedReadBucket> & lanes,
+    const VectorWithMemoryTracking<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
     MergeTreeData::MergingParams merging_params,
     size_t max_block_size_rows,

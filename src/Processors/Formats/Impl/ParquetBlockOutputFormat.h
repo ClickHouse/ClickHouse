@@ -1,5 +1,7 @@
 #pragma once
 #include "config.h"
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_PARQUET
 
@@ -68,7 +70,7 @@ private:
     struct RowGroupState
     {
         size_t tasks_in_flight = 0;
-        std::vector<std::vector<ColumnChunk>> column_chunks;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnChunk>> column_chunks;
         size_t num_rows = 0;
     };
 
@@ -97,9 +99,9 @@ private:
     void resetFormatterImpl() override;
     void onCancel() noexcept override;
 
-    void writeRowGroup(std::vector<Chunk> chunks);
+    void writeRowGroup(VectorWithMemoryTracking<Chunk> chunks);
     void writeRowGroupInOneThread(Chunk chunk);
-    void writeRowGroupInParallel(std::vector<Chunk> chunks);
+    void writeRowGroupInParallel(VectorWithMemoryTracking<Chunk> chunks);
 
     void threadFunction();
     void startMoreThreadsIfNeeded(const std::unique_lock<std::mutex> & lock);
@@ -110,7 +112,7 @@ private:
     const FormatSettings format_settings;
 
     /// Chunks to squash together to form a row group.
-    std::vector<Chunk> staging_chunks;
+    VectorWithMemoryTracking<Chunk> staging_chunks;
     size_t staging_rows = 0;
     size_t staging_bytes = 0;
 
@@ -132,8 +134,8 @@ private:
     size_t threads_running = 0;
     std::atomic<size_t> bytes_in_flight{0};
 
-    std::deque<Task> task_queue;
-    std::deque<RowGroupState> row_groups;
+    DequeWithMemoryTracking<Task> task_queue;
+    DequeWithMemoryTracking<RowGroupState> row_groups;
     FormatFilterInfoPtr format_filter_info;
 };
 

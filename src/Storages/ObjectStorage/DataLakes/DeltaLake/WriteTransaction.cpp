@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_DELTA_KERNEL_RS
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
@@ -120,7 +121,7 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
             format_settings.arrow.use_64_bit_indexes_for_dictionary
         });
 
-    std::vector<DB::Chunk> meta_chunks;
+    DB::VectorWithMemoryTracking<DB::Chunk> meta_chunks;
     meta_chunks.emplace_back(std::move(columns), files.size());
 
     std::shared_ptr<arrow::Table> arrow_table;

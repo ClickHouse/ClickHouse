@@ -1,4 +1,8 @@
 #include <algorithm>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <stack>
 #include <unordered_map>
@@ -54,7 +58,7 @@ namespace ErrorCodes
 const QueryPlan::Node * findNonSerializableStep(
     const QueryPlan::Node * root, const std::function<bool(const IQueryPlanStep &)> & ignore)
 {
-    std::vector<const QueryPlan::Node *> stack;
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack;
     if (root)
         stack.push_back(root);
     while (!stack.empty())
@@ -132,7 +136,7 @@ const SharedHeader & QueryPlan::getCurrentHeader() const
     return root->step->getOutputHeader();
 }
 
-void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
+void QueryPlan::unitePlans(QueryPlanStepPtr step, VectorWithMemoryTracking<std::unique_ptr<QueryPlan>> plans)
 {
     if (isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans because current QueryPlan is already initialized");
@@ -560,7 +564,7 @@ namespace ExplainPlan
 };
 
 static void buildTreeOffset(
-    const std::deque<ExplainPlan::Frame> & frames,
+    const DequeWithMemoryTracking<ExplainPlan::Frame> & frames,
     const ExplainPlan::Frame & current,
     IQueryPlanStep::FormatSettings & settings_format,
     const std::string & parent_tree_prefix = "",
@@ -603,7 +607,7 @@ static void buildTreeOffset(
     settings_format.detail_prefix += has_children ? "│  " : "   ";
 }
 
-static void buildIndentOffset(const std::deque<ExplainPlan::Frame> & frames, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
+static void buildIndentOffset(const DequeWithMemoryTracking<ExplainPlan::Frame> & frames, IQueryPlanStep::FormatSettings & settings_format, size_t indent_offset)
 {
     settings_format.offset = (frames.size() - 1 + indent_offset) * settings_format.base_indent;
     settings_format.header_prefix = std::string(settings_format.offset, settings_format.indent_char);
@@ -663,7 +667,7 @@ void QueryPlan::explainPlan(
         return node;
     };
 
-    std::deque<ExplainPlan::Frame> stack;
+    DequeWithMemoryTracking<ExplainPlan::Frame> stack;
 
     if (settings.pretty && parent_tree_prefix.empty())
     {
@@ -842,7 +846,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
     for (const auto & stage : distributed_plan.stages)
     {
         auto it = distributed_plan.stage_depends_on.find(stage.first);
-        const auto & dependencies = it != distributed_plan.stage_depends_on.end() ? it->second : std::unordered_map<String, String>{};
+        const auto & dependencies = it != distributed_plan.stage_depends_on.end() ? it->second : UnorderedMapWithMemoryTracking<String, String>{};
         LOG_TEST(getLogger("optimize"), "Distributed stage: '{}' depends on: [{}] plan:\n{}",
             stage.first, fmt::join(dependencies, ", "), dumpQueryPlan(stage.second.query_plan_fragment));
     }
@@ -991,7 +995,7 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
     };
 
     using CountersPtr = std::shared_ptr<EstimateCounters>;
-    std::unordered_map<std::string, CountersPtr> counters;
+    UnorderedMapWithMemoryTracking<std::string, CountersPtr> counters;
     using processNodeFuncType = std::function<void(const Node * node)>;
     processNodeFuncType process_node = [&counters, &process_node] (const Node * node)
     {
@@ -1060,7 +1064,7 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
 
 QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
 {
-    std::unordered_set<Node *> used;
+    UnorderedSetWithMemoryTracking<Node *> used;
     std::stack<Node *> stack;
 
     stack.push(root);
@@ -1108,7 +1112,7 @@ std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndRe
 
 QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
 {
-    std::unordered_set<Node *> used;
+    UnorderedSetWithMemoryTracking<Node *> used;
     std::stack<Node *> stack;
 
     stack.push(subplan_root);
@@ -1179,13 +1183,13 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
     {
         Node * node;
         Node * clone;
-        std::vector<Node *> children = {};
+        VectorWithMemoryTracking<Node *> children = {};
     };
 
-    std::unordered_map<const Node *, Node *> original_to_clone;
-    std::vector<CommonSubplanReferenceStep *> cloned_references;
+    UnorderedMapWithMemoryTracking<const Node *, Node *> original_to_clone;
+    VectorWithMemoryTracking<CommonSubplanReferenceStep *> cloned_references;
 
-    std::vector<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
+    VectorWithMemoryTracking<Frame> nodes_to_process{ Frame{ .node = subplan_root, .clone = node_to_replace } };
 
     while (!nodes_to_process.empty())
     {

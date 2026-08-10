@@ -1,5 +1,6 @@
 #pragma once
 #include <Compression/CompressedReadBuffer.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
@@ -7,6 +8,7 @@
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
@@ -20,10 +22,10 @@ public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
     UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
-    std::vector<Int32> out_of_order_buckets; // out of order buckets for two level aggregation
+    VectorWithMemoryTracking<Int32> out_of_order_buckets; // out of order buckets for two level aggregation
 };
 
-using AggregatorList = std::list<Aggregator>;
+using AggregatorList = ListWithMemoryTracking<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
@@ -171,7 +173,7 @@ private:
 
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
-    std::list<TemporaryBlockStreamHolder> tmp_files;
+    ListWithMemoryTracking<TemporaryBlockStreamHolder> tmp_files;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 

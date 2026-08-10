@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
 #include <Common/GetPriorityForLoadBalancing.h>
@@ -104,7 +106,7 @@ public:
         Tables external_tables_,
         LoggerPtr log_,
         std::shared_ptr<const StorageLimitsList> storage_limits_,
-        std::vector<ConnectionPoolPtr> pools_to_use,
+        VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use,
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
         ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
         std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
@@ -125,7 +127,7 @@ public:
     /// The connection pools (sized to the coordinator's replica count) and the local replica's index
     /// within them. Captured before this step is dropped from the local INSERT SELECT plan so the
     /// remote-pool pass can reuse the exact same replica set the coordinator was created with.
-    const std::vector<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
+    const VectorWithMemoryTracking<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
     std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
 
 private:
@@ -147,7 +149,7 @@ private:
     Tables external_tables;
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
-    std::vector<ConnectionPoolPtr> pools_to_use;
+    VectorWithMemoryTracking<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
     std::shared_ptr<const QueryPlan> query_plan;
@@ -155,8 +157,8 @@ private:
 
 ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
-    const std::unordered_set<std::string> & projection_names,
-    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    const NameSet & projection_names,
+    const UnorderedMapWithMemoryTracking<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
     ContextMutablePtr & context);
 

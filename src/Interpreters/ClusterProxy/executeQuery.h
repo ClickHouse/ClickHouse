@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Client/ConnectionPool_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
@@ -84,7 +85,7 @@ struct LocalPlanParallelReplicasInfo
 {
     ParallelReplicasReadingCoordinatorPtr coordinator;
     /// Sized to the coordinator's replica count, with the local replica at `local_replica_index`.
-    std::vector<ConnectionPoolPtr> connection_pools;
+    VectorWithMemoryTracking<ConnectionPoolPtr> connection_pools;
     /// The local replica's number; matches the coordinator's snapshot replica number.
     std::optional<size_t> local_replica_index;
 };
@@ -118,7 +119,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ContextPtr & context,
     std::optional<QueryPipeline> pipeline = std::nullopt,
     std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator = std::nullopt,
-    std::vector<ConnectionPoolPtr> reused_connection_pools = {},
+    VectorWithMemoryTracking<ConnectionPoolPtr> reused_connection_pools = {},
     std::optional<size_t> reused_local_replica_index = std::nullopt);
 
 void executeQueryWithParallelReplicas(

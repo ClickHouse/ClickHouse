@@ -1,5 +1,9 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
@@ -22,7 +26,7 @@ class ParallelReadingExtension;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class LazilyReadFromMergeTree;
@@ -41,21 +45,21 @@ struct UsefulSkipIndexes
 {
     bool empty() const { return useful_indices.empty() && !skip_index_for_top_k_filtering; }
 
-    std::vector<MergeTreeIndexWithCondition> useful_indices;
-    std::vector<std::vector<size_t>> per_part_index_orders;
+    VectorWithMemoryTracking<MergeTreeIndexWithCondition> useful_indices;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> per_part_index_orders;
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
 
 /// Contains parts each from different projection index
-using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+using ProjectionIndexReadRangesByIndex = UnorderedMapWithMemoryTracking<size_t, RangesInDataParts>;
 
 struct ProjectionIndexReadInfo
 {
     ProjectionDescriptionRawPtr projection;
     PrewhereInfoPtr prewhere_info;
 };
-using ProjectionIndexReadInfos = std::vector<ProjectionIndexReadInfo>;
+using ProjectionIndexReadInfos = VectorWithMemoryTracking<ProjectionIndexReadInfo>;
 
 struct ProjectionIndexReadDescription
 {
@@ -125,15 +129,15 @@ public:
         std::string part_name = {};
         std::string description = {};
         std::string condition = {};
-        std::vector<std::string> used_keys = {};
+        VectorWithMemoryTracking<std::string> used_keys = {};
         size_t num_parts_after;
         size_t num_granules_after;
         MarkRanges::SearchAlgorithm search_algorithm = {MarkRanges::SearchAlgorithm::Unknown};
 
-        std::vector<DistributedIndexStat> distributed = {};
+        VectorWithMemoryTracking<DistributedIndexStat> distributed = {};
     };
 
-    using IndexStats = std::vector<IndexStat>;
+    using IndexStats = VectorWithMemoryTracking<IndexStat>;
 
     /// Information about used projections.
     struct ProjectionStat
@@ -150,7 +154,7 @@ public:
     };
 
     /// `deque` is used to ensure stable addresses during projection analysis stats building.
-    using ProjectionStats = std::deque<ProjectionStat>;
+    using ProjectionStats = DequeWithMemoryTracking<ProjectionStat>;
 
     using ReadType = MergeTreeReadType;
 
@@ -309,7 +313,7 @@ public:
         bool use_skip_indexes_for_disjunctions;
         bool use_skip_indexes_if_final_exact_mode;
         bool use_skip_indexes_on_data_read;
-        std::optional<std::unordered_set<String>> part_values;
+        std::optional<UnorderedSetWithMemoryTracking<String>> part_values;
     };
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
@@ -446,12 +450,12 @@ public:
     size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
     /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
     /// per-bucket blob shipped as the `read_bucket` task parameter; empty unless this is a distributed read.
-    std::vector<String> serializeDistributedReadBuckets() const;
+    VectorWithMemoryTracking<String> serializeDistributedReadBuckets() const;
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
@@ -537,7 +541,7 @@ private:
     /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
     /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
     /// only the optimization is lost); propagating it there is a follow-up.
-    std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
+    VectorWithMemoryTracking<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;
@@ -683,11 +687,11 @@ private:
     size_t distributed_read_bucket_count = 0;
     /// Initiator side: every virtual bucket across all tasks; `serializeDistributedReadBuckets` groups
     /// `distributed_read_lanes_per_task` of them into each task's `read_bucket` parameter. Empty on a worker.
-    std::vector<DistributedReadBucket> distributed_read_buckets;
+    VectorWithMemoryTracking<DistributedReadBucket> distributed_read_buckets;
     size_t distributed_read_lanes_per_task = 1;
     /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its `read_bucket`
     /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
-    std::vector<DistributedReadBucket> distributed_read_task_buckets;
+    VectorWithMemoryTracking<DistributedReadBucket> distributed_read_task_buckets;
 };
 
 }

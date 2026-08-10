@@ -3,8 +3,8 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <vector>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/Defines.h>
@@ -32,7 +32,7 @@ class Port
 public:
     struct UpdateInfo
     {
-        using UpdateList = std::vector<void *>;
+        using UpdateList = VectorWithMemoryTracking<void *>;
 
         UpdateList * update_list = nullptr;
         void * id = nullptr;
@@ -495,8 +495,8 @@ public:
 };
 
 
-using InputPorts = std::list<InputPort>;
-using OutputPorts = std::list<OutputPort>;
+using InputPorts = std::list<InputPort>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using OutputPorts = std::list<OutputPort>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 
 void connect(OutputPort & output, InputPort & input, bool reconnect = false);

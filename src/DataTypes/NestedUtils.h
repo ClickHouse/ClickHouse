@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
@@ -73,7 +74,7 @@ namespace Nested
     ///   -> t.a Int32, t.b.c Int64, t.b.d String
     /// If `flattened_ancestors` is not null, it is filled (aligned by position with the result)
     /// with each leaf's tuple ancestor paths.
-    Block flattenTupleRecursive(const Block & block, std::vector<Strings> * flattened_ancestors = nullptr);
+    Block flattenTupleRecursive(const Block & block, VectorWithMemoryTracking<Strings> * flattened_ancestors = nullptr);
 
     /// All tuples are flattened recursively, regardless of whether they have explicit names.
     /// For example, [Int32, Tuple(field1 Int64, field2 String)] will be flattened to [Int32, Int64, String].

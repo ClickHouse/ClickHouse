@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Names.h>
 #include <base/types.h>
 #include <base/unit.h>

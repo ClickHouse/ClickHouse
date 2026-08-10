@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Chunk.h>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
@@ -69,8 +70,8 @@ public:
     ~SharedChunkAllocator();
 
 private:
-    std::vector<SharedChunk> chunks;
-    std::vector<size_t> free_chunks;
+    VectorWithMemoryTracking<SharedChunk> chunks;
+    VectorWithMemoryTracking<size_t> free_chunks;
 
     void release(SharedChunk * ptr) noexcept;
 

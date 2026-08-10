@@ -1,4 +1,5 @@
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
@@ -387,7 +388,7 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
     if (!materialize_skip_indexes)
         return indices;
 
-    std::unordered_set<String> exclude_index_names;
+    UnorderedSetWithMemoryTracking<String> exclude_index_names;
     if (!exclude_indexes_string.empty())
         exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, settings);
 
@@ -779,7 +780,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
+    auto reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -1144,7 +1145,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
+    auto reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);

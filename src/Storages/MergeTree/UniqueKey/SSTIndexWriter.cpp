@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/IColumn.h>
 #include <Core/SortDescription.h>
@@ -89,7 +90,7 @@ LoggerPtr getWriterLogger()
 /// sorted writer can take it as-is and skip the re-sort.
 bool isBlockSortedByUniqueKey(
     const Names & uk_names, const Names & sort_names,
-    const std::vector<bool> & sort_reverse_flags, const Block & block)
+    const VectorWithMemoryTracking<bool> & sort_reverse_flags, const Block & block)
 {
     if (uk_names.size() > sort_names.size())
         return false;
@@ -451,7 +452,7 @@ UInt64 SSTIndexWriter::write(
     const Block & block,
     const Names & uk_names,
     const Names & sort_names,
-    const std::vector<bool> & sort_reverse_flags,
+    const VectorWithMemoryTracking<bool> & sort_reverse_flags,
     const IColumn::Permutation * permutation,
     UInt64 max_encoded_size,
     ContextPtr context)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/Statistics/Statistics.h>
 
@@ -26,7 +27,7 @@ public:
     bool isUseless() const { return useless; }
 
     /// Get the list of column names used in the filter condition that have statistics.
-    Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
+    VectorWithMemoryTracking<String> getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
 
 private:
     /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.

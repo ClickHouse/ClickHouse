@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/BinaryRowInputFormat.h>
@@ -72,9 +73,9 @@ BinaryFormatReader<with_defaults>::BinaryFormatReader(ReadBuffer & in_, const Fo
 }
 
 template <bool with_defaults>
-std::vector<String> BinaryFormatReader<with_defaults>::readHeaderRow()
+VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readHeaderRow()
 {
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     String field;
     for (size_t i = 0; i < read_columns; ++i)
     {
@@ -85,17 +86,17 @@ std::vector<String> BinaryFormatReader<with_defaults>::readHeaderRow()
 }
 
 template <bool with_defaults>
-std::vector<String> BinaryFormatReader<with_defaults>::readNames()
+VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readNames()
 {
     readVarUInt(read_columns, *in);
     return readHeaderRow();
 }
 
 template <bool with_defaults>
-std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
+VectorWithMemoryTracking<String> BinaryFormatReader<with_defaults>::readTypes()
 {
     read_data_types.reserve(read_columns);
-    Names type_names;
+    VectorWithMemoryTracking<String> type_names;
     if (format_settings.binary.decode_types_in_binary_format)
     {
         type_names.reserve(read_columns);

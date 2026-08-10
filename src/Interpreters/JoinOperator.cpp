@@ -1,5 +1,5 @@
-#include <vector>
 #include <Interpreters/JoinOperator.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Columns/IColumn.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -345,7 +345,7 @@ String toString(const JoinActionRef & node)
     return out.str();
 }
 
-static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const ActionsDAG::Node *, size_t> & node_to_id, const std::vector<JoinActionRef> & nodes)
+static void serializeNodeList(WriteBuffer & out, const UnorderedMapWithMemoryTracking<const ActionsDAG::Node *, size_t> & node_to_id, const VectorWithMemoryTracking<JoinActionRef> & nodes)
 {
     writeVarUInt(nodes.size(), out);
     for (const auto & action : nodes)
@@ -369,14 +369,14 @@ void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) 
     serializeJoinLocality(locality, out);
 }
 
-static std::vector<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
+static VectorWithMemoryTracking<JoinActionRef> deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node, JoinExpressionActions & expression_actions)
 {
     size_t num_nodes = 0;
     readVarUInt(num_nodes, in);
 
     size_t max_node_id = id_to_node.size();
 
-    std::vector<JoinActionRef> result;
+    VectorWithMemoryTracking<JoinActionRef> result;
     result.reserve(num_nodes);
 
     for (size_t i = 0; i < num_nodes; ++i)

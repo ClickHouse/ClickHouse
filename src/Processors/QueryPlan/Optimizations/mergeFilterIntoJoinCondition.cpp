@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
@@ -35,9 +38,9 @@ namespace
 
 auto getInputNodes(const ActionsDAG & filter_dag, const Names & allowed_inputs_names)
 {
-    std::unordered_set<const ActionsDAG::Node *> allowed_nodes;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> allowed_nodes;
 
-    std::unordered_map<std::string_view, std::list<const ActionsDAG::Node *>> inputs_map;
+    UnorderedMapWithMemoryTracking<std::string_view, ListWithMemoryTracking<const ActionsDAG::Node *>> inputs_map;
     for (const auto & input_node : filter_dag.getInputs())
         inputs_map[input_node->result_name].emplace_back(input_node);
 
@@ -61,11 +64,11 @@ enum class ExpressionSide : uint8_t
     RIGHT,
 };
 
-std::unordered_set<const ActionsDAG::Node *> getExpressionInputs(const ActionsDAG::Node * expr)
+UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> getExpressionInputs(const ActionsDAG::Node * expr)
 {
-    std::unordered_set<const ActionsDAG::Node *> result;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> result;
 
-    std::unordered_set<const ActionsDAG::Node *> visited;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> visited;
     ActionsDAG::NodeRawConstPtrs nodes_to_process = { expr };
     while (!nodes_to_process.empty())
     {
@@ -92,8 +95,8 @@ std::unordered_set<const ActionsDAG::Node *> getExpressionInputs(const ActionsDA
 
 ExpressionSide getExpressionSide(
     const ActionsDAG::Node * expr,
-    const std::unordered_set<const ActionsDAG::Node *> & left_allowed_inputs,
-    const std::unordered_set<const ActionsDAG::Node *> & right_allowed_inputs
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & left_allowed_inputs,
+    const UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> & right_allowed_inputs
 )
 {
     auto inputs = getExpressionInputs(expr);
@@ -123,7 +126,7 @@ ExpressionSide getExpressionSide(
     return ExpressionSide::UNKNOWN;
 }
 
-using JoinConditionParts = std::vector<ActionsDAG>;
+using JoinConditionParts = VectorWithMemoryTracking<ActionsDAG>;
 
 const ActionsDAG::Node & createResultPredicate(
     ActionsDAG & filter_dag,
@@ -167,7 +170,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     auto conjuncts_list = getConjunctsList(predicate);
 
     JoinConditionParts result;
-    std::unordered_set<const ActionsDAG::Node *> conjuncts_to_replace;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> conjuncts_to_replace;
     ActionsDAG::NodeRawConstPtrs rejected_conjuncts;
     rejected_conjuncts.reserve(conjuncts_list.size());
 

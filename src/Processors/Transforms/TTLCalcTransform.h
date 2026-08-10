@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -38,7 +39,7 @@ protected:
     void finalize();
 
 private:
-    std::vector<TTLAlgorithmPtr> algorithms;
+    VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
     PreparedSets::Subqueries subqueries_for_sets;
 
     /// ttl_infos and empty_columns are updating while reading

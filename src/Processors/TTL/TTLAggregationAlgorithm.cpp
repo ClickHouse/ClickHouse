@@ -1,4 +1,5 @@
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -298,7 +299,7 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
             /// Since there might be intersecting columns between GROUP BY and SET, we prioritize
             /// the SET values over the GROUP BY because doing it the other way causes unexpected
             /// results.
-            std::unordered_set<String> columns_added;
+            UnorderedSetWithMemoryTracking<String> columns_added;
             for (const auto & it : description.set_parts)
             {
                 const IColumn * values_column = agg_block.getByName(it.expression_result_column_name).column.get();

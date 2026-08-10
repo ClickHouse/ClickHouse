@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
@@ -745,7 +746,7 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
 }
 
-std::vector<size_t> SortingStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> SortingStep::getStepGroups() const
 {
     return { static_cast<size_t>(SortingStage::Scatter),
         static_cast<size_t>(SortingStage::Sort),

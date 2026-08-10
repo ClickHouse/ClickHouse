@@ -36,7 +36,7 @@ class RemoveRedundantSorting : public QueryPlanVisitor<RemoveRedundantSorting, d
     /// stack with nodes which affect order
     /// nodes added when traversing top-down
     /// as soon as all children for the node on top of stack are traversed, the node is removed from stack
-    std::vector<QueryPlan::Node *> nodes_affect_order;
+    VectorWithMemoryTracking<QueryPlan::Node *> nodes_affect_order;
 
 public:
     explicit RemoveRedundantSorting(QueryPlan::Node * root_) : QueryPlanVisitor<RemoveRedundantSorting, debug_logging_enabled>(root_) { }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <tuple>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
@@ -96,7 +97,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
 class UniqueKeyDenseIndexOps;
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+using PartitionIdToMaxBlock = UnorderedMapWithMemoryTracking<String, Int64>;
 
 namespace ErrorCodes
 {

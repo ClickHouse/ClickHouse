@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/assert_cast.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -144,7 +146,7 @@ static void skipQuery(ReadBuffer & in)
 }
 
 
-static bool skipUntilRowStartedWithOneOfKeywords(const std::unordered_set<String> & keywords, ReadBuffer & in, String * keyword_out = nullptr)
+static bool skipUntilRowStartedWithOneOfKeywords(const UnorderedSetWithMemoryTracking<String> & keywords, ReadBuffer & in, String * keyword_out = nullptr)
 {
     while (true)
     {
@@ -265,7 +267,7 @@ static void readUnquotedColumnName(String & name, ReadBuffer & in)
 
 /// Try to read column names from a list in INSERT query.
 /// Like '(x, `column name`, z)'
-static void tryReadColumnNames(ReadBuffer & in, std::vector<String> * column_names)
+static void tryReadColumnNames(ReadBuffer & in, VectorWithMemoryTracking<String> * column_names)
 {
     skipWhitespaceIfAny(in);
     /// Check that we have the list of columns.
@@ -306,7 +308,7 @@ static MySQLQueryType skipToInsertOrCreateQuery(String & table_name, ReadBuffer 
     String keyword;
     MySQLQueryType type = MySQLQueryType::NONE;
     /// In MySQL dumps INSERT queries might be replaced with REPLACE queries.
-    std::unordered_set<String> keywords = {"insert", "replace"};
+    UnorderedSetWithMemoryTracking<String> keywords = {"insert", "replace"};
     if (!skip_create_query)
         keywords.insert("create");
 
@@ -343,7 +345,7 @@ static bool skipToInsertQuery(String & table_name, ReadBuffer & in)
     return skipToInsertOrCreateQuery(table_name, in, true) != MySQLQueryType::NONE;
 }
 
-static void skipToDataInInsertQuery(ReadBuffer & in, std::vector<String> * column_names = nullptr)
+static void skipToDataInInsertQuery(ReadBuffer & in, VectorWithMemoryTracking<String> * column_names = nullptr)
 {
     tryReadColumnNames(in, column_names);
     skipWhitespaceIfAny(in);
@@ -418,7 +420,7 @@ static void skipEndOfRow(ReadBuffer & in, String & table_name)
     skipEndOfInsertQueryIfNeeded(in, table_name);
 }
 
-static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name, NamesAndTypesList & structure_from_create, Names & column_names)
+static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name, NamesAndTypesList & structure_from_create, VectorWithMemoryTracking<String> & column_names)
 {
     auto type = skipToInsertOrCreateQuery(table_name, in);
     bool insert_query_present = type == MySQLQueryType::INSERT;
@@ -426,7 +428,8 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
     {
         /// If we have CREATE query, we can extract columns names and types from it.
         if (tryToExtractStructureFromCreateQuery(in, structure_from_create))
-            column_names = structure_from_create.getNames();
+            for (const auto & name_and_type : structure_from_create)
+                column_names.push_back(name_and_type.name);
         skipQuery(in);
         insert_query_present = skipToInsertQuery(table_name, in);
     }
@@ -441,7 +444,7 @@ static void readFirstCreateAndInsertQueries(ReadBuffer & in, String & table_name
 void MySQLDumpRowInputFormat::readPrefix()
 {
     NamesAndTypesList structure_from_create;
-    Names column_names;
+    VectorWithMemoryTracking<String> column_names;
     readFirstCreateAndInsertQueries(*in, table_name, structure_from_create, column_names);
 
     if (!column_names.empty() && format_settings.mysql_dump.map_column_names)
@@ -518,14 +521,15 @@ MySQLDumpSchemaReader::MySQLDumpSchemaReader(ReadBuffer & in_, const FormatSetti
 NamesAndTypesList MySQLDumpSchemaReader::readSchema()
 {
     NamesAndTypesList structure_from_create;
-    Names names;
+    VectorWithMemoryTracking<String> names;
     readFirstCreateAndInsertQueries(in, table_name, structure_from_create, names);
 
     if (!structure_from_create.empty())
         return structure_from_create;
 
     if (!names.empty())
-        setColumnNames(names);
+        /// `IRowSchemaReader` keeps the column names as `Names`; the setter copied them anyway.
+        setColumnNames(Names(names.begin(), names.end()));
 
     return IRowSchemaReader::readSchema();
 }

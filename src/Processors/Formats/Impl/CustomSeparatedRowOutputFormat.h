@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ParsedTemplateFormatString.h>
 
 namespace DB
@@ -28,7 +29,7 @@ private:
     void writePrefix() override;
     void writeSuffix() override;
 
-    void writeLine(const std::vector<String> & values);
+    void writeLine(const Names & values);
     bool with_names;
     bool with_types;
     const FormatSettings format_settings;

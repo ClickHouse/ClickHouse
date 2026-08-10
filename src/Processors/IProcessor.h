@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Processors/Port.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
@@ -17,20 +19,20 @@ namespace DB
 
 class InputPort;
 class OutputPort;
-using InputPorts = std::list<InputPort>;
-using OutputPorts = std::list<OutputPort>;
+using InputPorts = std::list<InputPort>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using OutputPorts = std::list<OutputPort>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class IQueryPlanStep;
 
 struct StorageLimits;
-using StorageLimitsList = std::list<StorageLimits>;
+using StorageLimitsList = std::list<StorageLimits>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class RowsBeforeStepCounter;
 using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class StepWallClock;
 
@@ -189,8 +191,8 @@ public:
     virtual Status prepare();
 
     /// Optimization for prepare in case we know ports were updated.
-    using UpdatedInputPorts  = std::vector<InputPort *>;
-    using UpdatedOutputPorts = std::vector<OutputPort *>;
+    using UpdatedInputPorts  = VectorWithMemoryTracking<InputPort *>;
+    using UpdatedOutputPorts = VectorWithMemoryTracking<OutputPort *>;
     virtual Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) { return prepare(); }
 
     /** You may call this method if 'prepare' returned Ready.
@@ -351,7 +353,7 @@ public:
     struct ProcessorsProfileLogInfo
     {
         UInt64 id = 0;
-        std::vector<UInt64> parent_ids;
+        VectorWithMemoryTracking<UInt64> parent_ids;
         UInt64 plan_step = 0;
         String plan_step_name;
         String plan_step_description;

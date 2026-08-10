@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -150,8 +152,8 @@ private:
         }
         return true;
     }
-    std::vector<Range> left;
-    std::vector<Range> right;
+    VectorWithMemoryTracking<Range> left;
+    VectorWithMemoryTracking<Range> right;
 
     size_t lidx = 0;
     size_t ridx = 0;
@@ -185,7 +187,7 @@ public:
     constexpr static bool has_null_maps = true;
 
     FullMergeJoinCursor() = default;
-    explicit FullMergeJoinCursor(std::vector<size_t> key_indices_, bool is_asof_);
+    explicit FullMergeJoinCursor(VectorWithMemoryTracking<size_t> key_indices_, bool is_asof_);
 
     FullMergeJoinCursor(FullMergeJoinCursor &&) = default;
     FullMergeJoinCursor & operator=(FullMergeJoinCursor &&) noexcept = default;
@@ -216,7 +218,7 @@ private:
     Chunk current_chunk;
     bool received_all_blocks = false;
 
-    std::vector<size_t> key_indices;
+    VectorWithMemoryTracking<size_t> key_indices;
     bool is_asof = false;
 };
 
@@ -268,7 +270,7 @@ private:
     SharedHeaders input_headers;
 
     /// For `USING` join key columns should have values from right side instead of defaults
-    std::unordered_map<size_t, size_t> left_to_right_key_remap;
+    UnorderedMapWithMemoryTracking<size_t, size_t> left_to_right_key_remap;
 
     std::array<FullMergeJoinCursor, 2> cursors;
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::None;

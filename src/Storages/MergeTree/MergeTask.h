@@ -1,6 +1,7 @@
 #pragma once
 
 #include <list>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <memory>
 
 #include <Common/ProfileEvents.h>
@@ -386,7 +387,7 @@ private:
 
         MergeAlgorithm chooseMergeAlgorithm() const;
         void createMergedStream() const;
-        void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
+        void extractMergingAndGatheringColumns(const UnorderedSetWithMemoryTracking<String> & exclude_index_names) const;
 
         void setRuntimeContext(StageRuntimeContextPtr local, StageRuntimeContextPtr global) override
         {

@@ -1,4 +1,5 @@
 #include <Core/Field.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Processors/ISource.h>
@@ -41,9 +42,9 @@ Ranges intersectWithPrimesDomain(const Ranges & ranges)
 
 /// We can keep using `Range` however it is very slow, and inside `SourceFromPrimes`, we will doing
 /// lots of ranges access. So, we convert to lightweight `Intervals`.
-std::vector<Interval> rangesToIntervals(const Ranges & ranges)
+VectorWithMemoryTracking<Interval> rangesToIntervals(const Ranges & ranges)
 {
-    std::vector<Interval> intervals;
+    VectorWithMemoryTracking<Interval> intervals;
     intervals.reserve(ranges.size());
 
     for (const auto & range : ranges)
@@ -76,7 +77,7 @@ std::vector<Interval> rangesToIntervals(const Ranges & ranges)
 
 /// Maybe this part not needed if KeyCondition already simplifies the intervals.
 /// But let's keep it regardless to be safe from future changes to other components.
-void mergeIntervals(std::vector<Interval> & intervals)
+void mergeIntervals(VectorWithMemoryTracking<Interval> & intervals)
 {
     if (intervals.empty())
         return;
@@ -230,7 +231,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
     /// so it is only safe when this source already generates only rows that satisfy the filter.)
     auto apply_query_limit = [&] { NumbersLikeUtils::applyQueryLimit(effective_limit, limit); };
 
-    auto intersect_ranges = [&](const Ranges & ranges) -> std::optional<std::vector<Interval>>
+    auto intersect_ranges = [&](const Ranges & ranges) -> std::optional<VectorWithMemoryTracking<Interval>>
     {
         /// Intersect extracted conditions with the primes value domain [2, UInt64::max],
         /// and convert to sorted, non-overlapping inclusive intervals for `SourceFromPrimes` implementations.
@@ -240,7 +241,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
 
         /// It is cheaper to work with Intervals in SourceFromPrimes than Ranges.
         /// Intervals are just pairs of UInt64.
-        std::vector<Interval> intervals = rangesToIntervals(intersected);
+        VectorWithMemoryTracking<Interval> intervals = rangesToIntervals(intersected);
         if (intervals.empty())
             return std::nullopt;
 

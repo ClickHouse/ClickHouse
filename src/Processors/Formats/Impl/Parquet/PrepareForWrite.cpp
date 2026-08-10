@@ -1,4 +1,6 @@
 #include <DataTypes/DataTypeString.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
 
@@ -257,7 +259,7 @@ parq::CompressionCodec::type compressionMethodToParquet(CompressionMethod c)
 /// with the same convention as ColumnMapper's producer; only the Iceberg optionality lookup uses it.
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
     const String & column_path, const IcebergOptionality & iceberg_optionality);
 
 void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::string & name,
@@ -513,7 +515,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
 void prepareColumnNullable(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & field_ids,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & field_ids, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
     const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
@@ -562,14 +564,14 @@ void prepareColumnNullable(
     }
 }
 
-std::optional<std::unordered_map<String, Int64>> buildSubFieldIds(
-    const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+std::optional<std::unordered_map<String, Int64>> buildSubFieldIds( // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
+    const std::optional<std::unordered_map<String, Int64>> & column_field_ids, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
     const String & prefix)
 {
     if (!column_field_ids)
         return std::nullopt;
 
-    std::unordered_map<String, Int64> result;
+    std::unordered_map<String, Int64> result; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
     const String prefix_dot = prefix + ".";
     for (const auto & [key, value] : *column_field_ids)
     {
@@ -581,7 +583,7 @@ std::optional<std::unordered_map<String, Int64>> buildSubFieldIds(
 
 void prepareColumnTuple(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
     const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
@@ -634,7 +636,7 @@ void prepareColumnTuple(
 
 void prepareColumnArray(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
     const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     const auto * column_array = assert_cast<const ColumnArray *>(column.get());
@@ -701,7 +703,7 @@ void prepareColumnArray(
 
 void prepareColumnMap(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
     const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     const auto * column_map = assert_cast<const ColumnMap *>(column.get());
@@ -774,7 +776,7 @@ void prepareColumnMap(
 /// may legitimately omit some leaves. Must NOT use unordered_map::at(), which throws
 /// std::out_of_range (not a DB::Exception) and escalates to a fatal abort.
 std::optional<Int64> lookupLeafFieldId(
-    const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const String & name)
+    const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const String & name) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
 {
     if (!column_field_ids)
         return std::nullopt;
@@ -785,7 +787,7 @@ std::optional<Int64> lookupLeafFieldId(
 }
 
 void validateIcebergFieldIds(
-    const DataTypePtr & type, const String & path, const std::unordered_map<String, Int64> & field_ids)
+    const DataTypePtr & type, const String & path, const std::unordered_map<String, Int64> & field_ids) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
 {
     /// Nullable/LowCardinality are transparent in Iceberg field naming: the field id sits on
     /// the inner type and the path is unchanged. Strip them and keep the same path, mirroring
@@ -838,7 +840,7 @@ void validateIcebergFieldIds(
 
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
     const String & column_path, const IcebergOptionality & iceberg_optionality)
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
@@ -883,7 +885,7 @@ bool IcebergOptionality::isOptional(const String & path) const
     return mapper->isIcebergOptionalPath(path);
 }
 
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const IcebergOptionality & iceberg_optionality)
+SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const IcebergOptionality & iceberg_optionality) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
 {
     SchemaElements schema;
     auto & root = schema.emplace_back();
@@ -915,7 +917,7 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
         const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
         const auto & variants = variant_type.getVariants();
 
-        std::vector<std::shared_ptr<IWKBTransform>> transforms(variants.size());
+        VectorWithMemoryTracking<std::shared_ptr<IWKBTransform>> transforms(variants.size());
         for (size_t i = 0; i < variants.size(); ++i)
         {
             const auto & variant_name = variants[i]->getCustomName() ? variants[i]->getCustomName()->getName() : variants[i]->getName();
@@ -994,7 +996,7 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, // STYLE_CHECK_ALLOW_STD_CONTAINERS -- rooted in ColumnMapper::getStorageColumnEncoding, which returns std::unordered_map
     const IcebergOptionality & iceberg_optionality)
 {
     if (column->empty() && out_columns_to_write != nullptr)

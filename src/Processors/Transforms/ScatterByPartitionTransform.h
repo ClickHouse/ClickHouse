@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
@@ -31,7 +32,7 @@ private:
 
     bool has_data = false;
     bool all_outputs_processed = true;
-    std::vector<char> was_output_processed;
+    VectorWithMemoryTracking<char> was_output_processed;
     Chunk chunk;
 
     PaddedPODArray<UInt32> hash;

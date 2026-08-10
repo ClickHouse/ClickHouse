@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
@@ -38,7 +40,7 @@ namespace DB::Parquet
 
 SchemaConverter::SchemaConverter(
     const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
-    const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
+    const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- geo metadata map, shared with ArrowIPC which keeps it std::unordered_map
     : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
@@ -79,7 +81,7 @@ void SchemaConverter::prepareForReading()
     }
 
     /// Check that all requested columns were found.
-    std::vector<UInt8> found_columns(sample_block->columns());
+    VectorWithMemoryTracking<UInt8> found_columns(sample_block->columns());
     for (const auto & col : output_columns)
     {
         if (!col.idx_in_output_block.has_value())
@@ -631,14 +633,14 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
 /// definition-level null map is exactly the root group's null map. This lets us reconstruct the
 /// group null map from any leaf and read a physically nullable struct (OPTIONAL group) as
 /// Nullable(Tuple(...)) losslessly. Returns false for any OPTIONAL/REPEATED descendant.
-static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & schema, size_t root_idx)
+static bool tupleSubtreeIsAllRequired(const std::vector<parq::SchemaElement> & schema, size_t root_idx) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift parq::FileMetaData::schema is std::vector
 {
     /// schema is a flattened pre-order tree; num_children counts direct children, laid out
     /// contiguously in pre-order. Walk the root's subtree with an explicit stack of
     /// remaining-children counters for the groups we descended into.
     if (root_idx >= schema.size())
         return false;
-    std::vector<size_t> stack;
+    VectorWithMemoryTracking<size_t> stack;
     stack.push_back(size_t(schema.at(root_idx).num_children));
     size_t idx = root_idx + 1;
     while (!stack.empty())
@@ -725,7 +727,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///    In other modes, we skip the whole tuple if any element is unsupported.
 
     bool lookup_by_name = false;
-    std::vector<size_t> elements;
+    VectorWithMemoryTracking<size_t> elements;
     if (tuple_type_hint)
     {
         if (tuple_type_hint->hasExplicitNames() && !tuple_type_hint->getElements().empty() &&
@@ -755,7 +757,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     size_t primitive_start = primitive_columns.size();
     size_t output_start = output_columns.size();
     size_t skipped_unsupported_columns = 0;
-    std::vector<String> element_names_in_file;
+    VectorWithMemoryTracking<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
         const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));

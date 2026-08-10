@@ -15,7 +15,7 @@ struct ProcessorProfileLogElement
     Decimal64 event_time_microseconds{};
 
     UInt64 id{};
-    std::vector<UInt64> parent_ids;
+    VectorWithMemoryTracking<UInt64> parent_ids;
 
     UInt64 plan_step{};
     UInt64 plan_group{};

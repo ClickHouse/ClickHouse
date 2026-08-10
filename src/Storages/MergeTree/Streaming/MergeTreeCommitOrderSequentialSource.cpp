@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 
@@ -204,7 +205,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     const auto storage_snapshot = storage.getStorageSnapshot(metadata, context);
     const auto columns_to_read = extendWithAuxiliaryColumns(user_requested_columns);
 
-    std::vector<QueryPlanPtr> per_partition_plans;
+    VectorWithMemoryTracking<QueryPlanPtr> per_partition_plans;
     SharedHeaders per_partition_headers;
 
     for (const auto & partition_id : partitions_classification.readable_partitions)

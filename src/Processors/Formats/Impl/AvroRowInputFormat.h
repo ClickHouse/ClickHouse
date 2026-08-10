@@ -1,6 +1,10 @@
 #pragma once
 
 #include "config.h"
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_AVRO
 
@@ -81,10 +85,10 @@ private:
         /// Skip
         SkipFn skip_fn;
         /// Record | Union
-        std::vector<Action> actions;
+        VectorWithMemoryTracking<Action> actions;
         /// For flattened Nested column
-        std::vector<size_t> nested_column_indexes;
-        std::vector<DeserializeFn> nested_deserializers;
+        VectorWithMemoryTracking<size_t> nested_column_indexes;
+        VectorWithMemoryTracking<DeserializeFn> nested_deserializers;
 
 
         Action() : type(Noop) {}
@@ -99,15 +103,15 @@ private:
             , target_column_idx(0)
             , skip_fn(skip_fn_) {}
 
-        Action(const std::vector<size_t> & nested_column_indexes_, const std::vector<DeserializeFn> & nested_deserializers_)
+        Action(const VectorWithMemoryTracking<size_t> & nested_column_indexes_, const VectorWithMemoryTracking<DeserializeFn> & nested_deserializers_)
             : type(Nested)
             , target_column_idx(0)
             , nested_column_indexes(nested_column_indexes_)
             , nested_deserializers(nested_deserializers_) {}
 
-        static Action recordAction(const std::vector<Action> & field_actions) { return Action(Type::Record, field_actions); }
+        static Action recordAction(const VectorWithMemoryTracking<Action> & field_actions) { return Action(Type::Record, field_actions); }
 
-        static Action unionAction(const std::vector<Action> & branch_actions) { return Action(Type::Union, branch_actions); }
+        static Action unionAction(const VectorWithMemoryTracking<Action> & branch_actions) { return Action(Type::Union, branch_actions); }
 
 
         void execute(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const
@@ -140,7 +144,7 @@ private:
             }
         }
     private:
-        Action(Type type_, std::vector<Action> actions_)
+        Action(Type type_, VectorWithMemoryTracking<Action> actions_)
             : type(type_)
             , target_column_idx(0)
             , actions(actions_) {}
@@ -152,16 +156,16 @@ private:
     AvroDeserializer::Action createAction(const Block & header, const avro::NodePtr & node, const std::string & current_path = "");
 
     /// Bitmap of columns found in Avro schema
-    std::vector<bool> column_found;
+    VectorWithMemoryTracking<bool> column_found;
     /// Deserialize/Skip actions for a row
     Action row_action;
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
-    std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
+    MapWithMemoryTracking<avro::Name, SkipFn> symbolic_skip_fn_map;
 
     /// Guard against infinite recursion in createDeserializeFn and createAction
     /// when Avro schema contains cyclic symbolic references (e.g. TypeA -> TypeB -> TypeA).
-    std::unordered_set<std::string> symbolic_deserialize_guard;
+    UnorderedSetWithMemoryTracking<std::string> symbolic_deserialize_guard;
 
     bool null_as_default = false;
 
@@ -208,7 +212,7 @@ private:
 
     std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
-    std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
+    UnorderedMapWithMemoryTracking<SchemaId, AvroDeserializer> deserializer_cache;
     const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
 
     avro::InputStreamPtr input_stream;
@@ -229,7 +233,7 @@ public:
     /// that CREATE TABLE rejects.
     static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type = true);
 private:
-    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type);
+    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, UnorderedSetWithMemoryTracking<std::string> & seen_names, bool allow_nullable_tuple_type);
 
     bool confluent;
     const FormatSettings format_settings;

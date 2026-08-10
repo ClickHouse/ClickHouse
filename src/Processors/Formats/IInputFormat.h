@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
@@ -55,7 +56,7 @@ struct FileBucketInfo
     virtual void deserialize(ReadBuffer & buffer) = 0;
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
-    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
+    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const VectorWithMemoryTracking<size_t> & matching_row_groups) const = 0;
 
     virtual ~FileBucketInfo() = default;
 };
@@ -66,7 +67,7 @@ struct IBucketSplitter
 {
     /// Splits a file into buckets using the given read buffer and format settings.
     /// Returns information about the resulting buckets (see the structure above for details).
-    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+    virtual VectorWithMemoryTracking<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
 
     virtual ~IBucketSplitter() = default;
 };
@@ -130,7 +131,7 @@ public:
 
     void needOnlyCount() { need_only_count = true; }
 
-    virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
+    virtual std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
@@ -146,7 +147,7 @@ protected:
 private:
     void resetOwnedBuffers();
 
-    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
+    VectorWithMemoryTracking<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

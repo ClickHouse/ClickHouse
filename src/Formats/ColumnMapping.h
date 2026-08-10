@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/BlockNameMap.h>
 
@@ -33,12 +34,12 @@ struct ColumnMapping
     void setupByHeader(const Block & header);
 
     void addColumns(
-        const Names & column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings);
+        const VectorWithMemoryTracking<String> & column_names, const BlockNameMap & column_indexes_by_names, const FormatSettings & settings);
 
     void addColumns(
-        const Names & column_names, const CaseAwareBlockNameMap & column_indexes_by_names, const FormatSettings & settings);
+        const VectorWithMemoryTracking<String> & column_names, const CaseAwareBlockNameMap & column_indexes_by_names, const FormatSettings & settings);
 
-    void insertDefaultsForNotSeenColumns(MutableColumns & columns, std::vector<UInt8> & read_columns);
+    void insertDefaultsForNotSeenColumns(MutableColumns & columns, VectorWithMemoryTracking<UInt8> & read_columns);
 };
 
 }

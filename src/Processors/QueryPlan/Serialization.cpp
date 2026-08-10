@@ -187,7 +187,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
     {
         NodePtr & to_fill;
         size_t next_child = 0;
-        std::vector<Node *> children = {};
+        VectorWithMemoryTracking<Node *> children = {};
     };
 
     std::stack<Frame> stack;

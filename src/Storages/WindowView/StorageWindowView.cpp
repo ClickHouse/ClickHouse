@@ -1,4 +1,5 @@
 #include <numeric>
+#include <Common/SetWithMemoryTracking.h>
 #include <thread>
 
 #include <Columns/ColumnConst.h>
@@ -997,7 +998,7 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
     }
 }
 
-void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
+void StorageWindowView::addFireSignal(const SetWithMemoryTracking<UInt32> & signals)
 {
     throwIfWindowViewIsDisabled();
     std::lock_guard lock(fire_signal_mutex);

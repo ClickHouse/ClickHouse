@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/Statistics/Statistics.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Core/Field.h>
 #include <Core/PlainRanges.h>
@@ -21,7 +22,7 @@ struct ColumnStats
 struct RelationProfile
 {
     UInt64 rows = 0;
-    std::unordered_map<String, ColumnStats> column_stats = {};
+    UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats = {};
 };
 
 class IMergeTreeDataPart;

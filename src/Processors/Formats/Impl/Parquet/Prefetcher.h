@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Common/PODArray.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Parquet/ReadCommon.h>
 
 #include <optional>
@@ -43,14 +45,14 @@ public:
 
     /// Replace a requested range with a set of disjoint smaller ranges contained within it.
     /// `subranges` must be sorted.
-    std::vector<PrefetchHandle> splitRange(
-        PrefetchHandle request, const std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> & subranges, bool likely_to_be_used);
+    VectorWithMemoryTracking<PrefetchHandle> splitRange(
+        PrefetchHandle request, const VectorWithMemoryTracking<std::pair</*global_offset*/ size_t, /*length*/ size_t>> & subranges, bool likely_to_be_used);
 
     /// Kicks off background tasks to prefetch these range, if needed (if not already started, and
     /// prefetching is enabled, and handle is valid).
     /// Adds the range's memory usage to MemoryUsageDiff. Remembers memory_usage->stage so that
     /// PrefetchHandle::reset can later subtract from MemoryUsageDiff correctly.
-    void startPrefetch(const std::vector<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff);
+    void startPrefetch(const VectorWithMemoryTracking<PrefetchHandle *> & requests_to_start, MemoryUsageDiff * diff);
 
     /// If prefetched, returns prefetched data.
     /// If prefetch in progress, waits for it to complete.
@@ -165,7 +167,7 @@ private:
     struct RangeSet
     {
         /// Pre-registered ranges. Sorted and immutable after finalizeRanges().
-        std::vector<RangeState> ranges;
+        VectorWithMemoryTracking<RangeState> ranges;
     };
 
     FormatParserSharedResourcesPtr parser_shared_resources;
@@ -185,9 +187,9 @@ private:
     std::mutex mutex;
 
     /// Arenas.
-    std::deque<RequestState> requests;
-    std::deque<Task> tasks;
-    std::deque<RangeSet> range_sets;
+    DequeWithMemoryTracking<RequestState> requests;
+    DequeWithMemoryTracking<Task> tasks;
+    DequeWithMemoryTracking<RangeSet> range_sets;
 
     std::atomic<bool> ranges_finalized {false};
 

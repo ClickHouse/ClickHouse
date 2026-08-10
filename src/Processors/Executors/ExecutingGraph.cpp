@@ -1,4 +1,6 @@
 #include <Processors/Executors/ExecutingGraph.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/StepWallClock.h>
@@ -65,7 +67,7 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
     return new_node;
 }
 
-std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> ExecutingGraph::removeNode(ProcessorPtr processor)
+std::pair<const ExecutingGraph::Node *, UnorderedSetWithMemoryTracking<const void *>> ExecutingGraph::removeNode(ProcessorPtr processor)
 {
     auto node_it = processors_map.find(processor.get());
     if (node_it == processors_map.end())
@@ -78,7 +80,7 @@ std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> Execut
     if (node->last_processor_status.value() != IProcessor::Status::Finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
 
-    std::unordered_set<const void *> removed_edges;
+    UnorderedSetWithMemoryTracking<const void *> removed_edges;
     removed_edges.insert_range(node->direct_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
     removed_edges.insert_range(node->back_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
 
@@ -146,9 +148,9 @@ ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
     return result;
 }
 
-std::unordered_set<const void *> ExecutingGraph::removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes)
+UnorderedSetWithMemoryTracking<const void *> ExecutingGraph::removeAffectedEdges(Node & node, const UnorderedSetWithMemoryTracking<const Node *> & removed_nodes)
 {
-    std::unordered_set<const void *> removed_edge_ids;
+    UnorderedSetWithMemoryTracking<const void *> removed_edge_ids;
 
     for (auto it = node.back_edges.begin(); it != node.back_edges.end();)
     {
@@ -239,7 +241,7 @@ ExecutingGraph::UpdatePipelineResult ExecutingGraph::updatePipeline(boost::conta
     delayed_destruction.splice(delayed_destruction.end(), update.to_remove);
 
     /// Updated edges for every node.
-    std::vector<std::pair<Node *, NewEdges>> added_edges;
+    VectorWithMemoryTracking<std::pair<Node *, NewEdges>> added_edges;
     for (auto & node : nodes)
     {
         std::optional<NewEdges> edges;

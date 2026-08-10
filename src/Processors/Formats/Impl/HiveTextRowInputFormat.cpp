@@ -1,4 +1,5 @@
 #include <Formats/FormatFactory.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
 #include <Common/assert_cast.h>
 
@@ -47,12 +48,12 @@ HiveTextFormatReader::HiveTextFormatReader(PeekableReadBuffer & buf_, const Form
 {
 }
 
-std::vector<String> HiveTextFormatReader::readNames()
+VectorWithMemoryTracking<String> HiveTextFormatReader::readNames()
 {
-    return input_field_names;
+    return {input_field_names.begin(), input_field_names.end()};
 }
 
-std::vector<String> HiveTextFormatReader::readTypes()
+VectorWithMemoryTracking<String> HiveTextFormatReader::readTypes()
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readTypes is not implemented");
 }

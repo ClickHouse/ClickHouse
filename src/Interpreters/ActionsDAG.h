@@ -1,6 +1,9 @@
 #pragma once
 
 #include <unordered_map>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <utility>
 #include <vector>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -161,7 +164,7 @@ public:
     std::string dumpDAG() const;
 
     std::vector<const Node *> getIdToNode() const;
-    std::unordered_map<const Node *, size_t> getNodeToIdMap() const;
+    UnorderedMapWithMemoryTracking<const Node *, size_t> getNodeToIdMap() const;
 
     void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
@@ -217,7 +220,7 @@ public:
     /// `keep_inputs` are forwarded to the internal `removeUnusedActions` as `used_inputs`: source
     /// constants get re-created as free-standing COLUMN outputs by folding, orphaning their INPUTs;
     /// keeping the INPUTs lets the columns keep flowing (needed at distributed stage boundaries).
-    void project(const NamesWithAliases & projection, const std::unordered_set<const Node *> & keep_inputs = {});
+    void project(const NamesWithAliases & projection, const UnorderedSetWithMemoryTracking<const Node *> & keep_inputs = {});
 
     /// Add input for every column from sample_block which is not mapped to existing input.
     void appendInputsForUnusedColumns(const Block & sample_block);
@@ -247,7 +250,7 @@ public:
     /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
     /// Returns true if any of the actions were removed.
     /// Outputs remain unchanged.
-    bool removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true, bool evaluate_constants = false);
+    bool removeUnusedActions(const UnorderedSetWithMemoryTracking<const Node *> & used_inputs, bool allow_constant_folding = true, bool evaluate_constants = false);
 
     /// Remove actions that are not needed to compute output nodes with required names.
     /// Returns true if any of the actions were removed or if the outputs are changed.
@@ -263,7 +266,7 @@ public:
     /// carve-out for ARRAY_JOIN. Nodes still required by any output are kept.
     /// Caller MUST ensure removed ARRAY_JOIN is recomputed elsewhere in the plan.
     /// Returns count of removed nodes.
-    size_t removeNodes(const std::unordered_set<const Node *> & to_remove);
+    size_t removeNodes(const UnorderedSetWithMemoryTracking<const Node *> & to_remove);
 
     void removeAliasesForFilter(const std::string & filter_name);
 
@@ -292,7 +295,7 @@ public:
     ///            \      /
     ///            c * d - e
     static ActionsDAG foldActionsByProjection(
-        const std::unordered_map<const Node *, const Node *> & new_inputs,
+        const UnorderedMapWithMemoryTracking<const Node *, const Node *> & new_inputs,
         const NodeRawConstPtrs & required_outputs);
 
     bool hasCorrelatedColumns() const noexcept;
@@ -303,10 +306,10 @@ public:
     bool hasNonDeterministic() const;
 
 #if USE_EMBEDDED_COMPILER
-    void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    void compileExpressions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {});
 #endif
 
-    using NodeMapping = std::unordered_map<const Node *, const Node *>;
+    using NodeMapping = UnorderedMapWithMemoryTracking<const Node *, const Node *>;
     ActionsDAG clone(NodeMapping & old_to_new_nodes) const;
     ActionsDAG clone() const;
 
@@ -336,8 +339,8 @@ public:
     ///  - passthrough: header positions not consumed by any DAG input (in order)
     struct MatchedInputPositions
     {
-        std::vector<size_t> matched;
-        std::vector<size_t> passthrough;
+        VectorWithMemoryTracking<size_t> matched;
+        VectorWithMemoryTracking<size_t> passthrough;
     };
     MatchedInputPositions matchInputPositionsToHeader(const Block & header) const;
 
@@ -351,10 +354,10 @@ public:
     /// can be used to index into the list of pass-through inputs from matchInputPositionsToHeader.
     struct SplitOutputPositions
     {
-        std::vector<size_t> dag_indices;
-        std::vector<size_t> passthrough_indices;
+        VectorWithMemoryTracking<size_t> dag_indices;
+        VectorWithMemoryTracking<size_t> passthrough_indices;
     };
-    SplitOutputPositions splitOutputPositions(const std::vector<size_t> & output_positions) const;
+    SplitOutputPositions splitOutputPositions(const VectorWithMemoryTracking<size_t> & output_positions) const;
 
     using IntermediateExecutionResult = std::unordered_map<const Node *, ColumnWithTypeAndName>;
     static ColumnsWithTypeAndName evaluatePartialResult(
@@ -437,7 +440,7 @@ public:
     ///   initial DAG    : (a, b, c, d, e) -> (w, x, y, z)  | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 3 4 5 6 w x y z
     ///   split (first)  : (a, c, d) -> (i, j, k, w, y)     | 1 a 2 b 3 c 4 d 5 e 6      ->  1 2 b 3 4 5 e 6 i j k w y
     ///   split (second) : (i, j, k, y, b, e) -> (x, y, z)  | 1 2 b 3 4 5 e 6 i j k w y  ->  1 2 3 4 5 6 w x y z
-    SplitResult split(std::unordered_set<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
+    SplitResult split(UnorderedSetWithMemoryTracking<const Node *> split_nodes, bool create_split_nodes_mapping = false, bool avoid_duplicate_inputs = false) const;
 
     /// Splits actions into two parts. Returned first half may be swapped with ARRAY JOIN.
     SplitResult splitActionsBeforeArrayJoin(const Names & array_joined_columns) const;
@@ -507,8 +510,8 @@ public:
         const Names & right_stream_available_columns_to_push_down,
         const Block & right_stream_header,
         const Names & equivalent_columns_to_push_down,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
+        const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
+        const UnorderedMapWithMemoryTracking<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
 
     /** Build filter dag from multiple filter dags.
       *
@@ -569,7 +572,7 @@ private:
         bool all_const);
 
 #if USE_EMBEDDED_COMPILER
-    void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+    void compileFunctions(size_t min_count_to_compile_expression, const UnorderedSetWithMemoryTracking<const Node *> & lazy_executed_nodes = {});
 #endif
 
     bool removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
@@ -579,7 +582,7 @@ struct ActionsDAG::SplitResult
 {
     ActionsDAG first;
     ActionsDAG second;
-    std::unordered_map<const Node *, const Node *> split_nodes_mapping;
+    UnorderedMapWithMemoryTracking<const Node *, const Node *> split_nodes_mapping;
 };
 
 struct ActionsDAG::ActionsForFilterPushDown

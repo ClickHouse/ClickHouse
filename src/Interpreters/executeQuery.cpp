@@ -165,6 +165,7 @@ namespace Setting
     extern const SettingsString log_comment;
     extern const SettingsBool log_formatted_queries;
     extern const SettingsBool log_profile_events;
+    extern const SettingsBool log_processors_profiles;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool log_queries;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
@@ -640,7 +641,8 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
     return res;
 }
 
-static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline)
+static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(
+    QueryPipeline && query_pipeline, QueryResultCacheUsage /*query_result_cache_usage*/, bool pulling_pipeline, bool log_processors_profiles)
 {
     /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
     /// prevent partial/garbage results in case of exceptions during query execution.
@@ -648,10 +650,15 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     /// opted in to caching via explicit SETTINGS use_query_cache = true even when the outer query doesn't use the cache.
     query_pipeline.finalizeWriteInQueryResultCache();
 
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
-
+    /// Only collected to be written to `system.processors_profile_log`. Both of these allocate
+    /// per processor, and the containers are tracked, so gather them only when they are logged -
+    /// otherwise a query that has already produced its result could fail on the memory limit here.
+    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
     String pipeline_dump;
+    if (log_processors_profiles)
     {
+        processors_profile_infos = getProcessorsProfileLogInfo(query_pipeline.getProcessors());
+
         WriteBufferFromString out(pipeline_dump);
         printPipeline(query_pipeline.getProcessors(), out, true);
     }
@@ -803,7 +810,8 @@ void logQueryFinish(
     bool log_as_internal)
 {
     const auto time_now = std::chrono::system_clock::now();
-    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+    auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(
+        std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, context->getSettingsRef()[Setting::log_processors_profiles]);
     logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
 }
 
@@ -2078,10 +2086,12 @@ static BlockIO executeQueryImpl(
             /// The prepare callback flushes pipeline progress and resets the pipeline
             auto finish_callback_finalize_pipeline = [
                                      query_result_cache_usage,
+                                     log_processors_profiles = context->getSettingsRef()[Setting::log_processors_profiles],
                                      // Need to be cached, since will be changed after complete()
                                      pulling_pipeline = pipeline.pulling()](QueryPipeline && query_pipeline) mutable -> QueryPipelineFinalizedInfo
             {
-                return finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
+                return finalizeQueryPipelineBeforeLogging(
+                    std::move(query_pipeline), query_result_cache_usage, pulling_pipeline, log_processors_profiles);
             };
 
             /// The finish callback logs the query result

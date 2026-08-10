@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/DWARFBlockInputFormat.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/CurrentThread.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
@@ -97,10 +98,10 @@ static NamesAndTypesList getHeaderForDWARF()
     return NamesAndTypesList(cols.begin(), cols.end());
 }
 
-static const std::unordered_map<std::string, size_t> & getColumnNameToIdx()
+static const UnorderedMapWithMemoryTracking<std::string, size_t> & getColumnNameToIdx()
 {
     static std::once_flag once;
-    static std::unordered_map<std::string, size_t> name_to_idx;
+    static UnorderedMapWithMemoryTracking<std::string, size_t> name_to_idx;
     std::call_once(once, [&] {
         size_t i = 0;
         for (const auto & c : getHeaderForDWARF())

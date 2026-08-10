@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Chunk.h>
+#include <Common/QueueWithMemoryTracking.h>
 #include <base/defines.h>
 
 #include <mutex>
@@ -60,7 +61,7 @@ struct ChunkBuffer
 
 private:
     std::mutex mutex;
-    std::queue<Chunk> chunks;
+    QueueWithMemoryTracking<Chunk> chunks;
     size_t unfinished_inputs = 1; /// Initialized to 1 to avoid being ready before setting the actual number of inputs
 };
 

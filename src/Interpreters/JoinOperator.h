@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
 
@@ -22,12 +23,12 @@ struct JoinOperator
     JoinLocality locality;
 
     /// An expression in ON/USING clause of a JOIN statement
-    std::vector<JoinActionRef> expression = {};
+    VectorWithMemoryTracking<JoinActionRef> expression = {};
     /// Additional filter after join (e.g. from WHERE clause)
     /// Difference is for OUTER JOINs, where expression used to match row or return NULL
     /// but residual filter is used to filter rows after join.
     /// For INNER JOINs, residual filter is the same as expression
-    std::vector<JoinActionRef> residual_filter = {};
+    VectorWithMemoryTracking<JoinActionRef> residual_filter = {};
 
     /// (filter_name, build-side key column name) pairs that HashJoin should publish as
     /// shared FixedHashMap runtime filters. Set by the joinRuntimeFilter optimizer pass.
@@ -37,7 +38,7 @@ struct JoinOperator
         JoinKind kind_ = JoinKind::Cross,
         JoinStrictness strictness_ = JoinStrictness::All,
         JoinLocality locality_ = JoinLocality::Unspecified,
-        std::vector<JoinActionRef> expression_ = {})
+        VectorWithMemoryTracking<JoinActionRef> expression_ = {})
         : kind(kind_)
         , strictness(strictness_)
         , locality(locality_)

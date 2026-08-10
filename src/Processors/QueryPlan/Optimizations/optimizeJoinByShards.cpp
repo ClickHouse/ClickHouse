@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -82,7 +85,7 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
     {
         const auto & array_joined_columns = array_join->getColumns();
 
-        std::unordered_set<std::string_view> keys_set(array_joined_columns.begin(), array_joined_columns.end());
+        UnorderedSetWithMemoryTracking<std::string_view> keys_set(array_joined_columns.begin(), array_joined_columns.end());
 
         /// Remove array joined columns from outputs.
         /// Types are changed after ARRAY JOIN, and we can't use this columns anyway.
@@ -119,8 +122,8 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     if (rhs_pk.column_names.empty())
         return {};
 
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> lhs_outputs;
+    UnorderedMapWithMemoryTracking<std::string_view, const ActionsDAG::Node *> rhs_outputs;
 
     for (const auto & output : lhs_dag.getOutputs())
         lhs_outputs.emplace(output->result_name, output);
@@ -214,16 +217,16 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
         JoinStep::PrimaryKeySharding sharding;
     };
 
-    std::list<JoinAndSharding> joins;
+    ListWithMemoryTracking<JoinAndSharding> joins;
     /// Separately, store joins which use full sorting merge algorithm.
     /// We should mark this joins to keep the number of streams for the left table the same.
-    std::list<JoinStep *> joins_to_keep_in_order;
+    ListWithMemoryTracking<JoinStep *> joins_to_keep_in_order;
     /// Source steps are kept according to in-order traverse.
     /// The important part that the first source is the left-most.
-    std::list<ReadFromMergeTree *> sources;
+    ListWithMemoryTracking<ReadFromMergeTree *> sources;
     /// For sorting steps which are created for full sorting merge algorithm,
     /// We need to change the sorting mode to sort partitions independently.
-    std::list<SortingStep *> sorting_steps;
+    ListWithMemoryTracking<SortingStep *> sorting_steps;
     /// Apply the minimum prefix in case of multiple joins.
     size_t common_prefix = std::numeric_limits<size_t>::max();
     /// Whether the common primary key prefix used for sharding is in reverse order.
@@ -241,7 +244,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     /// Here we take all the parts from all the sources.
     /// Update part index to restore back the set of parts.
     RangesInDataParts all_parts;
-    std::vector<ReadFromMergeTree::AnalysisResultPtr> analysis_results;
+    VectorWithMemoryTracking<ReadFromMergeTree::AnalysisResultPtr> analysis_results;
     for (auto & source : data.sources)
     {
         auto analysis_result = source->getAnalyzedResult();
@@ -268,7 +271,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     auto logger = getLogger("optimizeJoinByLayers");
     auto all_split = splitIntersectingPartsRangesIntoLayers(
         all_parts, data.sources.front()->getNumStreams(), data.common_prefix, data.is_reverse_order, logger);
-    std::vector<SplitPartsByRanges> splits(analysis_results.size());
+    VectorWithMemoryTracking<SplitPartsByRanges> splits(analysis_results.size());
     splits[0].borders = std::move(all_split.borders);
     splits[0].in_reverse_order = data.is_reverse_order;
     for (size_t i = 1; i < splits.size(); ++i)
@@ -351,7 +354,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
     {
         const QueryPlan::Node * node;
         size_t next_child_to_process = 0;
-        std::vector<std::optional<Result>> results{};
+        VectorWithMemoryTracking<std::optional<Result>> results{};
     };
 
     std::optional<Result> result;

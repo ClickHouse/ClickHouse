@@ -1,4 +1,5 @@
 #include <Formats/ProtobufSerializer.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Arena.h>
 
 #if USE_PROTOBUF
@@ -3176,7 +3177,7 @@ namespace
         std::unique_ptr<ProtobufSerializer> buildMessageSerializer(
             const Strings & column_names,
             const DataTypes & data_types,
-            std::vector<size_t> & missing_column_indices,
+            VectorWithMemoryTracking<size_t> & missing_column_indices,
             const MessageDescriptor & message_descriptor,
             bool with_length_delimiter,
             bool with_envelope,
@@ -4314,7 +4315,7 @@ namespace
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const Strings & column_names,
     const DataTypes & data_types,
-    std::vector<size_t> & missing_column_indices,
+    VectorWithMemoryTracking<size_t> & missing_column_indices,
     const ProtobufSchemas::DescriptorHolder & descriptor,
     bool with_length_delimiter,
     bool with_envelope,
@@ -4342,7 +4343,7 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     bool defaults_for_nullable_google_wrappers,
     ProtobufWriter & writer)
 {
-    std::vector<size_t> missing_column_indices;
+    VectorWithMemoryTracking<size_t> missing_column_indices;
     return ProtobufSerializerBuilder(writer).buildMessageSerializer(
         column_names, data_types, missing_column_indices,
         *descriptor.message_descriptor,

@@ -31,7 +31,7 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
     /// resolved to physical columns. This is essential for correct index
     /// analysis when plan optimizations like mergeExpressions have not
     /// merged these steps into the filter.
-    std::vector<const ActionsDAG *> expression_dags;
+    VectorWithMemoryTracking<const ActionsDAG *> expression_dags;
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {

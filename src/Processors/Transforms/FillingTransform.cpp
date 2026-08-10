@@ -1,4 +1,5 @@
 #include <Processors/Transforms/FillingTransform.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
@@ -223,7 +224,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
 static SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
 {
     SortDescription result;
-    std::unordered_set<std::string> unique_columns;
+    UnorderedSetWithMemoryTracking<std::string> unique_columns;
     for (const auto & desc : sort_description)
     {
         if (header.findByName(desc.column_name) == nullptr)
@@ -271,7 +272,7 @@ FillingTransform::FillingTransform(
         }
     }
 
-    std::vector<bool> is_fill_column(header_->columns());
+    VectorWithMemoryTracking<bool> is_fill_column(header_->columns());
     for (size_t i = 0, size = fill_description.size(); i < size; ++i)
     {
         size_t block_position = header_->getPositionByName(fill_description[i].column_name);
@@ -298,14 +299,14 @@ FillingTransform::FillingTransform(
     }
     logDebug("fill description", dumpSortDescription(fill_description));
 
-    std::unordered_set<size_t> ordinary_sort_positions;
+    UnorderedSetWithMemoryTracking<size_t> ordinary_sort_positions;
     for (const auto & desc : sort_description)
     {
         if (!desc.with_fill)
             ordinary_sort_positions.insert(header_->getPositionByName(desc.column_name));
     }
 
-    std::unordered_set<size_t> unique_positions;
+    UnorderedSetWithMemoryTracking<size_t> unique_positions;
     for (auto pos : fill_column_positions)
     {
         if (!unique_positions.insert(pos).second)
@@ -353,7 +354,7 @@ FillingTransform::FillingTransform(
     /// check conflict in positions between interpolate and sorting prefix columns
     if (!sort_prefix_positions.empty() && !interpolate_column_positions.empty())
     {
-        std::unordered_set<size_t> interpolate_positions(interpolate_column_positions.begin(), interpolate_column_positions.end());
+        UnorderedSetWithMemoryTracking<size_t> interpolate_positions(interpolate_column_positions.begin(), interpolate_column_positions.end());
         for (auto sort_prefix_pos : sort_prefix_positions)
         {
             if (interpolate_positions.contains(sort_prefix_pos))
@@ -368,7 +369,7 @@ FillingTransform::FillingTransform(
     /// row (one from filling, one from interpolate), yielding a chunk with inconsistent row counts.
     if (!interpolate_column_positions.empty())
     {
-        std::unordered_set<size_t> fill_positions(fill_column_positions.begin(), fill_column_positions.end());
+        UnorderedSetWithMemoryTracking<size_t> fill_positions(fill_column_positions.begin(), fill_column_positions.end());
         for (auto interpolate_pos : interpolate_column_positions)
         {
             if (fill_positions.contains(interpolate_pos))
@@ -464,7 +465,7 @@ void FillingTransform::interpolate(const MutableColumns & result_columns, Block 
     }
 }
 
-using MutableColumnRawPtrs = std::vector<IColumn*>;
+using MutableColumnRawPtrs = VectorWithMemoryTracking<IColumn*>;
 
 void FillingTransform::insertFromFillingRow(
     const MutableColumnRawPtrs & filling_columns,
@@ -513,7 +514,7 @@ static void initColumnsByPositions(
     Columns & input_columns_by_positions,
     const MutableColumns & output_columns,
     MutableColumnRawPtrs & output_columns_by_position,
-    const std::vector<size_t> & positions)
+    const VectorWithMemoryTracking<size_t> & positions)
 {
     for (const size_t pos : positions)
     {

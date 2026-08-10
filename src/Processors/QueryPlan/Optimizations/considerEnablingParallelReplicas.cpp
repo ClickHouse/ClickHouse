@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
+#include <Common/MapWithMemoryTracking.h>
 
 #include <Core/Joins.h>
 #include <Interpreters/PreparedSets.h>
@@ -219,7 +220,7 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replic
 void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, const QueryPlan & parallel_replicas_plan)
 {
     Stack stack;
-    std::map<FutureSet::Hash, SetAndKeyPtr> sets_map;
+    MapWithMemoryTracking<FutureSet::Hash, SetAndKeyPtr> sets_map;
 
     // Create a map: set_key -> set
     stack.clear();

@@ -1,4 +1,8 @@
 #include <Common/logger_useful.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -69,13 +73,13 @@ static int thriftEnumToInt(const E & e)
 }
 
 template <typename E>
-static bool isValidThriftEnum(const E & e, const std::map<int, const char *> & valid_values)
+static bool isValidThriftEnum(const E & e, const std::map<int, const char *> & valid_values) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift `parq::_*_VALUES_TO_NAMES` are std::map
 {
     return valid_values.contains(thriftEnumToInt(e));
 }
 
 template <typename E>
-static void checkThriftEnum(const E & e, const std::map<int, const char *> & valid_values, const char * what)
+static void checkThriftEnum(const E & e, const std::map<int, const char *> & valid_values, const char * what) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift `parq::_*_VALUES_TO_NAMES` are std::map
 {
     if (!isValidThriftEnum(e, valid_values))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid {} in Parquet metadata", what);
@@ -368,7 +372,7 @@ bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spa
     return true;
 }
 
-void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
+void Reader::prefilterAndInitRowGroups(const std::optional<UnorderedSetWithMemoryTracking<UInt64>> & row_groups_to_read)
 {
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
@@ -384,7 +388,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     ///   Some(empty)  — parsed (or failed); SchemaConverter must not re-parse (avoids rethrow
     ///                  on malformed metadata when the try/catch above already issued a warning)
     ///   Some(map)    — parsed successfully with geo columns; use directly
-    std::optional<std::unordered_map<String, DB::GeoColumnMetadata>> geo_meta;
+    std::optional<std::unordered_map<String, DB::GeoColumnMetadata>> geo_meta; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- parseGeoMetadataEncoding returns std::unordered_map
     if (options.format.parquet.allow_geoparquet_parser
         || options.format.parquet.spatial_filter_push_down)
     {
@@ -427,14 +431,14 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     /// i.e. the very same raw name `geo_meta` already carries. Translating them to the query-side
     /// name (as an earlier version of this code did) breaks the match against
     /// `primitive_columns[i].name` for any bbox sub-column that was itself renamed.
-    std::unordered_map<String, String> clickhouse_to_parquet_name;
+    std::unordered_map<String, String> clickhouse_to_parquet_name; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- ColumnMapper::makeMapping returns std::unordered_map
     const auto * query_side_column_mapper = format_filter_info->current_schema_column_mapper
         ? format_filter_info->current_schema_column_mapper.get()
         : format_filter_info->column_mapper.get();
     if (query_side_column_mapper && format_filter_info->column_mapper)
         clickhouse_to_parquet_name =
             query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName()).first;
-    auto resolve_geo_meta = [&](const String & ch_name) -> std::unordered_map<String, DB::GeoColumnMetadata>::const_iterator
+    auto resolve_geo_meta = [&](const String & ch_name) -> std::unordered_map<String, DB::GeoColumnMetadata>::const_iterator // STYLE_CHECK_ALLOW_STD_CONTAINERS -- geo metadata map, shared with ArrowIPC which keeps it std::unordered_map
     {
         if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
             return geo_meta->find(it->second);
@@ -455,12 +459,12 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
     /// Phase A: inject covering.bbox sub-columns into extended_sample_block BEFORE
     /// SchemaConverter runs, so the bbox primitives get proper idx_in_output_block and stats support.
-    std::vector<SpatialFilter> all_spatial_filters;
-    std::vector<SpatialFilter> geostats_spatial_filters;
+    VectorWithMemoryTracking<SpatialFilter> all_spatial_filters;
+    VectorWithMemoryTracking<SpatialFilter> geostats_spatial_filters;
     /// Tracks bbox column names that Phase A actually injected (not already present in
     /// extended_sample_block). Used in Phase B to suppress data decoding for those columns:
     /// they exist only for row-group statistics, not for query output or filter evaluation.
-    std::unordered_set<String> injected_bbox_columns;
+    UnorderedSetWithMemoryTracking<String> injected_bbox_columns;
     if (options.format.parquet.spatial_filter_push_down && format_filter_info->filter_actions_dag)
     {
         all_spatial_filters = extractSpatialFilters(*format_filter_info->filter_actions_dag, extended_sample_block);
@@ -470,7 +474,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         /// might not exist in the actual file schema (stale/malformed metadata). Without this
         /// check, SchemaConverter throws THERE_IS_NO_COLUMN for the injected column when
         /// input_format_parquet_allow_missing_columns = 0, turning a readable file into an exception.
-        std::unordered_set<String> schema_leaf_paths;
+        UnorderedSetWithMemoryTracking<String> schema_leaf_paths;
         {
             const auto & schema = file_metadata.schema;
             if (schema.size() >= 2 && schema.at(0).num_children > 0)
@@ -850,12 +854,12 @@ static parquet::ColumnDescriptor makeColumnDescriptor(const parq::FileMetaData &
 void Reader::prepareBloomFilterCondition()
 {
     /// Index in output block -> arrow column info.
-    std::vector<std::optional<std::pair</*primitive_idx*/ size_t, parquet::ColumnDescriptor>>>
+    VectorWithMemoryTracking<std::optional<std::pair</*primitive_idx*/ size_t, parquet::ColumnDescriptor>>>
         bf_eligible_columns(extended_sample_block.columns());
     /// Index in output block -> whether at least one surviving row group can use the dictionary page
     /// for this column. Used below to exempt the exact dictionary filter from the bloom filter's
     /// set-size cap (see hash_many).
-    std::vector<bool> dict_filter_eligible_columns(extended_sample_block.columns(), false);
+    VectorWithMemoryTracking<bool> dict_filter_eligible_columns(extended_sample_block.columns(), false);
     bool any_column_eligible_for_bf = false;
     for (size_t primitive_idx = 0; primitive_idx < primitive_columns.size(); ++primitive_idx)
     {
@@ -917,7 +921,7 @@ void Reader::prepareBloomFilterCondition()
             return hash;
         };
 
-        auto hash_many = [&](size_t column_idx, const ColumnPtr & column) -> std::optional<std::vector<uint64_t>>
+        auto hash_many = [&](size_t column_idx, const ColumnPtr & column) -> std::optional<VectorWithMemoryTracking<uint64_t>>
         {
             const auto & pair = bf_eligible_columns.at(column_idx);
             if (!pair.has_value())
@@ -1097,7 +1101,7 @@ void Reader::initializePrefetches()
         /// reads if it's small.
         /// Bloom filter ends when something else starts (or earlier). So we list all possible
         /// "something else" offsets and do binary search for each bloom filter to find where it ends.
-        std::vector<size_t> all_offsets;
+        VectorWithMemoryTracking<size_t> all_offsets;
         all_offsets.reserve(file_metadata.row_groups.size() * file_metadata.schema.size() * 6);
         for (const auto & rg : file_metadata.row_groups)
         {
@@ -1140,7 +1144,7 @@ void Reader::preparePrewhere()
 {
     const auto & row_level_filter = format_filter_info->row_level_filter;
     const auto & prewhere_info = format_filter_info->prewhere_info;
-    std::unordered_set<size_t> prewhere_output_column_idxs;
+    UnorderedSetWithMemoryTracking<size_t> prewhere_output_column_idxs;
 
     /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
     ///     subgroup, in one thread per row group. Instead, we could extract single-column conditions
@@ -1307,7 +1311,7 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / bytes_per_block;
 
     const auto & hashes = column_info.bloom_filter_hashes;
-    std::vector<size_t> block_idxs;
+    VectorWithMemoryTracking<size_t> block_idxs;
     block_idxs.reserve(hashes.size());
     for (UInt64 h : column_info.bloom_filter_hashes)
     {
@@ -1320,13 +1324,13 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     std::sort(block_idxs.begin(), block_idxs.end());
     block_idxs.erase(std::unique(block_idxs.begin(), block_idxs.end()), block_idxs.end());
 
-    std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> subranges;
+    VectorWithMemoryTracking<std::pair</*global_offset*/ size_t, /*length*/ size_t>> subranges;
     subranges.reserve(block_idxs.size());
     size_t base_offset = column.meta->meta_data.bloom_filter_offset + header_size;
     for (size_t block_idx : block_idxs)
         subranges.emplace_back(base_offset + block_idx * bytes_per_block, bytes_per_block);
 
-    std::vector<PrefetchHandle> prefetches;
+    VectorWithMemoryTracking<PrefetchHandle> prefetches;
     if (!subranges.empty()) // can be empty e.g. if `WHERE x IN ()`
         prefetches = prefetcher.splitRange(std::move(column.bloom_filter_data_prefetch), subranges, /*likely_to_be_used*/ false);
 
@@ -1495,7 +1499,7 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.decoded_type);
 }
 
-bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
+bool Reader::BloomFilterLookup::findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes)
 {
     size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / 32;
     for (size_t h : hashes)
@@ -1683,7 +1687,7 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
 
     /// Hash the dictionary values the same way query constants are hashed (see prepareBloomFilterCondition).
     parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
-    std::optional<std::vector<uint64_t>> hashes;
+    std::optional<VectorWithMemoryTracking<uint64_t>> hashes;
     if (column.dictionary.mode == Dictionary::Mode::Column)
     {
         /// The values already exist as a decoded column (built from `column_info.decoded_type`, same
@@ -1808,10 +1812,10 @@ struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
         reservation.release(reserved_bytes);
     }
 
-    bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+    bool findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes) override;
 };
 
-bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
+bool Reader::DictionaryLookup::findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes)
 {
     if (!computed)
     {
@@ -2013,11 +2017,11 @@ void Reader::adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnIn
 
 void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
 {
-    std::vector<std::pair<size_t, size_t>> row_ranges;
+    VectorWithMemoryTracking<std::pair<size_t, size_t>> row_ranges;
     size_t num_rows = 0;
     {
         /// Do a sweep to find the intersection of all per-column row sets.
-        std::vector<std::pair<size_t, /*sign*/ int>> events;
+        VectorWithMemoryTracking<std::pair<size_t, /*sign*/ int>> events;
 
         /// Add an extra row set representing the whole row group so that we don't need a separate
         /// code path for when column index is not used.
@@ -2102,7 +2106,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
             row_subgroup.filter.rows_total = subend - substart;
 
             row_subgroup.columns.resize(primitive_columns.size());
-            row_subgroup.output = std::vector<OutputColumnState>(extended_sample_block.columns());
+            row_subgroup.output = VectorWithMemoryTracking<OutputColumnState>(extended_sample_block.columns());
             for (size_t idx = 0; idx < row_subgroup.output.size(); ++idx)
             {
                 const auto & output_idx = sample_block_to_output_columns_idx.at(idx);
@@ -2152,7 +2156,7 @@ void Reader::decodeOffsetIndex(ColumnChunk & column, const RowGroup & row_group)
     }
 }
 
-void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & row_subgroup, const RowGroup & row_group, std::vector<PrefetchHandle *> & out)
+void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & row_subgroup, const RowGroup & row_group, VectorWithMemoryTracking<PrefetchHandle *> & out)
 {
     chassert(row_subgroup.filter.rows_pass > 0);
     if (column.offset_index.page_locations.empty())
@@ -2163,7 +2167,7 @@ void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & 
         const auto & locations = column.offset_index.page_locations;
         const auto & row_ranges = row_group.intersected_row_ranges_after_column_index;
         chassert(!row_ranges.empty());
-        std::vector<std::pair</*global_offset*/ size_t, /*length*/ size_t>> page_byte_ranges;
+        VectorWithMemoryTracking<std::pair</*global_offset*/ size_t, /*length*/ size_t>> page_byte_ranges;
 
         /// Some writers don't assign dictionary_page_offset and instead set data_page_offset to
         /// point to the dictionary page. Such undeclared dictionary page is not listed in offset

@@ -19,7 +19,7 @@ class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 using ColumnIdentifier = std::string;
-using ColumnIdentifiers = std::vector<ColumnIdentifier>;
+using ColumnIdentifiers = VectorWithMemoryTracking<ColumnIdentifier>;
 
 enum class CorrelatedSubqueryKind
 {

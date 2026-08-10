@@ -796,9 +796,9 @@ size_t getEqualRangeEndAssumeSorted(const TColumns & columns, size_t begin, size
 /** Same as above, but the key columns are selected from `columns` by `positions` (`columns[positions[k]]` is
   * the k-th key column).
   */
-template <typename TColumns>
+template <typename TColumns, typename TPositions>
 size_t getEqualRangeEndAssumeSorted(
-    const TColumns & columns, const std::vector<size_t> & positions, size_t begin, size_t end, int nan_direction_hint)
+    const TColumns & columns, const TPositions & positions, size_t begin, size_t end, int nan_direction_hint)
 {
     return detail::equalRangeEndAcrossColumns(
         positions.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[positions[i]]; }, [&](size_t) { return nan_direction_hint; });

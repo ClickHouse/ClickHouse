@@ -1,4 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/joinEnum.h>
 #include <Common/CurrentThread.h>
 
@@ -54,7 +58,7 @@ static UInt32 toMask(const BitSet & bits)
     return mask;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
+DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats_)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
@@ -258,7 +262,7 @@ static void cleanupJoinPredicates(
             const auto & right_rels = entry->right->relations;
 
             using ConstClassPtr = EquivClasses::ConstClassPtr;
-            std::unordered_set<ConstClassPtr> visited;
+            UnorderedSetWithMemoryTracking<ConstClassPtr> visited;
 
             for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
             {
@@ -306,7 +310,7 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_)
+    JoinOrderOptimizer(QueryGraph query_graph_, const VectorWithMemoryTracking<JoinOrderAlgorithm> & enabled_algorithms_, UInt64 max_searched_plans_)
         : query_graph(std::move(query_graph_))
         , max_searched_plans(max_searched_plans_)
         , enabled_algorithms(enabled_algorithms_)
@@ -334,11 +338,11 @@ private:
     friend class EnumeratorCheckerWithCosts;
 
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
-    std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
+    VectorWithMemoryTracking<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
 
     double computeSelectivity(const JoinActionRef & edge);
-    double computeSelectivity(const std::vector<JoinActionRef *> & edges);
-    double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
+    double computeSelectivity(const VectorWithMemoryTracking<JoinActionRef *> & edges);
+    double computeSelectivity(const VectorWithMemoryTracking<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
     std::optional<UInt64> estimateCardinality(
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
     size_t getColumnStats(const BitSet & rels, const String & column_name);
@@ -351,8 +355,8 @@ private:
     std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
     /// Returns the connecting (and, for two-relation joins, the early non-connecting) predicates,
     /// reusing an internal scratch buffer that is overwritten on every call.
-    const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    const VectorWithMemoryTracking<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
+    double computeSelectivityMask(const VectorWithMemoryTracking<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
 
     /// Periodically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
@@ -373,7 +377,7 @@ private:
         const DPJoinEntryPtr & left,
         const DPJoinEntryPtr & right,
         JoinKind join_kind,
-        std::vector<JoinActionRef *> & predicates);
+        VectorWithMemoryTracking<JoinActionRef *> & predicates);
 
     /// DPhyp helpers
     void buildHyperedges();
@@ -389,9 +393,9 @@ private:
     constexpr static auto APPLY_DP_THRESHOLD = 10;
 
     QueryGraph query_graph;
-    std::unordered_map<JoinActionRef, bool> applied;
-    std::unordered_map<JoinActionRef, double> expression_selectivity;
-    std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
+    UnorderedMapWithMemoryTracking<JoinActionRef, bool> applied;
+    UnorderedMapWithMemoryTracking<JoinActionRef, double> expression_selectivity;
+    UnorderedMapWithMemoryTracking<BitSet, DPJoinEntryPtr> dp_table;
 
     /** Precomputed native-mask view of the query graph for the DPsub hot path. Populated once per
     * `solveDPsub` run by `initDPsubScratch`. Each `BitSet` is packed into a `UInt` type, the outer-join
@@ -404,9 +408,9 @@ private:
     {
         using EquivClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
 
-        std::vector<TUInt> edge_source_mask;   /// per edge: source relations
-        std::vector<TUInt> edge_pin_mask;      /// per edge: relations that must all be present (if pinned)
-        std::vector<char> edge_pinned;         /// per edge: whether a pin applies
+        VectorWithMemoryTracking<TUInt> edge_source_mask;   /// per edge: source relations
+        VectorWithMemoryTracking<TUInt> edge_pin_mask;      /// per edge: relations that must all be present (if pinned)
+        VectorWithMemoryTracking<char> edge_pinned;         /// per edge: whether a pin applies
 
         struct Restriction
         {
@@ -414,14 +418,14 @@ private:
             JoinKind kind = JoinKind::Inner;
             bool present = false;
         };
-        std::vector<Restriction> restriction_by_rel; /// indexed by relation id
+        VectorWithMemoryTracking<Restriction> restriction_by_rel; /// indexed by relation id
 
-        std::vector<EquivClassPtr> equiv_classes;        /// distinct equivalence classes
-        std::vector<std::vector<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
+        VectorWithMemoryTracking<EquivClassPtr> equiv_classes;        /// distinct equivalence classes
+        VectorWithMemoryTracking<VectorWithMemoryTracking<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
 
-        std::vector<UInt64> class_visited;        /// generation stamp per equivalence class
+        VectorWithMemoryTracking<UInt64> class_visited;        /// generation stamp per equivalence class
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
-        std::vector<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
+        VectorWithMemoryTracking<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
     };
     DPsubMaskData<UInt32> dpsub_data;
 
@@ -436,8 +440,8 @@ private:
     };
 
     /// DPhyp hyperedge representation (built lazily by buildHyperedges)
-    std::vector<Hyperedge> hyperedges;
-    std::vector<std::vector<size_t>> node_to_edge_ids; /// node index -> hyperedge indices
+    VectorWithMemoryTracking<Hyperedge> hyperedges;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> node_to_edge_ids; /// node index -> hyperedge indices
 
     /// Set by `tryJoin` when it encounters a single-table or constant predicate inside the join edges
     /// that `dphyp` does not yet know how to attach. `solveDPhyp` returns `nullptr` so the fallback
@@ -451,7 +455,7 @@ private:
     bool search_budget_exceeded = false;
     const UInt64 max_searched_plans;
 
-    const std::vector<JoinOrderAlgorithm> enabled_algorithms;
+    const VectorWithMemoryTracking<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 
     QueryStatusPtr query_status;
@@ -529,7 +533,7 @@ double JoinOrderOptimizer::computeSelectivity(const JoinActionRef & edge)
     return selectivity;
 }
 
-double JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *> & edges)
+double JoinOrderOptimizer::computeSelectivity(const VectorWithMemoryTracking<JoinActionRef *> & edges)
 {
     double selectivity = 1.0;
     for (const auto & edge : edges)
@@ -541,13 +545,13 @@ double JoinOrderOptimizer::computeSelectivity(const std::vector<JoinActionRef *>
 /// Direct edges and transitive equivalences may cover different columns between
 /// the two relation sets, so both contribute to the overall selectivity.
 double JoinOrderOptimizer::computeSelectivity(
-    const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
+    const VectorWithMemoryTracking<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
 {
     double selectivity = computeSelectivity(edges);
 
     /// Also account for transitively-equivalent columns spanning both sides.
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
-    std::unordered_set<ConstClassPtr> visited;
+    UnorderedSetWithMemoryTracking<ConstClassPtr> visited;
 
     for (const auto & [member, _] : query_graph.column_equivalences.getMemberToClassMap())
     {
@@ -688,9 +692,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     return best_plan;
 }
 
-std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const BitSet & left, const BitSet & right)
+VectorWithMemoryTracking<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const BitSet & left, const BitSet & right)
 {
-    std::vector<JoinActionRef *> applicable;
+    VectorWithMemoryTracking<JoinActionRef *> applicable;
 
     BitSet joined_rels = left | right;
     for (auto & edge : query_graph.edges)
@@ -760,7 +764,7 @@ void JoinOrderOptimizer::initDPsubScratch()
     /// visits the classes touching the left side instead of rescanning the whole member map
     dpsub_data.equiv_classes.clear();
     dpsub_data.rel_to_classes.assign(num_relations, {});
-    std::unordered_map<const EquivClass *, UInt32> class_index;
+    UnorderedMapWithMemoryTracking<const EquivClass *, UInt32> class_index;
     for (const auto & [member, class_ptr] : query_graph.column_equivalences.getMemberToClassMap())
     {
         if (!class_ptr)
@@ -821,7 +825,7 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mas
     return {};
 }
 
-const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask)
+const VectorWithMemoryTracking<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask)
 {
     auto & out = dpsub_data.applicable_scratch;
     out.clear();
@@ -875,7 +879,7 @@ const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UI
 }
 
 double JoinOrderOptimizer::computeSelectivityMask(
-    const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
+    const VectorWithMemoryTracking<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
 {
     double selectivity = computeSelectivity(edges);
 
@@ -931,14 +935,14 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     dp_table.clear();
     expression_selectivity.clear();
 
-    std::deque<std::shared_ptr<DPJoinEntry>> components;
+    DequeWithMemoryTracking<std::shared_ptr<DPJoinEntry>> components;
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
         components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
     }
 
-    std::vector<JoinActionRef *> applied_edges;
+    VectorWithMemoryTracking<JoinActionRef *> applied_edges;
     /// Iteratively join components until we have a single plan
     while (components.size() > 1)
     {
@@ -1094,11 +1098,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
         Bitvector left{0};
         Bitvector right{0};
         std::optional<UInt64> estimated_rows = {};
-        std::unordered_map<String, ColumnStats> column_stats = {};
+        UnorderedMapWithMemoryTracking<String, ColumnStats> column_stats = {};
         double cost{.0};
         double sel{.0};
         JoinKind kind{JoinKind::Inner};
-        std::vector<JoinActionRef*> edges; // needed for physical plan generation
+        VectorWithMemoryTracking<JoinActionRef*> edges; // needed for physical plan generation
     };
     using DPTable = DPTable<DPEntry, Bitvector>;
     using Checker = EnumeratorCheckerWithCosts<DPTable, JoinOrderOptimizer>;
@@ -1138,7 +1142,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
     const size_t total_relations_count = query_graph.relation_stats.size();
 
     /// Components by size (index 0 is not used that why the size is N+1)
-    std::vector<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
+    VectorWithMemoryTracking<UnorderedMapWithMemoryTracking<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
 
     /// Populate DP table for components of size=1.
     /// Also reset the per-edge selectivity cache so an earlier algorithm in the
@@ -1196,7 +1200,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     /// Only leave the edges that connect left and right.
                     /// DPsize also includes non-connecting predicates (single-table filters) at the earliest
                     /// stage (component_size == 2), unlike DPhyp which handles them separately via the hyperedge graph.
-                    std::vector<JoinActionRef *> edge;
+                    VectorWithMemoryTracking<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
                         if (connects(edge_it, left->relations, right->relations))
@@ -1259,7 +1263,7 @@ void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_
         return;
 
     auto applicable_predicates = getApplicableExpressions(left_rels, right_rels);
-    std::vector<JoinActionRef *> connecting_predicates;
+    VectorWithMemoryTracking<JoinActionRef *> connecting_predicates;
     for (auto * predicate : applicable_predicates)
     {
         if (connects(predicate, left_rels, right_rels))
@@ -1297,7 +1301,7 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
     const DPJoinEntryPtr & left,
     const DPJoinEntryPtr & right,
     JoinKind join_kind,
-    std::vector<JoinActionRef *> & predicates)
+    VectorWithMemoryTracking<JoinActionRef *> & predicates)
 {
     auto selectivity = computeSelectivity(predicates, left->relations, right->relations);
     auto new_cost = computeJoinCost(left, right, selectivity);
@@ -1314,7 +1318,7 @@ DPJoinEntryPtr JoinOrderOptimizer::evaluateJoin(
     auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
     JoinOperator join_operator(
         effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
-        std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
+        std::ranges::to<VectorWithMemoryTracking<JoinActionRef>>(predicates | std::views::transform([](const auto * p) { return *p; })));
     auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
 
     LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
@@ -1386,7 +1390,7 @@ void JoinOrderOptimizer::buildHyperedges()
     /// neighborhood traversal would never discover the pair.
 
     /// Build a connectivity matrix from explicit edges to avoid duplicating them.
-    std::vector<BitSet> connected_rels(num_relations);
+    VectorWithMemoryTracking<BitSet> connected_rels(num_relations);
     for (const auto & hyperedge : hyperedges)
     {
         auto left_rel = hyperedge.left.getSingleBit();
@@ -1399,7 +1403,7 @@ void JoinOrderOptimizer::buildHyperedges()
     }
 
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
-    std::unordered_set<ConstClassPtr> processed_classes;
+    UnorderedSetWithMemoryTracking<ConstClassPtr> processed_classes;
 
     for (const auto & [member, equiv_class] : query_graph.column_equivalences.getMemberToClassMap())
     {
@@ -1408,7 +1412,7 @@ void JoinOrderOptimizer::buildHyperedges()
 
         /// Collect all distinct relations in this equivalence class.
         BitSet seen_rels;
-        std::vector<size_t> class_rels;
+        VectorWithMemoryTracking<size_t> class_rels;
         for (const auto & column : *equiv_class)
         {
             auto relation = column.getSourceRelations().getSingleBit();
@@ -1487,7 +1491,7 @@ BitSet JoinOrderOptimizer::getNeighborhood(const BitSet & node_set) const
 template <typename F>
 static void forEachNonEmptySubset(const BitSet & mask, F && func)
 {
-    std::vector<size_t> bit_positions;
+    VectorWithMemoryTracking<size_t> bit_positions;
     for (auto bit : mask)
         bit_positions.push_back(bit);
 
@@ -1597,7 +1601,7 @@ void JoinOrderOptimizer::emitCsg(const BitSet & csg)
     LOG_TEST(log, "DPhyp: emitCsg neighborhood={{ {} }}, exclusion={{ {} }}",
         fmt::join(csg_neighborhood, ","), fmt::join(exclusion, ","));
 
-    std::vector<size_t> neighbor_nodes;
+    VectorWithMemoryTracking<size_t> neighbor_nodes;
     for (size_t n : csg_neighborhood)
         neighbor_nodes.push_back(n);
 

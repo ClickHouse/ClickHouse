@@ -3,6 +3,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -23,7 +24,7 @@ public:
 
 private:
     Port::Data data;
-    std::vector<char> was_output_processed;
+    VectorWithMemoryTracking<char> was_output_processed;
 
     Status prepareGenerate();
     Status prepareConsume();

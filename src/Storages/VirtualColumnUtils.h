@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
@@ -84,7 +85,7 @@ std::optional<ActionsDAG> splitFilterDagForAllowedInputs(
 template <typename T>
 auto extractSingleValueFromBlock(const Block & block, const String & name)
 {
-    std::unordered_set<T> res;
+    UnorderedSetWithMemoryTracking<T> res;
     const ColumnWithTypeAndName & data = block.getByName(name);
     size_t rows = block.rows();
     for (size_t i = 0; i < rows; ++i)

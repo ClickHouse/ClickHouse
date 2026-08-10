@@ -1,4 +1,5 @@
 #include <IO/WriteBufferFromString.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -195,7 +196,7 @@ void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
     const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
-    std::unordered_set<String> applied_projection_names;
+    UnorderedSetWithMemoryTracking<String> applied_projection_names;
     bool has_reading_from_mt = false;
 
     Optimization::ExtraSettings extra_settings = {

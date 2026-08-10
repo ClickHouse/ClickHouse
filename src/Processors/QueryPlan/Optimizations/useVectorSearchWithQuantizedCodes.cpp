@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Compression/CompressionCodecQuantized.h>
 #include <Core/Field.h>
@@ -116,7 +117,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// a rename ExpressionStep with the actual filter inside the reader. We collect the chain so we can splice the
     /// shortlist ABOVE all of it: this way every filter prefilters the approximate ranking. The codes subcolumn is then
     /// propagated up through the chain (the steps would otherwise drop it as an unknown column).
-    std::vector<QueryPlan::Node *> chain_nodes; /// ordered top (just below the rescore expression) to bottom (just above read)
+    VectorWithMemoryTracking<QueryPlan::Node *> chain_nodes; /// ordered top (just below the rescore expression) to bottom (just above read)
     QueryPlan::Node * read_node = expression_node->children.front();
     ReadFromMergeTree * read_step = nullptr;
     while (true)
@@ -299,7 +300,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
 
     /// 1. Pull the codes subcolumn (and, for the trained `product` method, the per-part codebook subcolumn) into the read
     /// list.
-    std::vector<String> extra_columns{codes_column};
+    VectorWithMemoryTracking<String> extra_columns{codes_column};
     if (is_pq)
         extra_columns.push_back(codebook_column);
     for (const auto & extra_column : extra_columns)
@@ -393,7 +394,7 @@ bool optimizeVectorSearchWithQuantizedCodes(
     /// consumed inputs (the distance function above still references them).
     /// Exception: keep a companion subcolumn that the rescore expression still consumes - e.g. `SELECT vec.quantized
     /// ... ORDER BY distance LIMIT` selects it - otherwise the rescore above the shortlist would lose its input.
-    std::unordered_set<std::string_view> needed_above;
+    UnorderedSetWithMemoryTracking<std::string_view> needed_above;
     for (const auto * input : expression.getInputs())
         needed_above.insert(input->result_name);
     std::erase_if(approx_dag.getOutputs(), [&](const ActionsDAG::Node * node)

@@ -1,4 +1,7 @@
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/CurrentThread.h>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
@@ -149,11 +152,11 @@ Chunk ParquetV3BlockInputFormat::read()
     return std::move(res.chunk);
 }
 
-std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
+std::optional<std::pair<VectorWithMemoryTracking<size_t>, size_t>> ParquetV3BlockInputFormat::getMatchedBuckets() const
 {
     if (!reader)
         return std::nullopt;
-    std::vector<size_t> matched;
+    VectorWithMemoryTracking<size_t> matched;
     for (const auto & row_group : reader->reader.row_groups)
     {
         if (!row_group.need_to_process)
@@ -244,7 +247,7 @@ void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
 {
     size_t size_chunks = 0;
     readVarUInt(size_chunks, buffer);
-    row_group_ids = std::vector<size_t>{};
+    row_group_ids = VectorWithMemoryTracking<size_t>{};
     row_group_ids.resize(size_chunks);
     size_t bucket = 0;
     for (size_t i = 0; i < size_chunks; ++i)
@@ -262,19 +265,19 @@ String ParquetFileBucketInfo::getIdentifier() const
     return result;
 }
 
-ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_)
+ParquetFileBucketInfo::ParquetFileBucketInfo(const VectorWithMemoryTracking<size_t> & row_group_ids_)
     : row_group_ids(row_group_ids_)
 {
 }
 
-std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const
+std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups(const VectorWithMemoryTracking<size_t> & matching_row_groups) const
 {
     if (matching_row_groups.empty())
         return nullptr;
     if (row_group_ids.empty())
         return std::make_shared<ParquetFileBucketInfo>(matching_row_groups);
-    std::unordered_set<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
-    std::vector<size_t> filtered;
+    UnorderedSetWithMemoryTracking<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
+    VectorWithMemoryTracking<size_t> filtered;
     for (size_t rg : row_group_ids)
         if (matching_set.contains(rg))
             filtered.push_back(rg);
@@ -283,22 +286,22 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
 }
 
-void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
-void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
+void registerParquetFileBucketInfo(UnorderedMapWithMemoryTracking<String, FileBucketInfoPtr> & instances);
+void registerParquetFileBucketInfo(UnorderedMapWithMemoryTracking<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
 }
 
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
+VectorWithMemoryTracking<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
 {
     std::atomic<int> is_stopped = false;
     auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
     auto metadata = parquet::ReadMetaData(arrow_file);
-    std::vector<size_t> bucket_sizes;
+    VectorWithMemoryTracking<size_t> bucket_sizes;
     for (int i = 0; i < metadata->num_row_groups(); ++i)
         bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
 
-    std::vector<std::vector<size_t>> buckets;
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> buckets;
     size_t current_weight = 0;
     for (size_t i = 0; i < bucket_sizes.size(); ++i)
     {
@@ -318,7 +321,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
         }
     }
 
-    std::vector<FileBucketInfoPtr> result;
+    VectorWithMemoryTracking<FileBucketInfoPtr> result;
     for (const auto & bucket : buckets)
     {
         result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));

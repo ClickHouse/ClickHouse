@@ -22,7 +22,7 @@ class ArrowFlightSource final : public ISource
 
 public:
     ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, const Block & sample_block_, const Block & virtual_header_, ContextPtr context_);
-    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, std::vector<arrow::flight::FlightEndpoint> endpoints_, const Block & sample_block_, ContextPtr context_);
+    ArrowFlightSource(std::shared_ptr<ArrowFlightConnection> connection_, std::vector<arrow::flight::FlightEndpoint> endpoints_, const Block & sample_block_, ContextPtr context_); // STYLE_CHECK_ALLOW_STD_CONTAINERS
     ArrowFlightSource(std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader_, const Block & sample_block_, ContextPtr context_);
 
 protected:
@@ -35,7 +35,7 @@ private:
     Block sample_block;
     Block virtual_header;
     ContextPtr context;
-    std::vector<arrow::flight::FlightEndpoint> endpoints;
+    std::vector<arrow::flight::FlightEndpoint> endpoints; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     size_t current_endpoint = 0;
     std::unique_ptr<arrow::flight::MetadataRecordBatchReader> stream_reader;
     std::shared_ptr<arrow::Schema> schema;

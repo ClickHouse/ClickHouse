@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -63,7 +64,9 @@ RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
 
 class RuntimeDataflowStatisticsCacheUpdater
 {
-    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+    /// Mirrors `IMergeTreeDataPart::ColumnSizeByName` / `IStorage::ColumnSizeByName`; the callers pass
+    /// those maps directly, so the three declarations have to name the same type.
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     struct Statistics
     {

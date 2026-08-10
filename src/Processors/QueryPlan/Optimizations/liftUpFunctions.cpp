@@ -1,4 +1,5 @@
 #include <Interpreters/ActionsDAG.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -33,7 +34,7 @@ namespace DB::QueryPlanOptimizations
 /// This is ok for DAG, but may introduce a bug in a SotringStep cause columns are selected by name.
 static bool areNodesConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
-    std::unordered_set<std::string_view> names;
+    UnorderedSetWithMemoryTracking<std::string_view> names;
     for (const auto & node : nodes)
     {
         if (!names.emplace(node->result_name).second)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/IProcessor.h>
 
 #include <Common/VectorWithMemoryTracking.h>
@@ -34,14 +35,14 @@ private:
         bool is_finished = false;
     };
 
-    std::vector<PortsPair> port_pairs;
+    VectorWithMemoryTracking<PortsPair> port_pairs;
     const size_t num_delayed_ports;
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
     size_t num_finished_main_inputs = 0;
 
-    std::unordered_map<const InputPort *, size_t> input_port_to_pair;
-    std::unordered_map<const OutputPort *, size_t> output_port_to_pair;
+    UnorderedMapWithMemoryTracking<const InputPort *, size_t> input_port_to_pair;
+    UnorderedMapWithMemoryTracking<const OutputPort *, size_t> output_port_to_pair;
     bool are_inputs_initialized = false;
 
     bool processPair(PortsPair & pair);

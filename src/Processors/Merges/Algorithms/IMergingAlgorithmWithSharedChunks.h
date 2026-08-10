@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
@@ -39,9 +40,9 @@ protected:
     };
 
     /// Sources currently being merged.
-    using Sources = std::vector<Source>;
+    using Sources = VectorWithMemoryTracking<Source>;
     Sources sources;
-    std::vector<size_t> sources_origin_merge_tree_part_level;
+    VectorWithMemoryTracking<size_t> sources_origin_merge_tree_part_level;
 
     SortingQueue<SortCursor> queue;
 

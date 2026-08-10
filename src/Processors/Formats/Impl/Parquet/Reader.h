@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/BlockMissingValues.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
@@ -176,7 +179,7 @@ struct Reader
         ///       (adjusting indices and dictionary).
 
         /// How to interpret repetition/definition levels.
-        std::vector<LevelInfo> levels;
+        VectorWithMemoryTracking<LevelInfo> levels;
         /// Definition level of innermost array. I.e. max levels[i].def where levels[i].is_array.
         UInt8 max_array_def = 0;
 
@@ -198,7 +201,7 @@ struct Reader
         /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
         /// on the same geometry, or a regular WHERE condition plus a spatial one on the same bbox
         /// column) each contribute their own KeyCondition here; a page must pass all of them.
-        std::vector<ColumnIndexCondition> column_index_conditions;
+        VectorWithMemoryTracking<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
@@ -214,7 +217,7 @@ struct Reader
         /// for the column (see hash_many and initializePrefetches). It can hold hashes for some atoms
         /// while an over-cap `IN` on the same column contributes none, so the bloom filter still prunes
         /// row groups using the smaller atoms.
-        std::vector<UInt64> bloom_filter_hashes;
+        VectorWithMemoryTracking<UInt64> bloom_filter_hashes;
 
         PrimitiveColumnInfo() = default;
         PrimitiveColumnInfo(PrimitiveColumnInfo &&) = default;
@@ -230,7 +233,7 @@ struct Reader
         DataTypePtr input_type; // make a column of this type from the nested columns...
         DataTypePtr output_type; // ... then castColumn it to this type, if `needs_cast`
         std::optional<size_t> idx_in_output_block;
-        std::vector<size_t> nested_columns;
+        VectorWithMemoryTracking<size_t> nested_columns;
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
@@ -349,7 +352,7 @@ struct Reader
         size_t data_pages_bytes = 0;
 
         /// Smaller prefetches for parts of bloom_filter_data_prefetch that we actually need.
-        std::vector<BloomFilterBlock> bloom_filter_blocks;
+        VectorWithMemoryTracking<BloomFilterBlock> bloom_filter_blocks;
 
         /// Smaller prefetches for pages inside data_pages_prefetch that we actually need.
         /// Based on offset index.
@@ -359,7 +362,7 @@ struct Reader
         /// is small and very close to other ranges (e.g. if column data is right next to offset
         /// index), Prefetcher may read it incidentally; then the `pages` prefetch ranges won't
         /// do any additional reading and will just point into the already-read bigger range.
-        std::vector<DataPage> data_pages;
+        VectorWithMemoryTracking<DataPage> data_pages;
 
         parq::BloomFilterHeader bloom_filter_header;
         parq::OffsetIndex offset_index;
@@ -379,7 +382,7 @@ struct Reader
         PruningMemoryReservation dictionary_reservation;
         size_t dictionary_reserved_bytes = 0;
 
-        std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
+        VectorWithMemoryTracking<std::pair</*start*/ size_t, /*end*/ size_t>> row_ranges_after_column_index;
 
         PageState page; // TODO [parquet]: deallocate when column chunk is done (and check other fields too)
         /// Offset from the start of `data_pages_prefetch`, if not using offset index (`data_pages` is empty).
@@ -444,10 +447,10 @@ struct Reader
         /// Initially `filter` is based only on column index, then it's updated after running prewhere.
         RowSet filter;
 
-        std::vector<ColumnSubchunk> columns;
+        VectorWithMemoryTracking<ColumnSubchunk> columns;
         BlockMissingValues block_missing_values;
 
-        std::vector<OutputColumnState> output; // parallel to extended_sample_block
+        VectorWithMemoryTracking<OutputColumnState> output; // parallel to extended_sample_block
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
@@ -463,13 +466,13 @@ struct Reader
         bool need_to_process = false;
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
-        std::vector<ColumnChunk> columns;
+        VectorWithMemoryTracking<ColumnChunk> columns;
 
         Hyperrectangle hyperrectangle; // min/max for each column; parallel to extended_sample_block
 
-        std::deque<RowSubgroup> subgroups;
+        DequeWithMemoryTracking<RowSubgroup> subgroups;
 
-        std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> intersected_row_ranges_after_column_index;
+        VectorWithMemoryTracking<std::pair</*start*/ size_t, /*end*/ size_t>> intersected_row_ranges_after_column_index;
 
 
         /// Fields below are used only by ReadManager.
@@ -485,8 +488,8 @@ struct Reader
     {
         ExpressionActions actions;
         std::optional<String> filter_column_name {};
-        std::vector<size_t> input_idxs {}; // indices in extended_sample_block
-        std::vector<std::pair<String, size_t>> idxs_in_output_block {};
+        VectorWithMemoryTracking<size_t> input_idxs {}; // indices in extended_sample_block
+        VectorWithMemoryTracking<std::pair<String, size_t>> idxs_in_output_block {};
     };
 
     ReadOptions options;
@@ -495,7 +498,7 @@ struct Reader
     Prefetcher prefetcher;
 
     parq::FileMetaData file_metadata;
-    std::deque<RowGroup> row_groups;
+    DequeWithMemoryTracking<RowGroup> row_groups;
 
     /// Don't get confused in different column numberings (sorry there are so many):
     ///  * In parquet metadata, columns are listed in array `schema`.
@@ -516,40 +519,40 @@ struct Reader
     ///    columns. E.g. for Array(Array(Int64)) there would be 3 elements in output_columns:
     ///    Int64 (pointing to an element of primitive_columns), Array(Int64), and Array(Array(Int64)).
 
-    std::vector<PrimitiveColumnInfo> primitive_columns;
+    VectorWithMemoryTracking<PrimitiveColumnInfo> primitive_columns;
     size_t total_primitive_columns_in_file = 0;
-    std::vector<OutputColumnInfo> output_columns;
+    VectorWithMemoryTracking<OutputColumnInfo> output_columns;
     /// Maps idx_in_output_block to index in output_columns. I.e.:
     ///     sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
     /// nullopt if the column is produced by PREWHERE expression:
     ///     prewhere_steps[?].idxs_in_output_block[?].second == i
-    std::vector<std::optional<size_t>> sample_block_to_output_columns_idx;
+    VectorWithMemoryTracking<std::optional<size_t>> sample_block_to_output_columns_idx;
 
     /// sample_block with maybe some columns added at the end.
     /// The added columns are used as inputs to prewhere expression, then discarded.
     /// (Why not just add them to sample_block? To avoid unnecessarily applying filter to them.)
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
-    std::vector<Step> steps;
+    VectorWithMemoryTracking<Step> steps;
 
     /// Per-column KeyConditions for page-level filter push-down (column index).
     /// Stored here to keep the shared_ptrs alive, since raw pointers from them
     /// are referenced by PrimitiveColumnInfo::column_index_conditions.
-    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
+    VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 
     /// KeyConditions built from GeoParquet covering.bbox spatial filters.
     /// One per spatial predicate; checked against the hyperrectangle of bbox column stats.
-    std::vector<std::shared_ptr<KeyCondition>> spatial_key_conditions;
+    VectorWithMemoryTracking<std::shared_ptr<KeyCondition>> spatial_key_conditions;
     /// For each spatial_key_conditions[i], the primitive_columns indices of its four bbox
     /// columns (xmin, ymin, xmax, ymax). SIZE_MAX means not found. Used to check null_count
     /// before applying row-group and page pruning: NULL bbox means unknown extent, must not prune.
-    std::vector<std::array<size_t, 4>> spatial_key_condition_bbox_col_indices;
+    VectorWithMemoryTracking<std::array<size_t, 4>> spatial_key_condition_bbox_col_indices;
 
     /// Per-column KeyConditions extracted from spatial_key_conditions for page-level
     /// spatial bbox pruning. Stored here (not as a local variable) to keep the shared_ptrs
     /// alive, since raw pointers from them are referenced by
     /// PrimitiveColumnInfo::column_index_conditions.
-    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
+    VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
 
@@ -558,7 +561,7 @@ struct Reader
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
-    void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+    void prefilterAndInitRowGroups(const std::optional<UnorderedSetWithMemoryTracking<UInt64>> & row_groups_to_read);
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
@@ -600,7 +603,7 @@ struct Reader
     /// Call after prewhere is done on row subgroup. Un-requests prefetch for fully filtered out pages,
     /// adds pages that need prefetch to `out`. Must be called in order.
     /// May assign dictionary_page_prefetch.
-    void determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & row_subgroup, const RowGroup & row_group, std::vector<PrefetchHandle *> & out);
+    void determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & row_subgroup, const RowGroup & row_group, VectorWithMemoryTracking<PrefetchHandle *> & out);
 
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
     double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
@@ -625,7 +628,7 @@ private:
 
         BloomFilterLookup(Prefetcher & prefetcher_, ColumnChunk & column_) : prefetcher(prefetcher_), column(column_) {}
 
-        bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+        bool findAnyHash(const VectorWithMemoryTracking<uint64_t> & hashes) override;
     };
 
     /// Like BloomFilterLookup, but backed by the (already decoded) dictionary page, which holds the

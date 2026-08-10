@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <concepts>
 #include <limits>
@@ -23,7 +24,7 @@ public:
     };
 
     using Key = TUInt;
-    using Map = std::vector<DPEntry>;
+    using Map = VectorWithMemoryTracking<DPEntry>;
 
     explicit DPTable(size_t numRelations_);
 

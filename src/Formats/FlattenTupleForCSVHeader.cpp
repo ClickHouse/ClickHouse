@@ -1,4 +1,5 @@
 #include <Formats/FlattenTupleForCSVHeader.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Block.h>
 #include <DataTypes/DataTypeTuple.h>

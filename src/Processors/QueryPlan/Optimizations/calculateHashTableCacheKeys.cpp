@@ -1,4 +1,7 @@
 #include <unordered_map>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Analyzer/TableFunctionNode.h>
@@ -157,8 +160,8 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// imprecision for a simpler, cheaper key.
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes)
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & cache_keys,
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & raw_hashes)
 {
     struct Frame
     {
@@ -169,7 +172,7 @@ void calculateHashTableCacheKeys(
     };
 
     // We use addresses of `left` and `right`, so they should be stable
-    std::list<Frame> stack;
+    ListWithMemoryTracking<Frame> stack;
     stack.push_back({.node = &root});
 
     while (!stack.empty())
@@ -344,15 +347,15 @@ void calculateHashTableCacheKeys(
     }
 }
 
-static void calculateHashTableCacheKeys(const QueryPlan::Node & root, std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys)
+static void calculateHashTableCacheKeys(const QueryPlan::Node & root, UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & cache_keys)
 {
-    std::unordered_map<const QueryPlan::Node *, UInt64> raw_hashes;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> raw_hashes;
     calculateHashTableCacheKeys(root, cache_keys, raw_hashes);
 }
 
-std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root)
+UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root)
 {
-    std::unordered_map<const QueryPlan::Node *, UInt64> cache_keys;
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> cache_keys;
     calculateHashTableCacheKeys(root, cache_keys);
     return cache_keys;
 }
@@ -366,9 +369,9 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
     /// NOT hash the plan: hashing serializes plan steps, and some steps that may appear in arbitrary
     /// queries are not serializable (e.g. `ORDER BY ... WITH FILL`, or `INSERT ... FROM INFILE`
     /// plans) and would throw. Only aggregating queries need a key.
-    std::vector<QueryPlan::Node *> aggregating_nodes;
+    VectorWithMemoryTracking<QueryPlan::Node *> aggregating_nodes;
     {
-        std::vector<QueryPlan::Node *> stack;
+        VectorWithMemoryTracking<QueryPlan::Node *> stack;
         stack.push_back(&root);
         while (!stack.empty())
         {
@@ -383,7 +386,7 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 
     /// Compute every key before stamping any of them, so a key never depends on whether another
     /// (e.g. a nested) aggregation has already been stamped.
-    std::vector<std::pair<AggregatingStep *, UInt64>> keys_to_set;
+    VectorWithMemoryTracking<std::pair<AggregatingStep *, UInt64>> keys_to_set;
     for (auto * aggregating_node : aggregating_nodes)
     {
         /// Hash only the aggregation's own input subtree (this node as the root). This excludes the

@@ -438,11 +438,11 @@ std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> JoinActionRef::a
     return {op, lhs, rhs};
 }
 
-std::vector<JoinActionRef> JoinActionRef::getArguments(bool recursive) const
+VectorWithMemoryTracking<JoinActionRef> JoinActionRef::getArguments(bool recursive) const
 {
     UNUSED(recursive);
     const auto * node = getNode();
-    std::vector<JoinActionRef> arguments;
+    VectorWithMemoryTracking<JoinActionRef> arguments;
     auto data_ptr = getData();
     for (const auto & child : node->children)
         arguments.emplace_back(child, data_ptr);
@@ -465,7 +465,7 @@ std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData() const
     return data_ptr;
 }
 
-std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData(const std::vector<JoinActionRef> & actions)
+std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData(const VectorWithMemoryTracking<JoinActionRef> & actions)
 {
     if (actions.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get actions DAG for empty actions");

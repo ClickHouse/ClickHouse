@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -13,17 +15,17 @@ struct PuffinBlob
     String type;
     Int64 snapshot_id = 0;
     Int64 sequence_number = 0;
-    std::vector<Int32> fields;
+    VectorWithMemoryTracking<Int32> fields;
     Int64 offset = 0;
     Int64 length = 0;
     String compression_codec;
-    std::map<String, String> properties;
+    MapWithMemoryTracking<String, String> properties;
 };
 
 struct PuffinFooter
 {
-    std::vector<PuffinBlob> blobs;
-    std::vector<UInt8> data;
+    VectorWithMemoryTracking<PuffinBlob> blobs;
+    VectorWithMemoryTracking<UInt8> data;
 };
 
 class PuffinMetadataInputFormat : public IInputFormat

@@ -4,6 +4,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Port.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -39,9 +40,9 @@ public:
 
 private:
     const size_t num_inputs;
-    std::vector<Int64> chunk_snums;
-    std::vector<Chunk> chunks;
-    std::vector<bool> is_input_finished;
+    VectorWithMemoryTracking<Int64> chunk_snums;
+    VectorWithMemoryTracking<Chunk> chunks;
+    VectorWithMemoryTracking<bool> is_input_finished;
 };
 
 }

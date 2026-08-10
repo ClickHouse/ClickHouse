@@ -1,4 +1,5 @@
 #include <atomic>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <map>
 #include <set>
 #include <optional>
@@ -732,7 +733,7 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable SharedMutex users_to_ignore_early_memory_limit_check_mutex;
     std::string users_to_ignore_early_memory_limit_check_source TSA_GUARDED_BY(users_to_ignore_early_memory_limit_check_mutex);
-    std::shared_ptr<std::unordered_set<std::string>> users_to_ignore_early_memory_limit_check TSA_GUARDED_BY(users_to_ignore_early_memory_limit_check_mutex);
+    std::shared_ptr<UnorderedSetWithMemoryTracking<std::string>> users_to_ignore_early_memory_limit_check TSA_GUARDED_BY(users_to_ignore_early_memory_limit_check_mutex);
 
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
     std::optional<AzureSettingsByEndpoint> storage_azure_settings TSA_GUARDED_BY(mutex);   /// Settings of AzureBlobStorage
@@ -4608,7 +4609,7 @@ void Context::allowSystemAllocateMemory(bool allow)
 
 void Context::setUsersToIgnoreEarlyMemoryLimitCheck(std::string users)
 {
-    std::shared_ptr<std::unordered_set<std::string>> map;
+    std::shared_ptr<UnorderedSetWithMemoryTracking<std::string>> map;
     std::lock_guard lock(shared->users_to_ignore_early_memory_limit_check_mutex);
 
     if (users == shared->users_to_ignore_early_memory_limit_check_source)
@@ -4618,14 +4619,14 @@ void Context::setUsersToIgnoreEarlyMemoryLimitCheck(std::string users)
 
     if (!users.empty())
     {
-        map = std::make_shared<std::unordered_set<std::string>>(parseIdentifiersOrStringLiteralsToSet(users, *settings));
+        map = std::make_shared<UnorderedSetWithMemoryTracking<std::string>>(parseIdentifiersOrStringLiteralsToSet(users, *settings));
         shared->users_to_ignore_early_memory_limit_check_source = std::move(users);
     }
 
     shared->users_to_ignore_early_memory_limit_check = std::move(map);
 }
 
-std::shared_ptr<std::unordered_set<std::string>> Context::getUsersToIgnoreEarlyMemoryLimitCheck() const
+std::shared_ptr<UnorderedSetWithMemoryTracking<std::string>> Context::getUsersToIgnoreEarlyMemoryLimitCheck() const
 {
     SharedLockGuard lock(shared->users_to_ignore_early_memory_limit_check_mutex);
     return shared->users_to_ignore_early_memory_limit_check;

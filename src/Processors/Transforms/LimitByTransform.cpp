@@ -1,4 +1,5 @@
 #include <Processors/Transforms/LimitByTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
@@ -47,7 +48,7 @@ UInt64 computeGroupLimitEnd(UInt64 length, UInt64 offset)
 struct GroupingKeys
 {
     Names names;
-    std::vector<size_t> positions;
+    VectorWithMemoryTracking<size_t> positions;
 };
 
 /// Collect grouping keys whose header-sample column is not `ColumnConst`.
@@ -112,7 +113,7 @@ ChunkRowRange shrinkRunToLimitWindow(
 /// non-overlapping, and each slice must stay within `[0, source_row_count)`.
 /// Reuse the whole chunk when possible; otherwise prefer a single `cut` for
 /// contiguous rows and fall back to mask-based `filter`.
-UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, const std::vector<ChunkRowRange> & slices)
+UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, const VectorWithMemoryTracking<ChunkRowRange> & slices)
 {
     UInt64 output_row_count = 0;
     for (const auto & slice : slices)
@@ -370,7 +371,8 @@ LimitBySortedStreamTransform::LimitBySortedStreamTransform(
     key_names.reserve(sorted_columns_descr.size());
     for (const auto & column_description : sorted_columns_descr)
         key_names.push_back(column_description.column_name);
-    grouping_key_positions = filterNonConstKeys(header, key_names).positions;
+    auto grouping_keys = filterNonConstKeys(header, key_names);
+    grouping_key_positions = std::move(grouping_keys.positions);
 
     previous_chunk_last_grouping_key_columns.reserve(grouping_key_positions.size());
     for (size_t position : grouping_key_positions)

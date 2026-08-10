@@ -1,4 +1,5 @@
 #include <Storages/ColumnsDescription.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/StorageArrowFlight.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -250,7 +251,7 @@ public:
 
         CHColumnToArrowColumn converter(getHeader(), "Arrow", arrow_settings);
         std::shared_ptr<arrow::Table> table;
-        std::vector<Chunk> chunks;
+        VectorWithMemoryTracking<Chunk> chunks;
         chunks.emplace_back(std::move(chunk));
         converter.chChunkToArrowTable(table, chunks, getHeader().columns());
 

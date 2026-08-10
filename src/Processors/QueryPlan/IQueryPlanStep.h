@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
@@ -18,7 +19,7 @@ using QueryPipelineBuilders = VectorWithMemoryTracking<QueryPipelineBuilderPtr>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::list<ProcessorPtr>;
+using Processors = std::list<ProcessorPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
@@ -26,7 +27,7 @@ using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflow
 namespace JSONBuilder { class JSONMap; }
 
 class QueryPlan;
-using QueryPlanRawPtrs = std::list<QueryPlan *>;
+using QueryPlanRawPtrs = ListWithMemoryTracking<QueryPlan *>;
 
 struct QueryPlanSerializationSettings;
 
@@ -150,13 +151,13 @@ public:
         /// Required input positions per child (outer index = child_id).
         /// Empty outside vector means no inputs were changed.
         /// Empty inside vector means the step doesn't require any inputs from the child.
-        std::vector<std::vector<size_t>> required_input_positions;
+        VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> required_input_positions;
 
         /// Which original output positions survived, in order.
         /// Only meaningful if `changed` is true, otherwise it shouldn't be used.
         /// Maps new output position to the original output position.
         /// Entries with NEWLY_ADDED_COLUMN_POSITION indicate columns that weren't present in the original header.
-        std::vector<size_t> kept_output_positions;
+        VectorWithMemoryTracking<size_t> kept_output_positions;
     };
 
     /// Removes the unnecessary inputs and outputs from the step based on required_output_positions.
@@ -166,7 +167,7 @@ public:
     /// and might contain some other columns too.
     /// Can be used only if canRemoveUnusedColumns returns true.
     /// The order of the remaining outputs must be preserved.
-    virtual RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & /*required_output_positions*/, bool /*remove_inputs*/);
+    virtual RemoveUnusedColumnsResult removeUnusedColumns(const VectorWithMemoryTracking<size_t> & /*required_output_positions*/, bool /*remove_inputs*/);
 
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;
@@ -180,7 +181,7 @@ public:
     /// In order for EXPLAIN ANALYZE to track all the time for every step
     /// redefine the methods below when adding a new step with several stages
     /// Follow the pattern of classes with multi stage execution that already implements these methods
-    virtual std::vector<size_t> getStepGroups() const { return {0}; }
+    virtual VectorWithMemoryTracking<size_t> getStepGroups() const { return {0}; }
     virtual String getStepGroupName(size_t) const { return {}; }
 
 protected:

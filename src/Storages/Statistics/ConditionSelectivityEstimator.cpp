@@ -1,4 +1,5 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <stack>
 #include <cmath>

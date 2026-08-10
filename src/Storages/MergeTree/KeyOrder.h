@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Range.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <vector>
@@ -15,7 +16,7 @@ public:
     /// All columns ascending.
     KeyOrder() = default;
 
-    explicit KeyOrder(std::vector<bool> reverse_flags_)
+    explicit KeyOrder(VectorWithMemoryTracking<bool> reverse_flags_)
         : reverse_flags(std::move(reverse_flags_))
         , has_any_reversed(std::find(reverse_flags.begin(), reverse_flags.end(), true) != reverse_flags.end())
     {
@@ -49,7 +50,7 @@ public:
     /// left before right.
     int compareTuples(const FieldRef * left, const FieldRef * right, size_t size) const;
 
-    bool matchesPrefix(const std::vector<bool> & flags, size_t num_columns) const
+    bool matchesPrefix(const VectorWithMemoryTracking<bool> & flags, size_t num_columns) const
     {
         for (size_t i = 0; i < num_columns; ++i)
             if (isReversed(i) != (i < flags.size() && flags[i]))
@@ -59,7 +60,7 @@ public:
 
 private:
     /// Empty means all columns ascending.
-    std::vector<bool> reverse_flags;
+    VectorWithMemoryTracking<bool> reverse_flags;
     bool has_any_reversed = false;
 };
 

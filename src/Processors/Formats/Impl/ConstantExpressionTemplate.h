@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/LiteralTokenInfo.h>
@@ -10,7 +12,7 @@ namespace DB
 {
 
 struct LiteralInfo;
-using LiteralsInfo = std::vector<LiteralInfo>;
+using LiteralsInfo = VectorWithMemoryTracking<LiteralInfo>;
 struct SpecialParserType;
 
 class ExpressionActions;
@@ -41,14 +43,14 @@ class ConstantExpressionTemplate : boost::noncopyable
 
         String result_column_name;
 
-        std::vector<String> tokens;
-        std::vector<size_t> token_after_literal_idx;
+        VectorWithMemoryTracking<String> tokens;
+        VectorWithMemoryTracking<size_t> token_after_literal_idx;
 
         Block literals;
         ExpressionActionsPtr actions_on_literals;
         Serializations serializations;
 
-        std::vector<SpecialParserType> special_parser;
+        VectorWithMemoryTracking<SpecialParserType> special_parser;
         bool null_as_default;
     };
 
@@ -57,7 +59,7 @@ public:
 
     class Cache : boost::noncopyable
     {
-        std::unordered_map<size_t, TemplateStructurePtr> cache;
+        UnorderedMapWithMemoryTracking<size_t, TemplateStructurePtr> cache;
         const size_t max_size;
 
     public:

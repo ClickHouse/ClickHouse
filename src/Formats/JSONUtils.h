@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatSettings.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -45,7 +46,7 @@ namespace JSONUtils
         const FormatSettings & format_settings,
         bool yield_strings);
 
-    Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8);
+    Names makeNamesValidJSONStrings(const Names & names, const FormatSettings & settings, bool validate_utf8);
 
     /// Functions helpers for writing JSON data to WriteBuffer.
 

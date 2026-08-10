@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Processors/TTL/TTLDeleteAlgorithm.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -41,7 +43,7 @@ protected:
     void finalize();
 
 private:
-    std::vector<TTLAlgorithmPtr> algorithms;
+    VectorWithMemoryTracking<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
 
@@ -58,7 +60,7 @@ private:
         ExpressionActionsPtr default_expression;
         String default_column_name;
     };
-    std::unordered_map<String, ExpiredColumnData> expired_columns_data;
+    UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
     LoggerPtr log;
 };
 

@@ -1,4 +1,6 @@
 #include <Core/Settings.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldAccurateComparison.h>
@@ -51,7 +53,7 @@ namespace DB::QueryPlanOptimizations
 
 /// Extract AND-connected conjuncts from an AST expression tree.
 /// For example, (a = 1 AND b = 2 AND c = 3) yields {a = 1, b = 2, c = 3}.
-static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
+static void extractConjunctsFromAST(const ASTPtr & expr, VectorWithMemoryTracking<ASTPtr> & result)
 {
     if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
     {
@@ -256,7 +258,7 @@ static bool doesQueryFilterImplyProjectionWhere(
     }
 
     /// Extract projection's WHERE conjuncts from the AST.
-    std::vector<ASTPtr> proj_conjuncts;
+    VectorWithMemoryTracking<ASTPtr> proj_conjuncts;
     extractConjunctsFromAST(projection_where, proj_conjuncts);
 
     /// Unwrap a leading ALIAS wrapper before splitting conjuncts. `QueryDAG::build` wraps the
@@ -305,7 +307,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     if (proj_header.columns() != num_columns)
         return {};
 
-    std::vector<size_t> const_positions;
+    VectorWithMemoryTracking<size_t> const_positions;
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto col_proj = proj_header.getByPosition(i).column;
@@ -378,7 +380,7 @@ std::optional<String> optimizeUseNormalProjections(
     const auto metadata = reading->getStorageMetadata();
     const auto & projections = metadata->projections;
 
-    std::vector<const ProjectionDescription *> normal_projections;
+    VectorWithMemoryTracking<const ProjectionDescription *> normal_projections;
     for (const auto & projection : projections)
         if (projection.type == ProjectionDescription::Type::Normal)
             normal_projections.push_back(&projection);
@@ -458,7 +460,7 @@ std::optional<String> optimizeUseNormalProjections(
             return {};
     }
 
-    std::list<NormalProjectionCandidate> candidates;
+    ListWithMemoryTracking<NormalProjectionCandidate> candidates;
     NormalProjectionCandidate * best_candidate = nullptr;
 
     const auto & query_info = reading->getQueryInfo();

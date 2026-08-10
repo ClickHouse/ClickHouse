@@ -2561,7 +2561,7 @@ size_t evaluateMutationCommandsSize(
 std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIfPossible(const Block & header) const
 {
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
+    auto reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);

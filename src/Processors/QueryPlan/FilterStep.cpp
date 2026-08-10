@@ -1,4 +1,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <algorithm>
 #include <limits>
@@ -53,7 +55,7 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
     const String & filter_column_name,
     bool & remove_filter_column,
     const Block & input_header,
-    const std::vector<size_t> & required_output_positions,
+    const VectorWithMemoryTracking<size_t> & required_output_positions,
     bool remove_inputs)
 {
     FilterDAGOutputPruningResult result;
@@ -97,7 +99,7 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
     };
 
     /// Map positions from post-erase to pre-erase layout, then split into DAG vs pass-through.
-    std::vector<size_t> pre_erase_positions;
+    VectorWithMemoryTracking<size_t> pre_erase_positions;
     pre_erase_positions.reserve(required_output_positions.size());
     for (size_t pos : required_output_positions)
         pre_erase_positions.push_back(map_to_pre_erase_pos(pos));
@@ -107,7 +109,7 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
     /// Build the list of pass-through input columns.
     const auto passthrough_input_header_positions = dag.matchInputPositionsToHeader(input_header).passthrough;
 
-    std::set<size_t> required_passthrough_input_header_positions;
+    SetWithMemoryTracking<size_t> required_passthrough_input_header_positions;
     for (size_t passthrough_index : required_passthrough_indices)
     {
         if (passthrough_index >= passthrough_input_header_positions.size())
@@ -119,7 +121,7 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
     const auto has_to_remove_any_pass_through
         = passthrough_input_header_positions.size() > required_passthrough_input_header_positions.size();
 
-    std::set<size_t> required_dag_index_set(required_dag_indices.begin(), required_dag_indices.end());
+    SetWithMemoryTracking<size_t> required_dag_index_set(required_dag_indices.begin(), required_dag_indices.end());
 
     /// Check if the filter column is required by the caller. If not, we can remove it.
     if (!remove_filter_column && !required_dag_index_set.contains(filter_col_pre_erase_pos))
@@ -249,9 +251,9 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     return {};
 }
 
-static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
+static VectorWithMemoryTracking<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
 {
-    std::vector<ActionsAndName> res;
+    VectorWithMemoryTracking<ActionsAndName> res;
 
     while (auto condition = trySplitSingleAndFilter(dag, filter_name))
         res.push_back(std::move(*condition));
@@ -285,7 +287,7 @@ FilterStep::FilterStep(
 
 void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    std::vector<ActionsAndName> and_atoms;
+    VectorWithMemoryTracking<ActionsAndName> and_atoms;
 
     /// Splitting AND filter condition to steps under the setting, which is enabled with merge_filters optimization.
     /// This is needed to support short-circuit properly.
@@ -338,7 +340,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
 
     auto cloned_dag = actions_dag.clone();
 
-    std::vector<ActionsAndName> and_atoms;
+    VectorWithMemoryTracking<ActionsAndName> and_atoms;
     if (!settings.pretty && !actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
 
@@ -368,7 +370,7 @@ void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     auto cloned_dag = actions_dag.clone();
 
-    std::vector<ActionsAndName> and_atoms;
+    VectorWithMemoryTracking<ActionsAndName> and_atoms;
     if (!actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
 
@@ -440,7 +442,7 @@ bool FilterStep::canRemoveUnusedColumns() const
     return true;
 }
 
-FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
+FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const VectorWithMemoryTracking<size_t> & required_output_positions, bool remove_inputs)
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");

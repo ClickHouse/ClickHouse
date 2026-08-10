@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_MONGODB
 #include <Common/JSONBuilder.h>
@@ -45,7 +46,7 @@ private:
     mongocxx::cursor cursor;
 
     Block sample_block;
-    std::unordered_map<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
+    UnorderedMapWithMemoryTracking<size_t, std::pair<size_t, std::pair<DataTypePtr, Field>>> arrays_info;
     const UInt64 max_block_size;
     bool all_read = false;
 

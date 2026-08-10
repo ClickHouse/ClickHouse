@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Interpreters/PreparedSets.h>
 #include <Common/DateLUT.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ public:
             TTLExpressions expressions;
             TTLDescription description;
         };
-        std::vector<Entry> entries;
+        VectorWithMemoryTracking<Entry> entries;
         bool all_data_dropped = false;
         time_t current_time = 0;
     };

@@ -1,4 +1,5 @@
 #include <Storages/KeyDescription.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Functions/IFunction.h>
@@ -115,13 +116,13 @@ bool KeyDescription::moduloToModuloLegacyRecursive(ASTPtr node_expr)
 }
 
 /// Build expression_list_ast, column_names, and reverse_flags from key children and additional columns.
-static std::tuple<ASTPtr, Names, std::vector<bool>> buildKeyColumns(
+static std::tuple<ASTPtr, Names, VectorWithMemoryTracking<bool>> buildKeyColumns(
     const ASTPtr & key_expression_list,
     const NamesAndTypesList & additional_columns)
 {
     auto expression_list_ast = make_intrusive<ASTExpressionList>();
     Names column_names;
-    std::vector<bool> reverse_flags;
+    VectorWithMemoryTracking<bool> reverse_flags;
 
     for (const auto & child : key_expression_list->children)
     {

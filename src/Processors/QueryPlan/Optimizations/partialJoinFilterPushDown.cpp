@@ -1,4 +1,5 @@
 #include <Interpreters/ActionsDAG.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -46,8 +47,8 @@ struct ConditionList
     };
 
     ConditionType condition_type = SingleCondition;
-    std::vector<const ActionsDAG::Node *> existing_nodes;
-    std::vector<ConditionList> subconditions;
+    ActionsDAG::NodeRawConstPtrs existing_nodes;
+    VectorWithMemoryTracking<ConditionList> subconditions;
 
     bool assumedTrue() const
     {
@@ -222,7 +223,7 @@ void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::No
 
     auto filter_column_name = filter_dag.getOutputs().front()->result_name;
     // Let's keep the order inputs for the join
-    std::multimap<std::string, const ActionsDAG::Node *> filter_inputs;
+    MultiMapWithMemoryTracking<std::string, const ActionsDAG::Node *> filter_inputs;
     for (const auto * input : filter_dag.getInputs())
         filter_inputs.insert({input->result_name, input});
 

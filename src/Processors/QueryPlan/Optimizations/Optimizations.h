@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Joins.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
@@ -207,7 +208,7 @@ struct Frame
     size_t next_child = 0;
 };
 
-using Stack = std::vector<Frame>;
+using Stack = VectorWithMemoryTracking<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
@@ -237,7 +238,7 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const 
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
-std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
+UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
 
 /// Stamp every AggregatingStep in the plan with a hash-table preallocation cache key derived from
 /// the query plan (the node's bottom-up hash from calculateHashTableCacheKeys), instead of from the
@@ -251,8 +252,8 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 /// it builds itself; `cache_keys` matches the value `HashTablesStatistics` is keyed by.
 void calculateHashTableCacheKeys(
     const QueryPlan::Node & root,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & cache_keys,
-    std::unordered_map<const QueryPlan::Node *, UInt64> & raw_hashes);
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & cache_keys,
+    UnorderedMapWithMemoryTracking<const QueryPlan::Node *, UInt64> & raw_hashes);
 
 /// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);

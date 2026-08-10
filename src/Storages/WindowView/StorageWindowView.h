@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/DateLUT.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <DataTypes/DataTypeInterval.h>
@@ -267,7 +268,7 @@ private:
     void threadFuncCleanup();
     void threadFuncFireProc();
     void threadFuncFireEvent();
-    void addFireSignal(std::set<UInt32> & signals);
+    void addFireSignal(const SetWithMemoryTracking<UInt32> & signals);
     void updateMaxWatermark(UInt32 watermark);
     void updateMaxTimestamp(UInt32 timestamp);
 

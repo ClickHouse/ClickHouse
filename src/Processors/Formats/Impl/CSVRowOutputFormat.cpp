@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FlattenTupleForCSVHeader.h>
@@ -21,7 +22,7 @@ CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, SharedHeader header_,
         data_types[i] = sample.safeGetByPosition(i).type;
 }
 
-void CSVRowOutputFormat::writeLine(const std::vector<String> & values)
+void CSVRowOutputFormat::writeLine(const Names & values)
 {
     for (size_t i = 0; i < values.size(); ++i)
     {

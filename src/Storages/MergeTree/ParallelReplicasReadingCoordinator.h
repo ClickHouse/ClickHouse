@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Common/SetWithMemoryTracking.h>
 
 #include <memory>
 #include <mutex>
@@ -12,7 +13,7 @@ namespace DB
 {
 struct Progress;
 using ProgressCallback = std::function<void(const Progress & progress)>;
-using ReadCompletedCallback = std::function<void(const std::set<size_t> & used_replicas)>;
+using ReadCompletedCallback = std::function<void(const SetWithMemoryTracking<size_t> & used_replicas)>;
 
 /// The main class to spread mark ranges across replicas dynamically
 class ParallelReplicasReadingCoordinator
@@ -56,7 +57,7 @@ private:
     std::mutex mutex;
     const size_t replicas_count{0};
     ProgressCallback progress_callback; // store the callback only to bypass it to coordinator implementation
-    std::set<size_t> replicas_used;
+    SetWithMemoryTracking<size_t> replicas_used;
     std::optional<size_t> snapshot_replica_num;
     std::optional<ReadCompletedCallback> read_completed_callback;
     std::atomic_bool is_reading_completed{false};

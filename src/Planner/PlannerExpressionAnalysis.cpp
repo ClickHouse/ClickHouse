@@ -1,4 +1,5 @@
 #include <memory>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <optional>
 #include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -837,7 +838,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     /// Keep source-constant INPUTs (`source_constants`) so `project`/`removeUnusedActions` does not
     /// fold-and-drop them; they must keep flowing as required inputs to stay in the stream at
     /// distributed stage boundaries. Literals and re-creatable alias constants stay foldable.
-    std::unordered_set<const ActionsDAG::Node *> keep_inputs;
+    UnorderedSetWithMemoryTracking<const ActionsDAG::Node *> keep_inputs;
     if (!source_constants.empty())
         for (const auto * input : project_names_actions->dag.getInputs())
             if (input->column && source_constants.contains(input->result_name))

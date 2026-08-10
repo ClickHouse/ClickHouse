@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ORCBlockOutputFormat.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <unordered_map>
 
@@ -248,7 +249,7 @@ std::unique_ptr<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & 
             /// ORC type, so two variants that map to the same ORC type (e.g. `Int32` and `UInt32`,
             /// both ORC `int`) would produce a union with duplicate branches, which the reader
             /// rejects. Reject such a `Variant` up front instead of writing an unreadable file.
-            std::unordered_map<String, String> variant_by_orc_type;
+            UnorderedMapWithMemoryTracking<String, String> variant_by_orc_type;
             /// A union child is addressed by its type name, the way a `Variant` subcolumn is
             /// (`v.Int32`). Iceberg has no union type, so no field id is expected to be found there.
             for (const auto & nested_type : variant_type.getVariants())

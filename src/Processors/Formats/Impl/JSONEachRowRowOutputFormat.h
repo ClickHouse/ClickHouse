@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/RowOutputFormatWithExceptionHandlerAdaptor.h>
 #include <Formats/FormatSettings.h>
 

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/CurrentThread.h>
 #include <unordered_map>
 #include <Columns/ColumnArray.h>
@@ -126,7 +127,7 @@ GetPriorityForLoadBalancing::Func replicaIndexPriorityFunc()
     return [](size_t i) { return Priority{static_cast<Int64>(i)}; };
 }
 
-Scalars buildPartsScalars(const std::vector<std::string_view> & parts)
+Scalars buildPartsScalars(const VectorWithMemoryTracking<std::string_view> & parts)
 {
     auto column_string = ColumnString::create();
     for (const auto & part : parts)
@@ -142,7 +143,7 @@ Scalars buildPartsScalars(const std::vector<std::string_view> & parts)
 
 std::pair<Scalars, std::string> buildAnalyzeIndexQuery(const StorageID & storage_id, const std::optional<std::string> & filter,
     const OptionalVectorSearchParameters & vector_search_parameters,
-    const std::vector<std::string_view> & parts)
+    const VectorWithMemoryTracking<std::string_view> & parts)
 {
     static constexpr size_t DISTRIBUTED_INDEX_ANALYSIS_INLINE_PARTS_LIMIT = 30;
     bool inline_parts = parts.size() < DISTRIBUTED_INDEX_ANALYSIS_INLINE_PARTS_LIMIT;
@@ -206,7 +207,7 @@ void parseIndexAnalysisBlock(Block block, IndexAnalysisPartsRanges & result)
 
 IndexAnalysisPartsRanges getIndexAnalysisFromReplicaSync(const LoggerPtr & logger, const StorageID & storage_id, const std::optional<std::string> & filter,
                                                      const OptionalVectorSearchParameters & vector_search_parameters, ContextPtr context, const Tables & external_tables,
-                                                     const std::vector<std::string_view> & parts, Connection & connection)
+                                                     const VectorWithMemoryTracking<std::string_view> & parts, Connection & connection)
 {
     auto [scalars, query] = buildAnalyzeIndexQuery(storage_id, filter, vector_search_parameters, parts);
     auto sample_block = indexAnalysisSampleBlock();
@@ -489,10 +490,10 @@ private:
 
     struct DistributedParts
     {
-        std::vector<std::string_view> local_parts;
+        VectorWithMemoryTracking<std::string_view> local_parts;
         size_t local_marks = 0;
         size_t local_rows = 0;
-        std::vector<std::vector<std::string_view>> remote_parts;
+        std::vector<VectorWithMemoryTracking<std::string_view>> remote_parts;
         std::vector<size_t> remote_marks;
         std::vector<size_t> remote_rows;
     };
@@ -550,7 +551,7 @@ private:
     };
 
     LocalAnalysisResult executeLocalAnalysis(
-        const std::vector<std::string_view> & local_parts,
+        const VectorWithMemoryTracking<std::string_view> & local_parts,
         size_t local_marks,
         size_t local_rows,
         std::pair<std::string, IndexAnalysisPartsRanges> & local_result)
@@ -584,7 +585,7 @@ private:
     void executeRemoteAnalysis(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<VectorWithMemoryTracking<std::string_view>> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -599,7 +600,7 @@ private:
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<VectorWithMemoryTracking<std::string_view>> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -738,7 +739,7 @@ private:
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> &,
         const std::vector<Connection *> &,
-        const std::vector<std::vector<std::string_view>> &,
+        const std::vector<VectorWithMemoryTracking<std::string_view>> &,
         const std::vector<size_t> &,
         const std::vector<size_t> &,
         DistributedIndexAnalysisPartsRanges &)
@@ -750,7 +751,7 @@ private:
     void executeRemoteAnalysisSync(
         const std::vector<size_t> & active_remote_indexes,
         const std::vector<Connection *> & connections,
-        const std::vector<std::vector<std::string_view>> & remote_parts,
+        const std::vector<VectorWithMemoryTracking<std::string_view>> & remote_parts,
         const std::vector<size_t> & remote_marks,
         const std::vector<size_t> & remote_rows,
         DistributedIndexAnalysisPartsRanges & res)
@@ -802,7 +803,7 @@ private:
             for (const auto & [part, replica_ranges] : parts_ranges)
                 resolved_parts.insert(part);
         }
-        std::vector<std::string_view> missing_parts;
+        VectorWithMemoryTracking<std::string_view> missing_parts;
         size_t missing_parts_marks = 0;
         size_t missing_parts_rows = 0;
         for (const auto & part_ranges : parts_with_ranges)

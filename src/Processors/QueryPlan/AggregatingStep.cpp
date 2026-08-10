@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
 #include <numeric>
 #include <Columns/ColumnConst.h>
@@ -208,7 +209,7 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     explicit_sorting_required_for_aggregation_in_order = false;
 }
 
-std::vector<size_t> AggregatingStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> AggregatingStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStage::PartialAggregation),
@@ -895,7 +896,7 @@ AggregatingProjectionStep::AggregatingProjectionStep(
     updateInputHeaders(std::move(input_headers_));
 }
 
-std::vector<size_t> AggregatingProjectionStep::getStepGroups() const
+VectorWithMemoryTracking<size_t> AggregatingProjectionStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(AggregatingStep::AggregatingStage::PartialAggregation),

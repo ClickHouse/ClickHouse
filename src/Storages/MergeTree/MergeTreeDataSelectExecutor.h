@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/ConditionTemplate.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -157,7 +158,7 @@ private:
     ///  as well as `max_block_number_to_read`.
     static RangesInDataParts selectPartsToRead(
         const RangesInDataParts & parts,
-        const std::optional<std::unordered_set<String>> & part_values,
+        const std::optional<UnorderedSetWithMemoryTracking<String>> & part_values,
         const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
@@ -195,7 +196,7 @@ public:
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
     /// If expression found, return a set with allowed part names (std::nullopt otherwise).
-    static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
+    static std::optional<UnorderedSetWithMemoryTracking<String>> filterPartsByVirtualColumns(
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const RangesInDataParts & parts,
@@ -207,7 +208,7 @@ public:
         const RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
         const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
-        const std::optional<std::unordered_set<String>> & part_values,
+        const std::optional<UnorderedSetWithMemoryTracking<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const ContextPtr & context,
