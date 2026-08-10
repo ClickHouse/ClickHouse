@@ -874,10 +874,18 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
 }
 
 template <typename T>
-void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
+void decodeXor(const char * payload, UInt32 payload_size, char * out, UInt32 count)
 {
     using Traits = WallabyTraits<T>;
     constexpr UInt8 width = Traits::width_bits;
+
+    /// The output is the decompression destination itself, which has no alignment guarantee;
+    /// unaligned stores compile to plain stores on every supported platform. The decoder never
+    /// reads its own output back (the previous value and the ring live in locals).
+    const auto emit = [out](UInt32 position, T value) ALWAYS_INLINE
+    {
+        unalignedStore<T>(out + static_cast<size_t>(position) * sizeof(T), value);
+    };
 
     BitReader reader(payload, payload_size);
 
@@ -897,7 +905,7 @@ void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
     UInt32 newest_slot = 0;
 
     T previous = static_cast<T>(reader.readBits(width));
-    out[0] = previous;
+    emit(0, previous);
     ring[ring_position] = previous;
     newest_slot = ring_position;
     ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
@@ -913,7 +921,7 @@ void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
             if (run_length == 0 || run_length > count - produced)
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt run length");
             for (UInt32 j = 0; j < run_length; ++j)
-                out[produced + j] = previous;
+                emit(produced + j, previous);
             produced += run_length;
             continue;
         }
@@ -949,7 +957,7 @@ void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
                 break;
         }
 
-        out[produced] = value;
+        emit(produced, value);
         ++produced;
         ring[ring_position] = value;
         newest_slot = ring_position;
@@ -1093,9 +1101,16 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
 
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> lanes{};
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> unpacked{};
-    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> words{};
 
+    /// Every mode streams its values straight into the destination through unaligned stores:
+    /// no mode ever reads the output back, so no intermediate vector buffer is needed and each
+    /// value is written exactly once.
     char * out = dest;
+    const auto emit = [&out](UInt32 position, T value) ALWAYS_INLINE
+    {
+        unalignedStore<T>(out + static_cast<size_t>(position) * sizeof(T), value);
+    };
+
     UInt32 produced = 0;
     while (produced < values_count)
     {
@@ -1114,7 +1129,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 const T word = unalignedLoadLittleEndian<T>(src);
                 src += sizeof(T);
                 for (UInt32 i = 0; i < count; ++i)
-                    words[i] = word;
+                    emit(i, word);
                 break;
             }
             case VectorMode::DecimalFor:
@@ -1136,13 +1151,14 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 memcpy(lanes.data(), src, packed_bytes);
                 src += packed_bytes;
 
+                const Float64 scale = WALLABY_POW10[alpha];
                 if (mode == VectorMode::DecimalFor)
                 {
                     Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, static_cast<T>(base));
                     for (UInt32 i = 0; i < count; ++i)
                     {
                         const auto q = static_cast<SignedType>(unpacked[i]);
-                        words[i] = std::bit_cast<T>(static_cast<typename Traits::FloatType>(static_cast<Float64>(q) / WALLABY_POW10[alpha]));
+                        emit(i, std::bit_cast<T>(static_cast<typename Traits::FloatType>(static_cast<Float64>(q) / scale)));
                     }
                 }
                 else
@@ -1157,7 +1173,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                             accumulator += (zigzag >> 1) ^ (T{0} - (zigzag & T{1}));
                         }
                         const auto q = static_cast<SignedType>(accumulator);
-                        words[i] = std::bit_cast<T>(static_cast<typename Traits::FloatType>(static_cast<Float64>(q) / WALLABY_POW10[alpha]));
+                        emit(i, std::bit_cast<T>(static_cast<typename Traits::FloatType>(static_cast<Float64>(q) / scale)));
                     }
                 }
 
@@ -1170,7 +1186,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                     src += sizeof(T);
                     if (position >= count)
                         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt exception position");
-                    words[position] = raw;
+                    emit(position, raw);
                 }
                 break;
             }
@@ -1180,20 +1196,19 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 const UInt32 payload_size = unalignedLoadLittleEndian<UInt32>(src);
                 src += sizeof(UInt32);
                 require(payload_size);
-                decodeXor<T>(src, payload_size, words.data(), count);
+                decodeXor<T>(src, payload_size, out, count);
                 src += payload_size;
                 break;
             }
             case VectorMode::Raw:
             {
                 require(static_cast<size_t>(count) * sizeof(T));
-                memcpy(words.data(), src, static_cast<size_t>(count) * sizeof(T));
+                memcpy(out, src, static_cast<size_t>(count) * sizeof(T));
                 src += static_cast<size_t>(count) * sizeof(T);
                 break;
             }
         }
 
-        memcpy(out, words.data(), static_cast<size_t>(count) * sizeof(T));
         out += static_cast<size_t>(count) * sizeof(T);
         produced += count;
     }
