@@ -41,8 +41,10 @@ SELECT count() FROM t_empty_match_sync WHERE hasToken(msg, 'hotel');
 -- Cross-mark query: two tokens in different marks.
 SELECT count() FROM t_empty_match_sync WHERE hasAnyTokens(msg, ['alpha', 'hotel']);
 
--- A token that does not exist at all (all marks empty match).
-SELECT count() FROM t_empty_match_sync WHERE hasToken(msg, 'no_such_token');
+-- A token that does not exist at all (all marks empty match). The needle must not contain
+-- a token separator: `hasToken` uses splitByNonAlpha semantics and rejects such a needle
+-- with BAD_ARGUMENTS (HasTokenImpl.h), which would mask the empty-match path under test.
+SELECT count() FROM t_empty_match_sync WHERE hasToken(msg, 'nosuchtoken');
 
 -- After the empty-match no-result query, a follow-up query that DOES match the first
 -- mark must work — confirms the stream state is consistent across queries.

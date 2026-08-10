@@ -20,8 +20,7 @@ SYSTEM SYNC REPLICA x2;
 DETACH TABLE x2 SYNC;
 ATTACH TABLE x2;
 
-SELECT marks FROM system.projection_parts WHERE active AND database = currentDatabase() AND table = 'x2' AND name = 'p1';
-SELECT marks FROM system.projection_parts WHERE active AND database = currentDatabase() AND table = 'x2' AND name = 'p2';
+SELECT marks FROM system.projection_parts WHERE active AND database = currentDatabase() AND table = 'x2' AND name = 'p';
 
 DROP TABLE x1;
 DROP TABLE x2;

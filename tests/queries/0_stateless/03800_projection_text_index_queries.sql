@@ -50,9 +50,12 @@ SELECT read_rows==4 from system.query_log
 -- search text index with hasToken
 SELECT * FROM tab WHERE hasToken(s, 'Click') ORDER BY k;
 
--- check the query only read 4 granules (8 rows total; each granule has 2 rows)
+-- `hasToken` uses `splitByNonAlpha` semantics, which disagree with the `ngrams` index tokens,
+-- so the index is intentionally not used for `hasToken` (it would otherwise return wrong rows).
+-- The whole table (10 granules, 20 rows) is read and the row-level predicate filters it.
+-- Same expectation as the skip-index twin 02346_text_index_queries.
 SYSTEM FLUSH LOGS query_log;
-SELECT read_rows==8 from system.query_log
+SELECT read_rows==20 from system.query_log
         WHERE query_kind ='Select'
             AND current_database = currentDatabase()
             AND endsWith(trimRight(query), 'SELECT * FROM tab WHERE hasToken(s, \'Click\') ORDER BY k;')
