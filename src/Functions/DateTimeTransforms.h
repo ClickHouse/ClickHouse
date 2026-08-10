@@ -81,6 +81,29 @@ inline time_t minWholeSecondsForDateTime64(Int64 scale_multiplier)
     return std::max<Int64>(MIN_DATETIME64_TIMESTAMP, std::numeric_limits<Int64>::min() / scale_multiplier);
 }
 
+/// The window of day numbers whose midnight in `time_zone` is representable as a `DateTime64` with the given scale
+/// multiplier, intersected with the `Date32` range. Because of the scale-dependent bounds above, a perfectly valid
+/// `Date32` value such as `9999-12-31` has no scale-9 representation at all, so a `Date32` -> `DateTime64` conversion
+/// has to reject (or saturate) day numbers outside this window instead of silently returning the clamped bound.
+inline std::pair<Int32, Int32> getDateTime64DayNumRange(Int64 scale_multiplier, const DateLUTImpl & time_zone)
+{
+    /// The cast to `DateLUTImpl::Time` is required: `toDayNum` only takes the out-of-LUT-range escape path for
+    /// exactly that type, and `time_t` is a distinct type from `Int64` on Darwin (see the note in `DateLUTImpl.h`).
+    const auto min_whole = static_cast<DateLUTImpl::Time>(minWholeSecondsForDateTime64(scale_multiplier));
+    const auto max_whole = static_cast<DateLUTImpl::Time>(maxWholeSecondsForDateTime64(scale_multiplier));
+
+    /// `toDayNum` returns the day containing the timestamp, whose midnight is not greater than it. That makes the
+    /// upper bound representable as is, while the lower one may need rounding up to the next day.
+    Int32 min_day = static_cast<Int32>(time_zone.toDayNum(min_whole));
+    if (time_zone.fromDayNum(ExtendedDayNum(min_day)) < min_whole)
+        ++min_day;
+    const Int32 max_day = static_cast<Int32>(time_zone.toDayNum(max_whole));
+
+    return {
+        std::max<Int32>(min_day, DATE_LUT_MIN_EXTEND_DAY_NUM),
+        std::min<Int32>(max_day, DATE_LUT_MAX_EXTEND_DAY_NUM)};
+}
+
 [[noreturn]] void throwDateIsNotSupported(const char * name);
 [[noreturn]] void throwDate32IsNotSupported(const char * name);
 [[noreturn]] void throwDateTimeIsNotSupported(const char * name);

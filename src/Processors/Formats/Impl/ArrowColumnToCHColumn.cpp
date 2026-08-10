@@ -901,6 +901,9 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
     bool check_date32_range = false;
     bool check_date_range = false;
     bool check_datetime_range = false;
+    bool check_datetime64_range = false;
+    Int32 datetime64_min_day = 0;
+    Int32 datetime64_max_day = 0;
 
     if (type_hint && isNumber(type_hint))
     {
@@ -924,6 +927,17 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
         internal_type = std::make_shared<DataTypeDate32>();
         check_datetime_range = true;
     }
+    else if (type_hint && isDateTime64(*type_hint))
+    {
+        /// The later cast of the intermediate Date32 column to DateTime64 is context-less as well, so it silently
+        /// clamps whole seconds that the target scale cannot represent. Validate the day number here against the
+        /// window the scale can represent - at scale 9 that ends at `2262-04-11`, far below the Date32 upper bound.
+        const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*type_hint);
+        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
+        std::tie(datetime64_min_day, datetime64_max_day) = getDateTime64DayNumRange(scale_multiplier, dt64_type.getTimeZone());
+        internal_type = std::make_shared<DataTypeDate32>();
+        check_datetime64_range = true;
+    }
     else
     {
         internal_type = std::make_shared<DataTypeDate32>();
@@ -939,13 +953,17 @@ static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arro
     {
         const auto & chunk = checkedCast<arrow::Date32Array>(*(arrow_column->chunk(chunk_i)), column_name);
 
-        if (check_date32_range || check_date_range || check_datetime_range)
+        if (check_date32_range || check_date_range || check_datetime_range || check_datetime64_range)
         {
-            const Int32 min_day = check_date32_range ? DATE_LUT_MIN_EXTEND_DAY_NUM : 0;
+            const Int32 min_day = check_datetime64_range ? datetime64_min_day : check_date32_range ? DATE_LUT_MIN_EXTEND_DAY_NUM : 0;
             const Int32 max_day = check_date_range ? DATE_LUT_MAX_DAY_NUM
                 : check_datetime_range ? static_cast<Int32>(MAX_DATETIME_DAY_NUM)
+                : check_datetime64_range ? datetime64_max_day
                 : DATE_LUT_MAX_EXTEND_DAY_NUM;
-            const char * target_type_name = check_date_range ? "Date" : check_datetime_range ? "DateTime" : "Date32";
+            const String target_type_name = check_date_range ? "Date"
+                : check_datetime_range ? "DateTime"
+                : check_datetime64_range ? type_hint->getName()
+                : "Date32";
             for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
             {
                 Int32 days_num = static_cast<Int32>(chunk.Value(value_i));

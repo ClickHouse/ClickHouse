@@ -17,6 +17,7 @@
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -435,13 +436,28 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                 /// Similarly, when the requested header type is `DateTime`, enforce the
                 /// [0, MAX_DATETIME_DAY_NUM] window that `ToDateTimeImpl` uses: the later context-less cast
                 /// ignores `date_time_overflow_behavior` and wraps day numbers whose midnight does not fit.
-                const bool date32_as_date = effective_hint && isDate(stripHint(effective_hint));
-                const bool date32_as_datetime = effective_hint && isDateTime(stripHint(effective_hint));
-                const Int32 min_day = (date32_as_date || date32_as_datetime) ? 0 : DATE_LUT_MIN_EXTEND_DAY_NUM;
+                /// A `DateTime64` header type needs the same treatment, but its window is scale-dependent: the
+                /// context-less cast clamps whole seconds the target scale cannot represent, and a scale-9
+                /// `DateTime64` stops at `2262-04-11`, far below the Date32 upper bound.
+                const DataTypePtr stripped_hint = effective_hint ? stripHint(effective_hint) : nullptr;
+                const bool date32_as_date = stripped_hint && isDate(*stripped_hint);
+                const bool date32_as_datetime = stripped_hint && isDateTime(*stripped_hint);
+                const auto * dt64_hint = stripped_hint ? typeid_cast<const DataTypeDateTime64 *>(stripped_hint.get()) : nullptr;
+                const auto [dt64_min_day, dt64_max_day] = dt64_hint
+                    ? getDateTime64DayNumRange(
+                          DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_hint->getScale()), dt64_hint->getTimeZone())
+                    : std::pair<Int32, Int32>{DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM};
+                const Int32 min_day = (date32_as_date || date32_as_datetime) ? 0
+                    : dt64_hint ? dt64_min_day
+                    : DATE_LUT_MIN_EXTEND_DAY_NUM;
                 const Int32 max_day = date32_as_date ? DATE_LUT_MAX_DAY_NUM
                     : date32_as_datetime ? static_cast<Int32>(MAX_DATETIME_DAY_NUM)
+                    : dt64_hint ? dt64_max_day
                     : DATE_LUT_MAX_EXTEND_DAY_NUM;
-                const char * target_type_name = date32_as_date ? "Date" : date32_as_datetime ? "DateTime" : "Date32";
+                const String target_type_name = date32_as_date ? "Date"
+                    : date32_as_datetime ? "DateTime"
+                    : dt64_hint ? stripped_hint->getName()
+                    : "Date32";
                 checkBufferSize(values, requiredBytes(rows, sizeof(Int32)), "date32");
                 auto & data = assert_cast<ColumnInt32 &>(*column).getData();
                 data.resize(rows);

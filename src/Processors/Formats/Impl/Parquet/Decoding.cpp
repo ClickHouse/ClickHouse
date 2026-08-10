@@ -1393,6 +1393,28 @@ static void convertIntColumnImpl(const char * from_bytes, char * to_bytes, size_
     }
 }
 
+std::pair<Int32, Int32> IntConverter::dateTargetDayRange() const
+{
+    if (date_target_is_date)
+        return {0, DATE_LUT_MAX_DAY_NUM};
+    if (date_target_is_datetime)
+        return {0, static_cast<Int32>(MAX_DATETIME_DAY_NUM)};
+    if (date_target_datetime64_day_range.has_value())
+        return *date_target_datetime64_day_range;
+    return {DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM};
+}
+
+String IntConverter::dateTargetTypeName() const
+{
+    if (date_target_is_date)
+        return "Date";
+    if (date_target_is_datetime)
+        return "DateTime";
+    if (date_target_datetime64_day_range.has_value())
+        return "DateTime64";
+    return "Date32";
+}
+
 void IntConverter::convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const
 {
     if (output_size.has_value())
@@ -1424,10 +1446,7 @@ void IntConverter::convertColumn(std::span<const char> data, size_t num_values, 
 
     if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
     {
-        const Int32 min_day = (date_target_is_date || date_target_is_datetime) ? 0 : DATE_LUT_MIN_EXTEND_DAY_NUM;
-        const Int32 max_day = date_target_is_date ? DATE_LUT_MAX_DAY_NUM
-            : date_target_is_datetime ? static_cast<Int32>(MAX_DATETIME_DAY_NUM)
-            : DATE_LUT_MAX_EXTEND_DAY_NUM;
+        const auto [min_day, max_day] = dateTargetDayRange();
         auto & values = assert_cast<ColumnInt32 &>(col).getData();
         for (size_t i = values.size() - num_values; i < values.size(); ++i)
         {
@@ -1439,7 +1458,7 @@ void IntConverter::convertColumn(std::span<const char> data, size_t num_values, 
                 else
                     throw Exception{ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                         "Input value {} is out of allowed {} range, which is [{}, {}]",
-                        days_num, date_target_is_date ? "Date" : date_target_is_datetime ? "DateTime" : "Date32", min_day, max_day};
+                        days_num, dateTargetTypeName(), min_day, max_day};
             }
         }
     }
@@ -1498,12 +1517,12 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
     }
     else if (field_signed)
     {
-        if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore &&
-            (Int64(val) > (date_target_is_date ? DATE_LUT_MAX_DAY_NUM
-                : date_target_is_datetime ? Int64(MAX_DATETIME_DAY_NUM)
-                : DATE_LUT_MAX_EXTEND_DAY_NUM)
-                || Int64(val) < ((date_target_is_date || date_target_is_datetime) ? 0 : DATE_LUT_MIN_EXTEND_DAY_NUM)))
-            return;
+        if (date_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Ignore)
+        {
+            const auto [min_day, max_day] = dateTargetDayRange();
+            if (Int64(val) > Int64(max_day) || Int64(val) < Int64(min_day))
+                return;
+        }
 
         out = Field(Int64(val));
     }

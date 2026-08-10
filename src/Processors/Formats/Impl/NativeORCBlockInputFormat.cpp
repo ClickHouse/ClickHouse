@@ -1865,6 +1865,9 @@ static ColumnWithTypeAndName readColumnWithDateData(
     bool check_date32_range = false;
     bool check_date_range = false;
     bool check_datetime_range = false;
+    bool check_datetime64_range = false;
+    Int32 datetime64_min_day = 0;
+    Int32 datetime64_max_day = 0;
 
     /// Make result type Date32 when requested type is actually Date32 or when we use schema inference
     if (!type_hint || isDate32(*type_hint))
@@ -1893,10 +1896,15 @@ static ColumnWithTypeAndName readColumnWithDateData(
     else if (isDateTime64(*type_hint))
     {
         /// Keep the intermediate as Date32, so the later cast converts the day count to midnight
-        /// of that day instead of reading it as raw DateTime64 ticks. The cast clamps whole
-        /// seconds that do not fit the target scale, so the Date32 range check is enough here.
+        /// of that day instead of reading it as raw DateTime64 ticks. The cast is context-less and
+        /// therefore clamps whole seconds that do not fit the target scale, so validate the day
+        /// number here against what the scale can represent - at scale 9 that is only up to
+        /// `2262-04-11`, far below the Date32 upper bound.
+        const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*type_hint);
+        const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
+        std::tie(datetime64_min_day, datetime64_max_day) = getDateTime64DayNumRange(scale_multiplier, dt64_type.getTimeZone());
         internal_type = std::make_shared<DataTypeDate32>();
-        check_date32_range = true;
+        check_datetime64_range = true;
     }
     else
     {
@@ -1940,6 +1948,21 @@ static ColumnWithTypeAndName readColumnWithDateData(
                         days_num,
                         column_name,
                         DATE_LUT_MAX_DAY_NUM);
+            }
+
+            if (check_datetime64_range && (days_num > datetime64_max_day || days_num < datetime64_min_day))
+            {
+                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    days_num = (days_num < datetime64_min_day) ? datetime64_min_day : datetime64_max_day;
+                else
+                    throw Exception(
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                        "Input value {} of a column \"{}\" exceeds the day range representable by type {}, which is [{}, {}]",
+                        days_num,
+                        column_name,
+                        type_hint->getName(),
+                        datetime64_min_day,
+                        datetime64_max_day);
             }
 
             if (check_datetime_range && (days_num > MAX_DATETIME_DAY_NUM || days_num < 0))

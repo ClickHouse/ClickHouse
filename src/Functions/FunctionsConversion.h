@@ -705,6 +705,7 @@ struct ToDateTime64TransformFloat
     }
 };
 
+template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
 struct ToDateTime64Transform
 {
     static constexpr auto name = "toDateTime64";
@@ -734,12 +735,21 @@ struct ToDateTime64Transform
     {
         Int64 dt = static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)));
         /// Date32 reaches 9999-12-31, whose whole-seconds value (253402214400) overflows the Int64 DateTime64 ticks
-        /// at high precision (e.g. * 10^9 at scale 9 exceeds Int64::max). Clamp to the scale-dependent bounds before
-        /// multiplying, matching the numeric ToDateTime64Transform* transforms; otherwise decimalFromComponents throws
-        /// DECIMAL_OVERFLOW. The Date (UInt16, up to 2149) and DateTime (UInt32, up to 2106) source overloads stay
-        /// below these bounds at every scale, so only the Date32 overload needs the clamp.
-        dt = std::max<time_t>(dt, minWholeSecondsForDateTime64(scale_multiplier));
-        dt = std::min<time_t>(dt, maxWholeSecondsForDateTime64(scale_multiplier));
+        /// at high precision (e.g. * 10^9 at scale 9 exceeds Int64::max). Reject or clamp to the scale-dependent
+        /// bounds before multiplying, matching the numeric ToDateTime64Transform* transforms; otherwise
+        /// decimalFromComponents throws DECIMAL_OVERFLOW. The Date (UInt16, up to 2149) and DateTime (UInt32, up to
+        /// 2106) source overloads stay below these bounds at every scale, so only the Date32 overload needs this.
+        const time_t min_whole = minWholeSecondsForDateTime64(scale_multiplier);
+        const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        {
+            if (dt < min_whole || dt > max_whole) [[unlikely]]
+                throw Exception(
+                    ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                    "Timestamp value {} is out of bounds of type DateTime64 with this precision", dt);
+        }
+        dt = std::max<time_t>(dt, min_whole);
+        dt = std::min<time_t>(dt, max_whole);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
@@ -2231,7 +2241,7 @@ struct ConvertImpl
                 || std::is_same_v<FromDataType, DataTypeDateTime>)
             && std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform<date_time_overflow_behavior>, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
         /// Conversion of Time to DateTime64: treat seconds since midnight as seconds since 1970-01-01

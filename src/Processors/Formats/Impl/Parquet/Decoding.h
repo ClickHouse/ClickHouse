@@ -202,6 +202,14 @@ struct IntConverter : public FixedSizeConverter
     /// `date_time_overflow_behavior` and wraps day numbers whose midnight does not fit into
     /// DateTime, so range-check against the [0, MAX_DATETIME_DAY_NUM] window of ToDateTimeImpl.
     bool date_target_is_datetime = false;
+    /// Same idea for a DateTime64 output type, except that its window is scale-dependent: the cast clamps whole
+    /// seconds the target scale cannot represent, and a scale-9 DateTime64 stops at 2262-04-11, far below the
+    /// Date32 upper bound. Holds the day range of the requested DateTime64 type, when the output is one.
+    std::optional<std::pair<Int32, Int32>> date_target_datetime64_day_range;
+
+    /// The allowed day-number window of the requested output type, and its name for error messages.
+    std::pair<Int32, Int32> dateTargetDayRange() const;
+    String dateTargetTypeName() const;
 
     bool isTrivial() const override
     {

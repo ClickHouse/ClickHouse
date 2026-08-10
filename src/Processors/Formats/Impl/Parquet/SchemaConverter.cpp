@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
 #include <fmt/ranges.h>
@@ -1210,8 +1211,13 @@ void SchemaConverter::processPrimitiveColumn(
             /// narrowing the day number to UInt16, so an unchecked extended Date32 value would
             /// wrap into an unrelated in-range Date. Similarly for a DateTime target, whose
             /// context-less cast wraps day numbers whose midnight does not fit into DateTime.
+            /// A DateTime64 target needs the same treatment with a scale-dependent window, because the cast
+            /// clamps whole seconds that the target scale cannot represent.
             converter->date_target_is_date = type_hint && WhichDataType(type_hint->getTypeId()).isDate();
             converter->date_target_is_datetime = type_hint && WhichDataType(type_hint->getTypeId()).isDateTime();
+            if (const auto * dt64_hint = type_hint ? typeid_cast<const DataTypeDateTime64 *>(type_hint.get()) : nullptr)
+                converter->date_target_datetime64_day_range = getDateTime64DayNumRange(
+                    DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_hint->getScale()), dt64_hint->getTimeZone());
         }
 
         out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);

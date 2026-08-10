@@ -416,30 +416,31 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             if (target.isDateTime64() && root_node->logicalType().type() == avro::LogicalType::DATE)
             {
                 /// Same for DateTime64: convert the day count to midnight of that day instead of
-                /// inserting it as raw ticks. The day count is validated against the Date32 range,
-                /// and the resulting whole seconds are clamped to the scale-dependent DateTime64
-                /// bounds, matching the `Date32` to `DateTime64` cast.
+                /// inserting it as raw ticks. The day count is validated against the window that the
+                /// target scale can actually represent, which is narrower than the `Date32` range at
+                /// high precision - a scale-9 `DateTime64` stops at `2262-04-11`.
                 const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
-                return [target_type, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*target_type);
+                const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
+                const auto [min_day, max_day] = getDateTime64DayNumRange(scale_multiplier, dt64_type.getTimeZone());
+                return [target_type, date_time_overflow_behavior, scale_multiplier, min_day, max_day](IColumn & column, avro::Decoder & decoder)
                 {
                     Int32 days_num = decoder.decodeInt();
-                    if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM)
+                    if (days_num > max_day || days_num < min_day)
                     {
                         if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                            days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                            days_num = (days_num < min_day) ? min_day : max_day;
                         else
                             throw Exception(
                                 ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                                "Input value {} exceeds the range of type Date32, which is [{}, {}]",
+                                "Input value {} exceeds the day range representable by type {}, which is [{}, {}]",
                                 days_num,
-                                DATE_LUT_MIN_EXTEND_DAY_NUM,
-                                DATE_LUT_MAX_EXTEND_DAY_NUM);
+                                target_type->getName(),
+                                min_day,
+                                max_day);
                     }
-                    const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*target_type);
-                    const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
-                    Int64 seconds = dt64_type.getTimeZone().fromDayNum(ExtendedDayNum(days_num));
-                    seconds = std::max<Int64>(seconds, minWholeSecondsForDateTime64(scale_multiplier));
-                    seconds = std::min<Int64>(seconds, maxWholeSecondsForDateTime64(scale_multiplier));
+                    const auto & dt64 = assert_cast<const DataTypeDateTime64 &>(*target_type);
+                    const Int64 seconds = dt64.getTimeZone().fromDayNum(ExtendedDayNum(days_num));
                     assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(
                         DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(seconds, 0, scale_multiplier));
                     return true;
