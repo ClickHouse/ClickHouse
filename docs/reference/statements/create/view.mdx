@@ -45,7 +45,8 @@ SELECT a, b, c FROM (SELECT ...)
 
 ## Parameterized View {#parameterized-view}
 
-Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately. These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
+Parameterized views are similar to normal views, but can be created with parameters which are not resolved immediately.
+These views can be used with table functions, which specify the name of the view as function name and the parameter values as its arguments.
 
 ```sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
@@ -54,6 +55,14 @@ The above creates a view for table which can be used as table function by substi
 
 ```sql
 SELECT * FROM view(column1=value1, column2=value2 ...)
+```
+
+Since the parameterized view depends on the parameter values, it doesn't have a schema when parameters are not provided.
+That means there's no information about parameterized views in the `system.columns` table.
+Also, `DESCRIBE` queries would work only if parameters are provided.
+
+```sql
+DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
 ## Materialized View {#materialized-view}
@@ -187,11 +196,17 @@ Note that regardless of the SQL security option, in every case it is still requi
 Thus, it is required to have `GRANT ALLOW SQL SECURITY NONE TO <user>` in order to create a view with this option.
 </Note>
 
-If `DEFINER`/`SQL SECURITY` aren't specified, the default values are used:
-- `SQL SECURITY`: `INVOKER` for normal views and `DEFINER` for materialized views ([configurable by settings](/reference/settings/session-settings/default#default_normal_view_sql_security))
-- `DEFINER`: `CURRENT_USER` ([configurable by settings](/reference/settings/session-settings/default#default_view_definer))
+If `DEFINER`/`SQL SECURITY` aren't specified, the result depends on the [`ignore_empty_sql_security_in_create_view_query`](/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query) server setting.
 
-If a view is attached without `DEFINER`/`SQL SECURITY` specified, the default value is `SQL SECURITY NONE` for the materialized view and `SQL SECURITY INVOKER` for the normal view.
+With its default value of `true`, the query is stored as written and the view gets an empty SQL security type. A normal view then runs with the permissions of the invoker, and for a materialized view with an explicitly specified target table, the access checks on that target table are skipped: inserting into the source table does not require the `INSERT` privilege on the target table, and reading from the view does not require the `SELECT` privilege on it.
+
+With `false`, the following defaults are written into the view definition at creation time:
+- `SQL SECURITY`: `INVOKER` for normal views (configurable by [`default_normal_view_sql_security`](/reference/settings/session-settings/default#default_normal_view_sql_security)) and `DEFINER` for materialized views (configurable by [`default_materialized_view_sql_security`](/reference/settings/session-settings/default#default_materialized_view_sql_security))
+- `DEFINER`: `CURRENT_USER` (configurable by [`default_view_definer`](/reference/settings/session-settings/default#default_view_definer))
+
+Refreshable materialized views always receive these defaults, regardless of the setting.
+
+A view keeps the SQL security type from its stored definition when it is attached or reloaded at server startup, so a view stored without `DEFINER`/`SQL SECURITY` keeps the empty SQL security type.
 
 To change SQL security for an existing view, use
 ```sql
