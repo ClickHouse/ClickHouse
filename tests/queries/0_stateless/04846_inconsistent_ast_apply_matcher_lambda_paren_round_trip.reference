@@ -7,6 +7,8 @@
 1
 1
 1
+1
+1
 SELECT * APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t
 SELECT * APPLY (x -> *) EXCEPT a FROM t
 SELECT * APPLY (x -> t.*) REPLACE (a AS a) FROM t
@@ -14,6 +16,12 @@ SELECT * APPLY (x -> COLUMNS(\'a\') APPLY toString) APPLY length FROM t
 SELECT * EXCEPT b APPLY (x -> (x + 1)) REPLACE (a AS a) FROM t
 SELECT * APPLY (x -> (x + 1)) FROM t
 SELECT * APPLY (x -> x) FROM t
+SELECT 1 AS z, * APPLY (x -> (x + 1)) FROM t
+SELECT id, t.* APPLY (x -> toString(x)) FROM t
+SELECT id, t.* APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t
+SELECT arrayMap(x -> t.* APPLY (x -> x), [1, 2, 3]) FROM t
+SELECT arrayMap(x -> t.* APPLY (x -> COLUMNS(\'a\')) APPLY toString, [1, 2, 3]) FROM t
+SELECT 1 AS z, * APPLY (x -> f(x), \'p_\') FROM t
 SELECT * APPLY toString APPLY length FROM t
 SELECT * APPLY sum FROM t
 SELECT * APPLY quantile(0.5) FROM t

@@ -31,15 +31,18 @@ SELECT * APPLY (x -> COLUMNS(a)) APPLY toString FROM (SELECT 1 AS a, 2 AS ab) AS
 -- The matcher body alone never aborted; keep it as the negative control of the trigger.
 SELECT * APPLY (x -> COLUMNS(a)) FROM (SELECT 1 AS a, 2 AS ab) AS t SETTINGS enable_analyzer = 1;
 
--- format(x) must equal format(format(x)) for every carrier; this is what the internal round-trip
--- check verifies.
-SELECT formatQuerySingleLine('SELECT * APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t') = formatQuerySingleLine(formatQuerySingleLine('SELECT * APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t'));
-SELECT formatQuerySingleLine('SELECT * APPLY (x -> COLUMNS(a)) EXCEPT a FROM t') = formatQuerySingleLine(formatQuerySingleLine('SELECT * APPLY (x -> COLUMNS(a)) EXCEPT a FROM t'));
-SELECT formatQuerySingleLine('SELECT * APPLY (x -> *) REPLACE (a AS a) FROM t') = formatQuerySingleLine(formatQuerySingleLine('SELECT * APPLY (x -> *) REPLACE (a AS a) FROM t'));
-SELECT formatQuerySingleLine('SELECT * APPLY (x -> t.*) APPLY toString FROM t') = formatQuerySingleLine(formatQuerySingleLine('SELECT * APPLY (x -> t.*) APPLY toString FROM t'));
-SELECT formatQuerySingleLine('SELECT * APPLY (x -> t.COLUMNS(\'a\')) EXCEPT a FROM t') = formatQuerySingleLine(formatQuerySingleLine('SELECT * APPLY (x -> t.COLUMNS(\'a\')) EXCEPT a FROM t'));
-SELECT formatQuerySingleLine('SELECT * APPLY (x -> COLUMNS(\'a\') APPLY toString) APPLY toString FROM t') = formatQuerySingleLine(formatQuerySingleLine('SELECT * APPLY (x -> COLUMNS(\'a\') APPLY toString) APPLY toString FROM t'));
-SELECT formatQuerySingleLine('SELECT * APPLY (x -> x + 1) FROM t') = formatQuerySingleLine(formatQuerySingleLine('SELECT * APPLY (x -> x + 1) FROM t'));
+-- Formatting then parsing must yield the same AST, which is what the internal check compares
+-- (the tree hash, before it ever reaches a text comparison).
+SELECT parseQueryToJSON('SELECT * APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t') = parseQueryToJSON(formatQuerySingleLine('SELECT * APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t'));
+SELECT parseQueryToJSON('SELECT * APPLY (x -> COLUMNS(a)) EXCEPT a FROM t') = parseQueryToJSON(formatQuerySingleLine('SELECT * APPLY (x -> COLUMNS(a)) EXCEPT a FROM t'));
+SELECT parseQueryToJSON('SELECT * APPLY (x -> *) REPLACE (a AS a) FROM t') = parseQueryToJSON(formatQuerySingleLine('SELECT * APPLY (x -> *) REPLACE (a AS a) FROM t'));
+SELECT parseQueryToJSON('SELECT * APPLY (x -> t.*) APPLY toString FROM t') = parseQueryToJSON(formatQuerySingleLine('SELECT * APPLY (x -> t.*) APPLY toString FROM t'));
+SELECT parseQueryToJSON('SELECT * APPLY (x -> t.COLUMNS(\'a\')) EXCEPT a FROM t') = parseQueryToJSON(formatQuerySingleLine('SELECT * APPLY (x -> t.COLUMNS(\'a\')) EXCEPT a FROM t'));
+SELECT parseQueryToJSON('SELECT * APPLY (x -> COLUMNS(\'a\') APPLY toString) APPLY toString FROM t') = parseQueryToJSON(formatQuerySingleLine('SELECT * APPLY (x -> COLUMNS(\'a\') APPLY toString) APPLY toString FROM t'));
+SELECT parseQueryToJSON('SELECT * APPLY (x -> x + 1) FROM t') = parseQueryToJSON(formatQuerySingleLine('SELECT * APPLY (x -> x + 1) FROM t'));
+-- The lambda sits at a select-list position > 0, and inside another lambda's body.
+SELECT parseQueryToJSON('SELECT id, t.* APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t') = parseQueryToJSON(formatQuerySingleLine('SELECT id, t.* APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t'));
+SELECT parseQueryToJSON('SELECT arrayMap(x -> t.* APPLY (x -> COLUMNS(\'a\')) APPLY toString, [1, 2, 3]) FROM t') = parseQueryToJSON(formatQuerySingleLine('SELECT arrayMap(x -> t.* APPLY (x -> COLUMNS(\'a\')) APPLY toString, [1, 2, 3]) FROM t'));
 
 -- Concrete formatted output: the lambda keeps the brackets that delimit it from what follows.
 SELECT formatQuerySingleLine('SELECT * APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t');
@@ -51,6 +54,15 @@ SELECT formatQuerySingleLine('SELECT * EXCEPT b APPLY (x -> x + 1) REPLACE (a AS
 -- The brackets belong to the lambda, so a non-matcher body gets them too.
 SELECT formatQuerySingleLine('SELECT * APPLY (x -> x + 1) FROM t');
 SELECT formatQuerySingleLine('SELECT * APPLY (x -> x) FROM t');
+
+-- Exactly one pair of brackets, wherever the transformer sits: a select-list position > 0 and a
+-- nested lambda body both make ASTFunction bracket a lambda of its own accord.
+SELECT formatQuerySingleLine('SELECT 1 AS z, * APPLY (x -> x + 1) FROM t');
+SELECT formatQuerySingleLine('SELECT id, t.* APPLY x -> toString(x) FROM t');
+SELECT formatQuerySingleLine('SELECT id, t.* APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t');
+SELECT formatQuerySingleLine('SELECT arrayMap(x -> t.* APPLY x -> x, [1, 2, 3]) FROM t');
+SELECT formatQuerySingleLine('SELECT arrayMap(x -> t.* APPLY (x -> COLUMNS(\'a\')) APPLY toString, [1, 2, 3]) FROM t');
+SELECT formatQuerySingleLine('SELECT 1 AS z, * APPLY (x -> f(x), \'p_\') FROM t');
 
 -- No over-reach: a bare function name stays unbracketed, and the `column_name_prefix` forms are
 -- unchanged.

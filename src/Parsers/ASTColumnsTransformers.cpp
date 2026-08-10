@@ -40,7 +40,12 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
 
     if (lambda)
     {
-        lambda->format(ostr, settings, state, frame);
+        /// The brackets above delimit the lambda, so ASTFunction must not add its own
+        /// (it does for a lambda at a list position or under need_parens).
+        auto lambda_frame = frame;
+        lambda_frame.need_parens = false;
+        lambda_frame.list_element_index = 0;
+        lambda->format(ostr, settings, state, lambda_frame);
     }
     else
     {
