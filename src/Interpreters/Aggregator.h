@@ -668,6 +668,13 @@ private:
         bool has_null_key_data,
         bool use_compiled_functions) const;
 
+    /// A set method has no aggregate states, so emitting its keys covers both the final and the non-final
+    /// conversion; the map methods need the two below.
+    template <typename Method, typename Table>
+    requires SetAggregationMethod<Method>
+    Chunks convertToBlockImplKeysOnly(
+        Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block) const;
+
     template <typename Method, typename Table>
     Chunks convertToBlockImplFinal(
         Method & method,

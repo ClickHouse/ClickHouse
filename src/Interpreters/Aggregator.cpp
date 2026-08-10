@@ -2428,7 +2428,7 @@ void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVar
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
 Chunks
-Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const
+Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const
 {
     if (data.empty())
     {
@@ -2438,11 +2438,7 @@ Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Are
         return result;
     }
 
-    Chunks res;
-    if (final)
-        res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, /*use_compiled_functions=*/false, return_single_block);
-    else
-        res = convertToBlockImplNotFinal(method, data, aggregates_pools, rows, return_single_block);
+    Chunks res = convertToBlockImplKeysOnly(method, data, aggregates_pools, final, return_single_block);
 
     /// In order to release memory early.
     data.clearAndShrink();
@@ -2748,6 +2744,75 @@ Chunk Aggregator::insertResultsIntoColumns(
     return finalizeChunk(params,std::move(out_cols), /* final */ true);
 }
 
+/// Converting a set method's table to chunks is only a matter of emitting the keys. It has no aggregate
+/// states, so `final` changes nothing about the rows produced - it only selects the header that
+/// `prepareOutputBlockColumns` and `finalizeChunk` build - and one function covers both, where the map
+/// methods need `convertToBlockImplFinal` and `convertToBlockImplNotFinal` separately.
+template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+Chunks Aggregator::convertToBlockImplKeysOnly(
+    Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block) const
+{
+    /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
+    const size_t max_block_size = (return_single_block ? data.size() : std::min(params.max_block_size, data.size())) + 1;
+
+    std::optional<OutputBlockColumns> out_cols;
+    std::optional<Sizes> shuffled_key_sizes;
+    size_t rows_in_current_block = 0;
+    Chunks chunks;
+
+    auto init_out_cols = [&]()
+    {
+        out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, aggregates_pools, final, max_block_size);
+
+        /// The NULL group lives outside the cells; it carries no state to insert alongside its key.
+        if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+        {
+            if (data.hasNullKeyData())
+            {
+                out_cols->raw_key_columns[0]->insertDefault();
+                ++rows_in_current_block;
+                data.hasNullKeyData() = false;
+            }
+        }
+
+        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
+    };
+
+    // should be invoked at least once, because null data might be the only content of the `data`
+    init_out_cols();
+
+    data.forEachValue(
+        [&](const auto & key)
+        {
+            if (!out_cols.has_value())
+                init_out_cols();
+
+            const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
+
+            ++rows_in_current_block;
+            if (!return_single_block && rows_in_current_block >= max_block_size)
+            {
+                chunks.emplace_back(finalizeChunk(params, std::move(out_cols.value()), final));
+                out_cols.reset();
+                rows_in_current_block = 0;
+            }
+        });
+
+    if (return_single_block)
+    {
+        chunks.emplace_back(finalizeChunk(params, std::move(out_cols).value(), final));
+        return chunks;
+    }
+
+    if (out_cols.has_value())
+        chunks.emplace_back(finalizeChunk(params, std::move(out_cols.value()), final));
+    return chunks;
+}
+
 template <typename Method, typename Table>
 Chunks Aggregator::convertToBlockImplFinal(
     Method & method,
@@ -2795,7 +2860,7 @@ Chunks Aggregator::convertToBlockImplFinal(
     init_out_cols();
 
     data.forEachValue(
-        [&](const auto & key, auto &... mapped_pack)
+        [&](const auto & key, auto & mapped)
         {
             if (unlikely(!out_cols.has_value()))
                 init_out_cols();
@@ -2804,16 +2869,10 @@ Chunks Aggregator::convertToBlockImplFinal(
             IColumn::SerializationSettings serialization_settings{
                 .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
             method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
-            /// A set cell carries no aggregate state; still push one entry per key, because `places.size()`
-            /// is what drives block flushing below.
-            if constexpr (sizeof...(mapped_pack) == 0)
-                places.emplace_back(nullptr);
-            else
-            {
-                places.emplace_back(mapped_pack...);
-                /// Mark the cell as destroyed so it will not be destroyed in destructor.
-                ((mapped_pack = nullptr), ...);
-            }
+            places.emplace_back(mapped);
+
+            /// Mark the cell as destroyed so it will not be destroyed in destructor.
+            mapped = nullptr;
 
             if (!return_single_block && places.size() >= max_block_size)
             {
@@ -2878,7 +2937,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
     // should be invoked at least once, because null data might be the only content of the `data`
     init_out_cols();
     data.forEachValue(
-        [&](const auto & key, auto &... mapped_pack)
+        [&](const auto & key, auto & mapped)
         {
             if (!out_cols.has_value())
                 init_out_cols();
@@ -2888,17 +2947,11 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
                 .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
             method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
 
-            /// A set cell carries no aggregate state, so there is nothing to push into aggregate columns.
-            if constexpr (sizeof...(mapped_pack) > 0)
-            {
-                ([&](auto & mapped)
-                {
-                    /// reserved, so push_back does not throw exceptions
-                    for (size_t i = 0; i < params.aggregates_size; ++i)
-                        out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
-                    mapped = nullptr;
-                }(mapped_pack), ...);
-            }
+            /// reserved, so push_back does not throw exceptions
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
+
+            mapped = nullptr;
 
             ++rows_in_current_block;
             if (!return_single_block && rows_in_current_block >= max_block_size)
