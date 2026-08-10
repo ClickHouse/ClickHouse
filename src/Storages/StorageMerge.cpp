@@ -890,12 +890,14 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
         /// child table that the initiator matched but no participating replica did would never be
         /// announced at all, and its rows would silently vanish from the result (with a local plan
         /// the initiator itself announces every child and reads the ones nobody else announced in
-        /// full). The initiator passes the child sets of the `Merge` tables it read - one set per
-        /// `Merge` table expression of the query, this table's own set is not identified among
-        /// them - so require the set of tables this replica matches to be equal to one of them.
-        /// The comparison is of the raw matched sets, before the pruning of children by a filter
-        /// on `_database`/`_table` (`getSelectedTables`), which is derived on every node from the
-        /// same query.
+        /// full). The initiator passes the child sets of the `Merge` tables it read, keyed by the
+        /// table expression each of them belongs to, so require the set of tables this replica
+        /// matches to be equal to the set the initiator read for the same table expression - a
+        /// query reading two `Merge` tables must not accept the child set of the sibling one, or a
+        /// leaf whose set drifted into the other leaf's set would read the wrong tables and
+        /// duplicate or drop rows. The comparison is of the raw matched sets, before the pruning of
+        /// children by a filter on `_database`/`_table` (`getSelectedTables`), which is derived on
+        /// every node from the same query.
         const auto initiator_child_table_sets = parseMergeChildTableSets(initiator_settings[Setting::parallel_replicas_merge_child_tables]);
         if (!initiator_child_table_sets.empty())
         {
@@ -903,12 +905,43 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
             for (const auto & child_name : assert_cast<const StorageMerge &>(*storage_merge).getChildTableNames(context))
                 child_tables_here.insert(freshnessCheckedTableName(child_name));
 
-            if (std::find(initiator_child_table_sets.begin(), initiator_child_table_sets.end(), child_tables_here)
-                == initiator_child_table_sets.end())
+            const String key_here = mergeChildTableSetKey(query_info.table_expression.get());
+            const String base_name_here = mergeChildTableSetKeyBaseName(key_here);
+
+            /// The key of a table expression consists of its name and its alias. Both parts are
+            /// derived from the same query on the initiator and on the replicas, except when the
+            /// replica reads a serialized plan: the `Merge` read of a plan is re-planned from a
+            /// single-table query of its own, whose alias numbering is unrelated to that of the
+            /// original query (see `resolveStorages`), so the name alone identifies the table
+            /// expression there. It identifies it uniquely unless the query reads the same `Merge`
+            /// table (or two `merge` table functions, which share the name of the function) more
+            /// than once, and then the sets of the sibling table expressions are accepted as well.
+            /// A `Merge` table the initiator did not enumerate at all (it is hidden behind a view
+            /// whose stored query was not resolved) has no set of its own to be compared against;
+            /// falling back to the sets of the whole query still fails closed on a set that no
+            /// leaf of the query resolved to.
+            std::vector<std::set<String>> expected_table_sets;
+            for (const auto & table_set : initiator_child_table_sets)
+            {
+                if (table_set.key == key_here)
+                {
+                    expected_table_sets = {table_set.tables};
+                    break;
+                }
+                if (!base_name_here.empty() && mergeChildTableSetKeyBaseName(table_set.key) == base_name_here)
+                    expected_table_sets.push_back(table_set.tables);
+            }
+            if (expected_table_sets.empty())
+            {
+                for (const auto & table_set : initiator_child_table_sets)
+                    expected_table_sets.push_back(table_set.tables);
+            }
+
+            if (std::find(expected_table_sets.begin(), expected_table_sets.end(), child_tables_here) == expected_table_sets.end())
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Cannot coordinate reading from table {} with parallel replicas: the set of its underlying "
-                    "tables ({}) differs from every set the initiator read, so it changed after the query was "
+                    "tables ({}) differs from the set the initiator read, so it changed after the query was "
                     "planned, or differs on this replica",
                     storage_merge->getStorageID().getNameForLogs(),
                     fmt::join(child_tables_here, ", "));
@@ -1051,9 +1084,9 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// A replica reading for an initiator is the exception: this `Merge` read is itself a
             /// part of coordinated reading with parallel replicas, and every child must read only
             /// the mark ranges the coordinator hands out to it, which is exactly what the setting
-            /// enables in the child reading step. Clearing it would make every replica read every
-            /// child in full and duplicate its rows in the result. (The initiator's own local plan
-            /// does not depend on the setting: its child reading steps are replaced with local
+            /// enables in the child reading step. Clearing it here would make every replica read
+            /// every child in full and duplicate its rows in the result. (The initiator's own local
+            /// plan does not depend on the setting: its child reading steps are replaced with local
             /// parallel replicas reading steps after they are created, see `createPlanForTable`.)
             const bool coordinated_parallel_replicas_read = context->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables]
                 && (parallel_replicas_local_plan_info || context->canUseParallelReplicasOnFollower());

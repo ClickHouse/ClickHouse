@@ -52,16 +52,38 @@ String freshnessCheckedTableName(const QualifiedTableName & name);
 String serializeFreshnessCheckedTables(const std::vector<QualifiedTableName> & tables);
 std::unordered_set<String> parseFreshnessCheckedTables(const String & serialized);
 
+/// A key identifying the `Merge` table expression a child table set belongs to, so that a replica
+/// compares the set its own `Merge` table expression resolves to against the set the initiator read
+/// for the same table expression, and not against the set of a sibling `Merge` table expression of
+/// the same query. It consists of the escaped name of the table (or of the table function) and the
+/// escaped alias, separated by `:`; `mergeChildTableSetKeyBaseName` returns the first component,
+/// which identifies the table expression when the alias is not comparable (see `resolveStorages`).
+String mergeChildTableSetKey(const IQueryTreeNode * table_expression);
+String mergeChildTableSetKeyBaseName(const String & key);
+
 /// Serialization of the child table sets of the `Merge` tables (and `merge` table functions) the
 /// query reads, one set per `Merge` table expression, for the internal setting
 /// `parallel_replicas_merge_child_tables`. When the initiator builds no local plan, the reading
 /// coordinator has no pinned snapshot replica and a child table matched by no participating
 /// replica would never be announced, so its rows would silently vanish from the result. A replica
-/// whose `Merge` table resolves to a child set equal to none of the initiator's sets fails closed
-/// instead. Each set is serialized as the `freshnessCheckedTableName` names joined by `,` and
-/// terminated by `;`, so an empty string means "no sets" while `;` alone is a single empty set.
-String serializeMergeChildTableSets(const std::vector<std::vector<QualifiedTableName>> & table_sets);
-std::vector<std::set<String>> parseMergeChildTableSets(const String & serialized);
+/// whose `Merge` table resolves to a child set different from the initiator's set for the same
+/// table expression fails closed instead. Every set is serialized as its `mergeChildTableSetKey`,
+/// `=`, and the `freshnessCheckedTableName` names joined by `,`, and is terminated by `;`, so an
+/// empty string means "no sets" while `key=;` is a single empty set.
+struct MergeChildTableSet
+{
+    String key;
+    std::vector<QualifiedTableName> tables;
+};
+
+struct ParsedMergeChildTableSet
+{
+    String key;
+    std::set<String> tables;
+};
+
+String serializeMergeChildTableSets(const std::vector<MergeChildTableSet> & table_sets);
+std::vector<ParsedMergeChildTableSet> parseMergeChildTableSets(const String & serialized);
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;

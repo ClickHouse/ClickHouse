@@ -590,18 +590,25 @@ const IQueryTreeNode * findTableDesignatedForParallelReplicas(const QueryTreeNod
     return findTableForParallelReplicas(query_tree_node.get(), context);
 }
 
+/// The name of a table expression without its alias: the table it reads, or, for a table function,
+/// only the function name (the text of its arguments is not guaranteed to survive the rewriting of
+/// the query that is sent to the replicas).
+static String tableExpressionBaseName(const IQueryTreeNode * table_expression)
+{
+    if (const auto * table_node = typeid_cast<const TableNode *>(table_expression))
+        return table_node->getStorageID().getFullTableName();
+    if (const auto * table_function_node = typeid_cast<const TableFunctionNode *>(table_expression))
+        return "table function " + table_function_node->getTableFunctionName();
+    return {};
+}
+
 String parallelReplicasDesignatedTableName(const IQueryTreeNode * table_expression)
 {
     if (!table_expression)
         return {};
 
-    String name;
-
-    if (const auto * table_node = typeid_cast<const TableNode *>(table_expression))
-        name = table_node->getStorageID().getFullTableName();
-    else if (const auto * table_function_node = typeid_cast<const TableFunctionNode *>(table_expression))
-        name = "table function " + table_function_node->getTableFunctionName();
-    else
+    String name = tableExpressionBaseName(table_expression);
+    if (name.empty())
         return {};
 
     /// The same table, and even more so the same table function, can appear more than once in a
@@ -613,6 +620,26 @@ String parallelReplicasDesignatedTableName(const IQueryTreeNode * table_expressi
         name += " AS " + alias;
 
     return name;
+}
+
+String mergeChildTableSetKey(const IQueryTreeNode * table_expression)
+{
+    if (!table_expression)
+        return {};
+
+    const String base_name = tableExpressionBaseName(table_expression);
+    if (base_name.empty())
+        return {};
+
+    /// `escapeForFileName` leaves only alphanumeric characters and `_`, so neither the separator
+    /// between the two components nor the separators of the serialization can occur inside them,
+    /// and the base name can be compared on its own by taking the part before the separator.
+    return escapeForFileName(base_name) + ":" + escapeForFileName(table_expression->getAlias());
+}
+
+String mergeChildTableSetKeyBaseName(const String & key)
+{
+    return key.substr(0, key.find(':'));
 }
 
 String freshnessCheckedTableName(const QualifiedTableName & name)
@@ -648,14 +675,17 @@ std::unordered_set<String> parseFreshnessCheckedTables(const String & serialized
     return tables;
 }
 
-String serializeMergeChildTableSets(const std::vector<std::vector<QualifiedTableName>> & table_sets)
+String serializeMergeChildTableSets(const std::vector<MergeChildTableSet> & table_sets)
 {
     String serialized;
     for (const auto & table_set : table_sets)
     {
+        serialized += table_set.key;
+        serialized += '=';
+
         /// The names are sorted so that equal sets serialize identically however they were enumerated.
         std::set<String> names;
-        for (const auto & table : table_set)
+        for (const auto & table : table_set.tables)
             names.insert(freshnessCheckedTableName(table));
         for (const auto & name : names)
         {
@@ -664,29 +694,32 @@ String serializeMergeChildTableSets(const std::vector<std::vector<QualifiedTable
                 serialized += ',';
         }
         /// `;` terminates (not separates) every set: an empty string is "no sets", while a single
-        /// `;` is one empty set - a `Merge` table that currently matches no tables at all.
+        /// `=;` is one empty set - a `Merge` table that currently matches no tables at all.
         serialized += ';';
     }
     return serialized;
 }
 
-std::vector<std::set<String>> parseMergeChildTableSets(const String & serialized)
+std::vector<ParsedMergeChildTableSet> parseMergeChildTableSets(const String & serialized)
 {
-    std::vector<std::set<String>> table_sets;
+    std::vector<ParsedMergeChildTableSet> table_sets;
     for (size_t pos = 0; pos < serialized.size();)
     {
         size_t semicolon = serialized.find(';', pos);
         if (semicolon == String::npos)
             semicolon = serialized.size();
 
-        std::set<String> names;
-        for (size_t name_pos = pos; name_pos < semicolon;)
+        size_t equals = std::min(serialized.find('=', pos), semicolon);
+        ParsedMergeChildTableSet table_set;
+        table_set.key = serialized.substr(pos, equals - pos);
+
+        for (size_t name_pos = equals + 1; name_pos < semicolon;)
         {
             size_t comma = std::min(serialized.find(',', name_pos), semicolon);
-            names.emplace(serialized.substr(name_pos, comma - name_pos));
+            table_set.tables.emplace(serialized.substr(name_pos, comma - name_pos));
             name_pos = comma + 1;
         }
-        table_sets.push_back(std::move(names));
+        table_sets.push_back(std::move(table_set));
 
         pos = semicolon + 1;
     }

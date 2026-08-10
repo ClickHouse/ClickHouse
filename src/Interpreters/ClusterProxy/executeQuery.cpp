@@ -886,8 +886,9 @@ public:
     /// must not pay that price on a cluster with mixed versions.
     bool hasMergeStorage() const { return !merge_child_table_sets.empty(); }
 
-    /// The child table sets of every `Merge` leaf, for `parallel_replicas_merge_child_tables`.
-    const std::vector<std::vector<QualifiedTableName>> & mergeChildTableSets() const { return merge_child_table_sets; }
+    /// The child table sets of every `Merge` leaf, keyed by the leaf's table expression, for
+    /// `parallel_replicas_merge_child_tables`.
+    const std::vector<MergeChildTableSet> & mergeChildTableSets() const { return merge_child_table_sets; }
 
 private:
     void visitQueryTree(const IQueryTreeNode * root)
@@ -899,9 +900,9 @@ private:
             nodes_to_visit.pop_back();
 
             if (const auto * table_node = node->as<TableNode>())
-                visitStorage(table_node->getStorage());
+                visitStorage(table_node->getStorage(), node);
             else if (const auto * table_function_node = node->as<TableFunctionNode>())
-                visitStorage(table_function_node->getStorage());
+                visitStorage(table_function_node->getStorage(), node);
 
             for (const auto & child : node->getChildren())
             {
@@ -911,7 +912,10 @@ private:
         }
     }
 
-    void visitStorage(const StoragePtr & storage)
+    /// `table_expression` is the table expression the storage was resolved from, when the storage is
+    /// a leaf of the query tree. Reading through a wrapper storage (a view or a materialized view)
+    /// has no table expression of the outer query of its own.
+    void visitStorage(const StoragePtr & storage, const IQueryTreeNode * table_expression)
     {
         if (!storage)
             return;
@@ -928,12 +932,13 @@ private:
         {
             auto child_tables = merge_storage->getReplicatedChildTableNames(context);
             tables.insert(child_tables.begin(), child_tables.end());
-            merge_child_table_sets.push_back(merge_storage->getChildTableNames(context));
+            merge_child_table_sets.push_back(
+                MergeChildTableSet{mergeChildTableSetKey(table_expression), merge_storage->getChildTableNames(context)});
         }
         else if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
         {
             /// Reading from a materialized view reads from its target table.
-            visitStorage(materialized_view->tryGetTargetTable());
+            visitStorage(materialized_view->tryGetTargetTable(), nullptr);
         }
         else if (const auto * view = typeid_cast<const StorageView *>(storage.get()))
         {
@@ -960,7 +965,7 @@ private:
     bool enumerate_view_sources;
     std::set<QualifiedTableName> tables;
     std::set<const IStorage *> visited_storages;
-    std::vector<std::vector<QualifiedTableName>> merge_child_table_sets;
+    std::vector<MergeChildTableSet> merge_child_table_sets;
 };
 
 void executeQueryWithParallelReplicas(
@@ -999,7 +1004,7 @@ void executeQueryWithParallelReplicas(
     /// do not consume the settings on the replicas and must keep working with older replicas in
     /// a cluster with mixed versions - do not ship the settings for them.
     bool uses_merge_tables = false;
-    std::vector<std::vector<QualifiedTableName>> merge_child_table_sets;
+    std::vector<MergeChildTableSet> merge_child_table_sets;
     if (query_tree)
     {
         /// Enumerating the sources of a view requires resolving its stored query, so do it only
