@@ -341,6 +341,8 @@ def main() -> None:
     dry_run = (Info.get_workflow_input_value("dry-run") or "").lower() == "true"
     print(f"Auto release dry-run={dry_run}")
 
+    info = Info()
+    assert info.repo_name == "ClickHouse/ClickHouse", f"got [{info.repo_name}]"
     _assert_no_open_version_bump_prs()
     _fetch_history()
 
