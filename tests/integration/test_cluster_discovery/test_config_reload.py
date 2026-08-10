@@ -373,6 +373,82 @@ def test_reload_add_remove_discovery_cluster(start_cluster):
         raise AssertionError(f"Cluster was not removed after config reload: {counts}")
 
 
+def test_reload_remove_retries_failed_unregister(start_cluster):
+    """Keeper unregister failure must not drop the remove; ephemeral cleanup is retried."""
+    reload_config_on_all(CONFIG_WITH_PWD)
+    check_on_cluster(
+        list(nodes.values()),
+        len(nodes),
+        cluster_name="test_reload_cluster",
+        what="count()",
+        msg="Cluster not ready before unregister-retry test",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
+
+    node0 = nodes["node0"]
+    node1 = nodes["node1"]
+    node0.query(
+        "SYSTEM ENABLE FAILPOINT cluster_discovery_unregister_fail",
+        password="passwordAbc",
+    )
+    try:
+        reload_config_on_node(node0, CONFIG_NO_DISCOVERY)
+
+        # Local config apply must succeed despite the failed Keeper remove.
+        for retry in range(10):
+            count = int(
+                node0.query(
+                    "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster'",
+                    password="passwordAbc",
+                )
+            )
+            if count == 0:
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError("node0 still exposes removed discovery cluster after reload")
+
+        # Peer still sees node0 while the ephemeral linger is forced by the failpoint.
+        for retry in range(10):
+            hosts = int(
+                node1.query(
+                    "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster'",
+                    password="passwordAbc",
+                )
+            )
+            if hosts == len(nodes):
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError(
+                "Expected node0 ephemeral to remain visible on node1 while unregister failpoint is on"
+            )
+    finally:
+        node0.query(
+            "SYSTEM DISABLE FAILPOINT cluster_discovery_unregister_fail",
+            password="passwordAbc",
+        )
+
+    # After failpoint is cleared, worker retries remove the ephemeral.
+    for retry in range(20):
+        hosts = int(
+            node1.query(
+                "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster'",
+                password="passwordAbc",
+            )
+        )
+        if hosts == 1:
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError(
+            f"node0 ephemeral was not cleaned up after unregister retry; hosts on node1={hosts}"
+        )
+
+    reload_config_on_all(CONFIG_WITH_PWD)
+
+
 def test_reload_add_remove_multicluster_root(start_cluster):
     reload_config_on_all(CONFIG_MULTICLUSTER_ROOT)
 

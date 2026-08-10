@@ -216,7 +216,19 @@ private:
     void initialUpdate();
 
     void registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info);
-    void unregisterFromZk(const ClusterInfo & info);
+
+    struct PendingZkUnregister
+    {
+        String zk_name;
+        String zk_root;
+        String cluster_name;
+    };
+
+    /// Returns false if Keeper remove failed; caller should queue a retry.
+    bool unregisterFromZk(const ClusterInfo & info);
+    bool tryUnregisterPath(const String & zk_name, const String & zk_root, const String & cluster_name_for_log);
+    /// Retries failed unregisters. Returns true when the queue is empty.
+    bool retryPendingUnregisters();
 
     Strings getNodeNames(zkutil::ZooKeeperPtr & zk,
                          const String & zk_root,
@@ -281,6 +293,11 @@ private:
     /// while holding this one: lock order is start_mutex -> pending_config_mutex.
     mutable std::mutex pending_config_mutex;
     std::optional<ParsedDiscoveryConfig> pending_config_update;
+
+    /// Ephemeral registrations that failed to remove during config apply.
+    /// Local cluster state is already dropped; retry from the worker thread.
+    /// Accessed only from the discovery worker (same as clusters_info).
+    std::vector<PendingZkUnregister> pending_zk_unregisters;
 
     MultiVersion<Macros>::Version macros;
 };

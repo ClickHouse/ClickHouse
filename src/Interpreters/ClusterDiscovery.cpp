@@ -56,6 +56,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char cluster_discovery_faults[];
+    extern const char cluster_discovery_unregister_fail[];
 }
 
 namespace
@@ -340,7 +341,20 @@ void ClusterDiscovery::removeStaticCluster(const String & name)
     if (it == clusters_info.end() || it->second.isDynamic())
         return;
 
-    unregisterFromZk(it->second);
+    /// Drop local tracking even if Keeper remove fails: config already removed the cluster.
+    /// Keep enough identity to retry ephemeral cleanup so peers stop seeing this node.
+    if (!unregisterFromZk(it->second))
+    {
+        pending_zk_unregisters.push_back(PendingZkUnregister{
+            .zk_name = it->second.zk_name,
+            .zk_root = it->second.zk_root,
+            .cluster_name = name,
+        });
+        LOG_WARNING(
+            log,
+            "Failed to unregister current node from cluster '{}' on config remove; will retry",
+            name);
+    }
 
     clusters_to_update->remove(name);
     get_nodes_callbacks.erase(name);
@@ -875,8 +889,14 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
     if (info.current_node_is_observer)
     {
         /// Drop leftover ephemeral registration when transitioning from participant to observer
-        /// (or if a stale node remained). tryRemove is a no-op when the node is absent.
-        zk->tryRemove(node_path);
+        /// (or if a stale node remained). ZNONODE means already absent.
+        auto code = zk->tryRemove(node_path);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+            throw Exception(
+                ErrorCodes::KEEPER_EXCEPTION,
+                "Cannot remove discovery registration for observer node {}: {}",
+                node_path,
+                Coordination::errorMessage(code));
         LOG_DEBUG(log, "Current node {} is observer of cluster {}", current_node_name, info.name);
         return;
     }
@@ -900,19 +920,75 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
     LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);
 }
 
-void ClusterDiscovery::unregisterFromZk(const ClusterInfo & info)
+bool ClusterDiscovery::tryUnregisterPath(const String & zk_name, const String & zk_root, const String & cluster_name_for_log)
+{
+    fiu_do_on(FailPoints::cluster_discovery_unregister_fail,
+    {
+        throw Exception(
+            ErrorCodes::KEEPER_EXCEPTION,
+            "Failpoint cluster_discovery_unregister_fail is triggered for cluster '{}'",
+            cluster_name_for_log);
+    });
+
+    auto zk = context->getDefaultOrAuxiliaryZooKeeper(zk_name);
+    String node_path = getShardsListPath(zk_root) / current_node_name;
+    auto code = zk->tryRemove(node_path);
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+    {
+        LOG_WARNING(
+            log,
+            "Cannot unregister current node {} from cluster '{}': {}",
+            current_node_name,
+            cluster_name_for_log,
+            Coordination::errorMessage(code));
+        return false;
+    }
+
+    LOG_DEBUG(log, "Current node {} unregistered from cluster {}", current_node_name, cluster_name_for_log);
+    return true;
+}
+
+bool ClusterDiscovery::unregisterFromZk(const ClusterInfo & info)
 {
     try
     {
-        auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
-        String node_path = getShardsListPath(info.zk_root) / current_node_name;
-        zk->tryRemove(node_path);
-        LOG_DEBUG(log, "Current node {} unregistered from cluster {}", current_node_name, info.name);
+        return tryUnregisterPath(info.zk_name, info.zk_root, info.name);
     }
     catch (...)
     {
         tryLogCurrentException(log, "Error while unregistering node from cluster '" + info.name + "'");
+        return false;
     }
+}
+
+bool ClusterDiscovery::retryPendingUnregisters()
+{
+    if (pending_zk_unregisters.empty())
+        return true;
+
+    std::vector<PendingZkUnregister> still_pending;
+    still_pending.reserve(pending_zk_unregisters.size());
+
+    for (const auto & pending : pending_zk_unregisters)
+    {
+        bool ok = false;
+        try
+        {
+            ok = tryUnregisterPath(pending.zk_name, pending.zk_root, pending.cluster_name);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                log,
+                "Error while retrying unregister from cluster '" + pending.cluster_name + "'");
+        }
+
+        if (!ok)
+            still_pending.push_back(pending);
+    }
+
+    pending_zk_unregisters = std::move(still_pending);
+    return pending_zk_unregisters.empty();
 }
 
 void ClusterDiscovery::initialUpdate()
@@ -1130,6 +1206,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     /// failing initialUpdate (bad Keeper path, etc.) never reaches the loop body consumer and
     /// updateFromConfig stays stuck while ensureWorkerStarted no-ops on the running thread.
     consumePendingConfigUpdate();
+    retryPendingUnregisters();
 
     if (!is_initialized)
         initialUpdate();
@@ -1143,6 +1220,23 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
             break;
 
         consumePendingConfigUpdate();
+
+        if (!retryPendingUnregisters())
+        {
+            /// Keep waking the loop with a short interruptible backoff so ephemeral cleanup
+            /// retries without failing / rolling back the already-applied config update.
+            using namespace std::chrono_literals;
+            for (auto remaining = std::chrono::milliseconds(1000);
+                 remaining.count() > 0 && !clusters_to_update->isStopped();)
+            {
+                constexpr auto slice = std::chrono::milliseconds(50);
+                auto step = remaining < slice ? remaining : slice;
+                std::this_thread::sleep_for(step);
+                remaining -= step;
+            }
+            if (!clusters_to_update->isStopped())
+                clusters_to_update->set();
+        }
 
         std::unordered_map<String, ClusterInfo> new_dynamic_clusters_info;
         std::unordered_set<String> unchanged_roots;
