@@ -52,8 +52,8 @@ const std::vector<Int64> huge_timeouts_ms = {
     std::numeric_limits<Int64>::max(),
 };
 
-/// waitCommittedUpto takes the count as an unsigned parameter, so it must also survive the value a
-/// setting above Int64::max/1000 turns into: its wrapped negative count read as unsigned.
+/// waitCommittedUpto takes the count as an unsigned parameter, so a negative count read as unsigned
+/// must not become a huge wait either.
 std::vector<UInt64> hugeUnsignedTimeoutsMs()
 {
     std::vector<UInt64> result;

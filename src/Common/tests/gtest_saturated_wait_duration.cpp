@@ -74,8 +74,7 @@ TEST(SaturatedWaitDuration, SaturatesAboveBound)
 
 TEST(SaturatedWaitDuration, ClampsNegativeToZero)
 {
-    /// A millisecond setting above Int64::max/1000 wraps to a negative microsecond count, whose
-    /// totalMilliseconds() is negative and huge, and overflows the conversion just the same.
+    /// A negative count must not become a huge wait once read as unsigned.
     for (Int64 ms : {Int64{-1}, Int64{-9'223'372'036'854'775}, std::numeric_limits<Int64>::min()})
     {
         SCOPED_TRACE(ms);
