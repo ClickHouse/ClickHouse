@@ -4161,7 +4161,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 
         ("highlight,hilite", po::value<bool>()->default_value(true), "Toggle syntax highlighting of the command prompt and the echoed queries (can also use --hilite)")
         ("hints", po::value<bool>()->default_value(true), "Show as-you-type autocompletion hints (ghost text) in interactive mode; navigate with Up/Down or Ctrl-Up/Ctrl-Down. Accept the inline hint with Tab or Right; Enter accepts a hint only after one is explicitly selected, otherwise it runs the query. Requires --highlight and suggestions (disabled by --disable_suggestion). Disable with --hints 0.")
-        ("autocomplete_model", po::value<bool>()->default_value(false), "Additionally predict the next tokens from a Markov model seeded from your recent query history (from system.query_log) and updated with the queries you enter this session. The predictions are offered as higher-priority completions and inline hints on top of the static suggestions. Requires --hints. Off by default.")
+        ("autocomplete_model", po::value<bool>()->default_value(false), "Additionally predict the next tokens from a Markov model seeded from your recent query history (from system.user_query_log, which requires no grants) and updated with the queries you enter this session. The predictions are offered as higher-priority completions, and as inline hints when --hints and --highlight are enabled. Off by default.")
 
         ("ignore-error", "Do not stop processing after an error occurred")
         ("stacktrace", "Print stack traces of exceptions")
@@ -4554,21 +4554,25 @@ void ClientBase::runInteractive()
 
     /// Optionally set up the predictive autocomplete model (opt-in via --autocomplete_model). It is
     /// only consumed by the replxx line reader, so it is constructed here — inside USE_REPLXX and
-    /// only when enabled — so line-reader-fallback builds and disabled paths pay no cost. It needs
-    /// color (for the inline hints) and the suggestion machinery, so it follows the --hints gating.
+    /// only when enabled — so line-reader-fallback builds and disabled paths pay no cost. It feeds
+    /// the completion machinery, so `--disable_suggestion` turns it off too; it does not need color:
+    /// without highlighting the predictions still enrich Tab completion, only the ghost-text hints
+    /// (gated by `enable_hints` below) are unavailable.
     const bool load_autocomplete = getClientConfiguration().getBool("autocomplete_model", false)
-        && getClientConfiguration().getBool("hints", true)
-        && getClientConfiguration().getBool("highlight", true)
         && !getClientConfiguration().getBool("disable_suggestion", false);
     if (load_autocomplete)
     {
         autocomplete = std::make_unique<Autocomplete>();
-        /// Seed from server-side history only for a real client; clickhouse-local and embedded
-        /// clients have no persistent system.query_log, so they just learn from this session.
+        /// Seed the model from the user's own records of the query log (`system.user_query_log`).
+        /// For clickhouse-local and embedded clients this reads the local context: usually there is
+        /// no query log there and the seeding quietly yields an empty model that then learns from
+        /// this session, but a clickhouse-local with a persisted path and a configured query log
+        /// genuinely seeds from it.
         if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
             autocomplete->load<Connection>(client_context, connection_parameters);
-        else
-            autocomplete->markLoaded();
+        else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL
+            || client_context->getApplicationType() == Context::ApplicationType::SERVER)
+            autocomplete->load<LocalConnection>(client_context, connection_parameters);
     }
 
     auto options = ReplxxLineReader::Options
@@ -4697,6 +4701,13 @@ void ClientBase::runInteractive()
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
             suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo());
+        }
+
+        if (autocomplete && autocomplete->getLastError() == ErrorCodes::USER_SESSION_LIMIT_EXCEEDED)
+        {
+            // Likewise for the predictive autocomplete model: if its separate connection failed to
+            // open a new session, seed it from the query history through the main session.
+            autocomplete->load(*connection, connection_parameters.timeouts, client_context->getClientInfo());
         }
 
         try

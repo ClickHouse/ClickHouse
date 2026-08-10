@@ -13,8 +13,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int DEADLOCK_AVOIDED;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
-    extern const int ACCESS_DENIED;
-    extern const int READONLY;
+    extern const int UNKNOWN_TABLE;
 }
 
 std::vector<std::string> Autocomplete::predictNextTokens(const String & prefix)
@@ -106,11 +105,15 @@ void Autocomplete::load(ContextPtr context, const ConnectionParameters & connect
                     last_error = e.code();
                     if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
                         continue;
-                    /// A user without `SELECT` on `system.query_log` (or one whose restrictions
-                    /// prevent the seeding query from running) should not see a startup error:
-                    /// autocomplete simply starts with an empty model and learns from this session.
-                    else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED && e.code() != ErrorCodes::ACCESS_DENIED
-                        && e.code() != ErrorCodes::READONLY)
+                    /// Quietly keep the empty model (it still learns from this session) when history
+                    /// is unavailable for an expected reason: a server without `system.user_query_log`
+                    /// (an older version, or `query_log.enable_user_query_log = 0`) fails with
+                    /// `UNKNOWN_TABLE`, and a server that allows only one session per user rejects
+                    /// this second session with `USER_SESSION_LIMIT_EXCEEDED` (`ClientBase` then
+                    /// retries the seeding through the main session). Reading `system.user_query_log`
+                    /// itself requires no grants, so unlike a direct read of `system.query_log` there
+                    /// is no expected `ACCESS_DENIED` to hide.
+                    else if (e.code() != ErrorCodes::USER_SESSION_LIMIT_EXCEEDED && e.code() != ErrorCodes::UNKNOWN_TABLE)
                     {
                         WriteBufferFromFileDescriptor out(STDERR_FILENO, 4096);
                         out << "Cannot load data for command line autocomplete: " << getCurrentExceptionMessage(false, true) << "\n";
@@ -159,12 +162,10 @@ void Autocomplete::fillQueriesFromBlock(const Block & block)
 
     std::lock_guard lock(mutex);
     for (size_t i = 0; i < rows; ++i)
-    {
-        history_queries.emplace_back(column[i].safeGet<String>());
-        addQueryToModel(history_queries.back());
-    }
+        addQueryToModel(column[i].safeGet<String>());
 }
 
 
 template void Autocomplete::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters);
+template void Autocomplete::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters);
 }

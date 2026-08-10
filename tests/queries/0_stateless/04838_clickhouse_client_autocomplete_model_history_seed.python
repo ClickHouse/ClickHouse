@@ -7,9 +7,9 @@ import time
 
 TIMEOUT_SECONDS = 30
 
-# How long to keep reading after the last keystroke while waiting for the expected output. Seeding
-# a query and then predicting from it involves executing that query server-side first, which can
-# take longer than the inter-keystroke drain on slow (sanitizer) builds.
+# How long to keep reading after the last keystroke while waiting for the expected output. The
+# model is seeded from `system.user_query_log` by a background query, which can take a while on
+# slow (sanitizer) builds.
 FINAL_WAIT_SECONDS = 20
 
 DEBUG_LOG = os.path.join(
@@ -59,9 +59,8 @@ def drain(master, debug_log_fd, idle):
 
 
 def run_case(program, argv, name, keystrokes, check, state=None):
-    """Fork a PTY, wait for the prompt, send keystrokes (with a small pause between
-    them so replxx repaints / the seeding query executes), then run `check` over the
-    collected output."""
+    """Fork a PTY, wait for the prompt, send keystrokes (with a pause between them so the
+    background seeding finishes and replxx repaints), then run `check` over the output."""
     shell_pid, master = pty.fork()
     if shell_pid == 0:
         os.environ["TERM"] = "xterm"
@@ -75,8 +74,6 @@ def run_case(program, argv, name, keystrokes, check, state=None):
         output = ""
         for keys in keystrokes:
             os.write(master, keys)
-            # A generous drain: the seeding query must finish and a fresh prompt reappear before
-            # the next keystrokes are processed, otherwise the model has not learned it yet.
             output += drain(master, debug_log_fd, 1.0)
 
         if not check(output):
@@ -111,43 +108,31 @@ def run_with_timeout(program, argv, name, keystrokes, check):
 
 
 def main():
-    program = os.environ["CLICKHOUSE_LOCAL"]
-    base = shlex.split(program)
-    # A fresh clickhouse-local has no query log backing system.user_query_log, so the predictive
-    # model seeds empty and learns from the queries entered this session. Enable it explicitly
-    # (off by default). Seeding from real history is covered by
-    # 04838_clickhouse_client_autocomplete_model_history_seed.
-    args = base + ["--autocomplete_model", "1", "--hints", "1"]
+    base = shlex.split(os.environ["CLICKHOUSE_CLIENT"])
+    # Connect as the prepared test user (see the .sh part): a user with zero grants whose query
+    # history consists of a single distinctive query, `SELECT anyHeavy(1)`. The model seeds from
+    # `system.user_query_log` in the background, which requires no grants.
+    args = base + [
+        "--user",
+        os.environ["TEST_USER"],
+        "--autocomplete_model",
+        "1",
+        "--hints",
+        "1",
+    ]
 
-    # A query using a distinctive function; once it has executed, the Markov model has seen
-    # "SELECT" followed by "uniqExact", so it predicts "uniqExact" as the next token.
-    seed = b"SELECT uniqExact(number) FROM numbers(10)\r"
-
-    # 1. After a word break (here right after "SELECT "), there is no prefix for the static
-    #    dictionary to match, so it shows nothing. The predictive model, however, suggests the next
-    #    token from the preceding context: the full "uniqExact" appears as gray ghost text. Anchor
-    #    on the colored full word so this cannot be satisfied by the echoed input or by a dictionary
-    #    prefix hint shown while the seeding query was typed.
+    # Right after "SELECT " there is no prefix for the static dictionary to match, so any gray ghost
+    # text with the full "anyHeavy" can only come from the model seeded with the user's history: the
+    # session itself has not run any query. "SELECT" is typed as a separate keystroke group to give
+    # the background seeding an extra drain period before the hint-triggering space. The whole case
+    # is retried a few times, so a seeding that lost the race with the keystrokes only delays the
+    # test, it does not fail it.
     run_with_timeout(
-        base[0],
+        args[0],
         args,
-        "model_next_token_ghost",
-        [seed, b"SELECT "],
-        lambda o: (HINT_COLOR + "uniqExact") in o,
-    )
-
-    # 2. The predicted next token is acceptable like any other hint: step into the list with Down
-    #    (several tokens can be predicted, so one is selected explicitly, exactly like the static
-    #    multi-match case), then Tab inserts the whole selected token. Nothing is overwritten, so
-    #    "SELECT " becomes "SELECT uniqExact"; typing "FOO" right after yields the contiguous
-    #    "uniqExactFOO" only if the token was really inserted into the buffer (the ghost hint alone
-    #    would never produce that), which distinguishes acceptance from merely showing the hint.
-    run_with_timeout(
-        base[0],
-        args,
-        "model_next_token_accept",
-        [seed, b"SELECT ", b"\x1b[B", b"\t", b"FOO"],
-        lambda o: "uniqExactFOO" in o,
+        "history_seed_ghost",
+        [b"", b"SELECT", b" "],
+        lambda o: (HINT_COLOR + "anyHeavy") in o,
     )
 
 
