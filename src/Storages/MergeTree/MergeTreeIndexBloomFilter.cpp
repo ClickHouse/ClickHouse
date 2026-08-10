@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
@@ -743,6 +744,21 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
         && isStringOrFixedString(actual_type);
 }
 
+/// Convert a constant for hashing against the elements of an indexed array column, the way the
+/// functions built on arrayIndex.h (`has`, `indexOf`, `mapContainsKey`, `mapContainsValue`,
+/// `mapContains`, and `has` over a `Map`) compare it. Over a plain `String` element they compare
+/// the constant's raw padded bytes (arrayIndex.h `executeString`), so the padded form is the value
+/// to hash. The test must read the type before `getPrimitiveType` strips `LowCardinality`, whose
+/// elements do coerce.
+static Field convertConstantForArrayIndexFunction(
+    const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
+{
+    if (WhichDataType(nested_type).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
+        return convertFieldToType(value_field, *actual_type, value_type.get());
+
+    return coerceStringFieldLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
+}
+
 static ColumnPtr createColumnFromConstantArray(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool coerce_like_search_function)
 {
@@ -882,17 +898,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     out.function = RPNElement::FUNCTION_HAS;
                     const DataTypePtr & nested_type = array_type->getNestedType();
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(nested_type);
-
-                    /// Over a plain `String` element `has`/`indexOf` compare the constant's raw padded
-                    /// bytes (arrayIndex.h `executeString`), so the padded form is the value to hash.
-                    /// The test must read the type before `getPrimitiveType` strips `LowCardinality`,
-                    /// whose elements do coerce.
-                    const bool coerce = !WhichDataType(nested_type).isString()
-                        && searchFunctionCoercesConstant(value_type, actual_type);
-                    Field converted_field = coerce
-                        ? coerceStringFieldLikeSearchFunction(
-                              value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality())
-                        : convertFieldToType(value_field, *actual_type, value_type.get());
+                    Field converted_field = convertConstantForArrayIndexFunction(value_field, value_type, nested_type, actual_type);
                     if (converted_field.isNull())
                         return false;
 
@@ -981,9 +987,25 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (!array_type)
             return false;
 
+        /// `mapContainsKey`/`mapContainsValue`/`mapContains`, and `has` over a `Map`, are adapters
+        /// of the same arrayIndex.h machinery over the keys/values subcolumn, so the constant must
+        /// be coerced the same way as for `has` over an array. The subcolumn keeps the
+        /// `LowCardinality` wrapper that the `mapKeys`/`mapValues` index expression strips, so the
+        /// coercion mode must be read from the `Map` type itself, not from the index header.
+        DataTypePtr element_type;
+        if (const auto * map_type = typeid_cast<const DataTypeMap *>(key_node.getDAGNode()->result_type.get()))
+            element_type = function_name == "mapContainsValue" ? map_type->getValueType() : map_type->getKeyType();
+
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-        auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+
+        /// Without the `Map` type the padded and the coerced form cannot be told apart.
+        if (!element_type && searchFunctionCoercesConstant(value_type, actual_type))
+            return false;
+
+        Field converted_field = element_type
+            ? convertConstantForArrayIndexFunction(value_field, value_type, element_type, actual_type)
+            : convertFieldToType(value_field, *actual_type, value_type.get());
         if (converted_field.isNull())
             return false;
 
