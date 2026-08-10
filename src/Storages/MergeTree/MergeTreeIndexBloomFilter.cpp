@@ -633,7 +633,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
                 (*column)[row],
                 type,
                 json_info->is_string_cast ? nullptr : key_type,
-                json_info->missing_value_is_not_indexed ? key_type : nullptr);
+                json_info->unindexed_value);
             if (!serialized_value)
                 return false;
 
@@ -946,7 +946,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             value_field,
             value_type,
             json_info->is_string_cast ? nullptr : key_type,
-            json_info->missing_value_is_not_indexed ? key_type : nullptr);
+            json_info->unindexed_value);
         if (!serialized_value)
             return false;
 

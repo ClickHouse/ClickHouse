@@ -36,23 +36,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static bool missingStringCastCanMatch(
+static bool unindexedValueCanMatch(
     const String & function_name,
     const Field & value,
     const DataTypePtr & value_type,
     const DataTypePtr & result_type,
-    bool missing_value_is_not_indexed,
+    const std::optional<Field> & unindexed_value,
     const ContextPtr & context)
 {
-    if (!missing_value_is_not_indexed)
+    if (!unindexed_value)
         return false;
 
     if (function_name == "notEquals" || function_name == "notLike")
         return false;
 
-    Field default_value = result_type->getDefault();
     ColumnsWithTypeAndName arguments{
-        {result_type->createColumnConst(1, default_value), result_type, ""},
+        {result_type->createColumnConst(1, *unindexed_value), result_type, ""},
         {value_type->createColumnConst(1, value), value_type, ""},
     };
     auto function = FunctionFactory::instance().get(function_name, context)->build(arguments);
@@ -499,12 +498,12 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         key_index = json_info->subcolumn.header_position;
 
         const auto key_type = key_node.getDAGNode()->result_type;
-        if (missingStringCastCanMatch(
+        if (json_info->is_string_cast && unindexedValueCanMatch(
                 function_name,
                 const_value,
                 serialized_value_type,
                 key_type,
-                json_info->missing_value_is_not_indexed,
+                json_info->unindexed_value,
                 key_node.getTreeContext().getQueryContext()))
             return false;
 
@@ -554,7 +553,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 const_value,
                 serialized_value_type,
                 target_type,
-                function_name == "equals" && json_info->missing_value_is_not_indexed ? key_type : nullptr,
+                function_name == "equals" ? json_info->unindexed_value : std::nullopt,
                 serialize_quoted);
             if (!serialized_value)
                 return false;
@@ -895,7 +894,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
                 (*columns[0])[row],
                 data_types[0],
                 json_info->is_string_cast ? nullptr : key_type,
-                json_info->missing_value_is_not_indexed ? key_type : nullptr);
+                json_info->unindexed_value);
             if (!serialized_value)
                 return false;
 

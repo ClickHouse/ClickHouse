@@ -19,15 +19,22 @@ namespace DB
 ///   "a.b"            -> "a.b"
 ///   "a.b.:`Int64`"   -> "a.b"
 ///   "a.b.:`Array(Int64)`"  -> "a.b"
-static std::pair<String, bool> extractPathFromSubcolumn(std::string_view subcolumn_name)
+struct ExtractedJSONPath
+{
+    String path;
+    bool has_type_hint;
+    bool has_subcolumn_after_type_hint;
+};
+
+static ExtractedJSONPath extractPathFromSubcolumn(std::string_view subcolumn_name)
 {
     /// Dynamic type subcolumn looks like "some.path.:`TypeName`..."
     /// Find the ".:`" pattern that marks the start of the type specifier.
     auto pos = subcolumn_name.find(".:`");
     if (pos == std::string_view::npos)
-        return {String(subcolumn_name), false};
+        return {String(subcolumn_name), false, false};
 
-    return {String(subcolumn_name.substr(0, pos)), subcolumn_name.find("`.", pos + 3) != std::string_view::npos};
+    return {String(subcolumn_name.substr(0, pos)), true, subcolumn_name.find("`.", pos + 3) != std::string_view::npos};
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
@@ -57,17 +64,18 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         if (subcolumn_part.starts_with("^"))
             return std::nullopt;
 
-        auto [path, has_subcolumn_after_type_hint] = extractPathFromSubcolumn(subcolumn_part);
-        if (path.empty())
+        auto extracted_path = extractPathFromSubcolumn(subcolumn_part);
+        if (extracted_path.path.empty())
             return std::nullopt;
 
         size_t position = static_cast<size_t>(std::distance(index_columns.begin(), it));
 
         return JSONSubcolumnIndexInfo{
             .json_column_name = String(candidate_col),
-            .path = std::move(path),
+            .path = std::move(extracted_path.path),
             .header_position = position,
-            .has_subcolumn_after_type_hint = has_subcolumn_after_type_hint,
+            .has_type_hint = extracted_path.has_type_hint,
+            .has_subcolumn_after_type_hint = extracted_path.has_subcolumn_after_type_hint,
         };
     }
 
@@ -107,6 +115,19 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
     const Block & header)
 {
     return tryMatchNodeToJSONAllValuesIndex(node, header.getNames());
+}
+
+static String serializeJSONValueAsText(const Field & value, const DataTypePtr & type, bool serialize_quoted = false)
+{
+    auto column = type->createColumn();
+    column->insert(value);
+    WriteBufferFromOwnString buf;
+    const auto & serialization = type->getDefaultSerialization();
+    if (serialize_quoted)
+        serialization->serializeTextQuoted(*column, 0, buf, {});
+    else
+        serialization->serializeText(*column, 0, buf, {});
+    return buf.str();
 }
 
 static bool isJSONAllValuesMatchSafe(
@@ -166,9 +187,23 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
             if (!isJSONAllValuesMatchSafe(node, is_string_cast))
                 return std::nullopt;
 
-            const bool missing_value_is_not_indexed
-                = is_string_cast && (isDynamic(*argument_dag->result_type) || isVariant(*argument_dag->result_type));
-            return JSONAllValuesIndexInfo{std::move(*json_info), is_string_cast, missing_value_is_not_indexed};
+            std::optional<Field> unindexed_value;
+            if (json_info->has_type_hint && !canContainNull(*argument_dag->result_type))
+            {
+                if (is_string_cast)
+                    unindexed_value = serializeJSONValueAsText(
+                        argument_dag->result_type->getDefault(), argument_dag->result_type);
+                else
+                    unindexed_value = argument_dag->result_type->getDefault();
+            }
+            else if (is_string_cast
+                && (isDynamic(*argument_dag->result_type) || isVariant(*argument_dag->result_type))
+                && !canContainNull(*node_dag->result_type))
+            {
+                unindexed_value = node_dag->result_type->getDefault();
+            }
+
+            return JSONAllValuesIndexInfo{std::move(*json_info), is_string_cast, std::move(unindexed_value)};
         }
     }
 
@@ -176,7 +211,13 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
         json_info && !json_info->has_subcolumn_after_type_hint)
     {
         if (isJSONAllValuesMatchSafe(node, false))
-            return JSONAllValuesIndexInfo{std::move(*json_info), false, false};
+        {
+            const auto & result_type = node.getDAGNode()->result_type;
+            std::optional<Field> unindexed_value;
+            if (json_info->has_type_hint && !canContainNull(*result_type))
+                unindexed_value = result_type->getDefault();
+            return JSONAllValuesIndexInfo{std::move(*json_info), false, std::move(unindexed_value)};
+        }
     }
 
     return std::nullopt;
@@ -234,7 +275,7 @@ std::optional<String> tryConvertAndSerializeJSONValueAsText(
     const Field & value,
     const DataTypePtr & source_type,
     const DataTypePtr & target_type,
-    const DataTypePtr & default_type,
+    const std::optional<Field> & unindexed_value,
     bool serialize_quoted)
 {
     Field converted_value = value;
@@ -248,18 +289,10 @@ std::optional<String> tryConvertAndSerializeJSONValueAsText(
         serialization_type = target_type;
     }
 
-    if (default_type && !canContainNull(*default_type) && converted_value == default_type->getDefault())
+    if (unindexed_value && converted_value == *unindexed_value)
         return std::nullopt;
 
-    auto column = serialization_type->createColumn();
-    column->insert(converted_value);
-    WriteBufferFromOwnString buf;
-    const auto & serialization = serialization_type->getDefaultSerialization();
-    if (serialize_quoted)
-        serialization->serializeTextQuoted(*column, 0, buf, {});
-    else
-        serialization->serializeText(*column, 0, buf, {});
-    return buf.str();
+    return serializeJSONValueAsText(converted_value, serialization_type, serialize_quoted);
 }
 
 }

@@ -16,6 +16,7 @@ struct JSONSubcolumnIndexInfo
     String json_column_name;       /// e.g., "json"
     String path;                   /// e.g., "a.b"
     size_t header_position;        /// position of JSONAllPaths column in the index header
+    bool has_type_hint;
     bool has_subcolumn_after_type_hint;
 };
 
@@ -23,7 +24,7 @@ struct JSONAllValuesIndexInfo
 {
     JSONSubcolumnIndexInfo subcolumn;
     bool is_string_cast = false;
-    bool missing_value_is_not_indexed = false;
+    std::optional<Field> unindexed_value;
 };
 
 /// Try to match a column name from the filter DAG to a JSON index column in the header.
@@ -100,7 +101,7 @@ std::optional<String> tryConvertAndSerializeJSONValueAsText(
     const Field & value,
     const DataTypePtr & source_type,
     const DataTypePtr & target_type,
-    const DataTypePtr & default_type,
+    const std::optional<Field> & unindexed_value,
     bool serialize_quoted = false);
 
 }
