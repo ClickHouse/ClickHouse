@@ -3396,12 +3396,19 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
-void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(Table &, AggregatedDataWithoutKey &, Table & table_src, Arena *) const
+void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
+    Table & table_dst, AggregatedDataWithoutKey &, Table & table_src, Arena * arena) const
 {
-    /// A set method has no aggregate states. The keys already in dst stay, the keys only in src are dropped,
-    /// and the overflow row they would have fed carries no aggregate data - so there is nothing to merge.
-    /// The source is still consumed, though: releasing it here is what keeps the tables of the threads that
-    /// have not been merged yet from being held until the whole merge finishes.
+    /// The NULL group is carried over even here, exactly as the map version does: it lives outside the
+    /// cells, so the "no more keys" cutoff does not apply to it and dropping it would lose a group the
+    /// query is meant to return.
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+
+    /// A set method has no aggregate states, so the keys already in dst stay, the keys only in src are
+    /// dropped, and the overflow row they would have fed carries no aggregate data - nothing to merge. The
+    /// source is still consumed: releasing it here is what keeps the tables of the threads not yet merged
+    /// from being held until the whole merge finishes.
     table_src.clearAndShrink();
 }
 
@@ -3453,11 +3460,15 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
-void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(Table &, Table & table_src, Arena *) const
+void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(Table & table_dst, Table & table_src, Arena * arena) const
 {
+    /// See the note in `mergeDataNoMoreKeysImpl`: the NULL group lives outside the cells, so it is carried
+    /// over rather than dropped, as the map version does.
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+
     /// A set method has no aggregate states, so there is nothing to merge into the keys already in dst - but
-    /// the source is still consumed, and releasing it here is what keeps it from being held until the whole
-    /// merge finishes.
+    /// the source is still consumed, and releasing it here keeps it from being held until the merge ends.
     table_src.clearAndShrink();
 }
 
