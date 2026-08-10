@@ -98,12 +98,8 @@ public:
                     for (size_t i = 0; i < input_rows_count; ++i)
                     {
                         if constexpr (Primality::is_big_uint<ValueT>)
-                        {
                             budget.charge();
-                            result_data[i] = Primality::isProbablePrime(data[i], rounds, check_cancellation);
-                        }
-                        else
-                            result_data[i] = Primality::isProbablePrime(data[i], rounds);
+                        result_data[i] = Primality::isProbablePrime(data[i], rounds, check_cancellation);
                     }
                     return true;
                 }))

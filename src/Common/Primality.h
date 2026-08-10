@@ -203,9 +203,11 @@ inline UInt8 isPrime(T num)
     }
 }
 
-/// `rounds` is unused for narrow types - the result is exact regardless.
+/// `rounds` is unused for narrow types - the result is exact regardless. `check_cancellation` is
+/// accepted and ignored so that callers can use one call site for every width; these values cost
+/// well under a microsecond each.
 template <is_native_uint T>
-inline UInt8 isProbablePrime(T num, unsigned /*rounds*/)
+inline UInt8 isProbablePrime(T num, unsigned /*rounds*/, const std::function<void()> & = {})
 {
     return isPrime(num);
 }
