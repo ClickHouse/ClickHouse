@@ -10,9 +10,11 @@ mkdir -p "$DIR"
 # Asymmetric fixtures with per-side marker columns: a symmetric one hides column misalignment.
 printf '1,L1\n2,L2\n3,L3\n' > "$DIR/left.csv"
 printf '1,R1\n2,R2\n3,R3\n4,R4\n5,R5\n' > "$DIR/right.csv"
+printf '1,L1,"[10,11]"\n2,L2,"[20,21]"\n3,L3,"[30,31]"\n' > "$DIR/left_arr.csv"
 
 C="test_cluster_two_shards_localhost"
 L="fileCluster('$C', '${CLICKHOUSE_TEST_UNIQUE_NAME}/left.csv', 'CSV', 'a UInt32, lm String')"
+LA="fileCluster('$C', '${CLICKHOUSE_TEST_UNIQUE_NAME}/left_arr.csv', 'CSV', 'a UInt32, lm String, arr Array(UInt32)')"
 R="fileCluster('$C', '${CLICKHOUSE_TEST_UNIQUE_NAME}/right.csv', 'CSV', 'a UInt32, rm String')"
 PL="file('${CLICKHOUSE_TEST_UNIQUE_NAME}/left.csv', 'CSV', 'a UInt32, lm String')"
 PR="file('${CLICKHOUSE_TEST_UNIQUE_NAME}/right.csv', 'CSV', 'a UInt32, rm String')"
@@ -57,6 +59,10 @@ run "ARRAY JOIN then INNER" "SELECT a, lm, e, rm FROM $L AS x ARRAY JOIN [1, 2] 
 run "ARRAY JOIN then LEFT" "SELECT a, lm, e, rm FROM $L AS x ARRAY JOIN [1, 2] AS e LEFT JOIN $R AS y USING (a) ORDER BY a, e FORMAT CSV"
 run "ARRAY JOIN then CROSS" "SELECT count() FROM $L AS x ARRAY JOIN [1, 2] AS e CROSS JOIN $R AS y"
 run "ARRAY JOIN then a temporary table" "SELECT a, lm, e, tm FROM $L AS x ARRAY JOIN [1, 2] AS e INNER JOIN tt AS y USING (a) ORDER BY a, e FORMAT CSV"
+# An un-aliased ARRAY JOIN output keeps the source column's name, so a predicate naming it looks
+# like one this storage can evaluate, while shard-side that name is still the unexpanded array.
+run "WHERE on an ARRAY JOIN alias" "SELECT a, lm, e FROM $L AS x ARRAY JOIN [1, 2] AS e INNER JOIN $R AS y USING (a) WHERE e = 2 ORDER BY a FORMAT CSV"
+run "WHERE on an un-aliased ARRAY JOIN" "SELECT a, lm, arr FROM $LA AS x ARRAY JOIN arr INNER JOIN $R AS y USING (a) WHERE arr = 11 ORDER BY a FORMAT CSV"
 
 printf "SELECT '-- shapes that must not change';\n"
 run "single cluster function" "SELECT * FROM $L ORDER BY a FORMAT CSV"

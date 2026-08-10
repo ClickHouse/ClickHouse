@@ -131,6 +131,16 @@
 1,"L1",2,"T1"
 2,"L2",1,"T2"
 2,"L2",2,"T2"
+-- WHERE on an ARRAY JOIN alias
+1,"L1",2
+2,"L2",2
+3,"L3",2
+1,"L1",2
+2,"L2",2
+3,"L3",2
+-- WHERE on an un-aliased ARRAY JOIN
+1,"L1",11
+1,"L1",11
 -- shapes that must not change
 -- single cluster function
 1,"L1"

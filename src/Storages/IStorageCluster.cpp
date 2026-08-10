@@ -127,12 +127,13 @@ void IStorageCluster::read(
         if (auto * select_to_send = query_to_send->as<ASTSelectQuery>(); select_to_send && select_to_send->hasJoin())
         {
             /// A join may sit behind an ARRAY JOIN, but removeJoin() only inspects the second table
-            /// element, so drop the ARRAY JOIN ones first. The initiator applies them after the join.
+            /// element, so drop the ARRAY JOIN ones first. The initiator applies them too.
             auto & tables_to_send = select_to_send->tables()->children;
-            tables_to_send.erase(
-                std::remove_if(tables_to_send.begin(), tables_to_send.end(), [](const ASTPtr & table_element)
-                    { return table_element->as<ASTTablesInSelectQueryElement &>().array_join != nullptr; }),
-                tables_to_send.end());
+            const auto first_array_join = std::remove_if(
+                tables_to_send.begin(), tables_to_send.end(), [](const ASTPtr & table_element)
+                    { return table_element->as<ASTTablesInSelectQueryElement &>().array_join != nullptr; });
+            const bool array_join_removed = first_array_join != tables_to_send.end();
+            tables_to_send.erase(first_array_join, tables_to_send.end());
 
             TreeRewriterResult rewriter_result = *interpreter.getQueryInfo().syntax_analyzer_result;
             removeJoin(*select_to_send, rewriter_result, context);
@@ -144,6 +145,15 @@ void IStorageCluster::read(
             select_to_send->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
             select_to_send->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
             select_to_send->limit_with_ties = false;
+
+            /// An un-aliased ARRAY JOIN output keeps the source column's name, so removeJoin()
+            /// reads such a predicate as belonging to this storage and keeps it, but shard-side
+            /// the name still denotes the unexpanded array.
+            if (array_join_removed)
+            {
+                select_to_send->setExpression(ASTSelectQuery::Expression::WHERE, {});
+                select_to_send->setExpression(ASTSelectQuery::Expression::PREWHERE, {});
+            }
         }
     }
 
