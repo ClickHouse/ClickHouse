@@ -127,7 +127,7 @@ public:
 
     /// Update the per-entry size bounds applied during deserialization.
     /// Used when the cache configuration is reloaded at runtime.
-    void setEntrySizeLimits(size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
+    void setEntrySizeLimits(size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, size_t max_entry_chunks_);
 
     /// Atomic lock acquisition: `SET redis_key <token> NX PX ttl_ms`.
     /// Returns the unique lock token on success, or an empty string on failure.
@@ -227,8 +227,8 @@ private:
         size_t max_entry_size_in_rows);
 
     RedisConfiguration config;
-    size_t max_entry_chunks;
     /// Atomic because they may be updated via `setEntrySizeLimits` while a deserialization is in flight.
+    std::atomic<size_t> max_entry_chunks;
     std::atomic<size_t> max_entry_size_in_bytes;
     std::atomic<size_t> max_entry_size_in_rows;
     RedisPoolPtr getPoolForEndpoint(const RedisEndpoint & endpoint);

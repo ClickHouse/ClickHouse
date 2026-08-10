@@ -57,7 +57,8 @@ public:
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const override;
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries,
-                             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_) override;
+                             size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
+                             size_t max_entry_chunks_) override;
 
 private:
     /// IQueryResultCacheStorage interface (used by QueryResultCacheWriter)

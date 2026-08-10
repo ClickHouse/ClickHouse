@@ -273,7 +273,7 @@ public:
     virtual size_t recordQueryRun(const Key & key) = 0;
 
     /// Update cache configuration at runtime (e.g. after config reload).
-    virtual void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows) = 0;
+    virtual void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows, size_t max_entry_chunks) = 0;
 
     /// For debugging and system tables
     virtual std::vector<QueryResultCache::Cache::KeyMapped> dump() const = 0;
@@ -295,7 +295,7 @@ public:
 
     LocalQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
-    void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_) override;
+    void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, size_t max_entry_chunks_) override;
 
     QueryResultCacheReader createReader(const Key & key) override;
     QueryResultCacheWriter createWriter(

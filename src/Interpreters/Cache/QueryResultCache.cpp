@@ -25,6 +25,12 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
@@ -746,6 +752,41 @@ void QueryResultCache::Key::serializeTo(WriteBuffer & buf) const
     writeStringBinary(tag, buf);
 }
 
+namespace
+{
+
+/// Reject a malformed schema block before it reaches `NativeReader`.
+///
+/// The schema block is always written as `header->cloneEmpty()`, so its row count is zero by
+/// construction. A planted value only has to change that varint to make `NativeReader` reserve
+/// capacity for an arbitrary row count while the key is still being reconstructed, therefore any
+/// non-zero count is rejected. Each column additionally costs at least a name and a type name, so
+/// the declared column count cannot exceed the bytes left in the value either.
+void checkSchemaBlockBoundsBeforeRead(ReadBuffer & buf)
+{
+    char * const saved_position = buf.position();
+
+    UInt64 columns = 0;
+    UInt64 rows = 0;
+    readVarUInt(columns, buf);
+    readVarUInt(rows, buf);
+
+    const size_t bytes_left = buf.buffer().end() - buf.position();
+    buf.position() = saved_position;
+
+    if (rows != 0)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "The schema block of a cached query key declares {} rows, it must be empty", rows);
+
+    /// A column contributes at least a one-byte name length and a one-byte type name length.
+    if (columns > bytes_left / 2)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "The schema block of a cached query key declares {} columns but only {} bytes are left in the value",
+            columns, bytes_left);
+}
+
+}
+
 QueryResultCache::Key QueryResultCache::Key::deserializeFrom(ReadBuffer & buf)
 {
     /// Format version check — reject unknown versions as cache misses.
@@ -764,6 +805,7 @@ QueryResultCache::Key QueryResultCache::Key::deserializeFrom(ReadBuffer & buf)
     /// header: read the empty Block that carries the schema
     Block header_block;
     {
+        checkSchemaBlockBoundsBeforeRead(buf);
         NativeReader reader(buf, /*server_revision=*/0);
         header_block = reader.read();
     }
@@ -858,6 +900,46 @@ Chunk readBlockAsChunk(const Block & header, ReadBuffer & buf)
     return Chunk(block.getColumns(), block.rows());
 }
 
+/// A lower bound on the number of bytes one row of `type` occupies in the `Native` format.
+///
+/// Only used to reject impossible row counts before decoding, so it must never overestimate.
+/// Types whose per-row footprint cannot be bounded above zero contribute one byte, which is
+/// correct for every serialization that writes at least a discriminator, a size, or an index
+/// per row.
+size_t minNativeBytesPerRow(const IDataType & type)
+{
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return 1 + minNativeBytesPerRow(*nullable->getNestedType()); /// null map byte + nested value
+
+    if (typeid_cast<const DataTypeLowCardinality *>(&type))
+        return 1; /// the index is written per row and is at least one byte wide
+
+    if (typeid_cast<const DataTypeArray *>(&type) || typeid_cast<const DataTypeMap *>(&type))
+        return sizeof(ColumnArray::Offset); /// one offset per row; the nested column may be empty
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        size_t result = 0;
+        for (const auto & element : tuple->getElements())
+            result += minNativeBytesPerRow(*element);
+        return result;
+    }
+
+    if (type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return type.getSizeOfValueInMemory();
+
+    return 1;
+}
+
+/// A lower bound on the number of bytes one row of `header` occupies in the `Native` format.
+size_t minNativeBytesPerRow(const Block & header)
+{
+    size_t result = 0;
+    for (const auto & column : header)
+        result += minNativeBytesPerRow(*column.type);
+    return result;
+}
+
 /// Reject a Native block whose declared row count is impossible or exceeds the remaining row
 /// budget, without decoding it.
 ///
@@ -868,7 +950,7 @@ Chunk readBlockAsChunk(const Block & header, ReadBuffer & buf)
 ///
 /// The block starts with `columns` and `rows` as varints; both are peeked and the read position is
 /// restored, which is safe because the whole value is a single in-memory buffer.
-void checkBlockBoundsBeforeRead(ReadBuffer & buf, size_t rows_so_far, size_t max_rows)
+void checkBlockBoundsBeforeRead(ReadBuffer & buf, const Block & header, size_t rows_so_far, size_t max_rows)
 {
     char * const saved_position = buf.position();
 
@@ -880,17 +962,21 @@ void checkBlockBoundsBeforeRead(ReadBuffer & buf, size_t rows_so_far, size_t max
     const size_t bytes_left = buf.buffer().end() - buf.position();
     buf.position() = saved_position;
 
-    /// Every column costs at least one bit per row, so a block cannot declare more rows than there
-    /// are bits left in the value.
-    if (columns != 0 && rows > bytes_left * 8)
+    /// A row of the entry's schema cannot be encoded in fewer bytes than this, so the value has to
+    /// carry at least `rows * min_bytes_per_row` bytes. A blob that declares more is malformed and
+    /// must be rejected before `NativeReader` reserves capacity for the declared count.
+    const size_t min_bytes_per_row = std::max<size_t>(minNativeBytesPerRow(header), 1);
+    if (columns != 0 && rows > bytes_left / min_bytes_per_row)
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-            "Cached query result declares {} rows but only {} bytes are left in the value", rows, bytes_left);
+            "Cached query result declares {} rows but only {} bytes are left in the value "
+            "and a row of its schema takes at least {} bytes", rows, bytes_left, min_bytes_per_row);
 
     if (max_rows && (rows_so_far >= max_rows || rows > max_rows - rows_so_far))
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Cached query result exceeds max_entry_size_in_rows: a block declares {} rows on top of {} already read (max {})",
             rows, rows_so_far, max_rows);
 }
+
 
 }
 
@@ -956,7 +1042,7 @@ QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(
     entry.chunks.reserve(chunks_count);
     for (UInt32 i = 0; i < chunks_count; ++i)
     {
-        checkBlockBoundsBeforeRead(buf, total_rows, max_entry_size_in_rows);
+        checkBlockBoundsBeforeRead(buf, header, total_rows, max_entry_size_in_rows);
         entry.chunks.push_back(readBlockAsChunk(header, buf));
         check_bounds(entry.chunks.back());
     }
@@ -965,7 +1051,7 @@ QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(
     readIntBinary(has_totals, buf);
     if (has_totals)
     {
-        checkBlockBoundsBeforeRead(buf, total_rows, max_entry_size_in_rows);
+        checkBlockBoundsBeforeRead(buf, header, total_rows, max_entry_size_in_rows);
         entry.totals = readBlockAsChunk(header, buf);
         check_bounds(*entry.totals);
     }
@@ -974,7 +1060,7 @@ QueryResultCache::Entry QueryResultCache::Entry::deserializeFrom(
     readIntBinary(has_extremes, buf);
     if (has_extremes)
     {
-        checkBlockBoundsBeforeRead(buf, total_rows, max_entry_size_in_rows);
+        checkBlockBoundsBeforeRead(buf, header, total_rows, max_entry_size_in_rows);
         entry.extremes = readBlockAsChunk(header, buf);
         check_bounds(*entry.extremes);
     }
@@ -1414,10 +1500,12 @@ LocalQueryResultCache::LocalQueryResultCache(size_t max_size_in_bytes, size_t ma
     : cache(std::make_unique<TTLCachePolicy<QueryResultCache::Key, QueryResultCache::Entry, QueryResultCache::KeyHasher, QueryResultCache::EntryWeight, QueryResultCache::IsStale>>(
             CurrentMetrics::QueryCacheBytes, CurrentMetrics::QueryCacheEntries, std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
-    LocalQueryResultCache::updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
+    LocalQueryResultCache::updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_, /*max_entry_chunks_=*/0);
 }
 
-void LocalQueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+/// `max_entry_chunks_` bounds the deserialization of an externally stored entry, so it is
+/// meaningless for the in-process cache, which never deserializes anything.
+void LocalQueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_, size_t /*max_entry_chunks_*/)
 {
     std::lock_guard lock(mutex);
     cache.setMaxSizeInBytes(max_size_in_bytes);

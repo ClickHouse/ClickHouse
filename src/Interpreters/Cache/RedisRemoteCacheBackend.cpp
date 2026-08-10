@@ -124,10 +124,11 @@ bool RedisRemoteCacheBackend::isSerializedEntryStorable(const std::string & seri
         return false;
     }
 
-    if (chunks_count > max_entry_chunks)
+    const size_t max_chunks = max_entry_chunks.load(std::memory_order_relaxed);
+    if (chunks_count > max_chunks)
     {
         LOG_TRACE(logger, "Skipped remote write because the entry would be rejected on read: {} chunks > max_entry_chunks {}",
-            chunks_count, max_entry_chunks);
+            chunks_count, max_chunks);
         return false;
     }
 
@@ -136,10 +137,12 @@ bool RedisRemoteCacheBackend::isSerializedEntryStorable(const std::string & seri
 
 void RedisRemoteCacheBackend::setEntrySizeLimits(
     size_t max_entry_size_in_bytes_,
-    size_t max_entry_size_in_rows_)
+    size_t max_entry_size_in_rows_,
+    size_t max_entry_chunks_)
 {
     max_entry_size_in_bytes.store(max_entry_size_in_bytes_, std::memory_order_relaxed);
     max_entry_size_in_rows.store(max_entry_size_in_rows_, std::memory_order_relaxed);
+    max_entry_chunks.store(max_entry_chunks_, std::memory_order_relaxed);
 }
 
 RedisConnectionPtr RedisRemoteCacheBackend::borrowConnection()

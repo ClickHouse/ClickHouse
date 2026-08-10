@@ -384,7 +384,8 @@ void RemoteQueryResultCache::clear(const std::optional<String> & tag)
 
 void RemoteQueryResultCache::updateConfiguration(
     size_t /*max_size_in_bytes*/, size_t /*max_entries*/,
-    size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+    size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
+    size_t max_entry_chunks_)
 {
     {
         std::lock_guard lock(mutex);
@@ -392,7 +393,7 @@ void RemoteQueryResultCache::updateConfiguration(
         max_entry_size_in_rows = max_entry_size_in_rows_;
     }
     /// Propagate the new bounds to the Redis backend so a malformed payload still gets rejected at deserialization time.
-    backend.setEntrySizeLimits(max_entry_size_in_bytes_, max_entry_size_in_rows_);
+    backend.setEntrySizeLimits(max_entry_size_in_bytes_, max_entry_size_in_rows_, max_entry_chunks_);
     /// max_size_in_bytes and max_entries are managed by the Redis server
     /// (e.g. via `maxmemory`), so they are intentionally ignored here.
 }
