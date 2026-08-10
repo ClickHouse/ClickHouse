@@ -591,8 +591,8 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
 {
     auto prefixes_prefetch_callback_getter = [&](const NameAndTypePair & name_and_type)
     {
-        /// Resolve the per-column cache here, on the serial thread: the returned callback also runs on
-        /// the parallel prefix tasks, where `operator[]` could insert and rehash `caches` concurrently.
+        /// Resolved on the serial thread: the callback runs on the parallel prefix tasks, which must
+        /// not look `caches` up while the serial loop can still insert entries for other columns.
         auto * column_cache = &caches[name_and_type.getNameInStorage()];
         return [&, column_cache](const ISerialization::SubstreamPath & substream_path)
         {

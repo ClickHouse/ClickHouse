@@ -1,7 +1,13 @@
 part is Wide
 typed path is LowCardinality
 async: marks-load wait is measurable
+prefetch: marks-load wait is measurable
 sync: marks-load wait is measurable
-async arm scheduled background marks loads
+async: scheduled background marks loads
+prefetch: scheduled background marks loads
+prefix prefetch callback ran for every dynamic path
 async: marks loading overlaps across prefix tasks
+prefetch: marks loading overlaps across prefix tasks
 sync: marks loading overlaps across prefix tasks
+queue arm scheduled more loads than the queue holds
+queue arm: marks loading overlaps across prefix tasks
