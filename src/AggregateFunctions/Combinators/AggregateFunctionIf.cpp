@@ -113,6 +113,13 @@ public:
         filter_is_only_null = arguments[num_arguments - 1]->onlyNull();
     }
 
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        auto arguments = Base::getArgumentsThatCanBeOnlyNull();
+        arguments.insert(num_arguments - 1);
+        return arguments;
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         if (filter_is_only_null)
@@ -278,6 +285,13 @@ public:
             is_nullable[i] = arguments[i]->isNullable();
 
         filter_is_only_null = arguments.back()->onlyNull();
+    }
+
+    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    {
+        auto arguments = Base::getArgumentsThatCanBeOnlyNull();
+        arguments.insert(number_of_arguments - 1);
+        return arguments;
     }
 
     static bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
