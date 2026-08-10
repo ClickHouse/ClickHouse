@@ -18,13 +18,20 @@ INSERT INTO t_04812 SELECT number FROM numbers(300);
 CREATE ROW POLICY rp_04812 ON t_04812 FOR SELECT USING key >= 100 TO ALL;
 
 -- Must return the first three surviving rows in `key` order, never fewer, on both analyzers.
+--
+-- Every setting the narrowing depends on is pinned, because the test runner randomizes them and the
+-- bug only shows with the values below: `use_skip_indexes_on_data_read = 0` skips the narrowing
+-- altogether, and `query_plan_max_limit_for_top_k_optimization` below the `LIMIT` disables the
+-- optimization. All of them are pinned to their default values, so the query is the one a user runs.
 SELECT key FROM t_04812 ORDER BY key LIMIT 3
-    SETTINGS enable_analyzer = 0, use_skip_indexes_for_top_k = 1, max_threads = 1, enable_parallel_replicas = 0;
+    SETTINGS enable_analyzer = 0, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1,
+             query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1, enable_parallel_replicas = 0;
 
 SELECT '--';
 
 SELECT key FROM t_04812 ORDER BY key LIMIT 3
-    SETTINGS enable_analyzer = 1, use_skip_indexes_for_top_k = 1, max_threads = 1, enable_parallel_replicas = 0;
+    SETTINGS enable_analyzer = 1, use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1,
+             query_plan_max_limit_for_top_k_optimization = 1000, max_threads = 1, enable_parallel_replicas = 0;
 
 DROP ROW POLICY rp_04812 ON t_04812;
 DROP TABLE t_04812;
