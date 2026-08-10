@@ -6318,7 +6318,7 @@ The `LIMIT` is pushed down only when it is guaranteed to be safe, i.e. when ever
 - there is no `JOIN`, `ARRAY JOIN`, `SAMPLE` or `FINAL` (otherwise rows could be dropped or transformed locally, so pre-limiting is unwanted);
 - the `WHERE` clause, if any, is fully compatible and copied into the rewritten query unchanged (otherwise filtering after the remote `LIMIT` would drop some rows);
 - there is no other clause or modifier (like `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT BY`, `OFFSET`, `WITH TIES`, etc.) that may break the remote pre-limiting logic due to data reordering, aggregation or filtration;
-- the `SELECT` list maps one source row to one result row, i.e. it contains no aggregate functions, window functions or `arrayJoin` (they are evaluated locally over all the rows read from the external table);
+- the `SELECT` list maps one source row to one result row, i.e. it contains no aggregate functions, window functions or `arrayJoin` (also spelled `unnest`) (they are evaluated locally over all the rows read from the external table);
 - there is no filter that is applied locally on top of the rows read from the external table, such as a row policy or `additional_table_filters` (such a filter runs before the `LIMIT`, so pre-limiting remotely could discard rows that it would have kept).
 
 This reduces the amount of data read from and sent by the external database. Disable this setting to restore the previous behavior in case of compatibility issues.

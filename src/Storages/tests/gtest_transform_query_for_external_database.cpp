@@ -530,6 +530,23 @@ TEST(TransformQueryForExternalDatabase, Limit)
         "SELECT arrayJoin(range(column)) FROM table LIMIT 10",
         R"(SELECT "column" FROM "test"."table")");
 
+    /// `unnest` is a case-insensitive alias of `arrayJoin`. `TreeRewriter` normally rewrites it to the
+    /// canonical name before this code runs, but not when `normalize_function_names` is disabled (and
+    /// not for a secondary query of a distributed one), so the alias must be resolved here as well.
+    check(state, 1, {"column"},
+        "SELECT unnest(range(column)) FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    state.context->setSetting("normalize_function_names", false);
+    check(state, 1, {"column"},
+        "SELECT unnest(range(column)) FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT UNNEST(range(column)) FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+    state.context->setSetting("normalize_function_names", true);
+
     /// A plain projection expression does not change the number of rows, so it is still pushed down.
     check(state, 1, {"column"},
         "SELECT column + 1 FROM table LIMIT 10",

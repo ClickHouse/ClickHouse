@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Functions/FunctionFactory.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -389,7 +390,11 @@ bool isRowPreservingExpression(const ASTPtr & node)
         if (function->isWindowFunction() || function->window_definition || !function->window_name.empty())
             return false;
 
-        if (function->name == "arrayJoin")
+        /// The name is compared after resolving the aliases of ordinary functions: `arrayJoin` can
+        /// also be spelled as its case-insensitive alias `unnest`. `TreeRewriter` normalizes the
+        /// names before this code runs, but not when `normalize_function_names` is disabled and not
+        /// for a secondary query of a distributed one, so the alias has to be resolved here as well.
+        if (getFunctionCanonicalNameIfAny(function->name) == "arrayJoin")
             return false;
 
         if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
