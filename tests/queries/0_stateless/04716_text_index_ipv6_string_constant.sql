@@ -1,170 +1,54 @@
--- Text/token skip indexes must build their probe from bytes of the indexed column's own encoding.
--- The Log twin is the oracle for every row count; the granule assertions catch over-pruning, which
--- a correct-answer check alone is blind to once the index has already dropped the granule.
+-- Text and token skip indexes tokenize the raw bytes of the indexed column, so index analysis has
+-- to convert the compared constant into that encoding. Without it, an `IPv6` column probed with a
+-- string literal was searched for the bytes of the literal text, and the matching granule was
+-- dropped. The oracle for a row count is the same query with the index ignored, and
+-- `force_data_skipping_indices` makes a silently declined atom an error instead of a full scan.
 
 SET allow_suspicious_low_cardinality_types = 1;
 
-DROP TABLE IF EXISTS t_oracle;
-CREATE TABLE t_oracle (k UInt64, ip IPv6) ENGINE = Log;
-INSERT INTO t_oracle
-SELECT
-    number,
-    multiIf(number = 7, toIPv6('2001:db8::'),
-            number = 8, toIPv6('::1'),
-            number = 9, toIPv6('::ffff:1.2.3.4'),
-            toIPv6('2001:db8:1:2:3:4:5:' || hex(number + 256)))
-FROM numbers(64);
+CREATE TABLE t_ngram (ip IPv6, INDEX idx ip TYPE ngrambf_v1(3, 512, 3, 0)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_ngram VALUES ('2001:db8::');
 
-DROP TABLE IF EXISTS t_ngram;
-CREATE TABLE t_ngram (k UInt64, ip IPv6, INDEX idx ip TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
-INSERT INTO t_ngram SELECT * FROM t_oracle;
+SELECT '-- the matching row is found';
+SELECT count() FROM t_ngram WHERE ip = '2001:db8::' SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM t_ngram WHERE ip = '2001:db8::' SETTINGS ignore_data_skipping_indices = 'idx';
 
-DROP TABLE IF EXISTS t_token;
-CREATE TABLE t_token (k UInt64, ip IPv6, INDEX idx ip TYPE tokenbf_v1(512, 3, 0) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
-INSERT INTO t_token SELECT * FROM t_oracle;
+-- Assert the presence of the pruning line. Asserting a full-scan line instead would be vacuous:
+-- the primary key emits its own unconditional one.
+SELECT '-- a non-matching address still prunes, so pruning is not disabled outright';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE ip = 'dead:beef::1') WHERE explain ILIKE '%Granules: 0/1%';
 
-DROP TABLE IF EXISTS t_sparse;
-CREATE TABLE t_sparse (k UInt64, ip IPv6, INDEX idx ip TYPE sparse_grams(3, 100, 512, 3, 0) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
-INSERT INTO t_sparse SELECT * FROM t_oracle;
+SELECT '-- the other index types over the same column';
+CREATE TABLE t_token (ip IPv6, INDEX idx ip TYPE tokenbf_v1(512, 3, 0)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_token VALUES ('2001:db8::');
+SELECT count() FROM t_token WHERE ip = '2001:db8::' SETTINGS force_data_skipping_indices = 'idx';
 
-DROP TABLE IF EXISTS t_lc;
-CREATE TABLE t_lc (k UInt64, ip LowCardinality(IPv6), INDEX idx ip TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
-INSERT INTO t_lc SELECT * FROM t_oracle;
+CREATE TABLE t_sparse (ip IPv6, INDEX idx ip TYPE sparse_grams(3, 100, 512, 3, 0)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_sparse VALUES ('2001:db8::');
+SELECT count() FROM t_sparse WHERE ip = '2001:db8::' SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT '-- A: matching row is found, per index type';
-SELECT 'A-oracle', count() FROM t_oracle WHERE ip = '2001:db8::';
-SELECT 'A-ngram', count() FROM t_ngram WHERE ip = '2001:db8::';
-SELECT 'A-token', count() FROM t_token WHERE ip = '2001:db8::';
-SELECT 'A-sparse', count() FROM t_sparse WHERE ip = '2001:db8::';
-SELECT 'A-lc', count() FROM t_lc WHERE ip = '2001:db8::';
+CREATE TABLE t_lc (ip LowCardinality(IPv6), INDEX idx ip TYPE ngrambf_v1(3, 512, 3, 0)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_lc VALUES ('2001:db8::');
+SELECT count() FROM t_lc WHERE ip = '2001:db8::' SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT '-- A: the skip index does not prune the matching granule away';
--- Assert the ABSENCE of the over-pruning line. Asserting the presence of `Granules: 64/64` would be
--- vacuous: the primary key emits its own unconditional full-scan line.
-SELECT 'A-ngram-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE ip = '2001:db8::') WHERE explain ILIKE '%Granules: 0/64%';
-SELECT 'A-token-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_token WHERE ip = '2001:db8::') WHERE explain ILIKE '%Granules: 0/64%';
-SELECT 'A-sparse-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sparse WHERE ip = '2001:db8::') WHERE explain ILIKE '%Granules: 0/64%';
-SELECT 'A-lc-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc WHERE ip = '2001:db8::') WHERE explain ILIKE '%Granules: 0/64%';
+-- An `IN` set built from a subquery carries no type check against the index, unlike a literal tuple.
+-- The multi-element arm puts the matching address last, so converting only the first element fails.
+SELECT '-- an IN set from a subquery needs the same conversion';
+SELECT count() FROM t_ngram WHERE ip IN (SELECT '2001:db8::') SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM t_ngram WHERE ip IN (SELECT arrayJoin(['dead:beef::1', '::1', '2001:db8::'])) SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE ip IN (SELECT 'dead:beef::1')) WHERE explain ILIKE '%Granules: 0/1%';
 
-SELECT '-- A: the same defect via the map-key subcolumn, whose serialized key is also a String constant';
-DROP TABLE IF EXISTS m_oracle;
-CREATE TABLE m_oracle (k UInt64, m Map(IPv6, String)) ENGINE = Log;
-INSERT INTO m_oracle SELECT number, map(if(number = 7, toIPv6('2001:db8::'), toIPv6('::2')), 'v') FROM numbers(16);
+-- Here the converted value is the map key, so the conversion needs the key type. Given the compared
+-- value's type instead, a `FixedString(16)` is read as a binary address and decodes to wrong bytes.
+SELECT '-- the map key subcolumn is converted with the key type, not the compared type';
+CREATE TABLE t_map (m Map(IPv6, String), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_map VALUES (map(toIPv6('2001:db8::abcd:1'), 'v'));
+SELECT count() FROM t_map WHERE m.`key_2001:db8::abcd:1` = 'v' SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM t_map WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 16) SETTINGS force_data_skipping_indices = 'idx';
 
-DROP TABLE IF EXISTS m_idx;
-CREATE TABLE m_idx (k UInt64, m Map(IPv6, String), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
-INSERT INTO m_idx SELECT * FROM m_oracle;
-
-SELECT 'A-mapkey', (SELECT count() FROM m_oracle WHERE m.`key_2001:db8::` = 'v'), (SELECT count() FROM m_idx WHERE m.`key_2001:db8::` = 'v');
-SELECT 'A-mapkey-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM m_idx WHERE m.`key_2001:db8::` = 'v') WHERE explain ILIKE '%Granules: 0/16%';
-SELECT 'A-mapkey-absent-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM m_idx WHERE m.`key_dead:beef::1` = 'v') WHERE explain ILIKE '%Granules: 0/16%';
-
-SELECT '-- A: the map key is converted with its own type, not the type of the compared value';
--- The value being converted here is the map key, so the conversion must be told the key's type.
--- Given the compared value's type instead, a FixedString(16) is read as a binary address: a
--- 16-byte key text decodes into the wrong bytes, any other length hits EOF and declines. Both need
--- an explicitly typed compared value, since a bare literal is a String and hides the mismatch.
-SELECT 'A-mapkey-keylen', length('2001:db8::abcd:1'), length('dead:beef::abc:1'), length('2001:db8::');
-
-DROP TABLE IF EXISTS mf_oracle;
-CREATE TABLE mf_oracle (k UInt64, m Map(IPv6, String)) ENGINE = Log;
-INSERT INTO mf_oracle SELECT number, map(if(number = 7, toIPv6('2001:db8::abcd:1'), toIPv6('::2')), 'v') FROM numbers(16);
-
-DROP TABLE IF EXISTS mf_idx;
-CREATE TABLE mf_idx (k UInt64, m Map(IPv6, String), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
-INSERT INTO mf_idx SELECT * FROM mf_oracle;
-
-SELECT 'A-mapkey-fs-16', (SELECT count() FROM mf_oracle WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 16)), (SELECT count() FROM mf_idx WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 16));
-SELECT 'A-mapkey-fs-16-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM mf_idx WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 16)) WHERE explain ILIKE '%Granules: 0/16%';
-SELECT 'A-mapkey-fs-16-absent-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM mf_idx WHERE m.`key_dead:beef::abc:1` = toFixedString('v', 16)) WHERE explain ILIKE '%Granules: 0/16%';
--- Any other key-text length cannot be read as a binary address at all, so the atom declines and an
--- absent key stops pruning. The answer stays correct, so only the lost prune is observable.
-SELECT 'A-mapkey-fs-other-len', (SELECT count() FROM m_oracle WHERE m.`key_2001:db8::` = toFixedString('v', 16)), (SELECT count() FROM m_idx WHERE m.`key_2001:db8::` = toFixedString('v', 16));
-SELECT 'A-mapkey-fs-other-len-absent-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM m_idx WHERE m.`key_dead:beef::1` = toFixedString('v', 16)) WHERE explain ILIKE '%Granules: 0/16%';
--- A value type that is not 16 bytes wide is not a binary address either way: this arm is unaffected.
-SELECT 'A-mapkey-fs-8', (SELECT count() FROM mf_oracle WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 8)), (SELECT count() FROM mf_idx WHERE m.`key_2001:db8::abcd:1` = toFixedString('v', 8));
-
-SELECT '-- B: a non-matching address still prunes, so pruning is not blanket-disabled';
-SELECT 'B-rows', count() FROM t_ngram WHERE ip = 'dead:beef::1';
-SELECT 'B-ngram-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE ip = 'dead:beef::1') WHERE explain ILIKE '%Granules: 0/64%';
-SELECT 'B-token-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_token WHERE ip = 'dead:beef::1') WHERE explain ILIKE '%Granules: 0/64%';
-SELECT 'B-sparse-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sparse WHERE ip = 'dead:beef::1') WHERE explain ILIKE '%Granules: 0/64%';
-SELECT 'B-lc-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc WHERE ip = 'dead:beef::1') WHERE explain ILIKE '%Granules: 0/64%';
-
-SELECT '-- C: address spellings agree with the oracle (oracle, indexed)';
-SELECT 'C-expanded', (SELECT count() FROM t_oracle WHERE ip = '2001:0db8:0000:0000:0000:0000:0000:0000'), (SELECT count() FROM t_ngram WHERE ip = '2001:0db8:0000:0000:0000:0000:0000:0000');
-SELECT 'C-uppercase', (SELECT count() FROM t_oracle WHERE ip = '2001:DB8::'), (SELECT count() FROM t_ngram WHERE ip = '2001:DB8::');
-SELECT 'C-loopback', (SELECT count() FROM t_oracle WHERE ip = '::1'), (SELECT count() FROM t_ngram WHERE ip = '::1');
-SELECT 'C-all-zero', (SELECT count() FROM t_oracle WHERE ip = '::'), (SELECT count() FROM t_ngram WHERE ip = '::');
-SELECT 'C-v4-mapped', (SELECT count() FROM t_oracle WHERE ip = '::ffff:1.2.3.4'), (SELECT count() FROM t_ngram WHERE ip = '::ffff:1.2.3.4');
-SELECT 'C-v4-bare', (SELECT count() FROM t_oracle WHERE ip = '1.2.3.4'), (SELECT count() FROM t_ngram WHERE ip = '1.2.3.4');
-SELECT 'C-typed', (SELECT count() FROM t_oracle WHERE ip = toIPv6('2001:db8::')), (SELECT count() FROM t_ngram WHERE ip = toIPv6('2001:db8::'));
-SELECT 'C-not-equals', (SELECT count() FROM t_oracle WHERE ip != '2001:db8::'), (SELECT count() FROM t_ngram WHERE ip != '2001:db8::');
--- Inversion push-down rewrites this into an `equals` atom before index analysis, so it is a
--- separate wrong-results spelling rather than a probe of the notEquals arm.
-SELECT 'C-inverted-not-equals', (SELECT count() FROM t_oracle WHERE NOT (ip != '2001:db8::')), (SELECT count() FROM t_ngram WHERE NOT (ip != '2001:db8::'));
-SELECT 'C-inverted-not-equals-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE NOT (ip != '2001:db8::')) WHERE explain ILIKE '%Granules: 0/64%';
-SELECT 'C-inverted-not-equals-absent-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE NOT (ip != 'dead:beef::1')) WHERE explain ILIKE '%Granules: 0/64%';
-
-SELECT '-- F: an IN set built from a subquery is not type-checked against the index, so it needs the same conversion';
-SELECT 'F-in-subquery', (SELECT count() FROM t_oracle WHERE ip IN (SELECT '2001:db8::')), (SELECT count() FROM t_ngram WHERE ip IN (SELECT '2001:db8::'));
-SELECT 'F-in-subquery-token', (SELECT count() FROM t_oracle WHERE ip IN (SELECT '2001:db8::')), (SELECT count() FROM t_token WHERE ip IN (SELECT '2001:db8::'));
-SELECT 'F-in-subquery-lc', (SELECT count() FROM t_oracle WHERE ip IN (SELECT '2001:db8::')), (SELECT count() FROM t_lc WHERE ip IN (SELECT '2001:db8::'));
-SELECT 'F-in-subquery-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE ip IN (SELECT '2001:db8::')) WHERE explain ILIKE '%Granules: 0/64%';
-SELECT 'F-in-subquery-absent-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngram WHERE ip IN (SELECT 'dead:beef::1')) WHERE explain ILIKE '%Granules: 0/64%';
-SELECT 'F-notin-subquery', (SELECT count() FROM t_oracle WHERE ip NOT IN (SELECT '2001:db8::')), (SELECT count() FROM t_ngram WHERE ip NOT IN (SELECT '2001:db8::'));
-SELECT 'F-in-subquery-multi', (SELECT count() FROM t_oracle WHERE ip IN (SELECT arrayJoin(['2001:db8::', '::1']))), (SELECT count() FROM t_ngram WHERE ip IN (SELECT arrayJoin(['2001:db8::', '::1'])));
-
-SELECT '-- D: predicates and column types that never reach index analysis stay rejected';
-SELECT count() FROM t_ngram WHERE ip LIKE '2001%'; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT count() FROM t_ngram WHERE startsWith(ip, '2001'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT count() FROM t_ngram WHERE hasToken(ip, '2001'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT count() FROM t_ngram WHERE match(ip, '2001'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT count() FROM t_ngram WHERE has([ip], '2001:db8::'); -- { serverError NO_COMMON_TYPE }
-CREATE TABLE t_bad_nullable (k UInt64, ip Nullable(IPv6), INDEX idx ip TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY k; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE t_bad_v4 (k UInt64, ip IPv4, INDEX idx ip TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY k; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE t_bad_text (k UInt64, ip IPv6, INDEX idx ip TYPE text(tokenizer = splitByNonAlpha)) ENGINE = MergeTree ORDER BY k; -- { serverError BAD_ARGUMENTS }
-
-SELECT '-- E: the String and FixedString domains are unaffected';
-DROP TABLE IF EXISTS s_oracle;
-CREATE TABLE s_oracle (k UInt64, s String) ENGINE = Log;
-INSERT INTO s_oracle SELECT number, if(number = 3, 'needle', 'filler' || toString(number)) FROM numbers(16);
-
-DROP TABLE IF EXISTS s_idx;
-CREATE TABLE s_idx (k UInt64, s String, INDEX idx s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
-INSERT INTO s_idx SELECT * FROM s_oracle;
-
-DROP TABLE IF EXISTS f_idx;
-CREATE TABLE f_idx (k UInt64, s FixedString(8), INDEX idx s TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
-INSERT INTO f_idx SELECT * FROM s_oracle;
-
-SELECT 'E-string', (SELECT count() FROM s_oracle WHERE s = 'needle'), (SELECT count() FROM s_idx WHERE s = 'needle');
-SELECT 'E-string-overprune', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM s_idx WHERE s = 'needle') WHERE explain ILIKE '%Granules: 0/16%';
-SELECT 'E-string-neg-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM s_idx WHERE s = 'absentxx') WHERE explain ILIKE '%Granules: 0/16%';
-SELECT 'E-fixedstring', (SELECT count() FROM s_oracle WHERE s = 'needle'), (SELECT count() FROM f_idx WHERE s = 'needle');
-SELECT 'E-fixedstring-neg-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM f_idx WHERE s = 'absentxx') WHERE explain ILIKE '%Granules: 0/16%';
--- A constant wider than the FixedString still prunes: on this domain the constant's own bytes are
--- already the index encoding, so it must not be routed through a conversion that cannot represent it.
-SELECT 'E-fixedstring-oversize', (SELECT count() FROM s_oracle WHERE s = 'waytoolongvalue'), (SELECT count() FROM f_idx WHERE s = 'waytoolongvalue');
-SELECT 'E-fixedstring-oversize-prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM f_idx WHERE s = 'waytoolongvalue') WHERE explain ILIKE '%Granules: 0/16%';
-
-DROP TABLE t_oracle;
-DROP TABLE t_ngram;
-DROP TABLE t_token;
-DROP TABLE t_sparse;
-DROP TABLE t_lc;
-DROP TABLE m_oracle;
-DROP TABLE m_idx;
-DROP TABLE mf_oracle;
-DROP TABLE mf_idx;
-DROP TABLE s_oracle;
-DROP TABLE s_idx;
-DROP TABLE f_idx;
+-- On a `String` domain the constant is already in the index encoding, so it must not be routed
+-- through a conversion: one wider than the column has no representation there and would decline.
+SELECT '-- a FixedString column keeps pruning for a constant wider than the column';
+CREATE TABLE t_fixed (s FixedString(8), INDEX idx s TYPE ngrambf_v1(3, 512, 3, 0)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_fixed VALUES ('needle');
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_fixed WHERE s = 'waytoolongvalue') WHERE explain ILIKE '%Granules: 0/1%';

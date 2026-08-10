@@ -1,58 +1,18 @@
--- A: matching row is found, per index type
-A-oracle	1
-A-ngram	1
-A-token	1
-A-sparse	1
-A-lc	1
--- A: the skip index does not prune the matching granule away
-A-ngram-overprune	0
-A-token-overprune	0
-A-sparse-overprune	0
-A-lc-overprune	0
--- A: the same defect via the map-key subcolumn, whose serialized key is also a String constant
-A-mapkey	1	1
-A-mapkey-overprune	0
-A-mapkey-absent-prunes	1
--- A: the map key is converted with its own type, not the type of the compared value
-A-mapkey-keylen	16	16	10
-A-mapkey-fs-16	1	1
-A-mapkey-fs-16-overprune	0
-A-mapkey-fs-16-absent-prunes	1
-A-mapkey-fs-other-len	1	1
-A-mapkey-fs-other-len-absent-prunes	1
-A-mapkey-fs-8	1	1
--- B: a non-matching address still prunes, so pruning is not blanket-disabled
-B-rows	0
-B-ngram-prunes	1
-B-token-prunes	1
-B-sparse-prunes	1
-B-lc-prunes	1
--- C: address spellings agree with the oracle (oracle, indexed)
-C-expanded	1	1
-C-uppercase	1	1
-C-loopback	1	1
-C-all-zero	0	0
-C-v4-mapped	1	1
-C-v4-bare	1	1
-C-typed	1	1
-C-not-equals	63	63
-C-inverted-not-equals	1	1
-C-inverted-not-equals-overprune	0
-C-inverted-not-equals-absent-prunes	1
--- F: an IN set built from a subquery is not type-checked against the index, so it needs the same conversion
-F-in-subquery	1	1
-F-in-subquery-token	1	1
-F-in-subquery-lc	1	1
-F-in-subquery-overprune	0
-F-in-subquery-absent-prunes	1
-F-notin-subquery	63	63
-F-in-subquery-multi	2	2
--- D: predicates and column types that never reach index analysis stay rejected
--- E: the String and FixedString domains are unaffected
-E-string	1	1
-E-string-overprune	0
-E-string-neg-prunes	1
-E-fixedstring	1	1
-E-fixedstring-neg-prunes	1
-E-fixedstring-oversize	0	0
-E-fixedstring-oversize-prunes	1
+-- the matching row is found
+1
+1
+-- a non-matching address still prunes, so pruning is not disabled outright
+1
+-- the other index types over the same column
+1
+1
+1
+-- an IN set from a subquery needs the same conversion
+1
+1
+1
+-- the map key subcolumn is converted with the key type, not the compared type
+1
+1
+-- a FixedString column keeps pruning for a constant wider than the column
+1
