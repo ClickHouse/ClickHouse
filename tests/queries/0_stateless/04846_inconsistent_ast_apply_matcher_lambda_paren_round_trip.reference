@@ -1,0 +1,31 @@
+1	1
+1	1
+1
+1
+1
+1
+1
+1
+1
+SELECT * APPLY (x -> COLUMNS(\'a\')) APPLY toString FROM t
+SELECT * APPLY (x -> *) EXCEPT a FROM t
+SELECT * APPLY (x -> t.*) REPLACE (a AS a) FROM t
+SELECT * APPLY (x -> COLUMNS(\'a\') APPLY toString) APPLY length FROM t
+SELECT * EXCEPT b APPLY (x -> (x + 1)) REPLACE (a AS a) FROM t
+SELECT * APPLY (x -> (x + 1)) FROM t
+SELECT * APPLY (x -> x) FROM t
+SELECT * APPLY toString APPLY length FROM t
+SELECT * APPLY sum FROM t
+SELECT * APPLY quantile(0.5) FROM t
+SELECT * APPLY (toString, \'p_\') FROM t
+SELECT * APPLY (x -> f(x), \'p_\') FROM t
+SELECT * APPLY (x -> COLUMNS(\'a\'), \'p_\') APPLY toString FROM t
+SELECT * EXCEPT (a, b) FROM t
+SELECT * EXCEPT STRICT a FROM t
+SELECT * REPLACE (a + 1 AS a) FROM t
+plus(a, 1)	plus(b, 1)
+2	3
+toString(multiply(a, 2))	toString(multiply(b, 2))
+2	4
+toString(a)	toString(b)
+1	2
