@@ -135,12 +135,6 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     if (!remove_property.empty())
         w.writeString("remove_property", remove_property);
 
-    /// The shift of the internal `SHIFT ROWS TTL BY <n> SECOND` command (see
-    /// `AlterCommands::getMutationCommands`). `formatImpl` emits it, so it must round-trip through
-    /// JSON as well.
-    if (ttl_shift != 0)
-        w.writeInt("ttl_shift", ttl_shift);
-
     w.writeChild("col_decl", col_decl);
     w.writeChild("column", column);
     w.writeChild("order_by", order_by);
@@ -213,15 +207,6 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     snapshot_name = r.getString("snapshot_name");
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
-
-    /// See `writeJSON`. `formatImpl` prints the shift only for `SHIFT ROWS TTL BY`, so a shift on any
-    /// other command type could only come from malformed `clickhouse_json`; reject it instead of
-    /// silently ignoring the field.
-    ttl_shift = r.getInt("ttl_shift");
-    if (ttl_shift != 0 && type != ASTAlterCommand::SHIFT_ROWS_TTL)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "'ttl_shift' is only valid for the SHIFT ROWS TTL BY command, not '{}', during AST JSON deserialization",
-            magic_enum::enum_name(type));
 
     /// `order_by`, `sample_by`, `predicate`, `ttl`, `settings_resets`, `execute_args` and similar
     /// are arbitrary expressions/lists with no single parser-produced node type, so they are
@@ -1005,10 +990,6 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
         }
-    }
-    else if (type == ASTAlterCommand::SHIFT_ROWS_TTL)
-    {
-        ostr << "SHIFT ROWS TTL BY " << ttl_shift << " SECOND";
     }
     else if (type == ASTAlterCommand::REWRITE_PARTS)
     {

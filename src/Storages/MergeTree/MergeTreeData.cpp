@@ -5941,11 +5941,8 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
             /// MATERIALIZE TTL rewrites parts to apply expiration, bypassing the UNIQUE KEY
             /// dedup path (like MATERIALIZE COLUMN below) — and TTL is unsupported anyway
             /// while merges are disabled. Reject so an ATTACH-loaded UK+TTL table cannot
-            /// materialize it. `SHIFT_ROWS_TTL` is the same materialization recorded in
-            /// the shift form: it only shifts the stored TTL bounds for the parts that can be
-            /// proven shiftable and falls back to the regular rewrite for the rest, so it must
-            /// be rejected here as well.
-            if (command.type == MutationCommand::MATERIALIZE_TTL || command.type == MutationCommand::SHIFT_ROWS_TTL)
+            /// materialize it.
+            if (command.type == MutationCommand::MATERIALIZE_TTL)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
 

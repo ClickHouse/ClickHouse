@@ -1,5 +1,5 @@
--- Correctness of the fast `MODIFY TTL` optimization. The fast path only shifts each part's stored TTL
--- timestamps by a constant, so it must:
+-- Correctness of the fast path of `MATERIALIZE TTL` (which is what `MODIFY TTL` materializes). The fast
+-- path only shifts a part's stored TTL timestamps by a constant, so it must:
 --   * handle every TTL result type (Date, DateTime, Date32, DateTime64) without a logical error;
 --   * fall back to a full rewrite when the delta is not a provably constant number of seconds
 --     (calendar month/year intervals, day/week intervals in a DST time zone, column-dependent
@@ -13,7 +13,6 @@
 
 SET alter_sync = 2;
 SET allow_suspicious_ttl_expressions = 1;
-SET enable_modify_ttl_by_extending_time_interval = 1;
 
 SELECT 'Date32 TTL shortened so every row expires';
 DROP TABLE IF EXISTS t_ttl_date32;
@@ -91,13 +90,12 @@ DROP TABLE t_ttl_batch;
 SELECT 'Batched ALTER adding a column with a TTL falls back to the regular rewrite';
 DROP TABLE IF EXISTS t_ttl_batch2;
 -- `ADD COLUMN` is not a TTL alter by itself, so the `MODIFY TTL` command is the one that triggers
--- materialization here; it must still notice the column TTL introduced by the sibling command and
--- use the regular `MATERIALIZE TTL` instead of the internal `SHIFT ROWS TTL BY` form.
+-- materialization here; the new column TTL introduced by the sibling command must still be
+-- materialized, so no part may take the shift fast path.
 CREATE TABLE t_ttl_batch2 (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 300 DAY;
 INSERT INTO t_ttl_batch2 SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
 ALTER TABLE t_ttl_batch2 ADD COLUMN x String TTL d + INTERVAL 10 DAY, MODIFY TTL d + INTERVAL 200 DAY;
 SELECT count() FROM t_ttl_batch2;
-SELECT countIf(command LIKE '%SHIFT ROWS TTL BY%') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch2';
 DROP TABLE t_ttl_batch2;
 
 SELECT 'Batched ALTER adding the column the new TTL references falls back instead of throwing';
@@ -109,7 +107,6 @@ CREATE TABLE t_ttl_batch3 (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDE
 INSERT INTO t_ttl_batch3 SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
 ALTER TABLE t_ttl_batch3 ADD COLUMN d2 DateTime('UTC') DEFAULT d, MODIFY TTL d2 + INTERVAL 10 DAY;
 SELECT count() FROM t_ttl_batch3;
-SELECT countIf(command LIKE '%SHIFT ROWS TTL BY%') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch3';
 DROP TABLE t_ttl_batch3;
 
 SELECT 'Batched ALTER changing the default of the TTL column falls back to the regular rewrite';
@@ -121,7 +118,6 @@ CREATE TABLE t_ttl_batch4 (id UInt32, d DateTime('UTC'), d2 DateTime('UTC') DEFA
 INSERT INTO t_ttl_batch4 (id, d) SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
 ALTER TABLE t_ttl_batch4 MODIFY COLUMN d2 DateTime('UTC') DEFAULT d + INTERVAL 1 DAY, MODIFY TTL d2 + INTERVAL 10 DAY;
 SELECT count() FROM t_ttl_batch4;
-SELECT countIf(command LIKE '%SHIFT ROWS TTL BY%') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch4';
 DROP TABLE t_ttl_batch4;
 
 SELECT 'Part lagging a standalone metadata-only DEFAULT change of the TTL column falls back';
@@ -145,9 +141,9 @@ ALTER TABLE t_ttl_lag_default MODIFY COLUMN d2 DateTime('UTC') DEFAULT d + INTER
 -- applying it to the stored bounds would declare the part expired (now + 100 - 150 days), so the next
 -- merge would drop every row, while the true expiry is d + 2000 + 50 = now + 1050 days. The fast path
 -- must reject a part that does not physically store the TTL source column and fall back to the regular
--- recalculation. The ALTER itself is still recorded in the `SHIFT ROWS TTL BY` form (that decision is table-wide), so
--- the fallback is asserted on the part's resulting TTL bounds: recalculated from the current DEFAULT
--- they are far in the future, whereas a blind shift of the stored bounds puts them in the past.
+-- recalculation. The fallback is asserted on the part's resulting TTL bounds: recalculated from the
+-- current DEFAULT they are far in the future, whereas a blind shift of the stored bounds puts them in
+-- the past.
 ALTER TABLE t_ttl_lag_default MODIFY TTL d2 + INTERVAL 50 DAY;
 SELECT count() FROM t_ttl_lag_default;
 SELECT delete_ttl_info_max > now('UTC') + INTERVAL 1000 DAY FROM system.parts
@@ -167,8 +163,7 @@ SELECT 'materialize_ttl_recalculate_only must not delete rows, only refresh the 
 DROP TABLE IF EXISTS t_ttl_recalc_only;
 -- With `materialize_ttl_recalculate_only` the regular `MATERIALIZE TTL` never rewrites a part, so
 -- expired rows stay until the next merge. The fast path must behave the same: it may shift the stored
--- TTL bounds (the mutation is still recorded in the `SHIFT ROWS TTL BY` form below), but it must not replace a fully
--- expired part with an empty one.
+-- TTL bounds, but it must not replace a fully expired part with an empty one.
 CREATE TABLE t_ttl_recalc_only (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id
     TTL d + INTERVAL 300 DAY SETTINGS materialize_ttl_recalculate_only = 1;
 -- The refreshed metadata marks the part as fully expired, so a background TTL merge is free to drop
@@ -178,5 +173,40 @@ SYSTEM STOP TTL MERGES t_ttl_recalc_only;
 INSERT INTO t_ttl_recalc_only SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
 ALTER TABLE t_ttl_recalc_only MODIFY TTL d + INTERVAL 10 DAY;
 SELECT count() FROM t_ttl_recalc_only;
-SELECT countIf(command LIKE '%SHIFT ROWS TTL BY%') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_recalc_only';
 DROP TABLE t_ttl_recalc_only;
+
+SELECT 'The fast path reads no data at all';
+DROP TABLE IF EXISTS t_ttl_no_read;
+-- A provable constant +100 day extension of the sole rows TTL, with no row expired before or after: the
+-- part is cloned and only its stored TTL bounds are shifted, so the mutation reads nothing. The regular
+-- rewrite would read every row of the part, so this is what pins the optimization down - the resulting
+-- data and TTL bounds are identical either way, only the work done differs.
+-- `min_bytes_for_full_part_storage` is pinned because the in-place rewrite of `ttl.txt` needs the part's
+-- files to be stored separately; a packed part takes the regular rewrite.
+CREATE TABLE t_ttl_no_read (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id
+    TTL d + INTERVAL 300 DAY
+    SETTINGS min_bytes_for_full_part_storage = 0, materialize_ttl_recalculate_only = 0;
+INSERT INTO t_ttl_no_read SELECT number, now('UTC') FROM numbers(1000);
+ALTER TABLE t_ttl_no_read MODIFY TTL d + INTERVAL 400 DAY;
+SELECT count() FROM t_ttl_no_read;
+SYSTEM FLUSH LOGS part_log;
+SELECT read_rows FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_ttl_no_read' AND event_type = 'MutatePart';
+DROP TABLE t_ttl_no_read;
+
+SELECT 'MATERIALIZE TTL IN PARTITION must not touch the other partitions';
+DROP TABLE IF EXISTS t_ttl_in_partition;
+-- `MATERIALIZE TTL IN PARTITION` applies to one partition only, and the fast path must respect that
+-- scope. Both parts start with valid rows-TTL bounds, then `materialize_ttl_after_modify = 0` moves the
+-- table's TTL 100 days forward without touching them - so both parts are now shiftable by a provable
+-- +100 days. Materializing partition 0 alone must refresh only that partition's bounds and leave
+-- partition 1 with its old ones, i.e. the two must end up exactly 100 days apart.
+CREATE TABLE t_ttl_in_partition (p UInt32, d DateTime('UTC')) ENGINE = MergeTree PARTITION BY p ORDER BY d
+    TTL d + INTERVAL 300 DAY
+    SETTINGS min_bytes_for_full_part_storage = 0;
+INSERT INTO t_ttl_in_partition SELECT number % 2, now('UTC') FROM numbers(1000);
+ALTER TABLE t_ttl_in_partition MODIFY TTL d + INTERVAL 400 DAY SETTINGS materialize_ttl_after_modify = 0;
+ALTER TABLE t_ttl_in_partition MATERIALIZE TTL IN PARTITION 0 SETTINGS mutations_sync = 2;
+SELECT dateDiff('day', min(delete_ttl_info_max), max(delete_ttl_info_max)) FROM system.parts
+WHERE database = currentDatabase() AND table = 't_ttl_in_partition' AND active;
+DROP TABLE t_ttl_in_partition;

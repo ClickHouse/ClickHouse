@@ -63,7 +63,7 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
 
     /// Propagate the rows-TTL fingerprint (expression and time zone). The result is known only if every
     /// merged part that carries rows-TTL data agrees on it; otherwise it becomes empty (unknown), which
-    /// forces the fast `MODIFY TTL` path to fall back to a full rewrite. Presence of rows-TTL data is
+    /// forces the fast `MATERIALIZE TTL` path to fall back to a full rewrite. Presence of rows-TTL data is
     /// detected via `table_ttl.min`, so this must run before merging `table_ttl` below.
     if (other_infos.table_ttl.min != 0)
     {

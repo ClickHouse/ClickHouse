@@ -1,11 +1,10 @@
--- The fast `MODIFY TTL` path proves the constant TTL delta under the CURRENT column definitions, but a
+-- The fast `MATERIALIZE TTL` path proves the constant TTL delta under the CURRENT column definitions, but a
 -- part's stored TTL timestamps were computed under the definitions in effect when it was written. A
 -- `DateTime` time zone change is a metadata-only alter (`DataTypeDateTime::equals` ignores the time zone),
 -- so without the recorded time zone fingerprint a part written under a DST-observing zone could be shifted
 -- by a delta proven under a fixed-offset one, and the shifted bounds would be off by the DST offset.
 
 SET alter_sync = 2;
-SET enable_modify_ttl_by_extending_time_interval = 1;
 
 DROP TABLE IF EXISTS t_ttl_timezone_change;
 CREATE TABLE t_ttl_timezone_change (d DateTime('Europe/Berlin'), v UInt32)

@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 bool MutationCommand::isBarrierCommand() const
 {
-    return type == RENAME_COLUMN || type == SHIFT_ROWS_TTL;
+    return type == RENAME_COLUMN;
 }
 
 bool MutationCommand::isPureMetadataCommand() const
@@ -268,12 +268,6 @@ std::optional<MutationCommand> MutationCommand::parse(
     if (command.type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         res.type = MATERIALIZE_TTL;
-        return res;
-    }
-    if (command.type == ASTAlterCommand::SHIFT_ROWS_TTL)
-    {
-        res.type = SHIFT_ROWS_TTL;
-        res.ttl_shift = command.ttl_shift;
         return res;
     }
     if (command.type == ASTAlterCommand::REWRITE_PARTS)

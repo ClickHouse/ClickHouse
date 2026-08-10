@@ -1331,8 +1331,8 @@ std::optional<TTLShiftedColumn> tryAnalyzeTTLShift(const ASTPtr & node)
     return result;
 }
 
-}
-
+/// See the comment on the exported `tryComputeConstantTTLDelta` in the header: this is the same proof,
+/// with the old rows TTL already parsed and built into a `TTLDescription`.
 std::optional<time_t> tryComputeConstantTTLDelta(const TTLDescription & old_ttl, const TTLDescription & new_ttl)
 {
     if (!old_ttl.expression_ast || !new_ttl.expression_ast)
@@ -1397,6 +1397,8 @@ std::optional<time_t> tryComputeConstantTTLDelta(const TTLDescription & old_ttl,
         return {};
 
     return delta;
+}
+
 }
 
 String getRowsTTLTimeZoneFingerprint(const TTLDescription & rows_ttl)

@@ -66,7 +66,6 @@ namespace Setting
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
-    extern const SettingsBool enable_modify_ttl_by_extending_time_interval;
     extern const SettingsBool flatten_nested;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -2212,24 +2211,6 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-static MutationCommand createShiftRowsTTLCommand(time_t shift)
-{
-    MutationCommand command;
-    auto ast = make_intrusive<ASTAlterCommand>();
-    ast->type = ASTAlterCommand::SHIFT_ROWS_TTL;
-    ast->ttl_shift = shift;
-    command.type = MutationCommand::SHIFT_ROWS_TTL;
-    /// `ast_text` is what gets persisted to the replicated log / ZooKeeper for this mutation,
-    /// serialized as `SHIFT ROWS TTL BY <n> SECOND`. This syntax is intentionally not understood by
-    /// servers built without the fast `MODIFY TTL` optimization, so a mixed-version cluster cannot
-    /// process such a mutation until every replica is upgraded. This is why the optimization is
-    /// gated behind the `enable_modify_ttl_by_extending_time_interval` setting, disabled by default:
-    /// the user asserts that every server that may read this mutation entry understands the format.
-    command.ast_text = ast->formatWithSecretsOneLine();
-    command.ttl_shift = shift;
-    return command;
-}
-
 MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
 {
     /// Save a copy of the original metadata before applying commands.
@@ -2271,32 +2252,6 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
         {
             if (alter_cmd.isTTLAlter(original_metadata))
             {
-                /// SHIFT_ROWS_TTL cannot be executed together with other commands.
-                if (result.empty() && settings[Setting::enable_modify_ttl_by_extending_time_interval])
-                {
-                    /// The fast command materializes only the rows-TTL shift of this `MODIFY TTL`
-                    /// command, and the shift is proven against `original_metadata`. Any sibling
-                    /// command in the batch can invalidate that proof: another TTL-affecting command
-                    /// would never be materialized by the fast path, and even a metadata-only column
-                    /// change can alter the meaning of the columns the TTL expression reads — e.g.
-                    /// `ADD COLUMN d2 DateTime DEFAULT d, MODIFY TTL d2 + INTERVAL 10 DAY` references
-                    /// a column that does not exist in the original metadata, and
-                    /// `MODIFY COLUMN d2 DateTime DEFAULT d + INTERVAL 1 DAY, MODIFY TTL d2 + ...`
-                    /// changes the historical value of `d2` for parts where it is not stored.
-                    /// So the fast path applies only when `MODIFY TTL` is the sole command.
-                    if (this->size() == 1)
-                    {
-                        /// Try optimizing TTL changes for the same column.
-                        /// Use `original_metadata`: `metadata` already has the new TTL applied above,
-                        /// so the old TTL needed to compute the delta is only available in the original copy.
-                        /// A zero delta (the TTL is unchanged) falls through to the regular rewrite.
-                        if (auto delta = tryOptimizeModifyTTL(original_metadata, context, alter_cmd); delta.value_or(0) != 0)
-                        {
-                            result.push_back(createShiftRowsTTLCommand(*delta));
-                            break;
-                        }
-                    }
-                }
                 result.push_back(createMaterializeTTLCommand());
                 break;
             }
@@ -2304,45 +2259,6 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     }
 
     return result;
-}
-
-std::optional<time_t> AlterCommands::tryOptimizeModifyTTL(const StorageInMemoryMetadata & metadata, ContextPtr context, const AlterCommand & alter_cmd) const
-{
-    if (alter_cmd.type != AlterCommand::MODIFY_TTL || !alter_cmd.ttl || !metadata.hasAnyTableTTL())
-        return {};
-
-    TTLTableDescription new_table_ttl = TTLTableDescription::getTTLForTableFromAST(
-        alter_cmd.ttl,
-        metadata.columns,
-        context,
-        metadata.primary_key,
-        context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions] ? TTLValidationMode::SkipValidation
-                                                                             : TTLValidationMode::Validate);
-
-    /// Only optimize when the single unconditional rows TTL (`TTL <expr>`) is the one and only TTL in
-    /// the table, both before and after the change. The fast path shifts each part's aggregate
-    /// `part_min_ttl`/`part_max_ttl`, and those aggregates also include every column TTL and WHERE /
-    /// MOVE / RECOMPRESS / GROUP BY TTL, which must not be shifted; so any of them forces the regular
-    /// rewrite.
-    if (!new_table_ttl.rows_ttl.expression_ast || !new_table_ttl.rows_where_ttl.empty() || !new_table_ttl.move_ttl.empty()
-        || !new_table_ttl.recompression_ttl.empty() || !new_table_ttl.group_by_ttl.empty())
-        return {};
-
-    if (metadata.hasAnyColumnTTL())
-        return {};
-
-    const TTLTableDescription & old_table_ttl = metadata.table_ttl;
-    if (!old_table_ttl.rows_ttl.expression_ast || !old_table_ttl.rows_where_ttl.empty() || !old_table_ttl.move_ttl.empty()
-        || !old_table_ttl.recompression_ttl.empty() || !old_table_ttl.group_by_ttl.empty())
-        return {};
-
-    /// The fast path merely shifts each part's stored TTL timestamps by a constant. That is correct
-    /// only when `new_ttl(row) - old_ttl(row)` is the same constant for every row. `tryComputeConstantTTLDelta`
-    /// proves this structurally (the same single date/time column plus constant fixed-length intervals)
-    /// and returns std::nullopt for the unprovable cases (calendar month/year intervals, DST-sensitive
-    /// day/week intervals, column-dependent expressions, or unsupported result types), so we
-    /// transparently fall back to the regular `MATERIALIZE TTL`.
-    return tryComputeConstantTTLDelta(old_table_ttl.rows_ttl, new_table_ttl.rows_ttl);
 }
 
 }

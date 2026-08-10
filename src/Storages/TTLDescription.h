@@ -196,10 +196,14 @@ struct TTLTableDescription
         TTLValidationMode validation_mode);
 };
 
-/// Used by the fast `MODIFY TTL` optimization to decide whether a rows-TTL change can be applied by
-/// merely shifting each part's stored TTL timestamps instead of rewriting the data. That is correct
+/// Used by the fast path of `MATERIALIZE TTL` to decide whether a rows-TTL change can be applied by
+/// merely shifting a part's stored TTL timestamps instead of rewriting the data. That is correct
 /// only when the change adds the same constant number of seconds to every row's expiry time, i.e.
 /// when `new_ttl(row) - old_ttl(row)` does not depend on the row.
+///
+/// The old rows TTL is given as its serialized expression string, as stored in the part's TTL info
+/// fingerprint; it is parsed and built against `columns`/`primary_key`, and any parse/build failure
+/// yields `std::nullopt` (fall back).
 ///
 /// This proves that condition structurally: both expressions must be the same single date/time column
 /// shifted by constant fixed-length intervals (`col`, `col + INTERVAL N DAY`, `col - toIntervalHour(N)`,
@@ -214,12 +218,6 @@ struct TTLTableDescription
 /// functions, DST-sensitive day/week intervals, or an unsupported result type). A `std::nullopt` result
 /// means the fast path must not be used and the caller must fall back to a regular `MATERIALIZE TTL`
 /// rewrite. The function never throws for an unoptimizable input; it returns `std::nullopt` instead.
-std::optional<time_t> tryComputeConstantTTLDelta(const TTLDescription & old_ttl, const TTLDescription & new_ttl);
-
-/// Overload where the old rows-TTL is given as its serialized expression string (as stored in a part's
-/// TTL info fingerprint). It is parsed and built against `columns`/`primary_key`; any parse/build failure
-/// yields `std::nullopt` (fall back). Used by the fast `MODIFY TTL` path to verify, per part, that the
-/// part's stored TTL timestamps really shift to the new TTL by a single constant.
 std::optional<time_t> tryComputeConstantTTLDelta(
     const String & old_ttl_expression, const TTLDescription & new_ttl,
     const ColumnsDescription & columns, const KeyDescription & primary_key, const ContextPtr & context);
@@ -229,7 +227,7 @@ std::optional<time_t> tryComputeConstantTTLDelta(
 /// local wall-clock time, so the shift it produces is a property of that zone) and the server time zone
 /// otherwise (a `Date`/`Date32` TTL result is turned into a timestamp with `DateLUT::serverTimezoneInstance`).
 ///
-/// The fast `MODIFY TTL` path records this next to the part's TTL expression fingerprint and requires it to
+/// The fast `MATERIALIZE TTL` path records this next to the part's TTL expression fingerprint and requires it to
 /// still match, because neither the expression text nor the part's column type pins the zone down:
 /// `DataTypeDateTime::equals` ignores the time zone, `DataTypeDateTime64::equals` compares only the scale,
 /// and the server time zone is not part of the table metadata at all. Without it, a part written under one

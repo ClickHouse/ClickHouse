@@ -3731,7 +3731,7 @@ bool MutateTask::prepare()
 
     /// Clone the source part (hardlinking its files) into a new part with the target mutation
     /// version, without rewriting any data. Used both when a part is untouched by the mutation
-    /// and by the fast `MODIFY TTL` path below.
+    /// and by the fast `MATERIALIZE TTL` path below.
     auto clone_part = [&]() -> std::pair<MergeTreeData::MutableDataPartPtr, scope_guard>
     {
         NameSet files_to_copy_instead_of_hardlinks;
@@ -3763,27 +3763,33 @@ bool MutateTask::prepare()
             ctx->context->getReadSettings(), ctx->context->getWriteSettings(), true/*must_on_same_disk*/);
     };
 
-    /// Fast `MODIFY TTL`: instead of rewriting every part, shift each part's TTL metadata by the
-    /// delta between the old and new TTL (computed in `AlterCommands::tryOptimizeModifyTTL`). Per part:
+    /// Fast path of `MATERIALIZE TTL` (which is also what `MODIFY TTL` materializes): when the part's
+    /// stored expiry timestamps map to the current rows TTL by a single constant shift, the same result
+    /// can be reached without reading or rewriting any data. Per part:
     ///   * fully expired under the new TTL  -> replace with an empty part;
     ///   * not yet expired                  -> clone the part and shift its `ttl.txt` in place;
-    ///   * partially expired                -> fall back to a regular `MATERIALIZE TTL` rewrite.
-    const bool is_shift_rows_ttl = std::ranges::any_of(
-        *ctx->commands, [](const auto & command) { return command.type == MutationCommand::SHIFT_ROWS_TTL; });
+    ///   * partially expired                -> fall back to the regular `MATERIALIZE TTL` rewrite.
+    /// Anything the shift cannot be proven for falls back as well, so this is a pure optimization of the
+    /// existing command: no new syntax, nothing new persisted in the mutation entry, and the fast path is
+    /// decided independently by every replica when it executes the mutation.
+    /// `canSkipMutationCommandForPart` must be consulted first: `MATERIALIZE TTL IN PARTITION` does not
+    /// apply to a part of another partition at all, and such a part must stay untouched rather than get
+    /// its TTL metadata shifted here.
+    const bool is_single_materialize_ttl = ctx->commands->size() == 1
+        && ctx->commands->front().type == MutationCommand::MATERIALIZE_TTL
+        && !canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, ctx->commands->front(), context_for_reading);
 
-    if (is_shift_rows_ttl)
+    if (is_single_materialize_ttl)
     {
-        if (ctx->commands->size() != 1)
-            throw Exception(ErrorCodes::ABORTED, "SHIFT_ROWS_TTL must be the only mutation command, cancelling mutation.");
-
-        /// Recompute the shift for THIS part against the rows-TTL expression that its stored timestamps
-        /// were actually computed under (its `table_ttl_expression` fingerprint), rather than trusting the
-        /// table-wide delta from the ALTER. This keeps the optimization correct even if the part is stale
-        /// w.r.t. the current metadata (for example after an earlier
+        /// Prove the shift for THIS part against the rows-TTL expression that its stored timestamps were
+        /// actually computed under (its `table_ttl_expression` fingerprint). Doing the proof per part -
+        /// rather than once for the whole table in the ALTER - is what keeps the optimization correct when
+        /// a part is stale w.r.t. the current metadata (for example after an earlier
         /// `MODIFY TTL ... SETTINGS materialize_ttl_after_modify = 0` that changed the metadata without
-        /// recalculating parts). When the stored expiry times do not map to the new TTL by a single
-        /// constant shift, or the part's fingerprint is unknown, `delta` stays empty and we fall back to a
-        /// regular `MATERIALIZE TTL` rewrite for this part below.
+        /// recalculating parts), and it is also what lets a plain `ALTER TABLE ... MATERIALIZE TTL` benefit.
+        /// When the stored expiry times do not map to the current TTL by a single constant shift, or the
+        /// part's fingerprint is unknown, `delta` stays empty and we fall back to a regular
+        /// `MATERIALIZE TTL` rewrite for this part below.
         ///
         /// The part must also carry TTL info for the rows TTL and nothing else: its aggregate
         /// `part_min_ttl`/`part_max_ttl` are the bounds over ALL its TTLs, so any other TTL info (e.g.
@@ -3805,10 +3811,20 @@ bool MutateTask::prepare()
         const bool part_lags_conversions = !alter_conversions->getRenameMap().empty()
             || alter_conversions->hasMutations() || alter_conversions->hasPatches();
 
+        /// The unconditional rows TTL (`TTL <expr>`) must also be the one and only TTL of the table right
+        /// now. The shift only ever touches the part's rows-TTL info, while `MATERIALIZE TTL` is expected
+        /// to (re)compute the info for every TTL of the table - so if the table has a column, WHERE, MOVE,
+        /// RECOMPRESS or GROUP BY TTL, a part written before it was added would silently keep missing its
+        /// info instead of getting it computed.
+        const bool table_has_only_rows_ttl = ctx->metadata_snapshot->hasRowsTTL()
+            && !ctx->metadata_snapshot->hasAnyColumnTTL() && !ctx->metadata_snapshot->hasAnyRowsWhereTTL()
+            && !ctx->metadata_snapshot->hasAnyMoveTTL() && !ctx->metadata_snapshot->hasAnyRecompressionTTL()
+            && !ctx->metadata_snapshot->hasAnyGroupByTTL();
+
         std::optional<time_t> delta;
         String new_ttl_expression;
         String new_ttl_timezone;
-        if (part_has_only_rows_ttl && !part_lags_conversions && ctx->metadata_snapshot->hasRowsTTL())
+        if (part_has_only_rows_ttl && !part_lags_conversions && table_has_only_rows_ttl)
         {
             auto rows_ttl = ctx->metadata_snapshot->getRowsTTL();
             new_ttl_expression = rows_ttl.result_column;
@@ -3855,7 +3871,7 @@ bool MutateTask::prepare()
         /// The whole part is expired under the new TTL: replace it with an empty part.
         if (delta && !recalculate_only && source_ttl_infos.table_ttl.max + *delta <= ctx->time_of_mutation)
         {
-            LOG_TRACE(ctx->log, "Part {} is fully expired after MODIFY TTL, creating empty part with mutation version {}",
+            LOG_TRACE(ctx->log, "Part {} is fully expired after MATERIALIZE TTL, creating empty part with mutation version {}",
                 ctx->source_part->name, ctx->future_part->part_info.mutation);
 
             auto [empty_part, lock] = ctx->data->createEmptyPart(
@@ -3878,7 +3894,7 @@ bool MutateTask::prepare()
         if (delta && (recalculate_only || source_ttl_infos.table_ttl.min + *delta > ctx->time_of_mutation)
             && isFullPartStorage(ctx->source_part->getDataPartStorage()))
         {
-            LOG_TRACE(ctx->log, "Part {} is not expired after MODIFY TTL, cloning and shifting TTL by {} seconds to mutation version {}",
+            LOG_TRACE(ctx->log, "Part {} is not expired after MATERIALIZE TTL, cloning and shifting TTL by {} seconds to mutation version {}",
                 ctx->source_part->name, *delta, ctx->future_part->part_info.mutation);
 
             auto [part, lock] = clone_part();
@@ -3930,21 +3946,14 @@ bool MutateTask::prepare()
         }
 
         /// The part is only partially expired, or its per-part delta could not be proven constant
-        /// (unknown/stale fingerprint, calendar/DST interval, or column-dependent TTL): fall back to a
-        /// regular `MATERIALIZE TTL` rewrite below, which recomputes the TTL from the actual data.
-        MutationCommand materialize_ttl;
-        materialize_ttl.type = MutationCommand::MATERIALIZE_TTL;
-        materialize_ttl.ast_text = "MATERIALIZE TTL";
-        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, materialize_ttl, context_for_reading))
-            ctx->commands_for_part.emplace_back(std::move(materialize_ttl));
+        /// (unknown/stale fingerprint, calendar/DST interval, or column-dependent TTL): fall through to
+        /// the regular `MATERIALIZE TTL` rewrite below, which recomputes the TTL from the actual data.
     }
-    else
+
+    for (const auto & command : *ctx->commands)
     {
-        for (const auto & command : *ctx->commands)
-        {
-            if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
-                ctx->commands_for_part.emplace_back(command);
-        }
+        if (!canSkipMutationCommandForPart(ctx->source_part, ctx->metadata_snapshot, command, context_for_reading))
+            ctx->commands_for_part.emplace_back(command);
     }
 
     auto updated_columns_in_patches = alter_conversions->getColumnsUpdatedInPatches();

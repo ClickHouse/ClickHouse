@@ -17,12 +17,9 @@ Batched ALTER with another TTL change falls back and materializes the column TTL
 1000	1000
 Batched ALTER adding a column with a TTL falls back to the regular rewrite
 1000
-0
 Batched ALTER adding the column the new TTL references falls back instead of throwing
 0
-0
 Batched ALTER changing the default of the TTL column falls back to the regular rewrite
-0
 0
 Part lagging a standalone metadata-only DEFAULT change of the TTL column falls back
 1000
@@ -32,4 +29,8 @@ Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows
 1000
 materialize_ttl_recalculate_only must not delete rows, only refresh the TTL metadata
 1000
-1
+The fast path reads no data at all
+1000
+0
+MATERIALIZE TTL IN PARTITION must not touch the other partitions
+100
