@@ -3396,10 +3396,13 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
-void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(Table &, AggregatedDataWithoutKey &, Table &, Arena *) const
+void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(Table &, AggregatedDataWithoutKey &, Table & table_src, Arena *) const
 {
     /// A set method has no aggregate states. The keys already in dst stay, the keys only in src are dropped,
-    /// and the overflow row they would have fed carries no aggregate data - so there is nothing to do.
+    /// and the overflow row they would have fed carries no aggregate data - so there is nothing to merge.
+    /// The source is still consumed, though: releasing it here is what keeps the tables of the threads that
+    /// have not been merged yet from being held until the whole merge finishes.
+    table_src.clearAndShrink();
 }
 
 template <typename Method, typename Table>
@@ -3450,9 +3453,12 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
-void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(Table &, Table &, Arena *) const
+void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(Table &, Table & table_src, Arena *) const
 {
-    /// A set method has no aggregate states, so merging into the keys that already exist is a no-op.
+    /// A set method has no aggregate states, so there is nothing to merge into the keys already in dst - but
+    /// the source is still consumed, and releasing it here is what keeps it from being held until the whole
+    /// merge finishes.
+    table_src.clearAndShrink();
 }
 
 template <typename Method, typename Table>
