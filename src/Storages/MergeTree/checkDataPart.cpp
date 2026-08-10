@@ -155,10 +155,10 @@ bool isObjectStorageNotFoundException(std::exception_ptr exception_ptr)
 #if USE_AWS_S3
     catch (const S3Exception & s3_exception)
     {
-        /// Deliberately narrower than S3::isNotFoundError, which also covers NO_SUCH_BUCKET:
-        /// a missing bucket is a whole-storage condition, not a per-object one.
-        auto code = s3_exception.getS3ErrorCode();
-        return code == Aws::S3::S3Errors::NO_SUCH_KEY || code == Aws::S3::S3Errors::RESOURCE_NOT_FOUND;
+        /// Only the codes `unretryable_errors` (S3Common.cpp) actually classifies as
+        /// non-retryable: `RESOURCE_NOT_FOUND` is retryable there and already gets the
+        /// budget, and `NO_SUCH_BUCKET` is a whole-storage condition, not a per-object one.
+        return s3_exception.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY;
     }
 #endif
 #if USE_AZURE_BLOB_STORAGE

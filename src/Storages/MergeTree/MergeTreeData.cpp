@@ -2541,9 +2541,9 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             fs::path(getFullPathOnDisk(part_disk_ptr)) / part_name, part_size_str);
     };
 
-    /// A single not-found cannot distinguish a momentary blip from a really deleted object, so
-    /// retry while attempts remain. Active only: PreActive and Outdated never detach here, and a
-    /// throw would break their callers.
+    /// A single not-found cannot distinguish a momentary blip from a really deleted
+    /// object, so retry while attempts remain. Active only: `loadOutdatedDataParts`
+    /// terminates the server if a load throws, and the `PreActive` caller reschedules.
     auto should_rethrow = [&](std::exception_ptr exception_ptr)
     {
         if (isRetryableException(exception_ptr))

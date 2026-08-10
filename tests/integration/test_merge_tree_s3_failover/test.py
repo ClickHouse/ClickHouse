@@ -396,26 +396,31 @@ def test_no_fault_at_part_load(cluster):
 
 
 # Control: a not-found that outlives the retry budget is treated as genuine absence and
-# still detaches the part, exactly as before. Same outcome with and without the fix, so
-# this arm cannot fail on the buggy build - it guards the bound on the new retry.
+# still detaches the part, exactly as before. The retry-log deltas assert that the budget was
+# really exhausted (two absorbed attempts before the final one settles the outcome), so the
+# test also fails if the implementation gave up early.
 def test_persistent_not_found_at_part_load(cluster):
     node = cluster.instances["node"]
     create_not_found_table(node, "s3_persistent_not_found")
 
     node.query("DETACH TABLE s3_persistent_not_found")
 
+    try_0_before = int(node.count_in_log("at try 0 with retryable error"))
+    try_1_before = int(node.count_in_log("at try 1 with retryable error"))
     fail_request(cluster, 5, "GET", status=404, code="NoSuchKey", repeat=3)
     node.query("ATTACH TABLE s3_persistent_not_found")
     fail_request(cluster, 0)
 
     assert node.query("SELECT count() FROM s3_persistent_not_found") == "0\n"
     assert detached_parts(node, "s3_persistent_not_found") == "1"
+    assert int(node.count_in_log("at try 0 with retryable error")) > try_0_before
+    assert int(node.count_in_log("at try 1 with retryable error")) > try_1_before
 
     node.query("DROP TABLE s3_persistent_not_found")
 
 
-# Control: a corrupt part is still detached - the new retry is scoped to not-found and did
-# not widen to every load failure.
+# Control: a corrupt part is still detached with zero absorbed retries - the new retry is
+# scoped to not-found and did not widen to every load failure.
 def test_corrupted_part_still_detached(cluster):
     node = cluster.instances["node"]
     create_not_found_table(node, "s3_corrupted_part")
@@ -433,9 +438,11 @@ def test_corrupted_part_still_detached(cluster):
     cluster.minio_client.put_object(
         cluster.minio_bucket, remote_path, io.BytesIO(garbage), len(garbage)
     )
+    retries_before = int(node.count_in_log("at try 0 with retryable error"))
     node.query("ATTACH TABLE s3_corrupted_part")
 
     assert node.query("SELECT count() FROM s3_corrupted_part") == "0\n"
     assert detached_parts(node, "s3_corrupted_part") == "1"
+    assert int(node.count_in_log("at try 0 with retryable error")) == retries_before
 
     node.query("DROP TABLE s3_corrupted_part")
