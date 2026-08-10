@@ -446,28 +446,13 @@ public:
     }
 
 
-    /// If not found, the end of the haystack is returned.
-    const UInt8 * search(const UInt8 * const haystack, const size_t haystack_size) const
+    /// If not found, the end of the haystack is returned. `charger` reports the work done, so that a scan
+    /// long enough to outrun a deadline can be interrupted: see `SearchWorkCharger`.
+    const UInt8 * search(
+        const UInt8 * const haystack, const size_t haystack_size, const SearchWorkCharger & charger = no_search_work_charge) const
     {
-        return searchImpl(haystack, haystack_size, NoSearchWorkBatch{});
-    }
+        SearchWorkBatch batch(charger);
 
-    /// `charger` reports the work done, so that a scan long enough to outrun a deadline can be interrupted:
-    /// see `SearchWorkCharger`.
-    const UInt8 * search(const UInt8 * const haystack, const size_t haystack_size, const SearchWorkCharger & charger) const
-    {
-        return searchImpl(haystack, haystack_size, SearchWorkBatch(charger));
-    }
-
-    const char * search(const char * haystack, size_t haystack_size) const
-    {
-        return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
-    }
-
-private:
-    template <typename Batch>
-    const UInt8 * searchImpl(const UInt8 * const haystack, const size_t haystack_size, Batch batch) const
-    {
         if (needle_size == 0)
             return haystack;
 
@@ -505,6 +490,11 @@ private:
             batch.flush();
             return batch.delegate(fallback_searcher, pos - step + 1, haystack_end);
         }
+    }
+
+    const char * search(const char * haystack, size_t haystack_size) const
+    {
+        return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
     }
 
 protected:

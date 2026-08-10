@@ -348,15 +348,12 @@ scalar:
     return batch.finish(haystack_end);
 }
 
-const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(const UInt8 * haystack, const UInt8 * const haystack_end) const
-{
-    return searchImpl(haystack, haystack_end, NoSearchWorkBatch{});
-}
-
 const UInt8 * UTF8CaseInsensitiveSearcherImpl::search(
     const UInt8 * haystack, const UInt8 * const haystack_end, const SearchWorkCharger & charger) const
 {
-    return searchImpl(haystack, haystack_end, SearchWorkBatch(charger));
+    if (charger)
+        return searchImpl(haystack, haystack_end, SearchWorkBatch(charger));
+    return searchImpl(haystack, haystack_end, NoSearchWorkBatch{});
 }
 
 }

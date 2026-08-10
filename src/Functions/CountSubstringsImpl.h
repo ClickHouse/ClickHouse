@@ -83,7 +83,7 @@ struct CountSubstringsImpl
         const UInt8 * charged_up_to = pos;
 
         /// We will search for the next occurrence in all strings at once.
-        while (pos < end && end != (pos = searchCharged(searcher, pos, end - pos, charge_search)))
+        while (pos < end && end != (pos = searcher.search(pos, end - pos, charge_search)))
         {
             budget.charge(pos - charged_up_to);
             charged_up_to = pos;
@@ -201,7 +201,7 @@ struct CountSubstringsImpl
 
                 const UInt8 * pos = nullptr;
                 /// searcher returns a pointer to the found substring or to the end of `haystack`.
-                while ((pos = searchCharged(searcher, beg, end, charge_search)) < end)
+                while ((pos = searcher.search(beg, end, charge_search)) < end)
                 {
                     budget.charge(pos - beg);
                     ++res[i];
@@ -265,7 +265,7 @@ struct CountSubstringsImpl
                     const UInt8 * beg = reinterpret_cast<const UInt8 *>(Impl::advancePos(haystack.data(), reinterpret_cast<const char *>(end), start));
 
                     const UInt8 * pos = nullptr;
-                    while ((pos = searchCharged(searcher, beg, end, charge_search)) < end)
+                    while ((pos = searcher.search(beg, end, charge_search)) < end)
                     {
                         budget.charge(pos - beg);
                         ++res[i];

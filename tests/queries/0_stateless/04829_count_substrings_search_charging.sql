@@ -2,6 +2,8 @@
 -- no-fasttest: case-insensitive UTF-8 folding uses ICU.
 -- The searchers now report the work they do so a caller can observe a deadline inside one search.
 -- Charging runs on the matching path too, so it must not drop, duplicate or misplace an occurrence.
+-- This file is that regression guard only: it pins the counts, not the interruption itself, which is
+-- timing-dependent and left untested on purpose.
 
 -- All three functions, all dispatch branches: constant/vector needle against constant/vector haystack.
 SELECT countSubstrings(materialize('abcabcabc'), 'abc'), countSubstringsCaseInsensitive(materialize('AbCabc'), 'abc'), countSubstringsCaseInsensitiveUTF8(materialize('ПРИВЕТпривет'), 'привет');
@@ -30,5 +32,6 @@ SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat('\x80', 64) || repe
 SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat('\x80', 100) || 'Ж' || repeat('\x80', 100) || 'Ж'), 'Ж'), countSubstrings(materialize(repeat('\x80', 100) || 'Ж' || repeat('\x80', 100) || 'Ж'), 'Ж');
 SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat(repeat('\x80', 40) || 'Ж', 10)), 'Ж'), countSubstrings(materialize(repeat(repeat('\x80', 40) || 'Ж', 10)), 'Ж');
 
--- Enough occurrences that the charge crosses its reporting threshold many times within one search.
-SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat(repeat('Ж', 200) || 'Щ', 100000)), repeat('Ж', 16) || 'Щ') SETTINGS max_threads = 1;
+-- Enough occurrences that the charge crosses its reporting threshold many times within one search: 2 MB of
+-- haystack against a 64 KiB batch reports at least 30 times inside this one call.
+SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat(repeat('Ж', 200) || 'Щ', 5000)), repeat('Ж', 16) || 'Щ') SETTINGS max_threads = 1;
