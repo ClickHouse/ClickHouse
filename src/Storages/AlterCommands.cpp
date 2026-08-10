@@ -225,9 +225,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         {
             command.data_type = data_type_factory.get(ast_col_decl.getType());
             applyNullModifier(command.data_type, ast_col_decl.null_modifier);
-            /// Same as for ADD COLUMN above: the new explicit type of a stored column has to carry
-            /// the current state version into the metadata; existing data is converted by the ALTER.
-            pinCurrentStateVersionToAggregateFunctions(command.data_type);
+            /// Deliberately NOT pinning the current state version here, unlike ADD COLUMN above.
+            /// `DataTypeAggregateFunction::equals` ignores the state version, so a version change is
+            /// a metadata-only conversion (`isMetadataOnlyConversion`) and the existing parts keep
+            /// the older layout. A rewrite could not repair them either: a version 0 state does not
+            /// carry its skip degree, so deserializing and re-serializing it as version 1 would only
+            /// record a skip degree of 0. Pinning would therefore make the metadata claim a layout the
+            /// stored data does not have. `MODIFY COLUMN` keeps whatever version the user spells out,
+            /// so a column can still be moved to the current layout for future writes explicitly, with
+            /// `MODIFY COLUMN ... AggregateFunction(1, quantileDeterministic, ...)`.
         }
 
         if (ast_col_decl.getDefaultExpression())
