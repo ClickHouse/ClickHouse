@@ -244,6 +244,12 @@ REDIRECT_TO_VAR_RE = re.compile(
     r">>?\s*\"?\$\{?(?!CLICKHOUSE_TMP|CUR_DIR|CURDIR|USER_FILES_PATH"
     r"|CLICKHOUSE_USER_FILES|CLICKHOUSE_SCHEMA_FILES|CLICKHOUSE_LOG|\()"
 )
+# Redirection into a path built from an inline command substitution, e.g.
+# `echo x > "$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.parts ...")/foo"`. Command
+# substitution is handled separately from `$var` because a scratch path such as `$(mktemp)` is
+# fine, while a substitution that itself pulls a server path out of a system table is not - so
+# this pattern only counts when the same line also contains such a query.
+REDIRECT_TO_COMMAND_SUBSTITUTION_RE = re.compile(r">>?\s*\"?\$\(")
 CLICKHOUSE_DISKS_WRITE_RE = re.compile(
     r"clickhouse-disks\b.*\b(?:write|remove|copy|move|mkdir|link|truncate)\b"
 )
@@ -301,6 +307,13 @@ def check_no_server_data_manipulation(files):
                 FILE_MUTATION_CMD_RE.search(code)
                 or SED_IN_PLACE_RE.search(code)
                 or REDIRECT_TO_VAR_RE.search(code)
+                or (
+                    REDIRECT_TO_COMMAND_SUBSTITUTION_RE.search(code)
+                    and (
+                        FETCHES_SERVER_PATH_RE.search(code)
+                        or FETCHES_SERVER_ROOT_RE.search(code)
+                    )
+                )
                 or CLICKHOUSE_DISKS_WRITE_RE.search(code)
             ):
                 errors.append(
