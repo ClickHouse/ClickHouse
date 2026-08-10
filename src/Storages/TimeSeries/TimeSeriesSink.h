@@ -46,6 +46,11 @@ public:
     /// (e.g. two materialized views) converging on the same `TimeSeries` table.
     void setInsertStartGateRegistry(InsertStartGatesPtr gates) override { insert_start_gates = std::move(gates); }
 
+    /// Creates the nested pipelines of the inner target tables. Deliberately not done in the
+    /// constructor: the registry above is handed to this sink only after `StorageTimeSeries::write`
+    /// returns, and those nested `INSERT`s have to observe it.
+    void onStart() override;
+
     void consume(Chunk & chunk) override;
     void onFinish() override;
 
