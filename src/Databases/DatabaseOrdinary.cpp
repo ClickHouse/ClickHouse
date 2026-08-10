@@ -539,7 +539,7 @@ static StorageInMemoryMetadata buildLazyTableMetadata(
 
     if (storage_def->ttl_table)
         metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            storage_def->ttl_table->ptr(), metadata.columns, local_context, metadata.primary_key, /*is_attach*/ true);
+            storage_def->ttl_table->ptr(), metadata.columns, local_context, metadata.primary_key, TTLValidationMode::Attach);
 
     if (query.comment)
         metadata.setComment(query.comment->as<ASTLiteral &>().value.safeGet<String>());
