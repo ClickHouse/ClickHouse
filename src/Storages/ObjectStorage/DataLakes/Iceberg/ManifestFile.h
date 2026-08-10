@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <boost/noncopyable.hpp>
+#include <Poco/String.h>
 
 namespace DB::Iceberg
 {
@@ -95,6 +96,17 @@ struct ParsedManifestFileEntry : boost::noncopyable
     Int64 record_count;
     Int64 file_size_in_bytes;
 
+    /// Iceberg v3 deletion vector metadata (position delete entries with puffin format)
+    std::optional<Int64> content_offset;
+    std::optional<Int64> content_size_in_bytes;
+
+    bool isDeletionVector() const
+    {
+        return Poco::toLower(file_format) == "puffin"
+            && content_offset.has_value()
+            && content_size_in_bytes.has_value();
+    }
+
     ParsedManifestFileEntry(
         FileContentType content_type_,
         IcebergPathFromMetadata file_path_key_,
@@ -112,7 +124,9 @@ struct ParsedManifestFileEntry : boost::noncopyable
         std::optional<std::vector<Int32>> equality_ids_,
         std::optional<Int32> sort_order_id_,
         Int64 record_count_,
-        Int64 file_size_in_bytes_)
+        Int64 file_size_in_bytes_,
+        std::optional<Int64> content_offset_ = std::nullopt,
+        std::optional<Int64> content_size_in_bytes_ = std::nullopt)
         : content_type(content_type_)
         , file_path_key(std::move(file_path_key_))
         , row_number(row_number_)
@@ -130,6 +144,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
         , sort_order_id(sort_order_id_)
         , record_count(record_count_)
         , file_size_in_bytes(file_size_in_bytes_)
+        , content_offset(content_offset_)
+        , content_size_in_bytes(content_size_in_bytes_)
     {
     }
 };
@@ -148,6 +164,28 @@ struct ProcessedManifestFileEntry
 };
 
 using ProcessedManifestFileEntryPtr = std::shared_ptr<const ProcessedManifestFileEntry>;
+
+/// Live POSITION_DELETE entries are either puffin deletion vectors or parquet position-delete files.
+/// Iceberg readers ignore matching parquet position deletes when a DV applies. Helpers classify
+/// coexistence for callers that need the distinction; IcebergMetadata::totalRows fail-closes on
+/// any live position deletes (DV or parquet) rather than subtracting either kind.
+struct PositionDeleteKindPresence
+{
+    bool has_deletion_vectors = false;
+    bool has_parquet_position_deletes = false;
+
+    bool hasBoth() const { return has_deletion_vectors && has_parquet_position_deletes; }
+};
+
+PositionDeleteKindPresence getPositionDeleteKindPresence(
+    const std::vector<ProcessedManifestFileEntryPtr> & position_delete_files);
+
+/// Puffin deletion vectors must identify the data file via the dedicated `referenced_data_file`
+/// manifest field (non-empty). Position-delete lower/upper bounds must not be used as a fallback.
+void requireDirectReferencedDataFileForPuffinDeletionVector(
+    bool set_from_referenced_data_file_field,
+    const std::optional<IcebergPathFromMetadata> & referenced_path,
+    const IcebergPathFromMetadata & manifest_file_path);
 
 bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
 bool operator<(const DB::Row & lhs, const DB::Row & rhs);

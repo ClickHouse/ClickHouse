@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <IO/SeekableReadBuffer.h>
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -25,6 +26,9 @@ struct PuffinFooter
     std::vector<PuffinBlob> blobs;
     std::vector<UInt8> data;
 };
+
+/// Shared with the Iceberg deletion-vector loader (seekable object-storage path).
+std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size);
 
 class PuffinMetadataInputFormat : public IInputFormat
 {

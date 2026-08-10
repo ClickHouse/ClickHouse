@@ -120,11 +120,20 @@ ClickHouse supports time travel for Iceberg tables, allowing you to query histor
 
 ## Processing of tables with deleted rows {#deleted-rows}
 
-Currently, only Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) are supported. 
+ClickHouse supports reading Iceberg tables that use the following deletion methods:
 
-The following deletion methods are **not supported**:
-- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
-- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
+- [Position deletes](https://iceberg.apache.org/spec/#position-delete-files)
+- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files) (supported from version 25.8+)
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) stored in Puffin files (Iceberg v3, read-only)
+
+The following limitations apply to deletion vectors:
+
+- Only `deletion-vector-v1` Puffin blobs are supported
+- Data files must be in Parquet format
+- Column-scoped deletion vectors (`fields` in the Puffin blob) are not supported
+- Writing deletion vectors is not supported
+
+Parsed deletion vectors can be cached in memory when `use_puffin_files_cache` is enabled and the puffin file has a non-empty `etag`. Empty deletion vectors are cached as well, so repeated reads do not re-fetch the puffin file. The cache can be cleared with `SYSTEM DROP PUFFIN FILES CACHE`.
 
 ### Basic usage {#basic-usage}
 

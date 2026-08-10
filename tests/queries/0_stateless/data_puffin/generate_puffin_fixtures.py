@@ -5,24 +5,11 @@ from __future__ import annotations
 
 import json
 import struct
-import subprocess
-import sys
 import zlib
 from pathlib import Path
-
-try:
-    import lz4.frame
-    import xxhash
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "lz4", "xxhash", "-q"])
-    import lz4.frame
-    import xxhash
-
-try:
-    import pyroaring
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyroaring", "-q"])
-    import pyroaring
+import lz4.frame
+import xxhash
+import pyroaring
 
 OUTPUT_DIR = Path(__file__).parent
 PUFFIN_MAGIC = b"PFA1"

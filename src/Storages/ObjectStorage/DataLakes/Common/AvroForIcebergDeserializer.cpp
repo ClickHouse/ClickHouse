@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Common/UniqueLock.h>
@@ -16,6 +17,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <base/find_symbols.h>
 #include <Common/assert_cast.h>
+#include <Poco/String.h>
 
 namespace DB::ErrorCodes
 {
@@ -259,6 +261,22 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     const auto record_count = getValueFromRowByName(row_index, c_data_file_record_count, TypeIndex::Int64).safeGet<Int64>();
     const auto file_size_in_bytes = getValueFromRowByName(row_index, c_data_file_file_size_in_bytes, TypeIndex::Int64).safeGet<Int64>();
 
+    std::optional<Int64> content_offset;
+    if (hasPath(c_data_file_content_offset))
+    {
+        const auto content_offset_value = getValueFromRowByName(row_index, c_data_file_content_offset);
+        if (!content_offset_value.isNull())
+            content_offset = content_offset_value.safeGet<Int64>();
+    }
+
+    std::optional<Int64> content_size_in_bytes;
+    if (hasPath(c_data_file_content_size_in_bytes))
+    {
+        const auto content_size_value = getValueFromRowByName(row_index, c_data_file_content_size_in_bytes);
+        if (!content_size_value.isNull())
+            content_size_in_bytes = content_size_value.safeGet<Int64>();
+    }
+
     switch (content_type)
     {
         case FileContentType::DATA: {
@@ -283,6 +301,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
         }
         case FileContentType::POSITION_DELETE: {
             /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
+            const bool is_puffin = Poco::toLower(file_format) == "puffin";
             std::optional<Iceberg::IcebergPathFromMetadata> lower_reference_data_file_path;
             std::optional<Iceberg::IcebergPathFromMetadata> upper_reference_data_file_path;
             bool bounds_set_by_referenced_data_file = false;
@@ -298,7 +317,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                     bounds_set_by_referenced_data_file = true;
                 }
             }
-            if (!bounds_set_by_referenced_data_file)
+            /// Parquet position deletes may fall back to file-path column bounds. Puffin deletion
+            /// vectors must use the dedicated referenced_data_file field only.
+            if (!bounds_set_by_referenced_data_file && !is_puffin)
             {
                 if (auto it = value_for_bounds.find(IcebergPositionDeleteTransform::data_file_path_column_field_id);
                     it != value_for_bounds.end())
@@ -310,6 +331,20 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                         upper_reference_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(upper.safeGet<String>()));
                 }
             }
+
+            if (is_puffin)
+            {
+                if (!content_offset.has_value() || !content_size_in_bytes.has_value())
+                {
+                    throw Exception(
+                        DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Puffin deletion vector entry in manifest file '{}' is missing content_offset or content_size_in_bytes",
+                        manifest_file_path);
+                }
+                requireDirectReferencedDataFileForPuffinDeletionVector(
+                    bounds_set_by_referenced_data_file, lower_reference_data_file_path, manifest_file_path);
+            }
+
             return std::make_shared<const ParsedManifestFileEntry>(
                 FileContentType::POSITION_DELETE,
                 file_path_key,
@@ -327,7 +362,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*equality_ids*/ std::nullopt,
                 /*sort_order_id = */ std::nullopt,
                 record_count,
-                file_size_in_bytes);
+                file_size_in_bytes,
+                content_offset,
+                content_size_in_bytes);
         }
         case FileContentType::EQUALITY_DELETE: {
             std::vector<Int32> equality_ids;

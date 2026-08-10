@@ -105,6 +105,73 @@ TEST(LRUCache, getOrSet)
     ASSERT_TRUE(*value == 10);
 }
 
+TEST(LRUCache, getOrSetWithOutcomeHitAndMissInserted)
+{
+    using SimpleCacheBase = DB::CacheBase<int, int>;
+    SimpleCacheBase cache("LRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+
+    size_t loads = 0;
+    auto load = [&]()
+    {
+        ++loads;
+        return std::make_shared<int>(42);
+    };
+
+    {
+        auto [value, outcome] = cache.getOrSetWithOutcome(1, load);
+        ASSERT_NE(value, nullptr);
+        EXPECT_EQ(*value, 42);
+        EXPECT_EQ(outcome, DB::CacheGetOrSetOutcome::MissInserted);
+        EXPECT_EQ(loads, 1u);
+    }
+    {
+        auto [value, outcome] = cache.getOrSetWithOutcome(1, load);
+        ASSERT_NE(value, nullptr);
+        EXPECT_EQ(*value, 42);
+        EXPECT_EQ(outcome, DB::CacheGetOrSetOutcome::Hit);
+        EXPECT_EQ(loads, 1u);
+    }
+}
+
+TEST(LRUCache, getOrSetWithOutcomeClearDuringLoadIsMissNotResident)
+{
+    using SimpleCacheBase = DB::CacheBase<int, int>;
+    SimpleCacheBase cache("LRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+
+    auto [value, outcome] = cache.getOrSetWithOutcome(
+        1,
+        [&]()
+        {
+            cache.clear();
+            return std::make_shared<int>(7);
+        });
+
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(*value, 7);
+    EXPECT_EQ(outcome, DB::CacheGetOrSetOutcome::MissNotResident);
+    EXPECT_FALSE(cache.contains(1));
+}
+
+TEST(LRUCache, getOrSetWithOutcomeHitRemainsHitIfClearedAfterReturn)
+{
+    using SimpleCacheBase = DB::CacheBase<int, int>;
+    SimpleCacheBase cache("LRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes*/ 10, /*max_count*/ 10, /*size_ratio*/ 0.5);
+
+    cache.getOrSetWithOutcome(1, []() { return std::make_shared<int>(1); });
+
+    auto [value, outcome] = cache.getOrSetWithOutcome(1, []() { return std::make_shared<int>(2); });
+    EXPECT_EQ(outcome, DB::CacheGetOrSetOutcome::Hit);
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(*value, 1);
+
+    /// A follow-up contains() after clear would return false; callers must use `outcome`, not a
+    /// second residency check, when classifying hits (PuffinFilesCache used to race here).
+    cache.clear();
+    EXPECT_FALSE(cache.contains(1));
+    EXPECT_EQ(outcome, DB::CacheGetOrSetOutcome::Hit);
+    EXPECT_EQ(*value, 1);
+}
+
 
 TEST(LRUCache, noOnRemoveEntryCallback)
 {

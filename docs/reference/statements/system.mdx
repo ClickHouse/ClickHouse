@@ -141,6 +141,10 @@ Clears the in-memory cache of parsed Paimon metadata files (manifest lists and m
 
 Clears the cache of preprocessed constant polygons used by the function [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon). The configured size limit (the `point_in_polygon_cache_size` server setting) is left unchanged, so the cache keeps accepting entries afterwards. To disable the cache instead, set `point_in_polygon_cache_size` to `0`.
 
+## SYSTEM DROP PUFFIN FILES CACHE {#drop-puffin-files-cache}
+
+Clears the Puffin files cache used for parsed Iceberg puffin file content such as deletion vectors.
+
 ## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
 Clears the text index's tokens, header and postings caches.

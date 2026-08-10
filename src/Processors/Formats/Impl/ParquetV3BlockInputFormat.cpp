@@ -25,6 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
@@ -122,23 +123,68 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
     }
 }
 
+void ParquetV3BlockInputFormat::prepareNeedOnlyCountRowGroups(const parquet::format::FileMetaData & file_metadata)
+{
+    const std::vector<size_t> global_offsets = Parquet::buildRowGroupGlobalOffsets(file_metadata);
+    const size_t num_row_groups = file_metadata.row_groups.size();
+
+    need_only_count_row_groups.clear();
+    need_only_count_next = 0;
+
+    if (!buckets_to_read)
+    {
+        /// Emit one span per row group (not a single whole-file span). Bounds peak memory when a
+        /// downstream transform (e.g. DeletionVectorTransform) still walks chunk rows, and matches
+        /// the bucketed need-only-count shape.
+        for (size_t row_group_id = 0; row_group_id < num_row_groups; ++row_group_id)
+        {
+            const size_t num_rows = static_cast<size_t>(file_metadata.row_groups[row_group_id].num_rows);
+            if (num_rows == 0)
+                continue;
+
+            need_only_count_row_groups.push_back(
+                {.row_num_offset = global_offsets[row_group_id], .num_rows = num_rows});
+        }
+        return;
+    }
+
+    for (size_t row_group_id : buckets_to_read->row_group_ids)
+    {
+        if (row_group_id >= num_row_groups)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Parquet bucket row group {} is out of range (file has {} row groups)",
+                row_group_id,
+                num_row_groups);
+
+        const size_t num_rows = static_cast<size_t>(file_metadata.row_groups[row_group_id].num_rows);
+        if (num_rows == 0)
+            continue;
+
+        need_only_count_row_groups.push_back(
+            {.row_num_offset = global_offsets[row_group_id], .num_rows = num_rows});
+    }
+}
+
 Chunk ParquetV3BlockInputFormat::read()
 {
     if (need_only_count)
     {
-        if (reported_count)
+        if (!need_only_count_prepared)
+        {
+            /// Don't init Reader and ReadManager if we only need file metadata.
+            Parquet::Prefetcher temp_prefetcher;
+            temp_prefetcher.init(in, read_options, parser_shared_resources);
+            prepareNeedOnlyCountRowGroups(getFileMetadata(temp_prefetcher));
+            need_only_count_prepared = true;
+        }
+
+        if (need_only_count_next >= need_only_count_row_groups.size())
             return {};
 
-        /// Don't init Reader and ReadManager if we only need file metadata.
-        Parquet::Prefetcher temp_prefetcher;
-        temp_prefetcher.init(in, read_options, parser_shared_resources);
-        parquet::format::FileMetaData file_metadata = getFileMetadata(temp_prefetcher);
-
-
-        auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
-        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
-
-        reported_count = true;
+        const auto & row_group = need_only_count_row_groups[need_only_count_next++];
+        auto chunk = getChunkForCount(row_group.num_rows);
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(row_group.row_num_offset));
         return chunk;
     }
 
@@ -201,6 +247,9 @@ void ParquetV3BlockInputFormat::resetParser()
         reader.reset();
     }
     previous_block_missing_values.clear();
+    need_only_count_prepared = false;
+    need_only_count_next = 0;
+    need_only_count_row_groups.clear();
     IInputFormat::resetParser();
 }
 

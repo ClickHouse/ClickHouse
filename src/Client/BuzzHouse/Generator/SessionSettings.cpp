@@ -1811,6 +1811,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_page_cache_for_local_disks", trueOrFalseSetting},
     {"use_page_cache_for_object_storage", trueOrFalseSetting},
     {"use_parquet_metadata_cache", trueOrFalseSetting},
+    {"use_puffin_files_cache", trueOrFalseSetting},
     {"use_query_cache", trueOrFalseSetting},
     {"use_roaring_bitmap_iceberg_positional_deletes", trueOrFalseSetting},
     {"use_skip_indexes_if_final_exact_mode", CHSetting(trueOrFalse, {"0", "1"}, true)},

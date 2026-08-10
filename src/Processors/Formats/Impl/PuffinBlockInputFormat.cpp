@@ -24,7 +24,9 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Defines.h>
 #include <IO/ReadBuffer.h>
 #include <base/arithmeticOverflow.h>
@@ -34,6 +36,12 @@
 #include <IO/ReadBufferFromMemory.h>
 
 #include <IO/ReadHelpers.h>
+
+namespace ProfileEvents
+{
+extern const Event PuffinFilesRead;
+extern const Event PuffinFileReadMicroseconds;
+}
 
 namespace DB
 {
@@ -46,6 +54,17 @@ namespace ErrorCodes
 
 namespace
 {
+
+struct ScopedPuffinFileReadProfileEvent
+{
+    ProfileEventTimeIncrement<Microseconds> watch;
+
+    ScopedPuffinFileReadProfileEvent()
+        : watch(ProfileEvents::PuffinFileReadMicroseconds)
+    {
+        ProfileEvents::increment(ProfileEvents::PuffinFilesRead);
+    }
+};
 
 constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
 constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
@@ -410,8 +429,10 @@ std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_
     return blobs;
 }
 
-std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size)
+std::vector<PuffinBlob> readPuffinFooterFromSeekableImpl(SeekableReadBuffer & seekable, size_t file_size)
 {
+    ScopedPuffinFileReadProfileEvent profile_event;
+
     if (file_size < 16)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
 
@@ -485,7 +506,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
 
     if (seekable_read && seekable && seekable->checkIfActuallySeekable() && file_size_opt)
     {
-        result.blobs = readPuffinFooterFromSeekable(*seekable, *file_size_opt);
+        result.blobs = readPuffinFooterFromSeekableImpl(*seekable, *file_size_opt);
     }
     else
     {
@@ -503,7 +524,7 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
         }
 
         ReadBufferFromMemory mem_buf(result.data.data(), result.data.size());
-        result.blobs = readPuffinFooterFromSeekable(mem_buf, result.data.size());
+        result.blobs = readPuffinFooterFromSeekableImpl(mem_buf, result.data.size());
     }
 
     return result;
@@ -800,6 +821,11 @@ void checkPuffinHeader(const Block & header)
     checkPuffinFormatHeader(header, getPuffinSchema(), "Puffin");
 }
 
+}
+
+std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekable, size_t file_size)
+{
+    return readPuffinFooterFromSeekableImpl(seekable, file_size);
 }
 
 PuffinMetadataInputFormat::PuffinMetadataInputFormat(ReadBuffer & buf, SharedHeader header_, const FormatSettings & format_settings_)

@@ -407,6 +407,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_deletes;
+    std::optional<size_t> total_equality_deletes;
 
     if (snapshot_object->has(f_summary))
     {
@@ -421,6 +422,9 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         {
             total_position_deletes = summary_object->getValue<Int64>(f_total_position_deletes);
         }
+
+        if (summary_object->has(f_total_equality_deletes))
+            total_equality_deletes = summary_object->getValue<Int64>(f_total_equality_deletes);
     }
 
     if (!snapshot_object->has(f_schema_id))
@@ -434,7 +438,8 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         schema_id,
         total_rows,
         total_bytes,
-        total_position_deletes);
+        total_position_deletes,
+        total_equality_deletes);
 }
 
 IcebergDataSnapshotPtr
@@ -1141,37 +1146,38 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         return 0;
     }
 
+    /// Equality deletes remove data rows by value match; summary `total-equality-deletes` counts
+    /// rows in delete files, not deleted data rows. Fail closed when the field is present and > 0.
+    if (actual_data_snapshot->total_equality_delete_rows.has_value()
+        && *actual_data_snapshot->total_equality_delete_rows > 0)
+        return {};
 
     /// Row counts stored in the metadata layers above the manifest files are not used as
     /// data sources, because writers derive them instead of measuring them against the data:
-    /// - the snapshot summary's `total-records` is maintained incrementally (parent total
-    ///   plus this commit's delta), so a single corrupted commit anywhere in the table
-    ///   history silently poisons every later snapshot -- observed in the wild, making
-    ///   SELECT count() disagree with a full scan of the very same table;
+    /// - the snapshot summary's `total-records` / `total-position-deletes` are maintained
+    ///   incrementally (parent total plus this commit's delta), so a single corrupted commit
+    ///   anywhere in the table history silently poisons every later snapshot -- observed in
+    ///   the wild, making SELECT count() disagree with a full scan of the very same table;
     /// - the manifest-list per-entry `added_rows_count`/`existing_rows_count` are stamped
     ///   from snapshot summary fields by some writers (ClickHouse itself among them): a
     ///   rewritten manifest list can list every manifest with `added_rows_count = 0` taken
     ///   from a compaction snapshot's `added-records = 0`, so trusting these counts turned
-    ///   count() into 0 on a perfectly healthy table.
+    ///   count() into 0 on a perfectly healthy table;
+    /// - subtracting live position-delete / deletion-vector `record_count` from data-file
+    ///   totals is also unsafe: position delete records may be duplicated across delete
+    ///   files, may reference data files no longer in the snapshot, and Iceberg readers
+    ///   ignore matching parquet position deletes when a DV applies (so raw subtraction
+    ///   double-counts).
     /// The manifest files are the ground truth: the per-data-file `record_count` is a
     /// required field in every format version, so summing it over the live data files is
-    /// exact, at the cost of opening the manifest files (served from the Iceberg metadata
-    /// cache on repeated queries).
+    /// exact when no live delete files exist. Any live equality / position deletes (including
+    /// puffin deletion vectors) fail closed to a real scan.
     UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
             object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
 
-        /// Live delete files make an exact metadata-only count impossible:
-        /// - the record count of an equality delete file is the number of delete predicates,
-        ///   not the number of data rows they match;
-        /// - position delete records may be duplicated across delete files (the scan
-        ///   deduplicates matching (file_path, pos) pairs) and may reference data files that
-        ///   are no longer part of the snapshot, so subtracting their raw record count can
-        ///   miscount in both directions.
-        /// Bail out to a real scan, which applies the delete transformers and counts the
-        /// surviving rows exactly.
         if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
             || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
             return {};
@@ -1184,19 +1190,18 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         result += *manifest_rows;
     }
 
-    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
-    if (summary_total_rows.has_value() && *summary_total_rows != static_cast<size_t>(result))
+    if (actual_data_snapshot->total_rows.has_value() && *actual_data_snapshot->total_rows != result)
         LOG_WARNING(
             log,
             "Iceberg snapshot summary of table {} claims {} total rows, but its manifest files describe {} rows. "
             "The snapshot summary is inconsistent with the table data (possibly a corrupted commit in the table "
             "history), using the row count from the manifest files",
             persistent_components.table_location,
-            *summary_total_rows,
+            *actual_data_snapshot->total_rows,
             result);
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-    return result;
+    return static_cast<size_t>(result);
 }
 
 std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) const

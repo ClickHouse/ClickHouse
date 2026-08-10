@@ -1,6 +1,10 @@
 ---
 description: 'Documentation for the PuffinMetadata format'
+input_format: true
+output_format: false
 keywords: ['PuffinMetadata']
+sidebar_label: 'PuffinMetadata'
+sidebar_position: 2
 slug: /interfaces/formats/PuffinMetadata
 title: 'PuffinMetadata'
 doc_type: 'reference'
