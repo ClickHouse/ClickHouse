@@ -677,18 +677,33 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}"
     && echo 'JSONObjectEachRow payload with a non-UTF-8 column name round-trips' || echo 'MISMATCH'
 
 # The column selected by `format_json_object_each_row_column_for_object_name` is not emitted as an
-# inner object key (its values become the outer object names), so a non-UTF-8 name on that column
-# alone does not make the header keys non-textual and the query is accepted.
-echo '--- JSONEachPacketString accepts JSONObjectEachRow when only the object-name column has a non-UTF-8 name'
-data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_json_object_each_row_column_for_object_name=a%FFb" \
-    -d 'SELECT '\''k'\'' AS `a\xFFb`, 1 AS v FORMAT JSONObjectEachRow' | grep -c '"packet":"data"')
-[ "$data_packets" -ge 1 ] && echo 'JSONObjectEachRow (non-UTF-8 object-name column, name not emitted) accepted: OK'
-
-# A non-UTF-8 name on an emitted field is still rejected when the object-name column is configured.
-echo '--- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-8 emitted field name and an object-name column'
+# inner object key - its values become the outer object names, and they are written verbatim
+# (`JSONUtils::writeCompactObjectStart` emits the title with `writeCString`: no escaping, no UTF-8
+# validation). An arbitrary `String` value therefore makes the whole output non-textual, and that is
+# data-dependent, not knowable from the header - so the check fails close whenever such a column is
+# selected, even when every name in the header is plain ASCII.
+echo '--- JSONEachPacketString is rejected for JSONObjectEachRow with an object-name column'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_json_object_each_row_column_for_object_name=name_col" \
-    -d 'SELECT '\''k'\'' AS name_col, 1 AS `a\xFFb` FORMAT JSONObjectEachRow' \
+    -d 'SELECT '\''k'\'' AS name_col, 1 AS v FORMAT JSONObjectEachRow' \
     | grep -o -m1 'is not compatible with the output format JSONObjectEachRow'
+
+# The value below contains a double quote, so the plain output is malformed JSON: `{"a"b": {"v": 1}}`.
+# Under `EventStream` it goes through a base64 payload and round-trips byte-exactly.
+echo '--- EventStream base64-encodes JSONObjectEachRow with an object-name column'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream&format_json_object_each_row_column_for_object_name=name_col" \
+    -d 'SELECT '\''a"b'\'' AS name_col, 1 AS v FORMAT JSONObjectEachRow'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&format_json_object_each_row_column_for_object_name=name_col${SINGLE_BLOCK}" \
+    -d 'SELECT '\''a"b'\'' AS name_col, 1 AS v FORMAT JSONObjectEachRow' \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | while IFS= read -r payload; do printf '%s' "$payload" | base64 -d; done \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}&format_json_object_each_row_column_for_object_name=name_col" -d 'SELECT '\''a"b'\'' AS name_col, 1 AS v FORMAT JSONObjectEachRow') \
+    && echo 'JSONObjectEachRow payload with an unescaped object name round-trips' || echo 'MISMATCH'
+
+# Without an object-name column the object names are synthesized as `row_N`, which is always textual,
+# so only the header names decide - a plain-ASCII header is accepted.
+echo '--- JSONEachPacketString accepts JSONObjectEachRow without an object-name column'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT '\''k'\'' AS name_col, 1 AS v FORMAT JSONObjectEachRow' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSONObjectEachRow (synthesized row_N object names) accepted: OK'
 
 # The full-document JSON formats (`JSON`, `JSONStrings`, `JSONCompact`, `JSONCompactStrings`,
 # `JSONColumnsWithMetadata`) serialize the column type names into the `meta.type` fields. These

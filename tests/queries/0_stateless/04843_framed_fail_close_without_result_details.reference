@@ -1,0 +1,5 @@
+--- a framed exception response fails closed even when set_result_details never ran
+the packet stream had started: OK
+the generic __exception__ block was not appended: OK
+the secondary failure was not reported in the body: OK
+the client observes an aborted connection: OK
