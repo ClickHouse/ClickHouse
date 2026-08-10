@@ -1,0 +1,4 @@
+loaded	100
+part_codec	LZ4
+Codec T64 requires the column type
+column_codec	100

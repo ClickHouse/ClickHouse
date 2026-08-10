@@ -31,6 +31,21 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
+void CompressionCodecFactory::upperCaseCodecFamilyNames(const ASTPtr & codec_ast)
+{
+    const auto * func = codec_ast->as<ASTFunction>();
+    if (!func || !func->arguments)
+        return;
+
+    for (auto & child : func->arguments->children)
+    {
+        if (const auto * identifier = child->as<ASTIdentifier>())
+            child = make_intrusive<ASTIdentifier>(Poco::toUpper(identifier->name()));
+        else if (auto * inner_func = child->as<ASTFunction>())
+            inner_func->name = Poco::toUpper(inner_func->name);
+    }
+}
+
 CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
 {
     return default_codec;
@@ -65,7 +80,8 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
 CompressionCodecPtr CompressionCodecFactory::get(const String & compression_codec) const
 {
     ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    upperCaseCodecFamilyNames(ast);
     return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
@@ -76,7 +92,8 @@ String CompressionCodecFactory::getReasonUnsafeForUntypedData(const String & com
 
     ParserCodec codec_parser;
     auto ast = parseQuery(
-        codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    upperCaseCodecFamilyNames(ast);
 
     return getReasonUnsafeForUntypedData(ast);
 }

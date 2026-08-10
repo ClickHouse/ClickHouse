@@ -59,7 +59,8 @@ void CompressionCodecFactory::validateCodecString(
     const String & compression_codec, bool sanity_check, bool allow_experimental_codecs) const
 {
     ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    upperCaseCodecFamilyNames(ast);
     validateCodecAndGetPreprocessedAST(ast, {}, sanity_check, allow_experimental_codecs);
 }
 

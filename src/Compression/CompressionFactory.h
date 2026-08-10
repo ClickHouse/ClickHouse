@@ -137,6 +137,16 @@ protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const;
 
 private:
+    /// Upper-cases the codec family names of a parsed `CODEC(...)` clause in place, and nothing else.
+    ///
+    /// A codec string coming from a setting (`temporary_files_codec`, `default_compression_codec`, ...) is
+    /// not necessarily spelled the way the family is registered in the factory, so the family names are
+    /// normalized before the lookup. Only the identifiers and function names may be touched: upper-casing
+    /// the whole string before parsing would rewrite literal arguments too, turning e.g. `T64('bit')` into
+    /// `T64('BIT')`, which the codec rejects with `Wrong modification for T64` - so a valid stored setting
+    /// would fail to resolve, and `getReasonUnsafeForUntypedData` would throw instead of classifying it.
+    static void upperCaseCodecFamilyNames(const ASTPtr & codec_ast);
+
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;
     /// The source file where each codec family was registered, keyed by family name. See `getCodecDocumentations`.
