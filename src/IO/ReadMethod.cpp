@@ -5,6 +5,16 @@
 namespace DB
 {
 
+bool willUseDirectIO([[maybe_unused]] size_t estimated_size, [[maybe_unused]] size_t direct_io_threshold)
+{
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
+    return direct_io_threshold && estimated_size >= direct_io_threshold;
+#else
+    /// `createReadBufferFromFileBase` does not even compile the O_DIRECT branch here.
+    return false;
+#endif
+}
+
 LocalFSReadMethod resolveLocalFSReadMethod(LocalFSReadMethod requested, bool pread_no_wait_supported, bool direct_io)
 {
     if (requested == LocalFSReadMethod::pread_threadpool && !pread_no_wait_supported && !direct_io)

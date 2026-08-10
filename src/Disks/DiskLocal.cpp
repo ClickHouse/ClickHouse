@@ -433,9 +433,12 @@ void DiskLocal::prepareRead(
     /// Use the same estimated size basis as createReadBufferFromFileBase:
     /// read_hint first, then file_size. A large file with a small read_hint
     /// won't trigger O_DIRECT, so page cache remains safe.
-    size_t estimated_size = read_hint.value_or(file_size);
-    bool direct_io = settings.local_fs_settings.direct_io_threshold
-        && estimated_size >= settings.local_fs_settings.direct_io_threshold;
+    /// `willUseDirectIO` also carries the platform guard of the reader, which only ever attempts
+    /// O_DIRECT under Linux and FreeBSD: elsewhere this must not claim an O_DIRECT read,
+    /// or a large 'pread_threadpool' read would keep the method here while the reader
+    /// resolves it to 'pread'.
+    const size_t estimated_size = read_hint.value_or(file_size);
+    const bool direct_io = willUseDirectIO(estimated_size, settings.local_fs_settings.direct_io_threshold);
 
     /// The same resolution as in `createReadBufferFromFileBase`: on a system where the page cache
     /// cannot be checked without waiting for the disk, 'pread_threadpool' reads with 'pread',

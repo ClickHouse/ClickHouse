@@ -2,6 +2,7 @@
 
 #include <IO/ReadMethod.h>
 #include <IO/preadNoWait.h>
+#include <base/unit.h>
 
 #include <cerrno>
 
@@ -74,6 +75,38 @@ TEST(ReadMethod, OnDemandOverloadProbesOnlyForPreadThreadpool)
             LocalFSReadMethod::pread_threadpool, getPreadNoWaitSupport().supported, /*direct_io*/ false));
 
     EXPECT_TRUE(isPreadNoWaitProbed());
+}
+
+TEST(ReadMethod, DirectIOBasisMatchesTheReader)
+{
+    /// A zero threshold disables O_DIRECT, and a read smaller than the threshold does not reach it.
+    EXPECT_FALSE(willUseDirectIO(/*estimated_size*/ 1_GiB, /*direct_io_threshold*/ 0));
+    EXPECT_FALSE(willUseDirectIO(/*estimated_size*/ 1_MiB - 1, /*direct_io_threshold*/ 1_MiB));
+
+    /// A read at or above the threshold uses O_DIRECT — but only where the reader can:
+    /// `createReadBufferFromFileBase` only attempts it under Linux and FreeBSD, so on any other
+    /// platform the answer stays 'no' and 'pread_threadpool' keeps falling back to 'pread'.
+#if defined(OS_LINUX) || defined(OS_FREEBSD)
+    constexpr bool direct_io_possible = true;
+#else
+    constexpr bool direct_io_possible = false;
+#endif
+
+    EXPECT_EQ(willUseDirectIO(/*estimated_size*/ 1_MiB, /*direct_io_threshold*/ 1_MiB), direct_io_possible);
+    EXPECT_EQ(willUseDirectIO(/*estimated_size*/ 1_GiB, /*direct_io_threshold*/ 1_MiB), direct_io_possible);
+
+    /// This is what the carriers that resolve the method before the buffer is created rely on:
+    /// a large non-O_DIRECT-capable read must resolve exactly like a small one, so that
+    /// `DiskLocal::prepareRead` and the reader never disagree about the method.
+    for (size_t size : {size_t(0), 1_MiB - 1, 1_MiB, 1_GiB})
+    {
+        EXPECT_EQ(
+            resolveLocalFSReadMethod(
+                LocalFSReadMethod::pread_threadpool,
+                /*pread_no_wait_supported*/ false,
+                willUseDirectIO(size, /*direct_io_threshold*/ 1_MiB)),
+            direct_io_possible && size >= 1_MiB ? LocalFSReadMethod::pread_threadpool : LocalFSReadMethod::pread);
+    }
 }
 
 TEST(PreadNoWait, UnavailabilityIsRecognized)

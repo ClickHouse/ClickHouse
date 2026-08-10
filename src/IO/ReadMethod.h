@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 namespace DB
@@ -54,6 +55,15 @@ enum class RemoteFSReadMethod : uint8_t
     read,
     threadpool,
 };
+
+/// Whether a local read of `estimated_size` bytes will be performed with O_DIRECT.
+///
+/// Mirrors `createReadBufferFromFileBase`, including its platform guard: O_DIRECT is only ever
+/// attempted under Linux and FreeBSD, so on every other platform the answer is 'no' regardless
+/// of the threshold. A component that resolves the read method before the buffer is created
+/// (e.g. `DiskLocal::prepareRead`) must use this, so that it does not claim an O_DIRECT read
+/// where the reader cannot perform one.
+bool willUseDirectIO(size_t estimated_size, size_t direct_io_threshold);
 
 /// The read method to use for a local file, given the requested one.
 ///
