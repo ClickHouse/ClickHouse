@@ -24,14 +24,13 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS max_insert_threads = 1;
 "
 
-# Every setting below is randomized by tests/clickhouse-test and each one can either make the
-# test vacuous or fail it on a correct binary, so they are pinned in the query itself
-# (a query-level SETTINGS clause wins over the runner's injection):
+# Each setting below either makes the test vacuous or fails it on a correct binary if it takes the
+# wrong value, so all of them are pinned in the query itself. Most are randomized by
+# tests/clickhouse-test, and a query-level SETTINGS clause wins over the runner's injection:
 #   enable_filesystem_cache=1                                   -- 0 never builds the cache buffer
 #   read_from_filesystem_cache_if_exists_otherwise_bypass_cache=0 -- 1 takes the bypass branch
 #   use_uncompressed_cache=0                                    -- 1 routes through another class
-#   max_read_buffer_size/max_read_buffer_size_local_fs           -- small buffer => many refills
-#   filesystem_cache_prefer_bigger_buffer_size=0                -- otherwise the buffer is widened
+#   max_read_buffer_size                                        -- small buffer => many refills
 #   filesystem_cache_segments_batch_size=1                      -- makes the batch hold one segment,
 #                                                                  so the per-refill resize log fires
 #   min_bytes_to_use_direct_io / _mmap_io=0, local_filesystem_read_method='pread',
@@ -39,6 +38,9 @@ $CLICKHOUSE_CLIENT -q "
 #   enable_parallel_replicas=0                                  -- 1 sends the read to the replica
 #                                                                  cluster, so this server's cache
 #                                                                  buffer is not the one measured
+# The rest are not randomized, but their defaults would widen the read buffer and so reduce the
+# refill count the test depends on: max_read_buffer_size_local_fs,
+# filesystem_cache_prefer_bigger_buffer_size.
 read_settings="enable_filesystem_cache = 1, max_read_buffer_size = 4096,
     max_read_buffer_size_local_fs = 4096, use_uncompressed_cache = 0,
     read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0,
