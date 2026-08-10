@@ -1,0 +1,55 @@
+DROP TABLE IF EXISTS test;
+
+-- A plain key column
+CREATE TABLE test (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+ALTER TABLE test DROP COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN IF EXISTS a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN b;
+DROP TABLE test;
+
+-- Columns used inside key expressions, not as keys themselves
+CREATE TABLE test (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree PARTITION BY intDiv(a, 10) ORDER BY (b + 1);
+ALTER TABLE test DROP COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN b; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN b; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN c;
+DROP TABLE test;
+
+-- Only a subcolumn of the column is used in the key
+CREATE TABLE test (a Tuple(x UInt64, y UInt64), b UInt64) ENGINE = MergeTree ORDER BY a.x;
+ALTER TABLE test DROP COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN b;
+DROP TABLE test;
+
+-- A special column of the engine that is a key column as well
+CREATE TABLE test (a UInt64, s Int8, b UInt64) ENGINE = CollapsingMergeTree(s) ORDER BY (a, s);
+ALTER TABLE test DROP COLUMN s; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN s; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN b;
+DROP TABLE test;
+
+-- The column is checked before the partition expression, so a key column is rejected even when the
+-- partition is malformed. For other columns the partition is still validated first
+CREATE TABLE test (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree PARTITION BY b ORDER BY a;
+ALTER TABLE test CLEAR COLUMN a IN PARTITION 'nonsense'; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test CLEAR COLUMN c IN PARTITION 'nonsense'; -- { serverError TYPE_MISMATCH }
+ALTER TABLE test CLEAR COLUMN c IN PARTITION 1;
+DROP TABLE test;
+
+-- A column used only in a TTL expression is not a key column, so it is rejected later, when the
+-- expression is recalculated. The drop is allowed together with a rewrite of the TTL
+CREATE TABLE test (d Date, e Date, a UInt64) ENGINE = MergeTree ORDER BY a TTL d + INTERVAL 1 DAY;
+ALTER TABLE test DROP COLUMN d; -- { serverError UNKNOWN_IDENTIFIER }
+ALTER TABLE test DROP COLUMN d, MODIFY TTL e + INTERVAL 1 DAY;
+ALTER TABLE test DROP COLUMN e; -- { serverError UNKNOWN_IDENTIFIER }
+DROP TABLE test;
+
+-- The same for a TTL of a single column
+CREATE TABLE test (d Date, a UInt64, v UInt64 TTL d + INTERVAL 1 DAY) ENGINE = MergeTree ORDER BY a;
+ALTER TABLE test DROP COLUMN d; -- { serverError UNKNOWN_IDENTIFIER }
+ALTER TABLE test DROP COLUMN v;
+ALTER TABLE test DROP COLUMN d;
+DROP TABLE test;
