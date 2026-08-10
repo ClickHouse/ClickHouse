@@ -53,9 +53,7 @@ namespace Setting
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
-    extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool compile_expressions;
-    extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsNonZeroUInt64 input_format_parquet_max_block_size;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
@@ -97,9 +95,8 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
     }
 }
 
-/// TODO: This is a temporary workaround (issues #109476, #109329). Remove each override once
-/// distributed plans support the corresponding feature - e.g. for the text index direct read,
-/// let the worker re-run the rewrite over its pinned part list instead of disabling it.
+/// TODO: This is a temporary workaround (issue #109476). Remove each override once
+/// distributed plans support the corresponding feature.
 void adjustSettingsForMakeDistributedPlan(Settings & settings)
 {
     if (!settings[Setting::make_distributed_plan])
@@ -127,20 +124,10 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings)
         settings[Setting::correlated_subqueries_use_in_memory_buffer] = false;
         adjusted.emplace_back("correlated_subqueries_use_in_memory_buffer = 0");
     }
-    if (settings[Setting::use_skip_indexes_on_data_read])
-    {
-        settings[Setting::use_skip_indexes_on_data_read] = false;
-        adjusted.emplace_back("use_skip_indexes_on_data_read = 0");
-    }
     if (settings[Setting::compile_expressions])
     {
         settings[Setting::compile_expressions] = false;
         adjusted.emplace_back("compile_expressions = 0");
-    }
-    if (settings[Setting::query_plan_direct_read_from_text_index])
-    {
-        settings[Setting::query_plan_direct_read_from_text_index] = false;
-        adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
     }
 
     if (!adjusted.empty())

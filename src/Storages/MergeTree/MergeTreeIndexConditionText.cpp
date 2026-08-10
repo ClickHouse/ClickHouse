@@ -13,7 +13,9 @@
 #include <Functions/MultiSearchImpl.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <Functions/hasAnyAllTokens.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -39,6 +41,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
@@ -58,22 +61,119 @@ namespace Setting
     extern const SettingsBool reject_expensive_hyperscan_regexps;
 }
 
+static std::vector<OptimizedRegularExpression> compilePatterns(const std::vector<TextSearchPatternSource> & pattern_sources)
+{
+    std::vector<OptimizedRegularExpression> patterns;
+    patterns.reserve(pattern_sources.size());
+
+    for (const auto & pattern_source : pattern_sources)
+    {
+        if (pattern_source.case_insensitive)
+            patterns.emplace_back(Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, /*case_insensitive=*/ true>(pattern_source.like_pattern));
+        else
+            patterns.emplace_back(Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, /*case_insensitive=*/ false>(pattern_source.like_pattern));
+    }
+
+    return patterns;
+}
+
 TextSearchQuery::TextSearchQuery(
     String function_name_,
     TextSearchMode search_mode_,
     TextIndexDirectReadMode direct_read_mode_,
     VectorWithMemoryTracking<String> tokens_,
-    std::vector<OptimizedRegularExpression> patterns_,
+    std::vector<TextSearchPatternSource> pattern_sources_,
     VectorWithMemoryTracking<String> phrase_tokens_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
     , tokens(std::move(tokens_))
-    , patterns(std::move(patterns_))
+    , patterns(compilePatterns(pattern_sources_))
+    , pattern_sources(std::move(pattern_sources_))
     , phrase_tokens(std::move(phrase_tokens_))
 {
     std::sort(tokens.begin(), tokens.end());
     initializeHash();
+}
+
+void TextSearchQuery::serialize(WriteBuffer & out) const
+{
+    writeStringBinary(function_name, out);
+    writeBinary(static_cast<UInt8>(search_mode), out);
+    writeBinary(static_cast<UInt8>(direct_read_mode), out);
+
+    writeVarUInt(tokens.size(), out);
+    for (const auto & token : tokens)
+        writeStringBinary(token, out);
+
+    writeVarUInt(pattern_sources.size(), out);
+    for (const auto & pattern_source : pattern_sources)
+    {
+        writeStringBinary(pattern_source.like_pattern, out);
+        writeBinary(pattern_source.case_insensitive, out);
+    }
+
+    writeVarUInt(phrase_tokens.size(), out);
+    for (const auto & token : phrase_tokens)
+        writeStringBinary(token, out);
+}
+
+std::shared_ptr<TextSearchQuery> TextSearchQuery::deserialize(ReadBuffer & in)
+{
+    String function_name;
+    readStringBinary(function_name, in);
+
+    UInt8 search_mode = 0;
+    readBinary(search_mode, in);
+    if (search_mode > static_cast<UInt8>(TextSearchMode::Phrase))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid search mode {} in a serialized text search query", static_cast<UInt32>(search_mode));
+
+    UInt8 direct_read_mode = 0;
+    readBinary(direct_read_mode, in);
+    if (direct_read_mode > static_cast<UInt8>(TextIndexDirectReadMode::Hint))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid direct read mode {} in a serialized text search query", static_cast<UInt32>(direct_read_mode));
+
+    size_t num_tokens = 0;
+    readVarUInt(num_tokens, in);
+    VectorWithMemoryTracking<String> tokens;
+    tokens.reserve(num_tokens);
+    for (size_t i = 0; i < num_tokens; ++i)
+    {
+        String token;
+        readStringBinary(token, in);
+        tokens.push_back(std::move(token));
+    }
+
+    size_t num_patterns = 0;
+    readVarUInt(num_patterns, in);
+    std::vector<TextSearchPatternSource> pattern_sources;
+    pattern_sources.reserve(num_patterns);
+    for (size_t i = 0; i < num_patterns; ++i)
+    {
+        TextSearchPatternSource pattern_source;
+        readStringBinary(pattern_source.like_pattern, in);
+        readBinary(pattern_source.case_insensitive, in);
+        pattern_sources.push_back(std::move(pattern_source));
+    }
+
+    size_t num_phrase_tokens = 0;
+    readVarUInt(num_phrase_tokens, in);
+    VectorWithMemoryTracking<String> phrase_tokens;
+    phrase_tokens.reserve(num_phrase_tokens);
+    for (size_t i = 0; i < num_phrase_tokens; ++i)
+    {
+        String token;
+        readStringBinary(token, in);
+        phrase_tokens.push_back(std::move(token));
+    }
+
+    return std::make_shared<TextSearchQuery>(
+        std::move(function_name),
+        static_cast<TextSearchMode>(search_mode),
+        static_cast<TextIndexDirectReadMode>(direct_read_mode),
+        std::move(tokens),
+        std::move(pattern_sources),
+        std::move(phrase_tokens));
 }
 
 void TextSearchQuery::initializeHash()
@@ -151,31 +251,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         return;
     }
 
-    const auto & settings = context_->getSettingsRef();
-    static constexpr auto cache_policy = "SLRU";
-    /// Local caches: ~10% of the query memory budget, capped at 100 MiB; max_memory_usage == 0 (unlimited) uses the cap, not a 0-size cache.
-    static constexpr size_t local_cache_size_cap = 100ULL * 1024 * 1024;
-    const size_t query_memory_limit = settings[Setting::max_memory_usage];
-    const size_t local_cache_max_size
-        = query_memory_limit == 0 ? local_cache_size_cap : std::min<size_t>(query_memory_limit / 10, local_cache_size_cap);
-
-    /// If usage of global text index caches is disabled, create local
-    /// one to share them between threads that read the same data parts.
-    if (settings[Setting::use_text_index_tokens_cache])
-        tokens_cache = context_->getTextIndexTokensCache();
-    else
-        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
-
-    use_global_header_cache = settings[Setting::use_text_index_header_cache];
-    if (use_global_header_cache)
-        header_cache = context_->getTextIndexHeaderCache();
-    else
-        header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
-
-    if (settings[Setting::use_text_index_postings_cache])
-        postings_cache = context_->getTextIndexPostingsCache();
-    else
-        postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, local_cache_max_size, 0, 1.0);
+    initializeCaches();
 
     rpn = std::move(RPNBuilder<RPNElement>(
         predicate,
@@ -201,6 +277,60 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
 
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
     std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
+    cardinalities_cache = std::make_shared<TokensCardinalitiesCache>(all_search_tokens);
+}
+
+void MergeTreeIndexConditionText::initializeCaches()
+{
+    const auto & settings = getContext()->getSettingsRef();
+    static constexpr auto cache_policy = "SLRU";
+    /// Local caches: ~10% of the query memory budget, capped at 100 MiB; max_memory_usage == 0 (unlimited) uses the cap, not a 0-size cache.
+    static constexpr size_t local_cache_size_cap = 100ULL * 1024 * 1024;
+    const size_t query_memory_limit = settings[Setting::max_memory_usage];
+    const size_t local_cache_max_size
+        = query_memory_limit == 0 ? local_cache_size_cap : std::min<size_t>(query_memory_limit / 10, local_cache_size_cap);
+
+    /// If usage of global text index caches is disabled, create local
+    /// one to share them between threads that read the same data parts.
+    if (settings[Setting::use_text_index_tokens_cache])
+        tokens_cache = getContext()->getTextIndexTokensCache();
+    else
+        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
+
+    use_global_header_cache = settings[Setting::use_text_index_header_cache];
+    if (use_global_header_cache)
+        header_cache = getContext()->getTextIndexHeaderCache();
+    else
+        header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
+
+    if (settings[Setting::use_text_index_postings_cache])
+        postings_cache = getContext()->getTextIndexPostingsCache();
+    else
+        postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, local_cache_max_size, 0, 1.0);
+}
+
+void MergeTreeIndexConditionText::setSearchQueriesForVirtualColumns(
+    TextSearchMode global_search_mode_,
+    const std::map<String, TextSearchQueryPtr> & queries_by_virtual_column)
+{
+    /// Only a condition created without a predicate (a fresh one on the receiving node
+    /// of a distributed plan) may be populated this way.
+    if (!all_search_queries.empty() || !virtual_column_to_search_query.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index condition already has search queries");
+
+    initializeCaches();
+    global_search_mode = global_search_mode_;
+
+    NameSet all_search_tokens_set;
+    for (const auto & [column_name, search_query] : queries_by_virtual_column)
+    {
+        all_search_tokens_set.insert(search_query->getTokens().begin(), search_query->getTokens().end());
+        all_search_queries[search_query->getHash()] = search_query;
+        virtual_column_to_search_query[column_name] = search_query;
+    }
+
+    all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
+    std::ranges::sort(all_search_tokens);
     cardinalities_cache = std::make_shared<TokensCardinalitiesCache>(all_search_tokens);
 }
 
@@ -781,7 +911,7 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
     return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
 }
 
-std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
+std::vector<TextSearchPatternSource> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
 {
     /// Only handles the pure '%value%' form: one leading '%', a non-empty alphanumeric token immediately following,
     /// then one trailing '%' immediately after the token, and nothing else.
@@ -838,12 +968,7 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
     pattern.append(data + start, end - start);
     pattern += '%';
 
-    std::vector<OptimizedRegularExpression> patterns;
-    if (case_insensitive)
-        patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
-    else
-        patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
-    return patterns;
+    return {TextSearchPatternSource{.like_pattern = std::move(pattern), .case_insensitive = case_insensitive}};
 }
 
 /// Converts a Field value to its text representation using `serializeText`,
@@ -1216,7 +1341,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 TextSearchMode::Phrase,
                 direct_read_mode,
                 std::move(unique_tokens),
-                std::vector<OptimizedRegularExpression>{},
+                std::vector<TextSearchPatternSource>{},
                 std::move(phrase_tokens));
 
             out.function = RPNElement::FUNCTION_HAS_PHRASE;

@@ -1,11 +1,12 @@
 -- Tags: no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
--- make_distributed_plan auto-disables use_skip_indexes_on_data_read and compile_expressions
--- (issue #109476), including on worker tasks, whose contexts are rebuilt from the initiator's
--- user-level settings and would otherwise keep the defaults (both are true by default). The
--- settings are enabled explicitly here on purpose: the override is unconditional, because a
--- worker cannot honor them regardless of how they were set.
+-- make_distributed_plan auto-disables compile_expressions (issue #109476), including on worker
+-- tasks, whose contexts are rebuilt from the initiator's user-level settings and would otherwise
+-- keep the default. The setting is enabled explicitly here on purpose: the override is
+-- unconditional, because a worker cannot honor it regardless of how it was set.
+-- use_skip_indexes_on_data_read is NOT overridden anymore: it propagates to workers as set,
+-- because direct reads from a text index depend on it (see 04836_text_index_direct_read_make_distributed_plan).
 
 DROP TABLE IF EXISTS t_dp_big;
 DROP TABLE IF EXISTS t_dp_small;
@@ -31,7 +32,7 @@ SELECT count(), sum(b.v + 1) FROM t_dp_big AS b INNER JOIN t_dp_small AS s ON b.
     WHERE b.v < 50000
     SETTINGS make_distributed_plan = 0;
 
-SELECT 'worker tasks run with the unsupported settings disabled';
+SELECT 'worker tasks run with JIT disabled and skip-index reads propagated';
 SYSTEM FLUSH LOGS query_log;
 -- Worker task entries log the task id ('main', 'stage_N_M' - not SQL) as the query text and share
 -- the initiator's query_id; their Settings column shows the task context, where the overrides

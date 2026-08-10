@@ -1,0 +1,41 @@
+-- exact mode
+1
+1
+501
+501
+1
+1
+62496000
+62496000
+-- the same predicate in PREWHERE and WHERE
+1
+1
+-- the plan distributes
+distributes
+-- LIKE by dictionary scan (pattern queries)
+1111
+1111
+1111
+1111
+-- a part without the materialized index uses the shipped default expression
+1
+1
+1
+1
+2
+2
+-- preprocessor index
+1
+1
+1
+1
+-- postprocessor index (hint mode)
+1
+1
+0
+0
+-- phrase search
+100
+100
+100
+100

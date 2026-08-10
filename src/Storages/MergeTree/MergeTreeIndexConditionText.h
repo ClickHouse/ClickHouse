@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -7,6 +9,9 @@
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
 
 class TextIndexTokensCache;
 using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
@@ -40,6 +45,15 @@ enum class TextIndexDirectReadMode : uint8_t
     Hint,
 };
 
+/// Source form of a search pattern: a LIKE pattern plus a case flag. The compiled
+/// OptimizedRegularExpression cannot be serialized, so queries keep the source form
+/// and recompile it, e.g. on a node that receives the query with a distributed plan.
+struct TextSearchPatternSource
+{
+    String like_pattern;
+    bool case_insensitive = false;
+};
+
 /// Represents a single text-search function
 struct TextSearchQuery
 {
@@ -48,7 +62,7 @@ struct TextSearchQuery
         TextSearchMode search_mode_,
         TextIndexDirectReadMode direct_read_mode_,
         VectorWithMemoryTracking<String> tokens_,
-        std::vector<OptimizedRegularExpression> patterns_ = {},
+        std::vector<TextSearchPatternSource> pattern_sources_ = {},
         VectorWithMemoryTracking<String> phrase_tokens_ = {});
 
     const String & getFunctionName() const { return function_name; }
@@ -59,6 +73,9 @@ struct TextSearchQuery
     const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
     UInt128 getHash() const { return hash; }
 
+    void serialize(WriteBuffer & out) const;
+    static std::shared_ptr<TextSearchQuery> deserialize(ReadBuffer & in);
+
 private:
     void initializeHash();
 
@@ -68,7 +85,9 @@ private:
     TextIndexDirectReadMode direct_read_mode;
     /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
+    /// Compiled in the constructor from `pattern_sources`.
     std::vector<OptimizedRegularExpression> patterns;
+    std::vector<TextSearchPatternSource> pattern_sources;
     /// Not sorted, not deduplicated.
     VectorWithMemoryTracking<String> phrase_tokens;
     /// Precomputed in the constructor because getHash is called on hot paths.
@@ -118,6 +137,13 @@ public:
     /// Returns generated virtual column name for the replacement of related function node.
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
+
+    /// Populates a condition constructed without a predicate with search queries shipped in a
+    /// distributed query plan, keyed by text-index virtual column name. The receiving node cannot
+    /// re-derive them: the shipped filter references the virtual columns, not the original
+    /// text-search functions. `global_search_mode_` is the initiator's value; it cannot be derived
+    /// from the queries alone (it depends on how the predicate combines them).
+    void setSearchQueriesForVirtualColumns(TextSearchMode global_search_mode_, const std::map<String, TextSearchQueryPtr> & queries_by_virtual_column);
 
     TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
@@ -185,7 +211,10 @@ private:
     /// Builds the OR-list of token sets for a `match`-style regexp, folding the required substring
     /// into every alternative. Returns an empty list when the regexp imposes no token requirement.
     std::vector<VectorWithMemoryTracking<String>> regexpToTokensForQueries(const String & regexp_string) const;
-    std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
+    std::vector<TextSearchPatternSource> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
+
+    /// Creates token/header/postings caches (either the global ones or query-local ones).
+    void initializeCaches();
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
