@@ -390,10 +390,8 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                     out.function = RPNElement::FUNCTION_NOT_IN;
                     return true;
                 }
-                /// `nullIn`/`globalNullIn` are what `in`/`globalIn` become under
-                /// `transform_null_in = 1`. For a set without NULL they select the same rows; a set
-                /// containing NULL is refused inside the helper, because `nullIn` also matches the
-                /// column's NULL rows, which a bloom filter of tokens cannot express.
+                /// `nullIn`/`globalNullIn` are `in`/`globalIn` under `transform_null_in = 1`. A set
+                /// containing NULL is refused inside the helper.
                 if (function_name == "in" || function_name == "globalIn" || function_name == "nullIn" || function_name == "globalNullIn")
                 {
                     out.function = RPNElement::FUNCTION_IN;
@@ -809,11 +807,8 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
 
     for (const auto & prepared_set_data_type : prepared_set->getDataTypes())
     {
-        /// Set::getElementTypes strips Nullable only when `transform_null_in` is off, so at
-        /// `transform_null_in = 1` a Nullable key keeps the wrapper on its set elements even when no
-        /// element is NULL. Look through it here; NULL values are refused per row below. Which
-        /// positions are checked is deliberately unchanged: every component must still be a string,
-        /// so a mixed-type tuple keeps not using the index.
+        /// At `transform_null_in = 1` a Nullable key keeps the wrapper on its set elements even when
+        /// no element is NULL. NULL values are refused per row below.
         auto prepared_set_data_type_id = removeNullable(prepared_set_data_type)->getTypeId();
         if (prepared_set_data_type_id != TypeIndex::String && prepared_set_data_type_id != TypeIndex::FixedString)
             return false;
@@ -831,19 +826,17 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         key_position.push_back(elem.key_index);
 
         size_t tuple_idx = elem.tuple_index;
-        /// tuple_index counts left-hand arguments while columns are the set elements. Mirrors the
-        /// bound check in MergeTreeIndexConditionText::tryPrepareSetForTextSearch.
+        /// tuple_index counts left-hand arguments while columns are the set elements.
         if (tuple_idx >= columns.size())
             return false;
 
         const auto & column = columns[tuple_idx];
-        /// isNullable() is false for LowCardinality(Nullable), so use the helper that also covers it.
+        /// isNullable() is false for LowCardinality(Nullable).
         const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*column);
 
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
-            /// `nullIn` also matches the column's NULL rows, which a bloom filter of tokens cannot
-            /// express, and getDataAt() throws on a NULL element. Keep the original predicate then.
+            /// `nullIn` also matches the column's NULL rows, which a bloom filter cannot express.
             if (column_is_nullable && column->isNullAt(row))
                 return false;
 
