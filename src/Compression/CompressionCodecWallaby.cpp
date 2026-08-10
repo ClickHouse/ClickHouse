@@ -306,6 +306,14 @@ bool quantizeValueWithAdjustment(
     const FloatType reconstructed = static_cast<FloatType>(
         negative_scale ? static_cast<Float64>(q) * power : static_cast<Float64>(q) / power);
 
+    /// The bit-exact case dominates real decimal data; skip the adjustment arithmetic there.
+    if (std::bit_cast<T>(reconstructed) == std::bit_cast<T>(value))
+    {
+        quantized = static_cast<SignedType>(q);
+        adjustment = 0;
+        return true;
+    }
+
     const T adjustment_zigzag
         = zigzagEncode<T>(orderedFromBits(std::bit_cast<T>(value)) - orderedFromBits(std::bit_cast<T>(reconstructed)));
     /// A value whose reconstruction is more than 2^(width/2) ULPs away lives at a completely
@@ -327,7 +335,8 @@ bool quantizeValueWithAdjustment(
 template <typename T>
 std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value)
 {
-    constexpr T near_threshold = T{1} << (WallabyTraits<T>::width_bits / 4);
+    using Traits = WallabyTraits<T>;
+    constexpr T near_threshold = T{1} << (Traits::width_bits / 4);
     typename WallabyTraits<T>::SignedType quantized;
     T adjustment;
     /// Positive zero is exactly representable at every scale; skip the downward probing.
@@ -340,12 +349,27 @@ std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value)
             --alpha;
         return alpha;
     }
-    if (quantizeValueWithAdjustment<T>(value, 0, quantized, adjustment) && adjustment < near_threshold)
-        return 0;
+    std::optional<Int32> exact_alpha;
     for (Int32 alpha = 1; alpha <= WallabyTraits<T>::max_alpha; ++alpha)
-        if (quantizeValueWithAdjustment<T>(value, alpha, quantized, adjustment) && adjustment < near_threshold)
-            return alpha;
-    return std::nullopt;
+        if (quantizeValue<T>(value, alpha, quantized))
+        {
+            exact_alpha = alpha;
+            break;
+        }
+    /// A scale whose reconstruction lands within a small ULP adjustment is preferred over the
+    /// exact scale only when it is enough scales lower that the adjustment lanes (at most
+    /// width/4 bits per value) cost less than the extra quantized-lane width (log2(10) bits
+    /// per scale step) — decimals disturbed by lossy arithmetic are bit-exact only at a very
+    /// fine scale, while values that are exact at a low scale should vote it directly.
+    constexpr Int32 near_scale_advantage = Traits::width_bits == 64 ? 6 : 3;
+    if (!exact_alpha || *exact_alpha >= near_scale_advantage)
+    {
+        const Int32 near_limit = exact_alpha ? *exact_alpha - near_scale_advantage : WallabyTraits<T>::max_alpha;
+        for (Int32 alpha = 0; alpha <= near_limit; ++alpha)
+            if (quantizeValueWithAdjustment<T>(value, alpha, quantized, adjustment) && adjustment < near_threshold)
+                return alpha;
+    }
+    return exact_alpha;
 }
 
 template <typename T>
@@ -540,6 +564,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     };
     const auto plan_adjustments = [&](const std::array<bool, WALLABY_VECTOR_VALUES> & is_exiled, bool allow_capping) -> AdjustmentPlan
     {
+        /// Bit-exact vectors — the common case — have nothing to plan.
+        if (max_adjustment_zigzag == 0)
+            return AdjustmentPlan{0, 0, 0};
         UInt32 histogram[Traits::width_bits + 1] = {};
         UInt8 full_bits = 0;
         for (UInt32 i = 0; i < count; ++i)
@@ -674,17 +701,47 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             }
             else
             {
-                /// The adjustment lanes cover the positions that survive the width cap.
+                /// One pass fills the exile flags, counts the width exiles and feeds the
+                /// adjustment planner's histogram for the surviving positions.
+                UInt32 for_exiles = 0;
+                UInt32 adjustment_histogram[Traits::width_bits + 1] = {};
+                UInt8 adjustment_full_bits = 0;
                 for (UInt32 i = 0; i < count; ++i)
                 {
                     const T offset = static_cast<T>(quantized[i]) - static_cast<T>(min_q);
-                    exile_scratch[i] = is_quantization_exception[i]
+                    const bool exiled = is_quantization_exception[i]
                         || (best_w < Traits::width_bits && offset >= (T{1} << best_w));
+                    exile_scratch[i] = exiled;
+                    if (exiled)
+                    {
+                        for_exiles += !is_quantization_exception[i] ? 1 : 0;
+                        continue;
+                    }
+                    if (max_adjustment_zigzag != 0)
+                    {
+                        const T adjustment = adjustments[i];
+                        const UInt8 w = adjustment == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(adjustment));
+                        ++adjustment_histogram[w];
+                        adjustment_full_bits = std::max(adjustment_full_bits, w);
+                    }
                 }
-                const AdjustmentPlan adjustment_plan = plan_adjustments(exile_scratch, true);
-                UInt32 for_exiles = 0;
-                for (UInt32 i = 0; i < count; ++i)
-                    for_exiles += exile_scratch[i] && !is_quantization_exception[i] ? 1 : 0;
+                AdjustmentPlan adjustment_plan{adjustment_full_bits, 0, Compression::FFOR::calculateBitpackedBytes(adjustment_full_bits)};
+                {
+                    UInt32 adjustment_outliers = 0;
+                    UInt32 adjustment_best_cost = adjustment_plan.lane_bytes;
+                    for (Int32 w = adjustment_full_bits - 1; w >= 0; --w)
+                    {
+                        adjustment_outliers += adjustment_histogram[w + 1];
+                        const UInt32 cost
+                            = Compression::FFOR::calculateBitpackedBytes(static_cast<UInt8>(w)) + adjustment_outliers * exceptionCost<T>();
+                        if (cost < adjustment_best_cost)
+                        {
+                            adjustment_best_cost = cost;
+                            adjustment_plan = AdjustmentPlan{static_cast<UInt8>(w), adjustment_outliers,
+                                Compression::FFOR::calculateBitpackedBytes(static_cast<UInt8>(w))};
+                        }
+                    }
+                }
                 const UInt32 total = header_size + lanes_bytes(best_w) + adjustment_plan.lane_bytes
                     + (exception_count + for_exiles + adjustment_plan.exiled) * exceptionCost<T>();
                 best_packing = Packing{best_w, bits_for_full, adjustment_plan.bits, false, min_q, total};
