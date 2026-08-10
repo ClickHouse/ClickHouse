@@ -246,7 +246,11 @@ function _complete_clickhouse_generic()
 function _complete_clickhouse_bootstrap_main()
 {
     local runtime=/usr/share/bash-completion/bash_completion
-    if ! type _get_comp_words_by_ref >& /dev/null && [[ -f $runtime ]]; then
+    # BASH_COMPLETION_VERSINFO is assigned at the very top of the runtime, so
+    # it also detects a load that is still in progress (this file can be
+    # sourced by the runtime itself via BASH_COMPLETION_USER_FILE, and nested
+    # sourcing must be avoided)
+    if [[ ! -v BASH_COMPLETION_VERSINFO ]] && ! type _get_comp_words_by_ref >& /dev/null && [[ -f $runtime ]]; then
         source $runtime
     fi
     type _get_comp_words_by_ref >& /dev/null || return 0
