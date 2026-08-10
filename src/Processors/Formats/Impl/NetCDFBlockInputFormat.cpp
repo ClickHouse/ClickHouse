@@ -43,6 +43,34 @@ namespace
 /// by the chunk: one large read is cheaper than collecting the needed elements run by run.
 constexpr UInt64 min_sparse_read_range_bytes = 8 * 1024 * 1024;
 
+/// Checks that the data of every variable is inside the file, which the header alone does not
+/// guarantee: it stores the offset of the data of a variable, and the number of records, without
+/// any relation to the actual size of the file, so a truncated file has a well-formed header.
+void checkDataFitsInFile(const NetCDFHeader & header, UInt64 file_size)
+{
+    for (const auto & variable : header.variables)
+    {
+        UInt64 required_size = 0;
+        bool overflow = false;
+
+        if (!variable.is_record)
+        {
+            overflow = common::addOverflow(variable.begin, variable.slab_size, required_size);
+        }
+        else if (header.num_records != 0)
+        {
+            overflow = common::mulOverflow(header.num_records - 1, header.record_size, required_size)
+                || common::addOverflow(required_size, variable.begin, required_size)
+                || common::addOverflow(required_size, variable.slab_size, required_size);
+        }
+
+        if (overflow || required_size > file_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The data of the variable {} does not fit in the NetCDF file: it needs {} bytes, but the file is {} bytes",
+                variable.name, overflow ? "more than 2^64" : std::to_string(required_size), file_size);
+    }
+}
+
 DataTypePtr getDataType(NetCDFType type)
 {
     switch (type)
@@ -359,28 +387,7 @@ void NetCDFBlockInputFormat::initialize()
     }
 
     netcdf_header.resolveNumberOfRecords(file_size);
-
-    for (const auto & variable : netcdf_header.variables)
-    {
-        UInt64 required_size = 0;
-        bool overflow = false;
-
-        if (!variable.is_record)
-        {
-            overflow = common::addOverflow(variable.begin, variable.slab_size, required_size);
-        }
-        else if (netcdf_header.num_records != 0)
-        {
-            overflow = common::mulOverflow(netcdf_header.num_records - 1, netcdf_header.record_size, required_size)
-                || common::addOverflow(required_size, variable.begin, required_size)
-                || common::addOverflow(required_size, variable.slab_size, required_size);
-        }
-
-        if (overflow || required_size > file_size)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "The data of the variable {} does not fit in the NetCDF file: it needs {} bytes, but the file is {} bytes",
-                variable.name, overflow ? "more than 2^64" : std::to_string(required_size), file_size);
-    }
+    checkDataFitsInFile(netcdf_header, file_size);
 
     layout = getNetCDFTableLayout(netcdf_header, format_settings);
 
@@ -755,7 +762,6 @@ void NetCDFSchemaReader::initialize()
     /// The number of records of a file written in the streaming mode is not in the header and is
     /// derived from the size of the file, exactly as the input format does it, so that the number
     /// of rows of such a file is also answered from the metadata.
-    std::optional<UInt64> file_size;
     auto * seekable = dynamic_cast<SeekableReadBuffer *>(&in);
     if (seekable && format_settings.seekable_read && isBufferWithFileSize(in) && seekable->checkIfActuallySeekable())
         file_size = getFileSizeFromReadBuffer(in);
@@ -763,7 +769,13 @@ void NetCDFSchemaReader::initialize()
     netcdf_header = readNetCDFHeader(in);
 
     if (file_size)
+    {
         netcdf_header.resolveNumberOfRecords(*file_size);
+        /// The same check the input format does before it reads anything, so that a file whose
+        /// header promises data that the file does not contain is rejected here as well, instead
+        /// of its number of rows being inferred from the header and cached.
+        checkDataFitsInFile(netcdf_header, *file_size);
+    }
 
     layout = getNetCDFTableLayout(netcdf_header, format_settings);
 }
@@ -781,6 +793,12 @@ std::optional<size_t> NetCDFSchemaReader::readNumberOrRows()
     /// The number of records of a file written in the streaming mode is not in the header: it has
     /// to be calculated from the size of the file, which is not available here.
     if (netcdf_header.num_records_is_streaming)
+        return std::nullopt;
+
+    /// Without the size of the file the header cannot be checked against the data that the file
+    /// actually contains, and an unvalidated number of rows must not be published: it would be
+    /// cached and answer a `count()` for a file that the reader itself rejects.
+    if (!file_size)
         return std::nullopt;
 
     return layout.num_rows;
@@ -961,6 +979,17 @@ void registerNetCDFSchemaReader(FormatFactory & factory)
     factory.registerSchemaReader("NetCDF", [](ReadBuffer & buf, const FormatSettings & settings)
     {
         return std::make_shared<NetCDFSchemaReader>(buf, settings);
+    });
+
+    /// Both settings change the inferred schema - one adds the columns with the dimension indexes,
+    /// the other makes the columns that have a fill value Nullable - so a schema inferred with one
+    /// of them must not be reused for a query that has the other.
+    factory.registerAdditionalInfoForSchemaCacheGetter("NetCDF", [](const FormatSettings & settings)
+    {
+        return fmt::format(
+            "fill_value_as_null={}, add_dimension_columns={}",
+            settings.netcdf.fill_value_as_null,
+            settings.netcdf.add_dimension_columns);
     });
 }
 

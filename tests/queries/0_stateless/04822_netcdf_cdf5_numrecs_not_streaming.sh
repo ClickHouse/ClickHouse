@@ -44,14 +44,13 @@ PYTHON
 }
 
 echo "--- 4294967295 records in the header of a CDF-5 file is a concrete count, not the streaming marker"
-# The file does not carry the data of its records, but the count comes from the header alone, so
-# the metadata path sees the stored value. A reader that mistakes it for the streaming marker
-# would derive 0 records from the size of the file instead.
+# The file does not carry the data of its 4294967295 records, so the concrete count is visible in
+# the size that the reader demands of the file: (4294967295 - 1) * 4 + 128 + 4 = 17179869308 bytes.
+# A reader that mistakes the stored value for the streaming marker would instead derive 0 records
+# from the size of the file and read the file as an empty table.
 write_file "$FILE" 0xFFFFFFFF
-$CLICKHOUSE_LOCAL -m -q "
-DESCRIBE file('$FILE', NetCDF) FORMAT Null;
-SELECT number_of_rows FROM system.schema_inference_cache WHERE format = 'NetCDF';
-"
+$CLICKHOUSE_LOCAL -q "SELECT count() FROM file('$FILE', NetCDF)" 2>&1 |
+    grep -o -m1 "The data of the variable v does not fit in the NetCDF file: it needs 17179869308 bytes"
 rm -f "$FILE"
 
 echo "--- and the streaming marker of CDF-5 is the 64-bit all-ones value"

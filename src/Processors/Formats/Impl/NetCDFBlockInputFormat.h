@@ -7,6 +7,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -140,6 +141,9 @@ private:
 
     const FormatSettings format_settings;
     bool is_initialized = false;
+    /// The size of the file, when the input is seekable. Without it the header cannot be checked
+    /// against the data of the file, and the number of rows it declares is not published.
+    std::optional<UInt64> file_size;
     NetCDFHeader netcdf_header;
     NetCDFTableLayout layout;
 };

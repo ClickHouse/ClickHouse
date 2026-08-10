@@ -1,0 +1,9 @@
+--- the whole file
+3
+3
+--- truncated after the header
+The data of the variable v does not fit in the NetCDF file: it needs 92 bytes, but the file is 80 bytes
+--- truncated in the middle of the data
+The data of the variable v does not fit in the NetCDF file: it needs 92 bytes, but the file is 88 bytes
+--- and the count of a truncated file is not served from the cache of the whole file
+does not fit in the NetCDF file
