@@ -35,6 +35,10 @@ Les moteurs de table des familles [`MergeTree`](/fr/reference/engines/table-engi
 peuvent stocker les données dans `S3`, `AzureBlobStorage`, `HDFS` (non pris en charge) en utilisant respectivement un disque de type `s3`,
 `azure_blob_storage`, `hdfs` (non pris en charge).
 
+<Note>
+  Le type de disque `s3` peut également être utilisé avec des fournisseurs de stockage objet compatibles S3, tels qu’Alibaba Cloud Object Storage Service. Configurez `endpoint` avec le point de terminaison compatible S3 du fournisseur et tenez compte de toute exigence de compatibilité propre à ce fournisseur.
+</Note>
+
 La configuration du disque nécessite :
 
 1. Une section `type`, égale à l&#39;une des valeurs `s3`, `azure_blob_storage`, `hdfs` (non pris en charge), `local_blob_storage`, `web`.
@@ -49,7 +53,7 @@ Elle nécessite de spécifier :
 <br />
 
 Il est également possible de spécifier `metadata_type` (sa valeur par défaut est `local`) ; il peut aussi être défini sur `plain`, `web` et, à partir de `24.4`, `plain_rewritable`.
-L&#39;utilisation du type de métadonnées `plain` est décrite dans la [section sur le stockage plain](/fr/concepts/features/configuration/server-config/storing-data#plain-storage). Le type de métadonnées `web` ne peut être utilisé qu&#39;avec le type de stockage objet `web`. Le type de métadonnées `local` stocke les fichiers de métadonnées localement (chaque fichier de métadonnées contient la correspondance avec les fichiers du stockage objet, ainsi que des méta-informations supplémentaires à leur sujet).
+L&#39;utilisation du type de métadonnées `plain` est décrite dans la [section sur le stockage simple](/fr/concepts/features/configuration/server-config/storing-data#plain-storage). Le type de métadonnées `web` ne peut être utilisé qu&#39;avec le type de stockage objet `web`. Le type de métadonnées `local` stocke les fichiers de métadonnées localement (chaque fichier de métadonnées contient la correspondance avec les fichiers du stockage objet, ainsi que des méta-informations supplémentaires à leur sujet).
 
 Par exemple :
 

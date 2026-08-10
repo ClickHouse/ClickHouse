@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Iceberg 카탈로그 연결'
 title: 'ClickHouse Cloud에서 Iceberg 카탈로그를 연결하는 방법'
-useCases: ['Data warehousing']
+useCases: ['데이터 웨어하우징']
 products: ['Cloud']
 skillLevel: 'Beginner'
 description: 'ClickHouse Cloud를 데이터 카탈로그에 연결하고 Iceberg 테이블을 쿼리하는 방법을 알아봅니다.'
@@ -51,14 +51,12 @@ Iceberg 카탈로그에 아직 데이터가 없다면 이 데이터셋을 업로
 이 과정을 마치면 ClickHouse Cloud가 Iceberg 카탈로그에 연결되며, 데이터를 복사하지 않고도 Iceberg 테이블에 대해 SQL 쿼리를 실행할 수 있습니다.
 
 <Steps titleSize="h3">
-  <Step>
-    ### DataLakeCatalog 연결 생성
-
+  <Step title="DataLakeCatalog 연결 생성" id="create-a-datalakecatalog-connection">
     이 단계에서는 ClickHouse Cloud에서 데이터 레이크 카탈로그에 연결합니다.
 
     1. ClickHouse Cloud 서비스를 엽니다.
 
-    2. **Data Sources → Connect to your 데이터 레이크 카탈로그**로 이동합니다.
+    2. **Data Sources â Connect to your 데이터 레이크 카탈로그**로 이동합니다.
 
     3. 드롭다운에서 데이터 카탈로그를 선택합니다.
 
@@ -77,9 +75,7 @@ Iceberg 카탈로그에 아직 데이터가 없다면 이 데이터셋을 업로
     5. 카탈로그를 저장합니다. 이제 Data Sources 페이지에서 데이터베이스에서 사용 가능한 테이블 수와 함께 데이터 카탈로그가 로드된 것을 확인할 수 있습니다.
   </Step>
 
-  <Step>
-    ### Iceberg 테이블 쿼리
-
+  <Step title="Iceberg 테이블 쿼리" id="query-iceberg-table">
     이 단계에서는 데이터 카탈로그의 Iceberg 테이블을 쿼리합니다.
 
     1. `Show Tables` 또는 `SQL Console`을 클릭하면 SQL 콘솔로 이동하며,
@@ -94,7 +90,9 @@ Iceberg 카탈로그에 아직 데이터가 없다면 이 데이터셋을 업로
   </Step>
 </Steps>
 
-## 다음 단계
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
 이제 데이터 레이크에 연결되었으므로 ClickHouse에서 Iceberg 테이블을 작성해 볼 수 있습니다.
 

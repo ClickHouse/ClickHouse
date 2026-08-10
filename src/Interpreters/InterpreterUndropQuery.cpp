@@ -4,6 +4,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTUndropQuery.h>
 #if CLICKHOUSE_CLOUD
@@ -80,7 +81,15 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
     }
 #endif
 
-    DatabaseCatalog::instance().undropTable(table_id, context->getSettingsRef()[Setting::fsync_metadata]);
+    QueryStatusPtr query_status = context->getProcessListElementSafe();
+    auto throw_if_cancelled = [&]()
+    {
+        if (query_status)
+            query_status->throwIfKilled();
+    };
+
+    DatabaseCatalog::instance().undropTable(
+        table_id, context->getSettingsRef()[Setting::fsync_metadata], throw_if_cancelled);
     return {};
 }
 

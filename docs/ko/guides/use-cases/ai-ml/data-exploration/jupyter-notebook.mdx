@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-이 가이드에서는 ClickHouse 기반의 빠른 in-process SQL OLAP Engine인 [chDB](/ko/products/chdb/index)를 사용해 Jupyter 노트북에서 ClickHouse Cloud의 데이터셋을 탐색하는 방법을 알아봅니다.
+이 가이드에서는 ClickHouse 기반의 빠른 in-process SQL OLAP Engine인 [chDB](/ko/chdb/index)를 사용해 Jupyter 노트북에서 ClickHouse Cloud의 데이터셋을 탐색하는 방법을 알아봅니다.
 
 **사전 요구 사항**:
 
@@ -29,7 +29,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * matplotlib를 사용해 데이터를 시각화하기
 
 이 가이드에서는 ClickHouse Cloud에서 스타터 데이터셋 중 하나로 제공되는 UK Property Price 데이터셋을 사용합니다.
-이 데이터셋에는 1995년부터 2024년까지 영국에서 판매된 주택 가격 데이터가 포함되어 있습니다.
+이 데이터셋에는 1995년부터 2024년까지 영국에서 거래된 주택 가격 데이터가 포함되어 있습니다.
 
 <div id="setup">
   ## 설정
@@ -37,7 +37,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 데이터셋을 기존 ClickHouse Cloud 서비스에 추가하려면 계정 정보로 [console.clickhouse.cloud](https://console.clickhouse.cloud/)에 로그인하십시오.
 
-왼쪽 메뉴에서 `Data sources`를 클릭하십시오. 그런 다음 `Predefined sample data`를 클릭하십시오.
+왼쪽 메뉴에서 `데이터 소스`를 클릭하십시오. 그런 다음 `Predefined sample data`를 클릭하십시오.
 
 <Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="예시 데이터셋 추가" />
 
@@ -52,7 +52,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 ClickHouse는 `default` 데이터베이스에 `pp_complete` 테이블을 자동으로 생성하고, 가격 포인트 데이터 2,892만 행을 테이블에 채웁니다.
 
 자격 증명이 노출될 가능성을 줄이기 위해 로컬 머신에서 Cloud 사용자 이름과 비밀번호를 환경 변수로 추가하는 것을 권장합니다.
-터미널에서 다음 명령을 실행하여 사용자 이름과 비밀번호를 환경 변수로 추가하십시오.
+터미널에서 다음 명령을 실행하여 사용자 이름과 비밀번호를 환경 변수로 추가하십시오:
 
 ```bash
 export CLICKHOUSE_USER=default
@@ -122,7 +122,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-# .env 파일에서 환경 변수 로드
+# Load environment variables from .env file
 load_dotenv()
 
 username = os.environ.get('CLICKHOUSE_USER')
@@ -193,8 +193,8 @@ plt.xlabel('Year')
 plt.ylabel('Price (£)')
 plt.title('Price of London property over time')
 
-# 너무 빽빽해지지 않도록 2년 간격으로 표시
-years_to_show = df['year'][::2]  # 2년 간격
+# Show every 2nd year to avoid crowding
+years_to_show = df['year'][::2]  # Every 2nd year
 plt.xticks(years_to_show, rotation=45)
 
 plt.grid(True, alpha=0.3)
@@ -264,10 +264,10 @@ df_2.head()
 새 셀에서 다음 명령을 실행하세요.
 
 ```python
-# 두 개의 y축을 가진 그래프 생성
+# Create a figure with two y-axes
 fig, ax1 = plt.subplots(figsize=(14, 8))
 
-# 왼쪽 y축에 주택 판매량 표시
+# Plot houses sold on the left y-axis
 color = 'tab:blue'
 ax1.set_xlabel('Year')
 ax1.set_ylabel('Houses Sold', color=color)
@@ -275,28 +275,28 @@ ax1.plot(df_2['year'], df_2['houses_sold'], marker='o', color=color, label='Hous
 ax1.tick_params(axis='y', labelcolor=color)
 ax1.grid(True, alpha=0.3)
 
-# 가격 데이터용 두 번째 y축 생성
+# Create a second y-axis for price data
 ax2 = ax1.twinx()
 color = 'tab:red'
 ax2.set_ylabel('Average Price (£)', color=color)
 
-# 2019년까지의 가격 데이터 표시
+# Plot price data up until 2019
 ax2.plot(df[df['year'] <= 2019]['year'], df[df['year'] <= 2019]['avg_price'], marker='s', color=color, label='Average Price', linewidth=2)
 ax2.tick_params(axis='y', labelcolor=color)
 
-# 가격 축을 통화 형식으로 포맷
+# Format price axis with currency formatting
 ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'£{x:,.0f}'))
 
-# 제목 설정 및 2년 간격으로 눈금 표시
+# Set title and show every 2nd year
 plt.title('London Housing Market: Sales Volume vs Prices Over Time', fontsize=14, pad=20)
 
-# 두 데이터셋 모두 2019년까지의 연도만 사용
+# Use years only up to 2019 for both datasets
 all_years = sorted(list(set(df_2[df_2['year'] <= 2019]['year']).union(set(df[df['year'] <= 2019]['year']))))
-years_to_show = all_years[::2]  # 2년 간격
+years_to_show = all_years[::2]  # Every 2nd year
 ax1.set_xticks(years_to_show)
 ax1.set_xticklabels(years_to_show, rotation=45)
 
-# 범례 추가
+# Add legends
 ax1.legend(loc='upper left')
 ax2.legend(loc='upper right')
 

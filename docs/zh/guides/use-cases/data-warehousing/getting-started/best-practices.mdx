@@ -1,0 +1,374 @@
+---
+title: '数据湖最佳实践'
+sidebarTitle: '最佳实践'
+slug: /use-cases/data-lake/best-practices
+description: '面向生产环境的 ClickHouse 开放表格式查询指南：集成模式、性能调优、目录 配置和调试。'
+keywords: ['data lake', 'lakehouse', 'Iceberg', 'Delta Lake', 'DataLakeCatalog', 'partition pruning', 'metadata cache', 'Delta Kernel', 'change data feed', 'Parquet']
+doc_type: 'guide'
+---
+
+[入门指南](/zh/use-cases/data-lake/getting-started)将引导你完成首次查询 [Apache Iceberg](/zh/engines/table-engines/integrations/iceberg)、[Delta Lake](/zh/engines/table-engines/integrations/deltalake)、[Apache Hudi](/zh/engines/table-engines/integrations/hudi) 和 [Apache Paimon](/zh/sql-reference/table-functions/paimon)。完成初始设置后，请使用本页选择合适的访问模式、优化查询性能，并在生产环境中调试数据湖查询。
+
+<div id="choose-access-method">
+  ## 选择访问方法
+</div>
+
+| 访问方法                    | 适用场景                              | 示例                                                                                                                                                                                                               |
+| ----------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 表函数                     | 对已知路径执行即席查询                       | [icebergS3()](/zh/sql-reference/table-functions/iceberg), [deltaLake()](/zh/sql-reference/table-functions/deltalake), [hudi()](/zh/sql-reference/table-functions/hudi), [paimon()](/zh/sql-reference/table-functions/paimon) |
+| 表引擎                     | 在没有 目录 的情况下，重复查询同一路径         | [IcebergS3](/zh/engines/table-engines/integrations/iceberg), [DeltaLake](/zh/engines/table-engines/integrations/deltalake), [Hudi](/zh/engines/table-engines/integrations/hudi)                                           |
+| `DataLakeCatalog` 数据库引擎 | 适用于带有 目录 的生产工作负载；可跨多张表执行联邦查询 | [AWS Glue](/zh/use-cases/data-lake/glue-catalog), [Unity Catalog](/zh/use-cases/data-lake/unity-catalog), [REST catalog](/zh/use-cases/data-lake/rest-catalog)                                                            |
+
+<div id="table-functions">
+  ### 表函数
+</div>
+
+如果您已知该位置，且不需要持久化的表定义，可直接以内联方式传递存储路径和凭据。
+
+```sql
+SELECT count()
+FROM icebergS3('https://my-bucket.s3.amazonaws.com/warehouse/my_table/')
+WHERE event_date >= today() - 7
+```
+
+对于 AWS S3 和 GCS，请使用 S3 变体。Azure 和本地文件系统则有各自的专用变体 (`icebergAzure`、`icebergLocal`，以及其他格式中的对应变体) 。完整列表请参见[直接查询](/zh/use-cases/data-lake/getting-started/querying-directly)。
+
+[Paimon](/zh/sql-reference/table-functions/paimon)仅提供表函数。
+
+<div id="table-engines">
+  ### 表引擎
+</div>
+
+如果需要反复查询同一路径，可使用表引擎创建表。ClickHouse 会将路径和凭据存储在表元数据中，因此你只需查询普通表名，而不必每次都重新构造函数调用。
+
+```sql
+CREATE TABLE events
+    ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/events/')
+
+SELECT count() FROM events WHERE event_date = today()
+```
+
+表引擎支持与表函数相同的读取特性，包括[数据缓存](/zh/engines/table-engines/integrations/iceberg#data-cache)和[元数据缓存](/zh/engines/table-engines/integrations/iceberg#metadata-cache)。数据绝不会复制到 ClickHouse 中。当你需要与团队共享访问权限，或对同一张表运行定时作业时，表引擎会很有用。
+
+<div id="datalakecatalog">
+  ### `DataLakeCatalog` 数据库引擎
+</div>
+
+在外部[数据目录](/zh/use-cases/data-lake/getting-started/connecting-catalogs)中注册表时，只需连接 ClickHouse 一次。目录中的每个表都会自动显示为 ClickHouse 表，包括你创建连接后在上游新增的表。
+
+```sql
+CREATE DATABASE my_lake
+ENGINE = DataLakeCatalog
+SETTINGS
+    catalog_type = 'glue',
+    region = 'us-east-1',
+    aws_access_key_id = '<key>',
+    aws_secret_access_key = '<secret>'
+
+SELECT count() FROM my_lake.`analytics.events`
+```
+
+当您需要管理大量表或多个目录时，这种方式比逐个创建表定义更易于扩展。请参阅 [连接到目录](/zh/use-cases/data-lake/getting-started/connecting-catalogs) 和[目录指南](/zh/use-cases/data-lake/reference)。
+
+<Note>
+  **多部分表名中的反引号**
+
+  目录通常采用 `database.table` 这种命名方式。请像上面的示例一样，用反引号将包含数据库限定符的名称括起来。
+</Note>
+
+<div id="required-settings">
+  ## 必需设置
+</div>
+
+许多集成在首次使用前都需要先启用功能标志。如果 `CREATE DATABASE` 因权限错误而失败，请检查你的服务版本。
+
+对于目录连接，不同目录类型都有各自的标志。概览请参阅[Connecting to catalogs](/zh/use-cases/data-lake/getting-started/connecting-catalogs)，设置详情请参阅 [DataLakeCatalog Reference](/zh/engines/database-engines/datalakecatalog)。各目录的具体设置请见[目录指南](/zh/use-cases/data-lake/reference)。
+
+对于写入操作，Iceberg 需要 [allow&#95;insert&#95;into&#95;iceberg](/zh/operations/settings/settings#allow_insert_into_iceberg) (25.7+，自 26.2 起为 Beta) 。请参阅[写入数据湖](/zh/use-cases/data-lake/getting-started/writing-data)。Delta Lake 需要 [allow&#95;delta&#95;lake&#95;writes](/zh/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+) 。[支持矩阵](/zh/use-cases/data-lake/support-matrix)列出了每种格式和操作适用的标志。
+
+<div id="query-performance">
+  ## 提升查询性能
+</div>
+
+本页中的版本号与 ClickHouse 的发布版本 (Cloud 和自管理) 一致。在启用某项设置或功能之前，请先检查您的服务版本。
+
+Lake 的查询性能取决于 ClickHouse 从对象存储中读取的元数据量以及 [Parquet](/zh/interfaces/formats/Parquet) 文件数量。与任何 ClickHouse 表一样，按分区列进行筛选并选择更少的列，有助于提升查询性能。
+
+<div id="query-habits">
+  ### 查询习惯
+</div>
+
+在 `WHERE` 中按分区列进行过滤。Iceberg 和 Delta Lake 会存储分区元数据，使 ClickHouse 能在查询计划阶段跳过无关文件。如果过滤条件针对的是分区规范之外的列，ClickHouse 就会扫描所有匹配的文件。
+
+对于启用了[隐藏分区](https://iceberg.apache.org/docs/latest/partitioning/)的 Iceberg 表，应针对表 schema 中的**源列**进行过滤，而不是单独的分区列或转换后的字段名。如果该表按 `day(event_time)` 分区，请对 `event_time` 添加谓词。ClickHouse 会根据该过滤条件和 Iceberg 分区规范进行分区裁剪。参见[分区裁剪](/zh/engines/table-engines/integrations/iceberg#partition-pruning)和 [Iceberg 规范](https://iceberg.apache.org/spec/#partitioning/)。
+
+```sql
+SELECT count()
+FROM my_lake.`logs.application`
+WHERE event_time >= '2026-03-01'
+  AND event_time < '2026-03-02'
+```
+
+只列出需要的列，不要使用 `SELECT *`。ClickHouse 会从对象存储中按列读取 [Parquet](/zh/interfaces/formats/Parquet)，因此查询的列越少，传输和解压的字节数就越少。
+
+将选择性高的过滤条件放在 `WHERE` 中。从 ClickHouse 26.2+ 开始，[PREWHERE](/zh/optimize/prewhere) 也支持 Iceberg 和其他数据湖表的读取，会在读取其余列之前先在 Parquet 层进行过滤。分区裁剪仍然依赖于对分区源列的过滤，不能仅靠 PREWHERE。
+
+对于包含大量 [position 或 equality deletes](/zh/engines/table-engines/integrations/iceberg#deleted-rows) 的 Iceberg 表，扫描期间会应用 merge-on-read 过滤。因此，单个文件的处理开销通常会高于仅看清单裁剪所显示的程度。
+
+在多节点部署中，使用 [cluster 表函数](#parallel-cluster-reads) 将文件读取分发到各个副本上。
+
+<div id="parallel-cluster-reads">
+  ### 多节点集群上的并行读取
+</div>
+
+在 ClickHouse Cloud 和自管理的多节点服务中，lake 表函数的集群变体会将 [Parquet](/zh/interfaces/formats/Parquet) 文件读取分散到各个副本上。发起节点会并行将文件分派给工作线程。对于大型表的批次读取和定时加载，建议使用集群变体。在单节点部署中，标准表函数即可满足需求。
+
+将集群名称作为第一个参数传入 (在 ClickHouse Cloud 上为 `'default'`) 。所有受支持的格式都提供了对应的集群变体：
+
+| 格式         | 集群函数                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Iceberg    | [icebergS3Cluster()](/zh/sql-reference/table-functions/icebergCluster), [icebergAzureCluster()](/zh/sql-reference/table-functions/icebergCluster)       |
+| Delta Lake | [deltaLakeCluster()](/zh/sql-reference/table-functions/deltalakeCluster), [deltaLakeAzureCluster()](/zh/sql-reference/table-functions/deltalakeCluster) |
+| Hudi       | [hudiCluster()](/zh/sql-reference/table-functions/hudiCluster)                                                                                       |
+| Paimon     | [paimonS3Cluster()](/zh/sql-reference/table-functions/paimonCluster)                                                                                 |
+
+你还可以将集群读取与其他性能设置配合使用。
+
+<div id="snapshot-bounds">
+  ### 将批次读取限定在快照范围内
+</div>
+
+对于从湖仓表重复进行的批次加载，应将每次运行限制在某个快照范围内，而不是重新读取整张表。如果不设置边界，ClickHouse 可能会在每次运行时扫描所有版本和文件，从而增加 对象存储 读取量和查询时间。
+
+保存上一次成功加载的快照标识符，并在下一次运行时将其用作下界。
+
+* 对于 Iceberg，可使用 [iceberg&#95;snapshot&#95;id](/zh/operations/settings/settings#iceberg_snapshot_id) 或 [iceberg&#95;timestamp&#95;ms](/zh/operations/settings/settings#iceberg_timestamp_ms) (25.4+) 读取某个时间点的视图。对于仅追加表，可将快照设置与 `WHERE` 中的分区过滤条件结合使用。可使用 [system.iceberg&#95;history](/zh/operations/system-tables/iceberg_history) (25.6+) 查找两次运行之间的快照 ID。
+* 对于 Delta Lake，可使用 [delta&#95;lake&#95;snapshot&#95;start&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_start_version) 和 [delta&#95;lake&#95;snapshot&#95;end&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+) 读取两个版本之间的变更。可使用 [delta&#95;lake&#95;snapshot&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_version) (25.8+) 读取单个快照。有关 CDF 示例，请参见 [Delta change data feed](#delta-incremental-sync)。
+
+<div id="filesystem-cache">
+  ### 在本地缓存 Parquet 文件
+</div>
+
+这两种格式都支持 [enable&#95;filesystem&#95;cache](/zh/operations/settings/settings#enable_filesystem_cache)，可在多次查询之间将热点 [Parquet](/zh/interfaces/formats/Parquet) 文件保存在本地磁盘上。对于自管理部署，请在服务器配置中设置[文件系统缓存磁盘](/zh/operations/storing-data#using-local-cache)，以便该设置有可写入的存储空间。ClickHouse Cloud 会自动管理缓存。进行基准测试时，请将 `enable_filesystem_cache = 0`，以免缓存命中掩盖不同运行之间的变化。
+
+<div id="iceberg-settings">
+  ### Apache Iceberg
+</div>
+
+大多数 Iceberg 读取优化默认已启用。以下设置用于控制分区裁剪、元数据缓存以及与 目录 的往返次数。
+
+<div id="iceberg-read-settings">
+  #### 读取设置
+</div>
+
+| 设置                                                                                                                 | 起始版本 | 默认值           | 说明                                                |
+| ------------------------------------------------------------------------------------------------------------------ | ---- | ------------- | ------------------------------------------------- |
+| [use&#95;iceberg&#95;partition&#95;pruning](/zh/operations/settings/settings#use_iceberg_partition_pruning)           | 25.1 | 从 25.6 起为 `1` | 利用清单中的分区元数据跳过数据文件                                 |
+| [use&#95;iceberg&#95;metadata&#95;files&#95;cache](/zh/operations/settings/settings#use_iceberg_metadata_files_cache) | 25.4 | `1`           | 在内存中缓存 manifest 列表和元数据 JSON                       |
+| [iceberg&#95;metadata&#95;staleness&#95;ms](/zh/operations/settings/settings#iceberg_metadata_staleness_ms)           | 26.3 | `0`           | 查询设置。当缓存的元数据新于该时间窗口时，使用缓存元数据，而不是在每次查询时都调用 catalog |
+| [iceberg&#95;use&#95;version&#95;hint](/zh/sql-reference/table-functions/iceberg#writes-into-iceberg-table)           | 25.6 | —             | 在直接路径访问时读取 `version-hint.text`，以加快元数据解析           |
+
+<div id="iceberg-catalog-latency">
+  #### 降低 目录 延迟
+</div>
+
+对于连接到 目录 的 Iceberg 表，如果不缓存元数据，每次查询都需要拉取一次元数据。建议配合使用以下两个设置 (26.4+) ：
+
+1. 在创建表时设置 [iceberg&#95;metadata&#95;async&#95;prefetch&#95;period&#95;ms](/zh/engines/table-engines/integrations/iceberg#async-metadata-prefetch)，以便在后台预拉取元数据。
+2. 在查询中设置 [iceberg&#95;metadata&#95;staleness&#95;ms](/zh/operations/settings/settings#iceberg_metadata_staleness_ms) (26.3+) ，允许使用略有过期的元数据，从而跳过与 目录 的往返访问。
+
+```sql
+CREATE TABLE events
+    ENGINE = IcebergS3('https://my-bucket.s3.amazonaws.com/warehouse/events/')
+SETTINGS iceberg_metadata_async_prefetch_period_ms = 60000;
+
+SELECT count()
+FROM events
+SETTINGS iceberg_metadata_staleness_ms = 60000;
+```
+
+将 staleness 值设为 `0` 时，始终会拉取最新元数据。对于读操作密集且表很少发生变化的工作负载，请增大该窗口。
+
+当 ClickHouse 选错元数据文件时 (表 path 中存在多个 `.metadata.json` 文件) ，请在创建表时使用 [iceberg&#95;metadata&#95;file&#95;path](/zh/engines/table-engines/integrations/iceberg#metadata-file-resolution) (25.4+) 或 [iceberg&#95;metadata&#95;table&#95;uuid](/zh/engines/table-engines/integrations/iceberg#metadata-file-resolution) 固定分辨率。请参阅[元数据文件分辨率](/zh/engines/table-engines/integrations/iceberg#metadata-file-resolution)。
+
+<div id="iceberg-time-travel">
+  #### 时间旅行
+</div>
+
+使用 [iceberg&#95;timestamp&#95;ms](/zh/operations/settings/settings#iceberg_timestamp_ms) 或 [iceberg&#95;snapshot&#95;id](/zh/operations/settings/settings#iceberg_snapshot_id) 读取历史快照 (两者均从 25.4 版本起支持) 。不要在同一条查询中同时设置这两项。选择 ID 之前，请先在 [system.iceberg&#95;history](/zh/operations/system-tables/iceberg_history) (25.6+) 中查看快照的演变关系。对于重复执行的批次加载，请参见[将批次读取限定到快照](#snapshot-bounds)。
+
+```sql
+SELECT count()
+FROM my_iceberg_table
+SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
+<div id="iceberg-write-settings">
+  #### Iceberg 写入
+</div>
+
+除 [allow&#95;insert&#95;into&#95;iceberg](/zh/operations/settings/settings#allow_insert_into_iceberg) (25.7+，自 26.2 起为 Beta) 外，还可以控制 insert 时的输出文件大小和分区数：
+
+| Setting                                                                                                                              | Since | Purpose              |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ----- | -------------------- |
+| [iceberg&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/zh/operations/settings/settings#iceberg_insert_max_rows_in_data_file)   | 25.9  | 每个输出数据文件的行数上限        |
+| [iceberg&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/zh/operations/settings/settings#iceberg_insert_max_bytes_in_data_file) | 25.9  | 每个输出数据文件的字节数上限       |
+| [iceberg&#95;insert&#95;max&#95;partitions](/zh/operations/settings/settings#iceberg_insert_max_partitions)                             | 25.12 | 单次 insert 可写入的分区数量上限 |
+
+请参阅[写入数据湖](/zh/use-cases/data-lake/getting-started/writing-data)和 [Iceberg 引擎参考](/zh/engines/table-engines/integrations/iceberg)。
+
+<div id="delta-lake-settings">
+  ### Delta Lake
+</div>
+
+从 25.6 版本开始，ClickHouse 通过 Delta Lake Rust kernel ([allow&#95;experimental&#95;delta&#95;kernel&#95;rs](/zh/operations/settings/settings#allow_experimental_delta_kernel_rs)，25.5+) 在 S3 和 GCS 上读取 Delta Lake。在 Azure Blob 存储上，由于该内核已被禁用，请使用 [deltaLakeAzure()](/zh/sql-reference/table-functions/deltalake) 和 legacy reader。不使用该内核时，将无法使用分区裁剪、change data feed 以及按快照版本读取。
+
+<div id="delta-kernel">
+  #### Delta Kernel
+</div>
+
+必须启用 [allow&#95;experimental&#95;delta&#95;kernel&#95;rs](/zh/operations/settings/settings#allow_experimental_delta_kernel_rs)，才能使用分区裁剪、change data feed 和快照版本读取。从 25.5 起，该设置在 S3 和 GCS 上默认启用。对于旧版本，或在进行故障排查时，请显式启用它：
+
+```sql
+SET allow_experimental_delta_kernel_rs = 1;
+```
+
+<div id="iceberg-read-settings">
+  #### 读取设置
+</div>
+
+| 设置                                                                                                                                                                                                                                      | 自版本   | 默认值  | 说明                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ---- | ------------------------------------------------- |
+| [delta&#95;lake&#95;enable&#95;engine&#95;predicate](/zh/operations/settings/settings#delta_lake_enable_engine_predicate)                                                                                                                  | 25.8  | `1`  | 将过滤器下推到内核以进行分区裁剪。需要 [Delta Kernel](#delta-kernel) |
+| [delta&#95;lake&#95;reload&#95;schema&#95;for&#95;consistency](/zh/operations/settings/settings#delta_lake_reload_schema_for_consistency)                                                                                                  | 26.3  | `0`  | 当并发写入器演进 schema 时，在每次查询前重新加载 schema               |
+| [delta&#95;lake&#95;snapshot&#95;start&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_start_version) / [delta&#95;lake&#95;snapshot&#95;end&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_end_version) | 25.12 | `-1` | 读取两个快照版本之间的 CDF 变更。要求上游已启用 CDF                    |
+| [delta&#95;lake&#95;snapshot&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_version)                                                                                                                                    | 25.8  | `-1` | 读取单个历史快照。将 `-1` 设为最新版本 (`0` 也是有效值)                |
+
+带有[删除向量](https://docs.delta.io/latest/delta-deletion-vectors.html) (26.2+) 的表会在读取时应用行级过滤。ClickHouse 会自动处理这一点，但对 DV 较多的表进行 scan 时，每个文件都需要执行更多操作。
+
+<div id="delta-incremental-sync">
+  #### Delta change data feed
+</div>
+
+若要仅读取两个 Delta 快照之间发生变化的行，请设置 [delta&#95;lake&#95;snapshot&#95;start&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_start_version) 和 [delta&#95;lake&#95;snapshot&#95;end&#95;version](/zh/operations/settings/settings#delta_lake_snapshot_end_version) (25.12+) 。该表必须在上游启用 change data feed (`delta.enableChangeDataFeed`) 。请在查询设置中同时设置起始版本和结束版本。仅设置结束版本会报错。
+
+```sql
+SELECT *
+FROM deltaLake('s3://my-bucket/warehouse/ga4_events/')
+SETTINGS
+    delta_lake_snapshot_start_version = 42,
+    delta_lake_snapshot_end_version = 47
+```
+
+在每次成功加载后保存最终版本，并在下次运行时将其作为起始版本传入。结果中包含 CDF 列 (`_change_type`、`_commit_version`、`_commit_timestamp`) 。将数据加载到目标表之前，请先处理这些列。有关通用快照模式，请参阅 [将批次读取限定到快照](#snapshot-bounds)。
+
+<div id="delta-write-settings">
+  #### Delta Lake 写入
+</div>
+
+除了 [allow&#95;delta&#95;lake&#95;writes](/zh/operations/settings/settings#allow_experimental_delta_lake_writes) (25.9+) 外，还可控制插入时输出文件的大小：
+
+| 设置项                                                                                                                                            | 版本   | 用途            |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ------------- |
+| [delta&#95;lake&#95;insert&#95;max&#95;rows&#95;in&#95;data&#95;file](/zh/operations/settings/settings#delta_lake_insert_max_rows_in_data_file)   | 25.9 | 每个输出数据文件的行数上限 |
+| [delta&#95;lake&#95;insert&#95;max&#95;bytes&#95;in&#95;data&#95;file](/zh/operations/settings/settings#delta_lake_insert_max_bytes_in_data_file) | 25.9 | 每个输出数据文件的字节上限 |
+
+```sql
+SET allow_delta_lake_writes = 1;
+
+INSERT INTO my_delta_table
+SETTINGS
+    delta_lake_insert_max_rows_in_data_file = 1000000,
+    delta_lake_insert_max_bytes_in_data_file = 134217728
+SELECT * FROM source_table
+```
+
+写入操作需要使用 S3 或 GCS 上的 Delta Kernel。示例请参阅 [DeltaLake 引擎参考](/zh/engines/table-engines/integrations/deltalake)。
+
+<div id="debug-system-tables">
+  ## 调试数据湖查询
+</div>
+
+执行缓慢或返回异常结果的数据湖查询，通常可归因于元数据读取、分区裁剪或 目录 连接问题。请先进行以下检查；如果仍有需要，再查看特定 format 的元数据日志。
+
+<div id="debug-catalog">
+  ### 验证 目录 连接性
+</div>
+
+带有 `DataLakeCatalog` 的 `CREATE DATABASE` 不会校验凭据。即使 目录 连接已断开，数据库也可能仍然存在。从 ClickHouse 26.4 开始，可运行轻量级健康检查：
+
+```sql
+CHECK DATABASE my_lake;
+```
+
+在较早版本中，使用 `SHOW TABLES FROM my_lake` 确认连接是否正常，并查看错误信息。使用 `SHOW CREATE TABLE`，并将表名用反引号括起来，以验证解析后的存储路径和引擎类型：
+
+```sql
+SHOW CREATE TABLE my_lake.`db.table`;
+```
+
+如果在 `system.tables` 中看不到目录表，请启用 [show&#95;remote&#95;databases&#95;in&#95;system&#95;tables](/zh/operations/settings/settings#show_remote_databases_in_system_tables) (25.8+) 。默认情况下，目录表不会显示在系统内部信息中。在 26.6 之前的版本中，请使用其原名称 `show_data_lake_catalogs_in_system_tables`。
+
+<div id="debug-files">
+  ### 查看读取了哪些文件
+</div>
+
+Iceberg 和 Delta Lake 在每次读取时都会暴露[虚拟列](/zh/sql-reference/table-functions/iceberg#virtual-columns) (`_path`、`_file`、`_size`、`_time`、`_etag`) 。按 `_path` 分组，可查看分区裁剪是否生效，或查询扫描的文件是否超出预期。对于使用隐藏分区的 Iceberg 表，应基于源列 (例如 `event_time`) 进行过滤，而不是单独的分区列：
+
+```sql
+SELECT _path, count() AS rows
+FROM my_lake.`logs.application`
+WHERE event_time >= '2026-03-01'
+  AND event_time < '2026-03-02'
+GROUP BY _path
+ORDER BY rows DESC;
+```
+
+<div id="debug-query-log">
+  ### 检查扫描量
+</div>
+
+在添加过滤器或调整设置前后，对比 [system.query&#95;log](/zh/operations/system-tables/query_log) 中的 `read_rows` 和 `read_bytes`。`ReadBufferFromS3Bytes` 和 `CachedReadBufferReadFromCacheBytes` 等 ProfileEvents 可显示有多少数据来自对象存储，以及有多少来自本地缓存。有关 query&#95;log 和 EXPLAIN 的完整说明，请参阅 [查询优化](/zh/optimize/query-optimization)。
+
+进行基准测试时，请禁用 [enable&#95;filesystem&#95;cache](/zh/operations/settings/settings#enable_filesystem_cache)，以免缓存命中掩盖不同运行之间的变化。
+
+<div id="debug-metadata-logs">
+  ### 元数据日志
+</div>
+
+ClickHouse 提供了三个用于元数据级调试的系统表。请仅在查询时启用日志。它们不适合用于持续监控。
+
+| 系统表                                                                                             | 格式         | 自何版本起 | 启用方式                                                                                                      | 用途                  |
+| ----------------------------------------------------------------------------------------------- | ---------- | ----- | --------------------------------------------------------------------------------------------------------- | ------------------- |
+| [system.iceberg&#95;metadata&#95;log](/zh/operations/system-tables/iceberg_metadata_log)           | Iceberg    | 25.9  | 在查询中设置 [iceberg&#95;metadata&#95;log&#95;level](/zh/operations/settings/settings#iceberg_metadata_log_level) | 追踪读取的元数据文件以及分区裁剪决策  |
+| [system.iceberg&#95;history](/zh/operations/system-tables/iceberg_history)                         | Iceberg    | 25.6  | 对 ClickHouse 中的 Iceberg 表自动填充                                                                             | 在执行时间旅行查询前检查快照谱系    |
+| [system.delta&#95;lake&#95;metadata&#95;log](/zh/operations/system-tables/delta_lake_metadata_log) | Delta Lake | 25.10 | 在查询中设置 [delta&#95;lake&#95;log&#95;metadata](/zh/operations/settings/settings#delta_lake_log_metadata) = `1` | 追踪 Delta 元数据文件和快照解析 |
+
+启用日志后运行查询，刷新日志，然后检查该 `query_id` 对应的条目：
+
+```sql
+SELECT count() FROM my_iceberg_table
+SETTINGS iceberg_metadata_log_level = 'manifest_file_entry';
+
+SYSTEM FLUSH LOGS iceberg_metadata_log;
+
+SELECT content_type, file_path, pruning_status
+FROM system.iceberg_metadata_log
+WHERE query_id = '<previous_query_id>';
+```
+
+在 ClickHouse Cloud 中，日志数据仅保存在各个节点本地。使用 `clusterAllReplicas` 可查看跨所有副本的完整情况。
+
+较高的 Iceberg 日志级别会禁用 manifest 列表和文件的 元数据缓存，从而减慢对同一表的后续查询。只有在主动排查问题时才应使用高详细程度。对于 Delta Lake predicate 问题，可启用 [delta&#95;lake&#95;throw&#95;on&#95;engine&#95;predicate&#95;error](/zh/operations/settings/settings#delta_lake_throw_on_engine_predicate_error) (25.8+) ，以便在内核无法下推过滤器时快速报错。
+
+有关列详情和详细程度选项，请参阅 [iceberg&#95;metadata&#95;log](/zh/operations/system-tables/iceberg_metadata_log) 和 [delta&#95;lake&#95;metadata&#95;log](/zh/operations/system-tables/delta_lake_metadata_log) 参考页面。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* [入门](/zh/use-cases/data-lake/getting-started) — 从直接查询到回写的端到端指南
+* [直接查询](/zh/use-cases/data-lake/getting-started/querying-directly) — 涵盖全部四种格式的表函数、引擎和集群变体
+* [连接到目录](/zh/use-cases/data-lake/getting-started/connecting-catalogs) — `DataLakeCatalog` 与 Unity Catalog 的设置
+* [写入数据湖](/zh/use-cases/data-lake/getting-started/writing-data) — 将数据回写到 Iceberg 和 Delta Lake
+* [支持矩阵](/zh/use-cases/data-lake/support-matrix) — 跨格式、目录和存储后端的功能对比

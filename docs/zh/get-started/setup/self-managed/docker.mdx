@@ -32,13 +32,12 @@ docker pull clickhouse/clickhouse-server
   ### 兼容性
 </div>
 
-* amd64 镜像要求支持 [SSE3 指令集](https://en.wikipedia.org/wiki/SSE3)。
-  几乎所有 2005 年之后的 x86 CPU 都支持 SSE3。
+* amd64 镜像要求支持 [x86-64-v3 微架构级别](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels) (AVX2、BMI1、BMI2、F16C、FMA、LZCNT、MOVBE、XSAVE) 。几乎所有 2015 年之后的 x86 CPU 都支持 x86-64-v3。
 * arm64 镜像要求支持 [ARMv8.2-A 架构](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A)，并且
   还需要支持 Load-Acquire RCpc 寄存器。该寄存器在 ARMv8.2-A 中是可选的，而在
   [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A) 中则是必需的。Graviton &gt;=2、Azure 和 GCP 实例均支持此特性。
-  不受支持的设备示例包括 Raspberry Pi 4 (ARMv8.0-A) 和 Jetson AGX Xavier/Orin (ARMv8.2-A) 。
-* 从 ClickHouse 24.11 开始，Ubuntu 镜像已改为使用 `ubuntu:22.04` 作为基础镜像。它要求 docker 版本 &gt;= `20.10.10`，
+  不受支持的设备示例包括 Raspberry Pi 4 (ARMv8.0-A) 和 Jetson AGX Xavier/Orin (ARMv8.2-A)。
+* 从 ClickHouse 24.11 开始，Ubuntu 镜像已改为使用 `ubuntu:22.04` 作为基础镜像。它要求 docker 版本 &gt;= `20.10.10`
   且包含该 [patch](https://github.com/moby/moby/commit/977283509f75303bc6612665a04abf76ff1d2468)。作为临时变通方案，你也可以
   改用 `docker run --security-opt seccomp=unconfined`，但这会带来安全风险。
 

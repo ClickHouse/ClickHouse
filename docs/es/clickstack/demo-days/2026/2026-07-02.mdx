@@ -1,0 +1,178 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-02
+title: 'Demo days - 2026-07-02'
+sidebarTitle: '2026-07-02'
+description: 'ClickStack demo days de 2026-07-02'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="notebook-citations">
+  ## Citas en notebooks
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/ns5aVkpgTQg" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Ahora se puede enlazar directamente a los tiles (celdas) de notebooks, incluso entre ramas. En Markdown personalizado, puedes usar tanto un enlace absoluto como un enlace hash relativo, lo que facilita mucho dirigir a alguien a la evidencia exacta detrás de una afirmación.
+
+El cambio más importante está del lado del agente. Los resúmenes generados en notebooks ahora citan los tiles en los que se basan, para que los lectores puedan ir directamente a los datos subyacentes en lugar de dar por válido el resumen sin más.
+
+También hemos cambiado la forma en que se abren los notebooks existentes. El tile de resumen ahora aparece expandido de forma predeterminada en lugar de contraído, que suele ser lo que quieres al volver a uno.
+
+<div id="otel-metrics-table-primary-key-optimization">
+  ## Optimización de la clave primaria de la tabla de métricas de OTel
+</div>
+
+*Demo de [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/GIwNxRJGQKg" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Un análisis en profundidad de la validación y reducción de las claves primarias en las tablas de métricas de OTel. La medida útil aquí son los bytes de clave primaria por gránulo: el tamaño total de la clave primaria dividido entre el número de gránulos. Esto tiene en cuenta que las tablas más grandes tienen, naturalmente, más gránulos y nos da una comparación justa.
+
+El esquema original se situaba en torno a 148 bytes por gránulo. El nuevo esquema está más cerca de 17 bytes, lo que supone una reducción de aproximadamente 9 veces en el tamaño de la clave primaria, con una reducción similar en el uso de memoria en producción.
+
+Los cambios en el esquema son bastante pequeños. `MetricName` ahora usa `LowCardinality`, lo cual está bien salvo que estés manejando una cantidad enorme de nombres de métricas distintos. Incluso en ese caso, solo debería ser motivo de preocupación en casos extremos. Las marcas de tiempo pasan de `DateTime64` con precisión de nanosegundos a `DateTime` con precisión de segundos, lo cual es más que suficiente para las métricas. Aun así, puedes conservar la precisión de nanosegundos modificando tú mismo el esquema.
+
+También añadimos índices explícitos de mínimo/máximo para el tiempo y reemplazamos el mapa completo de atributos en la clave primaria por un hash. Los mismos cambios se han aplicado a todos los esquemas de tablas de métricas, y también los estamos aportando al proyecto upstream del OTel collector.
+
+**PR relacionados:** [#2545](https://github.com/hyperdxio/hyperdx/pull/2545) fix: change metrics PK for better memory usage
+
+<div id="trend-and-spark-lines-behind-numbers">
+  ## Líneas de tendencia y minigráficos detrás de los números
+</div>
+
+*Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/4XwOkyNqDEY" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Los tiles numéricos ahora pueden mostrar una línea de tendencia o un gráfico de área detrás del valor. Ha sido una función popular de Grafana durante mucho tiempo, y ahora también ha llegado a ClickStack.
+
+Puedes activarlo desde la configuración de visualización del tile. De forma predeterminada, no muestra ningún gráfico de fondo, y las otras opciones disponibles son línea y área. Requiere muy poca configuración, pero hace que los dashboards se vean notablemente más pulidos.
+
+Por ahora, los gráficos de fondo solo funcionan con tiles numéricos declarativos, así que todavía no puedes usar una consulta SQL personalizada. Estamos considerando incorporarlo más adelante, después de escuchar a usuarios que quieren más control sobre lo que representa el gráfico.
+
+**PR relacionadas:** [#2489](https://github.com/hyperdxio/hyperdx/pull/2489) feat(dashboards): minigráfico de tendencia de fondo en tiles numéricos, [#2501](https://github.com/hyperdxio/hyperdx/pull/2501) fix(dashboards): hacer que el minigráfico de fondo del tile numérico coincida con el valor mostrado, [#2520](https://github.com/hyperdxio/hyperdx/pull/2520) refactor(dashboards): extraer el primitive compartido Sparkline del tile numérico
+
+<div id="table-visual-improvements">
+  ## Mejoras visuales en las tablas
+</div>
+
+*Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yl7j7E9OGk4" title="reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Los tiles de tabla incorporaron algunas mejoras de legibilidad, todas surgidas de comentarios concretos de usuarios. Ahora puedes habilitar fondos alternos para las filas desde la configuración de visualización, lo que hace que las tablas anchas o densas sean mucho más fáciles de recorrer visualmente. También hay un separador más limpio y visible entre la fila de encabezado y los datos que aparecen debajo.
+
+Las columnas ahora pueden tener sus propios colores usando las mismas opciones de estilo que los tiles numéricos. Define un único color predeterminado o añade umbrales que se evalúan celda por celda, para que los errores se muestren en rojo mientras los valores normales se mantienen en verde.
+
+Son cambios pequeños, pero todos nacieron de comentarios reales de usuarios del tipo «ojalá esta tabla pudiera hacer eso».
+
+**PR relacionadas:** [#2519](https://github.com/hyperdxio/hyperdx/pull/2519) feat(dashboard): separador del encabezado del tile de tabla y fondo alterno de filas opcional, [#2517](https://github.com/hyperdxio/hyperdx/pull/2517) feat(dashboards): color por columna en tiles de tabla
+
+<div id="grafana-plugin-improvements">
+  ## Mejoras del plugin de Grafana
+</div>
+
+*Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/doFNUMZotJU" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Un resumen de lo que llegará próximamente al plugin de Grafana de ClickStack.
+
+La configuración de la fuente de datos ahora admite un modo de tabla única junto con la configuración existente de varias bases de datos. Apúntala a una sola tabla, como la de logs de producción, y el editor de consultas cambia a un constructor compacto diseñado para la exploración. Dispone de filtros rápidos para campos como el nombre del servicio, filtros de inclusión y exclusión, y SQL sigue estando ahí cuando lo necesitas.
+
+También estamos incorporando dashboards listos para usar para logs y traces de OTel, con el mismo patrón de drill-down al que los usuarios ya están acostumbrados. El dashboard de logs incluye una vista general por servicio, gráficos de volumen y detalles de logs. Trace Explore ofrece vistas de servicio, mapas de calor de latencia y desgloses por operación. También hay un dashboard de servicio combinado que reúne logs y traces, agrupados por nombre de span, para que puedas investigar un servicio sin tener que ir cambiando de herramienta.
+
+Todos estos dashboards funcionan con el esquema predeterminado desde el primer momento. Los nuevos usuarios pueden empezar a utilizarlos de inmediato y luego tomarlos como punto de partida para sus propios dashboards.
+
+También hay dos nuevos constructores de tipo asistente. El constructor de variables te permite seleccionar valores de columnas en lugar de escribir una consulta SQL personalizada. Por ejemplo, puedes crear una variable a partir de nombres de pods y obtener una vista previa de los valores que devuelve.
+
+El constructor de anotaciones genera annotations a partir de una consulta de detección de cambios sobre un campo elegido. Apúntalo al atributo de versión de un servicio y puede añadir un marcador de despliegue cada vez que cambie ese valor, sin que tengas que escribir tú mismo el SQL.
+
+<div id="sidebar-and-span-view-improvements">
+  ## Mejoras en la barra lateral y la vista de spans
+</div>
+
+*Demo de [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vbeufXNyBkw" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Una gran tanda de ajustes y mejoras para la navegación y la visualización de trazas.
+
+La barra lateral ahora puede mantenerse fija mientras trabajas desde la página de Búsqueda, para que puedas desplazarte y seleccionar otras filas sin cerrarla. La navegación también conserva el contexto de la pestaña actual. El botón Atrás usa una ruta de navegación para devolverte exactamente al punto del que venías, en lugar de limitarse a cerrar el panel.
+
+También hay una ventana emergente con atajos de teclado, para que sea fácil encontrar los atajos disponibles. Los logs con una traza asociada ahora muestran un chip que te lleva directamente a ella.
+
+La vista de spans recibe la mejora más visible. Los spans se colorean por nombre de servicio, alternando entre distintos colores a medida que cambian los servicios, y un nuevo minimapa hace que las trazas grandes sean mucho más fáciles de leer que un muro de barras grises. Puedes arrastrar sobre un rango de tiempo para ampliar la vista y restablecerla con un clic. Una nueva pila de historial también te permite moverte entre trazas y volver a donde estabas.
+
+Los spans seleccionados tienen mejores controles para expandir y contraer, lo que evita que tengas que cerrar cada elemento hijo por separado. También integramos una corrección aportada por la comunidad que da a los spans muy cortos un ancho mínimo de renderizado. Un span que dura unos pocos microsegundos, por ejemplo, sigue siendo visible en la línea de tiempo sin que tengas que ampliar la vista por completo.
+
+**PR relacionadas:** [#2552](https://github.com/hyperdxio/hyperdx/pull/2552) feat: add trace timeline minimap
+
+<div id="metrics-queries-dashboard-evals-and-better-alert-error-reporting-in-mcp">
+  ## Consultas de métricas, evaluaciones de dashboards y mejor reporte de errores para alertas en MCP
+</div>
+
+*Demo a cargo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yjceqgveZr8" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Tres mejoras del servidor MCP llegaron juntas en este ciclo.
+
+Ahora, el MCP puede ejecutar consultas de métricas directamente, incluso desde Notebooks, sin tener que pasar por un dashboard solo para acceder a los datos subyacentes.
+
+También hemos añadido una evaluación integral para la creación de dashboards. Actualmente supera alrededor del 75 % de los casos, y estamos añadiendo distractores de forma constante para que sea más difícil falsearla. Cuando el MCP crea un dashboard defectuoso en un caso real, ese fallo puede incorporarse al conjunto de evaluación. Con el tiempo, esto debería detectar problemas como fuentes de Raw SQL que generan la consulta incorrecta antes de que se conviertan en fallos recurrentes.
+
+Ahora, los errores de las herramientas se clasifican por categoría en lugar de agruparse en una única categoría genérica. Una consulta SQL incorrecta de un usuario se gestiona por separado de un fallo interno, como un timeout de la base de datos. Eso nos da la distinción que necesitamos para crear alertas más útiles sobre el estado del MCP.
+
+**PRs relacionados:** [#2437](https://github.com/hyperdxio/hyperdx/pull/2437) feat(mcp): first-class metric source support, [#2571](https://github.com/hyperdxio/hyperdx/pull/2571) feat(hdx-eval): add dashboard-build eval scenario, [#2570](https://github.com/hyperdxio/hyperdx/pull/2570) feat(mcp): classify MCP tool errors by category for alerting
+
+<div id="otel-collector-batch-processor-updates">
+  ## Actualizaciones del batch processor del OTel collector
+</div>
+
+*Demo de [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/rlSm_9ivsQ4" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+OpenTelemetry está trasladando la agrupación en lotes del batch processor independiente a la configuración del exportador. El ClickStack collector ya admitía ambos enfoques, por lo que no fue necesario cambiar ningún código. Al final, esto se redujo a una actualización de la documentación.
+
+En el modelo anterior, un batch processor dedicado se situaba en el pipeline y almacenaba en búfer las filas antes de pasarlas al exportador. Tenía sus propios ajustes de tamaño de lote, tamaño máximo de lote y timeout.
+
+El modelo que OpenTelemetry está estandarizando mantiene el agrupador por lotes junto al exportador en lugar de colocarlo en la cadena de procesadores. Se conservan la mayoría de los mismos conceptos, incluidos los tamaños mínimo y máximo de lote y el tamaño de la cola. La configuración basada en el exportador también admite comportamiento de bloqueo, límites basados en bytes y persistencia, características que no estaban disponibles en el batch processor anterior.
+
+La documentación ahora recomienda la configuración basada en el exportador y explica cómo migrar la configuración existente del batch processor. También sugiere un mínimo de 5.000 filas con un timeout corto como valor predeterminado razonable para la mayoría de las implementaciones. Una configuración deficiente de la agrupación en lotes sigue siendo una de las causas más comunes de una mala primera experiencia con ClickHouse.
+
+<div id="surrounding-context-for-arbitrary-attributes">
+  ## Contexto circundante para atributos arbitrarios
+</div>
+
+*Demo de [@MikeShi42](https://github.com/MikeShi42)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BZTG8TTTyoA" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+El contexto circundante te permite abrir una entrada de log y ver qué más estaba ocurriendo a su alrededor. De forma predeterminada, ese contexto se agrupa por servicio, pod de Kubernetes o nodo. Esto funciona bien para la mayoría de las implementaciones con esquema OTel, pero quienes usaban un esquema personalizado no tenían una forma sencilla de construir la vista en torno a sus propios atributos.
+
+Ahora puedes usar cualquier atributo de una entrada de log para definir la vista de contexto, tanto si proviene de un esquema OTel como de uno personalizado. Las opciones habituales de servicio, pod de Kubernetes y nodo siguen estando ahí, pero también puedes agrupar con la misma facilidad por la versión del SDK de telemetría o cualquier otro campo de la entrada de log. Además, puedes borrar la selección en cualquier momento y empezar de nuevo.
+
+**PR relacionadas:** [#2558](https://github.com/hyperdxio/hyperdx/pull/2558) fix: support service name expression and quick attribute filters in surrounding context

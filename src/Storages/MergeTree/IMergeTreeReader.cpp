@@ -15,6 +15,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Databases/enableAllExperimentalSettings.h>
@@ -60,6 +61,7 @@ IMergeTreeReader::IMergeTreeReader(
     , storage_settings(storage_settings_)
     , storage_snapshot(storage_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
+    , last_mark_to_read(getLastMark(all_mark_ranges_))
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     , original_requested_columns(columns_)
     , converted_requested_columns((*storage_settings_)[MergeTreeSetting::share_nested_offsets]
@@ -105,6 +107,11 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
 
     bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
     return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage(), share_nested);
+}
+
+bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
+{
+    return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());
 }
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
@@ -153,7 +160,9 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     }
 }
 
-void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
+void IMergeTreeReader::fillMissingColumns(
+    Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
+    const NameSet & previous_step_columns) const
 {
     try
     {
@@ -188,7 +197,8 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
                 : available_columns,
                 partially_read_columns,
                 storage_snapshot,
-                share_nested);
+                share_nested,
+                previous_step_columns);
 
             should_evaluate_missing_defaults
                 = std::any_of(res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -293,12 +303,17 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             }
 
             auto name_in_storage = it->getNameInStorage();
-            res_columns[pos] = additional_columns.getByName(name_in_storage).column;
 
             if (it->isSubcolumn())
             {
-                const auto & type_in_storage = it->getTypeInStorage();
-                res_columns[pos] = type_in_storage->getSubcolumn(it->getSubcolumnName(), res_columns[pos]);
+                /// The parent may still be in its pre-`ALTER MODIFY` type here (an earlier on-fly step
+                /// is not converted by performRequiredConversions); tryGetSubcolumnFromBlock casts it
+                /// to the storage type before extracting.
+                res_columns[pos] = tryGetSubcolumnFromBlock(additional_columns, it->getTypeInStorage(), *it);
+            }
+            else
+            {
+                res_columns[pos] = additional_columns.getByName(name_in_storage).column;
             }
         }
     }
@@ -432,7 +447,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
-            auto column_in_part = getColumnInPart(*name_and_type);
+            const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
             copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
@@ -461,6 +476,12 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
+}
+
+void IMergeTreeReader::updateAllMarkRanges(const MarkRanges & ranges)
+{
+    all_mark_ranges = ranges;
+    last_mark_to_read = getLastMark(all_mark_ranges);
 }
 
 std::optional<IMergeTreeReader::ColumnForOffsets>

@@ -18,9 +18,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 لقطات الشاشة في هذا الدليل مأخوذة من [ClickHouse Cloud](https://console.clickhouse.cloud) وحدة تحكم SQL. تعمل جميع الاستعلامات على كلٍّ من Cloud وعمليات النشر المُدارة ذاتيًا.
 
 <Steps>
-  <Step>
-    ## استعلم عن بيانات Iceberg مباشرة
-
+  <Step title="استعلم عن بيانات Iceberg مباشرة" id="query-directly">
     أسرع طريقة للبدء هي استخدام دالة الجدول [`icebergS3()`](/ar/reference/functions/table-functions/iceberg) — وجّهها إلى جدول Iceberg في S3 ونفّذ استعلامًا فورًا، من دون أي إعداد.
 
     افحص المخطط:
@@ -48,9 +46,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     **تعرّف على المزيد:** يتناول [الاستعلام عن تنسيقات الجداول المفتوحة مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) التنسيقات الأربعة، ومتغيرات cluster للقراءة الموزعة، وخيارات الواجهة الخلفية للتخزين (S3 وAzure وHDFS وlocal).
   </Step>
 
-  <Step>
-    ## أنشئ جدولًا دائمًا باستخدام محرك جدول Iceberg
-
+  <Step title="أنشئ جدولًا دائمًا باستخدام محرك جدول Iceberg" id="table-engine">
     للوصول المتكرر، أنشئ جدولًا باستخدام محرك جدول Iceberg حتى لا تحتاج إلى تمرير المسار في كل مرة. تبقى البيانات في S3 — ولا تُنسخ أي بيانات:
 
     ```sql
@@ -75,9 +71,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     يدعم محرك الجدول التخزين المؤقت للبيانات، والتخزين المؤقت للبيانات الوصفية، وتطوّر المخطط، والسفر عبر الزمن. راجع دليل [الاستعلام مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) للحصول على تفاصيل حول ميزات محرك الجدول، و[مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) للاطلاع على مقارنة شاملة للميزات.
   </Step>
 
-  <Step>
-    ## الاتصال بكتالوج
-
+  <Step title="الاتصال بكتالوج" id="connect-catalog">
     تدير معظم المؤسسات جداول Iceberg عبر كتالوج بيانات لتجميع البيانات الوصفية للجداول واكتشاف البيانات في مكان مركزي. يدعم ClickHouse الاتصال بكتالوجك باستخدام محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، مما يعرِض جميع جداول الكتالوج كقاعدة بيانات في ClickHouse. وهذا هو المسار الأكثر قابلية للتوسع، لذا عند إنشاء جداول Iceberg جديدة تظل متاحة دائمًا في ClickHouse دون أي عمل إضافي.
 
     إليك مثالاً على الاتصال بـ [AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog):
@@ -111,9 +105,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     **تعرّف على المزيد:** يشرح [الاتصال بـ Data Catalog](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) إعداد Unity Catalog كاملًا مع أمثلة على Delta وIceberg.
   </Step>
 
-  <Step>
-    ## نفِّذ استعلامًا
-
+  <Step title="نفِّذ استعلامًا" id="issue-query">
     بصرف النظر عن الطريقة التي استخدمتها أعلاه — دالة الجدول أو محرك الجدول أو catalog — فإن ClickHouse SQL نفسه يعمل في جميعها:
 
     ```sql
@@ -136,9 +128,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     صياغة الاستعلام متطابقة — والتغيير الوحيد يكون في عبارة `FROM`. تعمل جميع الدوال وعمليات JOIN وعمليات التجميع في ClickHouse SQL بالطريقة نفسها بغضّ النظر عن مصدر البيانات.
   </Step>
 
-  <Step>
-    ## حمّل مجموعة فرعية إلى ClickHouse
-
+  <Step title="حمّل مجموعة فرعية إلى ClickHouse" id="load-data">
     يُعد الاستعلام عن Iceberg مباشرةً أمرًا مناسبًا، لكن الأداء يظل محدودًا بمعدل نقل الشبكة وتخطيط الملفات. بالنسبة إلى أعباء العمل التحليلية، حمّل البيانات إلى جدول MergeTree أصلي.
 
     أولًا، شغّل استعلامًا مُرشَّحًا على جدول Iceberg للحصول على خط أساس:
@@ -199,9 +189,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     **اعرف المزيد:** يغطّي [تسريع التحليلات باستخدام MergeTree](/ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) تحسين المخطط، وفهرسة النص الكامل، ومقارنة كاملة للأداء قبل وبعد.
   </Step>
 
-  <Step>
-    ## الكتابة مرة أخرى إلى Iceberg
-
+  <Step title="الكتابة مرة أخرى إلى Iceberg" id="write-back">
     يمكن لـ ClickHouse أيضًا كتابة البيانات مرة أخرى إلى جداول Iceberg، مما يتيح سير عمل ETL العكسي — من خلال نشر النتائج المُجمَّعة أو مجموعات فرعية لتستخدمها أدوات أخرى (Spark وTrino وDuckDB وغيرها).
 
     أنشئ جدول Iceberg للمخرجات:
@@ -239,10 +227,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## الخطوات التالية
 </div>
 
-الآن بعد أن اطّلعت على سير العمل الكامل، تعمّق أكثر في كل جانب:
+بعد أن اطّلعت الآن على سير العمل الكامل، تعمّق أكثر في كل جانب:
 
-* [الاستعلام مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) — جميع التنسيقات الأربعة، ومتغيرات العناقيد، ومحركات الجداول، والتخزين المؤقت
-* [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — شرح تفصيلي كامل لـ Unity Catalog مع Delta وIceberg
-* [تسريع التحليلات](/ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — تحسين المخطط، والفهرسة، وعرض توضيحي لتسريع يصل إلى ~40x
-* [الكتابة إلى بحيرات البيانات](/ar/guides/use-cases/data-warehousing/getting-started/writing-data) — عمليات كتابة خام، وعمليات كتابة مجمّعة، ومواءمة الأنواع
-* [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) — مقارنة الميزات عبر التنسيقات وطبقات التخزين الخلفية
+* [الاستعلام عن البيانات مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) — التنسيقات الأربعة جميعها، خيارات العناقيد، محركات الجداول، التخزين المؤقت
+* [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — جولة كاملة في Unity Catalog مع Delta وIceberg
+* [تسريع التحليلات](/ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — تحسين المخطط، الفهرسة، عرض توضيحي لزيادة السرعة بنحو 40x
+* [الكتابة إلى بحيرات البيانات](/ar/guides/use-cases/data-warehousing/getting-started/writing-data) — كتابة خام، كتابة مُجمّعة، مواءمة الأنواع
+* [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) — مقارنة الميزات عبر التنسيقات وأنظمة التخزين الخلفية
+* [أفضل الممارسات](/ar/guides/use-cases/data-warehousing/getting-started/best-practices) — اختيار أسلوب الوصول، وإعدادات الأداء، وأنماط أعباء العمل

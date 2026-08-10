@@ -12,12 +12,20 @@ hide_advert: true
 import GatherCredentials from '/snippets/pt-BR/clickstack/_gather_credentials.mdx';
 import CreateIngestionUser from '/snippets/pt-BR/clickstack/_create_ingestion_user.mdx';
 import ConfirmInUI from '/snippets/pt-BR/clickstack/_confirm_in_ui.mdx';
+import { AgentPrompt } from '/snippets/pt-BR/components/AgentPrompt/AgentPrompt.jsx';
 
-Este guia orienta você na implantação de um coletor do OpenTelemetry em um serviço Managed ClickStack existente ou na adaptação do seu coletor atual, antes de verificar se os dados estão fluindo.
+Este guia orienta você na implantação de um OpenTelemetry Collector em um serviço Managed ClickStack existente ou na adaptação do seu coletor atual, antes de verificar se os dados estão fluindo.
+
+Instale o pacote oficial ClickHouse Agent Skills antes de usar o assistente de configuração:
+
+```bash
+npx skills add clickhouse/agent-skills
+```
 
 <AgentPrompt
-  prompt="Use curl para baixar, ler e seguir: https://clickhouse.com/docs/skills/clickstack-otel-collector/SKILL.md"
+  prompt="Use a skill clickstack-otel-collector para conectar um OpenTelemetry Collector ao meu serviço Managed ClickStack."
   description="Seu agent configurará o ClickStack OpenTelemetry Collector para você. Funciona com Claude Code, Cursor, Codex e outros agents de programação."
+  repositoryUrl="https://github.com/ClickHouse/agent-skills"
   outline={[
 "Instale o clickhousectl, se necessário, e autentique-o (ele solicitará uma chave de API do ClickHouse Cloud — cole-a no chat ou execute você mesmo o comando de login).",
 "Ele pedirá o ID ou nome do serviço ClickHouse Cloud de destino e, em seguida, buscará o endpoint HTTPS correspondente.",
@@ -33,7 +41,7 @@ O coletor é executado como um **gateway**: um único endpoint OTLP para o qual 
 <Info>
   **Coletor existente**
 
-  Se você estiver usando um coletor OpenTelemetry existente, presumimos que ele já esteja configurado na função de **gateway**. Não recomendamos usar este processo para reconfigurar coletores na função de **agent**.
+  Se você estiver usando um OpenTelemetry Collector existente, presumimos que ele já esteja configurado na função de **gateway**. Não recomendamos usar este processo para reconfigurar coletores na função de **agent**.
 </Info>
 
 Escolha a guia correspondente à sua situação:
@@ -41,21 +49,15 @@ Escolha a guia correspondente à sua situação:
 <Tabs>
   <Tab title="Não tenho um coletor">
     <Steps>
-      <Step>
-        ## Obtenha suas credenciais
-
+      <Step title="Reúna suas credenciais" id="gather-credentials">
         <GatherCredentials />
       </Step>
 
-      <Step>
-        ## Criar um usuário de ingestão
-
+      <Step title="Criar um usuário de ingestão" id="create-ingestion-user">
         <CreateIngestionUser />
       </Step>
 
-      <Step>
-        ## Implante o collector
-
+      <Step title="Implante o collector" id="deploy-the-collector">
         Implante a **distribuição ClickStack do OpenTelemetry Collector**, que já vem pré-configurada para o Managed ClickStack. No exemplo abaixo, executamos o collector localmente e geramos telemetria artificial na mesma máquina para simplificar.
 
         <Note>
@@ -94,9 +96,7 @@ Escolha a guia correspondente à sua situação:
         </Info>
       </Step>
 
-      <Step>
-        ## Verificar o endpoint
-
+      <Step title="Verificar o endpoint" id="verify-the-endpoint">
         Gere algum tráfego sintético contra o collector para confirmar que o pipeline completo funciona. Utilizamos o [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen), o gerador do OpenTelemetry Collector Contrib, que emite logs, traces e métricas via OTLP e expõe flags para controlar o formato dos dados entre serviços, severidades, status de spans e tipos de métricas.
 
         Execute a partir da sua Docker image (sem necessidade de instalação). Defina um pequeno wrapper para que os comandos abaixo fiquem legíveis; `--add-host` permite que o contêiner alcance um collector em execução no host:
@@ -119,7 +119,7 @@ Escolha a guia correspondente à sua situação:
         <Info>
           **O que esperar**
 
-          Cada execução de `tg` dura cerca de 20 segundos (definidos por `--duration 20s`) e transmite logs detalhados durante todo esse tempo, o que é esperado; cada execução termina automaticamente quando os 20 segundos se encerram. Os logs abaixo são suficientes para confirmar o pipeline; o conjunto opcional mais completo adiciona várias outras execuções e leva alguns minutos.
+          Cada execução de `tg` dura cerca de 20 segundos (configurada por `--duration 20s`) e gera logs detalhados durante todo esse tempo, o que é esperado; cada execução se encerra por conta própria assim que os 20 segundos terminam. Os logs abaixo são suficientes para confirmar o pipeline; o conjunto adicional opcional inclui várias execuções extras e leva alguns minutos.
         </Info>
 
         Defina um pequeno helper `tg` para que cada comando especifique apenas o que varia (service, severity, status, atributos):
@@ -147,7 +147,7 @@ Escolha a guia correspondente à sua situação:
 
         Somente os logs confirmam que o endpoint está funcionando. Para um demo dataset mais completo, um Service Map com múltiplos serviços e charts com diferentes tipos de métricas, expanda e execute os comandos abaixo também. Eles reutilizam o helper `tg`, portanto execute-os no mesmo shell.
 
-        <Accordion title="Gere uma telemetria mais detalhada (opcional)">
+        <Accordion title="Gere telemetria mais detalhada (opcional)">
           Envie traces com múltiplos spans de vários serviços saudáveis e uma dependência com falha. Isso dá ao Service Map uma estrutura realista, predominantemente saudável, com um serviço apresentando erro, e ainda alimenta as visualizações de erro:
 
           ```shell
@@ -164,7 +164,7 @@ Escolha a guia correspondente à sua situação:
             --telemetry-attributes 'http.route="/charge"'
           ```
 
-          Envie métricas dos três tipos mais comuns para que os gráficos tenham um counter, um gauge e uma distribuição:
+          Envie métricas nos três tipos mais comuns, para que os gráficos tenham um contador, um gauge e uma distribuição:
 
           ```shell
           tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
@@ -186,9 +186,7 @@ Escolha a guia correspondente à sua situação:
         Para a lista completa de flags e mais variações, consulte [Dados sintéticos com telemetrygen](/pt-BR/clickstack/example-datasets/telemetrygen).
       </Step>
 
-      <Step>
-        ## Confirme na UI do ClickStack
-
+      <Step title="Confirme na UI do ClickStack" id="confirm-in-ui">
         <ConfirmInUI />
       </Step>
     </Steps>
@@ -196,21 +194,15 @@ Escolha a guia correspondente à sua situação:
 
   <Tab title="Tenho um collector">
     <Steps>
-      <Step>
-        ## Reúna suas credenciais
-
+      <Step title="Obtenha suas credenciais" id="gather-credentials-existing">
         <GatherCredentials />
       </Step>
 
-      <Step>
-        ## Criar um usuário de ingestão
-
+      <Step title="Criar um usuário de ingestão" id="create-ingestion-user-existing">
         <CreateIngestionUser />
       </Step>
 
-      <Step>
-        ## Adapte a configuração do seu coletor
-
+      <Step title="Adapte a configuração do seu coletor" id="adapt-collector">
         Estenda a configuração atual do seu coletor para gravar no Managed ClickStack por meio do [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
 
         <Info>
@@ -314,9 +306,7 @@ Escolha a guia correspondente à sua situação:
         Para mais detalhes sobre como configurar OpenTelemetry collectors com o Managed ClickStack, consulte [Ingesting with OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry).
       </Step>
 
-      <Step>
-        ## Verificar o endpoint
-
+      <Step title="Verificar o endpoint" id="verify-the-endpoint-existing">
         Gere algum tráfego sintético contra o seu collector para confirmar que o pipeline completo está funcionando. Utilizamos o [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen), o gerador do OpenTelemetry Collector Contrib, que emite logs, traces e métricas via OTLP e expõe flags para controlar o formato dos dados entre serviços, severidades, status de spans e tipos de métricas.
 
         Execute a partir da sua Docker image (sem necessidade de instalação). Substitua `<your-collector-host>` pelo host em que seu collector está escutando e defina o header `authorization` (ou método de autenticação alternativo) conforme o que seu collector espera:
@@ -339,7 +329,7 @@ Escolha a guia correspondente à sua situação:
         <Info>
           **O que esperar**
 
-          Cada execução de `tg` dura cerca de 20 segundos (configurada por `--duration 20s`) e gera logs detalhados durante todo esse tempo, o que é esperado; cada execução se encerra por conta própria assim que os 20 segundos terminam. Os logs abaixo são suficientes para confirmar o pipeline; o conjunto adicional opcional inclui várias execuções extras e leva alguns minutos.
+          Cada execução de `tg` dura cerca de 20 segundos (definidos por `--duration 20s`) e transmite logs detalhados durante todo esse tempo, o que é esperado; cada execução termina automaticamente quando os 20 segundos se encerram. Os logs abaixo são suficientes para confirmar o pipeline; o conjunto opcional mais completo adiciona várias outras execuções e leva alguns minutos.
         </Info>
 
         Defina um pequeno helper `tg` para que cada comando especifique apenas o que varia (service, severity, status, atributos):
@@ -351,7 +341,7 @@ Escolha a guia correspondente à sua situação:
           --rate 5 --duration 20s "$@"; }
         ```
 
-        Envie logs como uma mistura realista de severidades entre serviços, predominantemente informativos com um aviso e um erro, em vez de um fluxo uniforme de erros:
+        Envie logs como uma mistura realista de severidades entre serviços, majoritariamente informativos, com um aviso e um erro em vez de um fluxo uniforme de erros:
 
         ```shell
         tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
@@ -365,10 +355,10 @@ Escolha a guia correspondente à sua situação:
           --telemetry-attributes 'http.status_code="500"'
         ```
 
-        Somente os logs confirmam que o endpoint está funcionando. Para um demo dataset mais completo, um Service Map com múltiplos serviços e gráficos com diferentes tipos de métricas, expanda e execute os comandos abaixo também. Eles reutilizam o helper `tg`, portanto execute-os no mesmo shell.
+        Somente os logs confirmam que o endpoint está funcionando. Para um demo dataset mais completo, um Service Map com múltiplos serviços e charts com diferentes tipos de métricas, expanda e execute os comandos abaixo também. Eles reutilizam o helper `tg`, portanto execute-os no mesmo shell.
 
-        <Accordion title="Gere telemetria mais detalhada (opcional)">
-          Envie traces com vários spans de vários serviços saudáveis e uma dependência com falha. Isso dá ao Service Map uma configuração realista, majoritariamente saudável, com um serviço apresentando erro, e ainda popula as visualizações de erros:
+        <Accordion title="Gere uma telemetria mais detalhada (opcional)">
+          Envie traces com múltiplos spans de vários serviços saudáveis e uma dependência com falha. Isso dá ao Service Map uma estrutura realista, predominantemente saudável, com um serviço apresentando erro, e ainda alimenta as visualizações de erro:
 
           ```shell
           # Healthy services: the bulk of the traffic, all spans Ok
@@ -392,7 +382,7 @@ Escolha a guia correspondente à sua situação:
           tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
           ```
 
-          Para ter ainda mais variedade, adicione mais alguns serviços e um histograma exponencial:
+          Para variar ainda mais, adicione mais alguns serviços e um histograma exponencial:
 
           ```shell
           tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
@@ -406,9 +396,7 @@ Escolha a guia correspondente à sua situação:
         Para a lista completa de flags e mais variações, consulte [Dados sintéticos com telemetrygen](/pt-BR/clickstack/example-datasets/telemetrygen).
       </Step>
 
-      <Step>
-        ## Confirme na UI do ClickStack
-
+      <Step title="Confirme na UI do ClickStack" id="confirm-in-ui-existing">
         <ConfirmInUI />
       </Step>
     </Steps>

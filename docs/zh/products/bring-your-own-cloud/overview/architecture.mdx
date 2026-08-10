@@ -41,7 +41,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 BYOC 将运行在 ClickHouse VPC 中的 **ClickHouse 控制平面** 与完全运行在您的云账户中的 **数据平面** 分离开来。ClickHouse VPC 承载 ClickHouse Cloud 控制台、身份验证、用户管理、API、计费、基础设施管理组件 (如 BYOC 控制器) 以及告警/事件处理工具。这些服务负责对您的部署进行编排和监控，但并不存储您的数据。
 
-在您的 **Customer BYOC VPC** 中，ClickHouse 会预配一个运行 ClickHouse 数据平面的 Kubernetes 集群 (例如 Amazon EKS) 。如图所示，其中包括 ClickHouse 集群本身、ClickHouse Operator，以及入口、DNS、证书管理、状态导出器和抓取器等配套服务。专用监控栈 (Prometheus、Grafana、AlertManager 和 Thanos) 也运行在您的 VPC 中，确保指标和告警都产生于并保留在您的环境内。
+在您的 **Customer BYOC VPC** 中，ClickHouse 会预配一个运行 ClickHouse 数据平面的 Kubernetes 集群 (例如 Amazon EKS)。如图所示，其中包括 ClickHouse 集群本身、ClickHouse Operator，以及入口、DNS、证书管理、状态导出器和抓取器等配套服务。专用监控栈 (Prometheus、Grafana、AlertManager 和 Thanos) 也运行在您的 VPC 中，确保指标和告警均产生于并保留在您的环境内。
 
 <br />
 

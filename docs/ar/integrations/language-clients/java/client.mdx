@@ -22,7 +22,6 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   * Maven Central (صفحة المشروع على الويب): https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * الإصدارات الليلية (رابط المستودع): https://central.sonatype.com/repository/maven-snapshots/
-  * مستودع Artifactory القديم للإصدارات الليلية (رابط المستودع): https://s01.oss.sonatype.org/content/repositories/snapshots/
 
   <br />
 
@@ -310,7 +309,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   ⚠️ عند تعيين الخيارات عبر طريقة `setOption` (سواء في `Client.Builder` أو في فئة إعدادات العملية)، يجب أن يُسبَق اسم إعداد الخادم بالبادئة `clickhouse_setting_`. قد يكون `com.clickhouse.client.api.ClientConfigProperties#serverSetting()` مفيدًا في هذه الحالة.
 
-  ### HTTP Header مخصص
+  ### ترويسة HTTP مخصصة
 
   يمكن تعيين HTTP headers مخصصة لجميع العمليات (على مستوى العميل) أو لعملية واحدة فقط (على مستوى العملية).
 
@@ -515,7 +514,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   | `setDBRoles(Collection dbRoles)`                | يعيّن أدوار قاعدة البيانات المراد تعيينها قبل تنفيذ العملية. يجب أن تكون عناصر المجموعة قيماً من نوع `String`.                                             |
   | `setOption(String option, Object value)`        | يضبط خيار تهيئة بتنسيقه الخام. وهذا ليس إعداد خادم.                                                                                                        |
 
-  ### استجابة الإدراج
+  ### InsertResponse
 
   كائن Response يحتوي على نتيجة عملية الإدراج. لا يكون متاحاً إلا إذا تلقّى الـ Client استجابةً من الـ server.
 
@@ -593,7 +592,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   `sqlQuery` - تعبير SQL مع العناصر النائبة `{}`.
 
-  `queryParams` - مجموعة من المتغيرات لإكمال تعبير SQL على الخادم.
+  `queryParams` - خريطة من المتغيرات لإكمال تعبير SQL على الخادم.
 
   `settings` - إعدادات الطلب.
 
@@ -689,7 +688,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   كائن الاستجابة الذي يحتوي على نتيجة تنفيذ الاستعلام. لا يكون متاحاً إلا إذا تلقّى الـ client استجابةً من الـ server.
 
   <Note>
-    يجب إغلاق هذا الكائن في أقرب وقت ممكن لتحرير الاتصال، لأن هذا الاتصال لا يمكن إعادة استخدامه حتى تتم قراءة جميع بيانات الاستجابة السابقة بالكامل.
+    يجب إغلاق هذا الكائن في أقرب وقت ممكن لتحرير الاتصال، إذ لا يمكن إعادة استخدامه حتى تُقرأ جميع بيانات الاستجابة السابقة بالكامل.
   </Note>
 
   | الطريقة                         | الوصف                                                                                   |
@@ -807,7 +806,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
       ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
       while (reader.next() != null) {
-          
+
           Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
           Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 
@@ -820,13 +819,13 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **طرق `GenericRecord`**
 
-  * `getList(...)` - يقرأ أي `Array(...)` باعتباره `List<T>`. خيار افتراضي جيد لعمليات القراءة المرنة المقيّدة بالأنواع. يدعم المصفوفات المتداخلة.
-  * `getByteArray(...)`, `getShortArray(...)`, `getIntArray(...)`, `getLongArray(...)`, `getFloatArray(...)`, `getDoubleArray(...)`, `getBooleanArray(...)` - الأفضل للمصفوفات أحادية البعد ذات القيم المتوافقة مع الأنواع البدائية.
-  * `getStringArray(...)` - لـ `Array(String)` (وقيم `enum` الممثلة على شكل أسماء).
-  * `getObjectArray(...)` - خيار عام لأي نوع عنصر في `Array(...)`، بما في ذلك المصفوفات المتداخلة. استخدمه لقراءة المصفوفات التي تحتوي على قيم قابلة لأن تكون NULL والمصفوفات المتداخلة.
+  * `getList(...)` - يقرأ أي `Array(...)` باعتباره `List<T>`. خيار افتراضي جيد لعمليات القراءة المرنة المقيّدة بالنوع. يدعم المصفوفات المتداخلة.
+  * `getByteArray(...)`, `getShortArray(...)`, `getIntArray(...)`, `getLongArray(...)`, `getFloatArray(...)`, `getDoubleArray(...)`, `getBooleanArray(...)` - الأفضل للمصفوفات أحادية البعد ذات القيم المتوافقة مع الأنواع الأولية.
+  * `getStringArray(...)` - مخصّص لـ `Array(String)` (وكذلك لقيم `enum` الممثلة كأسماء).
+  * `getObjectArray(...)` - خيار عام لأي نوع عنصر في `Array(...)`، بما في ذلك المصفوفات المتداخلة. استخدمه لقراءة المصفوفات التي تحتوي على قيم يمكن أن تكون `NULL` والمصفوفات المتداخلة.
 
-  تتوفر التحميلات الزائدة المستندة إلى الفهرس والمستندة إلى الاسم لجميع الطرق. يبدأ الفهرس من 1. تُتيح الطرق المستندة إلى الفهرس وصولاً مباشراً إلى العمود.
-  أما الطرق المستندة إلى الاسم فتستلزم البحث في الفهرس في كل مرة.
+  تتوفر التحميلات الزائدة المستندة إلى الفهرس والمستندة إلى الاسم لجميع الطرق. يبدأ الفهرس من 1. تتيح الطرق المستندة إلى الفهرس الوصول المباشر إلى العمود.
+  تتطلب الطرق المستندة إلى الاسم البحث عن الفهرس في كل مرة.
 
   ```java
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
@@ -915,7 +914,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
       | `ClickHouseClientOption#SOCKET_SNDBUF`      | `Client.Builder#setSocketSndbuf`       |         |
     </Tab>
 
-    <Tab title="ضغط">
+    <Tab title="الضغط">
       | تهيئة V1                                      | طريقة Builder                           | ملاحظات                                          |
       | --------------------------------------------- | --------------------------------------- | ------------------------------------------------ |
       | `ClickHouseClientOption#COMPRESS`             | `Client.Builder#compressServerResponse` | انظر أيضًا `useHttpCompression`                  |
@@ -936,7 +935,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
       | `ClickHouseClientOption#PROXY_PASSWORD` | `Client.Builder#setProxyCredentials` |         |
     </Tab>
 
-    <Tab title="المهلات وإعادة المحاولة">
+    <Tab title="مهلات الانتظار & إعادة المحاولة">
       | إعدادات V1                                      | طريقة Builder في V2                  | ملاحظات                      |
       | ----------------------------------------------- | ------------------------------------ | ---------------------------- |
       | `ClickHouseClientOption#MAX_EXECUTION_TIME`     | `Client.Builder#setExecutionTimeout` |                              |
@@ -985,7 +984,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
       | `ClickHouseClientOption#MAX_CORE_THREAD_TTL`                   | ✗                                 |                                   |
     </Tab>
 
-    <Tab title="HTTP & الترويسات">
+    <Tab title="HTTP والترويسات">
       | تهيئة V1                                             | طريقة Builder في V2            | ملاحظات                                            |
       | ---------------------------------------------------- | ------------------------------ | -------------------------------------------------- |
       | `ClickHouseHttpOption#CUSTOM_HEADERS`                | `Client.Builder#httpHeaders`   |                                                    |
