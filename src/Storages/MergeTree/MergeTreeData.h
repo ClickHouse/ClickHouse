@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
@@ -353,7 +354,7 @@ public:
         const VolumePtr & volume,
         const String & part_dir,
         const ReadSettings & read_settings,
-        bool part_may_exist_on_disk = true) const;
+        PartDirIntent intent) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
@@ -870,7 +871,10 @@ public:
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
-    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const;
+    /// With allow_delay = false, only the throw checks are performed and the function never sleeps:
+    /// this is for a check on the query thread before the insert pipeline is built, where a sleep
+    /// would run once per parallel sink stream instead of once per query.
+    void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay = true) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
@@ -1482,6 +1486,20 @@ public:
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
+    /// Removes a temporary part directory, keeping shared zero-copy blobs that other replicas may
+    /// still reference (same rule for the background cleaner and for the reclaim below).
+    void removeSharedTemporaryDirectory(const DiskPtr & disk, const String & relative_path) const;
+
+    /// Removes a leftover of an interrupted operation at `relative_data_path / part_dir_name`, if any.
+    /// The name must be claimed, and temporary (starts with "tmp", no '/'), so payload directories such
+    /// as "detached/<dir>" can never be reclaimed by mistake. Runs before the part storage is built.
+    void reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name) const;
+
+    /// Claims the name (exclusive, throws a `LOGICAL_ERROR` exception if already claimed), reclaims a
+    /// leftover, and returns the guard releasing the claim. Callers that know the name is collision-free
+    /// (e.g. from a Keeper-allocated block number) pass `may_have_leftover = false` to skip the probe.
+    scope_guard claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover = true) const;
+
     void waitForOutdatedPartsToBeLoaded() const;
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;
@@ -1563,22 +1581,43 @@ protected:
     }
 
 private:
-    struct NamesAndTypesListHash
+    /// `SharedPartColumns::describeColumns` of the stored columns, plus the `share_nested_offsets` value
+    /// the bundle was built with (readers compare its descriptions against the live setting).
+    struct SharedPartColumnsCacheKey
     {
-        size_t operator()(const NamesAndTypesList & list) const noexcept;
+        std::reference_wrapper<const String> interning_key;
+        bool collect_nested;
     };
-    struct ColumnsDescriptionCache
+    struct SharedPartColumnsCacheKeyHash
     {
-        std::shared_ptr<const ColumnsDescription> original;
-        std::shared_ptr<const ColumnsDescription> with_collected_nested;
+        size_t operator()(const SharedPartColumnsCacheKey & key) const noexcept;
     };
-    mutable AggregatedMetrics::GlobalSum columns_descriptions_metric_handle;
-    mutable std::mutex columns_descriptions_cache_mutex;
-    mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
+    struct SharedPartColumnsCacheKeyEqual
+    {
+        bool operator()(const SharedPartColumnsCacheKey & lhs, const SharedPartColumnsCacheKey & rhs) const
+        {
+            return lhs.collect_nested == rhs.collect_nested && lhs.interning_key.get() == rhs.interning_key.get();
+        }
+    };
+    mutable AggregatedMetrics::GlobalSum shared_part_columns_metric_handle;
+    mutable SharedMutex shared_part_columns_cache_mutex;
+    /// Interning cache for the schema-derived metadata shared across data parts (see SharedPartColumns.h).
+    /// The key references the `interning_key` member of the bundle it maps to, so it is stored only once
+    /// per entry; the bundle is always alive while its entry exists because the cache holds a strong
+    /// reference.
+    mutable std::unordered_map<SharedPartColumnsCacheKey, SharedPartColumnsPtr, SharedPartColumnsCacheKeyHash, SharedPartColumnsCacheKeyEqual>
+        shared_part_columns_cache TSA_GUARDED_BY(shared_part_columns_cache_mutex);
+
+    /// Returns the interned reference to the cache entry to be evicted when no part uses it anymore.
+    /// Only `SharedPartColumnsHolder` may call it, so the reference accounting cannot be bypassed.
+    void releaseSharedPartColumns(SharedPartColumnsPtr shared_part_columns) const;
+    friend class SharedPartColumnsHolder;
 
 public:
-    ColumnsDescriptionCache getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
-    void decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
+    /// Returns a holder of the shared metadata bundle for parts storing exactly these columns,
+    /// building and interning it on first request. The holder returns the reference to the cache
+    /// when it is destroyed or reassigned, so unused entries are evicted (see SharedPartColumns.h).
+    SharedPartColumnsHolder getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const;
     size_t getColumnsDescriptionsCacheSize() const;
 
 protected:

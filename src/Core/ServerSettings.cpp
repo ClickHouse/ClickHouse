@@ -420,10 +420,14 @@ To disable the cgroup observer, set this value to `0`.
     DECLARE(UInt64, async_insert_threads, 16, R"(Maximum number of threads to actually parse and insert data in background. Zero means asynchronous mode is disabled)", 0) \
     DECLARE(Bool, async_insert_queue_flush_on_shutdown, true, R"(If true queue of asynchronous inserts is flushed on graceful shutdown)", 0) \
     DECLARE(Bool, ignore_empty_sql_security_in_create_view_query, true, R"(
-If true, ClickHouse doesn't write defaults for empty SQL security statement in `CREATE VIEW` queries.
+If true, a `CREATE VIEW` or `CREATE MATERIALIZED VIEW` query that specifies neither `DEFINER` nor `SQL SECURITY` is stored as written, and the view gets an empty SQL security type. Specifying `DEFINER` alone counts as `SQL SECURITY DEFINER`, so such a query is unaffected by this setting. A normal view with an empty SQL security type runs with the permissions of the invoker. For a materialized view with an explicitly specified target table, the access checks on the target table are skipped: inserting into the source table does not require the `INSERT` privilege on the target table, and reading from the view does not require the `SELECT` privilege on it.
+
+If false, the defaults from the [`default_normal_view_sql_security`](/operations/settings/settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/operations/settings/settings#default_materialized_view_sql_security), and [`default_view_definer`](/operations/settings/settings#default_view_definer) settings are written into the view definition at creation time. With the default values of those settings, a materialized view created with neither clause records the creating user as its definer and runs with that user's permissions.
+
+Refreshable materialized views always receive the defaults, regardless of this setting.
 
 :::note
-This setting is only necessary for the migration period and will become obsolete in 24.4
+Changing this setting affects only views created afterwards; the stored definitions of existing views stay unchanged.
 :::
 )", 0)  \
     DECLARE(UInt64, max_build_vector_similarity_index_thread_pool_size, 16, R"(
