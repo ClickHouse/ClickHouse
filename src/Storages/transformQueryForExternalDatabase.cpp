@@ -321,8 +321,85 @@ void wrapSingleRowTupleSetForINNode(ASTFunction & function)
     }
 }
 
-bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, const NamesAndTypesList & available_columns)
+/// Where a tuple may legally appear as the row value `(a, b)` in the SQL of the external
+/// database. SQLite and MySQL accept row values only next to a comparison or `IN`
+/// (`(a, b) = (1, 'x')`, `(a, b) IN ((1, 'x'), (2, 'y'))`); anywhere else - e.g. in the SELECT
+/// list or as the argument of `IS NOT NULL` - the parenthesized form is a syntax error there
+/// (SQLite reports "row value misused"), so such tuples must be rejected in ClickHouse instead
+/// of being sent as broken SQL.
+enum class RowValueContext
 {
+    /// A tuple here has no valid text form for the external database.
+    Disallowed,
+    /// A boolean position: the whole pushed-down `WHERE`, or an operand of `AND` / `OR` / `NOT`.
+    /// No external database accepts a row value as a condition (PostgreSQL: "argument of WHERE
+    /// must be type boolean, not type record"), not even the ones that accept row values as
+    /// ordinary value expressions.
+    BooleanPredicate,
+    /// A tuple here is a row value: an operand of a comparison, the left-hand side of `IN`,
+    /// or an element of an `IN` set.
+    RowValue,
+    /// The node is the right-hand side of `IN`: a tuple here is the `IN` set itself, and its
+    /// elements may in turn be row values (the multi-row case).
+    INSet,
+};
+
+/// In PostgreSQL a row constructor is an ordinary value expression, valid in any expression
+/// position (`SELECT (a, b)`, `WHERE (a, b) IS NOT NULL`), so the row-value position
+/// restriction above does not apply to it.
+bool rowValueIsValidAnywhere(LiteralEscapingStyle literal_escaping_style)
+{
+    return literal_escaping_style == LiteralEscapingStyle::PostgreSQL;
+}
+
+/// Whether the external database accepts the row value `(a, b)` in the position described by
+/// `row_value_context`. `BooleanPredicate` never occurs while walking a raw `(SELECT ...)`
+/// argument (`normalizeSubqueryForExternalDatabaseImpl` does not track boolean positions there),
+/// only on the predicate-pushdown path.
+bool rowValueIsAllowedHere(RowValueContext row_value_context, LiteralEscapingStyle literal_escaping_style)
+{
+    switch (row_value_context)
+    {
+        case RowValueContext::RowValue:
+        case RowValueContext::INSet:
+            return true;
+        case RowValueContext::BooleanPredicate:
+            return false;
+        case RowValueContext::Disallowed:
+            return rowValueIsValidAnywhere(literal_escaping_style);
+    }
+}
+
+/// The position of an argument of `function` (the `index`-th one) with respect to row values:
+/// the operands of a comparison and both sides of `IN` are the only places where the external
+/// database accepts one. The elements of a row are plain values, while the elements of an `IN`
+/// set are rows themselves (the multi-row case).
+RowValueContext argumentRowValueContext(const String & function_name, size_t index, RowValueContext function_context)
+{
+    if (function_name == "and" || function_name == "or" || function_name == "not")
+        return RowValueContext::BooleanPredicate;
+
+    if (function_name == "in" || function_name == "notIn")
+        return index == 0 ? RowValueContext::RowValue : RowValueContext::INSet;
+
+    if (function_name == "equals" || function_name == "notEquals"
+        || function_name == "less" || function_name == "greater"
+        || function_name == "lessOrEquals" || function_name == "greaterOrEquals"
+        || function_name == "isNotDistinctFrom")
+        return RowValueContext::RowValue;
+
+    if (function_name == "tuple")
+        return function_context == RowValueContext::INSet ? RowValueContext::RowValue : RowValueContext::Disallowed;
+
+    return RowValueContext::Disallowed;
+}
+
+bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, const NamesAndTypesList & available_columns, RowValueContext row_value_context)
+{
+    /// The AST comes from a user query, so its depth is unbounded - fail with `TOO_DEEP_RECURSION`
+    /// instead of exhausting the stack.
+    checkStackSize();
+
     if (auto * function = node->as<ASTFunction>())
     {
         if (function->parameters)   /// Parametric aggregate functions
@@ -373,6 +450,12 @@ bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, co
             {
                 function->name.clear();
             }
+            /// A multi-column tuple is written as the row value `(a, b)`, which most external
+            /// databases accept only next to a comparison or `IN` (see `RowValueContext`).
+            /// Elsewhere - e.g. `WHERE (a, b) IS NOT NULL` - the predicate has no valid form for
+            /// the external database, so it must not be pushed down and is applied locally.
+            else if (!rowValueIsAllowedHere(row_value_context, literal_escaping_style))
+                return false;
         }
 
         /// If the right hand side of IN is a table identifier (example: x IN table), then it's not compatible.
@@ -380,8 +463,10 @@ bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, co
             && (function->arguments->children.size() != 2 || function->arguments->children[1]->as<ASTTableIdentifier>()))
             return false;
 
-        for (auto & expr : function->arguments->children)
-            if (!isCompatible(expr, literal_escaping_style, available_columns))
+        auto & arguments = function->arguments->children;
+        for (size_t i = 0; i < arguments.size(); ++i)
+            if (!isCompatible(arguments[i], literal_escaping_style, available_columns,
+                              argumentRowValueContext(name, i, row_value_context)))
                 return false;
 
         /// Normalize a single-row multi-column IN set so it does not collapse to scalars when
@@ -417,6 +502,11 @@ bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, co
                 node = makeASTFunction("", make_intrusive<ASTLiteral>(tuple_value[0]));
                 return true;
             }
+            /// The parser folds `(1, 'x')` into a single `ASTLiteral` holding a `Tuple` field,
+            /// which formats as the row value `(1, 'x')` and is therefore subject to the same
+            /// position restriction as the `tuple` function above.
+            if (!rowValueIsAllowedHere(row_value_context, literal_escaping_style))
+                return false;
         }
         return true;
     }
@@ -535,7 +625,7 @@ String transformQueryForExternalDatabaseImpl(
         ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
         ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
-        if (isCompatible(original_where, literal_escaping_style, available_columns))
+        if (isCompatible(original_where, literal_escaping_style, available_columns, RowValueContext::BooleanPredicate))
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
@@ -558,7 +648,7 @@ String transformQueryForExternalDatabaseImpl(
 
                     for (auto & elem : func->arguments->children)
                     {
-                        if (isCompatible(elem, literal_escaping_style, available_columns))
+                        if (isCompatible(elem, literal_escaping_style, available_columns, RowValueContext::BooleanPredicate))
                             new_function_and->arguments->children.push_back(elem);
                         else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
                             predicates.push(child);
@@ -695,31 +785,6 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo
             "the passed query, or disable external_table_strict_query.");
 }
 
-/// Where a tuple may legally appear as the row value `(a, b)` in the SQL of the external
-/// database. SQLite and MySQL accept row values only next to a comparison or `IN`
-/// (`(a, b) = (1, 'x')`, `(a, b) IN ((1, 'x'), (2, 'y'))`); anywhere else - e.g. in the SELECT
-/// list - the parenthesized form is a syntax error there (SQLite reports "row value misused"),
-/// so such tuples must be rejected in ClickHouse instead of being sent as broken SQL.
-enum class RowValueContext
-{
-    /// A tuple here has no valid text form for the external database.
-    Disallowed,
-    /// A tuple here is a row value: an operand of a comparison, the left-hand side of `IN`,
-    /// or an element of an `IN` set.
-    RowValue,
-    /// The node is the right-hand side of `IN`: a tuple here is the `IN` set itself, and its
-    /// elements may in turn be row values (the multi-row case).
-    INSet,
-};
-
-/// In PostgreSQL a row constructor is an ordinary value expression, valid in any expression
-/// position (`SELECT (a, b)`, `WHERE (a, b) IS NOT NULL`), so the row-value position
-/// restriction above does not apply to it.
-static bool rowValueIsValidAnywhere(LiteralEscapingStyle literal_escaping_style)
-{
-    return literal_escaping_style == LiteralEscapingStyle::PostgreSQL;
-}
-
 static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, RowValueContext row_value_context)
 {
     if (!node)
@@ -762,16 +827,14 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
                     "Cannot format a tuple with fewer than two elements for the external database: "
                     "it can only be written in ClickHouse-specific syntax. Rewrite the query passed "
                     "to the external database without it");
-            if (row_value_context == RowValueContext::Disallowed && !rowValueIsValidAnywhere(literal_escaping_style))
+            if (!rowValueIsAllowedHere(row_value_context, literal_escaping_style))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot format a tuple for the external database: the row value ('x', 'y') is "
                     "only valid as an operand of a comparison or IN there. Rewrite the query passed "
                     "to the external database without it");
             function->setIsOperator(true);
             /// The elements of an `IN` set are rows; the elements of a row are plain values.
-            auto element_context = row_value_context == RowValueContext::INSet
-                ? RowValueContext::RowValue
-                : RowValueContext::Disallowed;
+            auto element_context = argumentRowValueContext(function->name, 0, row_value_context);
             for (auto & child : function->arguments->children)
                 normalizeSubqueryForExternalDatabaseImpl(child, literal_escaping_style, element_context);
             return;
@@ -822,8 +885,7 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
         /// `ASTLiteral` holding a `Tuple` field) is subject to the same restriction as the
         /// `tuple` function above: outside a row-value position its parenthesized text form
         /// is a syntax error for the external database.
-        if (row_value_context == RowValueContext::Disallowed
-            && !rowValueIsValidAnywhere(literal_escaping_style)
+        if (!rowValueIsAllowedHere(row_value_context, literal_escaping_style)
             && literal->value.getType() == Field::Types::Tuple
             && literal->value.safeGet<Tuple>().size() >= 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

@@ -128,7 +128,8 @@ static void checkOld(
     const State & state,
     size_t table_num,
     const std::string & query,
-    const std::string & expected)
+    const std::string & expected,
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -141,7 +142,7 @@ static void checkOld(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
         state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        LiteralEscapingStyle::Regular, "test", "table", state.context);
+        literal_escaping_style, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -171,7 +172,8 @@ static void checkNewAnalyzer(
     const State & state,
     const Names & column_names,
     const std::string & query,
-    const std::string & expected)
+    const std::string & expected,
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -195,7 +197,7 @@ static void checkNewAnalyzer(
 
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        LiteralEscapingStyle::Regular, "test", "table", state.context);
+        literal_escaping_style, "test", "table", state.context);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -206,15 +208,16 @@ static void check(
     const Names & column_names,
     const std::string & query,
     const std::string & expected,
-    const std::string & expected_new = "")
+    const std::string & expected_new = "",
+    LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular)
 {
     {
         SCOPED_TRACE("Old analyzer");
-        checkOld(state, table_num, query, expected);
+        checkOld(state, table_num, query, expected, literal_escaping_style);
     }
     {
         SCOPED_TRACE("Analyzer");
-        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new);
+        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style);
     }
 }
 
@@ -522,6 +525,62 @@ TEST(TransformQueryForExternalDatabase, ArrayLiteral)
     check(state, 1, {"a", "arr"},
           "SELECT a, arr FROM table WHERE (a, arr) IN ((1, [1, 2])) AND a > 0",
           R"(SELECT "a", "arr" FROM "test"."table" WHERE "a" > 0)");
+}
+
+TEST(TransformQueryForExternalDatabase, RowValueOutsideComparison)
+{
+    const State & state = State::instance();
+    /// The State context is shared between tests; make sure strict mode (set by the Strict test)
+    /// is off here, so non-compatible predicates are dropped rather than throwing.
+    state.context->setSetting("external_table_strict_query", false);
+
+    /// A multi-column tuple is written as the row value `("field", "value")`, which MySQL and
+    /// SQLite accept only next to a comparison or `IN`. As the argument of `IS NOT NULL` it is a
+    /// syntax error there (SQLite: "row value misused"), so the predicate must not be pushed down
+    /// - it is evaluated by ClickHouse instead. (Under the analyzer it folds away entirely,
+    /// because a tuple of non-Nullable columns is never NULL.)
+    check(state, 1, {"field", "value"},
+          "SELECT field, value FROM table WHERE (field, value) IS NOT NULL",
+          R"(SELECT "field", "value" FROM "test"."table")");
+    check(state, 1, {"field", "value"},
+          "SELECT field, value FROM table WHERE isNull((field, value))",
+          R"(SELECT "field", "value" FROM "test"."table")",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE 1 = 0)");
+
+    /// In a conjunction only the tuple predicate stays local.
+    check(state, 1, {"field", "value", "a"},
+          "SELECT field, value, a FROM table WHERE ((field, value) IS NOT NULL) AND (a > 0)",
+          R"(SELECT "field", "value", "a" FROM "test"."table" WHERE ("a" > 0))",
+          R"(SELECT "field", "value", "a" FROM "test"."table" WHERE (1 = 1) AND ("a" > 0))");
+
+    /// A row value is still pushed down where the external database accepts it: as the left-hand
+    /// side of `IN` (a tuple comparison is rewritten into per-column comparisons before the
+    /// pushdown, so `IN` is the case that actually reaches the external database as a row value).
+    check(state, 1, {"field", "value"},
+          "SELECT field, value FROM table WHERE (field, value) IN (('foo', 'bar'))",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");
+    check(state, 1, {"field", "value"},
+          "SELECT field, value FROM table WHERE (field, value) IN (('foo', 'bar'), ('x', 'y'))",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar'), ('x', 'y')))");
+
+    /// In PostgreSQL a row constructor is an ordinary value expression, so there the same
+    /// `IS NOT NULL` predicate is pushed down.
+    checkOld(state, 1,
+             "SELECT field, value FROM table WHERE (field, value) IS NOT NULL",
+             R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IS NOT NULL)",
+             LiteralEscapingStyle::PostgreSQL);
+
+    /// A tuple used as the whole condition is never valid SQL for the external database (not even
+    /// for PostgreSQL, where `WHERE` requires a boolean and not a record); such a tuple is a list
+    /// of predicates in ClickHouse, so it is pushed down as a conjunction instead. Only the old
+    /// analyzer accepts a tuple as a filter at all.
+    checkOld(state, 1,
+             "SELECT a, column FROM table WHERE (a > 0, column > 10)",
+             R"(SELECT "column", "a" FROM "test"."table" WHERE ("a" > 0) AND ("column" > 10))");
+    checkOld(state, 1,
+             "SELECT a, column FROM table WHERE (a > 0, column > 10)",
+             R"(SELECT "column", "a" FROM "test"."table" WHERE ("a" > 0) AND ("column" > 10))",
+             LiteralEscapingStyle::PostgreSQL);
 }
 
 /// Parse a user-provided `(SELECT ...)` table argument of an external database engine / table
