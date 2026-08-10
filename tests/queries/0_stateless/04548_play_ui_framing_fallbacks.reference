@@ -14,6 +14,9 @@ lexer forward-progress guard: OK
 request-path detectors fall back on lexer failure: OK
 restore replays ndjson packets raw: OK
 non-200 ndjson dispatched as packets: OK
+retry keys off the exception packet: OK
+settings walk understands shorthand entries: OK
+shorthand-opened list is validated: OK
 snapshot cap helper present: OK
 all collection sites capped: OK
 no uncapped reply growth: OK
@@ -138,3 +141,13 @@ X-ClickHouse-Format: json
 	"exception":
 X-ClickHouse-Format: jsoneachrowwithprogress
 {"exception":
+--- a plain NDJSON format returns an in-band exception body on a non-200 response
+1
+application/x-ndjson
+{"exception":
+not a framing packet stream: OK
+--- a settings list that begins with a shorthand setting still carries the query framing choice
+application/x-ndjson
+"packet":"data"
+text/tab-separated-values
+the query-level None really disables framing: OK

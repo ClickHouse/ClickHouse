@@ -8681,11 +8681,21 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         /// above). The rejection is recognized by its message; the substring is pinned by
         /// `04512_framing_formats.sh`. Any other framed error stream is replayed below, rendering
         /// the partial data, the logs, and the exception.
+        ///
+        /// The decision is made from the message of the terminal `exception` packet ONLY
+        /// (`framedFailureMessage` locates that packet and unwraps its `data:` fields), not from the
+        /// whole buffered stream: a failed stream can already carry `data` and `log` packets, so a
+        /// row or a log line that merely contains this phrase - `SELECT 'is not compatible with
+        /// framing formats'` followed by a failure - must not resubmit the query and replace the
+        /// partial stream that was already streamed.
         let framed_error_stream = null;
         if (!response.ok && content_type.startsWith('text/event-stream')) {
             framed_error_stream = await response.text();
             if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
-            if (use_framing && await queryIsReadOnly(query) && framed_error_stream.includes('is not compatible with framing formats')) {
+            const framed_error_message = framedFailureMessage(framed_error_stream, 'event_stream', null);
+            if (use_framing && framed_error_message !== null
+                && framed_error_message.includes('is not compatible with framing formats')
+                && await queryIsReadOnly(query)) {
                 framed_error_stream = null;
                 use_framing = false;
                 response = await fetch(url, fetch_options);
@@ -8817,24 +8827,30 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             /// of the failed statements too, and only `display_error` restores them as their error.
             display_error = framedFailureMessage(reply, framing_kind, exception_carrier) ?? undefined;
             return { format, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, is_truncated, framing_kind, exception_carrier };
-        } else if (!response.ok && content_type.startsWith('application/x-ndjson')) {
+        } else if (!response.ok && content_type.startsWith('application/x-ndjson') && ndjson_exception_prefix !== null) {
             /// A query carrying its own `JSONEachPacket*` framing can also fail before the response
             /// reaches `200 OK` - e.g. `SELECT 1 FORMAT JSONEachRowWithProgress SETTINGS
             /// framing_output_format = 'JSONEachPacketString'` (a format the framing rejects) - coming
             /// back as a non-200 `application/x-ndjson` response whose body is still a packet stream
-            /// ending with a `{"packet":"exception",...}` line, NOT a plain `{"exception":...}` body
-            /// (a plain-HTTP error is `text/plain`, so a non-OK `application/x-ndjson` unambiguously
-            /// means framing was applied). Show those packets verbatim and record `framing_kind =
-            /// 'ndjson_packets'`, exactly like the `200 OK` NDJSON case below, so the user sees the
-            /// framing they asked for and the saved snapshot replays correctly on reload/tab restore -
-            /// rather than rendering the whole stream as one opaque error string.
+            /// ending with a `{"packet":"exception",...}` line. Show those packets verbatim and record
+            /// `framing_kind = 'ndjson_packets'`, exactly like the `200 OK` NDJSON case below, so the
+            /// user sees the framing they asked for and the saved snapshot replays correctly on
+            /// reload/tab restore - rather than rendering the whole stream as one opaque error string.
+            ///
+            /// The content type alone does not mean a packet stream: plain `JSONEachRow` / `JSONLines`
+            /// / `NDJSON` advertise `application/x-ndjson` too, and with
+            /// `http_write_exception_in_output_format` they return a non-OK body that is a plain
+            /// `{"exception":...}` line, which the generic `!response.ok` branch below renders as the
+            /// error. So this branch is taken only for the cases that really are packetized - the
+            /// query's own framing (`user_framing`), or a `*WithProgress` format retried without
+            /// framing - which is exactly what a non-null `ndjson_exception_prefix` marks.
             is_error = true;
             is_raw = true;
-            if (ndjson_exception_prefix !== null) framing_kind = 'ndjson_packets';
+            framing_kind = 'ndjson_packets';
             const res = await readNdjsonPacketStream(ndjson_exception_prefix);
             if (res.cancelled) { return { cancelled: true }; }
             exception_carrier = res.exception_line;
-            if (res.truncated && exception_carrier === null && ndjson_exception_prefix !== null) {
+            if (res.truncated && exception_carrier === null) {
                 /// The error stream was itself cut off before its terminal exception packet: show
                 /// an explicit truncation error and synthesize a replayable carrier, so the saved
                 /// failure snapshot still carries an error reason.
@@ -12970,7 +12986,10 @@ async function tokenizeOrNull(text)
 /// `framing_output_format = value` only when it appears in a real settings context: a top-level
 /// `SETTINGS` clause (at bracket depth 0) or a standalone `SET` statement (the setting is the leading
 /// keyword). A settings context is recognized by its list grammar, not by the keyword alone: the
-/// keyword must be followed by `name = value` pairs separated by commas, and the context ends where
+/// keyword must be followed by a settings list - `name = value` pairs, or bare `name` shorthand
+/// entries standing for `= true` (`ParserSetQuery` accepts those for `Bool` settings, so
+/// `SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None'` is a valid query and
+/// the walk consumes such entries too) - separated by commas, and the context ends where
 /// that list grammar ends. An occurrence inside a string literal, a comment, a subquery's own
 /// `SETTINGS`, or the query body as an ordinary comparison is ignored - including next to a column
 /// that is merely NAMED `settings`, e.g. `SELECT settings, framing_output_format = 'None' FROM
@@ -13045,21 +13064,57 @@ async function detectFramingSetting(query)
             const is_settings = lower === 'settings';
             const is_set = lower === 'set' && at_statement_start;
             /// A real settings context is not just the keyword: the keyword must be followed by an
-            /// actual settings list, which always begins `name = value`. A column merely named
-            /// `settings` in the query body (e.g. `SELECT settings, framing_output_format = 'None'
-            /// FROM values('settings UInt8, framing_output_format String', (1, 'None'))`) is
-            /// followed by a `,`/`FROM`/operator instead, so it does not open a settings context
-            /// and the comparison next to it is not mistaken for a setting.
+            /// actual settings list. A list entry is `name = value`, or - `ParserSetQuery` accepts
+            /// the shorthand form for `Bool` settings - a bare `name` standing for `name = true`,
+            /// so the list may well begin with one (`SELECT 1 SETTINGS optimize_move_to_prewhere,
+            /// framing_output_format = 'None'` is a valid query whose framing choice must be
+            /// honored). A leading `name = value` entry identifies a settings list on its own; a
+            /// leading shorthand entry is much weaker evidence - `SELECT settings x, ... FROM t` has
+            /// the same token shape - so such a list is trusted only when it also ENDS where a
+            /// settings list can end (see `list_ends_properly` below). A column merely named
+            /// `settings` in the query body stays out of the walk either way: in `SELECT settings,
+            /// framing_output_format = 'None' FROM values('settings UInt8, framing_output_format
+            /// String', (1, 'None'))` the keyword is followed by a `,` right away, in `SELECT
+            /// settings framing_output_format FROM t` by an implicit alias, and in `SELECT settings
+            /// x, framing_output_format = 'None' FROM t` the list would run into a `FROM`.
             if ((is_settings || is_set)
                 && settingName(tokens[i + 1]) !== null
-                && tokens[i + 2] && tokens[i + 2].type === TT.Equals) {
-                /// Walk the settings list itself - `name = value` pairs separated by commas - and
-                /// leave the settings context where the list grammar ends, so nothing after the
-                /// list (e.g. a trailing `FORMAT` clause) is scanned as if it were a setting.
+                && tokens[i + 2] && (tokens[i + 2].type === TT.Equals || tokens[i + 2].type === TT.Comma)) {
+                /// Walk the settings list itself - `name = value` pairs (or bare `name` shorthand
+                /// entries) separated by commas - and leave the settings context where the list
+                /// grammar ends, so nothing after the list (e.g. a trailing `FORMAT` clause) is
+                /// scanned as if it were a setting.
+                const opened_by_shorthand = tokens[i + 2].type !== TT.Equals;
+                const saved_saw_query_setting = saw_query_setting;
+                const saved_query_setting_disables = query_setting_disables;
                 let j = i + 1;
-                while (settingName(tokens[j]) !== null
-                    && tokens[j + 1] && tokens[j + 1].type === TT.Equals) {
+                while (settingName(tokens[j]) !== null) {
                     const name = settingName(tokens[j]);
+                    if (!tokens[j + 1] || tokens[j + 1].type !== TT.Equals) {
+                        /// A shorthand entry (`name` with no value, meaning `= true`). It is a list
+                        /// entry only where the list continues with a `,` or ends - at the end of the
+                        /// query or at a statement-terminating `;`. Anything else (a trailing
+                        /// `FORMAT` clause, an operator, an implicit alias) ends the list instead, so
+                        /// those tokens are not walked as if they were settings.
+                        const next = tokens[j + 1];
+                        const continues = next && next.type === TT.Comma;
+                        if (!continues && next && next.type !== TT.Semicolon) break;
+                        if (name === 'framing_output_format') {
+                            /// `framing_output_format` is a `String` setting, so the server rejects
+                            /// the shorthand form (only `Bool` settings can omit the value). Still
+                            /// count it as a query-level framing choice: the page then adds no
+                            /// framing of its own and the server's own error about the query is what
+                            /// the user sees, instead of an error about a request the page reshaped.
+                            if (is_set) {
+                                return { user_framing: false, user_disables_framing: false, user_sets_session_framing: true };
+                            }
+                            saw_query_setting = true;
+                            query_setting_disables = false;
+                        }
+                        ++j;
+                        if (continues) { ++j; continue; }
+                        break;
+                    }
                     j += 2;
                     /// A numeric value may carry a sign (`SETTINGS priority = -1`), which the lexer
                     /// reports as a separate token.
@@ -13108,9 +13163,23 @@ async function detectFramingSetting(query)
                     if (tokens[j] && tokens[j].type === TT.Comma) ++j;
                     else break;
                 }
-                /// Resume the main walk right after the settings list (the loop's `++i` steps past
-                /// the last consumed token).
-                i = j - 1;
+                /// `tokens[j]` is now the token the list stopped at. A list that was opened by a
+                /// shorthand entry alone is trusted only when it ends where a settings list really
+                /// can end: at the end of the query, at a statement-terminating `;`, or at one of the
+                /// clauses that may follow a settings list. Anything else (a `FROM`, an operator, ...)
+                /// means the keyword was an ordinary identifier after all, so the walk is rolled back
+                /// and this occurrence contributes nothing - the page then keeps its own framing, as
+                /// it did before shorthand entries were understood at all.
+                const list_ends_properly = !tokens[j] || tokens[j].type === TT.Semicolon
+                    || (tokens[j].type === TT.BareWord && SETTINGS_LIST_FOLLOWERS.has(tokens[j].token.toLowerCase()));
+                if (opened_by_shorthand && !list_ends_properly) {
+                    saw_query_setting = saved_saw_query_setting;
+                    query_setting_disables = saved_query_setting_disables;
+                } else {
+                    /// Resume the main walk right after the settings list (the loop's `++i` steps past
+                    /// the last consumed token).
+                    i = j - 1;
+                }
             }
         }
         /// The next token starts a new statement only right after a top-level `;`.
@@ -13651,6 +13720,12 @@ const SQL_KEYWORDS = new Set([
 /// nesting depth) and matched-bracket highlighting.
 const OPENING_BRACKETS = new Set([TT.OpeningRoundBracket, TT.OpeningSquareBracket, TT.OpeningCurlyBrace]);
 const CLOSING_BRACKETS = new Set([TT.ClosingRoundBracket, TT.ClosingSquareBracket, TT.ClosingCurlyBrace]);
+/// The keywords a query-level settings list may run into: the output clauses of
+/// `ParserQueryWithOutput` (`FORMAT`, `INTO OUTFILE`) and the data of an `INSERT ... SETTINGS ...
+/// VALUES ...`. Used by `detectFramingSetting` to tell a real settings list that begins with a
+/// shorthand entry from an identifier that merely looks like one (see `list_ends_properly`); the
+/// set is deliberately small, because an unlisted keyword only makes the page keep its own framing.
+const SETTINGS_LIST_FOLLOWERS = new Set(['format', 'into', 'values']);
 /// The closing type that matches each opening type.
 const BRACKET_PAIR = {
     [TT.OpeningRoundBracket]:  TT.ClosingRoundBracket,

@@ -65,13 +65,24 @@ struct Tok
 
 std::vector<Tok> tokenizeSignificant(const std::string & query)
 {
-    DB::Lexer lexer(query.data(), query.data() + query.size(), 65536);
+    /// `max_query_size = 0` means no limit, exactly like the browser's `tokenize`: the page lexes
+    /// whatever the editor holds (the server applies its own limits), and a cap here would flag every
+    /// token crossing it as an error and silently truncate the token stream of a big query.
+    DB::Lexer lexer(query.data(), query.data() + query.size(), 0);
     std::vector<Tok> tokens;
     const char * base = query.data();
     while (true)
     {
         DB::Token token = lexer.nextToken();
-        if (token.isError() || token.isEnd())
+        if (token.isError())
+        {
+            /// The browser's `tokenize` also stops at an error token, but a port that stopped
+            /// silently would analyze a prefix of the query and report the result as if it were
+            /// complete - so a truncated analysis fails the test loudly instead.
+            ADD_FAILURE() << "the SQL lexer reported an error token: " << DB::getErrorTokenDescription(token.type);
+            break;
+        }
+        if (token.isEnd())
             break;
         if (token.isSignificant())
             tokens.push_back({token.type, std::string(token.begin, token.end),
@@ -386,4 +397,21 @@ TEST(PlayDetectExplicitFormat, StripLeavesOrdinarySqlUnchanged)
     expectStrip("SELECT format JSONCompactColumns FROM values('format UInt8', (1))",
         "SELECT format JSONCompactColumns FROM values('format UInt8', (1))");
     expectStrip("SELECT 1", "SELECT 1");
+}
+
+TEST(PlayDetectExplicitFormat, LargeQueryIsTokenizedWithoutALimit)
+{
+    /// The reported bug: the browser tokenizer used to cap the lexer at `max_query_size = 65536`,
+    /// which flagged every token crossing that boundary as an error and silently truncated the token
+    /// stream - so a `FORMAT` clause behind the cap was invisible and the page applied its own
+    /// default format to a query that had chosen one. The page now lexes without a limit (the server
+    /// applies its own), and so does the helper above. A padding comment keeps the query valid while
+    /// pushing the clause past 64 KiB.
+    const std::string padding(70000, 'x');
+    expectFormat("SELECT 1 /* " + padding + " */ FORMAT JSONCompactColumns", "JSONCompactColumns");
+    expectFormat("SELECT 1 /* " + padding + " */ FORMAT TSV SETTINGS max_threads = 1", "TSV");
+    /// A `FORMAT` mention past the old cap that is only text is still not a clause.
+    expectFormat("SELECT '" + padding + " FORMAT JSON' AS s", std::nullopt);
+    /// The strip is span-based, so it removes only that far-away clause.
+    expectStrip("SELECT 1 /* " + padding + " */ FORMAT JSON", "SELECT 1 /* " + padding + " */ ");
 }

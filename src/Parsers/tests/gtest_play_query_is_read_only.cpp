@@ -62,12 +62,23 @@ struct Tok
 
 std::vector<Tok> tokenizeSignificant(const std::string & query)
 {
-    DB::Lexer lexer(query.data(), query.data() + query.size(), 65536);
+    /// `max_query_size = 0` means no limit, exactly like the browser's `tokenize`: the page lexes
+    /// whatever the editor holds (the server applies its own limits), and a cap here would flag every
+    /// token crossing it as an error and silently truncate the token stream of a big query.
+    DB::Lexer lexer(query.data(), query.data() + query.size(), 0);
     std::vector<Tok> tokens;
     while (true)
     {
         DB::Token token = lexer.nextToken();
-        if (token.isError() || token.isEnd())
+        if (token.isError())
+        {
+            /// The browser's `tokenize` also stops at an error token, but a port that stopped
+            /// silently would analyze a prefix of the query and report the result as if it were
+            /// complete - so a truncated analysis fails the test loudly instead.
+            ADD_FAILURE() << "the SQL lexer reported an error token: " << DB::getErrorTokenDescription(token.type);
+            break;
+        }
+        if (token.isEnd())
             break;
         if (token.isSignificant())
             tokens.push_back({token.type, std::string(token.begin, token.end)});
@@ -173,14 +184,25 @@ bool queryIsReadOnly(const std::string & query)
 /// statement's significant tokens, and classifies them with the shared `statementIsReadOnly`.
 std::vector<bool> splitAllQueriesIsSelect(const std::string & text)
 {
-    DB::Lexer lexer(text.data(), text.data() + text.size(), 65536);
+    /// `max_query_size = 0` means no limit, exactly like the browser's `tokenize`: the page lexes
+    /// whatever the editor holds (the server applies its own limits), and a cap here would flag every
+    /// token crossing it as an error and silently truncate the token stream of a big query.
+    DB::Lexer lexer(text.data(), text.data() + text.size(), 0);
     std::vector<bool> is_select;
     std::vector<Tok> statement_tokens;
     bool has_significant = false;
     while (true)
     {
         DB::Token token = lexer.nextToken();
-        if (token.isError() || token.isEnd())
+        if (token.isError())
+        {
+            /// The browser's `tokenize` also stops at an error token, but a port that stopped
+            /// silently would analyze a prefix of the query and report the result as if it were
+            /// complete - so a truncated analysis fails the test loudly instead.
+            ADD_FAILURE() << "the SQL lexer reported an error token: " << DB::getErrorTokenDescription(token.type);
+            break;
+        }
+        if (token.isEnd())
             break;
         if (token.type == DB::TokenType::Semicolon)
         {
@@ -297,4 +319,25 @@ TEST(PlayQueryIsReadOnly, SplitAllQueriesUsesStatementKind)
     EXPECT_EQ(
         splitAllQueriesIsSelect("SELECT 'a;b'; WITH y AS (SELECT 1) INSERT INTO t SELECT * FROM y"),
         (std::vector<bool>{true, false}));
+}
+
+TEST(PlayQueryIsReadOnly, LargeQueryIsTokenizedWithoutALimit)
+{
+    /// The reported bug: the browser tokenizer used to cap the lexer at `max_query_size = 65536`,
+    /// which flagged every token crossing that boundary as an error and silently truncated the token
+    /// stream. The read-only classification and the `Run all` splitting then reasoned about a prefix
+    /// of the query - a large `INSERT` could be classified from a prefix, and statements behind the
+    /// cap disappeared from the split. The page now lexes without a limit (the server applies its
+    /// own), and so does the helper above.
+    const std::string padding(70000, 'x');
+    /// A write statement stays a write when its keyword is behind a huge leading comment.
+    EXPECT_FALSE(queryIsReadOnly("/* " + padding + " */ INSERT INTO t VALUES (1)"));
+    /// ...and a read stays a read.
+    EXPECT_TRUE(queryIsReadOnly("/* " + padding + " */ SELECT 1"));
+    /// Every statement is still split out and classified, including the ones past the old cap
+    /// (`queryIsReadOnly` itself classifies by the statement kind of the text it is given, so it is
+    /// the splitting that has to see the far-away statements).
+    EXPECT_EQ(
+        splitAllQueriesIsSelect("SELECT '" + padding + "'; INSERT INTO t VALUES (1); SELECT 2"),
+        (std::vector<bool>{true, false, true}));
 }

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -19,7 +20,10 @@
   * `framing_output_format = value` only when it appears in a real settings context: a top-level
   * `SETTINGS` clause (at bracket depth 0) or a standalone `SET` statement (the setting is the leading
   * keyword). A settings context is recognized by its list grammar, not by the keyword alone: the
-  * keyword must be followed by `name = value` pairs separated by commas, and the context ends where
+  * keyword must be followed by a settings list - `name = value` pairs, or bare `name` shorthand
+  * entries standing for `= true` (`ParserSetQuery` accepts those for `Bool` settings, so
+  * `SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None'` is a valid query
+  * whose framing choice must be honored) - separated by commas, and the context ends where
   * that list grammar ends, so a column merely named `settings` does not open one. This ignores a `framing_output_format` mention inside a string literal or a comment, e.g.
   * `SELECT 'framing_output_format = None'` (wrongly refused) or `SELECT 'framing_output_format'`
   * (framing wrongly dropped), and - crucially - an ordinary comparison in the query body, e.g.
@@ -56,12 +60,23 @@ struct Tok
 
 std::vector<Tok> tokenizeSignificant(const std::string & query)
 {
-    DB::Lexer lexer(query.data(), query.data() + query.size(), 65536);
+    /// `max_query_size = 0` means no limit, exactly like the browser's `tokenize`: the page lexes
+    /// whatever the editor holds (the server applies its own limits), and a cap here would flag every
+    /// token crossing it as an error and silently truncate the token stream of a big query.
+    DB::Lexer lexer(query.data(), query.data() + query.size(), 0);
     std::vector<Tok> tokens;
     while (true)
     {
         DB::Token token = lexer.nextToken();
-        if (token.isError() || token.isEnd())
+        if (token.isError())
+        {
+            /// The browser's `tokenize` also stops at an error token, but a port that stopped
+            /// silently would analyze a prefix of the query and report the result as if it were
+            /// complete - so a truncated analysis fails the test loudly instead.
+            ADD_FAILURE() << "the SQL lexer reported an error token: " << DB::getErrorTokenDescription(token.type);
+            break;
+        }
+        if (token.isEnd())
             break;
         if (token.isSignificant())
             tokens.push_back({token.type, std::string(token.begin, token.end)});
@@ -90,6 +105,15 @@ struct FramingSetting
     bool user_disables_framing;
     bool user_sets_session_framing;
 };
+
+/// Mirror of `SETTINGS_LIST_FOLLOWERS` in play.html: the keywords a query-level settings list may
+/// run into - the output clauses of `ParserQueryWithOutput` (`FORMAT`, `INTO OUTFILE`) and the data
+/// of an `INSERT ... SETTINGS ... VALUES ...`.
+const std::set<std::string> & settingsListFollowers()
+{
+    static const std::set<std::string> followers{"format", "into", "values"};
+    return followers;
+}
 
 /// Mirror of `settingName` in play.html: `ParserSetQuery` parses the setting name with a full
 /// identifier parser, so the name may also be spelled as a quoted identifier - a backquoted
@@ -137,24 +161,58 @@ FramingSetting detectFramingSetting(const std::string & query)
             const bool is_settings = lower == "settings";
             const bool is_set = lower == "set" && at_statement_start;
             /// A real settings context is not just the keyword: the keyword must be followed by an
-            /// actual settings list, which always begins `name = value`. A column merely named
-            /// `settings` in the query body is followed by a `,`/`FROM`/operator instead, so it
-            /// does not open a settings context and a comparison next to it is not mistaken for a
-            /// setting.
+            /// actual settings list. A list entry is `name = value`, or - `ParserSetQuery` accepts
+            /// the shorthand form for `Bool` settings - a bare `name` standing for `name = true`, so
+            /// the list may well begin with one. A leading `name = value` entry identifies a settings
+            /// list on its own; a leading shorthand entry is much weaker evidence (`SELECT settings
+            /// x, ... FROM t` has the same token shape), so such a list is trusted only when it also
+            /// ENDS where a settings list can end - see `list_ends_properly` below. A column merely
+            /// named `settings` in the query body stays out of the walk either way: it is followed by
+            /// a `,` right away, by an implicit alias, or its "list" runs into a `FROM`.
             if ((is_settings || is_set)
                 && i + 2 < tokens.size()
                 && settingName(tokens[i + 1]).has_value()
-                && tokens[i + 2].type == DB::TokenType::Equals)
+                && (tokens[i + 2].type == DB::TokenType::Equals || tokens[i + 2].type == DB::TokenType::Comma))
             {
-                /// Walk the settings list itself - `name = value` pairs separated by commas - and
-                /// leave the settings context where the list grammar ends, so nothing after the
-                /// list (e.g. a trailing `FORMAT` clause) is scanned as if it were a setting.
+                /// Walk the settings list itself - `name = value` pairs (or bare `name` shorthand
+                /// entries) separated by commas - and leave the settings context where the list
+                /// grammar ends, so nothing after the list (e.g. a trailing `FORMAT` clause) is
+                /// scanned as if it were a setting.
+                const bool opened_by_shorthand = tokens[i + 2].type != DB::TokenType::Equals;
+                const bool saved_saw_query_setting = saw_query_setting;
+                const bool saved_query_setting_disables = query_setting_disables;
                 size_t j = i + 1;
-                while (j + 1 < tokens.size()
-                    && settingName(tokens[j]).has_value()
-                    && tokens[j + 1].type == DB::TokenType::Equals)
+                while (j < tokens.size() && settingName(tokens[j]).has_value())
                 {
                     const std::string name = *settingName(tokens[j]);
+                    if (j + 1 >= tokens.size() || tokens[j + 1].type != DB::TokenType::Equals)
+                    {
+                        /// A shorthand entry (`name` with no value, meaning `= true`). It is a list
+                        /// entry only where the list continues with a `,` or ends - at the end of the
+                        /// query or at a statement-terminating `;`. Anything else ends the list.
+                        const bool has_next = j + 1 < tokens.size();
+                        const bool continues = has_next && tokens[j + 1].type == DB::TokenType::Comma;
+                        if (!continues && has_next && tokens[j + 1].type != DB::TokenType::Semicolon)
+                            break;
+                        if (name == "framing_output_format")
+                        {
+                            /// `framing_output_format` is a `String` setting, so the server rejects
+                            /// the shorthand form. Still count it as a query-level framing choice:
+                            /// the page then adds no framing of its own and the user sees the
+                            /// server's own error about the query they wrote.
+                            if (is_set)
+                                return {false, false, true};
+                            saw_query_setting = true;
+                            query_setting_disables = false;
+                        }
+                        ++j;
+                        if (continues)
+                        {
+                            ++j;
+                            continue;
+                        }
+                        break;
+                    }
                     j += 2;
                     /// A numeric value may carry a sign (`SETTINGS priority = -1`), which the lexer
                     /// reports as a separate token.
@@ -209,9 +267,26 @@ FramingSetting detectFramingSetting(const std::string & query)
                     else
                         break;
                 }
-                /// Resume the main walk right after the settings list (the loop's `++i` steps past
-                /// the last consumed token).
-                i = j - 1;
+                /// `tokens[j]` is now the token the list stopped at. A list that was opened by a
+                /// shorthand entry alone is trusted only when it ends where a settings list really
+                /// can end: at the end of the query, at a statement-terminating `;`, or at one of the
+                /// clauses that may follow a settings list. Anything else means the keyword was an
+                /// ordinary identifier after all, so the walk is rolled back and this occurrence
+                /// contributes nothing.
+                const bool list_ends_properly = j >= tokens.size()
+                    || tokens[j].type == DB::TokenType::Semicolon
+                    || (tokens[j].type == DB::TokenType::BareWord && settingsListFollowers().contains(toLower(tokens[j].text)));
+                if (opened_by_shorthand && !list_ends_properly)
+                {
+                    saw_query_setting = saved_saw_query_setting;
+                    query_setting_disables = saved_query_setting_disables;
+                }
+                else
+                {
+                    /// Resume the main walk right after the settings list (the loop's `++i` steps past
+                    /// the last consumed token).
+                    i = j - 1;
+                }
             }
         }
         /// The next token starts a new statement only right after a top-level `;`.
@@ -408,4 +483,71 @@ TEST(PlayDetectFramingSetting, NonLiteralValuesAreConservativelyDisabling)
     /// A standalone `SET` is still refused as a session-level change, whatever the value form.
     expectFraming("SET framing_output_format = DEFAULT", false, false, true);
     expectFraming("SET framing_output_format = {fmt:String}", false, false, true);
+}
+
+TEST(PlayDetectFramingSetting, ShorthandSettingsInTheListAreConsumed)
+{
+    /// The reported bug: `ParserSetQuery` accepts valueless shorthand settings (a bare name standing
+    /// for `= true`), so a settings list may well begin with one. A walk that only opened a settings
+    /// context on a leading `name = value` pair skipped such a list entirely, and the page then added
+    /// its own framing instead of honoring - or refusing - the query's own `framing_output_format`.
+    expectFraming("SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None'", false, true);
+    expectFraming(
+        "SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'JSONEachPacketString'",
+        true, false);
+    /// Several shorthand entries in a row, and one after the framing assignment.
+    expectFraming(
+        "SELECT 1 SETTINGS optimize_move_to_prewhere, allow_experimental_analyzer, framing_output_format = 'None'",
+        false, true);
+    expectFraming(
+        "SELECT 1 SETTINGS framing_output_format = 'None', optimize_move_to_prewhere",
+        false, true);
+    expectFraming(
+        "SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' FORMAT TSV",
+        false, true);
+    expectFraming("SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None';", false, true);
+    /// A standalone `SET` with a leading shorthand entry is still a session-level change.
+    expectFraming("SET optimize_move_to_prewhere, framing_output_format = 'JSONEachPacketString'", false, false, true);
+    /// The shorthand form of `framing_output_format` itself is rejected by the server (it is a
+    /// `String` setting), but it is still the query's own framing choice, so the page adds none.
+    expectFraming("SELECT 1 SETTINGS max_threads = 1, framing_output_format", true, false);
+    /// A shorthand list without the framing setting is not a framing choice at all.
+    expectFraming("SELECT 1 SETTINGS optimize_move_to_prewhere, allow_experimental_analyzer", false, false);
+}
+
+TEST(PlayDetectFramingSetting, ShorthandOpenedListMustEndLikeASettingsList)
+{
+    /// Understanding shorthand entries must not make an ordinary column named `settings` look like a
+    /// settings clause: `SELECT settings x, framing_output_format = 'None' FROM t` has exactly the
+    /// token shape of a shorthand-opened list, so it is accepted only if it also ENDS where a
+    /// settings list can end. Here it runs into a `FROM`, so the walk is rolled back and the
+    /// comparison in the body is not mistaken for a real setting.
+    expectFraming("SELECT settings x, framing_output_format = 'None' FROM t", false, false);
+    expectFraming("SELECT settings x, framing_output_format = 'None' FROM t WHERE x", false, false);
+    /// A real settings clause later in such a query is still found.
+    expectFraming("SELECT settings x FROM t SETTINGS optimize_move_to_prewhere, framing_output_format = 'None'", false, true);
+    /// The rollback leaves the rest of the walk intact: an unrelated real settings clause after such
+    /// a query body is still parsed as one.
+    expectFraming("SELECT settings x, framing_output_format = 'None' FROM t SETTINGS max_threads = 1", false, false);
+}
+
+TEST(PlayDetectFramingSetting, LargeQueryIsTokenizedWithoutALimit)
+{
+    /// The reported bug: the browser tokenizer used to cap the lexer at `max_query_size = 65536`,
+    /// which flagged every token crossing that boundary as an error and silently truncated the token
+    /// stream - so the detection reasoned about a prefix of the query and missed a `SETTINGS` clause
+    /// behind it. The page now lexes without a limit (the server applies its own), and so does the
+    /// helper above. A padding comment keeps the query valid while pushing the clause past 64 KiB.
+    const std::string padding(70000, 'x');
+    expectFraming("SELECT 1 /* " + padding + " */ SETTINGS framing_output_format = 'None'", false, true);
+    expectFraming(
+        "SELECT 1 /* " + padding + " */ SETTINGS framing_output_format = 'JSONEachPacketString'",
+        true, false);
+    /// A long list of real settings pushes the framing entry past the old cap as well.
+    std::string long_list = "SELECT 1 SETTINGS ";
+    for (size_t i = 0; i < 3000; ++i)
+        long_list += "max_threads = 1, ";
+    expectFraming(long_list + "framing_output_format = 'None'", false, true);
+    /// A mention past the old cap that is NOT a setting is still not one.
+    expectFraming("SELECT '" + padding + " framing_output_format = None'", false, false);
 }

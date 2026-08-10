@@ -94,8 +94,11 @@ page="$(${CLICKHOUSE_CURL} -sS "${PLAY_URL}")"
 default_format="$(echo "$page" | sed -n "s/^const default_format = '\([A-Za-z0-9]*\)';$/\1/p")"
 framed_default_format="$(echo "$page" | sed -n "s/^const framed_default_format = '\([A-Za-z0-9]*\)';$/\1/p")"
 # The message substring the page matches to recognize a format-compatibility rejection (and retry
-# the query without framing), extracted from the page source so the two cannot drift apart.
-rejection_pattern="$(echo "$page" | sed -n "s/.*framed_error_stream\.includes('\([^']*\)').*/\1/p" | head -n1)"
+# the query without framing), extracted from the page source so the two cannot drift apart. The page
+# matches it on the message of the terminal `exception` packet only (`framed_error_message`), never on
+# the whole buffered stream - a `data` row or a `log` line containing the phrase must not resubmit the
+# query and discard the stream that was already rendered.
+rejection_pattern="$(echo "$page" | sed -n "s/.*framed_error_message\.includes('\([^']*\)').*/\1/p" | head -n1)"
 
 [ -n "$default_format" ] && echo 'default format extracted: OK'
 [ -n "$framed_default_format" ] && echo 'framed default format extracted: OK'
@@ -141,10 +144,25 @@ echo "$page" | grep -q -F 'SQL lexer stopped advancing' && echo 'lexer forward-p
 ndjson_dispatch="else if (kind === 'ndjson_packets')"
 echo "$page" | grep -qF "$ndjson_dispatch" && echo 'restore replays ndjson packets raw: OK'
 # A non-200 `application/x-ndjson` response (a user-chosen NDJSON framing that fails before 200 OK)
-# is dispatched through the raw packet-stream path, not the generic plain-error branch. Checked by
-# the presence of that branch on the served page (the response handling is a browser-only flow).
-non_ok_ndjson_dispatch="else if (!response.ok && content_type.startsWith('application/x-ndjson'))"
+# is dispatched through the raw packet-stream path, not the generic plain-error branch - but ONLY when
+# the response really is a packet stream (`ndjson_exception_prefix !== null`, i.e. the query's own
+# framing or a `*WithProgress` retry format). Plain `JSONEachRow` / `JSONLines` / `NDJSON` advertise
+# the same content type and, with `http_write_exception_in_output_format`, return a plain
+# `{"exception":...}` body that must fall through to the generic handler below. Checked by the
+# presence of that branch on the served page (the response handling is a browser-only flow).
+non_ok_ndjson_dispatch="else if (!response.ok && content_type.startsWith('application/x-ndjson') && ndjson_exception_prefix !== null)"
 echo "$page" | grep -qF "$non_ok_ndjson_dispatch" && echo 'non-200 ndjson dispatched as packets: OK'
+# The framing-compatibility retry is decided from the terminal `exception` packet's message, not from
+# the whole buffered error stream.
+echo "$page" | grep -q -F "const framed_error_message = framedFailureMessage(framed_error_stream, 'event_stream', null)" \
+    && echo 'retry keys off the exception packet: OK'
+# `ParserSetQuery` accepts valueless shorthand settings, so a real `SETTINGS` list may begin with one
+# (`SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None'`). The page's settings
+# walk opens a context on such an entry too, and - since that shape also matches an ordinary column
+# named `settings` - only trusts it when the list ends where a settings list can end.
+echo "$page" | grep -q -F 'const opened_by_shorthand = tokens[i + 2].type !== TT.Equals' \
+    && echo 'settings walk understands shorthand entries: OK'
+echo "$page" | grep -q -F 'const list_ends_properly = ' && echo 'shorthand-opened list is validated: OK'
 # The text kept for the tab/history snapshot is capped just past 100 KB as it is collected, so a
 # single large framed data/log burst is not retained in full only to be dropped later by
 # `saveHistory`. `appendCappedSnapshot` appends at most enough of a crossing chunk to exceed the
@@ -487,5 +505,35 @@ ${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=None" \
     -d "SELECT throwIf(number = 5) FROM numbers(10) FORMAT jsoneachrowwithprogress SETTINGS http_write_exception_in_output_format = 1, max_block_size = 1, max_threads = 1" > "$result_file"
 grep -o -m1 'X-ClickHouse-Format: jsoneachrowwithprogress' "$header_file"
 grep -o -m1 -F '{"exception":' "$result_file"
+
+echo '--- a plain NDJSON format returns an in-band exception body on a non-200 response'
+# `JSONEachRow` / `JSONLines` / `NDJSON` advertise `application/x-ndjson` just like the page's own
+# `JSONEachPacket*` framing does, and with `http_write_exception_in_output_format` a failure BEFORE
+# the 200 OK header comes back as a non-200 `application/x-ndjson` body that is a plain
+# `{"exception":...}` line - not a packet stream. Pin that contract: the page's non-200 NDJSON branch
+# must not claim such a response (it would echo the raw line and skip the error rendering); the
+# generic plain-error branch parses it instead.
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=None" \
+    -d "SELECT 1 FROM table_04548_does_not_exist FORMAT JSONEachRow SETTINGS http_write_exception_in_output_format = 1" > "$result_file"
+grep -c '^HTTP/1.1 404' "$header_file"
+grep -o -m1 'application/x-ndjson' "$header_file"
+grep -o -m1 -F '{"exception":' "$result_file"
+# It is a plain in-band exception body, not a framing packet stream.
+[ "$(grep -c -F '{"packet":' "$result_file")" -eq 0 ] && echo 'not a framing packet stream: OK'
+
+echo '--- a settings list that begins with a shorthand setting still carries the query framing choice'
+# `ParserSetQuery` accepts valueless shorthand settings, so `SETTINGS <bool_setting>,
+# framing_output_format = '"'"'...'"'"'` is a valid query whose framing choice the page must honor (the walk
+# is pinned on the page above). Here the server accepts such a list and applies the framing.
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&default_format=${framed_default_format}" \
+    -d "SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'JSONEachPacketString'" > "$result_file"
+grep -o -m1 'application/x-ndjson' "$header_file"
+grep -o -m1 '"packet":"data"' "$result_file"
+# ...and the same list with `= '"'"'None'"'"'` really does turn framing off, which is why the page refuses to
+# send such a query at all instead of expecting a framed response.
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&framing_output_format=EventStream" \
+    -d "SELECT 1 SETTINGS optimize_move_to_prewhere, framing_output_format = 'None' FORMAT TSV" > "$result_file"
+grep -o -m1 'text/tab-separated-values' "$header_file"
+[ "$(grep -c '^event: ' "$result_file")" -eq 0 ] && echo 'the query-level None really disables framing: OK'
 
 rm -f "$result_file" "$header_file"
