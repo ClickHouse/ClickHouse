@@ -5,6 +5,19 @@
 SET allow_introspection_functions = 1;
 SET trace_profile_events = 0; -- This can inhibit profiler from working, because it prevents sending samples from different profilers concurrently.
 
+-- Each sub-test below switches the profiler off again as soon as the query under test has finished,
+-- so that the following `SYSTEM FLUSH LOGS` and `system.trace_log` verification queries run
+-- unprofiled. Profiling them feeds a runaway loop: `TraceLogElement::appendToBlock` symbolizes every
+-- frame of every sample through DWARF while the flush thread holds up the queue (about 1 ms per row
+-- in CI), so each sample these queries take of themselves is another row the next flush has to
+-- symbolize, which makes the flush slower, which lets it collect even more samples of itself. It
+-- ends in `Timeout exceeded (180 s) while flushing system log
+-- 'DB::SystemLogQueue<DB::TraceLogElement>'` once the flaky check runs this test many times in
+-- parallel: in the report below a single verification query ran for 81 seconds and collected 243778
+-- samples of itself, one `SYSTEM FLUSH LOGS` collected 96283, and those two queries alone accounted
+-- for 81% of all the query-attributed samples in the job - while the queries actually under test
+-- contributed about 27000 each.
+
 SET query_profiler_cpu_time_period_ns = 0;
 -- Use a short period: a 100ms period gives only ~5 signals over sleep(0.5), and under a loaded
 -- sanitizer server (e.g. the flaky check running this test many times in parallel) a handful of
@@ -15,6 +28,7 @@ SET log_queries = 1;
 -- survives a single thread failing to create its profiler timer.
 SELECT sum(sleep(0.5)), ignore('test real time query profiler') FROM numbers_mt(16) SETTINGS max_block_size = 1, max_threads = 16;
 SET log_queries = 0;
+SET query_profiler_real_time_period_ns = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
 -- Do not check `system.trace_log` for the sleeping query: samples travel over a lossy channel (the
@@ -47,17 +61,18 @@ SET max_rows_to_read = 0;
 SET log_queries = 1;
 SELECT count(), ignore('test real time query profiler numbers_mt') FROM numbers_mt(1e9);
 SET log_queries = 0;
+SET query_profiler_real_time_period_ns = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
 WITH addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
 SELECT count() > 0 FROM system.trace_log t WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler numbers_mt%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1) AND symbol LIKE '%Source%';
 
-SET query_profiler_real_time_period_ns = 0;
 SET query_profiler_cpu_time_period_ns = 1000000;
 SET log_queries = 1;
 SET max_rows_to_read = 0;
 SELECT count(), ignore('test cpu time query profiler') FROM numbers_mt(1e9);
 SET log_queries = 0;
+SET query_profiler_cpu_time_period_ns = 0;
 SYSTEM FLUSH LOGS trace_log, query_log;
 
 WITH addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
