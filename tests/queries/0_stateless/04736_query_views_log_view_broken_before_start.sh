@@ -55,9 +55,9 @@ FROM system.query_views_log
 WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 5 MINUTE
   AND view_name IN (
-      concatWithSeparator('.', currentDatabase(), 'mv_dangling'),
-      concatWithSeparator('.', currentDatabase(), 'mv_present'),
-      concatWithSeparator('.', currentDatabase(), 'mv_ok'))
+      currentDatabase() || '.mv_dangling',
+      currentDatabase() || '.mv_present',
+      currentDatabase() || '.mv_ok')
 GROUP BY view, status, view_query_kept
 ORDER BY view
 "
