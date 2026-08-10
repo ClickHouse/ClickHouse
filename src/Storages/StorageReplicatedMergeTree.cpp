@@ -2933,15 +2933,8 @@ static void paranoidCheckForCoveredPartsInZooKeeper(
 
 void StorageReplicatedMergeTree::removeStrandedPartsInRangeFromZooKeeper(const MergeTreePartInfo & drop_range)
 {
-    /// `removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper` only sees parts that are
-    /// in the in-memory index (Active/Outdated/Deleting), so a part missing from it in every state
-    /// keeps its ZooKeeper node. Such a node is legal while an active part covers it (see
-    /// `paranoidCheckForCoveredPartsInZooKeeperOnStart`), but this drop removes every part of the
-    /// range: afterwards nothing covers the node, no replica can serve a fetch for it, and the
-    /// Outdated-driven cleanup thread never sees it. So it is garbage and we remove it here.
-    ///
-    /// Only valid for a full (fake) drop range: for a single-part DROP PART an empty removal set
-    /// instead means the drop is already satisfied by a live covering part, whose node must stay.
+    /// Only sound for a full drop range, which removes every part of the range: a single-part
+    /// DROP PART may instead be satisfied by a live covering part, whose node must be kept.
     chassert(drop_range.isFakeDropRangePart());
 
     auto zookeeper = getZooKeeper();
