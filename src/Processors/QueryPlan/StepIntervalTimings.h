@@ -35,8 +35,8 @@ private:
         double branch_concurrency = 0.0;
     };
 
-    /// Give every step of the plan tree a dense index, so that the timings live in a vector whose
-    /// elements keep their addresses while the tree is walked.
+    /// Give every step of the plan tree a unique number,
+    /// so that it is easier to access
     void indexPlanSteps(const QueryPlan & plan);
 
     /// One sorted, non-overlapping sequence per step, merged from the per-thread runs.

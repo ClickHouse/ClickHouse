@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
@@ -216,7 +217,7 @@ struct QueryPlanOptimizationSettings
 
     bool is_explain;
 
-    bool collect_analyze_stats = false;
+    JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
 
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 

@@ -56,12 +56,12 @@ class GraceHashJoin final : public IJoin
         size_t peak_in_memory_bytes = 0;
         size_t num_rehashes = 0;
         size_t num_buckets = 0;
-        TemporaryDataBuffer::Stat left_spill;
-        TemporaryDataBuffer::Stat right_spill;
+        size_t left_spilled_compressed_bytes = 0;
+        size_t right_spilled_compressed_bytes = 0;
 
         UInt64 left_rows_total = 0;
-        UInt64 matched_left = 0;
-        UInt64 matched_right = 0;
+        MatchedRowsAccumulator matched_left;
+        MatchedRowsAccumulator matched_right;
 
         void foldIn(const HashJoin & in_memory_join);
     };

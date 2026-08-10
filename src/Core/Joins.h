@@ -151,5 +151,14 @@ enum class JoinOrderAlgorithm : uint8_t
 
 const char * toString(JoinOrderAlgorithm join_order_algorithm);
 
+enum class JoinAnalyzeMode : uint8_t
+{
+    None = 0,
+    Derived,
+    Exact,
+};
+
+constexpr bool collectsAnalyzeStats(JoinAnalyzeMode mode) { return mode != JoinAnalyzeMode::None; }
+constexpr bool collectsExactMatches(JoinAnalyzeMode mode) { return mode == JoinAnalyzeMode::Exact; }
 
 }

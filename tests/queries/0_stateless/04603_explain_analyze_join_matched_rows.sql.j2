@@ -1,0 +1,134 @@
+-- Checks that `EXPLAIN ANALYZE matches = 1` reports the same matched-row counts for the same data
+-- whatever the join kind and the join algorithm, and reports `not collected` for the kinds where an
+-- exact count cannot be derived.
+--
+-- Both sides have 1000 rows, but only keys 0..99 are shared, so 439 left rows and 521 right rows
+-- find a partner. The two counts differ from each other and from the table sizes, so a metric that
+-- silently falls back to the row count, to zero, or to the other side cannot pass. The ASOF
+-- condition holds for every shared key, so ASOF matches the same 439 left rows.
+--
+-- `right_unique_keys` repeats the right side with every key unique, which is what makes
+-- `HashJoin` promote `ALL` to `RightAny` after the build; the counts must survive that promotion.
+--
+-- The join queries select `count()` on purpose: with no right column in the output the probe has
+-- nothing to materialize, which is the path where the counts are hardest to obtain.
+--
+-- Each algorithm is exercised over exactly the kinds it accepts, per `MergeJoin::isSupported`,
+-- `FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported`, `GraceHashJoin::isSupported`
+-- and `allowParallelHashJoin`.
+
+SET enable_analyzer = 1;
+-- Swapping the sides moves `columns_added_by_join` and flips which side owns the output filter.
+SET query_plan_join_swap_table = 0;
+-- A runtime filter would drop non-matching left rows before the probe, changing `Left: rows`.
+SET enable_join_runtime_filters = 0;
+SET join_use_nulls = 0;
+
+DROP TABLE IF EXISTS left_side;
+DROP TABLE IF EXISTS right_dup_keys;
+DROP TABLE IF EXISTS right_unique_keys;
+CREATE TABLE left_side (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE right_dup_keys (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE right_unique_keys (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
+
+INSERT INTO left_side SELECT number % 100, number FROM numbers(439);
+INSERT INTO left_side SELECT 1000 + number, number FROM numbers(561);
+INSERT INTO right_dup_keys SELECT number % 100, number FROM numbers(521);
+INSERT INTO right_dup_keys SELECT 2000 + number, number FROM numbers(479);
+INSERT INTO right_unique_keys SELECT number, number FROM numbers(100);
+INSERT INTO right_unique_keys SELECT 2000 + number, number FROM numbers(479);
+
+SELECT 'ground truth: rows, matched';
+SELECT count(), countIf(k IN (SELECT k FROM right_dup_keys)) FROM left_side;
+SELECT count(), countIf(k IN (SELECT k FROM left_side)) FROM right_dup_keys;
+SELECT count(), countIf(k IN (SELECT k FROM right_unique_keys)) FROM left_side;
+SELECT count(), countIf(k IN (SELECT k FROM left_side)) FROM right_unique_keys;
+
+{% set all_kinds = ['ALL INNER', 'ALL LEFT', 'ALL RIGHT', 'ALL FULL'] -%}
+{% set any_kinds = ['ANY INNER', 'ANY LEFT', 'ANY RIGHT'] -%}
+{% set semi_anti_kinds = ['SEMI LEFT', 'SEMI RIGHT', 'ANTI LEFT', 'ANTI RIGHT'] -%}
+{% set asof_kinds = ['ASOF', 'ASOF LEFT'] -%}
+
+{% set cases = [
+    ('hash', "join_algorithm = 'hash'",
+        all_kinds + any_kinds + semi_anti_kinds + asof_kinds),
+
+    ('parallel_hash', "join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 1, max_threads = 8",
+        all_kinds + any_kinds + semi_anti_kinds + asof_kinds),
+
+    ('grace_hash', "join_algorithm = 'grace_hash', max_bytes_before_external_join = 1",
+        all_kinds + any_kinds + semi_anti_kinds),
+
+    ('partial_merge', "join_algorithm = 'partial_merge'",
+        all_kinds + ['ANY INNER', 'ANY LEFT', 'SEMI LEFT']),
+
+    ('full_sorting_merge', "join_algorithm = 'full_sorting_merge'",
+        all_kinds + any_kinds + asof_kinds),
+] -%}
+
+{% for algo, settings, kinds in cases -%}
+SELECT '{{ algo }}';
+{% for kind in kinds -%}
+SELECT '{{ kind }}' AS kind,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
+FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM left_side AS l {{ kind }} JOIN right_dup_keys AS r ON l.k = r.k{% if kind.startswith('ASOF') %} AND l.v >= r.v{% endif %} SETTINGS {{ settings }});
+{% endfor -%}
+{% endfor -%}
+
+-- `any_join_distinct_right_table_keys` rewrites `ANY` to the old `RightAny` semantics, and `ANY
+-- INNER` to `SEMI LEFT`. This is the only way to reach `RightAny`, including `FULL RightAny`, which
+-- a plain `ANY FULL JOIN` cannot express because the analyzer rejects it.
+SELECT 'RightAny';
+{% for kind in ['ANY INNER', 'ANY LEFT', 'ANY RIGHT', 'ANY FULL'] -%}
+SELECT '{{ kind }}' AS kind,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
+FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM left_side AS l {{ kind }} JOIN right_dup_keys AS r ON l.k = r.k SETTINGS join_algorithm = 'hash', any_join_distinct_right_table_keys = 1);
+{% endfor -%}
+
+-- Every key of `right_unique_keys` is unique, so the build promotes `ALL` to `RightAny` for
+-- INNER and LEFT. The statistics must keep treating the join as `ALL`, since the maps are
+-- still `MapsAll`.
+SELECT 'unique right keys';
+{% for kind in ['ALL INNER', 'ALL LEFT'] -%}
+SELECT '{{ kind }}' AS kind,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
+FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM left_side AS l {{ kind }} JOIN right_unique_keys AS r ON l.k = r.k SETTINGS join_algorithm = 'hash');
+{% endfor -%}
+
+-- Splitting the output into single-row chunks exercises the per-chunk ref bookkeeping; the reported
+-- totals must not change.
+SELECT 'single-row chunks';
+{% for kind in all_kinds -%}
+SELECT '{{ kind }}' AS kind,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
+FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM left_side AS l {{ kind }} JOIN right_dup_keys AS r ON l.k = r.k SETTINGS joined_block_split_single_row = 1, max_joined_block_size_rows = 1);
+{% endfor -%}
+
+-- A residual `ON` condition routes the probe through a separate loop.
+-- `l.v + 1000 >= r.v` holds for every equal-key pair, since `r.v` is at most 520 for a
+-- shared key, so the counts stay the same.
+SELECT 'residual condition';
+{% for kind in ['ALL LEFT', 'ALL RIGHT', 'ALL FULL'] -%}
+SELECT '{{ kind }}' AS kind,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
+FROM (EXPLAIN ANALYZE matches = 1 SELECT count() FROM left_side AS l {{ kind }} JOIN right_dup_keys AS r ON l.k = r.k AND l.v + 1000 >= r.v SETTINGS join_algorithm = 'hash');
+{% endfor -%}
+
+-- With a right column in the output the refs are recorded for materialization anyway, so the counts
+-- must not depend on the projection either.
+SELECT 'right column in the output';
+{% for kind in ['ALL INNER', 'ALL LEFT', 'ALL FULL'] -%}
+SELECT '{{ kind }}' AS kind,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Left: rows%') AS matched_left,
+    maxIf(extract(explain, 'matched (not collected|[0-9]+)'), explain LIKE '%Right: rows%') AS matched_right
+FROM (EXPLAIN ANALYZE matches = 1 SELECT sum(r.v) FROM left_side AS l {{ kind }} JOIN right_dup_keys AS r ON l.k = r.k SETTINGS join_algorithm = 'hash');
+{% endfor -%}
+
+DROP TABLE left_side;
+DROP TABLE right_dup_keys;
+DROP TABLE right_unique_keys;

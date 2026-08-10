@@ -65,13 +65,6 @@ public:
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
 
-    size_t getRightRows() const;
-
-    size_t getUniqueKeys() const;
-
-    /// Sum of the per-slot build peaks, snapshotted before the two-level merge (see onBuildPhaseFinish).
-    size_t getPeakBuildBytes() const { return peak_build_bytes; }
-
     StepAnalysisReport getAnalysisReport() const override;
 
     bool alwaysReturnsEmptySet() const override;
@@ -152,6 +145,14 @@ private:
     /// `addBlockToJoin` and is used to track the join state.
     std::atomic<size_t> global_total_rows{0};
     std::atomic<size_t> global_total_bytes{0};
+
+    size_t getRightTableRowCount() const;
+    size_t getUniqueKeys() const;
+
+    /// Sum of the per-slot build peaks, snapshotted before the two-level merge (see onBuildPhaseFinish).
+    size_t getPeakBuildBytes() const { return peak_build_bytes; }
+
+    JoinAnalysisCounters collectMatchedRowsCounters() const;
 
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
     std::pair<size_t, size_t> updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);

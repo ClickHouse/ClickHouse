@@ -126,11 +126,10 @@ private:
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
     const size_t max_files_to_merge;
-    const bool collect_stats;
 
     /// Build side is single threaded that is why these variables are non-atomic
     UInt64 build_sort_time_ns = 0;
-    UInt64 right_spilled_bytes = 0;
+    UInt64 right_spilled_compressed_bytes = 0;
     std::atomic<UInt64> probe_sort_time_ns{0};
     std::atomic<UInt64> total_left_rows{0};
     std::atomic<UInt64> matched_left_rows{0};

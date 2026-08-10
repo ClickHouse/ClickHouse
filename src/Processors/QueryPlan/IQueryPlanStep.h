@@ -5,6 +5,8 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <span>
 #include <string_view>
 #include <variant>
 #include <list>
@@ -37,12 +39,7 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
 
-struct StepMetric;
-struct MetricGroup;
-using MetricList = std::vector<StepMetric>;
-using StepAnalysisReport = std::vector<MetricGroup>;
-
-using ProcessorsByGroup = std::unordered_map<size_t, std::vector<IProcessor *>>;
+using StepProcessors = std::span<IProcessor * const>;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -190,7 +187,7 @@ public:
     virtual std::vector<size_t> getStepGroups() const { return {0}; }
     virtual String getStepGroupName(size_t) const { return {}; }
 
-    virtual StepAnalysisReport getAnalysisReport(const ProcessorsByGroup & /*processors_by_group*/) const { return {}; }
+    virtual StepAnalysisReport getAnalysisReport(StepProcessors /*step_processors*/) const { return {}; }
 
 protected:
     virtual void updateOutputHeader() = 0;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Interpreters/ExpressionActions.h>
@@ -120,6 +121,64 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
     }
 }
 
+template <JoinKind KIND, JoinStrictness STRICTNESS, typename AddedColumns>
+static std::optional<UInt64> countMatchedLeftRows(const AddedColumns & added_columns, size_t probed_rows)
+{
+    constexpr auto source = leftMatchedSource(KIND, STRICTNESS);
+
+    if constexpr (source == LeftMatchedSource::ReplicationOffsets)
+    {
+        const auto & offsets = added_columns.offsets_to_replicate;
+        UInt64 matched = 0;
+        for (size_t i = 0; i < probed_rows; ++i)
+            matched += offsets[i] > offsets[i - 1];
+        return matched;
+    }
+    else if constexpr (source == LeftMatchedSource::DefaultRowMarkers)
+    {
+        if (added_columns.additional_filter_expression)
+            return added_columns.matched_left_rows;
+
+        /// The markers live in `LazyOutput::row_refs`, which the probe fills only when there is
+        /// something to materialize lazily, or when `matches = 1` asks it to
+        if (!added_columns.record_row_refs)
+            return std::nullopt;
+
+        UInt64 not_matched = 0;
+        for (const UInt64 ref_word : added_columns.lazy_output.getRowRefs())
+            not_matched += ref_word == 0;
+        return probed_rows - not_matched;
+    }
+    else if constexpr (source == LeftMatchedSource::OutputFilter)
+    {
+        chassert(added_columns.need_filter);
+        return countBytesInFilter(added_columns.filter);
+    }
+    else if constexpr (source == LeftMatchedSource::OutputFilterComplement)
+    {
+        chassert(added_columns.need_filter);
+        return probed_rows - countBytesInFilter(added_columns.filter);
+    }
+    else
+    {
+        return std::nullopt;
+    }
+}
+
+template <typename AddedColumns>
+static void markRightMatchedFromRowRefs(MatchedRowsStats & stats, const AddedColumns & added_columns)
+{
+    UInt64 prev = 0;
+    for (const UInt64 ref_word : added_columns.lazy_output.getRowRefs())
+    {
+        if (ref_word == 0 || ref_word == prev)
+            continue;
+
+        stats.markRightMatched(ref_word);
+        prev = ref_word;
+    }
+}
+
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     const HashJoin & join, Block block, const Block & block_with_columns_to_add, const MapsTemplateVector & maps_, bool is_join_get)
@@ -148,6 +207,12 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             HashJoin::isLowCardinalityType(join.data->type));
     }
 
+    /// Only `MapsAll` keeps every right row of a key, so only there do the recorded words resolve to
+    /// exact rows. The residual path is excluded: its words count output rows rather than left rows,
+    /// and both metrics come from elsewhere there.
+    constexpr bool refs_can_carry_stats = join_features.is_maps_all
+        && (join_features.inner || join_features.left || join_features.full);
+    const bool record_refs_for_stats = refs_can_carry_stats && join.recordsRowRefsForStats();
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
       * For FULL/RIGHT JOIN, the saved blocks contain keys;
@@ -163,15 +228,16 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         join.table_join->getMixedJoinExpression(),
         join.additional_filter_required_rhs_pos,
         join_features.is_asof_join,
-        is_join_get);
+        is_join_get,
+        record_refs_for_stats);
 
-    if constexpr (rightMatchedSource(KIND, STRICTNESS) == RightMatchedSource::RefsBitmap)
+    if (join.matched_rows_stats && join.matched_rows_stats->hasRightFlags())
         added_columns.match_stats = join.matched_rows_stats.get();
 
     bool has_required_right_keys = (join.required_right_keys.columns() != 0);
-    bool need_collect_stats = join.getTableJoin().collectAnalyzeStats();
-    added_columns.need_filter = join_features.need_filter || has_required_right_keys || need_collect_stats;
+    added_columns.need_filter = join_features.need_filter || has_required_right_keys;
     added_columns.max_joined_block_rows = join.max_joined_block_rows;
+
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
     else
@@ -184,7 +250,11 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     if (auto * stats = join.matched_rows_stats.get())
     {
         const size_t probed_rows = processed_rows ? processed_rows : block.rows();
-        stats->collectProbeBlock(probed_rows, added_columns.matched_rows.size());
+        stats->collectProbeBlock(probed_rows, countMatchedLeftRows<KIND, STRICTNESS>(added_columns, probed_rows));
+
+        const bool right_matches_marked_inline = added_columns.additional_filter_expression != nullptr;
+        if (stats->hasRightFlags() && !right_matches_marked_inline)
+            markRightMatchedFromRowRefs(*stats, added_columns);
     }
 
     std::optional<ScatteredBlock> next_scattered_block;
@@ -366,13 +436,13 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNu
 {
     if (added_columns.need_filter)
     {
-            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
-                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
+            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
     }
     else
     {
-            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
-                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
+            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
     }
 }
 
@@ -1013,6 +1083,12 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
 
         const PaddedPODArray<UInt8> & filter_flags = assert_cast<const ColumnUInt8 &>(*filter_col).getData();
 
+        if (added_columns.match_stats) [[unlikely]]
+            for (size_t row = 0; row < selected_rows.size(); ++row)
+                if (filter_flags[row])
+                    added_columns.match_stats->markRightMatched(selected_rows[row]);
+
+        [[maybe_unused]] UInt64 matched_left = 0;
         size_t prev_replicated_row = 0;
         auto * selected_right_row_it = selected_rows.begin();
         size_t find_result_index = 0;
@@ -1135,6 +1211,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                         added_columns.applyLazyDefaults();
                 }
             }
+            if constexpr (leftMatchedSource(KIND, STRICTNESS) == LeftMatchedSource::DefaultRowMarkers)
+                matched_left += any_matched;
+
             find_result_index += (prev_replicated_row != row_replicate_offset[i]);
 
             if constexpr (join_features.need_replication)
@@ -1143,6 +1222,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
             }
             prev_replicated_row = row_replicate_offset[i];
         }
+
+        if constexpr (leftMatchedSource(KIND, STRICTNESS) == LeftMatchedSource::DefaultRowMarkers)
+            added_columns.matched_left_rows = matched_left;
     }
 
     if constexpr (join_features.need_replication)

@@ -12,6 +12,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -192,7 +193,7 @@ public:
     bool hasPostBuildPhase() const override;
     void runPostBuildPhase() override;
 
-    /// Number of keys in all built JOIN maps.
+    /// Number of unique keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
@@ -530,19 +531,6 @@ public:
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
-    struct ProbeStats
-    {
-        UInt64 total_left_rows = 0;
-        UInt64 matched_left_rows = 0;
-
-        ProbeStats & operator+=(const ProbeStats & other)
-        {
-            total_left_rows += other.total_left_rows;
-            matched_left_rows += other.matched_left_rows;
-            return *this;
-        }
-    };
-
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
@@ -633,8 +621,7 @@ private:
     void initRightBlockStructure(Block & saved_block_sample);
 
     /// Shared probe path for `joinBlock` and `joinScatteredBlock`: runs the join dispatch on an
-    /// already-prepared block and folds the per-block probe statistics carried by the result into
-    /// our counters.
+    /// already-prepared block
     JoinResultPtr runJoinDispatch(ScatteredBlock block);
 
     bool preferUseMapsAll() const;
@@ -662,6 +649,8 @@ private:
     void tryConvertToFixedHashMapImpl(MapsTemplate & maps);
 
     void reinitUsedFlags();
+
+    bool recordsRowRefsForStats() const;
 
     void doDebugAsserts() const;
 };

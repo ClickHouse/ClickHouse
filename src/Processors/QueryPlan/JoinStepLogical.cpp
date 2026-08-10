@@ -1106,7 +1106,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto table_join = std::make_shared<TableJoin>(join_settings, logical_lookup && logical_lookup->useNulls(),
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
         Context::getGlobalContextInstance()->getTempDataOnDisk());
-    table_join->setCollectAnalyzeStats(optimization_settings.collect_analyze_stats);
+    table_join->setAnalyzeMode(optimization_settings.join_analyze_mode);
 
     PreparedJoinStorage prepared_join_storage;
     if (logical_lookup)

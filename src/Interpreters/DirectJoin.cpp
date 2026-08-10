@@ -2,7 +2,6 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
-#include <Processors/QueryPlan/JoinStep.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -232,7 +231,7 @@ StepAnalysisReport DirectKeyValueJoin::getAnalysisReport() const
     StepAnalysisReport report;
     const UInt64 left_rows = left_rows_total.load(std::memory_order_relaxed);
     const UInt64 matched_left = left_rows_matched.load(std::memory_order_relaxed);
-    report.push_back({"left", joinSideMetrics(left_rows, matched_left)});
+    report.push_back({MetricGroupKey::Left, joinSideMetrics(left_rows, matched_left)});
     return report;
 }
 

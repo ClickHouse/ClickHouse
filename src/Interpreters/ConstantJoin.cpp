@@ -294,6 +294,7 @@ void ConstantJoin::storeRightBlock(Block block_to_save, size_t rows)
     doDebugAsserts();
     right_blocks.emplace_back(block_to_save.getColumns(), ScatteredBlock::Selector(rows));
     allocated_size += right_blocks.back().allocatedBytes();
+    peak_allocated_size = std::max(peak_allocated_size, allocated_size);
     in_memory_rows += rows;
     doDebugAsserts();
 
@@ -321,6 +322,26 @@ size_t ConstantJoin::getTotalByteCount() const
 {
     doDebugAsserts();
     return allocated_size;
+}
+
+StepAnalysisReport ConstantJoin::getAnalysisReport() const
+{
+    StepAnalysisReport report;
+
+    report.push_back({MetricGroupKey::Left, joinSideMetrics(total_rows_left.load(std::memory_order_relaxed), std::nullopt)});
+    report.push_back({MetricGroupKey::Right, joinSideMetrics(total_rows_to_join, std::nullopt)});
+
+    MetricList buffer_metrics;
+    buffer_metrics.emplace_back(MetricKey::Memory, peak_allocated_size);
+    buffer_metrics.emplace_back(MetricKey::Compressed, std::string(have_compressed ? "yes" : "no"));
+    report.push_back({MetricGroupKey::Buffer, std::move(buffer_metrics)});
+
+    const size_t right_spilled_compressed_bytes = tmp_stream ? tmp_stream->getHolder()->getStat().compressed_size : 0;
+    MetricList spill_metrics;
+    spill_metrics.emplace_back(MetricKey::RightSpilled, right_spilled_compressed_bytes);
+    report.push_back({MetricGroupKey::Spill, std::move(spill_metrics)});
+
+    return report;
 }
 
 void ConstantJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
@@ -386,6 +407,8 @@ void ConstantJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
         }
         else
             allocated_size += new_size - old_size;
+
+        peak_allocated_size = std::max(peak_allocated_size, allocated_size);
 
         doDebugAsserts();
     }
@@ -865,6 +888,8 @@ private:
 
 JoinResultPtr ConstantJoin::joinBlock(Block block)
 {
+    total_rows_left.fetch_add(block.rows(), std::memory_order_relaxed);
+
     /// A constant predicate cannot match rows of an empty right side; `alwaysReturnsEmptySet` applies the same rule.
     const bool has_match = constant_predicate_value && total_rows_to_join != 0;
 

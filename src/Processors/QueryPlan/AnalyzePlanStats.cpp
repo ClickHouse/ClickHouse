@@ -1,4 +1,3 @@
-#include <cctype>
 #include <iterator>
 #include <type_traits>
 #include <unordered_map>
@@ -19,16 +18,21 @@ namespace DB
 namespace
 {
 
-/// `Format::Time` is shown as an absolute duration plus its share of the stage time
-/// (sum of elapsed time across the stage's processors), uniformly for any producing step.
-String formatStepMetricValue(const StepMetric & metric, UInt64 stage_sum_elapsed_ns)
+String formatStepMetricValue(const StepMetric & metric)
 {
-    if (metric.format == StepMetric::Format::Raw)
+    if (std::holds_alternative<std::monostate>(metric.value))
+        return "not collected";
+
+    const MetricFormat format = formatOf(metric.key);
+
+    if (format == MetricFormat::Raw)
         return std::visit([](const auto & value) -> String
         {
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<T, std::string>)
                 return value;
+            else if constexpr (std::is_same_v<T, std::monostate>)
+                return {};
             else
                 return fmt::format("{}", value);
         }, metric.value);
@@ -42,35 +46,22 @@ String formatStepMetricValue(const StepMetric & metric, UInt64 stage_sum_elapsed
             return 0.0;
     }, metric.value);
 
-    switch (metric.format)
+    switch (format)
     {
-        case StepMetric::Format::Bytes:
+        case MetricFormat::Bytes:
             return formatReadableSizeWithDecimalSuffix(numeric);
-        case StepMetric::Format::Quantity:
+        case MetricFormat::Quantity:
             return formatReadableQuantity(numeric);
-        case StepMetric::Format::Time:
-        {
-            String result = formatReadableTime(numeric);
-            if (stage_sum_elapsed_ns != 0)
-                result += fmt::format(" ({:.1f}%)", 100.0 * numeric / static_cast<double>(stage_sum_elapsed_ns));
-            return result;
-        }
-        case StepMetric::Format::Percent:
+        case MetricFormat::Time:
+            return formatReadableTime(numeric);
+        case MetricFormat::Percent:
             return fmt::format("{:.2f}%", numeric);
-        case StepMetric::Format::Ratio:
+        case MetricFormat::Ratio:
             return fmt::format("{:.2f}", numeric);
-        case StepMetric::Format::Raw:
+        case MetricFormat::Raw:
             return {};
     }
     return {};
-}
-
-/// Group labels are defined lowercase at their source; the printer capitalizes the first letter in
-/// place so the output reads e.g. `Left:`, `Right:`, `Hash table:`, `Spill:`. Labels are ASCII.
-void capitalizeLabel(std::string & label)
-{
-    if (!label.empty())
-        label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
 }
 
 void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const std::string & prefix)
@@ -78,9 +69,7 @@ void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const
     if (metric_group.metrics.empty())
         return;
 
-    out << prefix;
-    if (!metric_group.label.empty())
-        out << metric_group.label << ": ";
+    out << prefix << toString(metric_group.key) << ": ";
 
     bool first = true;
     for (const auto & metric : metric_group.metrics)
@@ -88,40 +77,29 @@ void printMetricGroup(const MetricGroup & metric_group, WriteBuffer & out, const
         if (!first)
             out << " · ";
         first = false;
-        if (metric.name.empty())
-            out << formatStepMetricValue(metric, 0);
+        const std::string_view name = toString(metric.key);
+        if (name.empty())
+            out << formatStepMetricValue(metric);
         else
-            out << metric.name << " " << formatStepMetricValue(metric, 0);
+            out << name << " " << formatStepMetricValue(metric);
     }
     out << "\n";
 }
 
-MetricGroup makeIOGroup(const StepStats & step_stats)
+/// The group is built by `makeIOGroup`, so a missing metric means the two went out of sync.
+UInt64 getQuantity(const MetricGroup & metric_group, MetricKey key)
 {
-    MetricGroup io_group;
-    io_group.label = "I/O";
-    io_group.metrics.emplace_back("input rows", step_stats.input_rows, StepMetric::Format::Quantity);
-    io_group.metrics.emplace_back("output rows", step_stats.output_rows, StepMetric::Format::Quantity);
-    io_group.metrics.emplace_back("input bytes", step_stats.input_bytes, StepMetric::Format::Bytes);
-    io_group.metrics.emplace_back("output bytes", step_stats.output_bytes, StepMetric::Format::Bytes);
-    return io_group;
-}
-
-UInt64 findQuantity(const MetricGroup & metric_group, const std::string & name)
-{
-    for (const auto & metric : metric_group.metrics)
-        if (metric.name == name)
-            if (const auto * quantity = std::get_if<UInt64>(&metric.value))
-                return *quantity;
-    return 0;
+    const auto quantity = findQuantity(metric_group, key);
+    chassert(quantity, "metric is missing from the I/O group");
+    return quantity.value_or(0);
 }
 
 void printIOGroup(const MetricGroup & io_group, WriteBuffer & out, const std::string & prefix)
 {
-    const UInt64 input_rows = findQuantity(io_group, "input rows");
-    const UInt64 output_rows = findQuantity(io_group, "output rows");
-    const UInt64 input_bytes = findQuantity(io_group, "input bytes");
-    const UInt64 output_bytes = findQuantity(io_group, "output bytes");
+    const UInt64 input_rows = getQuantity(io_group, MetricKey::InputRows);
+    const UInt64 output_rows = getQuantity(io_group, MetricKey::OutputRows);
+    const UInt64 input_bytes = getQuantity(io_group, MetricKey::InputBytes);
+    const UInt64 output_bytes = getQuantity(io_group, MetricKey::OutputBytes);
 
     const UInt8 precision_rows_in = input_rows < 1000 ? 0 : 2;
     const UInt8 precision_rows_out = output_rows < 1000 ? 0 : 2;
@@ -158,7 +136,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
         << (stage.wall_clock_time_ns ? fmt::format("{:.2f}/{}", stage.parallelism, stage.max_parallelism) : "Unknown");
 
     for (const auto & metric : stage.inline_metrics)
-        out << " · " << metric.name << " " << formatStepMetricValue(metric, stage.sum_elapsed_ns);
+        out << " · " << toString(metric.key) << " " << formatStepMetricValue(metric);
 
     out << "\n";
 
@@ -171,7 +149,7 @@ void printStage(const AnalyzedStage & stage, bool label_stages, WriteBuffer & ou
             if (!first)
                 out << " · ";
             first = false;
-            out << metric.name << " " << formatStepMetricValue(metric, 0);
+            out << toString(metric.key) << " " << formatStepMetricValue(metric);
         }
         out << "\n";
     }
@@ -210,8 +188,7 @@ void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 
         auto & step_stats = stats_by_step[step];
 
-        const auto step_group_key = std::make_pair(step, proc->getQueryPlanStepGroup());
-        processors_by_step_group[step_group_key].push_back(proc.get());
+        processors_by_step[step].push_back(proc.get());
 
         for (const auto & input_port : proc->getInputs())
         {
@@ -314,16 +291,14 @@ StepStatsContext AnalyzeStepsStats::makeContext(const IQueryPlanStep * step) con
 
 AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) const
 {
-    ProcessorsByGroup processors_by_group;
-    for (size_t group : step->getStepGroups())
-        if (const auto group_processors_it = processors_by_step_group.find(std::make_pair(step, group)); group_processors_it != processors_by_step_group.end())
-            processors_by_group[group] = group_processors_it->second;
+    StepProcessors step_processors;
+    if (const auto processors_it = processors_by_step.find(step); processors_it != processors_by_step.end())
+        step_processors = processors_it->second;
 
-    StepAnalysisReport raw_report = step->getAnalysisReport(processors_by_group);
+    StepAnalysisReport raw_report = step->getAnalysisReport(step_processors);
 
     auto context_for_step = makeContext(step);
-    auto step_name = step->getName();
-    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step_name);
+    StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step);
 
     /// Use the service of a generator, which takes the context (e.g. i/o, total time)
     /// some internal raw metrics, which are specific for each step,  that
@@ -341,15 +316,20 @@ AnalyzedStepData AnalyzeStepsStats::analyzeStep(const IQueryPlanStep * step) con
     return result;
 }
 
-void AnalyzeStepsStats::renderStep(const AnalyzedStepData & report, WriteBuffer & out, const std::string & prefix, bool processors_info) const
+void AnalyzeStepsStats::renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const
 {
-    for (const auto & group : report.groups)
+    for (const auto & group : step_data.step_metric_groups)
     {
-        MetricGroup display = group;
-        capitalizeLabel(display.label);
-        printMetricGroup(display, out, prefix);
+        if (group.key == MetricGroupKey::IO)
+        {
+            printIOGroup(group, out, prefix);
+            continue;
+        }
+
+        printMetricGroup(group, out, prefix);
     }
 
+<<<<<<< HEAD
     printIOGroup(makeIOGroup(report.io), out, prefix);
 
     if (report.step_wall_time_ns != 0 || report.branch_wall_time_ns != 0)
@@ -373,6 +353,10 @@ void AnalyzeStepsStats::renderStep(const AnalyzedStepData & report, WriteBuffer 
 
     for (const auto & stage : report.stages)
         printStage(stage, report.label_stages, out, prefix, processors_info);
+=======
+    for (const auto & stage : step_data.stage_reports)
+        printStage(stage, step_data.label_stages, out, prefix, processors_info);
+>>>>>>> origin/explain-analyze-join-stats
 }
 
 void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer & out, const std::string & prefix, bool processors_info) const

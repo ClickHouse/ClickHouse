@@ -12,7 +12,7 @@ namespace DB
 
 class IQueryPlanStep;
 
-struct StepStats
+struct StepIOStats
 {
     UInt64 input_rows = 0;
     UInt64 input_bytes = 0;
@@ -36,10 +36,9 @@ using StepGroupStatsByGroupId = std::unordered_map<size_t, StepGroupStats>;
 
 struct AnalyzedStage
 {
-    size_t group = 0;
+    size_t group_id = 0;
     std::string name;
     UInt64 wall_clock_time_ns = 0;
-    UInt64 sum_elapsed_ns = 0;
     UInt64 total_num_processors = 0;
     double share_of_query_time = 0.0;
     double parallelism = 0.0;
@@ -52,9 +51,8 @@ using AnalyzedStages = std::vector<AnalyzedStage>;
 
 struct AnalyzedStepData
 {
-    StepStats io;
-    StepAnalysisReport groups;
-    AnalyzedStages stages;
+    StepAnalysisReport step_metric_groups;
+    AnalyzedStages stage_reports;
     bool label_stages = false;
     UInt64 step_wall_time_ns = 0;
     UInt64 branch_wall_time_ns = 0;
@@ -65,7 +63,7 @@ struct AnalyzedStepData
 struct StepStatsContext
 {
     const IQueryPlanStep * step = nullptr;
-    StepStats io;
+    StepIOStats io;
     UInt64 execution_query_time_ns = 0;
     UInt64 max_num_threads_per_query = 0;
     StepGroupStatsByGroupId group_stats;

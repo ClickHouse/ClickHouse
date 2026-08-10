@@ -17,17 +17,17 @@ struct LogicalJoinInfo
     JoinLocality locality{};
 };
 
-enum class JoinStage
-{
-    Default = 0,
-    Build = 1,
-    Probe = 2,
-};
-
 /// Join two data streams.
 class JoinStep : public IQueryPlanStep
 {
 public:
+
+    enum class JoinStage : size_t
+    {
+        Default = 0,
+        Build = 1,
+        Probe = 2,
+    };
 
     JoinStep(
         const SharedHeader & left_header_,
@@ -89,11 +89,13 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    StepAnalysisReport getAnalysisReport(const ProcessorsByGroup & processors_by_group) const override;
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
 private:
     bool optimized = false;
     void updateOutputHeader() override;
+
+    JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_processors) const;
 
     /// Header that expected to be returned from IJoin
     SharedHeader join_algorithm_header;
@@ -145,7 +147,7 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
-    StepAnalysisReport getAnalysisReport(const ProcessorsByGroup & processors_by_group) const override;
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
 
 private:
     void updateOutputHeader() override;

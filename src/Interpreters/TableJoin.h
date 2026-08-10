@@ -228,7 +228,7 @@ private:
 
     bool enable_analyzer = false;
 
-    bool collect_analyze_stats = false;
+    JoinAnalyzeMode analyze_mode = JoinAnalyzeMode::None;
 
     Names requiredJoinedNames() const;
 
@@ -290,8 +290,12 @@ public:
     bool enableAnalyzer() const { return enable_analyzer; }
     void assertEnableAnalyzer() const;
 
-    bool collectAnalyzeStats() const { return collect_analyze_stats; }
-    void setCollectAnalyzeStats(bool value) { collect_analyze_stats = value; }
+    JoinAnalyzeMode analyzeMode() const { return analyze_mode; }
+    void setAnalyzeMode(JoinAnalyzeMode value) { analyze_mode = value; }
+
+    bool collectAnalyzeStats() const { return collectsAnalyzeStats(analyze_mode); }
+    bool collectExactMatches() const { return collectsExactMatches(analyze_mode); }
+
     TemporaryDataOnDiskScopePtr getTempDataOnDisk();
 
     ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;

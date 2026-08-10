@@ -239,7 +239,8 @@ public:
                        JoinStrictness strictness_,
                        const TableJoin::JoinOnClause & on_clause_,
                        SharedHeaders & input_headers,
-                       size_t max_block_size_);
+                       size_t max_block_size_,
+                       JoinAnalyzeMode analyze_mode_ = JoinAnalyzeMode::None);
 
     MergeJoinAlgorithm(JoinPtr join_ptr, SharedHeaders & input_headers, size_t max_block_size_);
 
@@ -254,15 +255,7 @@ public:
     MergedStats getMergedStats() const override;
 
     /// Participation counters for EXPLAIN ANALYZE (total and matched rows per side).
-    JoinAnalysisCounters getJoinAnalysisCounters() const
-    {
-        return {
-            .left_rows = stat.num_rows[0],
-            .matched_left = stat.matched_left,
-            .right_rows = stat.num_rows[1],
-            .matched_right = stat.matched_right,
-        };
-    }
+    JoinAnalysisCounters getJoinAnalysisCounters() const;
 
 private:
     std::optional<Status> handleAnyJoinState();
@@ -302,6 +295,7 @@ private:
 
     JoinKind kind;
     JoinStrictness strictness;
+    JoinAnalyzeMode analyze_mode;
 
     size_t max_block_size;
     int null_direction_hint = 1;

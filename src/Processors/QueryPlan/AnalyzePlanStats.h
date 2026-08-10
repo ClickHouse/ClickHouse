@@ -30,9 +30,9 @@ class AnalyzeStepsStats
     using ElapsedTimes = std::multiset<UInt64>;
     using ElapsedTimesPerStepGroup = std::unordered_map<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
 
-    using StatsByStep = std::unordered_map<const IQueryPlanStep *, StepStats>;
+    using StatsByStep = std::unordered_map<const IQueryPlanStep *, StepIOStats>;
     using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
-    using ProcessorsByStepAndGroup = std::unordered_map<StepAndGroup, std::vector<IProcessor *>, boost::hash<StepAndGroup>>;
+    using ProcessorsByStep = std::unordered_map<const IQueryPlanStep *, std::vector<IProcessor *>>;
 
 public:
     AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
@@ -46,11 +46,11 @@ private:
 
     StepStatsContext makeContext(const IQueryPlanStep * step) const;
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
-    void renderStep(const AnalyzedStepData & report, WriteBuffer & out, const std::string & prefix, bool processors_info) const;
+    void renderStep(const AnalyzedStepData & step_data, WriteBuffer & out, const std::string & prefix, bool processors_info) const;
 
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
-    ProcessorsByStepAndGroup processors_by_step_group;
+    ProcessorsByStep processors_by_step;
 
     std::optional<StepIntervalTimings> interval_timings;
 

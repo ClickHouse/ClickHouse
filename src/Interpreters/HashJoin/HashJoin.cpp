@@ -4,7 +4,6 @@
 #include <optional>
 #include <vector>
 
-#include <Processors/QueryPlan/JoinStep.h>
 #include <base/getL2CacheSize.h>
 #include <base/scope_guard.h>
 
@@ -42,7 +41,6 @@
 #include <Interpreters/IJoin.h>
 
 #include <Interpreters/HashJoin/HashJoinMethods.h>
-#include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
@@ -577,14 +575,14 @@ StepAnalysisReport HashJoin::getAnalysisReport() const
     else
     {
         MetricList right_metrics;
-        right_metrics.emplace_back("rows", getRightTableRowCount(), StepMetric::Format::Quantity);
-        report.push_back({"right", std::move(right_metrics)});
+        right_metrics.emplace_back(MetricKey::Rows, getRightTableRowCount());
+        report.push_back({MetricGroupKey::Right, std::move(right_metrics)});
     }
 
     MetricList hash_table_metrics;
-    hash_table_metrics.emplace_back("unique keys", getTotalRowCount(), StepMetric::Format::Quantity);
-    hash_table_metrics.emplace_back("memory", getPeakBuildBytes(), StepMetric::Format::Bytes);
-    report.push_back({"hash table", std::move(hash_table_metrics)});
+    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, getTotalRowCount());
+    hash_table_metrics.emplace_back(MetricKey::Memory, getPeakBuildBytes());
+    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
 
     return report;
 }
@@ -1558,6 +1556,7 @@ HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & resu
 void HashJoin::reuseJoinedData(const HashJoin & join)
 {
     data = join.data;
+    peak_build_bytes = join.peak_build_bytes;
     from_storage_join = true;
 
     bool flag_per_row = needUsedFlagsForPerRightTableRow(table_join);
@@ -1577,6 +1576,18 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
                 used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map_)>, MapsAll>>(
                     map_.getBufferSizeInCells(data->type) + 1);
             });
+    }
+
+    /// A filled join skips the build pipeline, so `onBuildPhaseFinish` never runs and would leave
+    /// this clone without statistics. The flags are owned per clone, while `data` stays read-only
+    /// and shared, so concurrent queries over the same table do not interfere.
+    if (table_join->collectAnalyzeStats())
+    {
+        matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, getRightTableRowCount());
+
+        if (table_join->collectExactMatches()
+            && rightMatchedSource(kind, strictness) == RightMatchedSource::RefsFlags)
+            matched_rows_stats->prepareRightFlags(data->columns);
     }
 }
 
@@ -1809,6 +1820,12 @@ void HashJoin::tryRerangeRightTableDataImpl(Map & map [[maybe_unused]])
             new_blocks_allocated_size += columns.allocatedBytes();
         }
         data->allocated_size = new_blocks_allocated_size;
+
+        /// Every stored block was replaced by a merged one with a fresh `block_no`, so the flags
+        /// keyed by the old numbers are stale. Nothing has been marked yet - the probe runs later.
+        if (matched_rows_stats && matched_rows_stats->hasRightFlags())
+            matched_rows_stats->prepareRightFlags(data->columns);
+
         doDebugAsserts();
     }
 }
@@ -2372,6 +2389,11 @@ void HashJoin::tryConvertToFixedHashMap()
         reinitUsedFlags();
 }
 
+bool HashJoin::recordsRowRefsForStats() const
+{
+    return table_join->collectExactMatches() && table_join->getMixedJoinExpression() == nullptr;
+}
+
 void HashJoin::onBuildPhaseFinish()
 {
     reinitUsedFlags();
@@ -2391,13 +2413,20 @@ void HashJoin::onBuildPhaseFinish()
     /// In case addBlockToJoin is returning early
     /// we take a peak snapshot
     size_t total_bytes = getTotalByteCount();
-    peak_build_bytes = std::max(peak_build_bytes, getTotalByteCount());
+    peak_build_bytes = std::max(peak_build_bytes, total_bytes);
 
     if (table_join->collectAnalyzeStats())
     {
-        matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness, getRightTableRowCount());
-        if (rightMatchedSource(kind, strictness) == RightMatchedSource::RefsBitmap)
-            matched_rows_stats->prepareRightBitmap(data->columns);
+        /// The promotion to `RightAny` keeps the `MapsAll` maps, so for statistics the join still
+        /// behaves as `ALL`.
+        const JoinStrictness strictness_for_stats
+            = all_join_was_promoted_to_right_any ? JoinStrictness::All : strictness;
+
+        matched_rows_stats = std::make_unique<MatchedRowsStats>(kind, strictness_for_stats, getRightTableRowCount());
+
+        if (table_join->collectExactMatches()
+            && rightMatchedSource(kind, strictness_for_stats) == RightMatchedSource::RefsFlags)
+            matched_rows_stats->prepareRightFlags(data->columns);
     }
 
     build_phase_finished = true;

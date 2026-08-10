@@ -54,6 +54,8 @@ public:
     size_t getTotalRowCount() const override { return in_memory_rows; }
     size_t getTotalByteCount() const override;
 
+    StepAnalysisReport getAnalysisReport() const override;
+
     bool alwaysReturnsEmptySet() const override;
 
     IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
@@ -131,6 +133,7 @@ private:
     size_t in_memory_rows = 0;
     /// Incrementally maintained sum of `StoredBlock::allocatedBytes` over `right_blocks`.
     size_t allocated_size = 0;
+    size_t peak_allocated_size = 0;
     /// At least one stored block is compressed; readers then decompress every stored block.
     bool have_compressed = false;
     /// The single right row joined by `RightRowsToJoin::SelectedRowOnly`; kept separately from the stored
@@ -143,6 +146,7 @@ private:
     const OutputPlan plan;
     /// Whether any probe rows have matched; gates the unmatched right rows and the first-left-row cut in `joinBlock`.
     std::atomic_bool has_seen_matching_rows = false;
+    std::atomic<UInt64> total_rows_left = 0;
     /// The `join_any_take_last_row` setting; folded into `plan`, kept only for `clone`.
     const bool any_take_last_row;
 
