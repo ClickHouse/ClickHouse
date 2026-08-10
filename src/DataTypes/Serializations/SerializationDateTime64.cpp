@@ -268,9 +268,33 @@ static ReturnType deserializeISODateJSON(
     return ReturnType(true);
 }
 
-/// Handles the non-quoted JSON cases: a bare numeric timestamp, or the mongodb shell syntax
+/// The non-ISODate part of a non-quoted JSON value: either the legacy raw scaled value (ticks) or a
+/// Unix timestamp, possibly with sub-second precision.
+template <typename ReturnType>
+static ReturnType deserializeNumberJSON(DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    if constexpr (throw_exception)
+    {
+        if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
+            readDateTime64AsRawValue(x, istr);
+        else
+            readDateTime64AsNumber(x, scale, istr);
+    }
+    else
+    {
+        if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
+            return ReturnType(tryReadDateTime64AsRawValue(x, istr));
+        return ReturnType(tryReadDateTime64AsNumber(x, scale, istr));
+    }
+}
+
+/// Handles the non-quoted JSON cases: a numeric timestamp, or the mongodb shell syntax
 /// ISODate("...") / new ISODate("..."). Uses PeekableReadBuffer so a malformed near-miss like
 /// "ISODate123" rolls back instead of falling through to numeric parsing on "123".
+/// The wrapper syntax is recognized regardless of `input_format_read_datetime_number_as_raw_value`;
+/// that setting governs only how an actual number is interpreted.
 template <typename ReturnType>
 static ReturnType deserializeNonQuotedJSON(
     DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings,
@@ -278,16 +302,16 @@ static ReturnType deserializeNonQuotedJSON(
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    /// Bare numeric timestamp is by far the common case; avoid PeekableReadBuffer's allocation for it.
+    /// A number is by far the common case; avoid PeekableReadBuffer's allocation for it.
     if (istr.eof() || (*istr.position() != 'n' && *istr.position() != 'I'))
     {
         if constexpr (throw_exception)
         {
-            readDateTime64AsNumber(x, scale, istr);
+            deserializeNumberJSON<void>(x, scale, istr, settings);
             return;
         }
         else
-            return ReturnType(tryReadDateTime64AsNumber(x, scale, istr));
+            return ReturnType(deserializeNumberJSON<bool>(x, scale, istr, settings));
     }
 
     PeekableReadBuffer peekable_buf(istr, true);
@@ -305,8 +329,8 @@ static ReturnType deserializeNonQuotedJSON(
 
     peekable_buf.rollbackToCheckpoint();
     if constexpr (throw_exception)
-        readDateTime64AsNumber(x, scale, peekable_buf);
-    else if (!tryReadDateTime64AsNumber(x, scale, peekable_buf))
+        deserializeNumberJSON<void>(x, scale, peekable_buf, settings);
+    else if (!deserializeNumberJSON<bool>(x, scale, peekable_buf, settings))
         return ReturnType(false);
     return ReturnType(true);
 }
@@ -318,10 +342,6 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     {
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
-    }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
-    {
-        readDateTime64AsRawValue(x, istr);
     }
     else
     {
@@ -336,11 +356,6 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     if (checkChar('"', istr))
     {
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
-            return false;
-    }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
-    {
-        if (!tryReadDateTime64AsRawValue(x, istr))
             return false;
     }
     else if (!deserializeNonQuotedJSON<bool>(x, scale, istr, settings, time_zone, utc_time_zone))
