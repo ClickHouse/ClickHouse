@@ -214,7 +214,7 @@ def test_postgres_dictionaries_custom_query_wrong_column_order(started_cluster):
         "SELECT dictGet(test_dictionary_wrong_order, 'id', 'M1', toDate('2025-01-01'))"
     )
     assert "'97955'" in error
-    assert "into `contract_time`" in error
+    assert "while reading column 2 of the result into `contract_time`" in error
     assert (
         "must return them in this order: `meter_no`, `contract_time`, `end_date`, `id`"
         in error
@@ -263,7 +263,7 @@ def test_postgres_dictionaries_custom_query_wrong_column_order(started_cluster):
     error = node1.query_and_get_error(
         "SELECT dictGet(test_dictionary_flat_wrong_order, 'end_date', toUInt64(97955))"
     )
-    assert "into `end_date`" in error
+    assert "while reading column 2 of the result into `end_date`" in error
     assert "must return them in this order: `id`, `end_date`, `meter_no`" in error
     assert "RANGE" not in error
 
