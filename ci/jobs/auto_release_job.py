@@ -220,23 +220,37 @@ def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool
     )
 
 
-def _find_release_candidate(branch: str) -> Tuple[str, str]:
-    """Return (commit_sha, reason) for `branch`.
+def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
+    """Return (commit_sha, reason, status) for `branch`.
 
     commit_sha is the newest fully-green commit within MAX_COMMITS_TO_CONSIDER
     of the branch head, excluding the version-bump commit; empty when none
-    qualifies, with `reason` explaining why."""
+    qualifies, with `reason` explaining why.
+
+    `status` is what the branch's sub-result should report when there is no
+    candidate: SKIPPED for an ordinary "nothing to release yet", ERROR for a
+    branch that can never be released as it stands."""
     tag = _latest_release_tag(branch)
     if not tag:
-        return "", "no release tag found"
+        # A `release`-labeled branch with no `v<branch>.*` tag is broken release
+        # metadata, not a branch that is merely not ready yet: nothing will ever
+        # make it releasable until someone fixes the tags. The legacy driver hard
+        # failed here (`assert refs`) and the patch-release-check runbook still
+        # treats it as a hard failure, so keep it visible instead of letting the
+        # daily run stay green over a permanently unreleasable branch.
+        return "", "no release tag found", Result.Status.ERROR
     if tag.endswith("new"):
-        return "", f"new release branch (tag {tag}) - skip auto release"
+        return (
+            "",
+            f"new release branch (tag {tag}) - skip auto release",
+            Result.Status.SKIPPED,
+        )
 
     commits = Shell.get_output_or_raise(
         f"git rev-list --first-parent {shlex.quote(tag)}..origin/{shlex.quote(branch)}"
     ).splitlines()
     if not commits:
-        return "", f"no new commits since {tag}"
+        return "", f"no new commits since {tag}", Result.Status.SKIPPED
 
     print(f"[{branch}]: {len(commits)} commit(s) since {tag}")
     # `git rev-list` lists newest first, so the oldest commit in the
@@ -270,9 +284,13 @@ def _find_release_candidate(branch: str) -> Tuple[str, str]:
                 or "release build artifacts missing (build skipped/cached)"
             )
             continue
-        return commit, ""
+        return commit, "", Result.Status.OK
 
-    return "", last_failure or "no completed green commit in range"
+    return (
+        "",
+        last_failure or "no completed green commit in range",
+        Result.Status.SKIPPED,
+    )
 
 
 def _latest_create_release_run_id() -> int:
@@ -355,13 +373,13 @@ def main() -> None:
     results: List[Result] = []
     for branch in _release_branches():
         print(f"\nChecking release branch [{branch}]")
-        commit_sha, reason = _find_release_candidate(branch)
+        commit_sha, reason, status = _find_release_candidate(branch)
         if not commit_sha:
             print(f"[{branch}] not ready: {reason}")
             results.append(
                 Result.create_from(
                     name=f"Release {branch}",
-                    status=Result.Status.SKIPPED,
+                    status=status,
                     stopwatch=Utils.Stopwatch(),
                     info=f"not ready: {reason}",
                 )

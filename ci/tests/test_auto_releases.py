@@ -278,5 +278,20 @@ def test_find_release_candidate_skips_new_branch(monkeypatch):
     """A branch whose latest tag ends with ``new`` is not auto-released."""
     m = _job_module()
     monkeypatch.setattr(m, "_latest_release_tag", lambda branch: "v25.8.1.1-new")
-    sha, reason = m._find_release_candidate("25.8")
+    sha, reason, status = m._find_release_candidate("25.8")
     assert sha == "" and "new release branch" in reason
+    assert status == m.Result.Status.SKIPPED
+
+
+def test_find_release_candidate_errors_without_release_tag(monkeypatch):
+    """A missing ``v<branch>.*`` tag must not be normalised to ``SKIPPED``.
+
+    It means the release metadata is broken — no later run can fix itself — so
+    reporting it like an ordinary "nothing to release yet" would let the daily
+    AutoReleases run stay green while the branch is permanently unreleasable.
+    """
+    m = _job_module()
+    monkeypatch.setattr(m, "_latest_release_tag", lambda branch: None)
+    sha, reason, status = m._find_release_candidate("25.8")
+    assert sha == "" and "no release tag" in reason
+    assert status == m.Result.Status.ERROR
