@@ -135,6 +135,7 @@ namespace Setting
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
+    extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool async_socket_for_remote;
@@ -875,7 +876,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
-            if (const auto & column_sizes = storage->getColumnSizes(queried_columns); !column_sizes.empty())
+            const auto & column_sizes = storage->getColumnSizes(
+                queried_columns, context->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
+            if (!column_sizes.empty())
             {
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
