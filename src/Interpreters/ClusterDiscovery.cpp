@@ -427,9 +427,9 @@ static bool contains(const Strings & list, const String & value)
 }
 
 /// Reads data from zookeeper and tries to update cluster.
-/// Returns true on success (or no update required).
 /// Is the record about cluster did not existed before, creates it.
-bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
+/// Returns `Empty` when the cluster has no nodes; the caller is responsible for removing it.
+ClusterDiscovery::UpsertResult ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 {
     LOG_DEBUG(log, "Updating cluster '{}'", cluster_info.name);
 
@@ -458,42 +458,39 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
         LOG_ERROR(log, "Can't find current node in cluster '{}', will register again", cluster_info.name);
         registerInZk(zk, cluster_info);
         nodes_info.clear();
-        return false;
+        return UpsertResult::NeedRetry;
     }
 
     if (cluster_info.current_cluster_is_invisible)
     {
         LOG_DEBUG(log, "Cluster '{}' is invisible.", cluster_info.name);
-        return true;
+        return UpsertResult::Updated;
     }
 
     if (!needUpdate(node_uuids, nodes_info))
     {
         LOG_DEBUG(log, "No update required for cluster '{}'", cluster_info.name);
-        return on_exit();
+        return on_exit() ? UpsertResult::Updated : UpsertResult::NeedRetry;
     }
 
     nodes_info = getNodes(zk, cluster_info.zk_root, node_uuids);
 
     if (bool ok = on_exit(); !ok)
-        return false;
+        return UpsertResult::NeedRetry;
 
     LOG_DEBUG(log, "Updating system.clusters record for '{}' with {} nodes", cluster_info.name, cluster_info.nodes_info.size());
 
     if (nodes_info.empty())
-    {
-        removeCluster(cluster_info.name, /* is_dynamic_cluster */cluster_info.zk_root_index != 0);
-        return true;
-    }
+        return UpsertResult::Empty;
 
     auto cluster = makeCluster(cluster_info);
     std::lock_guard lock(mutex);
     cluster_impls[cluster_info.name] = cluster;
 
-    return true;
+    return UpsertResult::Updated;
 }
 
-void ClusterDiscovery::removeCluster(const String & name, bool is_dynamic)
+void ClusterDiscovery::removeCluster(String name, bool is_dynamic)
 {
     {
         std::lock_guard lock(mutex);
@@ -506,6 +503,13 @@ void ClusterDiscovery::removeCluster(const String & name, bool is_dynamic)
     {
         clusters_to_update->remove(name);
         get_nodes_callbacks.erase(name);
+        /// Drop the `clusters_info` record as well. Leaving it behind makes the cluster
+        /// unreachable: the next root scan dedups the still-existing znode against the stale
+        /// record, so the cluster lands in neither `clusters_to_insert` nor the update set and
+        /// is never polled again. It then cannot recover once its watch is gone, for example
+        /// after a Keeper session expiry. Erasing it lets the scan rediscover the cluster when
+        /// nodes come back, and also handles a cluster recreated under the same name.
+        clusters_info.erase(name);
         LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
     }
 }
@@ -553,17 +557,38 @@ void ClusterDiscovery::initialUpdate()
 
     findDynamicClusters(clusters_info);
 
-    for (auto & [_, info] : clusters_info)
+    /// Iterate over a snapshot of the names: `upsertCluster` can erase the `clusters_info`
+    /// record of an empty dynamic cluster, which would invalidate an iterator over the map.
+    Strings initial_cluster_names;
+    initial_cluster_names.reserve(clusters_info.size());
+    for (const auto & e : clusters_info)
+        initial_cluster_names.push_back(e.first);
+
+    for (const auto & cluster_name : initial_cluster_names)
     {
+        auto it = clusters_info.find(cluster_name);
+        if (it == clusters_info.end())
+            continue;
+        auto & info = it->second;
+
         auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
         registerInZk(zk, info);
-        if (!upsertCluster(info))
+
+        switch (upsertCluster(info))
         {
-            LOG_WARNING(log, "Error on initial cluster '{}' update, will retry in background", info.name);
-            clusters_to_update->set(info.name);
+            case UpsertResult::Updated:
+                if (info.zk_root_index)
+                    clusters_to_update->set(cluster_name, false);
+                break;
+            case UpsertResult::Empty:
+                removeCluster(cluster_name, /* is_dynamic_cluster */info.zk_root_index != 0);
+                LOG_DEBUG(log, "Cluster '{}' is empty on startup, skipped", cluster_name);
+                break;
+            case UpsertResult::NeedRetry:
+                LOG_WARNING(log, "Error on initial cluster '{}' update, will retry in background", cluster_name);
+                clusters_to_update->set(cluster_name);
+                break;
         }
-        else if (info.zk_root_index)
-            clusters_to_update->set(info.name, false);
     }
 
     LOG_DEBUG(log, "Initialized");
@@ -744,10 +769,22 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
 
         for (const auto & [cluster_name, need_update] : clusters)
         {
+            /// `clusters` is a snapshot taken before the removal pass above, so it can still
+            /// mention a dynamic cluster whose record was just erased. Not an error.
+            /// A stale child-watch callback can also re-add a freshly discovered cluster to this
+            /// snapshot; let the insert pass handle it once instead of upserting it twice.
+            if (clusters_to_remove.contains(cluster_name) || clusters_to_insert.contains(cluster_name))
+                continue;
+
             auto cluster_info_it = clusters_info.find(cluster_name);
             if (cluster_info_it == clusters_info.end())
             {
-                LOG_ERROR(log, "Unknown cluster '{}'", cluster_name);
+                /// A child watch registered before a dynamic cluster was removed can still fire
+                /// (ZooKeeper fires all watches on session expiry) and re-add a flags entry for
+                /// a cluster that no longer has a record. Drop the orphaned entry: if the cluster
+                /// reappears, the root scan rediscovers it and the insert path re-adds the flag.
+                clusters_to_update->remove(cluster_name);
+                LOG_WARNING(log, "Skipping update for unknown cluster '{}'", cluster_name);
                 continue;
             }
 
@@ -760,17 +797,26 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
                     continue;
             }
 
-            if (upsertCluster(cluster_info))
+            switch (upsertCluster(cluster_info))
             {
-                cluster_info.watch.restart();
-                LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
-            }
-            else
-            {
-                all_up_to_date = false;
-                /// no need to trigger convar, will retry after timeout in `wait`
-                clusters_to_update->set(cluster_name);
-                LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
+                case UpsertResult::Updated:
+                    cluster_info.watch.restart();
+                    LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
+                    break;
+                case UpsertResult::Empty:
+                    /// Restart the watch to keep the pre-existing force-update cadence for empty
+                    /// static clusters, which stay in `clusters_info` and are retried periodically.
+                    /// For dynamic clusters the record is erased just below, so this is a no-op.
+                    cluster_info.watch.restart();
+                    removeCluster(cluster_name, /* is_dynamic_cluster */cluster_info.zk_root_index != 0);
+                    LOG_DEBUG(log, "Cluster '{}' became empty and was removed", cluster_name);
+                    break;
+                case UpsertResult::NeedRetry:
+                    all_up_to_date = false;
+                    /// no need to trigger convar, will retry after timeout in `wait`
+                    clusters_to_update->set(cluster_name);
+                    LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
+                    break;
             }
         }
 
@@ -786,17 +832,22 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
             /// Keep newly discovered dynamic clusters in the periodic update set so they can self-heal
             /// if their ZooKeeper watches are later lost after a Keeper session expiry.
             clusters_to_update->set(cluster_name, false);
-            if (upsertCluster(cluster_info))
+            switch (upsertCluster(cluster_info))
             {
-                cluster_info.watch.restart();
-                LOG_DEBUG(log, "Dynamic cluster '{}' inserted successfully", cluster_name);
-            }
-            else
-            {
-                all_up_to_date = false;
-                /// no need to trigger convar, will retry after timeout in `wait`
-                clusters_to_update->set(cluster_name);
-                LOG_WARNING(log, "Dynamic cluster '{}' wasn't inserted, will retry", cluster_name);
+                case UpsertResult::Updated:
+                    cluster_info.watch.restart();
+                    LOG_DEBUG(log, "Dynamic cluster '{}' inserted successfully", cluster_name);
+                    break;
+                case UpsertResult::Empty:
+                    removeCluster(cluster_name, /* is_dynamic_cluster */cluster_info.zk_root_index != 0);
+                    LOG_DEBUG(log, "Dynamic cluster '{}' is empty, skipped", cluster_name);
+                    break;
+                case UpsertResult::NeedRetry:
+                    all_up_to_date = false;
+                    /// no need to trigger convar, will retry after timeout in `wait`
+                    clusters_to_update->set(cluster_name);
+                    LOG_WARNING(log, "Dynamic cluster '{}' wasn't inserted, will retry", cluster_name);
+                    break;
             }
         }
 
