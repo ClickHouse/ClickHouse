@@ -81,9 +81,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 6 lets a `PARTITION BY` window's feeding sort be shipped under `make_distributed_plan`:
 /// `SortingStep` now serializes a non-empty `partition_by_description` plus a trailing flags byte that
 /// carries a `FinishSorting` conversion, and `GatherSendStep` now serializes `maintain_sort_description`
-/// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Each is gated by its
-/// own constant below, since an older peer would misparse the stream, not merely reject an unknown step
-/// name as with version 4.
+/// and merge-sorts its input streams instead of an unordered `resize(1)` when set. Both steps check the
+/// version in their serialize and deserialize, since an older peer would misparse the stream, not merely
+/// reject an unknown step name as with version 4.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 6;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
@@ -97,10 +97,6 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING = 5;
-/// Used to gate serializing a partitioned `Full` sort. See the version-6 note above.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;
-/// Used to gate `GatherSendStep` serializing `maintain_sort_description`. See the version-6 note above.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORTED_GATHER_SEND = 6;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

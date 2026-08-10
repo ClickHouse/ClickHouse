@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
@@ -704,15 +703,14 @@ void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, U
     sort_settings.updatePlanSettings(settings);
 }
 
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;
+
 void SortingStep::serialize(Serialization & ctx) const
 {
     if (type != Type::Full && type != Type::FinishSorting)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Serialization of SortingStep is implemented only for Full and FinishSorting");
 
-    /// Serialized plans are not used between different server versions yet, so there is exactly one
-    /// `SortingStep` layout - the current one - and any older version is rejected instead of being
-    /// written in its older byte layout.
     if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Serialization of SortingStep requires query plan serialization version >= {}; "
@@ -757,7 +755,6 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
 
     SortingStep::Settings sort_settings(ctx.settings);
 
-    /// Mirrors `serialize`: only the current layout is supported, an older stream is rejected.
     if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Deserialization of SortingStep requires query plan serialization version >= {}; "

@@ -10,7 +10,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Core/ProtocolDefines.h>
 #include <Core/Defines.h>
 
 #include <optional>
@@ -66,6 +65,8 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
 
     return std::move(pipelines.front());
 }
+
+static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORTED_GATHER_SEND = 6;
 
 void GatherSendStep::serialize(Serialization & ctx) const
 {
