@@ -1389,6 +1389,11 @@ def main():
             f"cp -r ./tests/performance/scripts/config/users.d {perf_right_config}/users.d",
             f"cp -r ./tests/config/top_level_domains {perf_wd}",
             f"rm {perf_right_config}/config.d/storage_conf_local.xml",  # Avoid conflicts on the filesystem cache dirs
+            # The reference (left) binary is the master build, which predates settings this PR adds to
+            # keeper_port.xml and rejects them as UNKNOWN_SETTING, so it fails to start. Strip such
+            # settings; both sides must share an identical config anyway, and their values are
+            # irrelevant to query performance.
+            f"sed -i '/<log_readahead_commit_window_bytes>/d' {perf_right_config}/config.d/keeper_port.xml",
             f"chmod +x {ch_path}/clickhouse",
             # The reference build (left) is downloaded as a bare `clickhouse`
             # binary, but the patched build (right) was only symlinked under its
