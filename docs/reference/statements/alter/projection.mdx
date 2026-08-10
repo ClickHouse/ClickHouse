@@ -321,8 +321,14 @@ Use the statement below to change the [`WITH SETTINGS`](#with-settings) clause o
 ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] [ORDER BY] ) WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
 ```
 
+For a [projection index](/reference/engines/table-engines/mergetree-family/mergetree#projection-index), restate the `INDEX` declaration instead of the `SELECT` query:
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY PROJECTION [IF EXISTS] name INDEX <index_expr> TYPE <index_type> WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)
+```
+
 The statement restates the full projection definition, but only the `WITH SETTINGS` clause may differ from the existing definition.
-The projection query itself must stay the same, because existing projection parts store data built from it; to change the query, use [`DROP PROJECTION`](#drop-projection) followed by [`ADD PROJECTION`](#add-projection).
+The projection query itself (or, for a projection index, the index expression and type) must stay the same, because existing projection parts store data built from it; to change it, use [`DROP PROJECTION`](#drop-projection) followed by [`ADD PROJECTION`](#add-projection).
 
 The command only changes the table metadata and does not rewrite any data: existing projection parts keep the settings they were written with, while projection parts written by future inserts and merges use the new settings.
 To rebuild existing parts with the new settings, run [`MATERIALIZE PROJECTION`](#materialize-projection).
