@@ -1798,9 +1798,6 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(const String & table_name, con
     if (create.storage && create.storage->engine && (create.storage->engine->name == "TimeSeries"))
         create.attach = true;
 
-    if (create.select && create.isView())
-        ApplyWithSubqueryVisitor::visit(*create.select);
-
     return ast;
 }
 ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & table_name, const String & query) const
