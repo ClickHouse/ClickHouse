@@ -1776,3 +1776,55 @@ def test_listing_propagates_non_not_found_error(started_cluster):
         )
     finally:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_exists_table_answers_only_from_not_found(started_cluster):
+    # `EXISTS TABLE` must answer "absent" only when Glue reports the table as not found. Any other failure
+    # has to propagate, otherwise an outage makes an existing table look dropped, and the DDL paths that
+    # share this probe act on that answer.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_exists_table_{uuid.uuid4().hex}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    assert (
+        "1"
+        == node.query(f"EXISTS TABLE {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
+    )
+    assert (
+        "0"
+        == node.query(
+            f"EXISTS TABLE {CATALOG_NAME}.`{namespace}.no_such_table`"
+        ).strip()
+    )
+
+    # Reusing the name of the table created above is what makes the arm below an assertion about error
+    # handling rather than about absence: the table is known to exist, so answering "0" is the misreport.
+    db_name = f"{test_ref}_unreachable"
+    # ATTACH is lazy, so the unreachable endpoint is only contacted by the probe below.
+    node.query(
+        f"""
+        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-glue:1')
+        SETTINGS catalog_type = 'glue', region = 'us-east-1', storage_endpoint = 'http://fake-glue:1/x',
+                 aws_access_key_id = '{minio_access_key}', aws_secret_access_key = '{minio_secret_key}'
+        """
+    )
+    try:
+        error = node.query_and_get_error(
+            f"EXISTS TABLE {db_name}.`{namespace}.{table_name}`"
+        )
+        assert "DATALAKE_DATABASE_ERROR" in error, error
+        # This per-table message has a single emitter, so it pins the failure to the GetTable probe rather
+        # than to a listing: the error alone would also be satisfied by an unrelated failing call.
+        assert (
+            f"Exception calling GetTable for table {namespace}.{table_name}" in error
+        ), error
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
