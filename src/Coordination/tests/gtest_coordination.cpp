@@ -1182,56 +1182,60 @@ TEST_P(CoordinationTest, TestDurableStateCrashDuringSave)
     reload_state_manager();
     ASSERT_EQ(state_manager->read_state(), nullptr);
 
-    /// Persist an initial state (term 1) successfully.
     auto state = nuraft::cs_new<nuraft::srv_state>();
     state->set_term(1);
     state->set_voted_for(2);
     state->allow_election_timer(true);
-    state_manager->save_state(*state);
+
+    auto new_state = nuraft::cs_new<nuraft::srv_state>();
+    new_state->set_term(2);
+    new_state->set_voted_for(3);
+    new_state->allow_election_timer(true);
 
     {
+        SCOPED_TRACE("Persist term 1 successfully");
+        state_manager->save_state(*state);
+
         auto read_state = state_manager->read_state();
         ASSERT_NE(read_state, nullptr);
         ASSERT_EQ(read_state->get_term(), 1);
         ASSERT_EQ(read_state->get_voted_for(), 2);
     }
 
-    /// Now attempt to persist term 2 but crash (throw) while the live "state" file is being
-    /// rewritten. The live file is left truncated/torn, exactly the vulnerable window.
-    auto new_state = nuraft::cs_new<nuraft::srv_state>();
-    new_state->set_term(2);
-    new_state->set_voted_for(3);
-    new_state->allow_election_timer(true);
+    {
+        SCOPED_TRACE("Crash while the live state file is being rewritten");
+        disk->arm();
+        ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+        disk->disarm();
 
-    disk->arm();
-    ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
-    disk->disarm();
+        /// The injection must have landed on the truncating rewrite, or the test would silently
+        /// retarget if the failure point ever moved.
+        ASSERT_TRUE(std::filesystem::exists("./state"));
+        ASSERT_EQ(std::filesystem::file_size("./state"), 0);
+        ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
+        ASSERT_GT(std::filesystem::file_size("./state-OLD"), 0);
+    }
 
-    /// The injection must have landed on the truncating rewrite, so the on-disk shape is the one
-    /// the backup exists for: a live file that lost its contents, and a valid backup beside it.
-    /// Asserting this keeps the test from silently retargeting if the failure point ever moves.
-    ASSERT_TRUE(std::filesystem::exists("./state"));
-    ASSERT_EQ(std::filesystem::file_size("./state"), 0);
-    ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
-    ASSERT_GT(std::filesystem::file_size("./state-OLD"), 0);
+    {
+        SCOPED_TRACE("The last durable state is recovered, not lost");
+        /// A nullptr here would reset the node to term 0 with an empty vote. The interrupted
+        /// term-2 write never became durable, so term 1 is the expected answer.
+        reload_state_manager();
+        auto recovered = state_manager->read_state();
+        ASSERT_NE(recovered, nullptr);
+        ASSERT_EQ(recovered->get_term(), 1);
+        ASSERT_EQ(recovered->get_voted_for(), 2);
+    }
 
-    /// After the "crash" the previously committed state must still be recoverable: `read_state`
-    /// must not return nullptr (which would reset the node to term 0 and lose the vote).
-    reload_state_manager();
-    auto recovered = state_manager->read_state();
-    ASSERT_NE(recovered, nullptr);
-    /// The recovered state is the last durably persisted one (term 1); the interrupted term-2
-    /// write never became durable. The invariant that matters is that state is not lost.
-    ASSERT_EQ(recovered->get_term(), 1);
-    ASSERT_EQ(recovered->get_voted_for(), 2);
-
-    /// A subsequent successful save must work normally after recovery.
-    state_manager->save_state(*new_state);
-    reload_state_manager();
-    auto final_state = state_manager->read_state();
-    ASSERT_NE(final_state, nullptr);
-    ASSERT_EQ(final_state->get_term(), 2);
-    ASSERT_EQ(final_state->get_voted_for(), 3);
+    {
+        SCOPED_TRACE("Saving works again after recovery");
+        state_manager->save_state(*new_state);
+        reload_state_manager();
+        auto final_state = state_manager->read_state();
+        ASSERT_NE(final_state, nullptr);
+        ASSERT_EQ(final_state->get_term(), 2);
+        ASSERT_EQ(final_state->get_voted_for(), 3);
+    }
 
     if (std::filesystem::exists("./state"))
         std::filesystem::remove("./state");
@@ -1266,124 +1270,134 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     state->allow_election_timer(true);
     state_manager->save_state(*state);
 
-    /// Second save: "state" already exists, so it is backed up to "state-OLD" first.
-    events->clear();
     auto new_state = nuraft::cs_new<nuraft::srv_state>();
     new_state->set_term(2);
     new_state->set_voted_for(3);
     new_state->allow_election_timer(true);
-    state_manager->save_state(*new_state);
 
-    const auto backup_synced = indexOf(*events, "sync:state-OLD");
-    const auto live_opened = indexOf(*events, "open:state");
-    const auto backup_removed = indexOf(*events, "remove:state-OLD");
+    {
+        SCOPED_TRACE("Backup is durable before the live state file is truncated");
+        /// Second save: "state" already exists, so it is backed up to "state-OLD" first.
+        events->clear();
+        state_manager->save_state(*new_state);
 
-    /// The backup must be synced at all, and synced before the live state file is reopened for
-    /// the rewrite that truncates it. Without the sync the backup can be page-cache-only, so a
-    /// crash in the rewrite window loses both copies.
-    ASSERT_NE(backup_synced, std::string::npos);
-    ASSERT_NE(live_opened, std::string::npos);
-    ASSERT_LT(backup_synced, live_opened);
+        const auto backup_synced = indexOf(*events, "sync:state-OLD");
+        const auto live_opened = indexOf(*events, "open:state");
+        const auto backup_removed = indexOf(*events, "remove:state-OLD");
 
-    /// The freshly created backup needs its directory entry synced too, before the truncation.
-    /// Anchored past the backup: an earlier sync of the live file also records one.
-    const auto backup_dirsync = indexOf(*events, "dirsync", backup_synced + 1);
-    ASSERT_NE(backup_dirsync, std::string::npos);
-    ASSERT_LT(backup_dirsync, live_opened);
+        /// Without the sync the backup can be page-cache-only, so a crash in the rewrite window
+        /// loses both copies.
+        ASSERT_NE(backup_synced, std::string::npos);
+        ASSERT_NE(live_opened, std::string::npos);
+        ASSERT_LT(backup_synced, live_opened);
 
-    /// The backup is dropped only once the replacement is durable in full, contents and
-    /// directory entry. Anchored past the truncating open, or the sync of the old contents counts.
-    ASSERT_NE(backup_removed, std::string::npos);
-    const auto live_synced = indexOf(*events, "sync:state", live_opened + 1);
-    ASSERT_NE(live_synced, std::string::npos);
-    ASSERT_LT(live_synced, backup_removed);
+        /// Anchored past the backup: an earlier sync of the live file also records a dirsync.
+        const auto backup_dirsync = indexOf(*events, "dirsync", backup_synced + 1);
+        ASSERT_NE(backup_dirsync, std::string::npos);
+        ASSERT_LT(backup_dirsync, live_opened);
 
-    const auto live_dirsync = indexOf(*events, "dirsync", live_synced + 1);
-    ASSERT_NE(live_dirsync, std::string::npos);
-    ASSERT_LT(live_dirsync, backup_removed);
+        /// The backup is dropped only once the replacement is durable in full, contents and
+        /// directory entry. Anchored past the truncating open, or the sync of the old contents counts.
+        ASSERT_NE(backup_removed, std::string::npos);
+        const auto live_synced = indexOf(*events, "sync:state", live_opened + 1);
+        ASSERT_NE(live_synced, std::string::npos);
+        ASSERT_LT(live_synced, backup_removed);
 
-    /// Three directory syncs in total: the live file before the backup, the new backup, and the
-    /// replacement, each distinct and in that order.
-    const auto pre_backup_dirsync = indexOf(*events, "dirsync");
-    ASSERT_NE(pre_backup_dirsync, std::string::npos);
-    ASSERT_LT(pre_backup_dirsync, backup_synced);
-    ASSERT_LT(pre_backup_dirsync, backup_dirsync);
-    ASSERT_LT(backup_dirsync, live_dirsync);
+        const auto live_dirsync = indexOf(*events, "dirsync", live_synced + 1);
+        ASSERT_NE(live_dirsync, std::string::npos);
+        ASSERT_LT(live_dirsync, backup_removed);
 
-    /// Reconstruct the on-disk state left by a crash inside the rewrite window: the backup is
-    /// present and the live state file is lost. This is what the backup exists for.
-    ASSERT_TRUE(std::filesystem::exists("./state"));
-    ASSERT_FALSE(std::filesystem::exists("./state-OLD"));
-    std::filesystem::copy_file("./state", "./state-OLD");
-    std::filesystem::remove("./state");
+        /// Three directory syncs in total: the live file before the backup, the new backup, and
+        /// the replacement, each distinct and in that order.
+        const auto pre_backup_dirsync = indexOf(*events, "dirsync");
+        ASSERT_NE(pre_backup_dirsync, std::string::npos);
+        ASSERT_LT(pre_backup_dirsync, backup_synced);
+        ASSERT_LT(pre_backup_dirsync, backup_dirsync);
+        ASSERT_LT(backup_dirsync, live_dirsync);
+    }
 
-    /// Recovery must not delete the backup: promoting it with a copy that is not yet durable
-    /// would reopen the same window during startup.
-    events->clear();
-    reload_state_manager();
-    auto recovered = state_manager->read_state();
-    ASSERT_NE(recovered, nullptr);
-    ASSERT_EQ(recovered->get_term(), 2);
-    ASSERT_EQ(recovered->get_voted_for(), 3);
-    ASSERT_EQ(indexOf(*events, "remove:state-OLD"), std::string::npos);
-    ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
+    {
+        SCOPED_TRACE("Recovery from the backup alone does not delete it");
+        /// Reconstruct the on-disk state left by a crash inside the rewrite window: the backup is
+        /// present and the live state file is lost. Promoting the backup with a copy that is not
+        /// yet durable would reopen the same window during startup.
+        ASSERT_TRUE(std::filesystem::exists("./state"));
+        ASSERT_FALSE(std::filesystem::exists("./state-OLD"));
+        std::filesystem::copy_file("./state", "./state-OLD");
+        std::filesystem::remove("./state");
 
-    /// Both files valid: a usable live state file is not proof that its bytes reached the disk,
-    /// so startup must still keep the backup rather than delete it on the strength of parsing.
-    /// The previous step left only the backup, so restore the live file from it.
-    std::filesystem::copy_file("./state-OLD", "./state");
-    events->clear();
-    reload_state_manager();
-    auto both_valid = state_manager->read_state();
-    ASSERT_NE(both_valid, nullptr);
-    ASSERT_EQ(both_valid->get_term(), 2);
-    ASSERT_EQ(indexOf(*events, "remove:state-OLD"), std::string::npos);
-    ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
+        events->clear();
+        reload_state_manager();
+        auto recovered = state_manager->read_state();
+        ASSERT_NE(recovered, nullptr);
+        ASSERT_EQ(recovered->get_term(), 2);
+        ASSERT_EQ(recovered->get_voted_for(), 3);
+        ASSERT_EQ(indexOf(*events, "remove:state-OLD"), std::string::npos);
+        ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
+    }
 
-    /// Returning a state means the node is about to act on that term, so the live file must be
-    /// durable by then. Without the sync the term could still be lost to a power failure, and the
-    /// restart after that would fall back to the older backup, i.e. the node would forget a term
-    /// it had already voted in. The sync must be an append (a rewrite would truncate the file it
-    /// is meant to preserve), and it must happen before `read_state` returns.
-    ASSERT_NE(indexOf(*events, "append:state"), std::string::npos);
-    ASSERT_NE(indexOf(*events, "sync:state"), std::string::npos);
-    ASSERT_LT(indexOf(*events, "append:state"), indexOf(*events, "sync:state"));
-    ASSERT_EQ(indexOf(*events, "open:state"), std::string::npos);
+    {
+        SCOPED_TRACE("A valid live state file is synced on startup, and the backup still kept");
+        /// A usable live state file is not proof that its bytes reached the disk, so startup must
+        /// keep the backup rather than delete it on the strength of parsing. The previous step
+        /// left only the backup, so restore the live file from it.
+        std::filesystem::copy_file("./state-OLD", "./state");
+        events->clear();
+        reload_state_manager();
+        auto both_valid = state_manager->read_state();
+        ASSERT_NE(both_valid, nullptr);
+        ASSERT_EQ(both_valid->get_term(), 2);
+        ASSERT_EQ(indexOf(*events, "remove:state-OLD"), std::string::npos);
+        ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
 
-    /// Durable contents alone still allow the directory entry to be lost, which would lose the
-    /// whole file, so the parent directory must be synced too.
-    ASSERT_NE(indexOf(*events, "dirsync"), std::string::npos);
-    ASSERT_LT(indexOf(*events, "sync:state"), indexOf(*events, "dirsync"));
+        /// Returning a state means the node is about to act on that term, so the live file must be
+        /// durable by then, or a power failure would make the node forget a term it voted in. The
+        /// sync must be an append: a rewrite would truncate the file it is meant to preserve.
+        ASSERT_NE(indexOf(*events, "append:state"), std::string::npos);
+        ASSERT_NE(indexOf(*events, "sync:state"), std::string::npos);
+        ASSERT_LT(indexOf(*events, "append:state"), indexOf(*events, "sync:state"));
+        ASSERT_EQ(indexOf(*events, "open:state"), std::string::npos);
 
-    /// The sync must not have cost any content: the live file still has to hold the same state.
-    reload_state_manager();
-    auto after_sync = state_manager->read_state();
-    ASSERT_NE(after_sync, nullptr);
-    ASSERT_EQ(after_sync->get_term(), 2);
-    ASSERT_EQ(after_sync->get_voted_for(), 3);
+        /// Durable contents alone still allow the directory entry to be lost, which would lose the
+        /// whole file.
+        ASSERT_NE(indexOf(*events, "dirsync"), std::string::npos);
+        ASSERT_LT(indexOf(*events, "sync:state"), indexOf(*events, "dirsync"));
 
-    /// Refreshing an existing backup truncates it, so the live file it is about to be replaced
-    /// from must be durable before that happens. Otherwise a retry after a failed sync could
-    /// destroy the one proven copy of the term while the live bytes are still only buffered.
-    /// Both files are present here, which is exactly the state such a retry starts from.
-    std::filesystem::copy_file("./state", "./state-OLD", std::filesystem::copy_options::overwrite_existing);
-    events->clear();
-    state_manager->save_state(*new_state);
-    const auto live_synced_before_backup = indexOf(*events, "sync:state");
-    const auto backup_reopened = indexOf(*events, "open:state-OLD");
-    ASSERT_NE(live_synced_before_backup, std::string::npos);
-    ASSERT_NE(backup_reopened, std::string::npos);
-    ASSERT_LT(live_synced_before_backup, backup_reopened);
+        /// The sync must not have cost any content.
+        reload_state_manager();
+        auto after_sync = state_manager->read_state();
+        ASSERT_NE(after_sync, nullptr);
+        ASSERT_EQ(after_sync->get_term(), 2);
+        ASSERT_EQ(after_sync->get_voted_for(), 3);
+    }
 
-    /// The next successful save re-establishes the live file and clears the backup.
-    state_manager->save_state(*new_state);
-    ASSERT_TRUE(std::filesystem::exists("./state"));
-    ASSERT_FALSE(std::filesystem::exists("./state-OLD"));
+    {
+        SCOPED_TRACE("Refreshing an existing backup syncs the live file first");
+        /// Refreshing the backup truncates it, so the live file it is replaced from must be durable
+        /// first. Otherwise a retry after a failed sync destroys the one proven copy of the term
+        /// while the live bytes are still only buffered. Both files are present here, which is
+        /// exactly the state such a retry starts from.
+        std::filesystem::copy_file("./state", "./state-OLD", std::filesystem::copy_options::overwrite_existing);
+        events->clear();
+        state_manager->save_state(*new_state);
+        const auto live_synced_before_backup = indexOf(*events, "sync:state");
+        const auto backup_reopened = indexOf(*events, "open:state-OLD");
+        ASSERT_NE(live_synced_before_backup, std::string::npos);
+        ASSERT_NE(backup_reopened, std::string::npos);
+        ASSERT_LT(live_synced_before_backup, backup_reopened);
+    }
 
-    reload_state_manager();
-    auto final_state = state_manager->read_state();
-    ASSERT_NE(final_state, nullptr);
-    ASSERT_EQ(final_state->get_term(), 2);
+    {
+        SCOPED_TRACE("The next successful save re-establishes the live file and clears the backup");
+        state_manager->save_state(*new_state);
+        ASSERT_TRUE(std::filesystem::exists("./state"));
+        ASSERT_FALSE(std::filesystem::exists("./state-OLD"));
+
+        reload_state_manager();
+        auto final_state = state_manager->read_state();
+        ASSERT_NE(final_state, nullptr);
+        ASSERT_EQ(final_state->get_term(), 2);
+    }
 
     if (std::filesystem::exists("./state"))
         std::filesystem::remove("./state");
@@ -1418,19 +1432,24 @@ TEST_P(CoordinationTest, TestDurableStatePartialWriteRecoversFromBackup)
     state->allow_election_timer(true);
     state_manager->save_state(*state);
 
-    /// Reconstruct what a crash inside the rewrite leaves behind: a valid backup, plus a live file
-    /// holding a partial write, so it is non-empty but fails its checksum.
-    ASSERT_TRUE(std::filesystem::exists("./state"));
-    std::filesystem::copy_file("./state", "./state-OLD");
-    const auto full_size = std::filesystem::file_size("./state");
-    ASSERT_GT(full_size, 10u);
-    std::filesystem::resize_file("./state", full_size - 1);
+    {
+        SCOPED_TRACE("Live file holds a partial write: non-empty, but fails its checksum");
+        /// This is what a crash inside the rewrite usually leaves behind, alongside a valid backup.
+        ASSERT_TRUE(std::filesystem::exists("./state"));
+        std::filesystem::copy_file("./state", "./state-OLD");
+        const auto full_size = std::filesystem::file_size("./state");
+        ASSERT_GT(full_size, 10u);
+        std::filesystem::resize_file("./state", full_size - 1);
+    }
 
-    reload_state_manager();
-    auto recovered = state_manager->read_state();
-    ASSERT_NE(recovered, nullptr);
-    ASSERT_EQ(recovered->get_term(), 1);
-    ASSERT_EQ(recovered->get_voted_for(), 2);
+    {
+        SCOPED_TRACE("Recovery from the backup happens, in debug builds too");
+        reload_state_manager();
+        auto recovered = state_manager->read_state();
+        ASSERT_NE(recovered, nullptr);
+        ASSERT_EQ(recovered->get_term(), 1);
+        ASSERT_EQ(recovered->get_voted_for(), 2);
+    }
 
     if (std::filesystem::exists("./state"))
         std::filesystem::remove("./state");
@@ -1471,32 +1490,40 @@ TEST_P(CoordinationTest, TestDurableStateRetryKeepsValidBackup)
     new_state->set_voted_for(3);
     new_state->allow_election_timer(true);
 
-    /// First attempt fails while rewriting the live file, leaving it torn and the backup valid.
-    disk->arm();
-    ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
-    ASSERT_EQ(std::filesystem::file_size("./state"), 0);
-    ASSERT_GT(std::filesystem::file_size("./state-OLD"), 0);
+    {
+        SCOPED_TRACE("First attempt tears the live file, leaving the backup valid");
+        disk->arm();
+        ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+        ASSERT_EQ(std::filesystem::file_size("./state"), 0);
+        ASSERT_GT(std::filesystem::file_size("./state-OLD"), 0);
+    }
 
-    /// The retry (no restart in between) must fail the same way without consuming the backup.
-    /// The live file is worthless now, so the retry must not let it overwrite the backup.
-    ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
-    ASSERT_GT(std::filesystem::file_size("./state-OLD"), 0);
-    disk->disarm();
+    {
+        SCOPED_TRACE("The retry does not let the torn live file overwrite the backup");
+        /// No restart in between, so the retry re-enters `save_state` with the live file worthless.
+        ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+        ASSERT_GT(std::filesystem::file_size("./state-OLD"), 0);
+        disk->disarm();
+    }
 
-    /// Term 1 must still be recoverable after both failures.
-    reload_state_manager();
-    auto recovered = state_manager->read_state();
-    ASSERT_NE(recovered, nullptr);
-    ASSERT_EQ(recovered->get_term(), 1);
-    ASSERT_EQ(recovered->get_voted_for(), 2);
+    {
+        SCOPED_TRACE("Term 1 is still recoverable after both failures");
+        reload_state_manager();
+        auto recovered = state_manager->read_state();
+        ASSERT_NE(recovered, nullptr);
+        ASSERT_EQ(recovered->get_term(), 1);
+        ASSERT_EQ(recovered->get_voted_for(), 2);
+    }
 
-    /// A later successful save still works and clears the backup.
-    state_manager->save_state(*new_state);
-    reload_state_manager();
-    auto final_state = state_manager->read_state();
-    ASSERT_NE(final_state, nullptr);
-    ASSERT_EQ(final_state->get_term(), 2);
-    ASSERT_EQ(final_state->get_voted_for(), 3);
+    {
+        SCOPED_TRACE("A later successful save works and clears the backup");
+        state_manager->save_state(*new_state);
+        reload_state_manager();
+        auto final_state = state_manager->read_state();
+        ASSERT_NE(final_state, nullptr);
+        ASSERT_EQ(final_state->get_term(), 2);
+        ASSERT_EQ(final_state->get_voted_for(), 3);
+    }
 
     if (std::filesystem::exists("./state"))
         std::filesystem::remove("./state");
@@ -1536,34 +1563,42 @@ TEST_P(CoordinationTest, TestDurableStateReadErrorDoesNotDropBackup)
     new_state->set_voted_for(3);
     new_state->allow_election_timer(true);
 
-    /// The live state file cannot be read, so `save_state` cannot know whether it is worth backing
-    /// up. It must fail instead of truncating the only durable copy.
-    disk->armReads();
-    ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
-    disk->disarmReads();
+    {
+        SCOPED_TRACE("An unreadable live state file fails the save instead of truncating it");
+        /// `save_state` cannot know whether the file is worth backing up, so it must not proceed.
+        disk->armReads();
+        ASSERT_THROW(state_manager->save_state(*new_state), std::exception);
+        disk->disarmReads();
+    }
 
-    /// The same must hold on the startup path: a read failure there must not delete the state
-    /// file, because returning no state makes NuRaft restart from term 0 with an empty vote.
-    reload_state_manager();
-    disk->armReads();
-    ASSERT_THROW(state_manager->read_state(), std::exception);
-    disk->disarmReads();
-    ASSERT_TRUE(std::filesystem::exists("./state"));
+    {
+        SCOPED_TRACE("A read failure on startup does not delete the state file");
+        /// Returning no state makes NuRaft restart from term 0 with an empty vote.
+        reload_state_manager();
+        disk->armReads();
+        ASSERT_THROW(state_manager->read_state(), std::exception);
+        disk->disarmReads();
+        ASSERT_TRUE(std::filesystem::exists("./state"));
+    }
 
-    /// Term 1 must be intact: neither the failed save nor the failed read touched the live file.
-    reload_state_manager();
-    auto recovered = state_manager->read_state();
-    ASSERT_NE(recovered, nullptr);
-    ASSERT_EQ(recovered->get_term(), 1);
-    ASSERT_EQ(recovered->get_voted_for(), 2);
+    {
+        SCOPED_TRACE("Term 1 is intact: neither failure touched the live file");
+        reload_state_manager();
+        auto recovered = state_manager->read_state();
+        ASSERT_NE(recovered, nullptr);
+        ASSERT_EQ(recovered->get_term(), 1);
+        ASSERT_EQ(recovered->get_voted_for(), 2);
+    }
 
-    /// Once reads work again, saving proceeds normally.
-    state_manager->save_state(*new_state);
-    reload_state_manager();
-    auto final_state = state_manager->read_state();
-    ASSERT_NE(final_state, nullptr);
-    ASSERT_EQ(final_state->get_term(), 2);
-    ASSERT_EQ(final_state->get_voted_for(), 3);
+    {
+        SCOPED_TRACE("Once reads work again, saving proceeds normally");
+        state_manager->save_state(*new_state);
+        reload_state_manager();
+        auto final_state = state_manager->read_state();
+        ASSERT_NE(final_state, nullptr);
+        ASSERT_EQ(final_state->get_term(), 2);
+        ASSERT_EQ(final_state->get_voted_for(), 3);
+    }
 
     if (std::filesystem::exists("./state"))
         std::filesystem::remove("./state");
