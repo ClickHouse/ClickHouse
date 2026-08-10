@@ -3,6 +3,7 @@ SET max_threads = 1;
 SET query_plan_max_limit_for_top_k_optimization = 100;
 SET use_skip_indexes_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;
+SET use_top_k_dynamic_filtering_for_variable_length_types = 1;
 
 DROP TABLE IF EXISTS top_k_empty_tuple;
 
@@ -13,6 +14,7 @@ CREATE TABLE top_k_empty_tuple
     nested Tuple(Tuple()),
     nullable_nested Tuple(Nullable(Tuple())),
     mixed Tuple(UInt64, Tuple()),
+    array_nested Array(Tuple()),
     payload UInt64
 )
 ENGINE = MergeTree
@@ -26,6 +28,7 @@ SELECT
     tuple(tuple()),
     CAST(tuple(tuple()), 'Tuple(Nullable(Tuple()))'),
     tuple(number, tuple()),
+    [tuple()],
     number
 FROM numbers(100000);
 
@@ -69,6 +72,14 @@ FROM
 )
 WHERE explain LIKE '%__topKFilter%';
 
+SELECT 'array_nested_has_filter', count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT array_nested FROM top_k_empty_tuple ORDER BY array_nested DESC LIMIT 5
+)
+WHERE explain LIKE '%__topKFilter%';
+
 SELECT 'direct_results';
 SELECT direct FROM top_k_empty_tuple ORDER BY ALL DESC LIMIT 5;
 
@@ -83,5 +94,8 @@ SELECT nullable_nested FROM top_k_empty_tuple ORDER BY ALL DESC LIMIT 5;
 
 SELECT 'mixed_results';
 SELECT mixed FROM top_k_empty_tuple ORDER BY ALL DESC LIMIT 5;
+
+SELECT 'array_nested_results';
+SELECT array_nested FROM top_k_empty_tuple ORDER BY ALL DESC LIMIT 5;
 
 DROP TABLE top_k_empty_tuple;

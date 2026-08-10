@@ -3,6 +3,7 @@ normal_has_filter	1
 nested_has_filter	1
 nullable_nested_has_filter	1
 mixed_has_filter	1
+array_nested_has_filter	1
 direct_results
 ()
 ()
@@ -33,3 +34,9 @@ mixed_results
 (99997,())
 (99996,())
 (99995,())
+array_nested_results
+[()]
+[()]
+[()]
+[()]
+[()]
