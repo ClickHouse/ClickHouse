@@ -30,7 +30,6 @@ int cancellationAwareIoWait(my_socket handle, my_bool is_read, int timeout) noex
 {
     static constexpr int slice_ms = 200;
 
-    /// Invoked from C: nothing may escape. The cancellation predicate can throw.
     try
     {
         pollfd poll_fd{};
@@ -71,6 +70,8 @@ int cancellationAwareIoWait(my_socket handle, my_bool is_read, int timeout) noex
             }
         }
     }
+    /// Ok: invoked from C, so nothing may escape through the connector's frames. The only throwing
+    /// call is the cancellation predicate, and 0 is the failure value the caller already handles.
     catch (...)
     {
         return 0;
