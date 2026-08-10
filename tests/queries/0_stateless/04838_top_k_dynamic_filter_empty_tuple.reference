@@ -23,10 +23,10 @@ nested_results
 (())
 (())
 nullable_nested_results
-(())
-(())
-(())
-(())
+(NULL)
+(NULL)
+(NULL)
+(NULL)
 (())
 mixed_results
 (99999,())
@@ -35,8 +35,8 @@ mixed_results
 (99996,())
 (99995,())
 array_nested_results
-[()]
-[()]
-[()]
-[()]
+[(),()]
+[(),()]
+[(),()]
+[(),()]
 [()]

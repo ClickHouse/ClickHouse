@@ -26,9 +26,9 @@ SELECT
     tuple(),
     tuple(number),
     tuple(tuple()),
-    CAST(tuple(tuple()), 'Tuple(Nullable(Tuple()))'),
+    tuple(CAST(if(number < 4, NULL, tuple()), 'Nullable(Tuple())')),
     tuple(number, tuple()),
-    [tuple()],
+    if(number < 4, [tuple(), tuple()], if(number = 4, [tuple()], [])),
     number
 FROM numbers(100000);
 
@@ -60,7 +60,7 @@ SELECT 'nullable_nested_has_filter', count() > 0
 FROM
 (
     EXPLAIN actions = 1
-    SELECT nullable_nested FROM top_k_empty_tuple ORDER BY nullable_nested DESC LIMIT 5
+    SELECT nullable_nested FROM top_k_empty_tuple ORDER BY nullable_nested DESC NULLS FIRST LIMIT 5
 )
 WHERE explain LIKE '%__topKFilter%';
 
@@ -90,7 +90,7 @@ SELECT 'nested_results';
 SELECT nested FROM top_k_empty_tuple ORDER BY ALL DESC LIMIT 5;
 
 SELECT 'nullable_nested_results';
-SELECT nullable_nested FROM top_k_empty_tuple ORDER BY ALL DESC LIMIT 5;
+SELECT nullable_nested FROM top_k_empty_tuple ORDER BY nullable_nested DESC NULLS FIRST LIMIT 5;
 
 SELECT 'mixed_results';
 SELECT mixed FROM top_k_empty_tuple ORDER BY ALL DESC LIMIT 5;
