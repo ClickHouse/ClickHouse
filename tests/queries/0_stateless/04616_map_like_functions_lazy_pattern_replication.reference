@@ -11,5 +11,5 @@
 1	1	{'k0':'v0'}	{'k0':'v0'}
 0	0	{}	{}
 0	0	{}	{}
--- large non-constant pattern is not physically replicated per map entry
+-- large non-constant pattern is copied one time fewer at peak
 1

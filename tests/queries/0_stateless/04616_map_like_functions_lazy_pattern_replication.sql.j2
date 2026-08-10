@@ -1,6 +1,9 @@
 -- mapContainsKeyLike, mapContainsValueLike, mapExtractKeyLike and mapExtractValueLike build an
 -- internal lambda-like ColumnFunction that captures the pattern column
--- With enable_lazy_columns_replication the captured pattern must be replicated lazily (wrapped into ColumnReplicated)
+-- With enable_lazy_columns_replication the captured pattern stays lazy (wrapped into ColumnReplicated)
+-- until the lambda is executed. The pattern is still materialized in full when LIKE runs (the lambda
+-- receives a mix of replicated and full columns), but the eager copy at capture time is gone, so the
+-- exploded pattern is created later and freed sooner.
 
 SELECT '-- correctness with a non-constant pattern';
 {% for i in range(2) -%}
@@ -19,7 +22,7 @@ FROM
 SETTINGS enable_lazy_columns_replication = {{ i }};
 {% endfor %}
 
-SELECT '-- large non-constant pattern is not physically replicated per map entry';
+SELECT '-- large non-constant pattern is copied one time fewer at peak';
 {% for i in range(2) -%}
 WITH
     repeat('a', 100000) || toString(number) AS pattern,

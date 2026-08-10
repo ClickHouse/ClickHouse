@@ -204,8 +204,9 @@ public:
     }
 
 private:
-    /// Adapters that synthesize a lambda-like ColumnFunction take the
-    /// lazy replication flag to avoid physically replicating the captured column per map entry.
+    /// Adapters that synthesize a lambda-like ColumnFunction take the lazy replication flag
+    /// to defer the physical replication of the captured column: the capture stays lazy
+    /// (ColumnReplicated) until the lambda is executed.
     void extractNestedTypesAndColumns(ColumnsWithTypeAndName & nested_arguments) const
     {
         if constexpr (requires { Adapter::extractNestedTypesAndColumns(nested_arguments, enable_lazy_columns_replication); })
