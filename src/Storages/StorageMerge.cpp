@@ -711,10 +711,18 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
             || (common_processed_stage > QueryProcessingStage::FetchColumns && !query_info.need_aggregate
                 && !query_info.has_window));
 
+    // Memory efficient distributed aggregation delivers two-level blocks bucket by bucket, and that bucket order must be
+    // preserved. It can only happen when the query aggregates: without aggregation there are no buckets at all, so the
+    // setting alone - it is enabled by default - must not keep every shard's stream alive. Otherwise the very fan-out
+    // this optimization guards against would come back for all the other queries stopping at `WithMergeableState`, such
+    // as the window function queries above.
+    const bool memory_efficient_aggregation = query_info.need_aggregate
+        && context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
+        && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState;
+
     const bool should_not_narrow = query_info.input_order_info
         || children_produce_sorted_streams
-        || (context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
-            && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState);
+        || memory_efficient_aggregation;
     if (!should_not_narrow)
     {
         size_t tables_count = selected_tables.size();

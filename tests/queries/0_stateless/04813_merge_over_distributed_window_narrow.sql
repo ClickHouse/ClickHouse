@@ -30,6 +30,26 @@ FROM
 )
 SETTINGS max_threads = 1, max_streams_multiplier_for_merge_tables = 1, distributed_aggregation_memory_efficient = 0;
 
+-- The same holds with `distributed_aggregation_memory_efficient` enabled, which is the default: the
+-- bucket order of memory efficient distributed aggregation is only at stake when the query
+-- aggregates, and this one does not.
+SELECT countIf(explain LIKE '%× 4%')
+FROM
+(
+    EXPLAIN PIPELINE SELECT A, sum(A) OVER (ORDER BY A) FROM merge_dist ORDER BY A LIMIT 5
+)
+SETTINGS max_threads = 1, max_streams_multiplier_for_merge_tables = 1, distributed_aggregation_memory_efficient = 1;
+
+-- An aggregating query stopping at `WithMergeableState` keeps its four streams, so that memory
+-- efficient distributed aggregation can merge the two-level blocks in bucket order.
+SELECT countIf(explain LIKE '%GroupingAggregatedTransform 4 → 1%')
+FROM
+(
+    EXPLAIN PIPELINE SELECT A, count() FROM merge_dist GROUP BY A ORDER BY A LIMIT 5
+)
+SETTINGS max_threads = 1, max_streams_multiplier_for_merge_tables = 1, distributed_aggregation_memory_efficient = 1,
+    group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1;
+
 -- The results of the window query are correct regardless of narrowing (every row appears twice
 -- because both shards of the cluster read the same underlying table).
 SELECT A, sum(A) OVER (ORDER BY A) FROM merge_dist ORDER BY A LIMIT 5
