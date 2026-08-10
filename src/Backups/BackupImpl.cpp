@@ -818,7 +818,12 @@ void BackupImpl::checkBackupDoesntExist() const
     {
         chassert(!lock_file_name.empty());
         if (writer->fileExists(lock_file_name))
-            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name_for_logging);
+        {
+            /// If the .lock file exists but the backup file doesn't, the previous backup
+            /// was interrupted (crashed) before it could finalize. Remove the stale lock.
+            LOG_WARNING(log, "Stale lock file {} found (no backup file exists). Removing it.", lock_file_name);
+            writer->removeFile(lock_file_name);
+        }
     }
 }
 
