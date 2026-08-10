@@ -6,6 +6,7 @@
 
 #include <Poco/Util/LayeredConfiguration.h>
 
+#include <Common/SipHash.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
@@ -82,12 +83,27 @@ public:
     {}
 };
 
-String buildStoragePolicyName(const DatabaseBackup::Configuration & config)
+/// The name is the cache key of the storage policy, so it must cover every input the policy's disk
+/// depends on, including the local database name. Fields are length-prefixed to keep their
+/// boundaries unambiguous, and the name stays a pure function of them because it has to come out
+/// identical on every open of the same database.
+String buildStoragePolicyName(const String & local_database_name, const DatabaseBackup::Configuration & config)
 {
-    return fmt::format("__database_backup_config_{}_{})", config.database_name, config.backup_info.toString());
+    const auto backup_info_string = config.backup_info.toString();
+
+    SipHash hash;
+    hash.update(local_database_name.size());
+    hash.update(local_database_name);
+    hash.update(config.database_name.size());
+    hash.update(config.database_name);
+    hash.update(backup_info_string.size());
+    hash.update(backup_info_string);
+
+    return fmt::format("__database_backup_config_{}", getSipHash128AsHexString(hash));
 }
 
-void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_query, const DatabaseBackup::Configuration & config, ContextPtr)
+void updateCreateQueryWithDatabaseBackupStoragePolicy(
+    ASTCreateQuery * create_query, const String & local_database_name, const DatabaseBackup::Configuration & config)
 {
     auto * storage = create_query->storage;
 
@@ -148,7 +164,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
         settings = storage->settings;
     }
 
-    auto storage_policy_name = buildStoragePolicyName(config);
+    auto storage_policy_name = buildStoragePolicyName(local_database_name, config);
     settings->changes.setSetting("storage_policy", Field(storage_policy_name));
 }
 
@@ -237,7 +253,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
         return;
     }
 
-    auto storage_policy_name = buildStoragePolicyName(config);
+    auto storage_policy_name = buildStoragePolicyName(getDatabaseName(), config);
 
     getContext()->getOrCreateStoragePolicy(storage_policy_name, [&](const StoragePoliciesMap &)
     {
@@ -355,7 +371,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
                 return;
             }
 
-            updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, config, local_context);
+            updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, current_database_name, config);
 
             {
                 SelectIntersectExceptQueryVisitor::Data data{local_context->getSettingsRef()[Setting::intersect_default_mode], local_context->getSettingsRef()[Setting::except_default_mode]};

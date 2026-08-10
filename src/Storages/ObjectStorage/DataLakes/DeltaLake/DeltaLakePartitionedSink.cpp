@@ -2,6 +2,8 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ArenaUtils.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
@@ -36,6 +38,11 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
+}
+
+namespace FailPoints
+{
+    extern const char delta_lake_write_commit_pause[];
 }
 
 namespace
@@ -195,6 +202,43 @@ Columns DeltaLakePartitionedSink::computePartitionValueColumns(const Chunk & chu
         result.push_back(block.getByName(actions_with_column.column_name).column->convertToFullColumnIfConst());
     }
     return result;
+}
+
+DeltaLakePartitionedSink::~DeltaLakePartitionedSink()
+{
+    if (isCancelled())
+        cancelBuffers();
+}
+
+void DeltaLakePartitionedSink::cancelBuffers()
+{
+    /// The inner sinks are plain members, not pipeline processors, so the
+    /// pipeline-wide cancel does not reach them. Cancel each one explicitly:
+    /// this flips its isCancelled(), so its destructor finalizes/cancels its
+    /// WriteBuffer instead of tripping the "neither finalized nor canceled" assert.
+    /// WriteBuffer::cancel does not unlink an already written data file, so also
+    /// remove each uncommitted object (mirrors the commit-failure cleanup in
+    /// onFinish); otherwise a failed insert leaves orphan parquet files behind.
+    for (auto & [_, partition_info] : partitions_data)
+    {
+        for (auto & data_file : partition_info->data_files)
+        {
+            data_file.sink->cancel();
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(data_file.sink->getPath()));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to remove uncommitted data file on cancel");
+            }
+        }
+    }
+}
+
+void DeltaLakePartitionedSink::onException(std::exception_ptr)
+{
+    cancelBuffers();
 }
 
 void DeltaLakePartitionedSink::consume(Chunk & chunk)
@@ -379,6 +423,11 @@ void DeltaLakePartitionedSink::onFinish()
 
     LOG_TEST(log, "Written {} data files", total_data_files_count);
 
+    /// Test-only hook: pause inside the commit window (after the data files are
+    /// finalized, before commit) so a test can inject an external cancel and
+    /// check that a late cancel does not delete committed files.
+    FailPointInjection::pauseFailPoint(FailPoints::delta_lake_write_commit_pause);
+
     try
     {
         delta_transaction->commit(files);
@@ -392,6 +441,14 @@ void DeltaLakePartitionedSink::onFinish()
         }
         throw;
     }
+
+    /// The commit succeeded: the data files are now referenced by the Delta log.
+    /// Drop the tracked sinks so a cancel that arrives after this point (the
+    /// pipeline executor flips isCancelled() asynchronously, so it can race with
+    /// this commit) does not make ~DeltaLakePartitionedSink -> cancelBuffers()
+    /// unlink the just-committed files and leave the Delta log pointing at
+    /// missing data.
+    partitions_data.clear();
 }
 
 }
