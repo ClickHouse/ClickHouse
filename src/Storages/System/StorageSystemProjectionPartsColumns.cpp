@@ -124,6 +124,8 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         if (query_status && !query_status->checkTimeLimit())
             break;
 
+        slowDownSystemPartsEnumeration(info.table);
+
         const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
         const auto part_metadata_snapshot = part->getMetadataSnapshot();

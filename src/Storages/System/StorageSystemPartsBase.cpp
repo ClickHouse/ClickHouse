@@ -1,4 +1,6 @@
+#include <base/sleep.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -46,6 +48,22 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char slowdown_system_parts_enumeration[];
+}
+
+void slowDownSystemPartsEnumeration([[maybe_unused]] const String & table_name)
+{
+    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+    {
+        /// Slow down only the tables with a special name prefix, so that the tests using
+        /// this failpoint do not affect concurrent queries over the tables of other tests.
+        if (table_name.starts_with("t_slowdown_system_parts"))
+            sleepForMilliseconds(100);
+    });
 }
 
 StoragesInfoStreamBase::StoragesInfoStreamBase(ContextPtr context)

@@ -165,6 +165,8 @@ void StorageSystemParts::processNextStorage(
         if (query_status && !query_status->checkTimeLimit())
             break;
 
+        slowDownSystemPartsEnumeration(info.table);
+
         const auto & part = all_parts[part_number];
         auto part_state = all_parts_state[part_number];
 

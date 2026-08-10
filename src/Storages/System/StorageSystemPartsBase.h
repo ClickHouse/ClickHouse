@@ -16,6 +16,11 @@ class QueryStatus;
 /// only at the part boundary would leave a long uninterruptible stretch.
 static constexpr size_t COLUMNS_CANCELLATION_CHECK_PERIOD = 128;
 
+/// Test-only instrumentation, a no-op unless the `slowdown_system_parts_enumeration` failpoint
+/// is enabled: sleeps while enumerating the parts of specially named tables, to make the eager
+/// result building slow enough for the tests of query cancellation and time limits.
+void slowDownSystemPartsEnumeration(const String & table_name);
+
 struct StoragesInfo
 {
     StoragePtr storage = nullptr;
