@@ -1,0 +1,65 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!-- Isolate vectorized tag transformation over unique and repeated dense group ids. -->
+    <query>
+        SELECT timeSeriesRemoveTag(
+            timeSeriesTagsToGroup(
+                [('__name__', 'metric'), ('namespace', toString(number % 100)), ('pod', toString(number))]),
+            '__name__')
+        FROM numbers(500000)
+        SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT timeSeriesRemoveAllTagsExcept(
+            timeSeriesTagsToGroup(
+                [('__name__', 'metric'), ('namespace', toString(number % 100)), ('pod', toString(number % 10000))]),
+            ['namespace'])
+        FROM numbers(500000)
+        SETTINGS max_threads = 1
+        FORMAT Null
+    </query>
+
+    <!-- Exercise two repeated groups at the largest range accepted by the dense lookup heuristic. -->
+    <query>
+        WITH
+            (
+                SELECT groupArray(group)
+                FROM
+                (
+                    SELECT number,
+                           timeSeriesTagsToGroup([('shared', 'value'), ('unique', toString(number))]) AS group
+                    FROM numbers(262144)
+                    ORDER BY number
+                )
+            ) AS groups
+        SELECT timeSeriesRemoveAllTagsExcept(groups[if(number % 2 = 0, 1, 262144)], ['shared'])
+        FROM numbers(65536)
+        SETTINGS max_threads = 1, max_block_size = 65536
+        FORMAT Null
+    </query>
+
+    <!-- Exercise the same transformations through realistic instant PromQL aggregation and matching. -->
+    <create_query>
+        CREATE TABLE promql_tags_transform ENGINE = TimeSeries
+    </create_query>
+
+    <fill_query>
+        INSERT INTO promql_tags_transform (metric_name, tags, time_series)
+        SELECT
+            if(number &lt; 100000, 'foo', 'bar'),
+            map('namespace', 'ns' || toString(intDiv(number % 100000, 1000)), 'pod', 'pod' || toString(number % 100000)),
+            [(toDateTime64(100, 3), number::Float64)]
+        FROM numbers_mt(200000)
+    </fill_query>
+
+    <query>SELECT * FROM prometheusQuery('promql_tags_transform', 'sum by (namespace) (foo)', 100) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQuery('promql_tags_transform', 'foo / on(pod) bar', 100) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS promql_tags_transform</drop_query>
+</test>
