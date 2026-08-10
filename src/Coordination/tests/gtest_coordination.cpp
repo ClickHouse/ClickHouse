@@ -3,6 +3,7 @@
 #if USE_NURAFT
 
 #include <Coordination/tests/gtest_coordination_common.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/SummingStateMachine.h>
@@ -1151,6 +1152,20 @@ public:
         return std::make_unique<RecordingSyncGuard>(std::move(inner), events);
     }
 
+    void prepareRead(
+        const String & path, const DB::ReadSettings & settings, std::optional<size_t> read_hint, DB::ReadPipeline & pipeline)
+        const override
+    {
+        /// The caller's settings are recorded rather than asserted here, so the assertion belongs to
+        /// the test and a bypass that stops being requested is visible even with caches unconfigured.
+        const bool any_cache = settings.enable_filesystem_cache || settings.read_through_distributed_cache
+            || settings.use_page_cache_for_disks_without_file_cache || settings.use_page_cache_with_distributed_cache
+            || settings.use_page_cache_for_local_disks || settings.use_page_cache_for_object_storage
+            || settings.page_cache_settings.cache != nullptr || settings.local_fs_settings.mmap_cache != nullptr;
+        events->push_back((any_cache ? "read-cached:" : "read-uncached:") + path);
+        DB::DiskLocal::prepareRead(path, settings, read_hint, pipeline);
+    }
+
 private:
     DiskEvents events;
 };
@@ -1257,6 +1272,14 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
     auto disk = std::make_shared<RecordingStateDisk>("StateFile", ".", events);
     this->keeper_context->setStateFileDisk(disk);
 
+    /// `getReadSettings` takes the caches from the global context, so without one every cache is
+    /// already absent and the assertions below on the bypass would hold either way. The mmap cache
+    /// is created explicitly because nothing else in this binary does, and its threshold stays 0, so
+    /// no read actually maps a file.
+    auto & context_holder = getMutableContext();
+    if (!context_holder.context->getMMappedFileCache())
+        context_holder.context->setMMappedFileCache(1000);
+
     std::optional<DB::KeeperStateManager> state_manager;
     const auto reload_state_manager = [&]
     {
@@ -1292,6 +1315,12 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
         ASSERT_NE(backup_synced, std::string::npos);
         ASSERT_NE(live_opened, std::string::npos);
         ASSERT_LT(backup_synced, live_opened);
+
+        /// The backup is written from the bytes this read returned, and both this path and the
+        /// backup's are reused across saves, so a cache keyed by path alone could supply an
+        /// earlier term here.
+        ASSERT_NE(indexOf(*events, "read-uncached:state"), std::string::npos);
+        ASSERT_EQ(indexOf(*events, "read-cached:state"), std::string::npos);
 
         /// Anchored past the backup: an earlier sync of the live file also records a dirsync.
         const auto backup_dirsync = indexOf(*events, "dirsync", backup_synced + 1);
@@ -1336,6 +1365,16 @@ TEST_P(CoordinationTest, TestDurableStateBackupIsSynced)
         ASSERT_EQ(recovered->get_voted_for(), 3);
         ASSERT_EQ(indexOf(*events, "remove:state-OLD"), std::string::npos);
         ASSERT_TRUE(std::filesystem::exists("./state-OLD"));
+
+        /// The returned term is about to be acted on, so the file it came from must be durable by
+        /// then. A backup written by an earlier version was only finalized. The sync must append,
+        /// since a rewrite would truncate the only remaining copy.
+        ASSERT_NE(indexOf(*events, "append:state-OLD"), std::string::npos);
+        ASSERT_EQ(indexOf(*events, "open:state-OLD"), std::string::npos);
+        const auto backup_synced = indexOf(*events, "sync:state-OLD");
+        ASSERT_NE(backup_synced, std::string::npos);
+        ASSERT_LT(indexOf(*events, "append:state-OLD"), backup_synced);
+        ASSERT_NE(indexOf(*events, "dirsync", backup_synced + 1), std::string::npos);
     }
 
     {

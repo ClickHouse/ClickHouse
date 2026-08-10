@@ -451,8 +451,15 @@ using StateFileOrError = std::expected<nuraft::ptr<nuraft::srv_state>, StateFile
 /// on a verdict by deleting or truncating the file.
 String readStateFile(const DiskPtr & disk, const String & path)
 {
+    /// The state file is rewritten in place and its backup is recreated at a fixed path, so a cache
+    /// keyed by path alone would serve an earlier term. `disableCaches` does not cover the mmap
+    /// cache, whose key is only path, offset and length.
+    auto read_settings = getReadSettings();
+    read_settings.disableCaches();
+    read_settings.local_fs_settings.mmap_cache = nullptr;
+
     String content;
-    auto read_buf = disk->readFile(path, getReadSettings());
+    auto read_buf = disk->readFile(path, read_settings);
     readStringUntilEOF(content, *read_buf);
     return content;
 }
@@ -625,6 +632,10 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             auto state = try_read_file(old_path);
             if (state)
             {
+                /// Same reason as for the live file above, and a backup left by an earlier version
+                /// was written through `IDisk::copyFile`, which only finalizes.
+                syncExistingFile(disk, old_path);
+
                 /// The backup is deliberately left in place: copying it back would drop it
                 /// before the copy is durable. The next successful `save_state` clears it.
                 return state;
