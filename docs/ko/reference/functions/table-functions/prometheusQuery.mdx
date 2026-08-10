@@ -29,7 +29,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 * `promql_query` - [PromQL 구문](https://prometheus.io/docs/prometheus/latest/querying/basics/)으로 작성한 쿼리입니다.
 * `evaluation_time - 평가 시각의 타임스탬프입니다. 현재 시각을 기준으로 쿼리를 평가하려면 `evaluation&#95;time`에 `now()&#96;를 사용합니다.
 
-<div id="returned_value">
+<div id="returned-value">
   ## 반환 값
 </div>
 
@@ -58,7 +58,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 | 범주       | 함수                                                                                               |
 | -------- | ------------------------------------------------------------------------------------------------ |
-| 범위       | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| 범위       | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | 수학       | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | 삼각       | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |

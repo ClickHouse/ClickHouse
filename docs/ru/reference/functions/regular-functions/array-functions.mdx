@@ -4248,7 +4248,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 Массив считается пустым, если не содержит ни одного элемента.
 
 <Note>
-  Можно оптимизировать, включив [настройку `optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT empty(arr) FROM TABLE;` преобразуется в `SELECT arr.size0 = 0 FROM TABLE;`.
+  Можно оптимизировать, включив [настройку `optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT empty(arr) FROM TABLE;` преобразуется в `SELECT arr.size0 = 0 FROM TABLE;`.
 </Note>
 
 Функция также работает со строками и UUID.
@@ -5137,6 +5137,11 @@ SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])
 
 Элементы со значением `NULL` обрабатываются как обычные значения.
 
+Элементы `NaN` не подчиняются указанному выше правилу для `NULL`.
+Скалярное сравнение двух значений `NaN` (`NaN = NaN`) равно `0`, однако `indexOf` всё же может считать элемент `NaN` найденным.
+Это зависит от деталей реализации. Не полагайтесь на конкретное поведение.
+Чтобы найти такой элемент, выполните проверку: `arrayFirstIndex(x -> isNaN(x), arr)` возвращает его позицию, а `arrayExists(x -> isNaN(x), arr)` — флаг.
+
 **Синтаксис**
 
 ```sql
@@ -5146,7 +5151,7 @@ indexOf(arr, x)
 **Аргументы**
 
 * `arr` — Массив, в котором выполняется поиск `x`. [`Array(T)`](/ru/reference/data-types/array)
-* `x` — Значение первого совпавшего элемента в `arr`, индекс которого нужно вернуть. [`UInt64`](/ru/reference/data-types/int-uint)
+* `x` — Значение первого совпадающего элемента в `arr`, индекс которого нужно вернуть. [`UInt64`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
@@ -5335,7 +5340,7 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 Массив считается непустым, если содержит хотя бы один элемент.
 
 <Note>
-  Можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT notEmpty(arr) FROM table` преобразуется в `SELECT arr.size0 != 0 FROM TABLE`.
+  Можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](/ru/reference/data-types/array#array-size) вместо чтения и обработки всего столбца типа Array. Запрос `SELECT notEmpty(arr) FROM table` преобразуется в `SELECT arr.size0 != 0 FROM TABLE`.
 </Note>
 
 Функция также работает для строк и UUID.
@@ -5482,7 +5487,7 @@ SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
 
 * Все аргументы `start`, `end`, `step` должны относиться к одному из поддерживаемых выше типов. Элементы возвращаемого массива будут супертипом аргументов.
 
-* Генерируется исключение, если функция возвращает массив, общая длина которого превышает количество элементов, заданное настройкой [`function_range_max_elements_in_block`](/ru/reference/settings/session-settings#function_range_max_elements_in_block).
+* Генерируется исключение, если функция возвращает массив, общая длина которого превышает количество элементов, заданное настройкой [`function_range_max_elements_in_block`](/ru/reference/settings/session-settings/function#function_range_max_elements_in_block).
 
 * Возвращает `NULL`, если любой аргумент имеет тип Nullable(nothing). Генерируется исключение, если любой аргумент имеет значение `NULL` (тип Nullable(T)).
 

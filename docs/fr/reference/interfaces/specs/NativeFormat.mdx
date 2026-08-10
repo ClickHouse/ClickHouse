@@ -1148,16 +1148,16 @@ Plusieurs types sont de simples alias : le serveur envoie le nom de l&#39;alias
 
 Les types géographiques sont des alias de tableaux et de tuples imbriqués :
 
-| Chaîne de type               | Type wire sous-jacent     |
-| ---------------------------- | ------------------------- |
-| `Point`                      | `Tuple(Float64, Float64)` |
-| `Ring`, `LineString`         | `Array(Point)`            |
-| `Polygon`, `MultiLineString` | `Array(Ring)`             |
-| `MultiPolygon`               | `Array(Polygon)`          |
+| Chaîne de type                     | Type wire sous-jacent     |
+| ---------------------------------- | ------------------------- |
+| `Point`                            | `Tuple(Float64, Float64)` |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`            |
+| `Polygon`, `MultiLineString`       | `Array(Ring)`             |
+| `MultiPolygon`                     | `Array(Polygon)`          |
 
 Ainsi, une colonne `Point` est décodée exactement comme `Tuple(Float64, Float64)` (affichée sous la forme `(1,2)`), un `Ring` comme `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`), et ainsi de suite dans la hiérarchie.
 
-`Geometry` est également un alias, mais d&#39;un [`Variant`](#variant) plutôt que d&#39;un tableau imbriqué : son payload est la variante des six types geo ci-dessus. L&#39;en-tête de colonne ne contient que la chaîne de type `Geometry` — il **ne détaille pas** la variante — donc un décodeur doit l&#39;étendre lui-même. Comme pour tout `Variant`, les discriminants suivent l&#39;ordre canonique des alias geo triés par nom : `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`. Chaque valeur sélectionnée est ensuite décodée via l&#39;alias geo correspondant ci-dessus (`NULL` utilise le discriminant `NULL` `255` de `Variant`).
+`Geometry` est également un alias, mais d&#39;un [`Variant`](#variant) plutôt que d&#39;un tableau imbriqué : son payload est la variante des sept types geo ci-dessus. L&#39;en-tête de colonne ne contient que la chaîne de type `Geometry` — il **ne détaille pas** la variante — donc un décodeur doit l&#39;étendre lui-même. Contrairement à un `Variant` défini par l&#39;utilisateur, les discriminants de `Geometry` ne suivent **pas** l&#39;ordre trié par nom : ils sont fixés pour assurer la compatibilité, et les nouveaux types geo sont uniquement ajoutés à la fin. Le mapping est `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`, `6` = `MultiPoint` (ajouté dans la version 26.7 — les flux provenant de serveurs plus anciens ne contiennent simplement jamais le discriminant `6`). Chaque valeur sélectionnée est ensuite décodée via l&#39;alias geo correspondant ci-dessus (`NULL` utilise le discriminant `NULL` `255` de `Variant`).
 
 `SimpleAggregateFunction(func, T)` est un alias de son type de valeur `T`. Il stocke une valeur d&#39;agrégation déjà finalisée, donc sa représentation wire et son affichage sont exactement ceux de `T` (`SimpleAggregateFunction(sum, UInt64)` est décodé comme `UInt64`). Seule la forme à type de valeur unique est un alias de cette manière ; le type sous-jacent peut lui-même être composite.
 
@@ -1577,7 +1577,7 @@ Ces trois codecs sont ceux que le serveur produit pour le tramage `Native` sur f
 | `0x82` | LZ4    | Le corps utilise le **format de bloc LZ4** — *et non* le format de trame LZ4. Aucun nombre magique.                                   |
 | `0x90` | ZSTD   | Le corps est un flux zstd brut à trame unique (le nombre magique zstd standard fait partie du corps).                                 |
 
-L’octet de méthode encode également les [codecs au niveau des colonnes](/fr/reference/statements/create/table#column_compression_codec). Ceux-ci sont appliqués par colonne sur les paths sur disque de MergeTree plutôt qu’au tramage sur flux complet, mais le chemin d’entrée HTTP `decompress=1` prend le codec dans l’octet de méthode de chaque trame, de sorte que n’importe lequel de ces octets peut légitimement apparaître en entrée. Un décodeur conforme doit donc reconnaître tout l’espace alloué et rejeter un octet qu’il n’implémente pas, plutôt que de mal interpréter le corps. Leurs corps sont spécifiques à chaque codec et sortent du cadre de ce contrat de trame générique :
+L’octet de méthode encode également les [codecs au niveau des colonnes](/fr/reference/statements/create/table/codec). Ceux-ci sont appliqués par colonne sur les paths sur disque de MergeTree plutôt qu’au tramage sur flux complet, mais le chemin d’entrée HTTP `decompress=1` prend le codec dans l’octet de méthode de chaque trame, de sorte que n’importe lequel de ces octets peut légitimement apparaître en entrée. Un décodeur conforme doit donc reconnaître tout l’espace alloué et rejeter un octet qu’il n’implémente pas, plutôt que de mal interpréter le corps. Leurs corps sont spécifiques à chaque codec et sortent du cadre de ce contrat de trame générique :
 
 | Byte   | Method                                                                     |
 | ------ | -------------------------------------------------------------------------- |
@@ -1595,7 +1595,7 @@ L’octet de méthode encode également les [codecs au niveau des colonnes](/fr/
 | `0x9e` | `Quantized`                                                                |
 | `0x9f` | `ZXC`                                                                      |
 
-`0x9d` (`SZ3`) est un codec **expérimental** *avec perte* et à erreur bornée pour `Float32`, `Float64` et `Array` de ces types. Une table peut être créée avec `CODEC(SZ3)` uniquement lorsque `allow_experimental_codecs` est défini, mais l’octet de méthode est toujours accepté lors de la décompression afin que les données précédemment écrites restent lisibles. `0x9f` (`ZXC`) est un codec LZ asymétrique : lent à compresser, mais très rapide à décompresser, avec un ratio situé entre `LZ4` et `ZSTD`. Les octets `0x99` (`DeflateQpl`) et `0x9b` (`ZSTD_QPL`) avaient été attribués à des codecs qui ont depuis été supprimés ; ils sont réservés et ne sont pas réutilisés.
+`0x9d` (`SZ3`) est un codec **expérimental** *avec perte* et à erreur bornée pour `Float32`, `Float64` et `Array` de ces types. Une table peut être créée avec `CODEC(SZ3)` uniquement lorsque `allow_experimental_codecs` est défini, mais l’octet de méthode est toujours accepté lors de la décompression afin que les données précédemment écrites restent lisibles. `0x9f` (`ZXC`) est un codec LZ asymétrique **expérimental** : lent à compresser, mais très rapide à décompresser, avec un ratio situé entre `LZ4` et `ZSTD`. Une table peut être créée avec `CODEC(ZXC)` uniquement lorsque `allow_experimental_codecs` est défini, mais l’octet de méthode est toujours accepté lors de la décompression afin que les données précédemment écrites restent lisibles. Les octets `0x99` (`DeflateQpl`) et `0x9b` (`ZSTD_QPL`) avaient été attribués à des codecs qui ont depuis été supprimés ; ils sont réservés et ne sont pas réutilisés.
 
 `0x9e` (`Quantized`) est un codec de colonne **expérimental** pour les colonnes de vecteurs denses (`Array(Float32)` et assimilés). Comme `NONE`, il agit en passthrough — le corps en pleine précision est stocké tel quel — mais sa présence associe une sérialisation qui écrit un flux compagnon quantifié compact utilisé pour accélérer la recherche vectorielle. Une table peut être créée avec `CODEC(Quantized(...))` uniquement lorsque `allow_experimental_codecs` est défini, et l’octet de méthode est toujours accepté lors de la décompression.
 

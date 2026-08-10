@@ -20,7 +20,7 @@ Les services ClickHouse Managed Postgres peuvent être créés et gérés à l�
 <Warning>
   **Mettez à niveau vers le fournisseur v3.21.0 avant le 31 juillet 2026**
 
-  Depuis le **31 juillet 2026**, l’API Managed Postgres ne renvoie plus le mot de passe du superutilisateur ni la chaîne de connexion dans ses réponses ; les identifiants ne sont renvoyés que lors de la création d’un service ou de la réinitialisation de son mot de passe. Les versions du fournisseur **v3.21.0 et ultérieures** fonctionnent de manière identique avant et après ce changement. Les anciennes versions du fournisseur dépendent du fait que l’API renvoie les identifiants : depuis le 31 juillet 2026, elles ne renseignent plus `connection_string`, et un service créé sans `password` déclaré aboutit alors que le mot de passe généré n’est jamais récupéré.
+  Depuis le **31 juillet 2026**, l’API ClickHouse Managed Postgres ne renvoie plus le mot de passe du superutilisateur ni la chaîne de connexion dans ses réponses ; les identifiants ne sont renvoyés que lors de la création d’un service ou de la réinitialisation de son mot de passe. Les versions du fournisseur **v3.21.0 et ultérieures** fonctionnent de manière identique avant et après ce changement. Les anciennes versions du fournisseur dépendent du fait que l’API renvoie les identifiants : depuis le 31 juillet 2026, elles ne renseignent plus `connection_string`, et un service créé sans `password` déclaré aboutit alors que le mot de passe généré n’est jamais récupéré.
 
   Mettez à niveau avant le 31 juillet 2026. Votre état migre automatiquement lors du premier plan ou apply avec v3.21.0. Si l’un de vos services s’appuie sur un mot de passe généré par le serveur (pas de `password` dans la configuration), récupérez-le d’abord avec `terraform state pull` et déclarez-le, car v3.21.0 exige `password` ou `password_wo` pour un service standard.
 </Warning>
@@ -167,7 +167,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All Managed Postgres services in the organization.
+# All ClickHouse Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -180,7 +180,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## Importation de services existants
 </div>
 
-Les services Managed Postgres existants peuvent être importés dans l’état Terraform à l’aide de l’ID du service :
+Les services ClickHouse Managed Postgres existants peuvent être importés dans l’état Terraform à l’aide de l’ID du service :
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/scaling
 sidebarTitle: '扩缩容'
 title: '扩缩容'
-description: '借助灵活的 VM 类型和独立资源扩缩容能力，对由 ClickHouse 托管的 Postgres 实例进行垂直扩缩容'
+description: '借助灵活的 VM 类型和独立资源扩缩容能力，对您的 ClickHouse Managed Postgres 实例进行垂直扩缩容'
 keywords: ['Postgres 扩缩容', '垂直扩缩容', 'VM 类型', 'NVMe 扩缩容', '实例类型', '性能扩缩容']
 doc_type: 'guide'
 ---
@@ -12,13 +12,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
-Managed Postgres 提供灵活扩缩容选项，以满足您的工作负载需求。提供 50 多种采用 NVMe 的实例类型，您可以独立对 CPU、内存和存储进行扩缩容，从而根据具体用例优化性能和成本。
+ClickHouse Managed Postgres 提供灵活扩缩容选项，以满足您的工作负载需求。提供 50 多种采用 NVMe 的实例类型，您可以独立对 CPU、内存和存储进行扩缩容，从而根据具体用例优化性能和成本。
 
 <div id="instance-types">
   ## 实例类型与灵活性
 </div>
 
-Managed Postgres 提供丰富的实例类型，可针对不同的工作负载特征进行优化：
+ClickHouse Managed Postgres 提供丰富的实例类型，可针对不同的工作负载特征进行优化：
 
 * **提供 50 多种实例类型**，涵盖计算优化、内存优化和存储优化等配置
 * 所有实例类型均配备 **基于 NVMe 的存储**，可提供稳定、高性能的磁盘 I/O
@@ -46,7 +46,7 @@ Managed Postgres 提供丰富的实例类型，可针对不同的工作负载特
   ## 扩缩容的工作原理
 </div>
 
-当您更改实例类型时，Managed Postgres 会执行垂直扩缩容操作，创建新的基础设施资源，并在将停机时间降到最低的情况下迁移您的数据库。
+当您更改实例类型时，ClickHouse Managed Postgres 会执行垂直扩缩容操作，创建新的基础设施资源，并在将停机时间降到最低的情况下迁移您的数据库。
 
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="扩缩容设置" size="md" border />
 
@@ -95,7 +95,7 @@ Managed Postgres 提供丰富的实例类型，可针对不同的工作负载特
   ### 使用 WAL-G 并行恢复
 </div>
 
-Managed Postgres 使用 [WAL-G](https://github.com/wal-g/wal-g) 在扩缩容期间加速备份恢复。值得一提的是，WAL-G 的创建者是我们合作伙伴 Ubicloud 团队的成员，这也为恢复过程带来了深厚的专业经验。
+ClickHouse Managed Postgres 使用 [WAL-G](https://github.com/wal-g/wal-g) 在扩缩容期间加速备份恢复。值得一提的是，WAL-G 的创建者是我们合作伙伴 Ubicloud 团队的成员，这也为恢复过程带来了深厚的专业经验。
 
 WAL-G 提供：
 
@@ -110,7 +110,7 @@ WAL-G 提供：
   ### 发起扩缩容操作
 </div>
 
-如需扩缩容您的 Managed Postgres 实例：
+如需扩缩容您的 ClickHouse Managed Postgres 实例：
 
 1. 前往实例的 **Settings** 选项卡
 2. 在 **Scaling** 部分中，向下滚动到 **Service size**
@@ -125,7 +125,7 @@ WAL-G 提供：
   ### 垂直扩缩容
 </div>
 
-垂直扩缩容 (更改实例类型) 是 Managed Postgres 中调整资源的主要方式。这种方式可提供：
+垂直扩缩容 (更改实例类型) 是 ClickHouse Managed Postgres 中调整资源的主要方式。这种方式可提供：
 
 * **精细控制**：可从 50 多种实例类型中选择，精细调整 CPU、内存和存储
 * **工作负载优化**：可选择针对特定工作负载优化的配置 (计算密集型、内存密集型或存储密集型)

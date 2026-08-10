@@ -494,7 +494,7 @@ hasAllTokens(input, needles)
 
 * `input` — 输入列。[`String`](/zh/reference/data-types/string)、[`FixedString`](/zh/reference/data-types/fixedstring)、[`Array(String)`](/zh/reference/data-types/array) 或 [`Array(FixedString)`](/zh/reference/data-types/array)
 * `needles` — 待搜索的标记。[`String`](/zh/reference/data-types/string) 或 [`Array(String)`](/zh/reference/data-types/array)
-* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`ngrams`、`sparseGrams` 和 `array`。可选；如果未显式设置，默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
+* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。可选；如果未显式设置，默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -524,7 +524,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**指定要在数组中按原样搜索的 needle (不进行标记化)&#x20;**
+**指定要在数组中按原样搜索的 needle (不进行标记化)**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — 输入列。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`Nullable(String)`](/zh/reference/data-types/nullable) 或 [`Nullable(FixedString)`](/zh/reference/data-types/nullable) 或 [`Array(String)`](/zh/reference/data-types/array) 或 [`Array(FixedString)`](/zh/reference/data-types/array) 或 [`Array(Nullable(String))`](/zh/reference/data-types/array) 或 [`Array(Nullable(FixedString))`](/zh/reference/data-types/array)
 * `needles` — 待搜索的标记。[`String`](/zh/reference/data-types/string) 或 [`Array(String)`](/zh/reference/data-types/array)
-* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`ngrams`、`sparseGrams` 和 `array`。该参数为可选项；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
+* `tokenizer` — 使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数为可选项；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**指定要在数组中按原样搜索的 needle (不进行标记化)&#x20;**
+**指定要在数组中按原样搜索的 needle (不进行标记化)**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -913,7 +913,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 搜索前，该函数会使用为 文本索引 指定的分词器，对 `input` 和 `phrase` 参数进行分词。
 如果该列未定义 文本索引，则改用 `splitByNonAlpha` 分词器——除非通过可选的第三个参数提供了分词器。
-`tokenizer` 参数必须是 `splitByNonAlpha`、`splitByString`、`ngrams` 或 `asciiCJK` 之一。
+`tokenizer` 参数必须是 `splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK` 或 `icu` 之一。
 
 <Note>
   当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在分词前将其应用于 `input` 和 `phrase`。

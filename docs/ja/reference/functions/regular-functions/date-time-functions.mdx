@@ -2444,7 +2444,7 @@ FORMAT PrettyCompactMonoBlock
 
 導入バージョン: v23.6.0
 
-server のタイムゾーン、つまり [`timezone`](/ja/reference/settings/server-settings/settings#timezone) 設定の値を返します。
+server のタイムゾーン、つまり [`timezone`](/ja/reference/settings/server-settings/settings/other#timezone) 設定の値を返します。
 この関数が分散テーブルのコンテキストで実行される場合、各分片に対応する値を持つ通常のカラムを返します。そうでない場合は、定数値を返します。
 
 <Note>
@@ -3898,7 +3898,7 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 日付または日時を、その月の末日に切り上げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) を設定することで指定できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) を設定することで指定できます。
 </Note>
 
 **構文**
@@ -3940,7 +3940,7 @@ SELECT toLastDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 日付または日時を、最も近い土曜日または日曜日まで切り上げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) を設定することで変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) を設定することで変更できます。
 </Note>
 
 **構文**
@@ -4180,7 +4180,7 @@ SELECT toModifiedJulianDayOrNull('0000-00-00'); -- 無効な日付、NULLを返�
 日付または日時を、同じ週の月曜日に切り下げます。日付を返します。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -4712,7 +4712,7 @@ SELECT toSecond(toDateTime('2023-04-21 10:20:30'))
 日時をその日の開始時刻に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定で変更できます。
 </Note>
 
 **構文**
@@ -4752,7 +4752,7 @@ SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))
 日時を15分間隔の開始時点に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) を設定することで変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) を設定することで変更できます。
 </Note>
 
 **構文**
@@ -4798,7 +4798,7 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 日時を直前の5分間隔の開始時点に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定で変更できます。
 </Note>
 
 **構文**
@@ -4846,7 +4846,7 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 日時をその時間の開始時刻に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定で変更できます。
 </Note>
 
 **構文**
@@ -4887,7 +4887,7 @@ SELECT
 日付または日時を ISO 年の最初の日まで切り下げます。これは通常の暦年とは異なる場合があります。[ISO 週日付](https://en.wikipedia.org/wiki/ISO_week_date)を参照してください。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定で変更できます。
 </Note>
 
 **構文**
@@ -5110,7 +5110,7 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 日時をその分の先頭に切り捨てます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -5154,7 +5154,7 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
 日付または日時をその月の初日に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -5245,7 +5245,7 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 日付または日時を、その四半期の初日に切り下げます。四半期の初日は、1月1日、4月1日、7月1日、または10月1日です。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -5336,7 +5336,7 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 日時を、その時刻を含む10分間隔の開始時刻に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -5382,7 +5382,7 @@ toStartOfTenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 日付または日時を、直前の日曜日または月曜日に切り下げます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定で変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定で変更できます。
 </Note>
 
 **構文**
@@ -5432,7 +5432,7 @@ Row 1:
 日付または日時を、その年の最初の日に切り下げます。結果は `Date` オブジェクトとして返されます。
 
 <Note>
-  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings#enable_extended_results_for_datetime_functions) の設定によって変更できます。
+  戻り値の型は、[`enable_extended_results_for_datetime_functions`](/ja/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions) の設定によって変更できます。
 </Note>
 
 **構文**
@@ -5467,33 +5467,40 @@ SELECT toStartOfYear(toDateTime('2023-04-21 10:20:30'))
   ## toTimeWithFixedDate
 </div>
 
-導入バージョン: v1.1.0
+導入バージョン: v25.5.0
 
-日付または日時から時間部分を抽出します。
-返される値は固定された時点からのオフセットで、現在は `1970-01-02` が使われていますが、
-どの時点を基準とするかは実装の詳細であり、将来変更される可能性があります。
+日時から時刻部分を抽出します。
+返される結果は、現在は `1970-01-02` という固定時点からのオフセットですが、
+正確な時点は実装の詳細であり、将来変更される可能性があります。
 
-したがって、`toTime` を単独で使用するべきではありません。
-この関数の主な用途は、2 つの日付または日時の時間差を計算することです。たとえば、`toTime(dt1) - toTime(dt2)` のように使用します。
+したがって、`toTimeWithFixedDate` を単独で使用すべきではありません。
+この関数の主な目的は、2つの日時の時刻差を計算することです。例: `toTimeWithFixedDate(dt1) - toTimeWithFixedDate(dt2)`。
+
+これは従来の `toTime` 関数であり、値を [`Time`](/ja/reference/data-types/time) データ型に変換する
+[`toTime`](/ja/reference/functions/regular-functions/type-conversion-functions#toTime) が `toTime` という名前を使用するようになったため、v25.5 でリネームされました。
+設定
+[`use_legacy_to_time`](/ja/reference/settings/session-settings#use_legacy_to_time) が有効な場合は、旧名称の `toTime` でも引き続き使用できます (v26.7 以降のデフォルトは `0` ですが、v25.6 から v26.6 までは `1` がデフォルトでした) 。
+
+`datetime` 引数に秒未満の部分が含まれる場合、それらは削除され、秒精度の `DateTime` 値が返されます。
 
 **構文**
 
 ```sql
-toTimeWithFixedDate(date[, timezone])
+toTimeWithFixedDate(datetime[, timezone])
 ```
 
 **引数**
 
-* `date` — 時刻に変換する日付または日時。[`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 省略可。戻り値に使用するタイムゾーン。[`String`](/ja/reference/data-types/string)
+* `datetime` — 時刻に変換する日時。[`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
+* `timezone` — 省略可能。戻り値のタイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-固定の時点 (現在は 1970-01-02) からのオフセットとして、日付または日時の時刻部分を返します。[`DateTime`](/ja/reference/data-types/datetime)
+日時の時刻部分を、固定時点 (現在は 1970-01-02) からのオフセットとして返します。[`DateTime`](/ja/reference/data-types/datetime)
 
 **例**
 
-**2 つの日付の時刻差を計算する**
+**2 つの日付間の時差を計算する**
 
 ```sql title=Query
 SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDate('2024-05-10 11:00:00'::DateTime) AS result, toTypeName(result)
@@ -5503,6 +5510,31 @@ SELECT toTimeWithFixedDate('2025-06-15 12:00:00'::DateTime) - toTimeWithFixedDat
 ┌─result─┬─toTypeName(result)─┐
 │   3600 │ Int32              │
 └────────┴────────────────────┘
+```
+
+**秒未満の部分は切り捨てられます**
+
+```sql title=Query
+SELECT toTimeWithFixedDate(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
+```
+
+```response title=Response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
+```
+
+**legacy 名で呼び出した場合も同じ関数**
+
+```sql title=Query
+SET use_legacy_to_time = 1;
+SELECT toTime(toDateTime64('1970-12-10 01:20:30.3000', 3)) AS result, toTypeName(result)
+```
+
+```response title=Response
+┌──────────────result─┬─toTypeName(result)─┐
+│ 1970-01-02 01:20:30 │ DateTime           │
+└─────────────────────┴────────────────────┘
 ```
 
 <div id="toTimezone">
@@ -5687,7 +5719,7 @@ from_date32:     1509840000
 その週に新年の日数が何日含まれているかは関係なく、たとえ 1 日しか含まれていなくても同様です。
 つまり、12 月の最後の週に翌年の 1 月 1 日が含まれている場合、それは翌年の第 1 週になります。
 
-最初の引数は、[`parseDateTime64BestEffort()`](/ja/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) でサポートされる形式の [`String`](/ja/reference/data-types/string) として指定することもできます。文字列引数のサポートは、特定のサードパーティーツールが想定する MySQL との互換性のためにのみ存在します。文字列引数のサポートは、将来的に新しい MySQL 互換設定に依存するようになる可能性があり、また一般に文字列のパースは低速であるため、使用しないことを推奨します。
+最初の引数は、[`parseDateTime64BestEffort`](/ja/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) でサポートされる形式の [`String`](/ja/reference/data-types/string) として指定することもできます。文字列引数のサポートは、特定のサードパーティーツールが想定する MySQL との互換性のためにのみ存在します。文字列引数のサポートは、将来的に新しい MySQL 互換設定に依存するようになる可能性があり、また一般に文字列のパースは低速であるため、使用しないことを推奨します。
 
 **構文**
 
@@ -5919,7 +5951,7 @@ SELECT toYearNumSinceEpoch(toDate('2024-10-01'))
 
 警告: `toYearWeek()` が返す週番号は、`toWeek()` が返すものと異なる場合があります。`toWeek()` は常に指定された年における週番号を返しますが、`toWeek()` が `0` を返す場合、`toYearWeek()` は前年の最後の週に対応する値を返します。以下の例の `prev_yearWeek` を参照してください。
 
-最初の引数には、[`parseDateTime64BestEffort()`](/ja/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) がサポートするフォーマットの [`String`](/ja/reference/data-types/string) も指定できます。文字列引数のサポートは、特定のサードパーティツールで想定されている MySQL との互換性のためにのみ提供されています。文字列引数のサポートは将来的に新しい MySQL 互換設定に依存するようになる可能性があり、また文字列のパースは一般に低速であるため、使用しないことを推奨します。
+最初の引数には、[`parseDateTime64BestEffort`](/ja/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) がサポートするフォーマットの [`String`](/ja/reference/data-types/string) も指定できます。文字列引数のサポートは、特定のサードパーティツールで想定されている MySQL との互換性のためにのみ提供されています。文字列引数のサポートは将来的に新しい MySQL 互換設定に依存するようになる可能性があり、また文字列のパースは一般に低速であるため、使用しないことを推奨します。
 
 **構文**
 

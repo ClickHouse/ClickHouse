@@ -2165,14 +2165,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 Добавленный в: v21.7.0
 
 Сериализует значение в JSON-представление. Поддерживаются различные типы данных и вложенные структуры.
-64-битные [целые числа](/ru/reference/data-types/int-uint) и более крупные (например, `UInt64` или `Int128`) по умолчанию заключаются в кавычки. Это поведение контролируется параметром [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats#output_format_json_quote_64bit_integers).
-Специальные значения `NaN` и `inf` заменяются на `null`. Чтобы они отображались, включите настройку [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats#output_format_json_quote_denormals).
+64-битные [целые числа](/ru/reference/data-types/int-uint) и более крупные (например, `UInt64` или `Int128`) по умолчанию заключаются в кавычки. Это поведение контролируется параметром [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats/output-format#output_format_json_quote_64bit_integers).
+Специальные значения `NaN` и `inf` заменяются на `null`. Чтобы они отображались, включите настройку [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats/output-format#output_format_json_quote_denormals).
 При сериализации значения [Enum](/ru/reference/data-types/enum) функция выводит его имя.
 
 См. также:
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats/output-format#output_format_json_quote_denormals)
 
 **Синтаксис**
 

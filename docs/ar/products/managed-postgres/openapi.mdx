@@ -1,8 +1,8 @@
 ---
 slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
-title: 'OpenAPI لـ Managed Postgres'
-description: 'أدِر خدمات Managed Postgres لديك باستخدام OpenAPI الخاص بنا'
+title: 'OpenAPI لـ ClickHouse Managed Postgres'
+description: 'أدِر خدمات ClickHouse Managed Postgres لديك باستخدام OpenAPI الخاص بنا'
 keywords: ['Managed Postgres', 'OpenAPI', 'واجهة برمجة تطبيقات', 'curl', 'دليل عملي', 'سطر الأوامر', 'Query Insights', 'الاستعلامات البطيئة']
 doc_type: 'guide'
 ---
@@ -11,11 +11,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-استخدم [ClickHouse OpenAPI](/ar/products/cloud/features/admin-features/api/index) للتحكم برمجيًا
-في خدمات Managed Postgres لديك، تمامًا كما تفعل مع خدمات ClickHouse. كما تتيح
+استخدم [ClickHouse OpenAPI](/ar/products/cloud/features/admin-features/api/api-overview) للتحكم برمجيًا
+في خدمات ClickHouse Managed Postgres لديك، تمامًا كما تفعل مع خدمات ClickHouse. كما تتيح
 واجهة برمجة التطبيقات نفسها أيضًا [نقطة نهاية Prometheus] لاستخراج
 مقاييس الخدمة. هل أنت على دراية مسبقة بـ[OpenAPI]؟ احصل على [مفاتيح API] وانتقل مباشرةً إلى
-[مرجع API لـ Managed Postgres][pg-openapi]. وإن لم تكن كذلك، فتابع معنا
+[مرجع API لـ ClickHouse Managed Postgres][pg-openapi]. وإن لم تكن كذلك، فتابع معنا
 للاطلاع على شرح سريع.
 
 <div id="api-keys">
@@ -308,7 +308,7 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
   ## المراقبة
 </div>
 
-توفّر نقطتا نهاية متوافقتان مع Prometheus مقاييس CPU والذاكرة والإدخال/الإخراج والاتصالات والمعاملات لخدمات Managed Postgres: تُرجع إحداهما المقاييس لكل خدمة في المؤسسة، بينما تُرجع الأخرى المقاييس لخدمة واحدة. راجع صفحة [نقطة نهاية Prometheus] لمعرفة كيفية الإعداد، و[مرجع المقاييس] للاطلاع على القائمة الكاملة للمقاييس.
+توفّر نقطتا نهاية متوافقتان مع Prometheus مقاييس CPU والذاكرة والإدخال/الإخراج والاتصالات والمعاملات لخدمات ClickHouse Managed Postgres: تُرجع إحداهما المقاييس لكل خدمة في المؤسسة، بينما تُرجع الأخرى المقاييس لخدمة واحدة. راجع صفحة [نقطة نهاية Prometheus] لمعرفة كيفية الإعداد، و[مرجع المقاييس] للاطلاع على القائمة الكاملة للمقاييس.
 
 <div id="query-insights">
   ## Query insights
@@ -441,7 +441,7 @@ CPU للمستخدم والنظام، والعمّال المتوازيون، و
 يختصر المثال كلا الكائنين مراعاةً للإيجاز؛ وتُرجع واجهة برمجة تطبيقات
 مجموعة العدادات الكاملة الموثقة ضمن [per-execution counters].
 
-[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "مبادرة OpenAPI"
 
@@ -467,9 +467,9 @@ CPU للمستخدم والنظام، والعمّال المتوازيون، و
 
 [password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "إعادة تعيين كلمة مرور المستخدم الفائق لخدمة Postgres"
 
-[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "نقطة نهاية Prometheus لـ Managed Postgres"
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "نقطة نهاية Prometheus لـ ClickHouse Managed Postgres"
 
-[metrics reference]: /products/managed-postgres/monitoring/metrics "مرجع مقاييس Managed Postgres"
+[metrics reference]: /products/managed-postgres/monitoring/metrics "مرجع مقاييس ClickHouse Managed Postgres"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Query Insights لاستعلامات Postgres"
 

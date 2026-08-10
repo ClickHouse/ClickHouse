@@ -3,6 +3,7 @@
     {
       "group": "Источники данных",
       "pages": [
+        "ru/integrations/connectors/data-sources/index",
         {
           "expanded": false,
           "group": "AWS S3",
@@ -17,6 +18,7 @@
           "expanded": false,
           "group": "Kafka",
           "pages": [
+            "ru/integrations/connectors/data-ingestion/kafka/index",
             "ru/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink",
             "ru/integrations/connectors/data-ingestion/kafka/confluent/confluent-cloud",
             "ru/integrations/connectors/data-ingestion/kafka/confluent/custom-connector",
@@ -27,32 +29,32 @@
             "ru/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http",
             "ru/integrations/connectors/data-ingestion/kafka/kafka-connect-jdbc",
             "ru/integrations/connectors/data-ingestion/kafka/kafka-table-engine-named-collections"
-          ],
-          "root": "ru/integrations/connectors/data-ingestion/kafka/index"
+          ]
         },
         "ru/integrations/connectors/data-sources/mysql",
         "ru/integrations/connectors/data-sources/cassandra",
         "ru/integrations/connectors/data-sources/gcs",
         "ru/integrations/connectors/data-ingestion/s3-minio",
+        "ru/integrations/connectors/data-ingestion/s3-tigris",
         "ru/integrations/connectors/data-ingestion/emqx/index",
         "ru/integrations/connectors/data-ingestion/insert-local-files",
         "ru/integrations/connectors/data-ingestion/jdbc-with-clickhouse",
         "ru/integrations/connectors/data-ingestion/odbc-with-clickhouse"
-      ],
-      "root": "ru/integrations/connectors/data-sources/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Визуализация данных",
       "pages": [
+        "ru/integrations/connectors/data-visualization/index",
         {
           "expanded": false,
           "group": "Grafana",
           "pages": [
+            "ru/integrations/connectors/data-visualization/grafana/index",
             "ru/integrations/connectors/data-visualization/grafana/query-builder",
             "ru/integrations/connectors/data-visualization/grafana/config"
-          ],
-          "root": "ru/integrations/connectors/data-visualization/grafana/index"
+          ]
         },
         "ru/integrations/connectors/data-visualization/lightdash-and-clickhouse",
         "ru/integrations/connectors/data-visualization/looker-and-clickhouse",
@@ -94,13 +96,13 @@
             "ru/integrations/connectors/data-visualization/community-integrations/holistics-and-clickhouse"
           ]
         }
-      ],
-      "root": "ru/integrations/connectors/data-visualization/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Ингестия данных",
       "pages": [
+        "ru/integrations/connectors/data-ingestion/index",
         "ru/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         "ru/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "ru/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
@@ -108,11 +110,11 @@
           "expanded": false,
           "group": "Apache Spark",
           "pages": [
+            "ru/integrations/connectors/data-ingestion/apache-spark/index",
             "ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector",
             "ru/integrations/connectors/data-ingestion/apache-spark/databricks",
             "ru/integrations/connectors/data-ingestion/apache-spark/spark-jdbc"
-          ],
-          "root": "ru/integrations/connectors/data-ingestion/apache-spark/index"
+          ]
         },
         "ru/integrations/connectors/data-ingestion/apache-flink",
         "ru/integrations/connectors/data-ingestion/AWS/glue",
@@ -120,11 +122,11 @@
           "expanded": false,
           "group": "Azure Data Factory",
           "pages": [
+            "ru/integrations/connectors/data-ingestion/azure/azure-data-factory/index",
             "ru/integrations/connectors/data-ingestion/azure/azure-data-factory/overview",
             "ru/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage",
             "ru/integrations/connectors/data-ingestion/azure/azure-data-factory/using-http-interface"
-          ],
-          "root": "ru/integrations/connectors/data-ingestion/azure/azure-data-factory/index"
+          ]
         },
         "ru/integrations/connectors/data-ingestion/azure/azure-synapse",
         "ru/integrations/connectors/data-ingestion/etl-tools/apache-beam",
@@ -150,21 +152,21 @@
           "expanded": false,
           "group": "dbt",
           "pages": [
+            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/index",
             "ru/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
             "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
             "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
             "ru/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ],
-          "root": "ru/integrations/connectors/data-ingestion/etl-tools/dbt/index"
+          ]
         },
         "ru/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
           "group": "Fivetran",
           "pages": [
+            "ru/integrations/connectors/data-ingestion/etl-tools/fivetran/index",
             "ru/integrations/connectors/data-ingestion/etl-tools/fivetran/reference",
             "ru/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting"
-          ],
-          "root": "ru/integrations/connectors/data-ingestion/etl-tools/fivetran/index"
+          ]
         },
         "ru/integrations/connectors/data-ingestion/etl-tools/nifi-and-clickhouse",
         "ru/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse",
@@ -181,28 +183,35 @@
           "group": "Интеграции сообщества",
           "pages": [
             "ru/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
-            "ru/integrations/connectors/data-ingestion/community-integrations/estuary"
+            {
+              "group": "Estuary",
+              "pages": [
+                "ru/integrations/connectors/data-ingestion/community-integrations/estuary",
+                "ru/integrations/connectors/data-ingestion/community-integrations/estuary-native",
+                "ru/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes"
+              ]
+            }
           ]
         }
-      ],
-      "root": "ru/integrations/connectors/data-ingestion/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Интеграции данных",
       "pages": [
+        "ru/integrations/connectors/tools/data-integration-index",
         "ru/integrations/connectors/data-integrations/integrations/retool",
         "ru/integrations/connectors/data-integrations/integrations/easypanel",
         "ru/integrations/connectors/data-integrations/integrations/middleware",
         "ru/integrations/connectors/data-integrations/integrations/notion",
         "ru/integrations/connectors/data-integrations/integrations/splunk"
-      ],
-      "root": "ru/integrations/connectors/tools/data-integration-index"
+      ]
     },
     {
       "expanded": true,
       "group": "SQL-клиенты",
       "pages": [
+        "ru/integrations/connectors/sql-clients/index",
         "ru/integrations/connectors/sql-clients/sql-console",
         "ru/integrations/connectors/sql-clients/datagrip",
         "ru/integrations/connectors/sql-clients/dbeaver",
@@ -210,20 +219,18 @@
         "ru/integrations/connectors/sql-clients/jupysql",
         "ru/integrations/connectors/sql-clients/qstudio",
         "ru/integrations/connectors/sql-clients/tablum",
-        "ru/integrations/connectors/sql-clients/marimo",
-        "ru/integrations/connectors/sql-clients/cli"
-      ],
-      "root": "ru/integrations/connectors/sql-clients/index"
+        "ru/integrations/connectors/sql-clients/marimo"
+      ]
     },
     {
       "expanded": true,
       "group": "Инструменты",
       "pages": [
+        "ru/integrations/connectors/tools/index",
         "ru/integrations/connectors/tools/gui",
         "ru/integrations/connectors/tools/proxy",
         "ru/integrations/connectors/tools/third-party-libraries"
-      ],
-      "root": "ru/integrations/connectors/tools/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-connectors.svg",

@@ -35,9 +35,9 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-&quot;Ok.&quot; は [`http_server_default_response`](/ja/reference/settings/server-settings/settings#http_server_default_response) で定義されているデフォルト値で、必要に応じて変更できます。
+&quot;Ok.&quot; は [`http_server_default_response`](/ja/reference/settings/server-settings/settings/http#http_server_default_response) で定義されているデフォルト値で、必要に応じて変更できます。
 
-あわせて参照してください: [HTTP response codes caveats](#http_response_codes_caveats)。
+あわせて参照してください: [HTTPレスポンスコードに関する注意点](#http_response_codes_caveats)。
 
 <div id="web-ui">
   ## Webユーザーインターフェイス
@@ -297,7 +297,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 データ送信時には、ClickHouse の内部圧縮フォーマットを使用できます。圧縮されたデータは標準的ではないフォーマットのため、扱うには `clickhouse-compressor` プログラムが必要です。これは `clickhouse-client` パッケージとともにデフォルトでインストールされます。
 
-データの insert 効率を高めるには、[`http_native_compression_disable_checksumming_on_decompress`](/ja/reference/settings/session-settings#http_native_compression_disable_checksumming_on_decompress) 設定を使用して、サーバー側のチェックサム検証を無効にしてください。
+データの insert 効率を高めるには、[`http_native_compression_disable_checksumming_on_decompress`](/ja/reference/settings/session-settings/http#http_native_compression_disable_checksumming_on_decompress) 設定を使用して、サーバー側のチェックサム検証を無効にしてください。
 
 URL に `compress=1` を指定すると、サーバーは送信するデータを圧縮します。URL に `decompress=1` を指定すると、サーバーは `POST` method で渡されたデータを展開します。
 
@@ -316,7 +316,7 @@ URL に `compress=1` を指定すると、サーバーは送信するデータ�
 
 ClickHouse にレスポンスを圧縮させるには、リクエストに `Accept-Encoding: compression_method` header を追加してください。
 
-すべての圧縮方式で、[`http_zlib_compression_level`](/ja/reference/settings/session-settings#http_zlib_compression_level) 設定を使用してデータの圧縮レベルを設定できます。
+すべての圧縮方式で、[`http_zlib_compression_level`](/ja/reference/settings/session-settings/http#http_zlib_compression_level) 設定を使用してデータの圧縮レベルを設定できます。
 
 <Info>
   一部の HTTP クライアントは、デフォルトでサーバーからのデータを展開する場合があります (`gzip` および `deflate`) 。そのため、圧縮設定を正しく使用していても、展開後のデータを受け取ることがあります。
@@ -449,7 +449,7 @@ HTTPプロトコルでもClickHouseセッションを使用できます。これ
 
 セッションの状態を確認するには、`session_check=1` パラメータを使用します。1つのセッション内で同時に実行できるクエリは1つだけです。
 
-クエリの進行状況に関する情報は、`X-ClickHouse-Progress` レスポンスヘッダーで受け取ることができます。これを行うには、[`send_progress_in_http_headers`](/ja/reference/settings/session-settings#send_progress_in_http_headers) を有効にします。
+クエリの進行状況に関する情報は、`X-ClickHouse-Progress` レスポンスヘッダーで受け取ることができます。これを行うには、[`send_progress_in_http_headers`](/ja/reference/settings/session-settings/send#send_progress_in_http_headers) を有効にします。
 
 以下はヘッダーシーケンスの例です:
 
@@ -461,24 +461,24 @@ X-ClickHouse-Progress: {"read_rows":"1000000","read_bytes":"8000000","total_rows
 
 使用可能なヘッダーフィールドは次のとおりです。
 
-| Header field         | Description                                 |
-| -------------------- | ------------------------------------------- |
-| `read_rows`          | 読み取られた行数。                                   |
-| `read_bytes`         | 読み取られたデータ量 (バイト) 。                          |
-| `total_rows_to_read` | 読み取る予定の行の総数。                                |
-| `written_rows`       | 書き込まれた行数。                                   |
-| `written_bytes`      | 書き込まれたデータ量 (バイト) 。                          |
-| `elapsed_ns`         | クエリの実行時間 (ナノ秒) 。                            |
-| `memory_usage`       | クエリで使用されたメモリ量 (バイト) 。 (**v25.11 以降で利用可能**)  |
+| Header field         | Description                                |
+| -------------------- | ------------------------------------------ |
+| `read_rows`          | 読み取られた行数。                                  |
+| `read_bytes`         | 読み取られたデータ量 (バイト) 。                         |
+| `total_rows_to_read` | 読み取る予定の行の総数。                               |
+| `written_rows`       | 書き込まれた行数。                                  |
+| `written_bytes`      | 書き込まれたデータ量 (バイト) 。                         |
+| `elapsed_ns`         | クエリの実行時間 (ナノ秒) 。                           |
+| `memory_usage`       | クエリで使用されたメモリ量 (バイト) 。 (**v25.11 以降で利用可能**) |
 
 実行中のリクエストは、HTTP接続が失われても自動的には停止しません。パースとデータのフォーマットはサーバー側で行われるため、ネットワーク越しでは非効率になる場合があります。
 
 次のオプションパラメーターがあります。
 
-| Parameters             | Description                                                                                                    |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `query_id` (optional)  | クエリ ID として渡せます (任意の文字列) 。[`replace_running_query`](/ja/reference/settings/session-settings#replace_running_query) |
-| `quota_key` (optional) | クォータキーとして渡せます (任意の文字列) 。[&quot;クォータ&quot;](/ja/concepts/features/configuration/server-config/quotas)              |
+| Parameters             | Description                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `query_id` (optional)  | クエリ ID として渡せます (任意の文字列) 。[`replace_running_query`](/ja/reference/settings/session-settings/replace-running-query#replace_running_query) |
+| `quota_key` (optional) | クォータキーとして渡せます (任意の文字列) 。[&quot;クォータ&quot;](/ja/concepts/features/configuration/server-config/quotas)                                    |
 
 HTTP インターフェイスでは、クエリのために外部データ (外部一時テーブル) を渡すこともできます。詳細については、[&quot;クエリ処理用の外部データ&quot;](/ja/reference/engines/table-engines/special/external-data) を参照してください。
 
@@ -493,12 +493,12 @@ HTTP インターフェイスでは、クエリのために外部データ (外�
 
 次の設定も使用できます。
 
-* [`http_response_buffer_size`](/ja/reference/settings/session-settings#http_response_buffer_size)
-* [`http_wait_end_of_query`](/ja/reference/settings/session-settings#http_wait_end_of_query)
+* [`http_response_buffer_size`](/ja/reference/settings/session-settings/http-response#http_response_buffer_size)
+* [`http_wait_end_of_query`](/ja/reference/settings/session-settings/http#http_wait_end_of_query)
 
 `buffer_size` は、サーバーのメモリ内で結果をバッファリングするバイト数を決定します。結果のボディがこのしきい値を超える場合、バッファはHTTPチャネルに書き込まれ、残りのデータはHTTPチャネルに直接送信されます。
 
-レスポンス全体が確実にバッファリングされるようにするには、`wait_end_of_query=1` を設定します。この場合、メモリに格納されないデータは、一時的なサーバーファイルにバッファリングされます。
+レスポンス全体が確実にバッファリングされるようにするには、`wait_end_of_query=1` を設定します。この場合、メモリに格納されないデータは、一時サーバーファイルにバッファリングされます。
 
 たとえば:
 
@@ -566,7 +566,7 @@ Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while 
 
 この挙動は、`Native`、`TSV`、`JSON` など、どのフォーマットを使用しているかに関係ありません。エラーメッセージは常にレスポンスストリームの途中に現れます。
 
-この問題は、`wait_end_of_query=1` ([Response Buffering](#response-buffering)) を有効にすることで緩和できます。この場合、HTTP ヘッダー の送信はクエリ全体の処理が完了するまで遅延されます。ただし、これでも問題が完全に解決するわけではありません。結果は依然として [`http_response_buffer_size`](/ja/reference/settings/session-settings#http_response_buffer_size) の範囲内に収まる必要があり、さらに [`send_progress_in_http_headers`](/ja/reference/settings/session-settings#send_progress_in_http_headers) などの設定によって ヘッダー の送信遅延が妨げられることもあるためです。
+この問題は、`wait_end_of_query=1` ([レスポンスのバッファリング](#response-buffering)) を有効にすることで緩和できます。この場合、HTTP ヘッダー の送信はクエリ全体の処理が完了するまで遅延されます。ただし、これでも問題が完全に解決するわけではありません。結果は依然として [`http_response_buffer_size`](/ja/reference/settings/session-settings/http-response#http_response_buffer_size) の範囲内に収まる必要があり、さらに [`send_progress_in_http_headers`](/ja/reference/settings/session-settings/send#send_progress_in_http_headers) などの設定によって ヘッダー の送信遅延が妨げられることもあるためです。
 
 <Tip>
   すべてのエラーを捕捉する唯一の方法は、必要なフォーマットでパースする前に HTTP ボディ を解析することです。
@@ -818,9 +818,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 `predefined_query_handler` では、`Settings` と `query_params` の値を設定できます。`predefined_query_handler` 型では `query` を設定できます。
 
-`query` の値は `predefined_query_handler` 用の事前定義クエリで、HTTP リクエストが一致すると ClickHouse によって実行され、その結果が返されます。これは必須の設定です。
+`query` の値は `predefined_query_handler` 用の事前定義済みクエリで、HTTP リクエストが一致すると ClickHouse によって実行され、その結果が返されます。これは必須の設定です。
 
-次の例では、[`max_threads`](/ja/reference/settings/session-settings#max_threads) および [`max_final_threads`](/ja/reference/settings/session-settings#max_final_threads) の設定値を定義し、その後 system table にクエリして、これらの設定が正しく適用されたかどうかを確認します。
+次の例では、[`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) および [`max_final_threads`](/ja/reference/settings/session-settings/max#max_final_threads) の設定値を定義し、その後 system table にクエリして、これらの設定が正しく適用されたかどうかを確認します。
 
 <Note>
   `query`、`play`、`ping` などのデフォルトの `handlers` を維持するには、`<defaults/>` ルールを追加してください。
@@ -902,7 +902,7 @@ curl -X POST 'http://localhost:8123/api/events?id=123' \
 
 ClickHouse は、HTTP リクエストの URL から `query_param_name` に対応する値を取り出して実行します。`query_param_name` のデフォルト値は `/query` です。これは任意の設定です。設定ファイルに定義がない場合、このパラメータは渡されません。
 
-この機能を試すために、次の例では [`max_threads`](/ja/reference/settings/session-settings#max_threads) と `max_final_threads` の値を定義し、設定が正常に反映されたかどうかを確認する `queries` を実行します。
+この機能を試すために、次の例では [`max_threads`](/ja/reference/settings/session-settings/max-threads#max_threads) と `max_final_threads` の値を定義し、設定が正常に反映されたかどうかを確認する `queries` を実行します。
 
 例:
 
@@ -1186,7 +1186,7 @@ ClickHouse では、設定可能なあらゆる種類のハンドラーに適用
 
 HTTP 経由でクエリを実行している際、データの一部がすでに送信された後で例外が発生することがあります。通常、例外はプレーンテキストでクライアントに送信されます。
 データの出力に特定のデータフォーマットを使用していた場合、その出力は指定したデータフォーマットとしては無効になる可能性があります。
-これを防ぐには、設定 [`http_write_exception_in_output_format`](/ja/reference/settings/session-settings#http_write_exception_in_output_format) (デフォルトでは無効) を使用します。この設定により、ClickHouse は指定したフォーマットで例外を書き出します (現在は XML および JSON* フォーマットをサポートしています) 。
+これを防ぐには、設定 [`http_write_exception_in_output_format`](/ja/reference/settings/session-settings/http#http_write_exception_in_output_format) (デフォルトでは無効) を使用します。この設定により、ClickHouse は指定したフォーマットで例外を書き出します (現在は XML および JSON* フォーマットをサポートしています) 。
 
 例:
 

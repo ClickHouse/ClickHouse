@@ -45,6 +45,8 @@ Pour désactiver le paramètre `asynchronous_metric_log`, vous devez créer le f
 
 Utilise l’adresse d’origine pour authentifier les clients connectés via un proxy.
 
+* **Par défaut :** `false`
+
 <Note>
   Ce paramètre doit être utilisé avec une extrême prudence, car les adresses transmises peuvent être facilement usurpées ; les serveurs qui acceptent ce mode d’authentification ne doivent pas être accessibles directement, mais uniquement via un proxy de confiance.
 </Note>
@@ -135,6 +137,8 @@ Contient des informations sur toutes les tâches d’arrière-plan exécutées p
 Facteur de coût du type d&#39;authentification `bcrypt_password`, qui utilise l&#39;[algorithme Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 Le facteur de coût définit la quantité de calculs et le temps nécessaires pour calculer le hachage et vérifier le mot de passe.
 
+* **Par défaut :** `12`
+
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
@@ -142,14 +146,18 @@ Le facteur de coût définit la quantité de calculs et le temps nécessaires po
 <Warning>
   Pour les applications nécessitant une authentification fréquente,
   envisagez d’autres méthodes d’authentification en raison du
-  surcoût de calcul de bcrypt avec des facteurs de travail élevés.
+  surcoût de calcul de bcrypt avec des facteurs de coût élevés.
 </Warning>
 
 <div id="table_engines_require_grant">
   ## table_engines_require_grant
 </div>
 
+<CloudNotSupportedBadge />
+
 Si ce paramètre est défini sur true, les utilisateurs doivent disposer d&#39;un privilège pour créer une table avec un moteur spécifique, par ex. `GRANT TABLE ENGINE ON TinyLog to user`.
+
+* **Par défaut :** `false`
 
 <Note>
   Par défaut, pour assurer la rétrocompatibilité, la création d&#39;une table avec un moteur de table spécifique ne tient pas compte du privilège, mais vous pouvez modifier ce comportement en définissant ce paramètre sur true.
@@ -198,7 +206,7 @@ Paramètres de compression des données pour les tables utilisant le moteur [Mer
 * `min_part_size` – Taille minimale d’une partie de données.
 * `min_part_size_ratio` – Ratio entre la taille de la partie de données et celle de la table.
 * `method` – Méthode de compression. Valeurs acceptées : `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
-* `level` – Niveau de compression. Voir [Codecs](/fr/reference/statements/create/table#general-purpose-codecs).
+* `level` – Niveau de compression. Voir [Codecs](/fr/reference/statements/create/table/codec#general-purpose-codecs).
 
 <Note>
   Vous pouvez configurer plusieurs sections `<case>`.
@@ -230,7 +238,7 @@ Paramètres de compression des données pour les tables utilisant le moteur [Mer
   ## chiffrement
 </div>
 
-Configure une commande permettant d&#39;obtenir une clé à utiliser avec les [codecs de chiffrement](/fr/reference/statements/create/table#encryption-codecs). La ou les clés doivent être écrites dans des variables d&#39;environnement ou définies dans le fichier de configuration.
+Configure une commande permettant d&#39;obtenir une clé à utiliser avec les [codecs de chiffrement](/fr/reference/statements/create/table/codec#encryption-codecs). La ou les clés doivent être écrites dans des variables d&#39;environnement ou définies dans le fichier de configuration.
 
 Les clés peuvent être hexadécimales ou prendre la forme de chaînes de 16 octets.
 
@@ -387,6 +395,8 @@ Configure la limite souple de taille du fichier core dump.
 </div>
 
 Profil de paramètres par défaut. Les profils de paramètres figurent dans le fichier indiqué par le paramètre `user_config`.
+
+* **Par défaut :** `default`
 
 **Exemple**
 
@@ -576,6 +586,8 @@ Exemple :
 La page affichée par défaut lorsque vous accédez au serveur HTTP(s) de ClickHouse.
 La valeur par défaut est &quot;Ok.&quot; (avec un caractère de saut de ligne à la fin)
 
+* **Par défaut :** `"Ok.\n"`
+
 **Exemple**
 
 Ouvre `https://tabix.io/` lorsque vous accédez à `http://localhost: http_port`.
@@ -640,6 +652,8 @@ Durée d’expiration de HSTS, en secondes.
 
 Restriction des hôtes autorisés à échanger des données entre les serveurs ClickHouse.
 Si Keeper est utilisé, la même restriction s&#39;applique à la communication entre différentes instances de Keeper.
+
+* **Par défaut :** `listen_host`
 
 <Note>
   Par défaut, la valeur est celle du paramètre [`listen_host`](#listen_host).
@@ -1151,7 +1165,7 @@ Nom du groupe de répliques pour la base de données Replicated.
 Le cluster créé par la base de données Replicated sera constitué de répliques appartenant au même groupe.
 Les requêtes DDL n&#39;attendront que les répliques du même groupe.
 
-Valeur vide par défaut.
+* **Par défaut :** `""`
 
 **Exemple**
 
@@ -1392,10 +1406,11 @@ Paramètres :
 * `events` – Expose les métriques de la table [system.events](/fr/reference/system-tables/events).
 * `asynchronous_metrics` – Expose les valeurs actuelles des métriques de la table [system.asynchronous&#95;metrics](/fr/reference/system-tables/asynchronous_metrics).
 * `errors` - Expose le nombre d’erreurs par code d’erreur survenues depuis le dernier redémarrage du serveur. Ces informations peuvent également être obtenues à partir de [system.errors](/fr/reference/system-tables/errors).
+* `labels` – Libellés constants ajoutés à chaque métrique exposée. Chaque élément enfant définit un libellé : le nom de l’élément est le nom du libellé (il doit correspondre à `[a-zA-Z_][a-zA-Z0-9_]*`) et la valeur de l’élément est la valeur du libellé. Les valeurs de libellé prennent en charge les substitutions de config standard, telles que l’attribut `from_env`. Un nom de libellé est rejeté s’il commence par `__` (réservé par Prometheus) ou s’il entre en conflit avec un libellé que cet endpoint écrit déjà pour l’une de ses sections activées — sinon, un échantillon porterait deux fois le même nom de libellé. L’ensemble réservé dépend donc de la surface d’exportation active de l’endpoint : `le` lorsque `histograms` est activé ; les libellés de `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) lorsque `info` est activé ; et tout libellé utilisé par un histogramme exposé ou une famille de métriques dimensionnelles (par exemple `group`, `direction` ou `operation_type`) lorsque `histograms`/`dimensional_metrics` est activé. Comme cela dépend de ce que l’endpoint expose réellement, un nom peut être valide pour un endpoint mais rejeté pour un autre — par exemple, un endpoint Keeper `keeper_metrics_only` n’expose que les familles `keeper_*` ; les libellés utilisés uniquement par les familles de serveur y sont donc acceptés.
 
 **Exemple**
 
-```xml highlight={5-12}
+```xml highlight={5-16}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1407,6 +1422,10 @@ Paramètres :
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
+        <labels>
+            <environment>production</environment>
+            <shard from_env="SHARD_NAME"></shard>
+        </labels>
     </prometheus>
 </clickhouse>
 ```
@@ -1421,11 +1440,13 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-Paramètre de journalisation des requêtes reçues lorsque le paramètre [log&#95;queries=1](/fr/reference/settings/session-settings) est activé.
+Paramètre de journalisation des requêtes reçues lorsque le paramètre [log&#95;queries=1](/fr/reference/settings/session-settings/log-queries#log_queries) est activé.
 
 Les requêtes sont consignées dans la table [system.query&#95;log](/fr/reference/system-tables/query_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table via le paramètre `table` (voir ci-dessous).
 
 <SystemLogParameters />
+
+Le paramètre `enable_user_query_log` (activé par défaut) crée [`system.user_query_log`](/fr/reference/system-tables/user_query_log), qui permet à chaque utilisateur de voir ses propres enregistrements de la table de journal des requêtes configurée sans nécessiter d&#39;accès à la table elle-même. Cela ne fonctionne que lorsque le journal des requêtes est stocké localement : si `engine` délègue à un autre serveur (par exemple, `Distributed`), désactivez `enable_user_query_log`, car `system.user_query_log` ne peut pas appliquer la vérification des accès par utilisateur au-delà de la frontière d&#39;un serveur utilisant le protocole ClickHouse et refuse de lire depuis un tel backend.
 
 Si la table n&#39;existe pas, ClickHouse la crée. Si la structure du journal des requêtes a changé lors de la mise à jour du serveur ClickHouse, la table utilisant l&#39;ancienne structure est renommée, et une nouvelle table est créée automatiquement.
 
@@ -1441,6 +1462,7 @@ Si la table n&#39;existe pas, ClickHouse la crée. Si la structure du journal de
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -1516,7 +1538,7 @@ Les paramètres suivants sont disponibles :
   ## query_thread_log
 </div>
 
-Paramètre de journalisation des threads des requêtes reçues lorsque le paramètre [log&#95;query&#95;threads=1](/fr/reference/settings/session-settings#log_query_threads) est activé.
+Paramètre de journalisation des threads des requêtes reçues lorsque le paramètre [log&#95;query&#95;threads=1](/fr/reference/settings/session-settings/log-query#log_query_threads) est activé.
 
 Les requêtes sont consignées dans la table [system.query&#95;thread&#95;log](/fr/reference/system-tables/query_thread_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table via le paramètre `table` (voir ci-dessous).
 
@@ -1543,7 +1565,7 @@ Si la table n’existe pas, ClickHouse la crée. Si la structure du journal des 
   ## query_views_log
 </div>
 
-Paramètre de journalisation des vues (en direct, matérialisées, etc.) en fonction des requêtes reçues avec le paramètre [log&#95;query&#95;views=1](/fr/reference/settings/session-settings#log_query_views).
+Paramètre de journalisation des vues (en direct, matérialisées, etc.) en fonction des requêtes reçues avec le paramètre [log&#95;query&#95;views=1](/fr/reference/settings/session-settings/log-query#log_query_views).
 
 Les requêtes sont consignées dans la table [system.query&#95;views&#95;log](/fr/reference/system-tables/query_views_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table à l’aide du paramètre `table` (voir ci-dessous).
 
@@ -1619,7 +1641,7 @@ Le fichier de configuration du serveur par défaut `config.xml` contient la sect
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>false</symbolize>
+    <symbolize>true</symbolize>
 </trace_log>
 ```
 
@@ -1686,6 +1708,36 @@ Le fichier de configuration du serveur `config.xml` par défaut contient la sect
     <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
+```
+
+<div id="create_union_system_log_tables">
+  ## create_union_system_log_tables
+</div>
+
+Demande la création de tables `all_...` à côté des tables de logs système (`system.all_query_log` pour `system.query_log`, `system.all_text_log` pour `system.text_log`, etc.). Une telle table est l’union de la table de logs correspondante, de ses versions après rotation (`query_log_0`, `query_log_1`, ...) et/ou de ces mêmes tables sur toutes les répliques d’un cluster. Elle permet de les interroger toutes en une seule fois sans avoir à retenir des constructions telles que `clusterAllReplicas(default, merge(system, '^query_log'))`.
+
+Cette section est facultative. Si elle est présente, au moins l’un des paramètres suivants doit être spécifié :
+
+| Paramètre              | Description                                                                                                                                                                                                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `merge_rotated_tables` | Si `true`, la table `all_...` sélectionne les données de la table de logs et de ses versions après rotation à l’aide de la fonction de table `merge`.                                                                                                                                         |
+| `cluster`              | Si ce paramètre est spécifié, la table `all_...` sélectionne les données de toutes les répliques de ce cluster à l’aide de la fonction de table `clusterAllReplicas` (avec `SETTINGS skip_unavailable_shards = 1`, afin que les répliques indisponibles ne fassent pas échouer les requêtes). |
+
+Si les deux paramètres sont spécifiés, la table est l’union des tables après rotation sur toutes les répliques du cluster.
+
+Cette option s’applique à toutes les tables de logs système ; elle ne permet pas de définir une configuration différente pour chaque log système. Les tables sont créées dans la même base de données que les tables de logs système lors du premier flush de chaque log et sont automatiquement recréées lorsque la structure de la table de logs change (lors d’une rotation). Elles n’ont pas d’état ; vous pouvez donc les supprimer à tout moment sans risque. La création n’est prise en charge que pour les moteurs de base de données `Atomic`, `Replicated` et `Shared`.
+
+<Note>
+  Lorsque le paramètre `cluster` est utilisé, la définition de la table fait référence au cluster, qui doit exister pour que la table puisse être chargée. Si vous supprimez le cluster de la configuration, supprimez également les tables `all_...` (elles seront recréées conformément à la nouvelle configuration lors du prochain flush).
+</Note>
+
+**Exemple**
+
+```xml
+<create_union_system_log_tables>
+    <merge_rotated_tables>true</merge_rotated_tables>
+    <cluster>default</cluster>
+</create_union_system_log_tables>
 ```
 
 <div id="custom_cached_disks_base_directory">
@@ -1806,7 +1858,7 @@ Pour la valeur de l’attribut `incl`, consultez la section &quot;[Fichiers de c
 
 **Voir aussi**
 
-* [skip&#95;unavailable&#95;shards](/fr/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/fr/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [Découverte du cluster](/fr/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Moteur de base de données Replicated](/fr/reference/engines/database-engines/replicated)
 
@@ -1850,7 +1902,7 @@ Le fuseau horaire est nécessaire pour les conversions entre les formats String 
 
 **Voir aussi**
 
-* [session&#95;timezone](/fr/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/fr/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -1870,7 +1922,7 @@ Port de communication avec les clients via le protocole TCP.
 
 Port TCP utilisé pour les communications sécurisées avec les clients. À utiliser avec les paramètres [OpenSSL](#openSSL).
 
-**Valeur par défaut**
+* **Par défaut :** `9440`
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
@@ -1974,7 +2026,7 @@ Paramètres des améliorations facultatives du système de contrôle d’accès.
 | `select_from_information_schema_requires_grant` | Définit si `SELECT * FROM information_schema.<table>` nécessite des privilèges ou peut être exécuté par n’importe quel utilisateur. Si cette valeur est définie sur true, cette requête nécessite alors `GRANT SELECT ON information_schema.<table>`, comme pour les tables ordinaires.                                                                                                                                                                                                                                                                                                   | `true`  |
 | `select_from_system_db_requires_grant`          | Définit si `SELECT * FROM system.<table>` nécessite des privilèges ou peut être exécuté par n’importe quel utilisateur. Si cette valeur est définie sur true, cette requête nécessite alors `GRANT SELECT ON system.<table>`, comme pour les tables non système. Exceptions : quelques tables système (`tables`, `columns`, `databases` et certaines tables constantes comme `one`, `contributors`) restent accessibles à tous ; et si un privilège `SHOW` (par exemple `SHOW USERS`) a été accordé, alors la table système correspondante (c’est-à-dire `system.users`) sera accessible. | `true`  |
 | `settings_constraints_replace_previous`         | Définit si une contrainte dans un profil de paramètres, pour un paramètre donné, annule les effets de la contrainte précédente (définie dans d’autres profils) pour ce paramètre, y compris pour les champs qui ne sont pas définis par la nouvelle contrainte. Cela active également le type de contrainte `changeable_in_readonly`.                                                                                                                                                                                                                                                     | `true`  |
-| `table_engines_require_grant`                   | Définit si la création d’une table avec un moteur de table spécifique nécessite un privilège.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `false` |
+| `table_engines_require_grant`                   | Définit si la création d’une table avec un moteur de table spécifique nécessite un privilège. Non pris en charge dans ClickHouse Cloud.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `false` |
 | `throw_on_unmatched_row_policies`               | Définit si la lecture d’une table doit lever une exception lorsque la table possède des politiques de ligne, mais qu’aucune d’entre elles ne concerne l’utilisateur courant                                                                                                                                                                                                                                                                                                                                                                                                               | `false` |
 | `users_without_row_policies_can_read_rows`      | Définit si les utilisateurs sans politiques de ligne permissives peuvent tout de même lire des lignes à l’aide d’une requête `SELECT`. Par exemple, s’il existe deux utilisateurs A et B et qu’une politique de ligne est définie uniquement pour A, alors si ce paramètre vaut true, l’utilisateur B verra toutes les lignes. Si ce paramètre vaut false, l’utilisateur B ne verra aucune ligne.                                                                                                                                                                                         | `true`  |
 
@@ -2128,7 +2180,7 @@ Si [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_head
 </div>
 
 Gère l’exécution des [requêtes DDL distribuées](/fr/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) sur le cluster.
-Fonctionne uniquement si [ZooKeeper](/fr/reference/settings/server-settings/settings#zookeeper) est activé.
+Fonctionne uniquement si [ZooKeeper](/fr/reference/settings/server-settings/settings/zookeeper#zookeeper) est activé.
 
 Les paramètres configurables dans `<distributed_ddl>` comprennent :
 
@@ -2185,6 +2237,8 @@ Chemin du dossier dans lequel un serveur ClickHouse stocke les configurations de
 
 Indique si les types de mot de passe en clair (non sécurisés) sont autorisés ou non.
 
+* **Par défaut :** `true`
+
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
@@ -2194,6 +2248,8 @@ Indique si les types de mot de passe en clair (non sécurisés) sont autorisés 
 </div>
 
 Indique si le type de mot de passe non sécurisé no&#95;password est autorisé ou non.
+
+* **Par défaut :** `true`
 
 ```xml
 <allow_no_password>1</allow_no_password>
@@ -2205,6 +2261,8 @@ Indique si le type de mot de passe non sécurisé no&#95;password est autorisé 
 
 Interdit de créer un utilisateur sans mot de passe, sauf si &#39;IDENTIFIED WITH no&#95;password&#39; est explicitement spécifié.
 
+* **Par défaut :** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -2214,6 +2272,8 @@ Interdit de créer un utilisateur sans mot de passe, sauf si &#39;IDENTIFIED WIT
 </div>
 
 Délai d’expiration par défaut de la session, en secondes.
+
+* **Par défaut :** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
@@ -2228,9 +2288,14 @@ Définit le type de mot de passe à appliquer automatiquement dans les requêtes
 Les valeurs acceptées sont :
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **Par défaut :** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -2246,7 +2311,7 @@ Section du fichier de configuration contenant les paramètres suivants :
 * chemin d’accès au dossier où sont stockés les utilisateurs créés par des commandes SQL ;
 * chemin du nœud ZooKeeper où sont stockés et répliqués les utilisateurs créés par des commandes SQL.
 
-Si cette section est spécifiée, les chemins de [users&#95;config](/fr/reference/settings/server-settings/settings#users_config) et de [access&#95;control&#95;path](/fr/reference/settings/server-settings/settings#access_control_path) ne seront pas utilisés.
+Si cette section est spécifiée, les chemins de [users&#95;config](/fr/reference/settings/server-settings/settings/users#users_config) et de [access&#95;control&#95;path](/fr/reference/settings/server-settings/settings/access-control#access_control_path) ne seront pas utilisés.
 
 La section `user_directories` peut contenir un nombre quelconque d’éléments ; l’ordre des éléments détermine leur priorité (plus un élément est placé haut, plus sa priorité est élevée).
 
@@ -2462,6 +2527,8 @@ Cela permet également d&#39;utiliser une combinaison de types de résolveur.
 
 Par défaut, le tunneling (c.-à-d. `HTTP CONNECT`) est utilisé pour effectuer des requêtes `HTTPS` via un proxy `HTTP`. Ce paramètre permet de le désactiver.
 
+* **Par défaut :** `false`
+
 **no&#95;proxy**
 
 Par défaut, toutes les requêtes passent par le proxy. Pour le désactiver pour des hôtes spécifiques, la variable `no_proxy` doit être définie.
@@ -2491,6 +2558,8 @@ Il en va de même pour GitLab, même s’il comporte un point initial. `gitlab.c
 </div>
 
 Répertoire utilisé pour stocker toutes les requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`. Par défaut, le dossier `/workload/` situé dans le répertoire de travail du serveur est utilisé.
+
+* **Par défaut :** `<path>/workload/`
 
 **Exemple**
 

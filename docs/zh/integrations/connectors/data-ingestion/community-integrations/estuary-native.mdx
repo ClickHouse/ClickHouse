@@ -1,0 +1,122 @@
+---
+sidebar_label: '直接物化连接器'
+sidebar_position: 4
+sidebarTitle: '直接物化连接器'
+slug: /integrations/estuary/native
+description: '使用原生协议连接器集成 Estuary 和 ClickHouse'
+title: '从 Estuary 到 ClickHouse 的直接物化'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://estuary.dev'
+keywords: ['estuary', '数据摄取', 'etl', '管道', '数据集成']
+---
+
+import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Estuary 提供可直接将数据物化到 ClickHouse 的连接器，使用 ClickHouse 的[原生协议](/zh/interfaces/tcp)和[原生格式](/zh/interfaces/formats/Native)。
+
+借助此连接器，Estuary 可以：
+
+* 将数据物化到自托管和 ClickHouse Cloud 实例
+* 自动处理创建表、schema 演进等任务
+* 支持软删除和硬删除
+* 对常规合并更新使用 `ReplacingMergeTree`，对增量更新使用 `MergeTree`
+* 提供恰好一次交付保障
+
+如需了解 ClickPipes 工作流，请参阅 [Estuary 的 Kafka ClickPipe 集成](/zh/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes)。
+
+<div id="setup-guide">
+  ## 设置指南
+</div>
+
+**前置条件**
+
+您需要：
+
+* 一个 [Estuary 账户](https://dashboard.estuary.dev/register)
+* Estuary 中一个或多个从所需数据源拉取数据的 [**捕获**](https://docs.estuary.dev/concepts/captures/)
+* 自托管的 ClickHouse 实例或 ClickHouse Cloud 账户
+* 具有登录凭据的 ClickHouse 数据库用户
+
+<Steps>
+  <Step title="配置 ClickHouse 集成" id="1-configure-clickhouse">
+    要设置 Estuary 的 ClickHouse 连接器，您需要从 ClickHouse 实例获取一些信息，并配置用户权限。
+
+    1. 复制数据库的主机端点。
+
+       如果启用了 TLS，请使用端口 **9440**；如果禁用了 TLS，请使用端口 **9000**。
+
+       主机和端口共同构成需要提供给 Estuary 的**地址**。
+
+    2. 向 Estuary 要访问的数据库用户授予权限。
+
+       为自动创建和管理表，Estuary 需要目标数据库上的 `CREATE`、`SELECT`、`INSERT` 等权限，以及元数据发现和分区管理权限。
+
+       运行以下 SQL 命令即可授予所有必需权限。请将 `<database>` 和 `<user>` 替换为您自己的信息：
+
+       ```sql
+       -- 访问目标数据库的权限：CREATE TABLE、DROP TABLE、SELECT、INSERT、TRUNCATE 等。
+       GRANT ALL ON <database>.* TO <user>;
+
+       -- 用于元数据发现和分区管理的系统表访问权限。
+       -- 上述数据库授权不包含这些权限。
+       GRANT SELECT ON system.columns TO <user>;
+       GRANT SELECT ON system.parts TO <user>;
+       GRANT SELECT ON system.tables TO <user>;
+       ```
+
+    3. (可选) 将用户对系统表的访问权限限制为仅限目标数据库。
+
+    您可以使用行级策略实现。例如：
+
+    ```sql
+    CREATE ROW POLICY estuary_columns ON system.columns FOR SELECT USING database = '<database>' TO <user>;
+    CREATE ROW POLICY estuary_parts ON system.parts FOR SELECT USING database = '<database>' TO <user>;
+    CREATE ROW POLICY estuary_tables ON system.tables FOR SELECT USING database = '<database>' TO <user>;
+    ```
+
+    随后，您可以前往 Estuary 完成设置。
+  </Step>
+
+  <Step title="创建 Estuary 物化" id="2-create-an-estuary-materialization">
+    1. 在 Estuary 控制台中，前往 [Destinations](https://dashboard.estuary.dev/materializations) 页面。
+    2. 单击 **+ New Materialization**。
+    3. 选择 **ClickHouse** 连接器。
+    4. 填写 **Materialization Details** 部分：
+       * 为物化指定唯一名称
+       * 选择数据平面 (云提供商和区域)
+    5. 填写 **Endpoint Config** 信息，使 Estuary 能够连接到您的 ClickHouse 实例：
+
+       * **地址：**实例的主机和端口
+       * **数据库：**目标数据库名称
+       * **身份验证：**数据库用户的用户名和密码
+
+       您还可以配置可选设置，例如是否使用硬删除及所使用的 SSL 模式。
+  </Step>
+
+  <Step title="配置源集合" id="3-configure-source-collections">
+    在 **Source Collections** 部分中，选择要物化到 ClickHouse 的数据源。
+
+    1. 关联现有的**捕获**，或添加要物化到 ClickHouse 的单个数据集合。
+    2. 如有需要，从列表中选择数据集合进行进一步配置。可自定义的选项包括：
+       * 为集合指定其他表名
+       * 选择集合的合并行为 (是否使用增量更新模式)
+       * 自定义字段选择行为，以控制要物化的字段
+    3. 确认数据会按预期物化到 ClickHouse 后，单击 **Next** 和 **Save and Publish**。
+
+    Estuary 将开始将所选集合中的数据回填到 ClickHouse，随后持续流式传输更新。
+  </Step>
+</Steps>
+
+<div id="additional-resources">
+  ## 其他资源
+</div>
+
+如需了解如何通过 Estuary 设置 ClickHouse 连接器，请参阅 Estuary 文档：
+
+* 参阅 Estuary 的 [ClickHouse 物化文档](https://docs.estuary.dev/reference/Connectors/materialization-connectors/ClickHouse/)。
+* 除本指令中提供的基于 UI 的工作流外，您还可以通过命令行客户端使用 Estuary 管理管道配置。要了解如何以编程方式使用 Estuary，请参阅 Estuary 的 [`flowctl` 指南](https://docs.estuary.dev/guides/flowctl/ci-cd/)。

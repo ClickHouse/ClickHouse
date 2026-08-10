@@ -1,13 +1,13 @@
 ---
 description: 'قاعدة بيانات نظام توفّر عرضًا شبه موحّد وغير معتمد على نظام إدارة قواعد
-  البيانات لبيانات التعريف الخاصة بكائنات قاعدة البيانات.'
+  البيانات للبيانات الوصفية الخاصة بكائنات قاعدة البيانات.'
 keywords: ['system database', 'information_schema']
 slug: /operations/system-tables/information_schema
 title: 'INFORMATION_SCHEMA'
 doc_type: 'reference'
 ---
 
-تُعد `INFORMATION_SCHEMA` (أو: `information_schema`) قاعدة بيانات نظام توفّر [عرضًا غير معتمد على نظام إدارة قواعد البيانات](https://en.wikipedia.org/wiki/Information_schema) وموحّدًا إلى حدٍّ ما لبيانات التعريف الخاصة بكائنات قاعدة البيانات. وتُعد طرق العرض في `INFORMATION_SCHEMA` عمومًا أقل من جداول النظام العادية، لكن يمكن للأدوات استخدامها للحصول على معلومات أساسية بطريقة موحّدة عبر مختلف أنظمة إدارة قواعد البيانات. ومن المفترض أن تتطور بنية طرق العرض ومحتواها في `INFORMATION_SCHEMA` بطريقة متوافقة مع الإصدارات السابقة، أي لا تُضاف إلا وظائف جديدة، من دون تغيير الوظائف الحالية أو إزالتها. ومن ناحية التنفيذ الداخلي، تُطابِق طرق العرض في `INFORMATION_SCHEMA` عادةً جداول نظام عادية مثل [system.columns](/ar/reference/system-tables/columns) و[system.databases](/ar/reference/system-tables/databases) و[system.tables](/ar/reference/system-tables/tables).
+تُعد `INFORMATION_SCHEMA` (أو: `information_schema`) قاعدة بيانات نظام توفّر [عرضًا غير معتمد على نظام إدارة قواعد البيانات](https://en.wikipedia.org/wiki/Information_schema) وموحّدًا إلى حدٍّ ما للبيانات الوصفية الخاصة بكائنات قاعدة البيانات. وتُعد طرق العرض في `INFORMATION_SCHEMA` عمومًا أقل من جداول النظام العادية، لكن يمكن للأدوات استخدامها للحصول على معلومات أساسية بطريقة موحّدة عبر مختلف أنظمة إدارة قواعد البيانات. ومن المفترض أن تتطور بنية طرق العرض ومحتواها في `INFORMATION_SCHEMA` بطريقة متوافقة مع الإصدارات السابقة، أي لا تُضاف إلا وظائف جديدة، من دون تغيير الوظائف الحالية أو إزالتها. ومن ناحية التنفيذ الداخلي، تُطابِق طرق العرض في `INFORMATION_SCHEMA` عادةً جداول نظام عادية مثل [system.columns](/ar/reference/system-tables/columns) و[system.databases](/ar/reference/system-tables/databases) و[system.tables](/ar/reference/system-tables/tables).
 
 ```sql
 SHOW TABLES FROM INFORMATION_SCHEMA;
@@ -18,6 +18,7 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
+│ COLLATIONS              │
 │ COLUMNS                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
@@ -38,6 +39,7 @@ SHOW TABLES FROM information_schema;
 يحتوي `INFORMATION_SCHEMA` على طرق العرض التالية:
 
 * [COLUMNS](#columns)
+* [COLLATIONS](#collations)
 * [KEY&#95;COLUMN&#95;USAGE](#key_column_usage)
 * [REFERENTIAL&#95;CONSTRAINTS](#referential_constraints)
 * [SCHEMATA](#schemata)
@@ -380,3 +382,19 @@ referenced_column_name:        ᴺᵁᴸᴸ
 </div>
 
 يوفّر معلومات عن فهارس الجدول. ويُرجِع حاليًا نتيجة فارغة (من دون أي صفوف)، وهو ما يكفي فقط لضمان التوافق مع أدوات الجهات الخارجية مثل Tableau Online.
+
+<div id="collations">
+  ## COLLATIONS
+</div>
+
+يوفّر معلومات عن قواعد الترتيب المتاحة. يتضمن قواعد الترتيب من [system.collations](/ar/reference/system-tables/collations)، بالإضافة إلى صفّين للتوافق مع MySQL: `utf8mb4_0900_ai_ci` — قاعدة الترتيب التي يعلن عنها بروتوكول MySQL أثناء المصافحة، وفي `SCHEMATA.DEFAULT_COLLATION_NAME` و`TABLES.TABLE_COLLATION` — و`binary` — قاعدة الترتيب الشكلية التي يعيّنها بروتوكول MySQL للأعمدة الرقمية وغيرها من الأعمدة غير النصية في البيانات الوصفية لمجموعة النتائج — حتى يتمكن العميل المتوافق مع MySQL، الذي يتبع قواعد الترتيب المُعلن عنها، من العثور عليها في هذا العرض.
+
+الأعمدة:
+
+* `collation_name` ([String](/ar/reference/data-types/string)) — اسم قاعدة الترتيب.
+* `character_set_name` ([Nullable](/ar/reference/data-types/nullable)([String](/ar/reference/data-types/string))) — مجموعة الأحرف المرتبطة (`utf8mb4` لـ `utf8mb4_0900_ai_ci`، و`binary` لـ `binary`، وإلا `NULL`). يُوفَّر للتوافق مع MySQL.
+* `id` ([Nullable](/ar/reference/data-types/nullable)([UInt64](/ar/reference/data-types/int-uint))) — معرّف قاعدة ترتيب MySQL (`255` لـ `utf8mb4_0900_ai_ci`، و`63` لـ `binary`، وإلا `NULL`). يُوفَّر للتوافق مع MySQL.
+* `is_default` ([Nullable](/ar/reference/data-types/nullable)([String](/ar/reference/data-types/string))) — ما إذا كانت قاعدة الترتيب هي الإعداد الافتراضي لمجموعة الأحرف الخاصة بها (`Yes` لكلا صفَّي التوافق مع MySQL، وإلا `NULL`). يُوفَّر للتوافق مع MySQL.
+* `is_compiled` ([Nullable](/ar/reference/data-types/nullable)([String](/ar/reference/data-types/string))) — ما إذا كانت قاعدة الترتيب مُصرَّفةً ضمن الخادم (`Yes` لكلا صفَّي التوافق مع MySQL، وإلا `NULL`). يُوفَّر للتوافق مع MySQL.
+* `sortlen` ([Nullable](/ar/reference/data-types/nullable)([UInt64](/ar/reference/data-types/int-uint))) — الحد الأدنى لطول الفرز (`0` لـ `utf8mb4_0900_ai_ci`، و`1` لـ `binary`، وإلا `NULL`). يُوفَّر للتوافق مع MySQL.
+* `pad_attribute` ([Nullable](/ar/reference/data-types/nullable)([String](/ar/reference/data-types/string))) — سمة الحشو، `NO PAD` أو `PAD SPACE` (`NO PAD` لكلا صفَّي التوافق مع MySQL، وإلا `NULL`). يُوفَّر للتوافق مع MySQL.

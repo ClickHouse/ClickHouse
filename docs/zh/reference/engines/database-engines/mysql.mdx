@@ -58,27 +58,51 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="data_types-support">
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+与 MySQL 建立加密连接所需的凭据可作为[命名集合](/zh/concepts/features/configuration/server-config/named-collections)的键 (或键值参数) 传递：
+
+| 参数             | 描述                         |
+| -------------- | -------------------------- |
+| `ssl_ca_pem`   | 用于验证 MySQL 服务器证书的 CA 证书内容。 |
+| `ssl_cert_pem` | 用于基于证书的身份验证的客户端证书内容。       |
+| `ssl_key_pem`  | 与 `ssl_cert_pem` 对应的私钥内容。  |
+
+这些值是相应 PEM 文件的内容，可复制到命名集合或查询中。与密码一样，它们会在日志和 `SHOW` 查询中被隐藏。
+
+也可以通过 `ssl_ca`、`ssl_cert` 和 `ssl_key` 指定服务器上文件的路径来提供相同的凭据——但**只能在服务器配置文件中定义的命名集合中使用**，且此类值无法在查询中覆盖。服务器会使用自身的特权打开这些文件；因此，若允许从 SQL 中传入路径，任何能够定义 MySQL source 的用户都能探查本地文件系统，并使用其自身无权读取的证书和密钥进行身份验证。
+
+<a id="data_types-support" />
+
+<div id="data-types-support">
   ## 数据类型支持
 </div>
 
-| MySQL                            | ClickHouse                                       |
-| -------------------------------- | ------------------------------------------------ |
-| UNSIGNED TINYINT                 | [UInt8](/zh/reference/data-types/int-uint)          |
-| TINYINT                          | [Int8](/zh/reference/data-types/int-uint)           |
-| UNSIGNED SMALLINT                | [UInt16](/zh/reference/data-types/int-uint)         |
-| SMALLINT                         | [Int16](/zh/reference/data-types/int-uint)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/zh/reference/data-types/int-uint)         |
-| INT, MEDIUMINT                   | [Int32](/zh/reference/data-types/int-uint)          |
-| UNSIGNED BIGINT                  | [UInt64](/zh/reference/data-types/int-uint)         |
-| BIGINT                           | [Int64](/zh/reference/data-types/int-uint)          |
-| FLOAT                            | [Float32](/zh/reference/data-types/float)           |
-| DOUBLE                           | [Float64](/zh/reference/data-types/float)           |
-| DATE                             | [Date](/zh/reference/data-types/date)               |
-| DATETIME, TIMESTAMP              | [DateTime](/zh/reference/data-types/datetime)       |
-| BINARY                           | [FixedString](/zh/reference/data-types/fixedstring) |
+| MySQL                            | ClickHouse                                                   |
+| -------------------------------- | ------------------------------------------------------------ |
+| UNSIGNED TINYINT                 | [UInt8](/zh/reference/data-types/int-uint)                      |
+| TINYINT                          | [Int8](/zh/reference/data-types/int-uint)                       |
+| UNSIGNED SMALLINT                | [UInt16](/zh/reference/data-types/int-uint)                     |
+| SMALLINT                         | [Int16](/zh/reference/data-types/int-uint)                      |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/zh/reference/data-types/int-uint)                     |
+| INT, MEDIUMINT                   | [Int32](/zh/reference/data-types/int-uint)                      |
+| UNSIGNED BIGINT                  | [UInt64](/zh/reference/data-types/int-uint)                     |
+| BIGINT                           | [Int64](/zh/reference/data-types/int-uint)                      |
+| FLOAT                            | [Float32](/zh/reference/data-types/float)                       |
+| DOUBLE                           | [Float64](/zh/reference/data-types/float)                       |
+| DATE                             | [Date](/zh/reference/data-types/date)                           |
+| DATETIME, TIMESTAMP              | [DateTime](/zh/reference/data-types/datetime)                   |
+| BINARY                           | [FixedString](/zh/reference/data-types/fixedstring)             |
+| POINT                            | [Point](/zh/reference/data-types/geo#point)                     |
+| LINESTRING                       | [LineString](/zh/reference/data-types/geo#linestring)           |
+| POLYGON                          | [Polygon](/zh/reference/data-types/geo#polygon)                 |
+| MULTILINESTRING                  | [MultiLineString](/zh/reference/data-types/geo#multilinestring) |
+| MULTIPOLYGON                     | [MultiPolygon](/zh/reference/data-types/geo#multipolygon)       |
+| GEOMETRY                         | [Geometry](/zh/reference/data-types/geo#geometry)               |
 
-其他所有 MySQL 数据类型都会被转换为 [String](/zh/reference/data-types/string)。
+空间类型的转换 (始终会转换的 `POINT` 除外) 由 [`mysql_datatypes_support_level`](/zh/reference/settings/session-settings/mysql#mysql_datatypes_support_level) 设置中的 `geometry` 标志控制，该标志默认启用。通用 `GEOMETRY` 列类型会映射为总括性的 [`Geometry`](/zh/reference/data-types/geo#geometry) 类型 (即具体几何类型的 `Variant`) 。由于这类列可存储任意子类型的值，读取没有对应 ClickHouse 类型的子类型值 (`GEOMETRYCOLLECTION`) 时会引发异常；为获得恰当的几何类型，可接受这一不兼容性。声明为 `GEOMETRYCOLLECTION` 类型的列会与其他所有 MySQL 数据类型一样，转换为 [String](/zh/reference/data-types/string) (原始 WKB) 。
 
 支持 [Nullable](/zh/reference/data-types/nullable)。
 

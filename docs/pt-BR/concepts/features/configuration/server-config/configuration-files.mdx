@@ -175,18 +175,18 @@ O resultado é a configuração:
 
 Também é possível substituir partes da configuração pelo conteúdo de arquivos. Isso pode ser feito de duas formas:
 
-* *Substituição de valores*: se um elemento tiver o atributo `incl`, seu valor será substituído pelo conteúdo do arquivo referenciado. Por padrão, o caminho para o arquivo com substituições é `/etc/metrika.xml`. Isso pode ser alterado no elemento [`include_from`](/pt-BR/reference/settings/server-settings/settings#include_from) da configuração do servidor. Os valores de substituição são especificados em elementos `/clickhouse/substitution_name` nesse arquivo. Se uma substituição especificada em `incl` não existir, isso será registrado no log. Para impedir que o ClickHouse registre substituições ausentes, especifique o atributo `optional="true"` (por exemplo, para configurações de [macros](/pt-BR/reference/settings/server-settings/settings#macros)).
+* *Substituição de valores*: se um elemento tiver o atributo `incl`, seu valor será substituído pelo conteúdo do arquivo referenciado. Por padrão, o caminho para o arquivo com substituições é `/etc/metrika.xml`. Isso pode ser alterado no elemento [`include_from`](/pt-BR/reference/settings/server-settings/settings/other#include_from) da configuração do servidor. Os valores de substituição são especificados em elementos `/clickhouse/substitution_name` nesse arquivo. Se uma substituição especificada em `incl` não existir, isso será registrado no log. Para impedir que o ClickHouse registre substituições ausentes, especifique o atributo `optional="true"` (por exemplo, para configurações de [macros](/pt-BR/reference/settings/server-settings/settings/other#macros)).
 * *Substituição de elementos*: se você quiser substituir o elemento inteiro por uma substituição, use `include` como nome do elemento. O nome de elemento `include` pode ser combinado com o atributo `from_zk = "/path/to/node"`. Nesse caso, o valor do elemento é substituído pelo conteúdo do nó do ZooKeeper em `/path/to/node`. Isso também funciona quando você armazena uma subárvore XML inteira como um nó do ZooKeeper; ela será inserida por completo no elemento de origem.
 
 Um exemplo disso é mostrado abaixo:
 
 ```xml
 <clickhouse>
-    <!-- Acrescenta a subárvore XML encontrada no caminho ZK `/profiles-in-zookeeper` ao elemento `<profiles>`. -->
+    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
     <users>
-        <!-- Substitui o elemento `include` pela subárvore encontrada no caminho ZK `/users-in-zookeeper`. -->
+        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
@@ -200,7 +200,7 @@ Se você quiser mesclar o conteúdo da substituição com a configuração exist
 </div>
 
 Você pode usar criptografia simétrica para criptografar um elemento de configuração, por exemplo, uma senha em texto simples ou uma chave privada.
-Para isso, primeiro configure o [codec de criptografia](/pt-BR/reference/statements/create/table#encryption-codecs) e, em seguida, adicione o atributo `encrypted_by`, com o nome do codec de criptografia como valor, ao elemento que será criptografado.
+Para isso, primeiro configure o [codec de criptografia](/pt-BR/reference/statements/create/table/codec#encryption-codecs) e, em seguida, adicione o atributo `encrypted_by`, com o nome do codec de criptografia como valor, ao elemento que será criptografado.
 
 Diferentemente dos atributos `from_zk`, `from_env` e `incl`, ou do elemento `include`, nenhuma substituição (ou seja, a descriptografia do valor criptografado) é realizada no arquivo pré-processado.
 A descriptografia ocorre apenas em tempo de execução, no processo do servidor.

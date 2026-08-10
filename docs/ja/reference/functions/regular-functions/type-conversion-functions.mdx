@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 ClickHouse は通常、[C++ プログラムと同じ動作](https://en.cppreference.com/w/cpp/language/implicit_conversion)をします。
 
-`to<type>` 関数と [cast](#CAST) は、場合によっては異なる動作をします。たとえば [LowCardinality](/ja/reference/data-types/lowcardinality) の場合、[cast](#CAST) は [LowCardinality](/ja/reference/data-types/lowcardinality) 特性を取り除きますが、`to<type>` 関数は取り除きません。[Nullable](/ja/reference/data-types/nullable) についても同様です。この動作は SQL 標準とは互換性がなく、[cast&#95;keep&#95;nullable](/ja/reference/settings/session-settings#cast_keep_nullable) 設定で変更できます。
+`to<type>` 関数と [cast](#CAST) は、場合によっては異なる動作をします。たとえば [LowCardinality](/ja/reference/data-types/lowcardinality) の場合、[cast](#CAST) は [LowCardinality](/ja/reference/data-types/lowcardinality) 特性を取り除きますが、`to<type>` 関数は取り除きません。[Nullable](/ja/reference/data-types/nullable) についても同様です。この動作は SQL 標準とは互換性がなく、[cast&#95;keep&#95;nullable](/ja/reference/settings/session-settings/cast#cast_keep_nullable) 設定で変更できます。
 
 <Note>
   データ型の値をより小さいデータ型 (たとえば `Int64` から `Int32`) に変換する場合や、
@@ -2964,7 +2964,9 @@ toTypeName(value): Date32
 
 導入バージョン: v21.11.0
 
-引数を [Date32](/ja/reference/data-types/date32) 型に変換します。値が範囲外の場合、`toDate32OrDefault` は [Date32](/ja/reference/data-types/date32) でサポートされている下限値を返します。引数が [Date](/ja/reference/data-types/date) 型の場合は、その型の範囲が考慮されます。無効な引数を受け取った場合は、デフォルト値を返します。
+引数を [Date32](/ja/reference/data-types/date32) 型に変換します。引数を変換できない場合 ([Date32](/ja/reference/data-types/date32) の範囲外の数値を含む) 、関数はデフォルト値を返します。これは第 2 引数が指定されている場合はその値、指定されていない場合は [Date32](/ja/reference/data-types/date32) の下限値です。引数が [Date](/ja/reference/data-types/date) 型の場合は、その型の範囲が考慮されます。
+
+[toDate32](#toDate32) とは異なり、この関数は範囲外の数値引数を [Date32](/ja/reference/data-types/date32) の境界値に飽和させません。このような引数は変換不能として扱われます。
 
 **構文**
 
@@ -2997,6 +2999,16 @@ SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))
 
 ```sql title=Query
 SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))
+```
+
+```response title=Response
+2020-01-01
+```
+
+**範囲外の数値**
+
+```sql title=Query
+SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))
 ```
 
 ```response title=Response
@@ -3261,8 +3273,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 導入バージョン: v20.9.0
 
 入力値を `DateTime` 型に変換します。
-`String`、`FixedString`、`Date`、`Date32`、`DateTime`、または数値型 (`(U)Int*`、`Float*`、`Decimal`) からの変換をサポートします。
-DateTime32 は `DateTime` より広い範囲を扱え、`1900-01-01` から `2299-12-31` までの日付をサポートします。
+`String`、`FixedString`、`Date`、`Date32`、`Time`、`DateTime`、`DateTime64`、または数値型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`BFloat16`、`Float32`、`Float64`) からの変換をサポートします。`Decimal` および `Time64` の値はサポートされておらず、例外が発生します。`Time` 型および `(U)Int128`/`(U)Int256` などのワイド整数型では、飽和ではなくラップアラウンドが発生します。
+`DateTime32` は `DateTime` の alias であり、`1970-01-01 00:00:00` から `2106-02-07 06:28:15` までの日付をサポートします。
+文字列、または上記の飽和する数値型から変換する場合、この範囲外の値は範囲の境界値に飽和されます。非有限の浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
+`Date32` や `DateTime64` など、他の日付と時刻型からの変換は、`date_time_overflow_behavior` 設定に従います。デフォルトの `ignore` モードではラップアラウンドした値が生成される場合があり、`saturate` では値が範囲の境界値に制限され、`throw` では例外が発生します。
 
 **構文**
 
@@ -3272,54 +3286,49 @@ toDateTime32(x[, timezone])
 
 **引数**
 
-* `x` — 変換する入力値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`UInt*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 省略可能。返される `DateTime` 値に使用するタイムゾーン。[`String`](/ja/reference/data-types/string)
+* `x` — 変換する入力値。[`String`](/ja/reference/data-types/string)、[`FixedString`](/ja/reference/data-types/fixedstring)、[`(U)Int*`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)、[`BFloat16`](/ja/reference/data-types/float)、[`Date`](/ja/reference/data-types/date)、[`Date32`](/ja/reference/data-types/date32)、[`Time`](/ja/reference/data-types/time)、[`DateTime`](/ja/reference/data-types/datetime)、または [`DateTime64`](/ja/reference/data-types/datetime64)
+* `timezone` — 省略可能。返される `DateTime` 値のタイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-変換された入力値を返します。[`DateTime`](/ja/reference/data-types/datetime)
+変換後の入力値を返します。[`DateTime`](/ja/reference/data-types/datetime)
 
 **例**
 
-**値が範囲内にある場合**
+**文字列から**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
 ```
 
-**精度を指定した Decimal として**
+**Unix timestampから**
 
 ```sql title=Query
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
 ```
 
-**タイムゾーンを指定した場合**
+**タイムゾーンを指定する場合**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
 ```
 
 <div id="toDateTime64">
@@ -7098,10 +7107,23 @@ SELECT
   ## toTime
 </div>
 
-導入バージョン: v1.1.0
+導入バージョン: v25.5.0
 
 入力値を [Time](/ja/reference/data-types/time) 型に変換します。
 String、FixedString、DateTime、DateTime64、または深夜0時からの経過秒数を表す数値型からの変換をサポートします。
+型の範囲外の数値 (`-999:59:59` ～ `999:59:59`、すなわち `-3599999` ～ `3599999` 秒) は範囲の境界値に飽和され、有限でない浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
+
+<Info>
+  **レガシー `toTime`**
+
+  v25.5 より前の `toTime` は別の関数であり、時刻の
+  部分を保持したまま日時を固定日付 (`1970-01-02`) に変換していました。この関数は現在も [`toTimeWithFixedDate`](/ja/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate) という名前で利用できます。
+
+  [`use_legacy_to_time`](/ja/reference/settings/session-settings#use_legacy_to_time) を `1` に設定すると、名前 `toTime` はレガシー
+  関数にバインドされたままになります。つまり、`toTime` の呼び出しは、ここで説明する変換関数ではなく `toTimeWithFixedDate` に解決されます。
+  この設定が有効な間は、`CAST(x AS Time)` または `x::Time` を使用して `Time` 型に変換してください。
+  この設定のデフォルトは v26.7 以降では `0` ですが、v25.6 から v26.6 までは `1` でした。そのため、以下の例では明示的に設定しています。
+</Info>
 
 **構文**
 
@@ -7111,7 +7133,7 @@ toTime(x)
 
 **引数**
 
-* `x` — 変換対象の入力値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
+* `x` — 変換対象の入力値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`BFloat16`](/ja/reference/data-types/float) または [`Float*`](/ja/reference/data-types/float)
 
 **戻り値**
 
@@ -7298,7 +7320,7 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
   ## toTimeOrNull
 </div>
 
-導入バージョン: v1.1.0
+導入バージョン: v25.5.0
 
 入力値を Time 型の値に変換します。エラーが発生した場合は `NULL` を返します。
 [`toTime`](#toTime) と同様ですが、変換エラー時に例外をスローする代わりに `NULL` を返します。
@@ -7340,7 +7362,7 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
   ## toTimeOrZero
 </div>
 
-導入バージョン: v1.1.0
+導入バージョン: v25.5.0
 
 入力値を Time 型の値に変換します。エラーが発生した場合は `00:00:00` を返します。
 `toTime` と同様ですが、変換エラー時に例外をスローする代わりに `00:00:00` を返します。

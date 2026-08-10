@@ -19,14 +19,14 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 要开始记录日志：
 
-1. 在 [query&#95;thread&#95;log](/zh/reference/settings/server-settings/settings#query_thread_log) 部分中配置参数。
-2. 将 [log&#95;query&#95;threads](/zh/reference/settings/session-settings#log_query_threads) 设置为 1。
+1. 在 [query&#95;thread&#95;log](/zh/reference/settings/server-settings/settings/query#query_thread_log) 部分中配置参数。
+2. 将 [log&#95;query&#95;threads](/zh/reference/settings/session-settings/log-query#log_query_threads) 设置为 1。
 
-数据刷新周期通过 [query&#95;thread&#95;log](/zh/reference/settings/server-settings/settings#query_thread_log) 服务器设置部分中的 `flush_interval_milliseconds` 参数进行设置。要强制刷新，请使用 [SYSTEM FLUSH LOGS](/zh/reference/statements/system#flush-logs) 查询。
+数据刷新周期通过 [query&#95;thread&#95;log](/zh/reference/settings/server-settings/settings/query#query_thread_log) 服务器设置部分中的 `flush_interval_milliseconds` 参数进行设置。要强制刷新，请使用 [SYSTEM FLUSH LOGS](/zh/reference/statements/system#flush-logs) 查询。
 
 ClickHouse 不会自动删除表中的数据。更多详情，请参见 [Introduction](/zh/reference/system-tables/overview#system-tables-introduction)。
 
-你可以使用 [log&#95;queries&#95;probability](/zh/reference/settings/session-settings#log_queries_probability)) 设置来减少记录到 `query_thread_log` 表中的查询数量。
+你可以使用 [log&#95;queries&#95;probability](/zh/reference/settings/session-settings/log-queries#log_queries_probability)) 设置来减少记录到 `query_thread_log` 表中的查询数量。
 
 <div id="columns">
   ## 列
@@ -72,7 +72,7 @@ ClickHouse 不会自动删除表中的数据。更多详情，请参见 [Introdu
 * `os_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 运行 clickhouse-client 的操作系统用户名称。
 * `client_hostname` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 运行 clickhouse-client 或其他 TCP 客户端的客户机主机名。
 * `client_name` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — `clickhouse-client` 或其他 TCP 客户端名称。
-* `client_agent` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 调用该客户端的 AI 编码代理 (例如 `claude-code` 或 `cursor`) ，从环境变量中检测得出。如果未检测到 agent，则为空。
+* `client_agent` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 调用该客户端的 AI 编码代理 (例如 `claude-code`、`cursor`) ，从环境变量中检测得出。如果未检测到 agent，则为空。
 * `client_revision` ([UInt32](/zh/reference/data-types/int-uint)) — `clickhouse-client` 或其他 TCP 客户端的修订号。
 * `client_version_major` ([UInt32](/zh/reference/data-types/int-uint)) — clickhouse-client 或其他 TCP 客户端的主版本。
 * `client_version_minor` ([UInt32](/zh/reference/data-types/int-uint)) — clickhouse-client 或其他 TCP 客户端的次要版本号。
@@ -83,7 +83,7 @@ ClickHouse 不会自动删除表中的数据。更多详情，请参见 [Introdu
 * `http_user_agent` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — HTTP 请求中的 UserAgent 请求头。
 * `http_referer` ([String](/zh/reference/data-types/string)) — 在 HTTP 查询中传递的 `Referer` HTTP 请求头 (包含发起该查询的页面的完整地址或部分地址) 。
 * `forwarded_for` ([String](/zh/reference/data-types/string)) — 在 HTTP 查询中传递的 `X-Forwarded-For` HTTP 请求头。
-* `quota_key` ([String](/zh/reference/data-types/string)) — quotas 设置中指定的“配额键”。
+* `quota_key` ([String](/zh/reference/data-types/string)) — quotas 设置中指定的&#39;配额键&#39;。
 * `distributed_depth` ([UInt64](/zh/reference/data-types/int-uint)) — 查询在服务器之间被转发的次数。
 * `revision` ([UInt32](/zh/reference/data-types/int-uint)) — ClickHouse 修订号。
 * `ProfileEvents` ([Map(LowCardinality(String), UInt64)](/zh/reference/data-types/map)) — 用于统计该线程各项指标的 ProfileEvents。其说明可在 system.events 表中找到。

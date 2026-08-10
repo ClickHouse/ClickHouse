@@ -6,26 +6,30 @@ title: 'دوال الذكاء الاصطناعي'
 doc_type: 'reference'
 ---
 
-دوال الذكاء الاصطناعي هي دوال مضمّنة في ClickHouse يمكنك استخدامها لاستدعاء الذكاء الاصطناعي أو إنشاء embeddings للعمل مع بياناتك، واستخراج المعلومات، وتصنيف البيانات، وغير ذلك...
+دوال الذكاء الاصطناعي هي دوال مضمّنة في ClickHouse يمكنك استخدامها لاستدعاء الذكاء الاصطناعي أو إنشاء تضمين للعمل مع بياناتك، واستخراج المعلومات، وتصنيف البيانات، وغير ذلك...
 
 <Note>
-  دوال الذكاء الاصطناعي تجريبية. اضبط [`allow_experimental_ai_functions`](/ar/reference/settings/session-settings#allow_experimental_ai_functions) لتمكينها.
-</Note>
+  دوال الذكاء الاصطناعي تجريبية. اضبط [`allow_experimental_ai_functions`](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) لتمكينها.
 
-<Note>
   قد تُرجع دوال الذكاء الاصطناعي مخرجات غير متوقعة. وتعتمد النتيجة بدرجة كبيرة على جودة الموجّه والنموذج المستخدم.
 </Note>
 
+<Warning>
+  **حقن الموجّه**
+
+  يُرسل النص المُدخل إلى النموذج ويمكنه توجيه مخرجاته (حقن الموجّه). قد يحتوي النص الوارد من مصادر خارجية أو غير متحقق منها أو غير مُنقّاة على تعليمات تجعل النموذج يُرجع محتوى يتحكم فيه المهاجم، أو يتجاهل التنسيق المطلوب، أو يُصدر حمولات ضارة. تعامل مع مخرجات دالة الذكاء الاصطناعي بوصفها غير موثوقة: تحقّق منها أو نقّها قبل استخدامها في خطوات لاحقة، مثل إنشاء SQL أو أوامر الصدفة أو استعلامات إضافية أو قرارات التحكم في الوصول.
+</Warning>
+
 تشترك جميع الدوال في بنية تحتية موحّدة توفّر ما يلي:
 
-* **فرض الحصص**: حدود لكل استعلام على الرموز ([`ai_function_max_input_tokens_per_query`](/ar/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ar/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) واستدعاءات واجهة برمجة التطبيقات ([`ai_function_max_api_calls_per_query`](/ar/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
-* **إعادة المحاولة مع زيادة تدريجية في التأخير**: تتم إعادة محاولة الإخفاقات العابرة ([`ai_function_max_retries`](/ar/reference/settings/session-settings#ai_function_max_retries)) باستخدام تأخير أُسّي متزايد ([`ai_function_retry_initial_delay_ms`](/ar/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
+* **فرض الحصص**: حدود لكل استعلام على الرموز ([`ai_function_max_input_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) واستدعاءات واجهة برمجة التطبيقات ([`ai_function_max_api_calls_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
+* **إعادة المحاولة مع زيادة تدريجية في التأخير**: تتم إعادة محاولة الإخفاقات العابرة ([`ai_function_max_retries`](/ar/reference/settings/session-settings/ai-function#ai_function_max_retries)) باستخدام تأخير أُسّي متزايد ([`ai_function_retry_initial_delay_ms`](/ar/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
 <div id="configuration">
   ## الإعداد
 </div>
 
-تشير دوال الذكاء الاصطناعي إلى **مجموعة مُسمّاة** تخزّن بيانات اعتماد الموفّر وإعداداته. ويمكن إنشاء مجموعات مُسمّاة مختلفة واستخدامها مع دوال مختلفة أو مع استدعاءات مختلفة للدوال. على سبيل المثال، قد ترغب في تعريف مجموعة مُسمّاة مختلفة لاستخدامها مع دوال النص (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) مقابل الدالة `aiEmbed`، إذ تتطلب نقاط نهاية مختلفة وتستخدم عادةً نماذج مختلفة.
+تشير دوال الذكاء الاصطناعي إلى **مجموعة مُسمّاة** تخزّن بيانات اعتماد الموفّر وإعداداته. ويمكن إنشاء مجموعات مُسمّاة مختلفة واستخدامها مع دوال مختلفة أو مع استدعاءات مختلفة للدوال. على سبيل المثال، قد ترغب في تعريف مجموعة مُسمّاة مختلفة لاستخدامها مع دوال النص (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) مقابل دوال التضمين (`aiEmbed`, `aiSimilarity`)، إذ تتطلب نقاط نهاية مختلفة وتستخدم عادةً نماذج مختلفة.
 
 مثال على تعليمة لإنشاء مجموعة مُسمّاة تحتوي على بيانات اعتماد الموفّر، إحداهما مع نقطة نهاية للدردشة والأخرى مع نقطة نهاية للتضمين:
 
@@ -36,8 +40,9 @@ CREATE NAMED COLLECTION ai_text_credentials AS
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
 
--- `aiEmbed` does not read `model` from the named collection; pass it as a positional argument instead.
--- Defining `model` in an `aiEmbed` collection is an error, not silently ignored.
+-- The embedding functions (`aiEmbed`, `aiSimilarity`) do not read `model` from the named collection,
+-- pass it as a positional argument instead. Defining `model` in an embedding collection is an error,
+-- not silently ignored.
 CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
@@ -48,14 +53,14 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
   ### معلمات المجموعة المسماة
 </div>
 
-| المعلمة       | النوع  | الافتراضي | الوصف                                                                                                                                                       |
-| ------------- | ------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provider`    | String | —         | موفّر النموذج. القيم المدعومة: `'openai'` و`'anthropic'`. انظر الملاحظة أدناه.                                                                              |
-| `endpoint`    | String | —         | عنوان URL لنقطة نهاية واجهة برمجة التطبيقات.                                                                                                                |
-| `model`       | String | —         | اسم النموذج (مثل `'gpt-4o-mini'`). تستخدمه الدوال النصية؛ وتتطلب `aiEmbed` إدخال `model` كوسيط موضعي، وتُرجع خطأً إذا تم تحديد `model` في المجموعة المسماة. |
-| `api_key`     | String | —         | مفتاح المصادقة الخاص بالموفّر. اختياري: عند عدم تحديده، لا يُرسَل ترويس المصادقة، مما يتيح الاستهداف لخوادم متوافقة مع OpenAI لا تتطلب مصادقة.              |
-| `max_tokens`  | UInt64 | `1024`    | الحد الأقصى لعدد الرموز الناتجة لكل استدعاء لواجهة برمجة التطبيقات.                                                                                         |
-| `api_version` | String | —         | سلسلة إصدار واجهة برمجة التطبيقات. تستخدمها Anthropic (`'2023-06-01'`).                                                                                     |
+| المعلمة       | النوع  | الافتراضي | الوصف                                                                                                                                                                                      |
+| ------------- | ------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `provider`    | String | —         | موفّر النموذج. القيم المدعومة: `'openai'` و`'anthropic'`. انظر الملاحظة أدناه.                                                                                                             |
+| `endpoint`    | String | —         | عنوان URL لنقطة نهاية واجهة برمجة التطبيقات.                                                                                                                                               |
+| `model`       | String | —         | اسم النموذج (مثل `'gpt-4o-mini'`). تستخدمه الدوال النصية؛ وتتطلب دوال التضمين (`aiEmbed` و`aiSimilarity`) إدخال `model` كوسيط موضعي، وتُرجع خطأً إذا تم تحديد `model` في المجموعة المسماة. |
+| `api_key`     | String | —         | مفتاح المصادقة الخاص بالموفّر. اختياري: عند عدم تحديده، لا يُرسَل رأس المصادقة، مما يتيح الاستهداف لخوادم متوافقة مع OpenAI لا تتطلب مصادقة.                                             |
+| `max_tokens`  | UInt64 | `1024`    | الحد الأقصى لعدد رموز الإخراج لكل استدعاء لواجهة برمجة التطبيقات.                                                                                                                        |
+| `api_version` | String | —         | سلسلة إصدار واجهة برمجة التطبيقات. تستخدمها Anthropic (`'2023-06-01'`).                                                                                                                    |
 
 <Note>
   يمكن استخدام أي واجهة برمجة تطبيقات متوافقة مع OpenAI (مثل vLLM وOllama وLiteLLM) عبر ضبط `provider = 'openai'` وتوجيه `endpoint` إلى خدمتك.
@@ -69,8 +74,8 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. مفتاح `credentials` في خريطة المَعلمات الخاصة بها، إن وُجد؛
 2. وإلا، إعداد بيانات الاعتماد الافتراضي المنطبق:
-   * [`ai_function_text_default_credentials`](/ar/reference/settings/session-settings#ai_function_text_default_credentials) لدوال النص (`aiGenerate` و`aiClassify` و`aiExtract` و`aiTranslate`);
-   * [`ai_function_embedding_default_credentials`](/ar/reference/settings/session-settings#ai_function_embedding_default_credentials) للدالة `aiEmbed`.
+   * [`ai_function_text_default_credentials`](/ar/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) لدوال النص (`aiGenerate` و`aiClassify` و`aiExtract` و`aiTranslate`);
+   * [`ai_function_embedding_default_credentials`](/ar/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) لدوال التضمين (`aiEmbed` و`aiSimilarity`).
 
 إذا لم يُضبط أيٌّ منهما، يفشل الاستدعاء. تستخدم دوال النص ودوال التضمين إعدادات افتراضية منفصلة لأن نقطة النهاية الخاصة بإكمالات الدردشة تختلف عن نظيرتها الخاصة بالتضمينات.
 
@@ -88,14 +93,14 @@ SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
   ### خريطة المعلمات
 </div>
 
-تقبل كل دالة، اختياريًا، ‎`Map(String, String)`‎ من المعلمات في النهاية. جميع القيم سلاسل نصية (ضع الأرقام بين علامتَي اقتباس، مثل ‎`'0.2'`‎). تُرفض المفاتيح غير المعروفة. وإذا كان المفتاح موجودًا، فإنه يتجاوز القيمة المناظرة في المجموعة المُسمّاة؛ أما إذا لم يكن موجودًا، فيُستخدَم ما في المجموعة المُسمّاة (بالنسبة إلى ‎`model`‎/‎`max_tokens`‎) أو القيمة الافتراضية المضمّنة. والاستثناء هو ‎`aiEmbed`‎، إذ يأخذ ‎`model`‎ بوصفه وسيطة موضعية مطلوبة (‎`aiEmbed(text, model[, params])`‎) ويُرجع خطأ إذا جرى تعيينه بدلًا من ذلك في خريطة المعلمات أو المجموعة المُسمّاة.
+تقبل كل دالة، اختياريًا، ‎`Map(String, String)`‎ من المعلمات في النهاية. جميع القيم سلاسل نصية (ضع الأرقام بين علامتَي اقتباس، مثل ‎`'0.2'`‎). تُرفض المفاتيح غير المعروفة. وإذا كان المفتاح موجودًا، فإنه يتجاوز القيمة المناظرة في المجموعة المُسمّاة؛ أما إذا لم يكن موجودًا، فيُستخدَم ما في المجموعة المُسمّاة (بالنسبة إلى ‎`model`‎/‎`max_tokens`‎) أو القيمة الافتراضية المضمّنة. والاستثناء هو دوال التضمين (‎`aiEmbed`‎ و‎`aiSimilarity`‎)، إذ تأخذ ‎`model`‎ بوصفها وسيطة موضعية مطلوبة (مثل ‎`aiEmbed(text, model[, params])`‎ و‎`aiSimilarity(text1, text2, model[, params])`‎) وتُرجع خطأ إذا جرى تعيينها بدلًا من ذلك في خريطة المعلمات أو المجموعة المُسمّاة. وذلك لضمان تضمينات قابلة لإعادة الإنتاج.
 
 المعلمات التالية مشتركة بين جميع دوال الذكاء الاصطناعي:
 
-| Key           | Description                                                                                                                                 |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `credentials` | المجموعة المُسمّاة المطلوب استخدامها (انظر أعلاه).                                                                                          |
-| `model`       | يتجاوز قيمة `model` الخاصة بالمجموعة (لدوال النصوص فقط؛ تأخذ `aiEmbed` القيمة `model` بوصفها وسيطة موضعية مطلوبة، وليس مفتاحًا في الخريطة). |
+| Key           | Description                                                                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `credentials` | المجموعة المُسمّاة المطلوب استخدامها (انظر أعلاه).                                                                                                                       |
+| `model`       | يتجاوز قيمة `model` الخاصة بالمجموعة (لدوال النص فقط؛ تأخذ دوال التضمين (`aiEmbed` و`aiSimilarity`) القيمة `model` بوصفها وسيطة موضعية مطلوبة، وليس مفتاحًا في الخريطة). |
 
 وتقبل كل دالة أيضًا معلمات إضافية خاصة بها (مثل ‎`max_tokens`‎ و‎`temperature`‎ و‎`system_prompt`‎ و‎`instructions`‎ و‎`dimensions`‎). راجع المرجع الخاص بكل دالة أدناه لمعرفة المعلمات التي تقبلها وقيمها الافتراضية.
 
@@ -113,7 +118,7 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
   ### تقييد مضيفات نقطة النهاية
 </div>
 
-يمثل عنوان URL الخاص بـ `endpoint` في مجموعة مسماة للذكاء الاصطناعي وجهةً خارجية يتصل بها الخادم باستخدام هويته الخاصة، وقد يتضمن — إذا جرى تحديده — `api_key` الخاص بالمجموعة المسماة في رؤوس الطلب. افتراضيًا، يسمح ClickHouse بأي مضيف. لحصر الدوال في مجموعة محددة من الموفّرين، اضبط [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings#remote_url_allow_hosts) في إعدادات الخادم، على سبيل المثال:
+يمثل عنوان URL الخاص بـ `endpoint` في مجموعة مسماة للذكاء الاصطناعي وجهةً خارجية يتصل بها الخادم باستخدام هويته الخاصة، وقد يتضمن — إذا جرى تحديده — `api_key` الخاص بالمجموعة المسماة في رؤوس الطلب. افتراضيًا، يسمح ClickHouse بأي مضيف. لحصر الدوال في مجموعة محددة من الموفّرين، اضبط [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) في إعدادات الخادم، على سبيل المثال:
 
 ```xml
 <remote_url_allow_hosts>
@@ -130,10 +135,10 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 
 يُحدَّد النقل حصريًا من خلال scheme لعنوان URL الخاص بـ `endpoint`. لا يوجد تشفير على مستوى التطبيق لحمولة الطلب؛ إذ تعتمد حماية البيانات أثناء النقل بالكامل على هذا الـ scheme:
 
-* `https://` — يستخدم الاتصال TLS. يُشفَّر جسم الطلب (النص المُدخل، والتوجيهات) و`api_key` في headers الطلب أثناء النقل، كما يجري التحقق من certificate الخاصة بالموفّر. استخدم هذا مع أي موفّر بعيد.
+* `https://` — يستخدم الاتصال TLS. يُشفَّر جسم الطلب (النص المُدخل، والتوجيهات) و`api_key` في رأس الطلب أثناء النقل، كما يجري التحقق من certificate الخاصة بالموفّر. استخدم هذا مع أي موفّر بعيد.
 * `http://` — الاتصال **غير مشفَّر**. يُرسَل جسم الطلب و`api_key` بصيغة مكشوفة. استخدم هذا فقط مع موفّر موثوق على private network (مثل instance محلي من `vLLM` أو `Ollama`).
 
-لا تفرض دوال الذكاء الاصطناعي استخدام HTTPS: إذ يُقبل `endpoint` من نوع `http://` وتُرسَل البيانات من دون تشفير. لا يوجد حاليًا إعداد server-side يرفض نقاط نهاية AI ذات النص المكشوف — إذ يقيّد [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings#remote_url_allow_hosts) مضيف الوجهة فقط ولا يفحص scheme الخاص بعنوان URL، لذا فإن `endpoint` من نوع `http://` والموجَّه إلى مضيف مسموح به يمر أيضًا. ولضمان نقل مشفَّر، اضبط مجموعات مُسمّاة باستخدام نقاط نهاية `https://`.
+افتراضيًا، ترفض دوال الذكاء الاصطناعي `endpoint` يؤدي إلى إرسال البيانات بصيغة مكشوفة إلى مضيف بعيد: إذ تؤدي أي نقطة نهاية غير HTTPS لا يكون مضيفها loopback إلى ظهور استثناء. تُستثنى مضيفات loopback (`localhost`، `127.0.0.0/8`، `::1`)، لذا يعمل خادم model محلي على `http://localhost` مباشرةً. للسماح بنقطة نهاية `http://` ذات نص مكشوف على مضيف بعيد، اضبط [`ai_function_allow_insecure_endpoint`](/ar/reference/settings/session-settings/ai-function#ai_function_allow_insecure_endpoint) على `1`. هذا check مستقل عن [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings/remote#remote_url_allow_hosts): فهذا الإعداد هو allowlist للمضيفين ولا يفحص scheme الخاص بعنوان URL، لذا فإن `endpoint` من نوع `http://` والموجَّه إلى مضيف مسموح به يمر منه أيضًا.
 
 لاحظ أنه في كلتا الحالتين يتلقى الموفّر بيانات الإدخال بصيغة مكشوفة بعد إنهاء TLS؛ إذ لا يحمي TLS البيانات إلا على مسار الشبكة بين الخادم والموفّر.
 
@@ -189,12 +194,8 @@ ORDER BY event_time DESC;
 
 يُصنّف النص المُعطى ضمن إحدى الفئات المتاحة باستخدام موفّر LLM.
 
-ترسل الدالة النص مع موجّه تصنيف ثابت وتنسيق استجابة من نوع JSON-schema
-يقيّد النموذج بحيث يُرجع تسمية واحدة فقط من التسميات المزوّدة. وعندما تُعاد الاستجابة على شكل كائن JSON
-بالصيغة `{"category": "..."}`، تُستخرج التسمية ويُعاد نصّها.
-
 تُؤخذ بيانات الاعتماد (وهي مجموعة مسماة تحدد الموفّر والنموذج ونقطة النهاية، واختياريًا مفتاح واجهة برمجة تطبيقات)
-من المفتاح `credentials` في خريطة المعاملات الاختيارية، أو من الإعداد
+من المفتاح `credentials` في خريطة المعلمات الاختيارية، أو من الإعداد
 `ai_function_text_default_credentials` إذا لم تتضمنه الخريطة.
 
 **البنية**
@@ -209,7 +210,7 @@ aiClassify(text, categories[, params])
 
 * `text` — النص المطلوب تصنيفه. [`String`](/ar/reference/data-types/string)
 * `categories` — قائمة ثابتة بتسميات الفئات المرشحة. [`Array(String)`](/ar/reference/data-types/array)
-* `params` — `Map(String, String)` ثابت اختياري للمعلمات. المفاتيح الخاصة بالدالة: `temperature` (درجة حرارة أخذ العينات التي تتحكم في مستوى العشوائية؛ القيمة الافتراضية `0.0`) و`max_tokens` (الحد الأقصى لعدد الرموز المُخرجة في كل استدعاء؛ القيمة الافتراضية `1024`). كما تنطبق أيضًا المعلمات العامة `credentials` و`model` (راجع [الدالة](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
+* `params` — `Map(String, String)` ثابت اختياري للمعلمات. المفاتيح الخاصة بالدالة: `temperature` (درجة حرارة أخذ العينات التي تتحكم في مستوى العشوائية؛ القيمة الافتراضية `0.0`) و`max_tokens` (الحد الأقصى لعدد الرموز المُخرجة في كل استدعاء؛ القيمة الافتراضية `1024`). كما تنطبق أيضًا المعلمات العامة `credentials` و`model` (راجع [دالة الذكاء الاصطناعي](/ar/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ar/reference/data-types/map)
 
 **القيمة المُعادة**
 
@@ -243,7 +244,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 ترسل الدالة النص إلى نقطة نهاية التضمين المُعَدّة وتُرجع المتجه الناتج بصيغة `Array(Float32)`.
 ضمن كتلة واحدة من الصفوف، تُجمَّع المدخلات في دفعات يصل حجمها إلى
-[`ai_function_embedding_max_batch_size`](/ar/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+[`ai_function_embedding_max_batch_size`](/ar/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 إدخالًا لكل طلب HTTP لتقليل الأعباء الإضافية لكل استدعاء.
 
 تُؤخذ بيانات الاعتماد (مجموعة مسماة تحدد الموفّر ونقطة النهاية، وبشكل اختياري مفتاح واجهة برمجة تطبيقات)
@@ -254,7 +255,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 تكون `model` وسيطة موضعية مطلوبة (قيمة ثابتة من نوع `String`). وعلى خلاف دوال النص،
 لا يقرأ `aiEmbed` قيمة `model` من المجموعة المسماة أو من خريطة المعلمات. وأي مجموعة مسماة
-تعرّف `model` تُرفَض بدلًا من تجاهلها بصمت.
+تعرّف `model` تُرفَض.
 
 تطلب المعلمة الاختيارية `dimensions`، عند دعمها من قِبل النموذج (مثل `text-embedding-3-*` من OpenAI&#39;s)،
 متجهًا بالحجم المحدد؛ وإلا فسيُعاد الحجم الأصلي للنموذج.

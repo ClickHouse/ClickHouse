@@ -16,7 +16,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 يدعم ClickHouse Cloud بروتوكول SCIM 2.0 ‏(System for Cross-domain Identity Management) لأتمتة إدارة دورة حياة المستخدمين والمجموعات. وبمجرد الاتصال بموفر الهوية لديك، يُنشأ تلقائيًا كل مستخدم تعيّنه لتطبيق ClickHouse Cloud داخل مؤسستك بالدور الصحيح، كما تنتقل تحديثات الملف الشخصي تلقائيًا، وتؤدي إزالة مستخدم من موفر الهوية (IdP) إلى سحب إمكانية وصوله — من دون دعوات يدوية أو حسابات مهجورة.
 
-يشرح هذا الدليل كيفية إعداد التزويد عبر SCIM بالكامل باستخدام **Okta**. تتوافق نقطة نهاية SCIM في ClickHouse Cloud مع SCIM 2.0 ‏(RFC 7644)، لكن لا تُدعَم المصادقة إلا عبر Basic Auth، وOkta هو موفر الهوية الوحيد الذي اختبرناه. وقد تعمل موفرو هوية SCIM 2.0 الآخرون إذا كانوا يدعمون المصادقة باستخدام Basic Auth، لكنهم غير مدعومين رسميًا حاليًا.
+يشرح هذا الدليل كيفية إعداد التزويد عبر SCIM بالكامل باستخدام **Okta**. تتوافق نقطة نهاية SCIM في ClickHouse Cloud مع SCIM 2.0 ‏(RFC 7644). يستخدم Okta المصادقة عبر Basic Auth، وهو ما يستخدمه هذا الدليل. إذا كان موفر الهوية لديك هو Microsoft Entra ID، فاتبع دليل [التزويد عبر SCIM باستخدام Entra ID](/ar/products/cloud/guides/security/cloud-access-management/scim-setup-entra) بدلًا من ذلك.
 
 <div id="before-you-begin">
   ## قبل أن تبدأ
@@ -316,7 +316,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
   </Accordion>
 
   <Accordion title="هل يعمل SCIM مع Microsoft Entra ID أو OneLogin أو موفري IdP الآخرين المتوافقين مع SCIM 2.0؟">
-    رسميًا، لا — إذ إن Okta هو موفر IdP الوحيد الذي اختبرناه وندعمه حاليًا. تتوافق نقطة النهاية مع SCIM 2.0 ‏(RFC 7644)، لكن authentication فيها يقتصر على Basic Auth، لذلك فإن أي موفر IdP لا يدعم المصادقة عبر Basic Auth لن يعمل. وقد تعمل عمليًا موفرو IdP الأخرى المتوافقة مع SCIM 2.0 والقادرة على استخدام Basic Auth، لكننا لا نقدم أي ضمانات.
+    يُدعم Microsoft Entra ID أيضًا — راجع [تزويد SCIM باستخدام Entra ID](/ar/products/cloud/guides/security/cloud-access-management/scim-setup-entra). تتوافق نقطة النهاية مع SCIM 2.0 ‏(RFC 7644) وتقبل إما Basic Auth ‏(الذي يستخدمه Okta) أو bearer token ‏(الذي يستخدمه Entra ID). وقد يعمل موفرو IdP الآخرون المتوافقون مع SCIM 2.0 عمليًا إذا كانوا يستطيعون المصادقة بإحدى هاتين الطريقتين، لكن Okta وEntra ID هما موفرا IdP اللذان اختبرناهما وندعمهما حاليًا.
   </Accordion>
 
   <Accordion title="ما مدى سرعة ظهور التغييرات في Okta داخل ClickHouse Cloud؟">
@@ -324,13 +324,13 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
   </Accordion>
 
   <Accordion title="هل يمكنني تزويد عدة مؤسسات في ClickHouse Cloud من مستأجر Okta واحد؟">
-    نعم — ثبّت التطبيق مرة واحدة لكل مؤسسة، مع endpoint URL لـ SCIM ورمز خاصين بها. وأرسِل مجموعات Okta نفسها إلى كل تطبيق حسب الحاجة.
+    نعم — ثبّت التطبيق مرة واحدة لكل مؤسسة، مع عنوان URL لنقطة نهاية SCIM ورمز خاصين بها. وأرسِل مجموعات Okta نفسها إلى كل تطبيق حسب الحاجة.
   </Accordion>
 
   <Accordion title="أين أحصل على المساعدة إذا واجهت مشكلة؟">
     افتح تذكرة دعم من ClickHouse Cloud Console ‏(**Help → Contact support**) وضمّن ما يلي:
 
-    * معرّف المؤسسة الخاص بك،
+    * معرّف organization الخاص بك،
     * معرّف تطبيق Okta الخاص بك، و
     * لقطة شاشة للمهمة أو الاختبار الذي فشل من سجلات Okta.
   </Accordion>

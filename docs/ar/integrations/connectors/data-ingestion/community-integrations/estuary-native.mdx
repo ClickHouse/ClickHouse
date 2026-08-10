@@ -1,0 +1,122 @@
+---
+sidebar_label: 'موصل التجسيد المباشر'
+sidebar_position: 4
+sidebarTitle: 'موصل التجسيد المباشر'
+slug: /integrations/estuary/native
+description: 'تكامل Estuary مع ClickHouse باستخدام موصل يعتمد البروتوكول الأصلي'
+title: 'التجسيد المباشر من Estuary إلى ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://estuary.dev'
+keywords: ['estuary', 'استيعاب البيانات', 'etl', 'مسار معالجة', 'تكامل البيانات']
+---
+
+import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+يوفّر Estuary موصلًا مباشرًا لتجسيد البيانات مع ClickHouse، يستخدم [البروتوكول الأصلي لـ ClickHouse](/ar/interfaces/tcp) و[التنسيق الأصلي](/ar/interfaces/formats/Native).
+
+يتيح ذلك لـ Estuary ما يلي:
+
+* تجسيد البيانات في مثيلات مستضافة ذاتيًا ومثيلات ClickHouse Cloud
+* معالجة مهام مثل إنشاء الجداول وتطور المخطط تلقائيًا
+* دعم الحذف المنطقي أو الحذف النهائي
+* استخدام `ReplacingMergeTree` لتحديثات الدمج القياسية أو `MergeTree` لتحديثات دلتا
+* توفير تسليم exactly-once
+
+راجع [تكامل Kafka ClickPipe الخاص بـ Estuary](/ar/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes) للاطلاع على سير عمل ClickPipes.
+
+<div id="setup-guide">
+  ## دليل الإعداد
+</div>
+
+**المتطلبات الأساسية**
+
+ستحتاج إلى:
+
+* [حساب في Estuary](https://dashboard.estuary.dev/register)
+* عملية [**التقاط**](https://docs.estuary.dev/concepts/captures/) واحدة أو أكثر في Estuary لسحب البيانات من المصادر المطلوبة
+* مثيل ClickHouse مستضاف ذاتيًا أو حساب Cloud
+* مستخدم قاعدة بيانات ClickHouse مع بيانات الاعتماد الخاصة به
+
+<Steps>
+  <Step title="تهيئة ClickHouse للتكامل" id="1-configure-clickhouse">
+    لإعداد موصل ClickHouse في Estuary، ستحتاج إلى جمع بعض المعلومات من مثيل ClickHouse وتهيئة أذونات المستخدم.
+
+    1. انسخ نقطة نهاية مضيف قاعدة بياناتك.
+
+       استخدم المنفذ **9440** إذا كان TLS مفعّلًا، أو **9000** إذا كان TLS معطّلًا.
+
+       يشكّل المضيف والمنفذ معًا **العنوان** الذي يجب تقديمه إلى Estuary.
+
+    2. امنح الأذونات لمستخدم قاعدة البيانات الذي سيستخدمه Estuary.
+
+       لكي ينشئ Estuary الجداول ويديرها تلقائيًا، يحتاج إلى أذونات `CREATE` و`SELECT` و`INSERT` وغيرها على قاعدة البيانات الهدف، بالإضافة إلى أذونات اكتشاف البيانات الوصفية وإدارة الأقسام.
+
+       يمكنك منح جميع الأذونات المطلوبة بتشغيل أوامر SQL التالية، مع استبدال `<database>` و`<user>` بمعلوماتك:
+
+       ```sql
+       -- الوصول إلى قاعدة البيانات الهدف: CREATE TABLE وDROP TABLE وSELECT وINSERT وTRUNCATE وغيرها.
+       GRANT ALL ON <database>.* TO <user>;
+
+       -- الوصول إلى جداول النظام لاكتشاف البيانات الوصفية وإدارة الأقسام.
+       -- لا تشملها صلاحيات قاعدة البيانات الممنوحة أعلاه.
+       GRANT SELECT ON system.columns TO <user>;
+       GRANT SELECT ON system.parts TO <user>;
+       GRANT SELECT ON system.tables TO <user>;
+       ```
+
+    3. يمكنك اختياريًا تقييد وصول المستخدم إلى النظام ليقتصر على قاعدة البيانات الهدف فقط.
+
+       يمكنك إجراء ذلك باستخدام سياسات على مستوى الصفوف. على سبيل المثال:
+
+       ```sql
+       CREATE ROW POLICY estuary_columns ON system.columns FOR SELECT USING database = '<database>' TO <user>;
+       CREATE ROW POLICY estuary_parts ON system.parts FOR SELECT USING database = '<database>' TO <user>;
+       CREATE ROW POLICY estuary_tables ON system.tables FOR SELECT USING database = '<database>' TO <user>;
+       ```
+
+    بعد ذلك، انتقل إلى Estuary لإكمال الإعداد.
+  </Step>
+
+  <Step title="إنشاء تجسيد في Estuary" id="2-create-an-estuary-materialization">
+    1. في لوحة معلومات Estuary، انتقل إلى صفحة [الوجهات](https://dashboard.estuary.dev/materializations).
+    2. انقر على **+ تجسيد جديد**.
+    3. اختر موصل **ClickHouse**.
+    4. املأ قسم **تفاصيل التجسيد**:
+       * أدخل اسمًا فريدًا للتجسيد
+       * اختر مستوى بيانات (موفر سحابي ومنطقة)
+    5. املأ تفاصيل **تهيئة نقطة النهاية** ليتمكن Estuary من الاتصال بمثيل ClickHouse:
+
+       * **العنوان:** مضيف المثيل والمنفذ
+       * **قاعدة البيانات:** اسم قاعدة البيانات الهدف
+       * **المصادقة:** اسم المستخدم وكلمة المرور لمستخدم قاعدة البيانات
+
+       يمكنك أيضًا تهيئة إعدادات اختيارية، مثل استخدام الحذف النهائي ووضع SSL المطلوب.
+  </Step>
+
+  <Step title="تهيئة مجموعات المصدر" id="3-configure-source-collections">
+    اختر المصادر التي تريد تجسيدها في ClickHouse ضمن قسم **مجموعات المصدر**.
+
+    1. اربط عملية **التقاط** موجودة أو أضف مجموعات بيانات فردية لتجسيدها في ClickHouse.
+    2. اختر مجموعة بيانات من القائمة لإجراء تهيئة إضافية عند الحاجة. تشمل خيارات التخصيص:
+       * اختيار اسم جدول مختلف للمجموعة
+       * اختيار سلوك الدمج للمجموعة، مثل استخدام وضع تحديثات دلتا
+       * تخصيص سلوك اختيار الحقول للتحكم في الحقول التي تُجسَّد
+    3. بعد التأكد من إعداد تجسيد البيانات في ClickHouse، انقر على **التالي** ثم **حفظ ونشر**.
+
+    سيبدأ Estuary بتحميل البيانات السابقة من المجموعات المحددة إلى ClickHouse، ثم سيبث التحديثات فور حدوثها.
+  </Step>
+</Steps>
+
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
+
+لمزيد من المعلومات عن إعداد موصل ClickHouse مع Estuary، راجع وثائق Estuary:
+
+* راجع [وثائق تجسيد لـ ClickHouse](https://docs.estuary.dev/reference/Connectors/materialization-connectors/ClickHouse/) من Estuary.
+* بالإضافة إلى سير العمل المعتمد على واجهة المستخدم والمتاح في هذه الإرشادات، يمكنك أيضًا إدارة إعداد مسار المعالجة في Estuary عبر واجهة سطر الأوامر. راجع [أدلة Estuary حول `flowctl`](https://docs.estuary.dev/guides/flowctl/ci-cd/) لمعرفة المزيد عن العمل مع Estuary برمجيًا.

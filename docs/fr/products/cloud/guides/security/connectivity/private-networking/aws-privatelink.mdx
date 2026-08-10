@@ -51,7 +51,10 @@ Pour restreindre l’accès à vos services ClickHouse Cloud exclusivement aux a
   * us-west-1
   * us-east-2
   * us-east-1
-    Considérations tarifaires : AWS facturera aux utilisateurs le transfert de données inter-région. Consultez les tarifs [ici](https://aws.amazon.com/privatelink/pricing/).
+</Note>
+
+<Note>
+  AWS facture le transfert de données inter-région. Consultez les [tarifs d’AWS PrivateLink](https://aws.amazon.com/privatelink/pricing/) pour plus de détails.
 </Note>
 
 **Veuillez effectuer les opérations suivantes pour activer AWS PrivateLink** :
@@ -163,7 +166,9 @@ Sélectionnez **Endpoint services that use NLBs and GWLBs** et utilisez `Service
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="Paramètres de l’endpoint AWS PrivateLink" border />
 
-Si vous souhaitez établir une connexion interrégionale via PrivateLink, cochez la case &quot;Cross region endpoint&quot; et indiquez la région du service. Il s’agit de la région dans laquelle l’instance ClickHouse s’exécute.
+<Note>
+  Pour une connexion interrégionale, cochez la case **Cross region endpoint** et indiquez la région du service dans laquelle votre service ClickHouse s’exécute.
+</Note>
 
 Si vous obtenez l’erreur &quot;Service name couldn&#39;t be verified.&quot;, veuillez contacter le support client pour demander l’ajout de nouvelles régions à la liste des régions prises en charge.
 

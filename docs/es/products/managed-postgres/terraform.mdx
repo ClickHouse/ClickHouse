@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/terraform
 sidebarTitle: 'Terraform'
-title: 'Referencia de Terraform de Managed Postgres'
+title: 'Referencia de Terraform de ClickHouse Managed Postgres'
 description: 'Referencia para gestionar servicios de ClickHouse Managed Postgres con el proveedor de Terraform de ClickHouse.'
 keywords: ['managed postgres', 'terraform', 'infraestructura como código', 'iac', 'proveedor', 'programático']
 doc_type: 'guide'
@@ -20,7 +20,7 @@ Los servicios de ClickHouse Managed Postgres se pueden crear y administrar media
 <Warning>
   **Actualiza al proveedor v3.21.0 antes del 31 de julio de 2026**
 
-  A partir del **31 de julio de 2026**, la API de Managed Postgres dejó de devolver la contraseña de superusuario y la connection string en sus respuestas; las credenciales solo se devuelven cuando se crea un servicio o se restablece su contraseña. Las versiones del proveedor **v3.21.0 y posteriores** funcionan de forma idéntica antes y después de este cambio. Las versiones anteriores del proveedor dependen de que la API devuelva las credenciales: desde el 31 de julio de 2026, ya no rellenan `connection_string`, y un servicio creado sin una `password` declarada se crea correctamente, mientras que la contraseña generada nunca se captura en ningún sitio.
+  A partir del **31 de julio de 2026**, la API de ClickHouse Managed Postgres dejó de devolver la contraseña de superusuario y la connection string en sus respuestas; las credenciales solo se devuelven cuando se crea un servicio o se restablece su contraseña. Las versiones del proveedor **v3.21.0 y posteriores** funcionan de forma idéntica antes y después de este cambio. Las versiones anteriores del proveedor dependen de que la API devuelva las credenciales: desde el 31 de julio de 2026, ya no rellenan `connection_string`, y un servicio creado sin una `password` declarada se crea correctamente, mientras que la contraseña generada nunca se captura en ningún sitio.
 
   Actualiza antes del 31 de julio de 2026. Tu estado se migra automáticamente en el primer plan o apply con v3.21.0. Si alguno de tus servicios depende de una contraseña generada por el server (sin `password` en la configuración), recupérala primero con `terraform state pull` y declárala, ya que v3.21.0 requiere `password` o `password_wo` para un servicio estándar.
 </Warning>
@@ -167,7 +167,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All Managed Postgres services in the organization.
+# All ClickHouse Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -180,7 +180,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## Importación de servicios existentes
 </div>
 
-Los servicios existentes de Managed Postgres se pueden importar al estado de Terraform mediante el ID del servicio:
+Los servicios existentes de ClickHouse Managed Postgres se pueden importar al estado de Terraform mediante el ID del servicio:
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

@@ -72,6 +72,13 @@ La función de tabla `file` crea una tabla y puedes usar `DESCRIBE` para ver el 
   ```
 </Tip>
 
+Los datos no tienen que ser locales: se puede usar una URL en lugar de un nombre de archivo, y el esquema de URL selecciona el motor de tabla correspondiente (`http://` y `https://` se leen como la función [url](/es/reference/functions/table-functions/url), `s3://` como la función [s3](/es/reference/functions/table-functions/s3), `file://` como la función [file](/es/reference/functions/table-functions/file)):
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)

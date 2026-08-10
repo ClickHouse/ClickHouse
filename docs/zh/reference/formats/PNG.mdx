@@ -22,20 +22,20 @@ doc_type: 'reference'
 将查询结果渲染为 PNG 图像。这可用作内置的可视化工具。
 
 输出图像的大小由设置
-[`output_format_image_width`](/zh/reference/settings/formats#output_format_image_width) 和
-[`output_format_image_height`](/zh/reference/settings/formats#output_format_image_height)
+[`output_format_image_width`](/zh/reference/settings/formats/output-format#output_format_image_width) 和
+[`output_format_image_height`](/zh/reference/settings/formats/output-format#output_format_image_height)
 固定 (两者默认值均为 1024) 。结果未覆盖到的像素会填充为黑色
-(在 `RGB` 和灰度模式下) ，或透明黑色 (在 `RGBA` 模式下) 。
+(在 `RGB` 和灰度图模式下) ，或透明黑色 (在 `RGBA` 模式下) 。
 
 颜色模式会根据结果的列名和类型自动确定：
 
-| 列                  | 模式                                 |
-| ------------------ | ---------------------------------- |
-| `r`, `g`, `b`      | 8 位 RGB                            |
-| `r`, `g`, `b`, `a` | 8 位 RGBA                           |
-| 整数类型的 `v`          | 8 位灰度                              |
-| `Float*` 类型的 `v`   | 8 位灰度 (`[0, 1]` 中的值 → `[0, 255]`)  |
-| `Bool` 类型的 `v`     | 二值 (渲染为 8 位灰度：`0` 或 `255`)         |
+| 列                  | 模式                                |
+| ------------------ | --------------------------------- |
+| `r`, `g`, `b`      | 8 位 RGB                           |
+| `r`, `g`, `b`, `a` | 8 位 RGBA                          |
+| 整数类型的 `v`          | 8 位灰度图                             |
+| `Float*` 类型的 `v`   | 8 位灰度图 (`[0, 1]` 中的值 → `[0, 255]`) |
+| `Bool` 类型的 `v`     | 二值 (渲染为 8 位灰度图：`0` 或 `255`)        |
 
 列名按不区分大小写方式匹配。如果无法明确
 判定颜色模式 (例如列名未知、`v` 与 `r`/`g`/`b`/`a` 混用，或 `r`/`g`/`b` 中缺少某一列) ，
@@ -95,7 +95,7 @@ SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 </div>
 
 默认情况下，`PNG` 格式会输出原始图像字节。通过设置
-[`output_format_image_terminal_mode`](/zh/reference/settings/formats#output_format_image_terminal_mode)
+[`output_format_image_terminal_mode`](/zh/reference/settings/formats/output-format#output_format_image_terminal_mode)
 可使该格式改为使用内联图像协议，直接在终端中渲染图像：
 
 | 值              | 行为                                                                  |

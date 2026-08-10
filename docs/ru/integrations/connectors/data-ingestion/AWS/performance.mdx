@@ -31,7 +31,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 При выполнении `INSERT INTO SELECT` ClickHouse получает некоторую порцию данных и ① формирует из неё (как минимум) один блок вставки в памяти (для каждого [ключа партиционирования](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key)). Данные в блоке сортируются, и к ним применяются оптимизации, специфичные для движка таблицы. Затем данные сжимаются и ② записываются в хранилище базы данных в виде новой части данных.
 
-Размер блока вставки влияет как на [дисковый файловый ввод-вывод](https://en.wikipedia.org/wiki/Category:Disk_file_systems), так и на потребление памяти сервером ClickHouse. Более крупные блоки вставки требуют больше памяти, но создают более крупные и менее многочисленные исходные части. Чем меньше частей ClickHouse нужно создать для загрузки большого объёма данных, тем меньше требуется дискового ввода-вывода и автоматических [фоновых слияний](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges).
+Размер блока вставки влияет как на [дисковые операции ввода-вывода](https://en.wikipedia.org/wiki/Category:Disk_file_systems), так и на потребление памяти сервером ClickHouse. Более крупные блоки вставки требуют больше памяти, но создают более крупные и менее многочисленные исходные части. Чем меньше частей ClickHouse нужно создать для загрузки большого объёма данных, тем меньше требуется дисковых операций ввода-вывода и автоматических [фоновых слияний](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges).
 
 При использовании запроса `INSERT INTO SELECT` в сочетании с движком интеграционной таблицы или табличной функцией данные загружаются сервером ClickHouse:
 
@@ -40,37 +40,37 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Пока данные не будут полностью загружены, сервер выполняет цикл:
 
 ```bash
-① Получить и разобрать следующую порцию данных и сформировать из неё блок данных в памяти (по одному на ключ партиционирования).
+① Pull and parse the next portion of data and form an in-memory data block (one per partitioning key) from it.
 
-② Записать блок в новую часть на хранилище.
+② Write the block into a new part on storage.
 
-Перейти к ① 
+Go to ① 
 ```
 
 В ① размер зависит от размера блока вставки, которым можно управлять с помощью двух настроек:
 
-* [`min_insert_block_size_rows`](/ru/reference/settings/session-settings#min_insert_block_size_rows) (по умолчанию: `1048545` строк)
-* [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings#min_insert_block_size_bytes) (по умолчанию: `256 MiB`)
+* [`min_insert_block_size_rows`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_rows) (по умолчанию: `1048545` строк)
+* [`min_insert_block_size_bytes`](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (по умолчанию: `256 MiB`)
 
 Когда в блоке вставки набирается либо указанное количество строк, либо достигается заданный объём данных (в зависимости от того, что произойдёт раньше), блок записывается в новую часть. Цикл вставки продолжается с шага ①.
 
-Обратите внимание, что значение `min_insert_block_size_bytes` обозначает размер несжатого блока в памяти (а не размер сжатой части на диске). Также обратите внимание, что созданные блоки и части редко содержат в точности заданное количество строк или байтов, поскольку ClickHouse [обрабатывает](https://clickhouse.com/company/events/query-performance-introspection) данные в потоковом режиме, построчно-[блоками](/ru/reference/settings/session-settings#max_block_size). Поэтому эти настройки задают минимальные пороговые значения.
+Обратите внимание, что значение `min_insert_block_size_bytes` обозначает размер несжатого блока в памяти (а не размер сжатой части на диске). Также обратите внимание, что созданные блоки и части редко содержат в точности заданное количество строк или байтов, поскольку ClickHouse [обрабатывает](https://clickhouse.com/company/events/query-performance-introspection) данные в потоковом режиме, построчно-[блоками](/ru/reference/settings/session-settings/max#max_block_size). Поэтому эти настройки задают минимальные пороговые значения.
 
 <div id="be-aware-of-merges">
   #### Учитывайте слияния
 </div>
 
-Чем меньше заданный размер блока вставки, тем больше исходных частей создаётся при большой загрузке данных и тем больше фоновых слияний частей выполняется одновременно с приёмом данных. Это может приводить к конкуренции за ресурсы (CPU и память) и требовать дополнительного времени после завершения загрузки, чтобы число частей вернулось к [приемлемому](/ru/reference/settings/merge-tree-settings#parts_to_throw_insert) уровню (3000).
+Чем меньше заданный размер блока вставки, тем больше исходных частей создаётся при большой загрузке данных и тем больше фоновых слияний частей выполняется одновременно с приёмом данных. Это может приводить к конкуренции за ресурсы (CPU и память) и требовать дополнительного времени после завершения загрузки, чтобы число частей вернулось к [приемлемому](/ru/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert) уровню (3000).
 
 <Warning>
-  Производительность запросов ClickHouse снизится, если количество частей превысит [рекомендуемые пределы](/ru/reference/settings/merge-tree-settings#parts_to_throw_insert).
+  Производительность запросов ClickHouse снизится, если количество частей превысит [рекомендуемые пределы](/ru/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert).
 </Warning>
 
-ClickHouse будет непрерывно [сливать части](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) в более крупные, пока они не [достигнут](/ru/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) сжатого размера около 150 GiB. Эта диаграмма показывает, как сервер ClickHouse сливает части:
+ClickHouse будет непрерывно [сливать части](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) в более крупные, пока они не [достигнут](/ru/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) сжатого размера около 150 GiB. Эта диаграмма показывает, как сервер ClickHouse сливает части:
 
 <Image img="/images/integrations/data-ingestion/s3/merges.webp" size="lg" border alt="Фоновые слияния в ClickHouse" />
 
-Один сервер ClickHouse использует несколько [фоновых потоков слияния](/ru/reference/settings/server-settings/settings#background_pool_size) для выполнения параллельных [слияний частей](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes). Каждый поток выполняет цикл:
+Один сервер ClickHouse использует несколько [фоновых потоков слияния](/ru/reference/settings/server-settings/settings/background#background_pool_size) для выполнения параллельных [слияний частей](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes). Каждый поток выполняет цикл:
 
 ```bash
 ① Decide which parts to merge next, and load these parts as blocks into memory.
@@ -84,7 +84,7 @@ Go to ①
 
 Обратите внимание, что [увеличение](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size) числа ядер CPU и объема RAM повышает производительность фоновых слияний.
 
-Части, слитые в более крупные, помечаются как [неактивные](/ru/reference/system-tables/parts) и в итоге удаляются через [настраиваемое](/ru/reference/settings/merge-tree-settings#old_parts_lifetime) количество минут. Со временем это формирует дерево слитых частей (отсюда и название таблицы [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/index)).
+Части, слитые в более крупные, помечаются как [неактивные](/ru/reference/system-tables/parts) и в итоге удаляются через [настраиваемое](/ru/reference/settings/merge-tree-settings/other#old_parts_lifetime) количество минут. Со временем это формирует дерево слитых частей (отсюда и название таблицы [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/index)).
 
 <div id="insert-parallelism">
   ### Параллелизм вставки
@@ -108,11 +108,11 @@ Go to ①
 Go to ①. 
 ```
 
-Количество таких параллельных потоков вставки можно настроить с помощью параметра [`max_insert_threads`](/ru/reference/settings/session-settings#max_insert_threads). Значение по умолчанию — `1` для open-source ClickHouse и 4 для [ClickHouse Cloud](https://clickhouse.com/cloud).
+Количество таких параллельных потоков вставки можно настроить с помощью параметра [`max_insert_threads`](/ru/reference/settings/session-settings/max-insert#max_insert_threads). Значение по умолчанию — `1` для open-source ClickHouse и 4 для [ClickHouse Cloud](https://clickhouse.com/cloud).
 
 При большом количестве файлов параллельная обработка несколькими потоками вставки работает эффективно. Она может полностью загрузить как доступные ядра CPU, так и пропускную способность сети (при параллельной загрузке файлов). В сценариях, когда в таблицу загружается всего несколько крупных файлов, ClickHouse автоматически обеспечивает высокий уровень параллелизма обработки данных и оптимизирует использование пропускной способности сети, создавая дополнительные потоки чтения для каждого потока вставки, чтобы параллельно читать (загружать) разные диапазоны внутри крупных файлов.
 
-Для функции и таблицы s3 параллельная загрузка отдельного файла определяется значениями [max&#95;download&#95;threads](/ru/operations/settings/settings#max_download_threads) и [max&#95;download&#95;buffer&#95;size](/ru/operations/settings/settings#max_download_buffer_size). Файлы будут загружаться параллельно, только если их размер превышает `2 * max_download_buffer_size`. По умолчанию значение `max_download_buffer_size` равно 10 MiB. В некоторых случаях можно без риска увеличить размер этого буфера до 50 MB (`max_download_buffer_size=52428800`), чтобы каждый файл загружался одним потоком. Это может сократить время, которое каждый поток тратит на обращения к S3, и тем самым уменьшить время ожидания S3. Кроме того, для файлов, слишком маленьких для параллельного чтения, ClickHouse для повышения пропускной способности автоматически выполняет предзагрузку данных, асинхронно читая такие файлы заранее.
+Для функции и таблицы s3 параллельная загрузка отдельного файла определяется значениями [max&#95;download&#95;threads](/ru/reference/settings/session-settings/max-download#max_download_threads) и [max&#95;download&#95;buffer&#95;size](/ru/reference/settings/session-settings/max-download#max_download_buffer_size). Файлы будут загружаться параллельно, только если их размер превышает `2 * max_download_buffer_size`. По умолчанию значение `max_download_buffer_size` равно 10 MiB. В некоторых случаях можно без риска увеличить размер этого буфера до 50 MB (`max_download_buffer_size=52428800`), чтобы каждый файл загружался одним потоком. Это может сократить время, которое каждый поток тратит на обращения к S3, и тем самым уменьшить время ожидания S3. Кроме того, для файлов, слишком маленьких для параллельного чтения, ClickHouse для повышения пропускной способности автоматически выполняет предзагрузку данных, асинхронно читая такие файлы заранее.
 
 <div id="measuring-performance">
   ## Измерение производительности
@@ -214,7 +214,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 * Обычно значения `max_threads` по умолчанию достаточно, то есть числа ядер. Если запрос потребляет много памяти и это нужно сократить, либо если `LIMIT` для результатов невелик, это значение можно уменьшить. Пользователи с большим объемом памяти могут поэкспериментировать с увеличением этого значения, чтобы, возможно, добиться более высокой пропускной способности чтения из S3. Как правило, это полезно только на машинах с небольшим числом ядер, то есть &lt; 10. Выигрыш от дальнейшей параллелизации обычно снижается, поскольку другие ресурсы становятся узким местом, например сеть и конкуренция за CPU.
 * Версии ClickHouse до 22.3.1 распараллеливали чтение только между несколькими файлами при использовании функции `s3` или табличного движка `S3`. Это требовало от пользователя разбивать файлы на части в S3 и читать их с использованием glob-шаблона, чтобы добиться оптимальной производительности чтения. В более поздних версиях загрузки теперь распараллеливаются и внутри одного файла.
 * В сценариях с небольшим числом потоков может помочь установка `remote_filesystem_read_method` в значение &quot;read&quot;, чтобы включить синхронное чтение файлов из S3.
-* Для функции `s3` и таблицы параллельная загрузка отдельного файла определяется значениями [`max_download_threads`](/ru/reference/settings/session-settings#max_download_threads) и [`max_download_buffer_size`](/ru/reference/settings/session-settings#max_download_buffer_size). Хотя [`max_download_threads`](/ru/reference/settings/session-settings#max_download_threads) управляет числом используемых потоков, файлы будут загружаться параллельно только в том случае, если их размер превышает 2 * `max_download_buffer_size`. По умолчанию значение `max_download_buffer_size` равно 10MiB. В некоторых случаях можно безопасно увеличить размер этого буфера до 50 MB (`max_download_buffer_size=52428800`), чтобы небольшие файлы загружались только одним потоком. Это может сократить время, которое каждый поток тратит на вызовы S3, и тем самым уменьшить время ожидания S3. Пример см. в [этой записи блога](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge).
+* Для функции `s3` и таблицы параллельная загрузка отдельного файла определяется значениями [`max_download_threads`](/ru/reference/settings/session-settings/max-download#max_download_threads) и [`max_download_buffer_size`](/ru/reference/settings/session-settings/max-download#max_download_buffer_size). Хотя [`max_download_threads`](/ru/reference/settings/session-settings/max-download#max_download_threads) управляет числом используемых потоков, файлы будут загружаться параллельно только в том случае, если их размер превышает 2 * `max_download_buffer_size`. По умолчанию значение `max_download_buffer_size` равно 10MiB. В некоторых случаях можно безопасно увеличить размер этого буфера до 50 MB (`max_download_buffer_size=52428800`), чтобы небольшие файлы загружались только одним потоком. Это может сократить время, которое каждый поток тратит на вызовы S3, и тем самым уменьшить время ожидания S3. Пример см. в [этой записи блога](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge).
 
 Прежде чем вносить какие-либо изменения для повышения производительности, обязательно проведите соответствующие замеры. Поскольку вызовы API S3 чувствительны к задержке и могут влиять на время выполнения на стороне клиента, используйте для метрик производительности журнал запросов, то есть `system.query_log`.
 

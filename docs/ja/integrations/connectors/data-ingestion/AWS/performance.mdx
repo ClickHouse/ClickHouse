@@ -49,28 +49,28 @@ Go to ①
 
 ① では、サイズは挿入ブロックサイズに依存し、これは次の 2 つの設定で制御できます。
 
-* [`min_insert_block_size_rows`](/ja/reference/settings/session-settings#min_insert_block_size_rows) (デフォルト: `1048545` 行)
-* [`min_insert_block_size_bytes`](/ja/reference/settings/session-settings#min_insert_block_size_bytes) (デフォルト: `256 MiB`)
+* [`min_insert_block_size_rows`](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_rows) (デフォルト: `1048545` 行)
+* [`min_insert_block_size_bytes`](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (デフォルト: `256 MiB`)
 
 挿入ブロックに指定した行数が集まるか、設定したデータ量に達した時点で (どちらか早い方) 、ブロックの内容が新しいパーツとして書き込まれます。挿入ループはステップ ① から続行されます。
 
-`min_insert_block_size_bytes` の値は、非圧縮のインメモリブロックサイズを表します (圧縮後のディスク上のパーツサイズではありません) 。また、作成されるブロックやパーツに、設定した行数やバイト数が厳密に含まれることはほとんどありません。これは、ClickHouse がデータを行単位の[ブロック](/ja/reference/settings/session-settings#max_block_size)ごとにストリーミングして[処理する](https://clickhouse.com/company/events/query-performance-introspection)ためです。したがって、これらの設定は最小しきい値を指定するものです。
+`min_insert_block_size_bytes` の値は、非圧縮のインメモリブロックサイズを表します (圧縮後のディスク上のパーツサイズではありません) 。また、作成されるブロックやパーツに、設定した行数やバイト数が厳密に含まれることはほとんどありません。これは、ClickHouse がデータを行単位の[ブロック](/ja/reference/settings/session-settings/max#max_block_size)ごとにストリーミングして[処理する](https://clickhouse.com/company/events/query-performance-introspection)ためです。したがって、これらの設定は最小しきい値を指定するものです。
 
 <div id="be-aware-of-merges">
   #### マージに注意する
 </div>
 
-設定された挿入ブロックサイズが小さいほど、大量のデータロード時に作成される初期パーツは増え、データのインジェストと並行して実行されるバックグラウンドのパーツマージも増えます。これにより、リソース競合 (CPU とメモリ) が発生し、さらにインジェスト完了後も、パーツ数が[適正](/ja/reference/settings/merge-tree-settings#parts_to_throw_insert) (3000) な水準に達するまで追加の時間が必要になる場合があります。
+設定された挿入ブロックサイズが小さいほど、大量のデータロード時に作成される初期パーツは増え、データのインジェストと並行して実行されるバックグラウンドのパーツマージも増えます。これにより、リソース競合 (CPU とメモリ) が発生し、さらにインジェスト完了後も、パーツ数が[適正](/ja/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert) (3000) な水準に達するまで追加の時間が必要になる場合があります。
 
 <Warning>
-  パーツ数が[推奨上限](/ja/reference/settings/merge-tree-settings#parts_to_throw_insert)を超えると、ClickHouse のクエリ性能に悪影響が生じます。
+  パーツ数が[推奨上限](/ja/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert)を超えると、ClickHouse のクエリ性能に悪影響が生じます。
 </Warning>
 
-ClickHouse は、[圧縮サイズ](/ja/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)が約 150 GiB に[達する](/ja/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)まで、継続的に[パーツをマージ](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)して、より大きなパーツへとまとめていきます。この図は、ClickHouse サーバーがパーツをどのようにマージするかを示しています。
+ClickHouse は、[圧縮サイズ](/ja/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)が約 150 GiB に[達する](/ja/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)まで、継続的に[パーツをマージ](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)して、より大きなパーツへとまとめていきます。この図は、ClickHouse サーバーがパーツをどのようにマージするかを示しています。
 
 <Image img="/images/integrations/data-ingestion/s3/merges.webp" size="lg" border alt="ClickHouse のバックグラウンドマージ" />
 
-単一の ClickHouse サーバーは、複数の[バックグラウンドマージスレッド](/ja/reference/settings/server-settings/settings#background_pool_size)を使って、[パーツマージ](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes)を同時実行します。各スレッドは次のループを実行します。
+単一の ClickHouse サーバーは、複数の[バックグラウンドマージスレッド](/ja/reference/settings/server-settings/settings/background#background_pool_size)を使って、[パーツマージ](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes)を同時実行します。各スレッドは次のループを実行します。
 
 ```bash
 ① Decide which parts to merge next, and load these parts as blocks into memory.
@@ -84,7 +84,7 @@ Go to ①
 
 [増やす](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#hardware-size)と、CPU コア数と RAM 容量に応じて、バックグラウンドマージのスループットも向上することに注意してください。
 
-より大きなパーツへマージされたパーツには [inactive](/ja/reference/system-tables/parts) のマークが付き、最終的には[設定可能な](/ja/reference/settings/merge-tree-settings#old_parts_lifetime)分数が経過すると削除されます。時間の経過とともに、これによりマージ済みパーツのツリーが形成されます (これが [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/index) テーブルという名前の由来です) 。
+より大きなパーツへマージされたパーツには [inactive](/ja/reference/system-tables/parts) のマークが付き、最終的には[設定可能な](/ja/reference/settings/merge-tree-settings/other#old_parts_lifetime)分数が経過すると削除されます。時間の経過とともに、これによりマージ済みパーツのツリーが形成されます (これが [`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/index) テーブルという名前の由来です) 。
 
 <div id="insert-parallelism">
   ### 挿入の並列度
@@ -92,7 +92,7 @@ Go to ①
 
 <Image img="/images/integrations/data-ingestion/s3/resource_usage.webp" size="lg" border alt="挿入の並列度におけるリソース使用量" />
 
-ClickHouse サーバー は、データを並列に処理して挿入できます。挿入の並列度は、ClickHouse サーバー のインジェストスループットとメモリ使用量に影響します。データを並列にロードして処理するには、より多くのメインメモリが必要になりますが、その分データをより高速に処理できるため、インジェストスループットは向上します。
+ClickHouse サーバー は、データを並列に処理して挿入できます。挿入の並列度は、ClickHouse サーバー のインジェストスループットとメモリ使用量に影響します。データを並列にロードして処理するには、より多くの主記憶が必要になりますが、その分データをより高速に処理できるため、インジェストスループットは向上します。
 
 `s3` のようなテーブル関数では、glob パターンを使ってロード対象のファイル名の集合を指定できます。glob パターンが複数の既存ファイルに一致する場合、ClickHouse は、並行して実行される挿入スレッド (server ごと) を利用して、ファイル間および各ファイル内の読み取りを並列化し、データをテーブルに並列に挿入できます。
 
@@ -108,11 +108,11 @@ ClickHouse サーバー は、データを並列に処理して挿入できま�
 Go to ①. 
 ```
 
-このような並列な挿入スレッドの数は、[`max_insert_threads`](/ja/reference/settings/session-settings#max_insert_threads) 設定で構成できます。デフォルト値は、オープンソースの ClickHouse では `1`、[ClickHouse Cloud](https://clickhouse.com/cloud) では 4 です。
+このような並列な挿入スレッドの数は、[`max_insert_threads`](/ja/reference/settings/session-settings/max-insert#max_insert_threads) 設定で構成できます。デフォルト値は、オープンソースの ClickHouse では `1`、[ClickHouse Cloud](https://clickhouse.com/cloud) では 4 です。
 
 ファイル数が多い場合は、複数の挿入スレッドによる並列処理が効果的に機能します。これにより、利用可能な CPU コアとネットワーク帯域幅 (並列ファイルダウンロード時) の両方を最大限に活用できます。一方、少数の大きなファイルだけをテーブルに読み込む場合、ClickHouse は自動的に高いデータ処理の並列性を確保し、大きなファイル内の複数の異なる範囲を並列に読み取る (ダウンロードする) ために、各挿入スレッドごとに追加のリーダースレッドを生成して、ネットワーク帯域幅の利用を最適化します。
 
-s3 関数およびテーブルでは、個々のファイルを並列ダウンロードするかどうかは、[max&#95;download&#95;threads](/operations/settings/settings#max_download_threads) と [max&#95;download&#95;buffer&#95;size](/operations/settings/settings#max_download_buffer_size) の値によって決まります。ファイルが並列にダウンロードされるのは、そのサイズが `2 * max_download_buffer_size` を超える場合だけです。デフォルトでは、`max_download_buffer_size` は 10MiB に設定されています。場合によっては、このバッファサイズを 50 MB (`max_download_buffer_size=52428800`) まで安全に増やし、各ファイルが単一のスレッドでダウンロードされるようにすることも可能です。これにより、各スレッドが S3 呼び出しに費やす時間を短縮でき、結果として S3 の待機時間も削減できます。さらに、並列読み取りには小さすぎるファイルについては、スループットを向上させるため、ClickHouse はそのようなファイルを非同期に先読みして自動的にデータを prefetch します。
+s3 関数およびテーブルでは、個々のファイルを並列ダウンロードするかどうかは、[max&#95;download&#95;threads](/ja/reference/settings/session-settings/max-download#max_download_threads) と [max&#95;download&#95;buffer&#95;size](/ja/reference/settings/session-settings/max-download#max_download_buffer_size) の値によって決まります。ファイルが並列にダウンロードされるのは、そのサイズが `2 * max_download_buffer_size` を超える場合だけです。デフォルトでは、`max_download_buffer_size` は 10MiB に設定されています。場合によっては、このバッファサイズを 50 MB (`max_download_buffer_size=52428800`) まで安全に増やし、各ファイルが単一のスレッドでダウンロードされるようにすることも可能です。これにより、各スレッドが S3 呼び出しに費やす時間を短縮でき、結果として S3 の待機時間も削減できます。さらに、並列読み取りには小さすぎるファイルについては、スループットを向上させるため、ClickHouse はそのようなファイルを非同期に先読みして自動的にデータを prefetch します。
 
 <div id="measuring-performance">
   ## パフォーマンスの測定
@@ -214,7 +214,7 @@ S3 での読み取り性能は、ネットワーク帯域幅やローカル I/O 
 * 通常、`max_threads` のデフォルト値、つまりコア数で十分です。クエリのメモリ使用量が多く、これを抑えたい場合や、結果の `LIMIT` が小さい場合は、この値を低めに設定できます。十分なメモリがある場合は、S3 からの読み取りスループット向上を期待して、この値を増やして試してみる価値があります。一般に効果があるのは、コア数が少ないマシン、つまり &lt; 10 の場合に限られます。通常は、ネットワークや CPU 競合など別のリソースがボトルネックになるため、並列化をさらに進めても効果は次第に小さくなります。
 * 22.3.1 より前の ClickHouse では、`s3` 関数または `S3` テーブルエンジンを使用した場合、読み取りの並列化は複数ファイル間でしか行われませんでした。そのため、最適な読み取り性能を得るには、ファイルを S3 上で chunk に分割し、glob パターンを使って読み取れるようにしておく必要がありました。新しいバージョンでは、1 つのファイル内のダウンロードも並列化されます。
 * スレッド数が少ない環境では、`remote_filesystem_read_method` を &quot;read&quot; に設定して、S3 からのファイル読み取りを同期的に行うようにすると効果が出る場合があります。
-* `s3` 関数とテーブルでは、個々のファイルの並列ダウンロードは [`max_download_threads`](/ja/reference/settings/session-settings#max_download_threads) と [`max_download_buffer_size`](/ja/reference/settings/session-settings#max_download_buffer_size) の値で決まります。[`max_download_threads`](/ja/reference/settings/session-settings#max_download_threads) は使用するスレッド数を制御しますが、ファイルが並列ダウンロードされるのは、そのサイズが 2 * `max_download_buffer_size` を超える場合だけです。デフォルトでは、`max_download_buffer_size` のデフォルト値は 10MiB に設定されています。場合によっては、このバッファサイズを 50 MB (`max_download_buffer_size=52428800`) まで安全に増やし、より小さなファイルが単一スレッドでのみダウンロードされるようにすることもできます。これにより、各スレッドが S3 呼び出しに費やす時間を短縮でき、結果として S3 の待機時間も減らせます。例については、[このブログ記事](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge)を参照してください。
+* `s3` 関数とテーブルでは、個々のファイルの並列ダウンロードは [`max_download_threads`](/ja/reference/settings/session-settings/max-download#max_download_threads) と [`max_download_buffer_size`](/ja/reference/settings/session-settings/max-download#max_download_buffer_size) の値で決まります。[`max_download_threads`](/ja/reference/settings/session-settings/max-download#max_download_threads) は使用するスレッド数を制御しますが、ファイルが並列ダウンロードされるのは、そのサイズが 2 * `max_download_buffer_size` を超える場合だけです。デフォルトでは、`max_download_buffer_size` のデフォルト値は 10MiB に設定されています。場合によっては、このバッファサイズを 50 MB (`max_download_buffer_size=52428800`) まで安全に増やし、より小さなファイルが単一スレッドでのみダウンロードされるようにすることもできます。これにより、各スレッドが S3 呼び出しに費やす時間を短縮でき、結果として S3 の待機時間も減らせます。例については、[このブログ記事](https://clickhouse.com/blog/clickhouse-1-trillion-row-challenge)を参照してください。
 
 性能改善のために変更を加える前に、必ず適切に計測してください。S3 API 呼び出しはレイテンシの影響を受けやすく、クライアント側のタイミングにも影響する可能性があるため、パフォーマンスメトリクスにはクエリログ、つまり `system.query_log` を使用してください。
 

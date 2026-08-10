@@ -35,7 +35,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 参数也可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)传递。在这种情况下，需要分别指定 `host` 和 `port`。建议在生产环境中使用这种方式。
 
-<div id="returned_value">
+<div id="returned-value">
   ## 返回值
 </div>
 
@@ -83,7 +83,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JO
 <Note>
   子查询形式 `(SELECT ...)` 会先由 ClickHouse 解析，并在发送到服务器之前按 PostgreSQL 方言 (PostgreSQL 标识符引用和字符串字面量转义) 重新序列化。因此，它必须是有效的 ClickHouse SQL。要传递 ClickHouse 无法解析的 PostgreSQL 特有语法，请使用 `query('...')` 形式，其文本会被原样发送到 PostgreSQL。
 
-  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等都**不会**下推到传入的查询中——而是在完整查询结果被拉取后由 ClickHouse 执行。要限制从 PostgreSQL 读取的数据，请将过滤条件放在传入的查询内部。使用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings#external_table_strict_query) 时，无法下推的外层过滤条件会抛出异常，而不是在本地执行。
+  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等都**不会**下推到传入的查询中——而是在完整查询结果被拉取后由 ClickHouse 执行。要限制从 PostgreSQL 读取的数据，请将过滤条件放在传入的查询内部。使用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings/external-table#external_table_strict_query) 时，无法下推的外层过滤条件会抛出异常，而不是在本地执行。
 </Note>
 
 PostgreSQL 端的 `INSERT` 查询会在 PostgreSQL 事务中以 `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` 的形式运行，并在每个 `INSERT` 语句后自动提交。

@@ -1,8 +1,8 @@
 ---
-description: 'Документация по запросу SELECT'
-sidebarTitle: 'SELECT'
+description: 'Документация по SELECT-запросу'
+sidebarTitle: 'Обзор'
 slug: /sql-reference/statements/select/
-title: 'Запрос SELECT'
+title: 'SELECT-запрос'
 doc_type: 'reference'
 ---
 
@@ -199,7 +199,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 Вы можете использовать синонимы (псевдонимы `AS`) в любой части запроса.
 
-В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` можно использовать позиционные аргументы. Чтобы включить эту возможность, активируйте настройку [enable&#95;positional&#95;arguments](/ru/reference/settings/session-settings#enable_positional_arguments). Тогда, например, `ORDER BY 1,2` будет сортировать строки таблицы сначала по первому, а затем по второму столбцу.
+В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` можно использовать позиционные аргументы. Чтобы включить эту возможность, активируйте настройку [enable&#95;positional&#95;arguments](/ru/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments). Тогда, например, `ORDER BY 1,2` будет сортировать строки таблицы сначала по первому, а затем по второму столбцу.
 
 <div id="implementation-details">
   ## Подробности реализации

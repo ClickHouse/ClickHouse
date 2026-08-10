@@ -1,6 +1,6 @@
 ---
 description: 'Документация по операторам'
-sidebarTitle: 'Операторы'
+sidebarTitle: 'Обзор'
 slug: /sql-reference/operators/
 title: 'Операторы'
 doc_type: 'reference'
@@ -493,7 +493,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 | `Date32`      | `Time64(s)`    | `DateTime64(s)` |
 
 <Note>
-  В результате используется [часовой пояс сеанса](/ru/reference/settings/session-settings#session_timezone) (или часовой пояс сервера по умолчанию, если часовой пояс сеанса не задан). Настройка [`date_time_overflow_behavior`](/ru/reference/settings/formats#date_time_overflow_behavior) определяет, что произойдет, если результат выйдет за пределы представимого диапазона.
+  В результате используется [часовой пояс сеанса](/ru/reference/settings/session-settings/other#session_timezone) (или часовой пояс сервера по умолчанию, если часовой пояс сеанса не задан). Настройка [`date_time_overflow_behavior`](/ru/reference/settings/formats/date-time#date_time_overflow_behavior) определяет, что произойдет, если результат выйдет за пределы представимого диапазона.
 </Note>
 
 Примеры:
@@ -540,15 +540,15 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 | `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
 | `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
 
-`zone` может быть любым константным строковым expression, которое вычисляется в корректное имя часового пояса (например, `'America/Denver'`, `'UTC'` или `concat('America', '/', 'Denver')`). Поскольку `AT TIME ZONE` сводится к `toTimeZone`, действуют те же правила для аргумента часового пояса: неконстантные выражения, такие как ссылка на столбец, требуют [`allow_nonconst_timezone_arguments = 1`](/ru/reference/settings/session-settings#allow_nonconst_timezone_arguments).
+`zone` может быть любым константным строковым expression, которое вычисляется в корректное имя часового пояса (например, `'America/Denver'`, `'UTC'` или `concat('America', '/', 'Denver')`). Поскольку `AT TIME ZONE` сводится к `toTimeZone`, действуют те же правила для аргумента часового пояса: неконстантные выражения, такие как ссылка на столбец, требуют [`allow_nonconst_timezone_arguments = 1`](/ru/reference/settings/session-settings/allow#allow_nonconst_timezone_arguments).
 
-`AT LOCAL` использует текущий [часовой пояс сеанса](/ru/reference/settings/session-settings#session_timezone) (или часовой пояс сервера по умолчанию, если часовой пояс сеанса не задан). В таблицах `Distributed` параметр `session_timezone` должен быть задан явно; если он пуст, `timeZone()` определяется на уровне сегмента и не может использоваться как константный аргумент `toTimeZone`, что приводит к исключению `ILLEGAL_COLUMN`.
+`AT LOCAL` использует текущий [часовой пояс сеанса](/ru/reference/settings/session-settings/other#session_timezone) (или часовой пояс сервера по умолчанию, если часовой пояс сеанса не задан). В таблицах `Distributed` параметр `session_timezone` должен быть задан явно; если он пуст, `timeZone()` определяется на уровне сегмента и не может использоваться как константный аргумент `toTimeZone`, что приводит к исключению `ILLEGAL_COLUMN`.
 
 <Note>
   В отличие от PostgreSQL, где `timestamp without time zone AT TIME ZONE zone` сначала трактует локальное время как относящееся к указанному часовому поясу, а затем выполняет преобразование, ClickHouse всегда сохраняет одну и ту же абсолютную точку во времени и меняет только метку часового пояса, используемую для отображения. Обе формы эквивалентны `toTimeZone` и не изменяют исходную временную метку.
 </Note>
 
-`AT TIME ZONE` имеет приоритет 13 (выше `*`/`/`/`%` с приоритетом 12 и выше `+`/`-` с приоритетом 11), как и в PostgreSQL. Это означает, что `a * ts AT TIME ZONE 'tz'` связывается как `a * (ts AT TIME ZONE 'tz')`, а `ts + interval AT TIME ZONE 'tz'` — как `ts + (interval AT TIME ZONE 'tz')`. Чтобы применить преобразование часового пояса после арифметической операции, используйте явные круглые скобки:
+`AT TIME ZONE` имеет старшинство 13 (выше `*`/`/`/`%` со старшинством 12 и выше `+`/`-` со старшинством 11), как и в PostgreSQL. Это означает, что `a * ts AT TIME ZONE 'tz'` связывается как `a * (ts AT TIME ZONE 'tz')`, а `ts + interval AT TIME ZONE 'tz'` — как `ts + (interval AT TIME ZONE 'tz')`. Чтобы применить преобразование часового пояса после арифметической операции, используйте явные круглые скобки:
 
 ```sql
 -- Explicit parens required to add first, then convert timezone
@@ -682,7 +682,7 @@ ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL
   * `0` в противном случае.
 * Для всех остальных значений оператор `IS NULL` всегда возвращает `0`.
 
-Можно оптимизировать, включив настройку [optimize&#95;functions&#95;to&#95;subcolumns](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [null](/ru/reference/data-types/nullable#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NULL FROM table` преобразуется в `SELECT n.null FROM TABLE`.
+Можно оптимизировать, включив настройку [optimize&#95;functions&#95;to&#95;subcolumns](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [null](/ru/reference/data-types/nullable#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NULL FROM table` преобразуется в `SELECT n.null FROM TABLE`.
 
 {/* */}
 
@@ -717,7 +717,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-Можно повысить производительность, включив настройку [optimize&#95;functions&#95;to&#95;subcolumns](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [null](/ru/reference/data-types/nullable#finding-null) вместо чтения и обработки всех данных столбца. Запрос `SELECT n IS NOT NULL FROM table` преобразуется в `SELECT NOT n.null FROM TABLE`.
+Можно повысить производительность, включив настройку [optimize&#95;functions&#95;to&#95;subcolumns](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [null](/ru/reference/data-types/nullable#finding-null) вместо чтения и обработки всех данных столбца. Запрос `SELECT n IS NOT NULL FROM table` преобразуется в `SELECT NOT n.null FROM TABLE`.
 
 <div id="checking-boolean-values">
   ## Проверка булевых значений

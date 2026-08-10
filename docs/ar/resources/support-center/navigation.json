@@ -3,6 +3,7 @@
     {
       "group": "قاعدة المعرفة",
       "pages": [
+        "ar/resources/support-center/home",
         {
           "group": "الأداء والتحسين",
           "pages": [
@@ -65,13 +66,12 @@
             "ar/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
             "ar/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
             "ar/resources/support-center/knowledge-base/configuration-settings/configure-a-user-setting",
-            "ar/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
             "ar/resources/support-center/knowledge-base/configuration-settings/ignoring-incorrect-settings",
             "ar/resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases"
           ]
         },
         {
-          "group": "التكاملات ومكتبات العميل",
+          "group": "التكاملات ومكتبات العميل البرمجية",
           "pages": [
             "ar/resources/support-center/knowledge-base/integrations/node-js-example",
             "ar/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -85,6 +85,7 @@
         {
           "group": "استكشاف الأخطاء وإصلاحها ورسائل الخطأ",
           "pages": [
+            "ar/resources/support-center/troubleshooting/index",
             "ar/resources/support-center/troubleshooting/troubleshooting",
             "ar/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
             "ar/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
@@ -95,11 +96,10 @@
             "ar/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
             "ar/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
             "ar/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure"
-          ],
-          "root": "ar/resources/support-center/troubleshooting/index"
+          ]
         },
         {
-          "group": "الجداول والمخططات",
+          "group": "الجداول والمخطط",
           "pages": [
             "ar/resources/support-center/knowledge-base/tables-schema/add-column",
             "ar/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -150,12 +150,13 @@
           ]
         },
         {
-          "group": "الأمان والتحكم في الوصول",
+          "group": "الأمان والتحكم بالوصول",
           "pages": [
             "ar/resources/support-center/knowledge-base/security/check-users-roles",
             "ar/resources/support-center/knowledge-base/security/common-rbac-queries",
             "ar/resources/support-center/knowledge-base/security/remove-default-user",
             "ar/resources/support-center/knowledge-base/security/row-column-policy",
+            "ar/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
             "ar/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles"
           ]
         },
@@ -185,9 +186,11 @@
         {
           "group": "عام والأسئلة الشائعة",
           "pages": [
+            "ar/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
               "group": "عام",
               "pages": [
+                "ar/resources/support-center/knowledge-base/general-faqs/index",
                 "ar/resources/support-center/knowledge-base/general-faqs/columnar-database",
                 "ar/resources/support-center/knowledge-base/general-faqs/concurrency",
                 "ar/resources/support-center/knowledge-base/general-faqs/cost-based",
@@ -204,39 +207,37 @@
                 "ar/resources/support-center/knowledge-base/general-faqs/updates",
                 "ar/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
                 "ar/resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper"
-              ],
-              "root": "ar/resources/support-center/knowledge-base/general-faqs/index"
+              ]
             },
             {
               "group": "حالات الاستخدام",
               "pages": [
+                "ar/resources/support-center/knowledge-base/general-faqs/use-cases-index",
                 "ar/resources/support-center/knowledge-base/general-faqs/key-value",
                 "ar/resources/support-center/knowledge-base/general-faqs/time-series",
                 "ar/resources/support-center/knowledge-base/general-faqs/use-clickhouse-for-log-analytics",
                 "ar/resources/support-center/knowledge-base/general-faqs/vector-search"
-              ],
-              "root": "ar/resources/support-center/knowledge-base/general-faqs/use-cases-index"
+              ]
             },
             {
               "group": "التكامل",
               "pages": [
+                "ar/resources/support-center/knowledge-base/integrations/index",
                 "ar/resources/support-center/knowledge-base/data-import-export/json-import",
                 "ar/resources/support-center/knowledge-base/integrations/oracle-odbc"
-              ],
-              "root": "ar/resources/support-center/knowledge-base/integrations/index"
+              ]
             },
             {
               "group": "العمليات",
               "pages": [
+                "ar/resources/support-center/knowledge-base/general-faqs/operations-index",
                 "ar/resources/support-center/knowledge-base/tables-schema/delete-old-data",
                 "ar/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
                 "ar/resources/support-center/knowledge-base/setup-installation/production",
                 "ar/resources/support-center/knowledge-base/general-faqs/separate-storage"
-              ],
-              "root": "ar/resources/support-center/knowledge-base/general-faqs/operations-index"
+              ]
             }
-          ],
-          "root": "ar/resources/support-center/knowledge-base/general-faqs/faq-index"
+          ]
         },
         {
           "group": "نصائح وحيل",
@@ -250,8 +251,7 @@
             "ar/resources/support-center/tips-and-tricks/too-many-parts"
           ]
         }
-      ],
-      "root": "ar/resources/support-center/home"
+      ]
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",

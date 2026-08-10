@@ -174,18 +174,18 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 
 也可以用文件内容替换配置中的部分内容。这可以通过两种方式实现：
 
-* *替换值*：如果某个元素带有 `incl` 属性，其值将被替换为所引用文件的内容。默认情况下，包含替换内容的文件路径为 `/etc/metrika.xml`。这可以在 server 配置的 [`include_from`](/zh/reference/settings/server-settings/settings#include_from) 元素中修改。替换值在该文件的 `/clickhouse/substitution_name` 元素中指定。如果 `incl` 中指定的替换项不存在，则会记录到日志中。要防止 ClickHouse 记录缺失的替换项，请指定属性 `optional="true"` (例如，[macros](/zh/reference/settings/server-settings/settings#macros) 的设置) 。
-* *替换元素*：如果要用替换内容替换整个元素，请使用 `include` 作为元素名。元素名 `include` 可以与属性 `from_zk = "/path/to/node"` 结合使用。在这种情况下，元素值会被替换为 ZooKeeper 中 `/path/to/node` 节点的内容。如果将整个 XML 子树存储为 ZooKeeper 节点，这种方式同样适用，它会被完整插入到源元素中。
+* *替换值*：如果某个元素带有 `incl` 属性，其值将被替换为所引用文件的内容。默认情况下，包含替换内容的文件路径为 `/etc/metrika.xml`。这可以在 server 配置的 [`include_from`](/zh/reference/settings/server-settings/settings/other#include_from) 元素中修改。替换值在该文件的 `/clickhouse/substitution_name` 元素中指定。如果 `incl` 中指定的替换项不存在，则会记录到日志中。要防止 ClickHouse 记录缺失的替换项，请指定属性 `optional="true"` (例如，[macros](/zh/reference/settings/server-settings/settings/other#macros) 的设置) 。
+* *替换元素*：如果要用替换内容替换整个元素，请使用 `include` 作为元素名。元素名 `include` 可以与属性 `from_zk = "/path/to/node"` 结合使用。在这种情况下，元素值会被替换为 ZooKeeper 中 `/path/to/node` 节点的内容。如果将整个 XML 子树存储为 Zookeeper 节点，这种方式同样适用，它会被完整插入到源元素中。
 
 下面给出一个示例：
 
 ```xml
 <clickhouse>
-    <!-- 将 `/profiles-in-zookeeper` ZK 路径下的 XML 子树追加到 `<profiles>` 元素。 -->
+    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
     <users>
-        <!-- 将 `include` 元素替换为 `/users-in-zookeeper` ZK 路径下的子树。 -->
+        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
@@ -199,9 +199,9 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 </div>
 
 你可以使用对称加密来加密配置元素，例如明文密码或私钥。
-为此，先配置[加密编解码器](/zh/reference/statements/create/table#encryption-codecs)，然后为要加密的元素添加属性 `encrypted_by`，并将其值设为加密编解码器的名称。
+为此，先配置[加密编解码器](/zh/reference/statements/create/table/codec#encryption-codecs)，然后为要加密的元素添加属性 `encrypted_by`，并将其值设为加密编解码器的名称。
 
-与属性 `from_zk`、`from_env` 和 `incl` 以及元素 `include` 不同，预处理后的文件中不会进行替换 (即不会解密加密后的值) 。
+与属性 `from_zk`、`from_env` 和 `incl` 以及元素 `include` 不同，预处理文件中不会进行替换 (即不会解密加密后的值) 。
 解密只会在服务器进程运行时发生。
 
 例如：

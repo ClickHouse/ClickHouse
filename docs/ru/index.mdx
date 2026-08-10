@@ -130,7 +130,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
 
 export const IntegrationsBanner = () => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = '/ru/integrations/home';
+    const href = '/integrations/home';
     return (
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
@@ -260,25 +260,25 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-          .ch-goal-icon { color: #374151; }
-          .dark .ch-goal-icon { color: #FAFF69; }
-          /* Баннер «Интеграции»: акцентная граница в обеих темах */
-          html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
-          html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
-          .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
-          .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
-          /* Сразу скрыть боковую панель на главной странице (предотвращает мерцание) */
-          #sidebar { display: none !important; }
-          /* Растянуть панель навигации на всю ширину, так как боковая панель скрыта */
-          #navbar-transition-maple {
-            width: 100vw !important;
-            left: 0 !important;
-            margin-left: 0 !important;
-            /* Соответствует правому внутреннему отступу самой панели навигации (3rem) */
-            padding-left: 3rem !important;
-            justify-content: flex-start !important;
-          }
-          `}
+            .ch-goal-icon { color: #374151; }
+            .dark .ch-goal-icon { color: #FAFF69; }
+            /* Баннер «Интеграции»: акцентная граница в обеих темах */
+            html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
+            html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
+            .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
+            .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
+            /* Сразу скрыть боковую панель на главной странице (предотвращает мерцание) */
+            #sidebar { display: none !important; }
+            /* Растянуть панель навигации на всю ширину, так как боковая панель скрыта */
+            #navbar-transition-maple {
+              width: 100vw !important;
+              left: 0 !important;
+              margin-left: 0 !important;
+              /* Соответствует правому внутреннему отступу самой панели навигации (3rem) */
+              padding-left: 3rem !important;
+              justify-content: flex-start !important;
+            }
+            `}
 </style>
 
 <PageWrapper>
@@ -325,13 +325,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "Что такое ClickHouse?", href: "/ru/get-started/about/intro" },
-        { label: "Установка", href: "/ru/get-started/setup/cloud" },
-        { label: "Быстрый старт", href: "/ru/get-started/quickstarts/home" },
-        { label: "Концепции ClickHouse", href: "/ru/concepts/core-concepts/index" },
-        { label: "Примеры датасетов", href: "/ru/get-started/sample-datasets/index" },
-        { label: "Руководства по миграции", href: "/ru/get-started/migrate/overview" },
-        { label: "Рекомендации", href: "/ru/concepts/best-practices/index" },
+        { label: "Что такое ClickHouse?", href: "/get-started/about/intro" },
+        { label: "Установка", href: "/get-started/setup/cloud" },
+        { label: "Быстрый старт", href: "/get-started/quickstarts/home" },
+        { label: "Концепции ClickHouse", href: "/concepts/core-concepts/index" },
+        { label: "Примеры датасетов", href: "/get-started/sample-datasets/index" },
+        { label: "Руководства по миграции", href: "/get-started/migrate/overview" },
+        { label: "Рекомендации", href: "/concepts/best-practices/index" },
     ]}
         />
 
@@ -346,10 +346,10 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "Моделирование данных", href: "/ru/guides/clickhouse/data-modelling/schema-design" },
-        { label: "Оптимизация производительности", href: "/ru/guides/clickhouse/performance-and-monitoring/query-optimization" },
-        { label: "ClickHouse Cloud", href: "/ru/products/cloud/guides" },
-        { label: "Сценарии применения", href: "/ru/guides/use-cases" }
+        { label: "Моделирование данных", href: "/guides/clickhouse/data-modelling/schema-design" },
+        { label: "Оптимизация производительности", href: "/guides/clickhouse/performance-and-monitoring/query-optimization" },
+        { label: "ClickHouse Cloud", href: "/products/cloud/guides" },
+        { label: "Сценарии применения", href: "/guides/use-cases" }
     ]}
         />
 
@@ -364,13 +364,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "Справочник по ClickHouse SQL", href: "/ru/reference/statements" },
-        { label: "Настройки", href: "/ru/reference/settings/index" },
-        { label: "Функции", href: "/ru/reference/functions/regular-functions/overview" },
-        { label: "Движки", href: "/ru/reference/engines/engines" },
-        { label: "Системные таблицы", href: "/ru/reference/system-tables" },
-        { label: "Форматы", href: "/ru/reference/formats/index" },
-        { label: "Типы данных", href: "/ru/reference/data-types/index" }
+        { label: "Справочник по ClickHouse SQL", href: "/reference/statements" },
+        { label: "Настройки", href: "/reference/settings/index" },
+        { label: "Функции", href: "/reference/functions/regular-functions/overview" },
+        { label: "Движки", href: "/reference/engines/engines" },
+        { label: "Системные таблицы", href: "/reference/system-tables" },
+        { label: "Форматы", href: "/reference/formats/index" },
+        { label: "Типы данных", href: "/reference/data-types/index" }
     ]}
         />
 
@@ -385,12 +385,12 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouse Cloud", href: "/ru/products/cloud/getting-started/cloud-get-started" },
-        { label: "ClickStack", href: "/ru/clickstack" },
-        { label: "Managed Postgres", href: "/ru/products/managed-postgres/overview" },
+        { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
+        { label: "ClickStack", href: "/clickstack" },
+        { label: "ClickHouse Managed Postgres", href: "/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
-        { label: "chDB", href: "/ru/chdb" },
-        { label: "Оператор Kubernetes", href: "/ru/products/kubernetes-operator/overview" },
+        { label: "chDB", href: "/chdb" },
+        { label: "Оператор Kubernetes", href: "/products/kubernetes-operator/overview" },
     ]}
         />
       </div>
@@ -436,11 +436,11 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">Что вы узнаете:</p>
           </>}
               links={[
-              { label: "1. Как организовать приём данных из распространённых источников с минимальными усилиями", href: "/ru/integrations" },
-              { label: "2. Лучшие практики организации данных для аналитики и роста", href: "/ru/guides/clickhouse/data-modelling/schema-design" },
-              { label: "3. Способы выполнять запросы к большим датасетам в реальном времени", href: "/ru/get-started/use-cases/real-time-analytics" },
-              { label: "4. Как создавать панели мониторинга, оповещения и событийно-ориентированные возможности на этой платформе", href: "/ru/get-started/use-cases/data-warehousing" },
-              { label: "5. Как снижать затраты без ущерба для производительности", href: "/ru/concepts/best-practices/index" },
+              { label: "1. Как организовать приём данных из распространённых источников с минимальными усилиями", href: "/integrations" },
+              { label: "2. Лучшие практики организации данных для аналитики и роста", href: "/guides/clickhouse/data-modelling/schema-design" },
+              { label: "3. Способы выполнять запросы к большим датасетам в реальном времени", href: "/get-started/use-cases/real-time-analytics" },
+              { label: "4. Как создавать панели мониторинга, оповещения и событийно-ориентированные возможности на этой платформе", href: "/get-started/use-cases/data-warehousing" },
+              { label: "5. Как снижать затраты без ущерба для производительности", href: "/concepts/best-practices/index" },
           ]}
             />
           </div>
@@ -448,7 +448,7 @@ export const PageWrapper = ({ children }) => {
           <div className="flex flex-col gap-4">
             <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="Универсальный стек обсервабилити на базе ClickHouse, который обеспечивает молниеносные запросы и мощные агрегации по журналам, метрикам, трассировкам, воспроизведениям сеансов и ошибкам." href="/ru/clickstack/overview" extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="Быстрый, масштабируемый сервис Postgres корпоративного уровня с нативной интеграцией с ClickHouse. Легко объединяйте Postgres для транзакций и ClickHouse для аналитики." href="/ru/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="Быстрый, масштабируемый сервис Postgres корпоративного уровня с нативной интеграцией с ClickHouse. Легко объединяйте Postgres для транзакций и ClickHouse для аналитики." href="/ru/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 
@@ -479,26 +479,40 @@ export const PageWrapper = ({ children }) => {
               <p className="mb-2 text-[#9ca3af] text-[13px]">Выполните в терминале:</p>
 
               <CodeBlock language="bash">
-                {`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}
+                {`claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user`}
               </CodeBlock>
             </Tab>
 
             <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
               <p className="mb-2 text-[#9ca3af] text-[13px]">Добавьте в <code>claude&#95;desktop&#95;config.json</code>:</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
+            </Tab>
+
+            <Tab title="Codex" icon="/images/logo-codex.svg">
+              <p className="mb-2 text-[#9ca3af] text-[13px]">Выполните в терминале:</p>
+
+              <CodeBlock language="bash">
+                {`codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp`}
+              </CodeBlock>
             </Tab>
 
             <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
               <p className="mb-2 text-[#9ca3af] text-[13px]">Добавьте в <code>.cursor/mcp.json</code>:</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
             </Tab>
 
             <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
               <p className="mb-2 text-[#9ca3af] text-[13px]">Добавьте в <code>~/.codeium/windsurf/mcp&#95;config.json</code>:</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
             </Tab>
           </Tabs>
         </div>

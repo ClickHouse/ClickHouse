@@ -19,14 +19,14 @@ Contiene información sobre los hilos que ejecutan consultas, por ejemplo, el no
 
 Para habilitar el registro:
 
-1. Configure los parámetros en la sección [query&#95;thread&#95;log](/es/reference/settings/server-settings/settings#query_thread_log).
-2. Establezca [log&#95;query&#95;threads](/es/reference/settings/session-settings#log_query_threads) en 1.
+1. Configure los parámetros en la sección [query&#95;thread&#95;log](/es/reference/settings/server-settings/settings/query#query_thread_log).
+2. Establezca [log&#95;query&#95;threads](/es/reference/settings/session-settings/log-query#log_query_threads) en 1.
 
-El intervalo de vaciado de los datos se establece en el parámetro `flush_interval_milliseconds` de la sección de configuración del servidor [query&#95;thread&#95;log](/es/reference/settings/server-settings/settings#query_thread_log). Para forzar el vaciado, use la consulta [SYSTEM FLUSH LOGS](/es/reference/statements/system#flush-logs).
+El intervalo de vaciado de los datos se establece en el parámetro `flush_interval_milliseconds` de la sección de configuración del servidor [query&#95;thread&#95;log](/es/reference/settings/server-settings/settings/query#query_thread_log). Para forzar el vaciado, use la consulta [SYSTEM FLUSH LOGS](/es/reference/statements/system#flush-logs).
 
 ClickHouse no elimina automáticamente los datos de la tabla. Consulte [Introducción](/es/reference/system-tables/overview#system-tables-introduction) para obtener más información.
 
-Puede usar la configuración [log&#95;queries&#95;probability](/es/reference/settings/session-settings#log_queries_probability)) para reducir la cantidad de consultas registradas en la tabla `query_thread_log`.
+Puede usar la configuración [log&#95;queries&#95;probability](/es/reference/settings/session-settings/log-queries#log_queries_probability)) para reducir la cantidad de consultas registradas en la tabla `query_thread_log`.
 
 <div id="columns">
   ## Columnas
@@ -72,7 +72,7 @@ Puede usar la configuración [log&#95;queries&#95;probability](/es/reference/set
 * `os_user` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — nombre de usuario del sistema operativo que ejecuta `clickhouse-client`.
 * `client_hostname` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — Nombre de host del equipo cliente en el que se ejecuta `clickhouse-client` u otro cliente TCP.
 * `client_name` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — El nombre de `clickhouse-client` o de otro cliente TCP.
-* `client_agent` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — El agente de IA para programación que invocó al cliente (por ejemplo, `claude-code` o `cursor`), detectado a partir de variables de entorno. Vacío si no se detectó ningún agente.
+* `client_agent` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — El agente de IA para programación que invocó al cliente (p. ej., `claude-code`, `cursor`), detectado a partir de variables de entorno. Vacío si no se detectó ningún agente.
 * `client_revision` ([UInt32](/es/reference/data-types/int-uint)) — Revisión de `clickhouse-client` o de otro cliente TCP.
 * `client_version_major` ([UInt32](/es/reference/data-types/int-uint)) — Versión principal de clickhouse-client o de cualquier otro cliente TCP.
 * `client_version_minor` ([UInt32](/es/reference/data-types/int-uint)) — Versión menor de clickhouse-client o de otro cliente TCP.

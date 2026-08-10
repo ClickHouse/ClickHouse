@@ -189,13 +189,27 @@ keywords: ['备份', '灾难恢复', '数据保护', '恢复', '云功能']
 
   <Tab title="恢复">
     ```sql
-    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    RESTORE ALL
     FROM S3(
         'https://testchbackups.s3.amazonaws.com/<uuid>',
         '<key id>',
         '<key secret>'
     )
+    SETTINGS restore_access_entities_with_current_grants = 1
     ```
+
+    `restore_access_entities_with_current_grants` 设置从 ClickHouse Cloud **26.4** 版本 (build **26.4.1.1942** 或更高版本) 开始可用。
+    你可以使用以下命令检查服务正在运行的版本：
+
+    ```sql
+    SELECT version()
+    ```
+
+    启用 `restore_access_entities_with_current_grants` 后，恢复的用户和角色的授权将仅限于执行恢复的用户有权授予的权限
+    (语义与 [`GRANT CURRENT GRANTS`](/zh/sql-reference/statements/grant) 相同) ，而不会在备份包含的权限多于执行恢复的用户可授予的权限时，
+    导致 `RESTORE` 因 `ACCESS_DENIED` 而失败。
+
+    在早于 26.4 的版本中，请省略该设置。
   </Tab>
 </Tabs>
 

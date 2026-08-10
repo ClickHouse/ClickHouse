@@ -1,6 +1,6 @@
 ---
 description: 'SELECT クエリのドキュメント'
-sidebarTitle: 'SELECT'
+sidebarTitle: '概要'
 slug: /sql-reference/statements/select/
 title: 'SELECT クエリ'
 doc_type: 'reference'
@@ -199,7 +199,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 クエリのどの部分でも、シノニム (`AS` 別名) を使用できます。
 
-`GROUP BY`、`ORDER BY`、`LIMIT BY` 句では、位置引数を使用できます。これを有効にするには、[enable&#95;positional&#95;arguments](/ja/reference/settings/session-settings#enable_positional_arguments) 設定をオンにします。すると、たとえば `ORDER BY 1,2` は、テーブルの行を最初のカラム、次に 2 番目のカラムでソートします。
+`GROUP BY`、`ORDER BY`、`LIMIT BY` 句では、位置引数を使用できます。これを有効にするには、[enable&#95;positional&#95;arguments](/ja/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 設定をオンにします。すると、たとえば `ORDER BY 1,2` は、テーブルの行を最初のカラム、次に 2 番目のカラムでソートします。
 
 <div id="implementation-details">
   ## 実装の詳細

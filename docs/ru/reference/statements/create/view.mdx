@@ -49,7 +49,8 @@ SELECT a, b, c FROM (SELECT ...)
   ## Параметризованное представление
 </div>
 
-Параметризованные представления похожи на обычные представления, но могут создаваться с параметрами, значения которых определяются не сразу. Эти представления можно использовать с табличными функциями: имя представления указывается как имя функции, а значения параметров — как её аргументы.
+Параметризованные представления похожи на обычные представления, но могут создаваться с параметрами, значения которых определяются не сразу.
+Эти представления можно использовать с табличными функциями: имя представления указывается как имя функции, а значения параметров — как её аргументы.
 
 ```sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
@@ -59,6 +60,14 @@ CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Co
 
 ```sql
 SELECT * FROM view(column1=value1, column2=value2 ...)
+```
+
+Поскольку параметризованное представление зависит от значений параметров, без них у него нет схемы.
+Это означает, что в таблице `system.columns` нет информации о параметризованных представлениях.
+Кроме того, запросы `DESCRIBE` работают только при указании параметров.
+
+```sql
+DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
 <div id="materialized-view">
@@ -174,8 +183,6 @@ Materialized view работает следующим образом: при в�
 
 Если materialized view использует конструкцию `TO [db.]name`, можно выполнить `DETACH` представления, запустить `ALTER` для целевой таблицы, а затем `ATTACH` ранее отсоединённого (`DETACH`) представления.
 
-Обратите внимание, что на materialized view влияет настройка [optimize&#95;on&#95;insert](/ru/reference/settings/session-settings#optimize_on_insert). Данные объединяются перед вставкой в представление.
-
 Представления выглядят так же, как обычные таблицы. Например, они отображаются в результате запроса `SHOW TABLES`.
 
 Чтобы удалить представление, используйте [DROP VIEW](/ru/reference/statements/drop#drop-view). Хотя `DROP TABLE` тоже работает для VIEW.
@@ -201,12 +208,18 @@ Materialized view работает следующим образом: при в�
   Поэтому для создания представления с этим параметром требуется `GRANT ALLOW SQL SECURITY NONE TO <user>`.
 </Note>
 
-Если `DEFINER`/`SQL SECURITY` не указаны, используются значения по умолчанию:
+Если `DEFINER`/`SQL SECURITY` не указаны, результат зависит от настройки сервера [`ignore_empty_sql_security_in_create_view_query`](/ru/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query).
 
-* `SQL SECURITY`: `INVOKER` для обычных представлений и `DEFINER` для materialized view ([настраивается через settings](/ru/reference/settings/session-settings#default_normal_view_sql_security))
-* `DEFINER`: `CURRENT_USER` ([настраивается через settings](/ru/reference/settings/session-settings#default_view_definer))
+При значении по умолчанию `true` запрос сохраняется в исходном виде, а представление получает пустой тип безопасности SQL. Обычное представление при этом выполняется с разрешениями вызывающего пользователя, а для materialized view с явно указанной целевой таблицей проверки доступа к этой целевой таблице пропускаются: вставка в исходную таблицу не требует привилегии `INSERT` на целевую таблицу, а чтение из представления не требует привилегии `SELECT` на неё.
 
-Если представление присоединено без указания `DEFINER`/`SQL SECURITY`, по умолчанию используется `SQL SECURITY NONE` для materialized view и `SQL SECURITY INVOKER` для обычного представления.
+При значении `false` в определение представления при создании записываются следующие значения по умолчанию:
+
+* `SQL SECURITY`: `INVOKER` для обычных представлений (настраивается через [`default_normal_view_sql_security`](/ru/reference/settings/session-settings/default#default_normal_view_sql_security)) и `DEFINER` для materialized view (настраивается через [`default_materialized_view_sql_security`](/ru/reference/settings/session-settings/default#default_materialized_view_sql_security))
+* `DEFINER`: `CURRENT_USER` (настраивается через [`default_view_definer`](/ru/reference/settings/session-settings/default#default_view_definer))
+
+Refreshable materialized view всегда получают эти значения по умолчанию независимо от настройки.
+
+При присоединении или перезагрузке представления при запуске сервера оно сохраняет тип безопасности SQL из своего сохранённого определения, поэтому представление, сохранённое без `DEFINER`/`SQL SECURITY`, сохраняет пустой тип безопасности SQL.
 
 Чтобы изменить безопасность SQL для существующего представления, используйте
 
@@ -320,7 +333,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 В режиме без `APPEND` поддерживается только координируемое обновление. Для нескоординированного обновления используйте базу данных `Atomic` и запрос `CREATE ... ON CLUSTER`, чтобы создать refreshable materialized view на всех репликах.
 
-Координация выполняется через Keeper. Путь znode определяется настройкой сервера [default&#95;replica&#95;path](/ru/reference/settings/server-settings/settings#default_replica_path).
+Координация выполняется через Keeper. Путь znode определяется настройкой сервера [default&#95;replica&#95;path](/ru/reference/settings/server-settings/settings/default-replica#default_replica_path).
 
 <div id="refresh-dependencies">
   ### Зависимости при обновлении
@@ -498,13 +511,15 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
   ## Оконное представление
 </div>
 
-<ExperimentalBadge />
+<DeprecatedBadge />
 
 <CloudNotSupportedBadge />
 
-<Info>
-  Это экспериментальная возможность, которая в будущих выпусках может измениться обратно несовместимым образом. Чтобы включить использование оконных представлений и запроса `WATCH`, включите настройку [allow&#95;experimental&#95;window&#95;view](/ru/reference/settings/session-settings#allow_experimental_window_view). Введите команду `set allow_experimental_window_view = 1`.
-</Info>
+<Warning>
+  **Устарело**
+
+  Оконные представления устарели и могут быть удалены в будущих выпусках. Их использование по-прежнему требует включения настройки [allow&#95;experimental&#95;window&#95;view](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_window_view) (`SET allow_experimental_window_view = 1`); для новых сценариев они не рекомендуются.
+</Warning>
 
 ```sql
 CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]

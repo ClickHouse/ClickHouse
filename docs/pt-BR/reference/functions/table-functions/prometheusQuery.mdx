@@ -29,7 +29,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 * `promql_query` - Uma consulta escrita em [sintaxe PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 * `evaluation_time - O timestamp de avaliação. Para avaliar uma consulta no momento atual, use `now()`como`evaluation&#95;time&#96;.
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor retornado
 </div>
 
@@ -58,7 +58,7 @@ Seletores instantâneos, seletores de intervalo, operadores de correspondência 
 
 | Categoria     | Funções                                                                                          |
 | ------------- | ------------------------------------------------------------------------------------------------ |
-| Intervalo     | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| Intervalo     | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | Matemática    | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | Trigonometria | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | DateTime      | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |

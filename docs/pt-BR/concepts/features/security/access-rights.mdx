@@ -89,7 +89,7 @@ As configurações podem ser definidas de diferentes maneiras: para uma conta de
 1. Configurações da conta de usuário.
 2. As configurações das funções padrão da conta de usuário. Se uma configuração estiver definida em algumas funções, a ordem de aplicação dessa configuração será indefinida.
 3. As configurações de perfis de configurações atribuídos a um usuário ou às funções padrão dele. Se uma configuração estiver definida em alguns perfis, a ordem de aplicação dessa configuração será indefinida.
-4. Configurações aplicadas a todo o servidor por padrão ou a partir do [perfil padrão](/pt-BR/reference/settings/server-settings/settings#default_profile).
+4. Configurações aplicadas a todo o servidor por padrão ou a partir do [perfil padrão](/pt-BR/reference/settings/server-settings/settings/default#default_profile).
 
 <div id="role-management">
   ### Função
@@ -120,6 +120,8 @@ Privilégios podem ser concedidos a uma função por meio da consulta [GRANT](/p
 </div>
 
 Uma política de linha é um filtro que define quais linhas ficam disponíveis para um usuário ou uma função. Uma política de linha contém filtros para uma tabela específica, bem como uma lista de funções e/ou usuários aos quais essa política de linha deve ser aplicada.
+
+Uma política de linha é aplicada quando os dados da tabela são lidos localmente. Para uma tabela [Distributed](/pt-BR/reference/engines/table-engines/special/distributed) ou outra tabela que delega a leitura a servidores remotos, defina a política nas tabelas subjacentes de cada servidor: uma política na própria tabela com dados remotos não pode ser aplicada à consulta enviada, e as leituras por meio dela são rejeitadas. Essa política em uma tabela subjacente não é aplicada quando o iniciador envia um plano de leitura já criado; portanto, mantenha [`serialize_query_plan = 0`](/pt-BR/reference/settings/session-settings/serialize#serialize_query_plan) para usuários cujas políticas de linha devem ser aplicadas (consulte a [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)).
 
 <Note>
   As políticas de linha só fazem sentido se você tiver acesso somente leitura. Se você puder modificar a tabela ou copiar partições entre tabelas, isso invalida as restrições das políticas de linha.
@@ -170,7 +172,7 @@ Comandos de gerenciamento:
 
 * Configure um diretório para armazenar as configurações.
 
-  O ClickHouse armazena as configurações das entidades de acesso na pasta definida no parâmetro de configuração do servidor [access&#95;control&#95;path](/pt-BR/reference/settings/server-settings/settings#access_control_path).
+  O ClickHouse armazena as configurações das entidades de acesso na pasta definida no parâmetro de configuração do servidor [access&#95;control&#95;path](/pt-BR/reference/settings/server-settings/settings/access-control#access_control_path).
 
 * Habilite o controle de acesso e o gerenciamento de contas via SQL para pelo menos uma conta de usuário.
 

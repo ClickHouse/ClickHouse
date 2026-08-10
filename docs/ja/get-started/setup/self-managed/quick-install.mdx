@@ -18,9 +18,11 @@ doc_type: 'guide'
     curl https://clickhouse.com/ | sh
     ```
 
-    Linux および macOS では、これにより [`clickhousectl`](https://github.com/ClickHouse/clickhousectl) も
-    `~/.local/bin` にインストールされ (`chctl` シンボリックリンク付き) 、
-    ローカルの ClickHouse のバージョンとサーバーを管理できるようになります。
+    Linux および macOS では、ClickHouse CLI の [`clickhousectl`](/ja/install/clickhousectl) も
+    `~/.local/bin` にインストールされます (`chctl` エイリアス付き) 。`clickhousectl` を使用すると、
+    複数のローカル ClickHouse バージョンのインストールと管理、バックグラウンドでのサーバー実行、
+    ClickHouse Cloud の管理を行えます。CLI ベースのワークフローについては、
+    [clickhousectl のインストールページ](/ja/install/clickhousectl)を参照してください。
 
     `clickhousectl` なしで `clickhouse` バイナリのみをインストールするには、
     `CLICKHOUSE_ONLY=1` を設定します。

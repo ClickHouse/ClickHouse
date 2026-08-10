@@ -22,8 +22,8 @@ doc_type: 'reference'
 Отображает результат запроса в виде PNG-изображения. Это удобно как встроенный инструмент визуализации.
 
 Размер выходного изображения задаётся настройками
-[`output_format_image_width`](/ru/reference/settings/formats#output_format_image_width) и
-[`output_format_image_height`](/ru/reference/settings/formats#output_format_image_height)
+[`output_format_image_width`](/ru/reference/settings/formats/output-format#output_format_image_width) и
+[`output_format_image_height`](/ru/reference/settings/formats/output-format#output_format_image_height)
 (обе по умолчанию равны 1024). Пиксели, не покрытые результатом, заполняются чёрным цветом
 (в режимах `RGB` и градаций серого) или прозрачным чёрным (в режиме `RGBA`).
 
@@ -95,7 +95,7 @@ SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 </div>
 
 По умолчанию формат `PNG` выводит необработанные байты изображения. Параметр
-[`output_format_image_terminal_mode`](/ru/reference/settings/formats#output_format_image_terminal_mode)
+[`output_format_image_terminal_mode`](/ru/reference/settings/formats/output-format#output_format_image_terminal_mode)
 заставляет формат вместо этого отображать изображение прямо в терминале с помощью протокола встроенных изображений:
 
 | Значение           | Поведение                                                                                                                                                                          |

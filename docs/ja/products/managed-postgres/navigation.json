@@ -23,20 +23,14 @@
         {
           "group": "pg_clickhouse",
           "pages": [
+            "ja/products/managed-postgres/extensions/pg_clickhouse/introduction",
             "ja/products/managed-postgres/extensions/pg_clickhouse/reference",
             "ja/products/managed-postgres/extensions/pg_clickhouse/tutorial"
-          ],
-          "root": "ja/products/managed-postgres/extensions/pg_clickhouse/introduction"
+          ]
         },
         "ja/products/managed-postgres/upgrades",
         "ja/products/managed-postgres/openapi",
         "ja/products/managed-postgres/terraform"
-      ]
-    },
-    {
-      "group": "ベンチマーク",
-      "pages": [
-        "ja/products/managed-postgres/benchmarks"
       ]
     },
     {
@@ -60,7 +54,6 @@
         "ja/products/managed-postgres/migrations/peerdb",
         "ja/products/managed-postgres/migrations/clickpipes",
         "ja/products/managed-postgres/migrations/data-validation",
-        "ja/products/managed-postgres/migrations/clickhouse-cloud",
         "ja/products/managed-postgres/migrations/faq"
       ]
     },
@@ -71,7 +64,8 @@
         "ja/products/managed-postgres/monitoring/dashboard",
         "ja/products/managed-postgres/monitoring/metrics",
         "ja/products/managed-postgres/monitoring/prometheus",
-        "ja/products/managed-postgres/monitoring/query-insights"
+        "ja/products/managed-postgres/monitoring/query-insights",
+        "ja/products/managed-postgres/monitoring/notifications"
       ]
     },
     {
@@ -82,5 +76,5 @@
     }
   ],
   "icon": "/images/icons/icon-postgres.svg",
-  "item": "Managed Postgres"
+  "item": "ClickHouse Managed Postgres"
 }

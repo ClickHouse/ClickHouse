@@ -20,13 +20,13 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 
 하나의 쿼리에는 쉼표로 구분된 여러 명령을 포함할 수 있습니다.
 
-쿼리 처리의 동기 여부는 [mutations&#95;sync](/ko/reference/settings/session-settings#mutations_sync) 설정으로 정의됩니다. 기본값은 비동기입니다.
+쿼리 처리의 동기 여부는 [mutations&#95;sync](/ko/reference/settings/session-settings/mutations#mutations_sync) 설정으로 정의됩니다. 기본값은 비동기입니다.
 
 **관련 항목**
 
 * [뮤테이션](/ko/reference/statements/alter/index#mutations)
 * [ALTER 쿼리의 동기 여부](/ko/reference/statements/alter/index#synchronicity-of-alter-queries)
-* [mutations&#95;sync](/ko/reference/settings/session-settings#mutations_sync) 설정
+* [mutations&#95;sync](/ko/reference/settings/session-settings/mutations#mutations_sync) 설정
 * [경량 `UPDATE`](/ko/reference/statements/update) - patch parts를 사용하는 대체 경량 업데이트
 * [`APPLY PATCHES`](/ko/reference/statements/alter/apply-patches) - 경량 업데이트의 패치를 수동으로 적용합니다
 

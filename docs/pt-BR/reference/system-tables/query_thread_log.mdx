@@ -19,14 +19,14 @@ Contém informações sobre threads que executam consultas, por exemplo, nome da
 
 Para iniciar o logging:
 
-1. Configure os parâmetros na seção [query&#95;thread&#95;log](/pt-BR/reference/settings/server-settings/settings#query_thread_log).
-2. Defina [log&#95;query&#95;threads](/pt-BR/reference/settings/session-settings#log_query_threads) como 1.
+1. Configure os parâmetros na seção [query&#95;thread&#95;log](/pt-BR/reference/settings/server-settings/settings/query#query_thread_log).
+2. Defina [log&#95;query&#95;threads](/pt-BR/reference/settings/session-settings/log-query#log_query_threads) como 1.
 
-O período de flush dos dados é definido no parâmetro `flush_interval_milliseconds` da seção de configurações do servidor [query&#95;thread&#95;log](/pt-BR/reference/settings/server-settings/settings#query_thread_log). Para forçar o flush, use a consulta [SYSTEM FLUSH LOGS](/pt-BR/reference/statements/system#flush-logs).
+O período de flush dos dados é definido no parâmetro `flush_interval_milliseconds` da seção de configurações do servidor [query&#95;thread&#95;log](/pt-BR/reference/settings/server-settings/settings/query#query_thread_log). Para forçar o flush, use a consulta [SYSTEM FLUSH LOGS](/pt-BR/reference/statements/system#flush-logs).
 
 O ClickHouse não exclui dados da tabela automaticamente. Consulte [Introdução](/pt-BR/reference/system-tables/overview#system-tables-introduction) para mais detalhes.
 
-Você pode usar a configuração [log&#95;queries&#95;probability](/pt-BR/reference/settings/session-settings#log_queries_probability)) para reduzir o número de consultas registradas na tabela `query_thread_log`.
+Você pode usar a configuração [log&#95;queries&#95;probability](/pt-BR/reference/settings/session-settings/log-queries#log_queries_probability)) para reduzir o número de consultas registradas na tabela `query_thread_log`.
 
 <div id="columns">
   ## Colunas
@@ -72,7 +72,7 @@ Você pode usar a configuração [log&#95;queries&#95;probability](/pt-BR/refere
 * `os_user` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — nome de usuário do sistema operacional que está executando o clickhouse-client.
 * `client_hostname` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Hostname da máquina cliente na qual o `clickhouse-client` ou outro cliente TCP é executado.
 * `client_name` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — O nome do clickhouse-client ou de outro cliente TCP.
-* `client_agent` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — O agente de IA para programação que invocou o cliente (por exemplo, `claude-code` ou `cursor`), detectado por variáveis de ambiente. Fica vazio se nenhum agente for detectado.
+* `client_agent` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — O agente de IA para programação que invocou o cliente (por exemplo, `claude-code`, `cursor`), detectado por variáveis de ambiente. Fica vazio se nenhum agente for detectado.
 * `client_revision` ([UInt32](/pt-BR/reference/data-types/int-uint)) — Revisão do clickhouse-client ou de outro cliente TCP.
 * `client_version_major` ([UInt32](/pt-BR/reference/data-types/int-uint)) — Versão major do clickhouse-client ou de outro cliente TCP.
 * `client_version_minor` ([UInt32](/pt-BR/reference/data-types/int-uint)) — Versão secundária do clickhouse-client ou de outro cliente TCP.

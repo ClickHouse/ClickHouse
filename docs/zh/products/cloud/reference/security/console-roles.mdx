@@ -17,10 +17,10 @@ ClickHouse 提供四种组织级角色用于用户管理。只有 Admin 角色�
 
 | 角色             | 说明                                                                      |
 | -------------- | ----------------------------------------------------------------------- |
-| Admin          | 执行组织的所有管理操作并控制所有设置。默认情况下，此角色会分配给组织中的第一个用户，并自动拥有所有服务上的 Service Admin 权限。 |
+| Admin          | 执行组织的所有管理操作并控制所有设置。默认情况下，此角色会分配给组织中的第一个用户，并自动拥有所有服务上的 服务管理员 权限。 |
 | Billing        | 查看用量和发票，并管理付款方式。                                                        |
 | Org API reader | 具有管理组织级设置和用户的 API 权限，但不能访问服务。                                           |
-| Member         | 只能登录，并可管理个人 profile 设置。默认分配给 SAML 单点登录用户。                               |
+| Member         | 只能登录，并可管理个人 profile 设置。默认分配给 SAML 单点登录用户，除非组织配置了其他默认角色。                 |
 
 <div id="service-roles">
   ## 服务角色
@@ -60,10 +60,10 @@ ClickHouse 提供四种组织级角色用于用户管理。只有 Admin 角色�
 | **Organization** ([更多信息](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users))                              | 组织级权限                                                                                    |
 | control-plane:organization:view                                                                                                    | 查看组织详细信息和只读元数据。                                                                          |
 | control-plane:organization:manage                                                                                                  | 管理组织设置和用户。                                                                               |
-| **Billing** ([更多信息](/zh/products/cloud/reference/billing/index))                                                                      | 账单和发票管理                                                                                  |
+| **Billing** ([更多信息](/zh/products/cloud/reference/billing/billing-overview))                                                           | 账单和发票管理                                                                                  |
 | control-plane:organization:manage-billing                                                                                          | 管理账单设置、付款方式和发票。                                                                          |
 | control-plane:organization:view-billing                                                                                            | 查看账单用量和发票。                                                                               |
-| **API keys** ([更多信息](/zh/products/cloud/features/admin-features/api/index))                                                           | 组织 API 密钥管理                                                                              |
+| **API keys** ([更多信息](/zh/products/cloud/features/admin-features/api/api-overview))                                                    | 组织 API 密钥管理                                                                              |
 | control-plane:organization:view-api-keys                                                                                           | 查看组织的 API 密钥。                                                                            |
 | control-plane:organization:create-api-keys                                                                                         | 为组织创建新的 API 密钥。                                                                          |
 | control-plane:organization:update-api-keys                                                                                         | 更新现有 API 密钥及其权限。                                                                         |

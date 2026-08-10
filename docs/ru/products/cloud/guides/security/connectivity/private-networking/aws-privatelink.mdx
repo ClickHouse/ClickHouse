@@ -51,13 +51,16 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
   * us-west-1
   * us-east-2
   * us-east-1
-    Обратите внимание на стоимость: AWS взимает плату за межрегиональную передачу данных, подробнее о тарифах [здесь](https://aws.amazon.com/privatelink/pricing/).
+</Note>
+
+<Note>
+  AWS взимает плату за межрегиональную передачу данных. Подробнее см. в разделе [тарифы AWS PrivateLink](https://aws.amazon.com/privatelink/pricing/).
 </Note>
 
 **Чтобы включить AWS PrivateLink, выполните следующие действия**:
 
-1. Получите Endpoint &quot;Service name&quot;.
-2. Создайте AWS Endpoint.
+1. Получите значение &quot;Service name&quot; для конечной точки.
+2. Создайте AWS endpoint.
 3. Добавьте &quot;Endpoint ID&quot; в организацию ClickHouse Cloud.
 4. Добавьте &quot;Endpoint ID&quot; в список разрешённых для сервиса ClickHouse.
 
@@ -163,7 +166,9 @@ jq .result
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="Настройки конечной точки AWS PrivateLink" border />
 
-Если вы хотите установить межрегиональное подключение через PrivateLink, установите флажок &quot;Cross region endpoint&quot; и укажите регион сервиса. Регион сервиса — это регион, в котором запущен экземпляр ClickHouse.
+<Note>
+  Для межрегионального подключения установите флажок **Cross region endpoint** и укажите регион сервиса, в котором запущен ваш сервис ClickHouse.
+</Note>
 
 Если возникнет ошибка &quot;Service name couldn&#39;t be verified.&quot;, обратитесь в службу поддержки с запросом на добавление новых регионов в список поддерживаемых регионов.
 

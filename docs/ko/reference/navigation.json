@@ -14,6 +14,7 @@
           "expanded": false,
           "group": "SQL 문",
           "pages": [
+            "ko/reference/statements/index",
             {
               "expanded": false,
               "group": "ALTER",
@@ -43,8 +44,7 @@
                 "ko/reference/statements/alter/user",
                 "ko/reference/statements/alter/masking-policy",
                 "ko/reference/statements/alter/view"
-              ],
-              "root": "ko/reference/statements/alter/index"
+              ]
             },
             "ko/reference/statements/attach",
             "ko/reference/statements/check-grant",
@@ -54,11 +54,13 @@
               "expanded": false,
               "group": "CREATE",
               "pages": [
+                "ko/reference/statements/create/index",
                 "ko/reference/statements/create/database",
                 {
                   "expanded": false,
-                  "group": "딕셔너리",
+                  "group": "DICTIONARY",
                   "pages": [
+                    "ko/reference/statements/create/dictionary",
                     "ko/reference/statements/create/dictionary/attributes",
                     "ko/reference/statements/create/dictionary/embedded",
                     "ko/reference/statements/create/dictionary/lifetime",
@@ -66,6 +68,7 @@
                       "expanded": false,
                       "group": "레이아웃",
                       "pages": [
+                        "ko/reference/statements/create/dictionary/layouts/overview",
                         "ko/reference/statements/create/dictionary/layouts/flat",
                         "ko/reference/statements/create/dictionary/layouts/hashed",
                         "ko/reference/statements/create/dictionary/layouts/hashed-array",
@@ -78,13 +81,13 @@
                         "ko/reference/statements/create/dictionary/layouts/polygon",
                         "ko/reference/statements/create/dictionary/layouts/ip-trie",
                         "ko/reference/statements/create/dictionary/layouts/regexp-tree"
-                      ],
-                      "root": "ko/reference/statements/create/dictionary/layouts/overview"
+                      ]
                     },
                     {
                       "expanded": false,
                       "group": "SOURCES",
                       "pages": [
+                        "ko/reference/statements/create/dictionary/sources/overview",
                         "ko/reference/statements/create/dictionary/sources/local-file",
                         "ko/reference/statements/create/dictionary/sources/executable-file",
                         "ko/reference/statements/create/dictionary/sources/executable-pool",
@@ -99,11 +102,9 @@
                         "ko/reference/statements/create/dictionary/sources/null",
                         "ko/reference/statements/create/dictionary/sources/yamlregexptree",
                         "ko/reference/statements/create/dictionary/sources/ytsaurus"
-                      ],
-                      "root": "ko/reference/statements/create/dictionary/sources/overview"
+                      ]
                     }
-                  ],
-                  "root": "ko/reference/statements/create/dictionary"
+                  ]
                 },
                 "ko/reference/statements/create/masking-policy",
                 "ko/reference/statements/create/function",
@@ -112,11 +113,19 @@
                 "ko/reference/statements/create/role",
                 "ko/reference/statements/create/row-policy",
                 "ko/reference/statements/create/settings-profile",
-                "ko/reference/statements/create/table",
+                {
+                  "expanded": false,
+                  "group": "테이블",
+                  "pages": [
+                    "ko/reference/statements/create/table",
+                    "ko/reference/statements/create/table/codec",
+                    "ko/reference/statements/create/table/temporary-table",
+                    "ko/reference/statements/create/table/replace-table"
+                  ]
+                },
                 "ko/reference/statements/create/user",
                 "ko/reference/statements/create/view"
-              ],
-              "root": "ko/reference/statements/create/index"
+              ]
             },
             "ko/reference/statements/delete",
             "ko/reference/statements/describe-table",
@@ -141,6 +150,7 @@
               "expanded": false,
               "group": "SELECT",
               "pages": [
+                "ko/reference/statements/select/index",
                 "ko/reference/statements/select/all",
                 "ko/reference/statements/select/apply_modifier",
                 "ko/reference/statements/select/array-join",
@@ -165,8 +175,7 @@
                 "ko/reference/statements/select/union",
                 "ko/reference/statements/select/where",
                 "ko/reference/statements/select/with"
-              ],
-              "root": "ko/reference/statements/select/index"
+              ]
             },
             "ko/reference/statements/set-role",
             "ko/reference/statements/set",
@@ -177,18 +186,17 @@
             "ko/reference/statements/update",
             "ko/reference/statements/use",
             "ko/reference/statements/watch"
-          ],
-          "root": "ko/reference/statements/index"
+          ]
         },
         {
           "expandable": true,
           "expanded": false,
           "group": "연산자",
           "pages": [
+            "ko/reference/operators/index",
             "ko/reference/operators/exists",
             "ko/reference/operators/distributed-ddl"
-          ],
-          "root": "ko/reference/operators/index"
+          ]
         }
       ]
     },
@@ -197,6 +205,7 @@
       "expanded": false,
       "group": "데이터 타입",
       "pages": [
+        "ko/reference/data-types/index",
         {
           "expanded": false,
           "group": "숫자 타입",
@@ -256,7 +265,7 @@
         },
         {
           "expanded": false,
-          "group": "널 허용 타입 및 선택적 타입",
+          "group": "널 허용 및 옵셔널 타입",
           "pages": [
             "ko/reference/data-types/nullable",
             "ko/reference/data-types/lowcardinality"
@@ -264,7 +273,7 @@
         },
         {
           "expanded": false,
-          "group": "특수 용도 타입",
+          "group": "특수 타입",
           "pages": [
             "ko/reference/data-types/uuid",
             "ko/reference/data-types/enum",
@@ -285,38 +294,41 @@
           "expanded": false,
           "group": "특수 데이터 타입",
           "pages": [
+            "ko/reference/data-types/special-data-types/index",
             "ko/reference/data-types/special-data-types/expression",
             "ko/reference/data-types/special-data-types/interval",
             "ko/reference/data-types/special-data-types/nothing",
             "ko/reference/data-types/special-data-types/set"
-          ],
-          "root": "ko/reference/data-types/special-data-types/index"
+          ]
         },
         {
-          "group": "이진 인코딩",
+          "group": "바이너리 인코딩",
           "pages": [
             "ko/reference/data-types/data-types-binary-encoding"
           ]
         }
-      ],
-      "root": "ko/reference/data-types/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "엔진",
       "pages": [
+        "ko/reference/engines/engines",
         {
           "expanded": false,
           "group": "테이블 엔진",
           "pages": [
+            "ko/reference/engines/table-engines/index",
             {
               "expanded": false,
               "group": "통합",
               "pages": [
+                "ko/reference/engines/table-engines/integrations/index",
                 "ko/reference/engines/table-engines/integrations/arrowflight",
                 "ko/reference/engines/table-engines/integrations/azure-queue",
                 "ko/reference/engines/table-engines/integrations/azureBlobStorage",
+                "ko/reference/engines/table-engines/integrations/bigquery",
                 "ko/reference/engines/table-engines/integrations/deltalake",
                 "ko/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "ko/reference/engines/table-engines/integrations/ExternalDistributed",
@@ -340,23 +352,23 @@
                 "ko/reference/engines/table-engines/integrations/sqlite",
                 "ko/reference/engines/table-engines/integrations/time-series",
                 "ko/reference/engines/table-engines/integrations/ytsaurus"
-              ],
-              "root": "ko/reference/engines/table-engines/integrations/index"
+              ]
             },
             {
               "expanded": false,
-              "group": "Log 엔진 계열",
+              "group": "Log 계열",
               "pages": [
+                "ko/reference/engines/table-engines/log-family/index",
                 "ko/reference/engines/table-engines/log-family/log",
                 "ko/reference/engines/table-engines/log-family/stripelog",
                 "ko/reference/engines/table-engines/log-family/tinylog"
-              ],
-              "root": "ko/reference/engines/table-engines/log-family/index"
+              ]
             },
             {
               "expanded": false,
               "group": "MergeTree 엔진 계열",
               "pages": [
+                "ko/reference/engines/table-engines/mergetree-family/index",
                 "ko/reference/engines/table-engines/mergetree-family/mergetree",
                 "ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree",
                 "ko/reference/engines/table-engines/mergetree-family/annindexes",
@@ -369,13 +381,13 @@
                 "ko/reference/engines/table-engines/mergetree-family/summingmergetree",
                 "ko/reference/engines/table-engines/mergetree-family/textindexes",
                 "ko/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree"
-              ],
-              "root": "ko/reference/engines/table-engines/mergetree-family/index"
+              ]
             },
             {
               "expanded": false,
               "group": "특수",
               "pages": [
+                "ko/reference/engines/table-engines/special/index",
                 "ko/reference/engines/table-engines/special/alias",
                 "ko/reference/engines/table-engines/special/buffer",
                 "ko/reference/engines/table-engines/special/dictionary",
@@ -394,16 +406,15 @@
                 "ko/reference/engines/table-engines/special/set",
                 "ko/reference/engines/table-engines/special/url",
                 "ko/reference/engines/table-engines/special/view"
-              ],
-              "root": "ko/reference/engines/table-engines/special/index"
+              ]
             }
-          ],
-          "root": "ko/reference/engines/table-engines/index"
+          ]
         },
         {
           "expanded": false,
           "group": "데이터베이스 엔진",
           "pages": [
+            "ko/reference/engines/database-engines/index",
             "ko/reference/engines/database-engines/atomic",
             "ko/reference/engines/database-engines/backup",
             "ko/reference/engines/database-engines/datalake",
@@ -413,21 +424,21 @@
             "ko/reference/engines/database-engines/replicated",
             "ko/reference/engines/database-engines/shared",
             "ko/reference/engines/database-engines/sqlite"
-          ],
-          "root": "ko/reference/engines/database-engines/index"
+          ]
         }
-      ],
-      "root": "ko/reference/engines/engines"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "함수",
       "pages": [
+        "ko/reference/functions/index",
         {
           "expanded": false,
           "group": "일반 함수",
           "pages": [
+            "ko/reference/functions/regular-functions/overview",
             "ko/reference/functions/regular-functions/ai-functions",
             "ko/reference/functions/regular-functions/arithmetic-functions",
             "ko/reference/functions/regular-functions/array-functions",
@@ -449,6 +460,7 @@
               "expanded": false,
               "group": "Geo",
               "pages": [
+                "ko/reference/functions/regular-functions/geo/index",
                 "ko/reference/functions/regular-functions/geo/coordinates",
                 "ko/reference/functions/regular-functions/geo/flipCoordinates",
                 "ko/reference/functions/regular-functions/geo/geometry",
@@ -458,8 +470,7 @@
                 "ko/reference/functions/regular-functions/geo/polygon",
                 "ko/reference/functions/regular-functions/geo/s2",
                 "ko/reference/functions/regular-functions/geo/svg"
-              ],
-              "root": "ko/reference/functions/regular-functions/geo/index"
+              ]
             },
             "ko/reference/functions/regular-functions/hash-functions",
             "ko/reference/functions/regular-functions/in-functions",
@@ -473,7 +484,6 @@
             "ko/reference/functions/regular-functions/numeric-indexed-vector-functions",
             "ko/reference/functions/regular-functions/other-functions",
             "ko/reference/functions/regular-functions/random-functions",
-            "ko/reference/functions/regular-functions/overview",
             "ko/reference/functions/regular-functions/rounding-functions",
             "ko/reference/functions/regular-functions/splitting-merging-functions",
             "ko/reference/functions/regular-functions/string-functions",
@@ -488,13 +498,13 @@
             "ko/reference/functions/regular-functions/uniqtheta-functions",
             "ko/reference/functions/regular-functions/url-functions",
             "ko/reference/functions/regular-functions/uuid-functions"
-          ],
-          "root": "ko/reference/functions/regular-functions/regular-functions-index"
+          ]
         },
         {
           "expanded": false,
           "group": "집계 함수",
           "pages": [
+            "ko/reference/functions/aggregate-functions/index",
             "ko/reference/functions/aggregate-functions/combinators",
             "ko/reference/functions/aggregate-functions/grouping_function",
             "ko/reference/functions/aggregate-functions/parametric-functions",
@@ -663,16 +673,17 @@
                 "ko/reference/functions/aggregate-functions/welchTTest"
               ]
             }
-          ],
-          "root": "ko/reference/functions/aggregate-functions/index"
+          ]
         },
         {
           "expanded": false,
           "group": "테이블 함수",
           "pages": [
+            "ko/reference/functions/table-functions/index",
             "ko/reference/functions/table-functions/arrowflight",
             "ko/reference/functions/table-functions/azureBlobStorage",
             "ko/reference/functions/table-functions/azureBlobStorageCluster",
+            "ko/reference/functions/table-functions/bigquery",
             "ko/reference/functions/table-functions/cluster",
             "ko/reference/functions/table-functions/deltalake",
             "ko/reference/functions/table-functions/deltalakeCluster",
@@ -698,6 +709,7 @@
             "ko/reference/functions/table-functions/jdbc",
             "ko/reference/functions/table-functions/loop",
             "ko/reference/functions/table-functions/merge",
+            "ko/reference/functions/table-functions/mergeTreeCodecBlockCounts",
             "ko/reference/functions/table-functions/mergeTreeIndex",
             "ko/reference/functions/table-functions/mergeTreeProjection",
             "ko/reference/functions/table-functions/mergeTreeTextIndex",
@@ -728,13 +740,13 @@
             "ko/reference/functions/table-functions/view",
             "ko/reference/functions/table-functions/ytsaurus",
             "ko/reference/functions/table-functions/zeros"
-          ],
-          "root": "ko/reference/functions/table-functions/index"
+          ]
         },
         {
           "expanded": false,
           "group": "윈도우 함수",
           "pages": [
+            "ko/reference/functions/window-functions/index",
             "ko/reference/functions/window-functions/cume_dist",
             "ko/reference/functions/window-functions/dense_rank",
             "ko/reference/functions/window-functions/first_value",
@@ -749,8 +761,7 @@
             "ko/reference/functions/window-functions/percent_rank",
             "ko/reference/functions/window-functions/rank",
             "ko/reference/functions/window-functions/row_number"
-          ],
-          "root": "ko/reference/functions/window-functions/index"
+          ]
         },
         {
           "group": "사용자 정의 함수",
@@ -759,14 +770,14 @@
             "ko/reference/functions/regular-functions/wasm_udf"
           ]
         }
-      ],
-      "root": "ko/reference/functions/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "포맷",
       "pages": [
+        "ko/reference/formats/index",
         {
           "expanded": false,
           "group": "Arrow",
@@ -937,14 +948,14 @@
         "ko/reference/formats/Values",
         "ko/reference/formats/Vertical",
         "ko/reference/formats/XML"
-      ],
-      "root": "ko/reference/formats/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "설정",
       "pages": [
+        "ko/reference/settings/index",
         {
           "$ref": "./settings/server-settings/settings/navigation.json"
         },
@@ -958,15 +969,14 @@
           "$ref": "./settings/formats/navigation.json"
         },
         "ko/reference/settings/beta-and-experimental-features"
-      ],
-      "root": "ko/reference/settings/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "시스템 테이블",
       "pages": [
-        "ko/reference/system-tables/index",
+        "ko/reference/system-tables/overview",
         "ko/reference/system-tables/aggregate_function_combinators",
         "ko/reference/system-tables/aggregated_zookeeper_log",
         "ko/reference/system-tables/asynchronous_insert_log",
@@ -1001,6 +1011,7 @@
         "ko/reference/system-tables/database_replicas",
         "ko/reference/system-tables/databases",
         "ko/reference/system-tables/dead_letter_queue",
+        "ko/reference/system-tables/delta_lake_metadata_log",
         "ko/reference/system-tables/delta_metadata_log",
         "ko/reference/system-tables/detached_parts",
         "ko/reference/system-tables/detached_tables",
@@ -1036,6 +1047,7 @@
         "ko/reference/system-tables/jemalloc_stats",
         "ko/reference/system-tables/jemalloc_profile_text",
         "ko/reference/system-tables/kafka_consumers",
+        "ko/reference/system-tables/keeper_storage",
         "ko/reference/system-tables/keywords",
         "ko/reference/system-tables/licenses",
         "ko/reference/system-tables/macros",
@@ -1113,6 +1125,7 @@
         "ko/reference/system-tables/user_defined_functions",
         "ko/reference/system-tables/user_directories",
         "ko/reference/system-tables/user_processes",
+        "ko/reference/system-tables/user_query_log",
         "ko/reference/system-tables/users",
         "ko/reference/system-tables/view_refreshes",
         "ko/reference/system-tables/warnings",
@@ -1125,13 +1138,13 @@
         "ko/reference/system-tables/zookeeper_connection_log",
         "ko/reference/system-tables/zookeeper_log",
         "ko/reference/system-tables/zookeeper_watches"
-      ],
-      "root": "ko/reference/system-tables/overview"
+      ]
     },
     {
       "group": "데이터 레이크",
-      "pages": [],
-      "root": "ko/reference/datalakes"
+      "pages": [
+        "ko/reference/datalakes"
+      ]
     }
   ]
 }

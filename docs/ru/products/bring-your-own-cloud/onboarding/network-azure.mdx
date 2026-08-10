@@ -1,0 +1,110 @@
+---
+title: 'Настройка частной сети для BYOC на Azure'
+slug: /cloud/reference/byoc/onboarding/network-azure
+sidebarTitle: 'Настройка частной сети Azure'
+keywords: ['BYOC', 'cloud', 'собственное облако', 'azure', 'private link']
+description: 'Настройка Private Link для BYOC на Azure'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+ClickHouse BYOC on Azure поддерживает частное подключение через Azure Private Link.
+
+<div id="common-prerequisites">
+  ## Предварительные требования
+</div>
+
+<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
+  ### Включите private load balancer для ClickHouse BYOC
+</div>
+
+В консоли ClickHouse Cloud включите **Private load balancer** для инфраструктуры BYOC.
+
+<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC: включение Private Load Balancer" border />
+
+<div id="setup-privatelink">
+  ## Настройка Azure Private Link
+</div>
+
+Azure Private Link обеспечивает безопасное частное подключение к вашим сервисам ClickHouse BYOC. Весь трафик передаётся внутри сети Azure и не проходит через публичный интернет.
+
+<Steps>
+  <Step title="Включите Private Link в консоли ClickHouse" id="step-1-enable-private-link">
+    <Note>
+      В качестве предварительного условия убедитесь, что **приватный балансировщик нагрузки** включён.
+    </Note>
+
+    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="Включение BYOC PrivateLink" border />
+  </Step>
+
+  <Step title={<>Получите <code>Service name</code> конечной точки</>} id="step-2-obtain-endpoint-service-name">
+    1. В консоли ClickHouse Cloud перейдите на страницу Settings сервиса, к которому вы хотите подключиться через Private Link.
+    2. Нажмите «Set up private endpoint».
+    3. В открывшейся выдвижной панели скопируйте значения `Service name` (псевдоним сервиса Private Link) и `DNS-имя` — они понадобятся на следующих шагах. (После включения Private Link генерация этих значений может занять некоторое время.)
+       <Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="md" alt="Частные конечные точки" border />
+  </Step>
+
+  <Step title="Создайте частную конечную точку в вашей сети" id="step-3-create-endpoint">
+    1. Откройте свой **Azure Portal** (то есть подписку Azure, в которой размещено ваше клиентское приложение) → **Network Foundation** → **Private endpoints** → **Create**.
+    2. На вкладке **Basics** выберите подписку, группу ресурсов, имя и регион для частной конечной точки. Регион должен совпадать с регионом VNet, из которой подключается ваше клиентское приложение.
+       <Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Создание частной конечной точки: основные параметры" border />
+    3. На вкладке **Resource** выберите **Connect to an Azure resource by resource ID or alias** и введите `Service name`, полученное на предыдущем шаге.
+       <Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Выбор ресурса частной конечной точки" border />
+    4. На вкладке **Virtual Network** выберите виртуальную сеть и подсеть, в которых будет создана частная конечная точка. При необходимости добавьте группу безопасности приложений, чтобы фильтровать трафик к частной конечной точке.
+       <Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Выбор виртуальной сети для частной конечной точки" border />
+    5. Перейдите по оставшимся вкладкам и нажмите **Create**. **Connection status** созданной частной конечной точки будет иметь значение **Pending**, пока на следующих шагах вы не добавите её `Resource ID` в список разрешённых для сервиса ClickHouse.
+    6. Откройте сетевой интерфейс, связанный с частной конечной точкой, и скопируйте **Private IPv4 address** — он понадобится на этапе настройки DNS.
+       <Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="IP-адрес частной конечной точки" border />
+  </Step>
+
+  <Step title={<>Добавьте <code>Resource ID</code> частной конечной точки в список разрешённых для сервиса ClickHouse</>} id="step-4-add-endpoint-id-to-services-allow-list">
+    Чтобы получить Resource ID частной конечной точки, откройте созданную ранее частную конечную точку в Azure Portal, нажмите **JSON View** и скопируйте поле `id` верхнего уровня (**Resource ID**, отображаемый в верхней части представления, в формате `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`). Не используйте вложенные поля `id` внутри объекта `properties`:
+
+    <Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Resource ID частной конечной точки" border />
+
+    1. В консоли ClickHouse Cloud перейдите на страницу Settings сервиса, к которому требуется подключиться через Private Link.
+    2. Нажмите &quot;Set up private endpoint&quot;.
+    3. В открывшейся выдвижной панели укажите полученный выше `Resource ID` в поле `Endpoint ID` и при необходимости добавьте описание.
+    4. Нажмите &quot;Create endpoint&quot;.
+
+    <Note>
+      Чтобы разрешить доступ через существующее подключение Private Link, воспользуйтесь выпадающим списком существующих конечных точек.
+      В нём отображаются существующие подключения Private Link к сервисам в той же инфраструктуре.
+    </Note>
+
+    <Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="md" alt="Фильтр частных конечных точек" border />
+
+    <Note>
+      Ручное подтверждение в Azure Portal не требуется: после добавления `Resource ID` в список разрешённых подключение к конечной точке подтверждается автоматически, а его `LinkID` автоматически добавляется в Istio `AuthorizationPolicy` для сервиса ClickHouse. **Статус подключения** частной конечной точки в вашей подписке изменится на **Approved**.
+    </Note>
+  </Step>
+
+  <Step title="Задайте частное DNS-имя для конечной точки" id="step-5-set-private-dns-name-for-endpoint">
+    <Note>
+      DNS можно настроить разными способами. Настройте его в соответствии с вашим сценарием использования.
+    </Note>
+
+    Необходимо направить все поддомены (wildcard) &quot;DNS-имени&quot; (всё, что следует после ID сервиса, например `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`) на IP-адрес частной конечной точки. Это гарантирует, что сервисы и компоненты в вашей VNet смогут корректно разрешать это имя. Типичная настройка с использованием Azure Private DNS:
+
+    1. [Создайте зону Private DNS](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal) с именем, соответствующим &quot;DNS-имени&quot; без начального ID сервиса, например `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`.
+    2. В зоне создайте набор записей с wildcard: для **Name** укажите `*`, а в поле **IP Address** введите ранее скопированный IP-адрес частной конечной точки.
+    3. [Свяжите зону Private DNS с вашей виртуальной сетью](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal#link-the-virtual-network), чтобы клиенты в VNet могли разрешать имена в этой зоне.
+
+    Проверьте настройку DNS с хоста в вашей VNet: &quot;DNS-имя&quot; должно разрешаться в IP-адрес частной конечной точки:
+
+    ```bash
+    nslookup h5ju65kv87.privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com
+    ```
+  </Step>
+
+  <Step title="Доступ к экземпляру через Private Link" id="step-6-connect-via-privatelink">
+    1. В консоли ClickHouse Cloud перейдите на страницу Settings сервиса.
+    2. Нажмите &quot;Set up private endpoint&quot;.
+    3. В открывшейся выдвижной панели скопируйте `DNS-имя`.
+       <Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="md" alt="DNS-имя частной конечной точки" border />
+       <Note>
+         Доступ к сервисам ClickHouse через Private Link регулируется политикой **Istio Authorization Policy** на уровне сервиса, которой ClickHouse управляет в вашей инфраструктуре BYOC.
+       </Note>
+  </Step>
+</Steps>

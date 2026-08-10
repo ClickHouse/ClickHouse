@@ -2,14 +2,12 @@
 title: 'JupySQL 与 chDB'
 sidebarTitle: 'JupySQL'
 slug: /chdb/guides/jupysql
-description: '如何安装适用于 Bun 的 chDB'
+description: '如何在 Jupyter 笔记本和 IPython 中使用 JupySQL 查询 chDB'
 keywords: ['chdb', 'JupySQL']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
-[JupySQL](https://jupysql.readthedocs.io/en/latest/quick-start.html) 是一个 Python 库，可让你在 Jupyter 笔记本和 IPython shell 中运行 SQL。
+[JupySQL](https://github.com/ploomber/jupysql) 是一个 Python 库，可让你在 Jupyter 笔记本和 IPython shell 中运行 SQL。
 在本指南中，我们将学习如何使用 chDB 和 JupySQL 查询数据。
 
 <div class="vimeo-container">
@@ -55,20 +53,19 @@ jupyter lab
   ## 下载数据集
 </div>
 
-我们将使用 [Jeff Sackmann&#39;s tennis&#95;atp](https://github.com/JeffSackmann/tennis_atp) 数据集中的一个，该数据集包含球员信息及其排名随时间变化的元数据。
-先从下载排名文件开始：
+我们将使用纽约市出租车数据集，其中包含约 300 万条出租车行程记录，以及每次行程的车费、小费和上车社区信息。
+这些行程记录分布在多个 TSV 文件中，因此先下载这些文件：
 
 ```python
 from urllib.request import urlretrieve
 ```
 
 ```python
-files = ['00s', '10s', '20s', '70s', '80s', '90s', 'current']
-base = "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master"
-for file in files:
+base = "https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi"
+for n in range(3):
   _ = urlretrieve(
-    f"{base}/atp_rankings_{file}.csv",
-    f"atp_rankings_{file}.csv",
+    f"{base}/trips_{n}.gz",
+    f"trips_{n}.gz",
   )
 ```
 
@@ -83,13 +80,13 @@ from chdb import dbapi
 ```
 
 接下来我们将创建一个 chDB 连接。
-我们持久化的所有数据都会保存到 `atp.chdb` 目录中：
+我们持久化的所有数据都会保存到 `taxi.chdb` 目录中：
 
 ```python
-conn = dbapi.connect(path="atp.chdb")
+conn = dbapi.connect(path="taxi.chdb")
 ```
 
-现在加载 `sql` magic，并建立与 chDB 的连接：
+现在加载 `sql` 魔法命令，并建立与 chDB 的连接：
 
 ```python
 %load_ext sql
@@ -102,267 +99,227 @@ conn = dbapi.connect(path="atp.chdb")
 %config SqlMagic.displaylimit = None
 ```
 
-## 查询 CSV 文件中的数据
+<div id="querying-data-in-tsv-files">
+  ## 查询 TSV 文件中的数据
+</div>
 
-我们已经下载了一批带有 `atp_rankings` 前缀的文件。
-下面使用 `DESCRIBE` 语句来查看 schema：
+我们下载了一批以 `trips_` 为前缀的文件。
+使用 `DESCRIBE` 子句查看其 schema：
 
 ```python
 %%sql
-DESCRIBE file('atp_rankings*.csv')
+DESCRIBE file('trips_*.gz')
 SETTINGS describe_compact_output=1,
          schema_inference_make_columns_nullable=0
 ```
 
 ```text
-+--------------+-------+
-|     name     |  type |
-+--------------+-------+
-| ranking_date | Int64 |
-|     rank     | Int64 |
-|    player    | Int64 |
-|    points    | Int64 |
-+--------------+-------+
++--------------------+----------+
+|        name        |   type   |
++--------------------+----------+
+|      trip_id       |  Int64   |
+|     vendor_id      |  Int64   |
+|    pickup_date     |   Date   |
+|  pickup_datetime   | DateTime |
+|    dropoff_date    |   Date   |
+|  dropoff_datetime  | DateTime |
+| store_and_fwd_flag |  Int64   |
+|    rate_code_id    |  Int64   |
++--------------------+----------+
+(40 more rows)
 ```
 
-我们也可以直接对这些文件执行 `SELECT` 查询，看看数据是什么样子：
-
-```python
-%sql SELECT * FROM file('atp_rankings*.csv') LIMIT 1
-```
-
-```text
-+--------------+------+--------+--------+
-| ranking_date | rank | player | points |
-+--------------+------+--------+--------+
-|   20000110   |  1   | 101736 |  4135  |
-+--------------+------+--------+--------+
-```
-
-数据格式有点奇怪。
-我们先把这个日期清理一下，再使用 `REPLACE` 子句返回清理后的 `ranking_date`：
+我们还可以直接针对这些文件编写 `SELECT` 查询，查看数据内容：
 
 ```python
 %%sql
-SELECT * REPLACE (
-  toDate(parseDateTime32BestEffort(toString(ranking_date))) AS ranking_date
-)
-FROM file('atp_rankings*.csv')
-LIMIT 10
+SELECT trip_id, pickup_datetime, pickup_ntaname,
+       trip_distance, fare_amount, tip_amount
+FROM file('trips_*.gz')
+LIMIT 3
 SETTINGS schema_inference_make_columns_nullable=0
 ```
 
 ```text
-+--------------+------+--------+--------+
-| ranking_date | rank | player | points |
-+--------------+------+--------+--------+
-|  2000-01-10  |  1   | 101736 |  4135  |
-|  2000-01-10  |  2   | 102338 |  2915  |
-|  2000-01-10  |  3   | 101948 |  2419  |
-|  2000-01-10  |  4   | 103017 |  2184  |
-|  2000-01-10  |  5   | 102856 |  2169  |
-|  2000-01-10  |  6   | 102358 |  2107  |
-|  2000-01-10  |  7   | 102839 |  1966  |
-|  2000-01-10  |  8   | 101774 |  1929  |
-|  2000-01-10  |  9   | 102701 |  1846  |
-|  2000-01-10  |  10  | 101990 |  1739  |
-+--------------+------+--------+--------+
++------------+---------------------+----------------------------------------+---------------+-------------+------------+
+|  trip_id   |   pickup_datetime   |             pickup_ntaname             | trip_distance | fare_amount | tip_amount |
++------------+---------------------+----------------------------------------+---------------+-------------+------------+
+| 1199999902 | 2015-07-07 19:45:07 |      Lenox Hill-Roosevelt Island       |      2.59     |     14.5    |    3.26    |
+| 1199999919 | 2015-07-07 20:26:29 |                Airport                 |      2.4      |      9      |     0      |
+| 1199999944 | 2015-07-07 21:25:09 | SoHo-TriBeCa-Civic Center-Little Italy |      5.13     |      20     |     3      |
++------------+---------------------+----------------------------------------+---------------+-------------+------------+
 ```
 
-<div id="querying-data-in-csv-files">
-  ## 将 CSV 文件导入 chDB
+回顾 schema 可以看到，几个与金额相关的列——`trip_distance`、`fare_amount` 和 `tip_amount`——被推断为 `String`，而不是数值类型。
+将数据导入表时，我们会将这些列清理好。
+
+<div id="importing-tsv-files-into-chdb">
+  ## 将 TSV 文件导入 chDB
 </div>
 
-现在，我们要将这些 CSV 文件中的数据存储到表中。
-默认数据库不会将数据持久化到磁盘，因此我们需要先创建另一个数据库：
+现在，我们将这些 TSV 文件中的数据存储到表中。
+默认数据库不会将数据持久化到磁盘，因此需要先创建另一个数据库：
 
 ```python
-%sql CREATE DATABASE atp
+%sql CREATE DATABASE taxi
 ```
 
-现在我们将创建一个名为 `rankings` 的表，其 schema 将根据 CSV 文件中数据的结构推断得出：
+现在，我们将创建一个名为 `trips` 的表，其 schema 根据 TSV 文件中的数据结构推导而来。
+我们将使用 `REPLACE` 子句将金额相关列转换为 `Float64`，并使用 [`transform`](/zh/sql-reference/functions/other-functions#transform) 函数将数值型 `pickup_borocode` 列转换为易读的行政区名称：
 
 ```python
 %%sql
-CREATE TABLE atp.rankings
-ENGINE=MergeTree
-ORDER BY ranking_date AS
+CREATE TABLE taxi.trips
+ENGINE = MergeTree
+ORDER BY pickup_datetime AS
 SELECT * REPLACE (
-  toDate(parseDateTime32BestEffort(toString(ranking_date))) AS ranking_date
-)
-FROM file('atp_rankings*.csv')
+    toFloat64OrZero(trip_distance) AS trip_distance,
+    toFloat64OrZero(fare_amount) AS fare_amount,
+    toFloat64OrZero(tip_amount) AS tip_amount,
+    toFloat64OrZero(total_amount) AS total_amount
+  ),
+  transform(pickup_borocode, [1, 2, 3, 4, 5],
+            ['Manhattan', 'Bronx', 'Brooklyn', 'Queens', 'Staten Island'],
+            'Unknown') AS pickup_borough
+FROM file('trips_*.gz')
 SETTINGS schema_inference_make_columns_nullable=0
 ```
 
-我们来快速查看一下表中的数据：
+快速查看一下表中的数据：
 
 ```python
-%sql SELECT * FROM atp.rankings LIMIT 10
+%sql SELECT count() AS trips FROM taxi.trips
 ```
 
 ```text
-+--------------+------+--------+--------+
-| ranking_date | rank | player | points |
-+--------------+------+--------+--------+
-|  2000-01-10  |  1   | 101736 |  4135  |
-|  2000-01-10  |  2   | 102338 |  2915  |
-|  2000-01-10  |  3   | 101948 |  2419  |
-|  2000-01-10  |  4   | 103017 |  2184  |
-|  2000-01-10  |  5   | 102856 |  2169  |
-|  2000-01-10  |  6   | 102358 |  2107  |
-|  2000-01-10  |  7   | 102839 |  1966  |
-|  2000-01-10  |  8   | 101774 |  1929  |
-|  2000-01-10  |  9   | 102701 |  1846  |
-|  2000-01-10  |  10  | 101990 |  1739  |
-+--------------+------+--------+--------+
++---------+
+|  trips  |
++---------+
+| 3000317 |
++---------+
 ```
 
-看起来不错——输出结果和预期一样，与直接查询 CSV 文件时相同。
-
-接下来，我们对球员元数据执行相同的流程。
-这次所有数据都在一个 CSV 文件中，因此我们来下载这个文件：
+刚刚导入了超过 300 万条行程记录——再引入第二张表。
+纽约市出租车和豪华轿车委员会将全市划分为出租车区域，一个查找文件将每个区域映射到其所属行政区。
+下载该文件：
 
 ```python
 _ = urlretrieve(
-    f"{base}/atp_players.csv",
-    "atp_players.csv",
+    f"{base}/taxi_zone_lookup.csv",
+    "taxi_zone_lookup.csv",
 )
 ```
 
-然后根据 CSV 文件中的内容创建一个名为 `players` 的表。
-我们还会清理 `dob` 字段，将其转换为 `Date32` 类型。
-
-> 在 ClickHouse 中，`Date` 类型只支持 1970 年及之后的日期。由于 `dob` 列包含早于 1970 年的日期，因此我们将改用 `Date32` 类型。
+然后基于 CSV 文件的内容创建一个名为 `zones` 的表：
 
 ```python
 %%sql
-CREATE TABLE atp.players
-Engine=MergeTree
-ORDER BY player_id AS
-SELECT * REPLACE (
-  makeDate32(
-    toInt32OrNull(substring(toString(dob), 1, 4)),
-    toInt32OrNull(substring(toString(dob), 5, 2)),
-    toInt32OrNull(substring(toString(dob), 7, 2))
-  )::Nullable(Date32) AS dob
-)
-FROM file('atp_players.csv')
+CREATE TABLE taxi.zones
+ENGINE = MergeTree
+ORDER BY LocationID AS
+SELECT * FROM file('taxi_zone_lookup.csv')
 SETTINGS schema_inference_make_columns_nullable=0
 ```
 
 运行完成后，我们可以查看已摄取的数据：
 
 ```python
-%sql SELECT * FROM atp.players LIMIT 10
+%sql SELECT * FROM taxi.zones LIMIT 5
 ```
 
 ```text
-+-----------+------------+-----------+------+------------+-----+--------+-------------+
-| player_id | name_first | name_last | hand |    dob     | ioc | height | wikidata_id |
-+-----------+------------+-----------+------+------------+-----+--------+-------------+
-|   100001  |  Gardnar   |   Mulloy  |  R   | 1913-11-22 | USA |  185   |    Q54544   |
-|   100002  |   Pancho   |   Segura  |  R   | 1921-06-20 | ECU |  168   |    Q54581   |
-|   100003  |   Frank    |  Sedgman  |  R   | 1927-10-02 | AUS |  180   |   Q962049   |
-|   100004  |  Giuseppe  |   Merlo   |  R   | 1927-10-11 | ITA |   0    |   Q1258752  |
-|   100005  |  Richard   |  Gonzalez |  R   | 1928-05-09 | USA |  188   |    Q53554   |
-|   100006  |   Grant    |   Golden  |  R   | 1929-08-21 | USA |  175   |   Q3115390  |
-|   100007  |    Abe     |   Segal   |  L   | 1930-10-23 | RSA |   0    |   Q1258527  |
-|   100008  |    Kurt    |  Nielsen  |  R   | 1930-11-19 | DEN |   0    |   Q552261   |
-|   100009  |   Istvan   |   Gulyas  |  R   | 1931-10-14 | HUN |   0    |    Q51066   |
-|   100010  |    Luis    |   Ayala   |  R   | 1932-09-18 | CHI |  170   |   Q1275397  |
-+-----------+------------+-----------+------+------------+-----+--------+-------------+
++------------+---------------+-------------------------+--------------+
+| LocationID |    Borough    |           Zone          | service_zone |
++------------+---------------+-------------------------+--------------+
+|     1      |      EWR      |      Newark Airport     |     EWR      |
+|     2      |     Queens    |       Jamaica Bay       |  Boro Zone   |
+|     3      |     Bronx     | Allerton/Pelham Gardens |  Boro Zone   |
+|     4      |   Manhattan   |      Alphabet City      | Yellow Zone  |
+|     5      | Staten Island |      Arden Heights      |  Boro Zone   |
++------------+---------------+-------------------------+--------------+
 ```
 
-<div id="importing-csv-files-into-chdb">
+<div id="querying-chdb">
   ## 查询 chDB
 </div>
 
-数据摄取已完成，现在到了最有意思的部分——查询数据！
+数据摄取已完成，现在到了最有趣的部分——查询数据！
 
-网球选手会根据自己在所参加锦标赛中的表现获得积分。
-每位选手的积分按 52 周滚动周期统计。
-我们将编写一个查询，找出每位选手累计达到的最高积分以及其当时的排名：
+每个行政区包含的出租车区域数量各不相同。
+我们将编写一个查询，联接这两个表，以找出每个行政区的上车行程数，以及平均每个出租车区域的行程数：
 
 ```python
 %%sql
-SELECT name_first, name_last,
-       max(points) as maxPoints,
-       argMax(rank, points) as rank,
-       argMax(ranking_date, points) as date
-FROM atp.players
-JOIN atp.rankings ON rankings.player = players.player_id
-GROUP BY ALL
-ORDER BY maxPoints DESC
-LIMIT 10
+SELECT pickup_borough AS borough,
+       zone_count,
+       count() AS trips,
+       round(count() / zone_count) AS trips_per_zone
+FROM taxi.trips
+JOIN (
+    SELECT Borough, count() AS zone_count
+    FROM taxi.zones
+    GROUP BY Borough
+) AS zones ON pickup_borough = zones.Borough
+GROUP BY borough, zone_count
+ORDER BY trips DESC
 ```
 
 ```text
-+------------+-----------+-----------+------+------------+
-| name_first | name_last | maxPoints | rank |    date    |
-+------------+-----------+-----------+------+------------+
-|   Novak    |  Djokovic |   16950   |  1   | 2016-06-06 |
-|   Rafael   |   Nadal   |   15390   |  1   | 2009-04-20 |
-|    Andy    |   Murray  |   12685   |  1   | 2016-11-21 |
-|   Roger    |  Federer  |   12315   |  1   | 2012-10-29 |
-|   Daniil   |  Medvedev |   10780   |  2   | 2021-09-13 |
-|   Carlos   |  Alcaraz  |    9815   |  1   | 2023-08-21 |
-|  Dominic   |   Thiem   |    9125   |  3   | 2021-01-18 |
-|   Jannik   |   Sinner  |    8860   |  2   | 2024-05-06 |
-|  Stefanos  | Tsitsipas |    8350   |  3   | 2021-09-20 |
-| Alexander  |   Zverev  |    8240   |  4   | 2021-08-23 |
-+------------+-----------+-----------+------+------------+
++---------------+------------+---------+----------------+
+|    borough    | zone_count |  trips  | trips_per_zone |
++---------------+------------+---------+----------------+
+|   Manhattan   |     69     | 2713990 |    39333.0     |
+|     Queens    |     69     |  187737 |     2721.0     |
+|    Brooklyn   |     61     |  52445  |     860.0      |
+|    Unknown    |     2      |  43802  |    21901.0     |
+|     Bronx     |     43     |   2300  |      53.0      |
+| Staten Island |     20     |    43   |      2.0       |
++---------------+------------+---------+----------------+
 ```
 
-有趣的是，这份名单中的一些球员虽然凭借这一总得分并未排在第 1 位，却依然累计了大量得分。
+曼哈顿和皇后区的出租车区域数量相同，但曼哈顿的接客量是皇后区的 14 倍以上。
 
-<div id="querying-chdb">
+<div id="saving-queries">
   ## 保存查询
 </div>
 
-我们可以在与 `%%sql` 魔法命令相同的一行中使用 `--save` 参数来保存查询。
-`--no-execute` 参数表示将跳过查询执行。
+可以在与 `%%sql` 魔法命令同一行使用 `--save` 参数来保存查询。
+`--no-execute` 参数表示跳过查询执行。
 
 ```python
-%%sql --save best_points --no-execute
-SELECT name_first, name_last,
-       max(points) as maxPoints,
-       argMax(rank, points) as rank,
-       argMax(ranking_date, points) as date
-FROM atp.players
-JOIN atp.rankings ON rankings.player = players.player_id
-GROUP BY ALL
-ORDER BY maxPoints DESC
+%%sql --save tips_by_neighborhood --no-execute
+SELECT pickup_ntaname AS neighborhood,
+       count() AS trips,
+       round(avg(tip_amount), 2) AS avg_tip
+FROM taxi.trips
+WHERE fare_amount > 0 AND pickup_ntaname != ''
+GROUP BY neighborhood
+ORDER BY avg_tip DESC
 ```
 
-运行已保存查询时，系统会先将其转换为公用表表达式 (CTE) ，然后再执行。
-在下面的查询中，我们计算玩家排名为 1 时获得的最高分数：
+运行已保存的查询时，系统会先将其转换为通用表表达式 (CTE) ，再执行。
+在以下查询中，我们计算平均小费最高的社区：
 
 ```python
-%sql select * FROM best_points WHERE rank=1
+%sql SELECT * FROM tips_by_neighborhood ORDER BY avg_tip DESC LIMIT 5
 ```
 
 ```text
-+-------------+-----------+-----------+------+------------+
-|  name_first | name_last | maxPoints | rank |    date    |
-+-------------+-----------+-----------+------+------------+
-|    Novak    |  Djokovic |   16950   |  1   | 2016-06-06 |
-|    Rafael   |   Nadal   |   15390   |  1   | 2009-04-20 |
-|     Andy    |   Murray  |   12685   |  1   | 2016-11-21 |
-|    Roger    |  Federer  |   12315   |  1   | 2012-10-29 |
-|    Carlos   |  Alcaraz  |    9815   |  1   | 2023-08-21 |
-|     Pete    |  Sampras  |    5792   |  1   | 1997-08-11 |
-|    Andre    |   Agassi  |    5652   |  1   | 1995-08-21 |
-|   Lleyton   |   Hewitt  |    5205   |  1   | 2002-08-12 |
-|   Gustavo   |  Kuerten  |    4750   |  1   | 2001-09-10 |
-| Juan Carlos |  Ferrero  |    4570   |  1   | 2003-10-20 |
-|    Stefan   |   Edberg  |    3997   |  1   | 1991-02-25 |
-|     Jim     |  Courier  |    3973   |  1   | 1993-08-23 |
-|     Ivan    |   Lendl   |    3420   |  1   | 1990-02-26 |
-|     Ilie    |  Nastase  |     0     |  1   | 1973-08-27 |
-+-------------+-----------+-----------+------+------------+
++-----------------------------------+-------+---------+
+|            neighborhood           | trips | avg_tip |
++-----------------------------------+-------+---------+
+| New Springville-Bloomfield-Travis |   2   |   35.0  |
+|       New Dorp-Midland Beach      |   2   |  23.74  |
+|      New Brighton-Silver Lake     |   3   |  16.67  |
+|           Newark Airport          |  201  |  11.89  |
+|   Grymes Hill-Clifton-Fox Hills   |   1   |   11.3  |
++-----------------------------------+-------+---------+
 ```
 
-<div id="saving-queries">
+排名靠前的社区行程数都很少，因此一次高额行程就会拉高平均值。
+我们把这些社区过滤掉。
+
+<div id="querying-with-parameters">
   ## 使用参数查询
 </div>
 
@@ -370,59 +327,54 @@ ORDER BY maxPoints DESC
 参数就是普通变量：
 
 ```python
-rank = 10
+min_trips = 10000
 ```
 
-然后，我们就可以在查询中使用 `{{variable}}` 这种语法。
-以下查询会找出首次进入前 10 名到最后一次位列前 10 名之间相隔天数最少的球员：
+然后，我们可以在查询中使用 `{{variable}}` 语法。
+以下查询会找出行程次数超过 10,000 次的社区中平均小费最高的社区：
 
 ```python
 %%sql
-SELECT name_first, name_last,
-       MIN(ranking_date) AS earliest_date,
-       MAX(ranking_date) AS most_recent_date,
-       most_recent_date - earliest_date AS days,
-       1 + (days/7) AS weeks
-FROM atp.rankings
-JOIN atp.players ON players.player_id = rankings.player
-WHERE rank <= {{rank}}
-GROUP BY ALL
-ORDER BY days
+SELECT * FROM tips_by_neighborhood
+WHERE trips >= {{min_trips}}
+ORDER BY avg_tip DESC
 LIMIT 10
 ```
 
 ```text
-+------------+-----------+---------------+------------------+------+-------+
-| name_first | name_last | earliest_date | most_recent_date | days | weeks |
-+------------+-----------+---------------+------------------+------+-------+
-|    Alex    | Metreveli |   1974-06-03  |    1974-06-03    |  0   |   1   |
-|   Mikael   |  Pernfors |   1986-09-22  |    1986-09-22    |  0   |   1   |
-|   Felix    |  Mantilla |   1998-06-08  |    1998-06-08    |  0   |   1   |
-|   Wojtek   |   Fibak   |   1977-07-25  |    1977-07-25    |  0   |   1   |
-|  Thierry   |  Tulasne  |   1986-08-04  |    1986-08-04    |  0   |   1   |
-|   Lucas    |  Pouille  |   2018-03-19  |    2018-03-19    |  0   |   1   |
-|    John    | Alexander |   1975-12-15  |    1975-12-15    |  0   |   1   |
-|  Nicolas   |   Massu   |   2004-09-13  |    2004-09-20    |  7   |   2   |
-|   Arnaud   |  Clement  |   2001-04-02  |    2001-04-09    |  7   |   2   |
-|  Ernests   |   Gulbis  |   2014-06-09  |    2014-06-23    |  14  |   3   |
-+------------+-----------+---------------+------------------+------+-------+
++----------------------------------------+--------+---------+
+|              neighborhood              | trips  | avg_tip |
++----------------------------------------+--------+---------+
+|                Airport                 | 151171 |   4.92  |
+|   Battery Park City-Lower Manhattan    | 89110  |   2.16  |
+|         North Side-South Side          | 11152  |   1.79  |
+| SoHo-TriBeCa-Civic Center-Little Italy | 144887 |   1.65  |
+|               Chinatown                | 54780  |   1.65  |
+|            Lower East Side             | 15753  |   1.64  |
+|              East Village              | 99881  |   1.61  |
+|  Hunters Point-Sunnyside-West Maspeth  | 10054  |   1.58  |
+|        Turtle Bay-East Midtown         | 197035 |   1.57  |
+|              West Village              | 210369 |   1.54  |
++----------------------------------------+--------+---------+
 ```
 
-<div id="querying-with-parameters">
+机场接送服务的小费遥遥领先——进城的长途行程花费不菲。
+
+<div id="plotting-histograms">
   ## 绘制直方图
 </div>
 
 JupySQL 也提供了有限的图表绘制功能。
 我们可以创建箱线图或直方图。
 
-我们将创建一个直方图，但首先要编写 (并保存) 一个查询，用来计算每位球员曾达到的前 100 名中的名次。
-然后，我们就可以用它来创建一个直方图，统计达到各个名次的球员人数：
+我们将创建一个直方图，但首先要编写 (并保存) 一个查询，返回每次行程中距离小于 20 英里的行程距离。
+然后，我们就可以用它来创建一个直方图，统计落入各个距离分桶的行程数量：
 
 ```python
-%%sql --save players_per_rank --no-execute
-select distinct player, rank
-FROM atp.rankings
-WHERE rank <= 100
+%%sql --save trip_distances --no-execute
+SELECT trip_distance
+FROM taxi.trips
+WHERE trip_distance > 0 AND trip_distance < 20
 ```
 
 然后，我们可以运行以下内容来创建直方图：
@@ -432,11 +384,17 @@ from sql.ggplot import ggplot, geom_histogram, aes
 
 plot = (
   ggplot(
-    table="players_per_rank",
-    with_="players_per_rank",
-    mapping=aes(x="rank", fill="#69f0ae", color="#fff"),
-  ) + geom_histogram(bins=100)
+    table="trip_distances",
+    with_="trip_distances",
+    mapping=aes(x="trip_distance", fill="#69f0ae", color="#fff"),
+  ) + geom_histogram(bins=50)
 )
 ```
 
-<Image img="/images/chdb/guides/players_per_rank.webp" size="md" alt="ATP 数据集中球员排名分布的直方图" />
+大多数行程都是一到三英里的短途，只有少数较长的行程会延伸到机场。
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [使用 chDB 和 JupySQL 入门 (YouTube) ](https://www.youtube.com/watch?v=2wjl3OijCto)

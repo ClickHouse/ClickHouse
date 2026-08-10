@@ -57,13 +57,13 @@ Los valores actualizados quedan:
 
 Las actualizaciones ligeras son compatibles con los motores [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/es/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/es/reference/engines/table-engines/mergetree-family/collapsingmergetree) y [`VersionedCollapsingMergeTree`](/es/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree), así como con sus versiones [`Replicated`](/es/reference/engines/table-engines/mergetree-family/replication) y [`Shared`](/es/products/cloud/features/infrastructure/shared-merge-tree).
 
-Para usar actualizaciones ligeras, la materialización de las columnas `_block_number` y `_block_offset` debe habilitarse mediante las opciones de configuración de la tabla [`enable_block_number_column`](/es/reference/settings/merge-tree-settings#enable_block_number_column) y [`enable_block_offset_column`](/es/reference/settings/merge-tree-settings#enable_block_offset_column).
+Para usar actualizaciones ligeras, la materialización de las columnas `_block_number` y `_block_offset` debe habilitarse mediante las opciones de configuración de la tabla [`enable_block_number_column`](/es/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) y [`enable_block_offset_column`](/es/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column).
 
 <div id="lightweight-delete">
   ## Eliminaciones ligeras
 </div>
 
-Una consulta de [eliminación ligera `DELETE`](/es/reference/statements/delete) puede ejecutarse como una actualización ligera `UPDATE` en lugar de una mutación `ALTER UPDATE`. La implementación de la eliminación ligera `DELETE` se controla mediante el ajuste [`lightweight_delete_mode`](/es/reference/settings/session-settings#lightweight_delete_mode).
+Una consulta de [eliminación ligera `DELETE`](/es/reference/statements/delete) puede ejecutarse como una actualización ligera `UPDATE` en lugar de una mutación `ALTER UPDATE`. La implementación de la eliminación ligera `DELETE` se controla mediante el ajuste [`lightweight_delete_mode`](/es/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
   ## Consideraciones de rendimiento
@@ -88,7 +88,7 @@ Una consulta de [eliminación ligera `DELETE`](/es/reference/statements/delete) 
 </div>
 
 Las actualizaciones ligeras, a diferencia de las mutaciones tradicionales, no esperan a que finalicen las fusiones/mutaciones que están en ejecución.
-La consistencia de las actualizaciones ligeras concurrentes se controla mediante la configuración [`update_sequential_consistency`](/es/reference/settings/session-settings#update_sequential_consistency) y [`update_parallel_mode`](/es/reference/settings/session-settings#update_parallel_mode).
+La consistencia de las actualizaciones ligeras concurrentes se controla mediante la configuración [`update_sequential_consistency`](/es/reference/settings/session-settings/update#update_sequential_consistency) y [`update_parallel_mode`](/es/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
   ## Actualizar permisos

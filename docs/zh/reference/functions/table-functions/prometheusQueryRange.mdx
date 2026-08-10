@@ -31,7 +31,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 * `end_time` - 评估范围的结束时间。
 * `step` - 用于将评估时间从 `start_time` 逐步推进到 `end_time` (含两端) 的步长。
 
-<div id="returned_value">
+<div id="returned-value">
   ## 返回值
 </div>
 
@@ -60,7 +60,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 | 类别   | 函数                                                                                               |
 | ---- | ------------------------------------------------------------------------------------------------ |
-| 范围   | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| 范围   | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | 数学   | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | 三角函数 | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | 日期时间 | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -68,7 +68,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 | 直方图  | `histogram_quantile`                                                                             |
 | 其他   | `time`, `pi`                                                                                     |
 
-**注意**：`histogram_quantile` 在经典直方图桶 (由 `le` 标签标识) 上使用线性插值。原生直方图暂不受支持，并且 `phi` (分位数级别) 参数目前必须是常量标量——像 `histogram_quantile(time() / 1000, ...)` 这样在每个 step 上都会变化的表达式，会因 `NOT_IMPLEMENTED` 错误而被拒绝。
+**注意**：`histogram_quantile` 在经典直方图桶 (由 `le` 标签标识) 上使用线性插值。原生直方图暂不受支持，并且 `phi` (分位数级别) 参数目前必须是常量标量——像 `histogram_quantile(time() / 1000, ...)` 这样在每个步长上都会变化的表达式，会因 `NOT_IMPLEMENTED` 错误而被拒绝。
 
 <div id="operators">
   ### 运算符

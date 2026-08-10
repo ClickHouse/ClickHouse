@@ -42,7 +42,11 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
   </Step>
 
   <Step title="AWS アカウントを設定する" id="configure-aws-account">
-    初回の BYOC セットアップでは、ClickHouse Cloud の BYOC コントローラーがインフラストラクチャを管理できるようにするため、特権 IAM ロール (`ClickHouseManagementRole`) が作成されます。これは、[CloudFormation template](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) または [Terraform module](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz) のいずれかを使用して実行できます。
+    初回の BYOC セットアップでは、ClickHouse Cloud の BYOC コントローラーがインフラストラクチャを管理できるようにするため、特権 IAM ロール (`ClickHouseManagementRole`) が作成されます。これは、[CloudFormation template](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml) または Terraform module (以下を参照) のいずれかを使用して実行できます。
+
+    <Warning>
+      **IAM ロール名は必須要件です。** ClickHouse が事前に別の名前に明示的に同意している場合を除き、ロールはデフォルト名の `ClickHouseManagementRole` を維持する必要があります。組織の命名規則に従うためのプレフィックスや接尾辞の追加、リネームはできません (Terraform の `role_name` 入力は、ClickHouse と連携してのみ変更してください)。リネームしたロールは正常に適用されますが、ClickHouse が想定されたロールを引き受けられないため、その後のプロビジョニングは失敗します。より一般的には、ClickHouse の明示的な承認なしに、提供された template や module を変更しないでください。サポートされるカスタマイズはパラメーターとして公開されています。
+    </Warning>
 
     `BYO-VPC` セットアップをデプロイする場合は、`IncludeVPCWritePermissions` パラメーターを `false` に設定し、ClickHouse Cloud に顧客管理 VPC を変更する権限が付与されないようにしてください。
 
@@ -50,17 +54,27 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
       Storage buckets、Kubernetes クラスター、コンピュートリソースはこの初期セットアップには含まれていません。これらは後続の手順でプロビジョニングされます。VPC はお客様が管理しますが、ClickHouse Cloud が AWS アカウント内で Kubernetes クラスター、service account 用の IAM ロール、S3 bucket、そのほかの必須リソースを作成および管理するには、引き続き IAM 権限が必要です。
     </Note>
 
-    #### 代替 Terraform module
+    #### Terraform module
 
-    CloudFormation ではなく Terraform を使用する場合は、次の module を使用してください。
+    CloudFormation ではなく Terraform を使用する場合は、[terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) module を使用してください。
 
     ```hcl
     module "clickhouse_onboarding" {
-      source                     = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-      byoc_env                   = "production"
+      source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id                   = "<external-id-provided-by-clickhouse>"
       include_vpc_write_permissions = false
     }
     ```
+
+    `<version>` を、module の[リリースページ](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)にある最新のタグに置き換えます。常に最新リリースを使用してください。
+
+    module は `clickhouse_management_role_arn` を出力します。標準フローでは対応は不要で、オンボーディングは ClickHouse Cloud console で続行されます。ただし、セットアップがデフォルトと異なる場合 (たとえば、カスタムロール名を連携する場合) は ClickHouse から求められるため、手元に控えておいてください。
+
+    `external_id` の値は ClickHouse Cloud console によって生成され、同じ AWS アカウント上のすべての BYOC インフラストラクチャで共有されます。legacy `emptyid` プレースホルダーを含む詳細については、[AWS external ID](/ja/products/bring-your-own-cloud/onboarding/standard#aws-external-id) を参照してください。
+
+    <Note>
+      module は以前、`https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz` の tarball として配布されていました。この URL は引き続き利用できますが、非推奨です。上記の GitHub module を使用してください。
+    </Note>
   </Step>
 
   <Step title="BYOC インフラストラクチャをセットアップする" id="set-up-byoc-infrastructure">
@@ -96,9 +110,11 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
 * クロスアカウントアクセスに使用する `ClickHouseManagementRole` から IAM の書き込み権限を削除する
 * ロールの権限と信頼関係を完全に管理する
 
+以下の両方の module は、ClickHouse Cloud console で生成された `external_id` を受け取ります。同じ AWS account 内のすべての BYOC インフラストラクチャは、同じ external ID を共有します。旧来の `emptyid` プレースホルダーを含む詳細については、[AWS external ID](/ja/products/bring-your-own-cloud/onboarding/standard#aws-external-id) を参照してください。
+
 <Steps>
   <Step title="IAM の書き込み権限なしで管理ロールを設定する" id="byo-iam-management-role">
-    [初回の BYOC セットアップ](/ja/cloud/reference/byoc/onboarding/standard)を実行する際は、管理ロールの IAM 書き込み権限を無効にします。CloudFormation template では、`IncludeIAMWritePermissions` パラメータを `false` に設定します。Terraform module の場合は次のとおりです。
+    [初回の BYOC セットアップ](/ja/products/bring-your-own-cloud/onboarding/standard)を実行する際は、管理ロールの IAM 書き込み権限を無効にします。CloudFormation template では、`IncludeIAMWritePermissions` パラメータを `false` に設定します。Terraform module の場合は次のとおりです。
 
     ```hcl
     module "clickhouse_onboarding" {
