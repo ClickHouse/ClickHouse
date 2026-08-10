@@ -440,13 +440,32 @@ def main():
         # `kills_before_insert` / `kills_before_optimize` in `churn`), not after it returns: a
         # post-hoc read would let a kill landing in the gap between the rejection and the read excuse
         # a rejection that the server - necessarily still alive at that point - had already issued
-        # pre-kill. The observation is per call rather than per cycle, and both calls of a cycle are
-        # classified: one sample for the whole `INSERT` + `OPTIMIZE` pair would misjudge a kill that
-        # lands between them, and looking at a single failed call would let a non-memory `INSERT`
-        # failure hide a decisive tracked-limit rejection from the `OPTIMIZE` that followed it.
+        # pre-kill. The observation is per call rather than per cycle, and each call is classified as
+        # soon as it completes: one sample for the whole `INSERT` + `OPTIMIZE` pair would misjudge a
+        # kill that lands between them, looking at a single failed call would let a non-memory
+        # `INSERT` failure hide a decisive tracked-limit rejection from the `OPTIMIZE` that followed
+        # it, and deferring the `INSERT`'s classification until after the `OPTIMIZE` would lose its
+        # rejection whenever the `OPTIMIZE` times out (the timeout handler would take over before
+        # any classification placed after both calls could run).
         tracked_limit_failures = []
 
         def churn():
+            def record_tracked_limit_rejection(result, kills_before_call):
+                # The tracked-memory limit rejected the query before any cgroup OOM: tracked memory
+                # has reached `max_server_memory_usage`, so the run can no longer prove the
+                # resident > tracked mechanism - stop the churn and let `main` abort, even though a
+                # first successful cycle may already have been seen. Checked against the observation
+                # taken just before this call, not a fresh read: the rejection came from a live
+                # server, so it predates any kill that has landed since, and such a kill must not
+                # excuse it. (A rejection with `kills_before_call > oom_before` stays tolerated -
+                # the kill was already done before the call even started, so the rejection is
+                # post-kill noise from whatever the dying workload left behind.)
+                if result.returncode != 0 and "Memory limit (total) exceeded" in result.stderr and kills_before_call == oom_before:
+                    tracked_limit_failures.append(result)
+                    stop.set()
+                    return True
+                return False
+
             while not stop.is_set():
                 # `bounded_client` caps every call (see CLIENT_TIMEOUT_* above), so after `stop` is
                 # set - or once the server is OOM-killed or otherwise wedged - a call cannot block
@@ -459,11 +478,11 @@ def main():
                 # non-timeout failures below (and the same `oom_kill_count` check, re-checked in
                 # `main` via `oom_after`, excuses a timeout that raced with the kill).
                 #
-                # Sampled immediately before each client call so the tracked-limit branch below can
-                # order that call's rejection against the kill: if no kill had landed when the call
-                # started, a `Memory limit (total) exceeded` it brings back was issued by a server
-                # that was still alive - i.e. strictly before any kill - and a kill arriving while
-                # the call was in flight (or before the classification below runs) must not excuse
+                # Sampled immediately before each client call so `record_tracked_limit_rejection`
+                # can order that call's rejection against the kill: if no kill had landed when the
+                # call started, a `Memory limit (total) exceeded` it brings back was issued by a
+                # server that was still alive - i.e. strictly before any kill - and a kill arriving
+                # while the call was in flight (or before the classification runs) must not excuse
                 # it. One sample per cycle would be wrong in both directions: a kill landing between
                 # the `INSERT` and the `OPTIMIZE` would make the `OPTIMIZE`'s post-kill rejection
                 # look pre-kill, and a kill landing before the `INSERT` would be re-observed for the
@@ -477,6 +496,13 @@ def main():
                         "INSERT INTO m SELECT 0, arrayReduce('groupArrayState', "
                         "arrayMap(x -> repeat('x', 400000), range(500))) FROM numbers(1)",
                     )
+                    # Classified right here, before the `OPTIMIZE` is even launched: if the
+                    # `OPTIMIZE` times out, control jumps to the timeout handler below, so a
+                    # classification placed after the whole cycle would never run and a decisive
+                    # tracked-limit rejection the `INSERT` has already brought back would be lost -
+                    # the swallowed timeout would let a later kill make the run report success.
+                    if record_tracked_limit_rejection(insert, kills_before_insert):
+                        return
                     kills_before_optimize = oom_kill_count()
                     optimize = bounded_client("-q", "OPTIMIZE TABLE m FINAL")
                 except subprocess.TimeoutExpired as timeout_error:
@@ -485,30 +511,15 @@ def main():
                         stop.set()
                         return
                     continue
+                # Symmetric to the `INSERT`: classified as soon as the call has completed, against
+                # its own pre-call observation, so a non-memory `INSERT` failure in the same cycle
+                # (a wedged connection, say) cannot hide the `OPTIMIZE`'s decisive rejection behind
+                # the single `failed` result picked below.
+                if record_tracked_limit_rejection(optimize, kills_before_optimize):
+                    return
                 if insert.returncode == 0 and optimize.returncode == 0:
                     churn_ok.set()
                     continue
-                # Classify BOTH calls, each against its own pre-call observation: the `INSERT` can
-                # fail for an unrelated reason (a wedged connection, say) in the very cycle whose
-                # `OPTIMIZE` returns the decisive tracked-limit rejection, so picking a single
-                # `failed` result first would hide it.
-                for result, kills_before_call in ((insert, kills_before_insert), (optimize, kills_before_optimize)):
-                    if result.returncode == 0:
-                        continue
-                    if "Memory limit (total) exceeded" in result.stderr and kills_before_call == oom_before:
-                        # The tracked-memory limit rejected the query before any cgroup OOM: tracked
-                        # memory has reached `max_server_memory_usage`, so the run can no longer
-                        # prove the resident > tracked mechanism - stop the churn and let `main`
-                        # abort, even though a first successful cycle has already been seen. Checked
-                        # against the observation taken just before this call, not a fresh read: the
-                        # rejection came from a live server, so it predates any kill that has landed
-                        # since, and such a kill must not excuse it. (A rejection with
-                        # `kills_before_call > oom_before` stays tolerated - the kill was already
-                        # done before the call even started, so the rejection is post-kill noise
-                        # from whatever the dying workload left behind.)
-                        tracked_limit_failures.append(result)
-                        stop.set()
-                        return
                 failed = insert if insert.returncode != 0 else optimize
                 if not churn_ok.is_set() and oom_kill_count() == oom_before:
                     # Fail closed: the workload broke before it ever worked and before any OOM - stop
