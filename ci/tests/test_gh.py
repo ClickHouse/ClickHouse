@@ -334,10 +334,16 @@ def test_get_pr_state_by_branch_fails_closed(monkeypatch):
 
 def test_request_team_reviews_adds_only_missing_teams(monkeypatch):
     requests = []
+    responses = iter(
+        [
+            '["clickpipes", "unmanaged-team"]',
+            '["clickpipes", "docs", "integrations-ecosystem", "unmanaged-team"]',
+        ]
+    )
 
     def fake_get(command, verbose=False):
         assert "pulls/42/requested_reviewers" in command
-        return '["clickpipes", "unmanaged-team"]'
+        return next(responses)
 
     def fake_submit(team_slugs, pr, repo):
         requests.append((team_slugs, pr, repo))
@@ -374,6 +380,22 @@ def test_submit_team_review_requests_uses_pr_reviewer_cli(monkeypatch):
         "gh pr edit 42 --repo ClickHouse/ClickHouse "
         "--add-reviewer ClickHouse/clickpipes --add-reviewer ClickHouse/docs"
     ]
+
+
+def test_request_team_reviews_fails_when_submission_is_not_applied(monkeypatch):
+    monkeypatch.setattr(
+        GH, "get_output_with_retries", staticmethod(lambda *_args, **_kwargs: "[]")
+    )
+    monkeypatch.setattr(
+        GH, "_submit_team_review_requests", staticmethod(lambda *_args: None)
+    )
+
+    with pytest.raises(RuntimeError, match=r"missing teams \[docs\]"):
+        GH.request_team_reviews(
+            team_slugs=["docs"],
+            pr=42,
+            repo="ClickHouse/ClickHouse",
+        )
 
 
 def test_request_team_reviews_does_nothing_without_teams(monkeypatch):

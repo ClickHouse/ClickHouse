@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from ci.jobs.scripts.workflow_hooks import team_notifications
@@ -88,15 +90,63 @@ def test_check_requests_docs_teams(monkeypatch):
     requested = []
 
     def fake_request(team_slugs):
+        assert os.environ["GH_TOKEN"] == "robot-token"
         requested.extend(team_slugs)
 
+    monkeypatch.setenv("GH_TOKEN", "app-token")
     monkeypatch.setattr(team_notifications, "Info", FakeInfo)
+    monkeypatch.setattr(
+        team_notifications.TEAM_REVIEW_TOKEN,
+        "get_value",
+        lambda: "robot-token",
+    )
     monkeypatch.setattr(
         team_notifications.GH, "request_team_reviews", staticmethod(fake_request)
     )
 
     assert team_notifications.check()
     assert requested == ["clickpipes", "integrations-ecosystem", "docs"]
+    assert os.environ["GH_TOKEN"] == "app-token"
+
+
+def test_check_does_not_fetch_robot_token_without_docs_teams(monkeypatch):
+    class FakeInfo:
+        event_action = "opened"
+
+        def get_kv_data(self, key):
+            assert key == "changed_files"
+            return ["src/Core/Block.cpp"]
+
+    monkeypatch.setattr(team_notifications, "Info", FakeInfo)
+    monkeypatch.setattr(
+        team_notifications.TEAM_REVIEW_TOKEN,
+        "get_value",
+        lambda: pytest.fail("unexpected robot token lookup"),
+    )
+    monkeypatch.setattr(
+        team_notifications.GH,
+        "request_team_reviews",
+        staticmethod(lambda *_args: pytest.fail("unexpected review request")),
+    )
+
+    assert team_notifications.check()
+
+
+def test_request_docs_team_reviews_clears_robot_token(monkeypatch):
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setattr(
+        team_notifications.TEAM_REVIEW_TOKEN,
+        "get_value",
+        lambda: "robot-token",
+    )
+    monkeypatch.setattr(
+        team_notifications.GH,
+        "request_team_reviews",
+        staticmethod(lambda _teams: os.environ["GH_TOKEN"] == "robot-token"),
+    )
+
+    assert team_notifications.request_docs_team_reviews(["docs"])
+    assert "GH_TOKEN" not in os.environ
 
 
 def test_check_does_not_manage_docs_reviews_after_open(monkeypatch):

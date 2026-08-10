@@ -1,7 +1,9 @@
+import os
 import sys
 
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
+from ci.praktika.secret import Secret
 
 INTEGRATIONS_ECOSYSTEM_FILES = ("src/Core/TypeId.h",)
 
@@ -16,6 +18,11 @@ INTEGRATIONS_DOCS_PREFIXES = (
 DOCS_TEAM = "docs"
 CLICKPIPES_TEAM = "clickpipes"
 INTEGRATIONS_ECOSYSTEM_TEAM = "integrations-ecosystem"
+
+TEAM_REVIEW_TOKEN = Secret.Config(
+    name="/github-tokens/robot-1",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+)
 
 
 def normalize_path(file):
@@ -47,6 +54,24 @@ def get_docs_teams_to_request(changed_files):
     return teams
 
 
+def request_docs_team_reviews(team_slugs):
+    if not team_slugs:
+        return True
+
+    token = TEAM_REVIEW_TOKEN.get_value()
+    assert token, "Failed to retrieve the robot token for team review requests"
+
+    previous_token = os.environ.get("GH_TOKEN")
+    os.environ["GH_TOKEN"] = token
+    try:
+        return GH.request_team_reviews(team_slugs)
+    finally:
+        if previous_token is None:
+            os.environ.pop("GH_TOKEN", None)
+        else:
+            os.environ["GH_TOKEN"] = previous_token
+
+
 def check():
     info = Info()
 
@@ -57,7 +82,7 @@ def check():
         "See the Config Workflow logs for the underlying error."
     )
     if info.event_action == "opened":
-        GH.request_team_reviews(get_docs_teams_to_request(changed_files))
+        request_docs_team_reviews(get_docs_teams_to_request(changed_files))
 
     if any(
         file.startswith(prefix)
