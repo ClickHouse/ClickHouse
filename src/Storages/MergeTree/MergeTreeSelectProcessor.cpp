@@ -499,7 +499,13 @@ PartialAggregateInfoPtr MergeTreeSelectProcessor::buildPartialAggregateInfoFromC
 {
     if (!reader_settings.use_partial_aggregate_cache || !task)
         return nullptr;
-    auto info = partialAggregateInfoFromMergeTreePart(*task->getInfo().data_part);
+
+    /// Borrowed parts (stateless workers) have no concrete IMergeTreeDataPart.
+    const auto & data_part_info = task->getInfo().data_part_info;
+    if (!data_part_info || !data_part_info->getDataPart())
+        return nullptr;
+
+    auto info = partialAggregateInfoFromMergeTreePart(*data_part_info->getDataPart());
     if (reader_settings.skip_partial_aggregate_execution_cache_lookup)
         info->skip_execution_time_cache_lookup = true;
     return info;
