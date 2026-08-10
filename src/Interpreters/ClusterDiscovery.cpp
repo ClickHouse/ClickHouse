@@ -388,7 +388,13 @@ bool ClusterDiscovery::updateStaticClusterFields(ClusterInfo & info, const Parse
     info.current_node = NodeInfo(expected_address, parsed.secure, parsed.shard_id);
 
     if (registration_changed || invisible_changed)
+    {
+        /// Force upsertCluster to re-read ZK payloads; membership UUIDs alone do not change
+        /// when only address/shard/secure are updated.
+        if (registration_changed)
+            info.nodes_info.clear();
         clusters_to_update->set(info.name);
+    }
     else
         rebuildClusterObject(info);
 
@@ -679,10 +685,8 @@ ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk
     return result;
 }
 
-/// Checks if cluster nodes set is changed.
-/// Returns true if update required.
-/// It performs only shallow check (set of nodes' uuids).
-/// So, if node's hostname are changed, then cluster won't be updated.
+/// Checks if cluster membership (set of node UUIDs) changed.
+/// Used for logging; payload refresh is decided separately in upsertCluster.
 bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & nodes)
 {
     bool has_difference = node_uuids.size() != nodes.size() ||
@@ -809,13 +813,11 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
     }
 
     if (!needUpdate(node_uuids, nodes_info))
-    {
-        LOG_DEBUG(log, "No update required for cluster '{}'", cluster_info.name);
-        /// Rebuild so credential-only config changes are reflected even when membership is unchanged.
-        rebuildClusterObject(cluster_info);
-        return on_exit();
-    }
+        LOG_DEBUG(log, "Membership unchanged for cluster '{}', refreshing node payloads", cluster_info.name);
 
+    /// Always re-read ephemeral payloads so hostname/shard/secure updates propagate even when
+    /// the UUID set is unchanged (createOrUpdate does not fire children watches by itself;
+    /// registerInZk recreates the node when data changes to notify peers).
     nodes_info = getNodes(zk, cluster_info.zk_root, node_uuids);
 
     if (bool ok = on_exit(); !ok)
@@ -871,7 +873,20 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
 
     LOG_DEBUG(log, "Registering current node {} in cluster {}", current_node_name, info.name);
 
-    zk->createOrUpdate(node_path, info.current_node.serialize(), zkutil::CreateMode::Ephemeral);
+    const String payload = info.current_node.serialize();
+    String existing;
+    if (zk->tryGet(node_path, existing))
+    {
+        if (existing == payload)
+        {
+            LOG_DEBUG(log, "Current node {} already registered in cluster {} with up-to-date data", current_node_name, info.name);
+            return;
+        }
+        /// Recreate ephemeral so children watches fire; setData alone does not notify peers.
+        zk->tryRemove(node_path);
+    }
+
+    zk->create(node_path, payload, zkutil::CreateMode::Ephemeral);
     LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);
 }
 

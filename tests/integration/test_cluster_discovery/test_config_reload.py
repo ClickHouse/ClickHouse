@@ -523,3 +523,58 @@ def test_reload_static_replaces_dynamic_same_name(start_cluster):
         nodes["node1"].start_clickhouse(wait_start=False)
         nodes["node1"].wait_for_start(60)
         nodes["node1"].query("SELECT 1", password="passwordAbc")
+
+
+def _registration_config(hostname, shard):
+    return f"""
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_registration_reload>
+            <discovery>
+                <path>/clickhouse/discovery/test_registration_reload</path>
+                <my_hostname>{hostname}</my_hostname>
+                <shard>{shard}</shard>
+            </discovery>
+        </test_registration_reload>
+    </remote_servers>
+</clickhouse>
+"""
+
+
+def _registration_rows(node):
+    return node.query(
+        "SELECT host_name, shard_num FROM system.clusters "
+        "WHERE cluster = 'test_registration_reload' ORDER BY host_name, shard_num "
+        "FORMAT TSV",
+        password="passwordAbc",
+    ).strip()
+
+
+def test_reload_my_hostname_and_shard_updates_local_and_peer(start_cluster):
+    """Registration field reload must refresh payloads locally and on peers without membership churn."""
+    reload_config_on_node(nodes["node0"], _registration_config("reg-host-node0", 1))
+    reload_config_on_node(nodes["node1"], _registration_config("reg-host-node1", 1))
+
+    expected_initial = "reg-host-node0\t1\nreg-host-node1\t1"
+    for retry in range(15):
+        rows = {_registration_rows(node) for node in nodes.values()}
+        if rows == {expected_initial}:
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError(f"Initial registration view not ready: {rows}")
+
+    # Change hostname and shard on node1 only; UUID set stays the same.
+    reload_config_on_node(nodes["node1"], _registration_config("reg-host-node1-renamed", 2))
+
+    expected_updated = "reg-host-node0\t1\nreg-host-node1-renamed\t2"
+    for retry in range(15):
+        rows = {_registration_rows(node) for node in nodes.values()}
+        if rows == {expected_updated}:
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError(
+            f"Hostname/shard reload did not propagate to local and peer system.clusters: {rows}"
+        )
