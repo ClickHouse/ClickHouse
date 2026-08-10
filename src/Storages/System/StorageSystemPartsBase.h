@@ -11,6 +11,11 @@ namespace DB
 class Context;
 class QueryStatus;
 
+/// How often the column-oriented `system.parts` siblings consult `QueryStatus` while enumerating
+/// the columns of a part: a wide table can have many thousands of columns per part, and polling
+/// only at the part boundary would leave a long uninterruptible stretch.
+static constexpr size_t COLUMNS_CANCELLATION_CHECK_PERIOD = 128;
+
 struct StoragesInfo
 {
     StoragePtr storage = nullptr;
