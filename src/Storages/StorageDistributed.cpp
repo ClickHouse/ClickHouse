@@ -2028,9 +2028,44 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
     }
 }
 
+void StorageDistributed::checkTableCanBeRenamed(const StorageID & new_name) const
+{
+    /// Nothing on disk to move (a `remote()`/`cluster()` table function).
+    if (relative_data_path.empty())
+        return;
+
+    /// `ATTACH ... FROM` calls rename() with an unchanged StorageID only to move the data into
+    /// place, before the table is reachable. That is not a rename of a live table.
+    if (getStorageID() == new_name)
+        return;
+
+    /// An Atomic database keys the data directory by UUID and never moves it, so only a UUID-less
+    /// (Ordinary) endpoint reaches renameOnDisk below.
+    if (getStorageID().hasUUID() && new_name.hasUUID())
+        return;
+
+    /// The Ordinary-to-Atomic conversion assigns a UUID to each table and runs during startup.
+    /// Requiring the acquired UUID keeps a startup script renaming within Ordinary out of the
+    /// exemption, since startup scripts also run before the server is completely started.
+    const bool converting_ordinary_to_atomic = !getStorageID().hasUUID() && new_name.hasUUID();
+    if (converting_ordinary_to_atomic
+        && getContext()->getApplicationType() == Context::ApplicationType::SERVER
+        && !getContext()->isServerCompletelyStarted())
+        return;
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Cannot rename Distributed table {} because its asynchronous insert queue directory would have to be moved, "
+        "which cannot be done while inserts and sends are running. Use an Atomic database, where the data directory "
+        "is keyed by UUID and is not moved. An existing Ordinary database can be converted by creating the "
+        "'convert_ordinary_to_atomic' file in the flags directory and restarting the server",
+        getStorageID().getNameForLogs());
+}
+
 void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     chassert(relative_data_path != new_path_to_table_data);
+    checkTableCanBeRenamed(new_table_id);
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
     renameInMemory(new_table_id);

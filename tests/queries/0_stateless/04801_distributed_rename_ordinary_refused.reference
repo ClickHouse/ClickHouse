@@ -1,0 +1,10 @@
+ordinary rename refused
+ordinary to atomic refused
+atomic to ordinary refused
+atomic rename allowed
+dist2
+local
+no data path is not refused
+dist
+local
+no_path2
