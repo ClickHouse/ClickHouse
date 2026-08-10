@@ -45,13 +45,16 @@ namespace DB
  *   mode 0 CONST:         float_width bytes; all count values equal it bitwise.
  *   mode 1 DECIMAL_FOR:   u8 biased scale (alpha + 32; negative alpha divides by a power of
  *                         ten, shrinking integers that end in decimal zeros), u8 bits,
- *                         Int64/Int32 base (LE), u16 exception_count,
+ *                         u8 adjustment_bits, Int64/Int32 base (LE), u16 exception_count,
  *                         bits * 1024 / 8 bytes of FFOR-packed (q[i] - base) lanes,
+ *                         adjustment_bits * 1024 / 8 bytes of FFOR-packed zigzag ULP
+ *                         adjustments applied to the reconstruction in the total order of the
+ *                         float bit patterns (zero when the reconstruction is bit-exact),
  *                         exception_count * { u16 position, float_width raw value }.
- *   mode 2 DECIMAL_DELTA: u8 biased scale (as in DECIMAL_FOR), u8 bits, Int64/Int32 first_q
+ *   mode 2 DECIMAL_DELTA: u8 biased scale, u8 bits, u8 adjustment_bits, Int64/Int32 first_q
  *                         (LE), u16 exception_count,
  *                         bits * 1024 / 8 bytes of FFOR-packed zigzag(q[i] - q[i-1]) lanes
- *                         (lane 0 is zero), exceptions as above.
+ *                         (lane 0 is zero), adjustment lanes and exceptions as above.
  *   mode 3 XOR:           u32 payload byte length (LE), then a bitstream described below.
  *   mode 4 RAW:           count * float_width bytes verbatim.
  *
@@ -203,6 +206,37 @@ UInt8 leadClassIndex(UInt8 lead)
     return index;
 }
 
+/// The standard total-order map of float bit patterns to unsigned integers (and back): sign
+/// bit set means the bits are inverted, otherwise the sign bit is set. Adjacent floats map to
+/// adjacent integers, so a difference in this domain is a distance in ULPs.
+template <typename T>
+ALWAYS_INLINE T orderedFromBits(T bits)
+{
+    constexpr T sign = T{1} << (WallabyTraits<T>::width_bits - 1);
+    return (bits & sign) ? ~bits : (bits | sign);
+}
+
+template <typename T>
+ALWAYS_INLINE T bitsFromOrdered(T ordered)
+{
+    constexpr T sign = T{1} << (WallabyTraits<T>::width_bits - 1);
+    return (ordered & sign) ? (ordered ^ sign) : ~ordered;
+}
+
+template <typename T>
+ALWAYS_INLINE T zigzagEncode(T difference)
+{
+    using SignedType = typename WallabyTraits<T>::SignedType;
+    const auto signed_difference = static_cast<SignedType>(difference);
+    return (static_cast<T>(signed_difference) << 1) ^ static_cast<T>(signed_difference >> (WallabyTraits<T>::width_bits - 1));
+}
+
+template <typename T>
+ALWAYS_INLINE T zigzagDecode(T encoded)
+{
+    return (encoded >> 1) ^ (T{0} - (encoded & T{1}));
+}
+
 /** Quantizes a value to alpha decimal places and verifies that the division reconstructs it
   * bitwise. Returns false when the value cannot be represented this way losslessly.
   */
@@ -239,13 +273,63 @@ bool quantizeValue(typename WallabyTraits<T>::FloatType value, Int32 alpha, type
     return true;
 }
 
-/// Returns the smallest decimal scale that quantizes the value losslessly, if any. Scales are
-/// signed: an integer value ending in decimal zeros quantizes at negative scales too, where it
-/// is divided by a power of ten, so the search extends downward from zero while that holds.
+/** Quantizes a value to the given scale, producing the quantized integer and the zigzag ULP
+  * adjustment between the reconstruction and the true value (zero when the reconstruction is
+  * bit-exact). Returns false only when no quantized integer can be computed at all — the value
+  * is not finite or the scaled value leaves the exact llround domain — since any representable
+  * difference can be absorbed by the adjustment.
+  */
+template <typename T>
+bool quantizeValueWithAdjustment(
+    typename WallabyTraits<T>::FloatType value, Int32 alpha, typename WallabyTraits<T>::SignedType & quantized, T & adjustment)
+{
+    using Traits = WallabyTraits<T>;
+    using SignedType = typename Traits::SignedType;
+    using FloatType = typename Traits::FloatType;
+
+    if (!std::isfinite(value))
+        return false;
+
+    const bool negative_scale = alpha < 0;
+    const Float64 power = WALLABY_POW10[negative_scale ? -alpha : alpha];
+    const Float64 scaled = negative_scale ? static_cast<Float64>(value) / power : static_cast<Float64>(value) * power;
+    if (!(std::fabs(scaled) < 9.2e18))
+        return false;
+
+    const Int64 q = std::llround(scaled);
+    if constexpr (std::is_same_v<SignedType, Int32>)
+    {
+        if (q < std::numeric_limits<Int32>::min() || q > std::numeric_limits<Int32>::max())
+            return false;
+    }
+
+    const FloatType reconstructed = static_cast<FloatType>(
+        negative_scale ? static_cast<Float64>(q) * power : static_cast<Float64>(q) / power);
+
+    const T adjustment_zigzag
+        = zigzagEncode<T>(orderedFromBits(std::bit_cast<T>(value)) - orderedFromBits(std::bit_cast<T>(reconstructed)));
+    /// A value whose reconstruction is more than 2^(width/2) ULPs away lives at a completely
+    /// different magnitude; storing it as a patched exception is always cheaper than letting
+    /// it widen the adjustment lanes of the whole vector.
+    if (adjustment_zigzag >= (T{1} << (Traits::width_bits / 2)))
+        return false;
+
+    quantized = static_cast<SignedType>(q);
+    adjustment = adjustment_zigzag;
+    return true;
+}
+
+/// Returns the smallest decimal scale at which the value is representable within a small ULP
+/// adjustment (the adjustment lanes absorb such differences at a few bits per value), if any.
+/// Scales are signed: an integer value ending in decimal zeros quantizes at negative scales
+/// too, where it is divided by a power of ten, so the search extends downward from zero while
+/// the value stays bit-exact there.
 template <typename T>
 std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value)
 {
+    constexpr T near_threshold = T{1} << (WallabyTraits<T>::width_bits / 4);
     typename WallabyTraits<T>::SignedType quantized;
+    T adjustment;
     /// Positive zero is exactly representable at every scale; skip the downward probing.
     if (std::bit_cast<T>(value) == 0)
         return WallabyTraits<T>::min_alpha;
@@ -256,8 +340,10 @@ std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value)
             --alpha;
         return alpha;
     }
+    if (quantizeValueWithAdjustment<T>(value, 0, quantized, adjustment) && adjustment < near_threshold)
+        return 0;
     for (Int32 alpha = 1; alpha <= WallabyTraits<T>::max_alpha; ++alpha)
-        if (quantizeValue<T>(value, alpha, quantized))
+        if (quantizeValueWithAdjustment<T>(value, alpha, quantized, adjustment) && adjustment < near_threshold)
             return alpha;
     return std::nullopt;
 }
@@ -283,7 +369,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     using Traits = WallabyTraits<T>;
     using SignedType = typename Traits::SignedType;
 
-    constexpr UInt32 header_size = 2 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16);
+    constexpr UInt32 header_size = 3 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16);
 
     /// Determine the number of decimal places from a sample. The sample positions follow an odd
     /// multiplicative sequence rather than a fixed stride, so that a periodic pattern of
@@ -313,9 +399,12 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
 
     /// Filled before use; zeroing per vector is a measurable cost on the compression path.
     alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> quantized; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> adjustments; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     std::array<UInt16, WALLABY_VECTOR_VALUES> exception_positions; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     std::array<bool, WALLABY_VECTOR_VALUES> is_quantization_exception; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     UInt32 exception_count = 0;
+    UInt32 soft_exception_count = 0;
+    T max_adjustment_zigzag = 0;
 
     /// No candidate may spend more on exceptions alone than the size of the best encoding of
     /// this vector known so far — initially the caller-provided bound (the RAW mode at worst),
@@ -333,15 +422,29 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     {
         const UInt32 budget = exception_budget();
         exception_count = 0;
+        soft_exception_count = 0;
+        max_adjustment_zigzag = 0;
         std::fill(is_quantization_exception.begin(), is_quantization_exception.begin() + count, false);
         SignedType previous_good = 0;
         Int32 first_good = -1;
         for (UInt32 i = 0; i < count; ++i)
         {
             SignedType q;
-            if (quantizeValue<T>(values[i], candidate_alpha, q))
+            T adjustment;
+            if (quantizeValueWithAdjustment<T>(values[i], candidate_alpha, q, adjustment))
             {
                 quantized[i] = q;
+                adjustments[i] = adjustment;
+                if (adjustment != 0)
+                {
+                    /// A near-miss: the candidate comparison prices it as an exception (the
+                    /// historical model), while the once-per-vector capping analysis of the
+                    /// winner decides whether the adjustment lanes absorb it more cheaply.
+                    /// Near-misses do not count against the abort budget — unlike hard
+                    /// exceptions they are recoverable at a few bits each.
+                    ++soft_exception_count;
+                    max_adjustment_zigzag = std::max(max_adjustment_zigzag, adjustment);
+                }
                 previous_good = q;
                 if (first_good < 0)
                     first_good = static_cast<Int32>(i);
@@ -356,6 +459,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 /// Any placeholder works since the value is patched at decompression;
                 /// the previous one keeps both FOR and DELTA packings narrow.
                 quantized[i] = previous_good;
+                adjustments[i] = 0;
             }
         }
         /// Leading exceptions were filled with zero placeholders before any good value was
@@ -370,6 +474,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     {
         UInt8 bits = 0;
         UInt8 bits_for = 0;
+        UInt8 adjustment_bits = 0;
         bool use_delta = false;
         SignedType base = 0;
         UInt32 payload_size = 0;
@@ -421,6 +526,52 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         }
         return exceptions;
     };
+
+    /** Chooses the packed width of the adjustment lanes over the positions that survive as lane
+      * payers (per-position independence makes the histogram exact): capping the width exiles
+      * the positions with wider adjustments to ordinary exceptions. Returns the chosen width,
+      * the number of positions it exiles, and the resulting adjustment-side byte cost.
+      */
+    struct AdjustmentPlan
+    {
+        UInt8 bits = 0;
+        UInt32 exiled = 0;
+        UInt32 lane_bytes = 0;
+    };
+    const auto plan_adjustments = [&](const std::array<bool, WALLABY_VECTOR_VALUES> & is_exiled, bool allow_capping) -> AdjustmentPlan
+    {
+        UInt32 histogram[Traits::width_bits + 1] = {};
+        UInt8 full_bits = 0;
+        for (UInt32 i = 0; i < count; ++i)
+        {
+            if (is_exiled[i])
+                continue;
+            const T adjustment = adjustments[i];
+            const UInt8 w = adjustment == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(adjustment));
+            ++histogram[w];
+            full_bits = std::max(full_bits, w);
+        }
+        AdjustmentPlan best{full_bits, 0, Compression::FFOR::calculateBitpackedBytes(full_bits)};
+        if (allow_capping)
+        {
+            UInt32 outliers = 0;
+            UInt32 best_cost = best.lane_bytes;
+            for (Int32 w = full_bits - 1; w >= 0; --w)
+            {
+                outliers += histogram[w + 1];
+                const UInt32 cost = Compression::FFOR::calculateBitpackedBytes(static_cast<UInt8>(w)) + outliers * exceptionCost<T>();
+                if (cost < best_cost)
+                {
+                    best_cost = cost;
+                    best = AdjustmentPlan{static_cast<UInt8>(w), outliers, Compression::FFOR::calculateBitpackedBytes(static_cast<UInt8>(w))};
+                }
+            }
+        }
+        return best;
+    };
+
+    /// Scratch for exile flags shared by the measuring and packing phases of one candidate.
+    std::array<bool, WALLABY_VECTOR_VALUES> exile_scratch; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
 
     /** Chooses between Frame-of-Reference and zigzag delta packing for the quantized vector and
       * computes the payload size of the cheaper of the two. Both packings may cap their width
@@ -512,22 +663,78 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                     }
                 }
             }
-            best_packing = Packing{best_w, bits_for_full, false, min_q, best_cost};
+            if (!allow_capping)
+            {
+                /// The candidate loop prices near-misses as exceptions (zero adjustment bits);
+                /// the once-per-vector capping analysis of the winner turns them into
+                /// adjustment lanes whenever that is cheaper.
+                const UInt32 total = header_size + lanes_bytes(bits_for_full)
+                    + (exception_count + soft_exception_count) * exceptionCost<T>();
+                best_packing = Packing{bits_for_full, bits_for_full, 0, false, min_q, total};
+            }
+            else
+            {
+                /// The adjustment lanes cover the positions that survive the width cap.
+                for (UInt32 i = 0; i < count; ++i)
+                {
+                    const T offset = static_cast<T>(quantized[i]) - static_cast<T>(min_q);
+                    exile_scratch[i] = is_quantization_exception[i]
+                        || (best_w < Traits::width_bits && offset >= (T{1} << best_w));
+                }
+                const AdjustmentPlan adjustment_plan = plan_adjustments(exile_scratch, true);
+                UInt32 for_exiles = 0;
+                for (UInt32 i = 0; i < count; ++i)
+                    for_exiles += exile_scratch[i] && !is_quantization_exception[i] ? 1 : 0;
+                const UInt32 total = header_size + lanes_bytes(best_w) + adjustment_plan.lane_bytes
+                    + (exception_count + for_exiles + adjustment_plan.exiled) * exceptionCost<T>();
+                best_packing = Packing{best_w, bits_for_full, adjustment_plan.bits, false, min_q, total};
+            }
         }
 
         /// DELTA: the histogram only estimates (exiled deltas partially reappear at the next
         /// position), so it proposes the most promising cap and an exact walk verifies it.
         if (delta_valid && bits_delta_full < Traits::width_bits)
         {
-            const UInt32 uncapped_cost = header_size + lanes_bytes(bits_delta_full) + exception_count * exceptionCost<T>();
-            if (!best_packing || uncapped_cost < best_packing->payload_size)
-                best_packing = Packing{bits_delta_full, bits_for_full, true, quantized[0], uncapped_cost};
+            /// Evaluates the delta packing at one width cap exactly: the chain walk yields the
+            /// exile set, the adjustment planner covers the surviving positions.
+            const auto evaluate_delta = [&](UInt8 w) -> Packing
+            {
+                if (!allow_capping)
+                {
+                    const UInt32 total = header_size + lanes_bytes(w)
+                        + (exception_count + soft_exception_count) * exceptionCost<T>();
+                    return Packing{w, bits_for_full, 0, true, quantized[0], total};
+                }
+                UInt32 walked_exceptions = 0;
+                if (w >= bits_delta_full)
+                {
+                    for (UInt32 i = 0; i < count; ++i)
+                        exile_scratch[i] = is_quantization_exception[i];
+                    walked_exceptions = exception_count;
+                }
+                else
+                {
+                    UInt16 exiled[WALLABY_VECTOR_VALUES]; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+                    walked_exceptions = walk_delta(w, nullptr, exiled);
+                    std::fill(exile_scratch.begin(), exile_scratch.begin() + count, false);
+                    for (UInt32 e = 0; e < walked_exceptions; ++e)
+                        exile_scratch[exiled[e]] = true;
+                }
+                const AdjustmentPlan adjustment_plan = plan_adjustments(exile_scratch, allow_capping);
+                const UInt32 total = header_size + lanes_bytes(w) + adjustment_plan.lane_bytes
+                    + (walked_exceptions + adjustment_plan.exiled) * exceptionCost<T>();
+                return Packing{w, bits_for_full, adjustment_plan.bits, true, quantized[0], total};
+            };
+
+            const Packing uncapped = evaluate_delta(bits_delta_full);
+            if (!best_packing || uncapped.payload_size < best_packing->payload_size)
+                best_packing = uncapped;
 
             if (allow_capping)
             {
                 UInt32 outliers = 0;
                 UInt8 estimated_w = bits_delta_full;
-                UInt32 estimated_cost = uncapped_cost;
+                UInt32 estimated_cost = uncapped.payload_size;
                 for (Int32 w = bits_delta_full - 1; w >= 0; --w)
                 {
                     outliers += delta_width_histogram[w + 1];
@@ -541,10 +748,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 }
                 if (estimated_w < bits_delta_full && estimated_cost + 64 < best_packing->payload_size)
                 {
-                    const UInt32 walk_exceptions = walk_delta(estimated_w, nullptr, nullptr);
-                    const UInt32 cost = header_size + lanes_bytes(estimated_w) + walk_exceptions * exceptionCost<T>();
-                    if (cost < best_packing->payload_size)
-                        best_packing = Packing{estimated_w, bits_for_full, true, quantized[0], cost};
+                    const Packing capped = evaluate_delta(estimated_w);
+                    if (capped.payload_size < best_packing->payload_size)
+                        best_packing = capped;
                 }
             }
         }
@@ -711,6 +917,32 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             }
         }
 
+        /// The values with the widest adjustments play the same role: a high-precision minority
+        /// no longer becomes exceptions (the adjustment absorbs it), but the scale that would
+        /// absorb it into the packed lanes is still worth an evaluation.
+        if (max_adjustment_zigzag > T{0xFF})
+        {
+            const UInt8 max_adjustment_width = static_cast<UInt8>(Traits::width_bits - std::countl_zero(max_adjustment_zigzag));
+            UInt32 probed = 0;
+            for (UInt32 i = 0; i < count && probed < 8; ++i)
+            {
+                if (is_quantization_exception[i] || adjustments[i] == 0)
+                    continue;
+                const UInt8 w = static_cast<UInt8>(Traits::width_bits - std::countl_zero(adjustments[i]));
+                if (w + 2 < max_adjustment_width)
+                    continue;
+                ++probed;
+                if (auto adjustment_alpha = findAlpha<T>(values[i]))
+                {
+                    if (!considered[alpha_index(*adjustment_alpha)])
+                    {
+                        considered[alpha_index(*adjustment_alpha)] = true;
+                        candidates_pending = true;
+                    }
+                }
+            }
+        }
+
         const auto packing = measure_packing(false);
         if (packing && candidate == reference_alpha)
         {
@@ -759,11 +991,14 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     if (scratch_alpha != alpha && !quantize_all(alpha))
         return std::nullopt;
 
-    /// The capping analysis (PFOR-style patching of lane-width outliers into exceptions) runs
-    /// once per vector, on the winning scale only, and is skipped when even a large capping
-    /// gain could not bring the decimal encoding under the best other encoding of this vector
-    /// (capping recovers more than a quarter of the payload only in contrived cases).
-    if (best->payload_size * 4 < best_total_size * 5)
+    /// The capping analysis (PFOR-style patching of lane-width outliers into exceptions, and
+    /// the reverse conversion of near-miss exceptions into adjustment lanes) runs once per
+    /// vector, on the winning scale only. It is skipped when even a large gain could not bring
+    /// the decimal encoding under the best other encoding of this vector: the near-misses may
+    /// become almost free, the rest recovers more than a quarter only in contrived cases.
+    const UInt32 soft_exception_bytes = soft_exception_count * exceptionCost<T>();
+    const UInt32 payload_beyond_soft = best->payload_size - std::min(best->payload_size, soft_exception_bytes);
+    if (payload_beyond_soft * 4 < best_total_size * 5)
         if (const auto capped = measure_packing(true); capped && capped->payload_size < best->payload_size)
             best = *capped;
 
@@ -777,10 +1012,16 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// whose lane does not fit the (possibly capped) width both become patched exceptions, so
     /// their lane content is arbitrary and chosen to fit. write_exceptions collects the final
     /// exception positions in ascending order.
-    UInt32 write_exception_count = 0;
+    /// Replays the exile decisions of the measuring phase in two steps: the width cap of the
+    /// quantized lanes (chain walk for DELTA, offset predicate for FOR), then the width cap of
+    /// the adjustment lanes over the surviving positions.
     if (use_delta)
     {
-        write_exception_count = walk_delta(bits, lanes.data(), exception_positions.data());
+        UInt16 exiled[WALLABY_VECTOR_VALUES]; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+        const UInt32 walked = walk_delta(bits, lanes.data(), exiled);
+        std::fill(exile_scratch.begin(), exile_scratch.begin() + count, false);
+        for (UInt32 e = 0; e < walked; ++e)
+            exile_scratch[exiled[e]] = true;
         for (UInt32 i = count; i < WALLABY_VECTOR_VALUES; ++i)
             lanes[i] = 0;
         Compression::FFOR::bitPack(lanes.data(), packed.data(), bits, T{0});
@@ -790,23 +1031,38 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         for (UInt32 i = 0; i < count; ++i)
         {
             const T offset = static_cast<T>(quantized[i]) - static_cast<T>(best->base);
-            const bool exiled = is_quantization_exception[i] || (bits < Traits::width_bits && offset >= (T{1} << bits));
-            if (exiled)
-            {
-                exception_positions[write_exception_count++] = static_cast<UInt16>(i);
-                lanes[i] = static_cast<T>(best->base);
-            }
-            else
-                lanes[i] = static_cast<T>(quantized[i]);
+            exile_scratch[i] = is_quantization_exception[i] || (bits < Traits::width_bits && offset >= (T{1} << bits));
+            lanes[i] = exile_scratch[i] ? static_cast<T>(best->base) : static_cast<T>(quantized[i]);
         }
         for (UInt32 i = count; i < WALLABY_VECTOR_VALUES; ++i)
             lanes[i] = static_cast<T>(best->base);
         Compression::FFOR::bitPack(lanes.data(), packed.data(), bits, static_cast<T>(best->base));
     }
 
+    const UInt8 adjustment_bits = best->adjustment_bits;
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> adjustment_lanes; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> adjustment_packed; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+    UInt32 write_exception_count = 0;
+    for (UInt32 i = 0; i < count; ++i)
+    {
+        if (!exile_scratch[i] && adjustment_bits < Traits::width_bits && adjustments[i] >= (T{1} << adjustment_bits))
+            exile_scratch[i] = true;
+        if (exile_scratch[i])
+        {
+            exception_positions[write_exception_count++] = static_cast<UInt16>(i);
+            adjustment_lanes[i] = 0;
+        }
+        else
+            adjustment_lanes[i] = adjustments[i];
+    }
+    for (UInt32 i = count; i < WALLABY_VECTOR_VALUES; ++i)
+        adjustment_lanes[i] = 0;
+    Compression::FFOR::bitPack(adjustment_lanes.data(), adjustment_packed.data(), adjustment_bits, T{0});
+
     const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
+    const UInt32 adjustment_bytes = Compression::FFOR::calculateBitpackedBytes(adjustment_bits);
     const UInt32 payload_size = best->payload_size;
-    if (payload_size != header_size + packed_bytes + write_exception_count * exceptionCost<T>())
+    if (payload_size != header_size + packed_bytes + adjustment_bytes + write_exception_count * exceptionCost<T>())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wallaby packing size mismatch between measurement and packing");
     if (payload_size > scratch_size)
         return std::nullopt;
@@ -814,12 +1070,15 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     char * out = scratch;
     *out++ = static_cast<char>(alpha + WALLABY_ALPHA_BIAS);
     *out++ = static_cast<char>(bits);
+    *out++ = static_cast<char>(adjustment_bits);
     unalignedStoreLittleEndian<SignedType>(out, best->base);
     out += sizeof(SignedType);
     unalignedStoreLittleEndian<UInt16>(out, static_cast<UInt16>(write_exception_count));
     out += sizeof(UInt16);
     memcpy(out, packed.data(), packed_bytes);
     out += packed_bytes;
+    memcpy(out, adjustment_packed.data(), adjustment_bytes);
+    out += adjustment_bytes;
     for (UInt32 i = 0; i < write_exception_count; ++i)
     {
         unalignedStoreLittleEndian<UInt16>(out, exception_positions[i]);
@@ -1303,6 +1562,8 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
 
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> lanes{};
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> unpacked{};
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> adjustment_lanes{};
+    alignas(64) std::array<T, WALLABY_VECTOR_VALUES> adjustments{};
 
     /// Every mode streams its values straight into the destination through unaligned stores:
     /// no mode ever reads the output back, so no intermediate vector buffer is needed and each
@@ -1337,21 +1598,32 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
             case VectorMode::DecimalFor:
             case VectorMode::DecimalDelta:
             {
-                require(2 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16));
+                require(3 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16));
                 const Int32 alpha = static_cast<Int32>(static_cast<UInt8>(*src++)) - WALLABY_ALPHA_BIAS;
                 const UInt8 bits = static_cast<UInt8>(*src++);
+                const UInt8 adjustment_bits = static_cast<UInt8>(*src++);
                 const SignedType base = unalignedLoadLittleEndian<SignedType>(src);
                 src += sizeof(SignedType);
                 const UInt16 exception_count = unalignedLoadLittleEndian<UInt16>(src);
                 src += sizeof(UInt16);
 
-                if (alpha < Traits::min_alpha || alpha > Traits::max_alpha || bits >= Traits::width_bits || exception_count > count)
+                if (alpha < Traits::min_alpha || alpha > Traits::max_alpha || bits >= Traits::width_bits
+                    || adjustment_bits >= Traits::width_bits || exception_count > count)
                     throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt decimal header");
 
                 const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
                 require(packed_bytes);
                 memcpy(lanes.data(), src, packed_bytes);
                 src += packed_bytes;
+
+                const UInt32 adjustment_bytes = Compression::FFOR::calculateBitpackedBytes(adjustment_bits);
+                require(adjustment_bytes);
+                if (adjustment_bits > 0)
+                {
+                    memcpy(adjustment_lanes.data(), src, adjustment_bytes);
+                    Compression::FFOR::bitUnpack(adjustment_lanes.data(), adjustments.data(), adjustment_bits, T{0});
+                }
+                src += adjustment_bytes;
 
                 const bool negative_scale = alpha < 0;
                 const Float64 scale = WALLABY_POW10[negative_scale ? -alpha : alpha];
@@ -1360,11 +1632,22 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                     return std::bit_cast<T>(static_cast<typename Traits::FloatType>(
                         negative_scale ? static_cast<Float64>(q) * scale : static_cast<Float64>(q) / scale));
                 };
+                /// The adjustment shifts the reconstruction by a signed number of ULPs in the
+                /// total order of the float bit patterns; zero adjustment bits (the common
+                /// case) keeps the loops free of it.
+                const auto adjust = [&](UInt32 i, T reconstructed_bits) ALWAYS_INLINE
+                {
+                    return bitsFromOrdered<T>(orderedFromBits(reconstructed_bits) + zigzagDecode(adjustments[i]));
+                };
                 if (mode == VectorMode::DecimalFor)
                 {
                     Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, static_cast<T>(base));
-                    for (UInt32 i = 0; i < count; ++i)
-                        emit(i, reconstruct(static_cast<SignedType>(unpacked[i])));
+                    if (adjustment_bits == 0)
+                        for (UInt32 i = 0; i < count; ++i)
+                            emit(i, reconstruct(static_cast<SignedType>(unpacked[i])));
+                    else
+                        for (UInt32 i = 0; i < count; ++i)
+                            emit(i, adjust(i, reconstruct(static_cast<SignedType>(unpacked[i]))));
                 }
                 else
                 {
@@ -1377,7 +1660,8 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                             const T zigzag = unpacked[i];
                             accumulator += (zigzag >> 1) ^ (T{0} - (zigzag & T{1}));
                         }
-                        emit(i, reconstruct(static_cast<SignedType>(accumulator)));
+                        const T reconstructed = reconstruct(static_cast<SignedType>(accumulator));
+                        emit(i, adjustment_bits == 0 ? reconstructed : adjust(i, reconstructed));
                     }
                 }
 

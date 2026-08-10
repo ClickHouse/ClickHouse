@@ -2932,6 +2932,7 @@ TEST_F(WallabyTest, DecodesDecimalForVectorWithException)
         0x01,                                           // mode = DECIMAL_FOR
         0x21,                                           // biased scale 33: alpha = 1 decimal place
         0x00,                                           // bits = 0, no packed data
+        0x00,                                           // adjustment_bits = 0, no adjustments
         0x19, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 25 -> 2.5
         0x01, 0x00,                                     // exception_count = 1
         0x01, 0x00,                                     // exception position = 1
@@ -2948,6 +2949,7 @@ TEST_F(WallabyTest, DecodesDecimalDeltaVector)
         0x02,                                           // mode = DECIMAL_DELTA
         0x22,                                           // biased scale 34: alpha = 2 decimal places
         0x00,                                           // bits = 0, no packed data
+        0x00,                                           // adjustment_bits = 0, no adjustments
         0x7B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 123 -> 1.23
         0x00, 0x00                                      // exception_count = 0
     };
@@ -3031,6 +3033,7 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptDecimalHeader)
         0x01,                                           // mode = DECIMAL_FOR
         0x33,                                           // biased scale 51: alpha = 19, above the Float64 maximum of 18
         0x00,                                           // bits = 0
+        0x00,                                           // adjustment_bits = 0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 0
         0x00, 0x00                                      // exception_count = 0
     };
@@ -3043,6 +3046,7 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptExceptionPosition)
         0x01,                                           // mode = DECIMAL_FOR
         0x21,                                           // biased scale 33: alpha = 1
         0x00,                                           // bits = 0
+        0x00,                                           // adjustment_bits = 0
         0x19, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 25
         0x01, 0x00,                                     // exception_count = 1
         0x05, 0x00,                                     // exception position = 5, beyond the 2 values
@@ -3212,6 +3216,25 @@ TEST_F(WallabyTest, KeepsDecimalModeBeyondAFixedExceptionCount)
     EXPECT_LT(wallabyCompressedSize(values), 3500u);
 }
 
+TEST_F(WallabyTest, AbsorbsNearDecimalValuesWithAdjustments)
+{
+    /// Two-decimal values disturbed by a few dozen ULPs each (the shape of decimals that went
+    /// through lossy arithmetic or a float32 round trip): no value is bit-exact at any scale,
+    /// so the old encoder fell through to the XOR mode (~6 KiB); the adjustment lanes absorb
+    /// the disturbance at a few bits per value next to the narrow quantized lanes.
+    std::vector<Float64> values(1024);
+    UInt64 state = 7;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        const Float64 exact = static_cast<Float64>(1000 + (i % 500)) / 100;
+        const Int64 ulps = static_cast<Int64>((state >> 33) % 64) - 32;
+        values[i] = std::bit_cast<Float64>(std::bit_cast<Int64>(exact) + ulps);
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 3000u);
+}
+
 TEST_F(WallabyTest, DecodesNegativeScaleVector)
 {
     /// A negative scale multiplies the quantized values by a power of ten at reconstruction:
@@ -3220,6 +3243,7 @@ TEST_F(WallabyTest, DecodesNegativeScaleVector)
         0x02,                                           // mode = DECIMAL_DELTA
         0x1E,                                           // biased scale 30: alpha = -2
         0x00,                                           // bits = 0, no packed data
+        0x00,                                           // adjustment_bits = 0, no adjustments
         0x0C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 12 -> 1200
         0x00, 0x00                                      // exception_count = 0
     };
