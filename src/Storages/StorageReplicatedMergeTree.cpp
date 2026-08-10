@@ -6921,11 +6921,13 @@ void StorageReplicatedMergeTree::alter(
         MergeTreeData::verifySortingKey(future_metadata.sorting_key);
     }
 
+    /// The definitions below are written into Keeper and compared with what the other replicas have
+    /// written, so their text must not depend on the parentheses the user has written around them.
     auto ast_to_str = [](ASTPtr query) -> String
     {
         if (!query)
             return "";
-        return query->formatWithSecretsOneLine();
+        return query->formatIgnoringRedundantParentheses();
     };
 
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();
@@ -6973,19 +6975,19 @@ void StorageReplicatedMergeTree::alter(
             /// list here and we cannot change this representation for compatibility. Also we have preparsed AST `sorting_key.expression_list_ast`
             /// in KeyDescription, but it contain version column for VersionedCollapsingMergeTree, which shouldn't be defined as a part of key definition AST.
             /// So the best compatible way is just to convert definition_ast to list and serialize it. In all other places key.expression_list_ast should be used.
-            future_metadata_in_zk.sorting_key = extractKeyExpressionList(future_metadata.sorting_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.sorting_key = ast_to_str(extractKeyExpressionList(future_metadata.sorting_key.definition_ast));
         }
 
         if (ast_to_str(future_metadata.sampling_key.definition_ast) != ast_to_str(current_metadata->sampling_key.definition_ast))
-            future_metadata_in_zk.sampling_expression = extractKeyExpressionList(future_metadata.sampling_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.sampling_expression = ast_to_str(extractKeyExpressionList(future_metadata.sampling_key.definition_ast));
 
         if (ast_to_str(future_metadata.partition_key.definition_ast) != ast_to_str(current_metadata->partition_key.definition_ast))
-            future_metadata_in_zk.partition_key = extractKeyExpressionList(future_metadata.partition_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.partition_key = ast_to_str(extractKeyExpressionList(future_metadata.partition_key.definition_ast));
 
         if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata->table_ttl.definition_ast))
         {
             if (future_metadata.table_ttl.definition_ast)
-                future_metadata_in_zk.ttl_table = future_metadata.table_ttl.definition_ast->formatWithSecretsOneLine();
+                future_metadata_in_zk.ttl_table = ast_to_str(future_metadata.table_ttl.definition_ast);
             else /// TTL was removed
                 future_metadata_in_zk.ttl_table = "";
         }

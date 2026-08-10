@@ -149,10 +149,14 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
+/// This is how a column is serialized into ZooKeeper, and `ColumnsDescription::operator==` compares
+/// two sets of columns through it, so the text must not depend on the redundant parentheses the user
+/// has written around a `DEFAULT`, `CODEC` or `TTL` expression.
 static String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
     IAST::FormatSettings settings(true);
+    settings.ignore_redundant_parentheses = true;
     ast.format(buf, settings, state, IAST::FormatStateStacked());
     return buf.str();
 }

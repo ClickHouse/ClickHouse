@@ -1325,7 +1325,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
         if (!metadata.table_ttl.definition_ast)
             return true;
         /// If TTL had not been changed, do not require mutations
-        return metadata.table_ttl.definition_ast->formatWithSecretsOneLine() != ttl->formatWithSecretsOneLine();
+        return metadata.table_ttl.definition_ast->formatIgnoringRedundantParentheses() != ttl->formatIgnoringRedundantParentheses();
     }
 
     if (!ttl || type != MODIFY_COLUMN)
@@ -1334,7 +1334,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     bool column_ttl_changed = true;
     for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
     {
-        if (name == column_name && ttl->formatWithSecretsOneLine() == ttl_ast->formatWithSecretsOneLine())
+        if (name == column_name && ttl->formatIgnoringRedundantParentheses() == ttl_ast->formatIgnoringRedundantParentheses())
         {
             column_ttl_changed = false;
             break;
@@ -1558,11 +1558,13 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
 
+    /// Used to tell whether a command restates the definition the table already has, so it must not
+    /// depend on whether the redundant parentheses were written on one side and not on the other.
     auto ast_to_str = [](const ASTPtr & query) -> String
     {
         if (!query)
             return "";
-        return query->formatWithSecretsOneLine();
+        return query->formatIgnoringRedundantParentheses();
     };
 
     for (size_t i = 0; i < size(); ++i)
