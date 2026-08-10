@@ -2,6 +2,7 @@
 #include <Core/Types.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <optional>
 
 namespace DB
 {
@@ -152,8 +153,11 @@ public:
     /// `created_nodes` is a helper index for hive partitioning case,
     /// keeps values and indexes of already inserted commands
     /// to avoid double creation with the same path.
+    /// `retriable_node_version` is an optimization: if set, we already checked
+    /// whether .retriable exists in a batched operation, so skip the per-file tryGet.
     void prepareProcessedRequests(Coordination::Requests & requests,
-        LastProcessedFileInfoMapPtr created_nodes = nullptr);
+        LastProcessedFileInfoMapPtr created_nodes = nullptr,
+        std::optional<int32_t> retriable_node_version = std::nullopt);
     /// Prepare keeper requests, required to set file as Failed.
     void prepareFailedRequests(
         Coordination::Requests & requests,
@@ -212,7 +216,8 @@ protected:
 
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
-        LastProcessedFileInfoMapPtr created_nodes) = 0;
+        LastProcessedFileInfoMapPtr created_nodes,
+        std::optional<int32_t> retriable_node_version) = 0;
 
     virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &,
         const std::string &)

@@ -1507,6 +1507,56 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 ++processed_count;
     }
 
+    /// Batch-check all .retriable nodes for successfully processed files to avoid
+    /// N synchronous Keeper reads (one per file). Most files succeed on first try
+    /// and have no .retriable node, so this batched check is much cheaper.
+    std::unordered_map<std::string, int32_t> retriable_versions;
+    if (insert_succeeded)
+    {
+        std::vector<std::string> retriable_paths;
+        std::vector<size_t> retriable_file_indices;
+        for (size_t i = 0; i < processed_files.size(); ++i)
+        {
+            const auto & [file_state, file_metadata, exception_during_read] = processed_files[i];
+            if (file_state == FileState::Processed)
+            {
+                /// Will call prepareProcessedRequests, which needs .retriable check
+                auto retriable_path = file_metadata->getFailedNodePath() + ".retriable";
+                retriable_paths.push_back(retriable_path);
+                retriable_file_indices.push_back(i);
+            }
+        }
+
+        if (!retriable_paths.empty())
+        {
+            zkutil::ZooKeeper::MultiTryGetResponse responses;
+            ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+            {
+                responses = files_metadata->getZooKeeper()->tryGet(retriable_paths);
+            });
+
+            for (size_t j = 0; j < responses.size(); ++j)
+            {
+                const auto & response = responses[j];
+                const auto & retriable_path = retriable_paths[j];
+                if (response.error == Coordination::Error::ZOK)
+                {
+                    /// Node exists, store its version
+                    retriable_versions[retriable_path] = response.stat.version;
+                }
+                else if (response.error == Coordination::Error::ZNONODE)
+                {
+                    /// Node doesn't exist, store -1 as sentinel
+                    retriable_versions[retriable_path] = -1;
+                }
+                else
+                {
+                    throw zkutil::KeeperException::fromPath(response.error, retriable_path);
+                }
+            }
+        }
+    }
+
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
         const auto & [file_state, file_metadata, exception_during_read] = processed_files[i];
@@ -1517,6 +1567,15 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 chassert(exception_during_read.empty());
                 if (insert_succeeded)
                 {
+                    /// Look up the batched .retriable check result for this file
+                    auto retriable_path = file_metadata->getFailedNodePath() + ".retriable";
+                    std::optional<int32_t> retriable_version;
+                    auto it = retriable_versions.find(retriable_path);
+                    if (it != retriable_versions.end())
+                    {
+                        retriable_version = it->second;
+                    }
+
                     if (is_ordered_mode)
                     {
                         /// For Ordered mode we need to commit as Processed
@@ -1525,7 +1584,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
                         if (last_processed_file_idx_per_bucket[bucket] == i)
                         {
-                            file_metadata->prepareProcessedRequests(requests, created_nodes);
+                            file_metadata->prepareProcessedRequests(requests, created_nodes, retriable_version);
                         }
                         else
                         {
@@ -1536,7 +1595,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     }
                     else
                     {
-                        file_metadata->prepareProcessedRequests(requests);
+                        file_metadata->prepareProcessedRequests(requests, nullptr, retriable_version);
                     }
                     successful_files.push_back(StoredObject(file_metadata->getPath()));
                 }

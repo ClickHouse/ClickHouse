@@ -123,7 +123,8 @@ private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
     void prepareProcessedRequestsImpl(Coordination::Requests & requests,
-        LastProcessedFileInfoMapPtr created_nodes) override;
+        LastProcessedFileInfoMapPtr created_nodes,
+        std::optional<int32_t> retriable_node_version) override;
 
     static bool getMaxProcessedNode(
         NodeMetadata & result,

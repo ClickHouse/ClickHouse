@@ -508,13 +508,14 @@ void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordinatio
 }
 
 void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests,
-    LastProcessedFileInfoMapPtr created_nodes)
+    LastProcessedFileInfoMapPtr created_nodes,
+    std::optional<int32_t> retriable_node_version)
 {
     LOG_TRACE(log, "Setting file {} as processed (keeper path: {})", path, processed_node_path);
 
     try
     {
-        prepareProcessedRequestsImpl(requests, created_nodes);
+        prepareProcessedRequestsImpl(requests, created_nodes, retriable_node_version);
     }
     catch (...)
     {
