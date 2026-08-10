@@ -169,6 +169,111 @@ def test_postgres_dictionaries_custom_query_full_load(started_cluster):
     cursor.execute("DROP TABLE test_table_1;")
 
 
+def test_postgres_dictionaries_custom_query_wrong_column_order(started_cluster):
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        database=True,
+        port=started_cluster.postgres_port,
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS test_column_order (meter_no Text, id BigInt, contract_time Date, end_date Date);"
+    )
+    cursor.execute(
+        "INSERT INTO test_column_order VALUES ('M1', 97955, '2020-01-01', '2030-01-01');"
+    )
+
+    query = node1.query
+    source = f"""SOURCE(PostgreSQL(
+        DB 'postgres_database'
+        HOST '{started_cluster.postgres_ip}'
+        PORT {started_cluster.postgres_port}
+        USER 'postgres'
+        PASSWORD '{pg_pass}'"""
+
+    # A range dictionary expects the key column, then RANGE MIN and RANGE MAX, then the remaining
+    # attributes. Here `id` comes second, so its value is read into `contract_time`.
+    query(f"""
+    CREATE DICTIONARY test_dictionary_wrong_order
+    (
+        meter_no String,
+        id Int64,
+        contract_time Date,
+        end_date Date
+    )
+    PRIMARY KEY meter_no
+    LAYOUT(RANGE_HASHED())
+    RANGE(MIN contract_time MAX end_date)
+    {source}
+        QUERY $doc$SELECT meter_no, id, contract_time, end_date FROM test_column_order;$doc$))
+    LIFETIME(0)
+    """)
+
+    error = node1.query_and_get_error(
+        "SELECT dictGet(test_dictionary_wrong_order, 'id', 'M1', toDate('2025-01-01'))"
+    )
+    assert "'97955'" in error
+    assert "into `contract_time`" in error
+    assert (
+        "must return them in this order: `meter_no`, `contract_time`, `end_date`, `id`"
+        in error
+    )
+    assert "RANGE MIN and RANGE MAX" in error
+
+    # The same query with the documented column order loads fine.
+    query(f"""
+    CREATE DICTIONARY test_dictionary_right_order
+    (
+        meter_no String,
+        id Int64,
+        contract_time Date,
+        end_date Date
+    )
+    PRIMARY KEY meter_no
+    LAYOUT(RANGE_HASHED())
+    RANGE(MIN contract_time MAX end_date)
+    {source}
+        QUERY $doc$SELECT meter_no, contract_time, end_date, id FROM test_column_order;$doc$))
+    LIFETIME(0)
+    """)
+
+    assert (
+        query(
+            "SELECT dictGet(test_dictionary_right_order, 'id', 'M1', toDate('2025-01-01'))"
+        )
+        == "97955\n"
+    )
+
+    # A layout without a range must not be told about RANGE MIN / RANGE MAX columns.
+    query(f"""
+    CREATE DICTIONARY test_dictionary_flat_wrong_order
+    (
+        id UInt64,
+        end_date Date,
+        meter_no String
+    )
+    PRIMARY KEY id
+    LAYOUT(FLAT())
+    {source}
+        QUERY $doc$SELECT id, meter_no, end_date FROM test_column_order;$doc$))
+    LIFETIME(0)
+    """)
+
+    error = node1.query_and_get_error(
+        "SELECT dictGet(test_dictionary_flat_wrong_order, 'end_date', toUInt64(97955))"
+    )
+    assert "into `end_date`" in error
+    assert "must return them in this order: `id`, `end_date`, `meter_no`" in error
+    assert "RANGE" not in error
+
+    query("DROP DICTIONARY test_dictionary_wrong_order;")
+    query("DROP DICTIONARY test_dictionary_right_order;")
+    query("DROP DICTIONARY test_dictionary_flat_wrong_order;")
+
+    cursor.execute("DROP TABLE test_column_order;")
+
+
 def test_postgres_dictionaries_custom_query_partial_load_simple_key(started_cluster):
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
