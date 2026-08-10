@@ -1,5 +1,6 @@
 SET enable_nullable_tuple_type = 1;
 SET max_threads = 1;
+SET max_block_size = 8192;
 SET query_plan_max_limit_for_top_k_optimization = 100;
 SET use_skip_indexes_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;
