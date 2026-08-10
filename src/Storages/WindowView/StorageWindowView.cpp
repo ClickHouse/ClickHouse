@@ -820,10 +820,17 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     else
     {
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
-        /// LIMIT ... WITH TIES requires an ORDER BY clause, which was just removed;
-        /// a stale flag would be a logical error in InterpreterSelectQuery.
-        modified_select.limit_with_ties = false;
     }
+
+    /// This query must read the raw source table in full: it backfills the view on
+    /// `CREATE WINDOW VIEW ... POPULATE`, and the window-view query is applied to the
+    /// inserted rows afterwards. A leftover LIMIT/OFFSET would pre-truncate the raw
+    /// input stream, which steady-state inserts do not have, so the initialized state
+    /// would diverge from live behavior. WITH TIES cannot survive without its LIMIT
+    /// (and its ORDER BY was replaced or removed above anyway).
+    modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
+    modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, {});
+    modified_select.limit_with_ties = false;
 
     /// INTERPOLATE belongs to the replaced (or removed) ORDER BY ... WITH FILL clause, and it may
     /// reference aliases of the original select list, which was rewritten to raw source columns above.
