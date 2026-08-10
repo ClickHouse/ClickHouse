@@ -987,8 +987,10 @@ void KeeperServer::resetLeaderMetrics()
     election_since_ms = 0;
     sum_leader_unavailable_time_ms = 0;
     cnt_leader_unavailable_time = 0;
+    last_leader_unavailable_time_ms.reset();
     sum_election_time_ms = 0;
     cnt_election_time = 0;
+    last_leader_election_time_ms.reset();
 }
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)

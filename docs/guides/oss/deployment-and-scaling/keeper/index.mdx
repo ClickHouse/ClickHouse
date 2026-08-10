@@ -215,6 +215,8 @@ zk_synced_followers     0
 
 `zk_sum_leader_unavailable_time`, `zk_cnt_leader_unavailable_time`, `zk_sum_election_time`, and `zk_cnt_election_time` are cumulative leader-only metrics. Keeper samples NuRaft leader availability once per `heart_beat_interval_ms`, but never more frequently than every 100 milliseconds. Each election start and leader-unavailability boundary can differ from the actual transition by up to that effective interval and windows shorter than that interval can be missed. Keeper records election completion at NuRaft `BecomeLeader`. `srst` resets all four values.
 
+The duration of the most recent window of each kind is also exported to `system.asynchronous_metrics` as `KeeperLastLeaderElectionTime` and `KeeperLastLeaderUnavailableTime`, in milliseconds. Both are leader-only as well: a node that is not the active leader, or that has not completed a window yet, reports `0`. `srst` resets them together with the cumulative counters.
+
 - `srvr`: Lists full details for the server.
 
 ```response

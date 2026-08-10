@@ -508,11 +508,11 @@ Average request latency of ClickHouse Keeper.
 
 ### KeeperCommitLogsCacheEntries {#keepercommitlogscacheentries}
 
-Number of entries stored in the in-memory cache for next logs to be committed
+Number of decoded log entries currently buffered ahead of the commit thread by the changelog read-ahead reader
 
 ### KeeperCommitLogsCacheSize {#keepercommitlogscachesize}
 
-Total size of in-memory cache for next logs to be committed
+Total size of decoded log entries currently buffered ahead of the commit thread by the changelog read-ahead reader
 
 ### KeeperEphemeralsCount {#keeperephemeralscount}
 
@@ -549,6 +549,14 @@ The size in bytes of the memory arena for keys in ClickHouse Keeper.
 ### KeeperLastCommittedLogIdx {#keeperlastcommittedlogidx}
 
 Index of the last committed log in ClickHouse Keeper.
+
+### KeeperLastLeaderElectionTime {#keeperlastleaderelectiontime}
+
+Duration in milliseconds of the most recent election won by this ClickHouse Keeper leader. `0` if this instance is not the active leader or has no recorded completed election.
+
+### KeeperLastLeaderUnavailableTime {#keeperlastleaderunavailabletime}
+
+Duration in milliseconds of the most recent no-leader window completed by this ClickHouse Keeper leader. `0` if this instance is not the active leader or has no recorded completed no-leader window.
 
 ### KeeperLastLogIdx {#keeperlastlogidx}
 

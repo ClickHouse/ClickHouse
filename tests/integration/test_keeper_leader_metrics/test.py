@@ -43,6 +43,14 @@ def get_mntr_metrics(node):
     return result
 
 
+def get_keeper_async_metric(node, name):
+    value = node.query(
+        f"SELECT value FROM system.asynchronous_metrics WHERE metric = '{name}'"
+    ).strip()
+    assert value != "", f"Asynchronous metric {name} is not exported"
+    return float(value)
+
+
 def test_leader_failover_metrics(started_cluster):
     """The election / leader-unavailability metrics must actually advance on
     the node that wins a re-election after a real no-leader window, not just
@@ -90,6 +98,33 @@ def test_leader_failover_metrics(started_cluster):
         assert int(result["zk_cnt_leader_unavailable_time"]) >= 1
         assert int(result["zk_sum_leader_unavailable_time"]) > 0
         assert int(result["zk_leader_uptime"]) >= 0
+
+        # The same failover must be visible through `system.asynchronous_metrics`:
+        # `srst` above cleared the previous values, so a non-zero reading here can
+        # only come from the election this test forced. Asynchronous metrics are
+        # recomputed once per `asynchronous_metrics_update_period_s`, so retry.
+        last_election_time = 0.0
+        last_unavailable_time = 0.0
+        for _ in range(60):
+            last_election_time = get_keeper_async_metric(
+                new_leader, "KeeperLastLeaderElectionTime"
+            )
+            last_unavailable_time = get_keeper_async_metric(
+                new_leader, "KeeperLastLeaderUnavailableTime"
+            )
+            if last_election_time > 0 and last_unavailable_time > 0:
+                break
+            time.sleep(1)
+
+        assert last_election_time > 0
+        assert last_unavailable_time > 0
+
+        # A node that is not the leader reports zero for both metrics.
+        for node in survivors:
+            if node.name == new_leader.name:
+                continue
+            assert get_keeper_async_metric(node, "KeeperLastLeaderElectionTime") == 0
+            assert get_keeper_async_metric(node, "KeeperLastLeaderUnavailableTime") == 0
     finally:
         if old_leader is not None:
             old_leader.start_clickhouse()
