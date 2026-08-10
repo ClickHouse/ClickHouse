@@ -168,7 +168,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
-          ref: ${{{{ env.CHECKOUT_REF }}}}
+          ref: ${{{{ env.CHECKOUT_REF }}}}{CHECKOUT_EXTRA}
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
@@ -412,6 +412,14 @@ class PullRequestPushYamlGen:
                     f"\n    timeout-minutes: {math.ceil(orig_job.timeout / 60) + 5}"
                 )
 
+            # A job that runs untrusted code in the checkout opts out of the
+            # persisted checkout token (see Job.Config.checkout_persist_credentials).
+            checkout_extra = ""
+            if orig_job and not getattr(
+                orig_job, "checkout_persist_credentials", True
+            ):
+                checkout_extra = "\n          persist-credentials: false"
+
             secrets_envs = []
             for secret in job.secret_names_gh:
                 secrets_envs.append(
@@ -445,6 +453,7 @@ class PullRequestPushYamlGen:
                 JOB_NAME_NORMALIZED=job_name_normalized,
                 IF_EXPRESSION=if_expression,
                 TIMEOUT_MINUTES=timeout_minutes,
+                CHECKOUT_EXTRA=checkout_extra,
                 RUNS_ON=", ".join(job.runs_on),
                 NEEDS=needs,
                 JOB_NAME_GH=job_name.replace('"', '\\"'),
