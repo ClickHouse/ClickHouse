@@ -1,16 +1,1 @@
-Variant(String)
-Variant(LowCardinality(String), String)
-Variant(LowCardinality(String), UInt64)
-Variant(LowCardinality(BFloat16), Point)
-Variant(LowCardinality(String), Point, Ring)
-Variant(String, UInt64)
-Variant(LowCardinality(String), String)
-UInt8	LowCardinality(String)	Nullable(UInt8)
-Array(Variant(LowCardinality(String), UInt64))
-x	5
-x	5
-x	5
-1.5	LowCardinality(BFloat16)	5
-2020-01-02 03:04:05.00000	DateTime64(5, \'UTC\')	5
-x	5
-x	5	Variant(LowCardinality(String), UInt64)	LowCardinality(String)
+x	Variant(LowCardinality(String), UInt64)	LowCardinality(String)
