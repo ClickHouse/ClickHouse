@@ -3,10 +3,12 @@
 # `timeout_overflow_mode = 'break'`: the query stops early and returns the rows collected so far
 # instead of failing, and it stops both between parts and while enumerating the columns of a part.
 #
-# The fixtures are deliberately large, so that building the full result takes far longer than the
-# deadline below: if the cancellation checkpoints are removed, the queries return the complete
-# result and the assertions fail. Only the upper bound is asserted, because the exact number of
-# rows collected before the deadline is inherently nondeterministic.
+# The deadline below is smaller than the time it takes to even start executing a query, so it is
+# guaranteed to fire: every query must return fewer rows than the full result. Without the
+# cancellation checkpoints the whole result is built regardless of the deadline and the assertions
+# fail. Only the upper bound is asserted, because the exact number of rows collected before the
+# deadline is inherently nondeterministic - which checkpoint stops the query depends on the
+# machine.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -52,7 +54,7 @@ function check_break()
 
     INSERT INTO t_break_result
         SELECT name FROM system.$1 WHERE database = currentDatabase() AND table = '$2'
-        SETTINGS max_execution_time = 0.005, timeout_overflow_mode = 'break';
+        SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'break';
 
     SELECT '$1', count() < $3 FROM t_break_result;
     "
@@ -66,7 +68,7 @@ check_break parts_columns t_break_columns $((NUM_COLUMNS + 1))
 
 # `system.dropped_tables_parts` has no deterministic contents here, so it is only checked for not throwing.
 $CLICKHOUSE_CLIENT --query "
-SELECT * FROM system.dropped_tables_parts FORMAT Null SETTINGS max_execution_time = 0.005, timeout_overflow_mode = 'break';
+SELECT * FROM system.dropped_tables_parts FORMAT Null SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'break';
 "
 
 $CLICKHOUSE_CLIENT --query "
