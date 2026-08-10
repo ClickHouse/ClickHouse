@@ -1256,7 +1256,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             const bool should_worry_about_partial_merge_join = partial_merge_join_can_be_selected
                 && (!MergeJoin::isSupported(join_operator.kind, join_operator.strictness)
                     || !MergeJoin::isSupported(reverseJoinKind(join_operator.kind), join_operator.strictness));
-            const bool suitable_swap_only_join = isSwapOnlyJoinStrictness(join_operator.strictness) && !should_worry_about_partial_merge_join;
+            bool skip_flip_any_join = join_settings.join_any_take_last_row && join_operator.strictness == JoinStrictness::Any;
+            const bool suitable_swap_only_join = isSwapOnlyJoinStrictness(join_operator.strictness)
+                && !should_worry_about_partial_merge_join
+                && !skip_flip_any_join;
             if (join_operator.strictness != JoinStrictness::All && !suitable_swap_only_join)
                 flip_join = false;
 
