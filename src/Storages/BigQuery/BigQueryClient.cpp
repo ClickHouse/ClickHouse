@@ -226,6 +226,8 @@ Poco::JSON::Object::Ptr BigQueryClient::requestJSON(
             out_stream_callback = [&request_body](std::ostream & os) { os << request_body; };
         }
 
+        context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+
         auto buf = BuilderRWBufferFromHTTP(uri)
             .withConnectionGroup(HTTPConnectionGroupType::HTTP)
             .withMethod(method)
