@@ -169,6 +169,28 @@ GTEST_TEST(FunctionSignature, ReinterpretAsFixedStringSignature)
     EXPECT_THAT(checkSignature(sig, {makeColumn("Array(UInt8)")}), ::testing::StartsWith("FAIL:"));
 }
 
+/// `Not(X)` matches everything `X` does not, which is how `toInterval*` says "convert from
+/// anything except a `Decimal`".
+GTEST_TEST(FunctionSignature, NotMatcher)
+{
+    const String sig = "(Not(Decimal)) -> IntervalDay";
+    EXPECT_EQ(checkSignature(sig, {makeColumn("UInt8")}), "IntervalDay");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("String")}), "IntervalDay");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("IntervalNanosecond")}), "IntervalDay");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("DateTime64(3)")}), "IntervalDay");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Array(UInt8)")}), "IntervalDay");
+    EXPECT_THAT(checkSignature(sig, {makeColumn("Decimal(9, 2)")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(checkSignature(sig, {makeColumn("Decimal(76, 2)")}), ::testing::StartsWith("FAIL:"));
+
+    /// A nested union, and a double negation collapsing back to the plain matcher.
+    EXPECT_EQ(checkSignature("(Not(String | FixedString)) -> UInt8", {makeColumn("UInt8")}), "UInt8");
+    EXPECT_THAT(checkSignature("(Not(String | FixedString)) -> UInt8", {makeColumn("FixedString(2)")}),
+        ::testing::StartsWith("FAIL:"));
+    EXPECT_EQ(checkSignature("(Not(Not(String))) -> UInt8", {makeColumn("String")}), "UInt8");
+    EXPECT_THAT(checkSignature("(Not(Not(String))) -> UInt8", {makeColumn("UInt8")}),
+        ::testing::StartsWith("FAIL:"));
+}
+
 /// The `dateTimeFromScale` / `timeFromScale` type functions used by `toDateTime` / `toTime`: a scale
 /// of 0 collapses to DateTime/Time; a non-zero scale widens to DateTime64/Time64. A timezone (for
 /// DateTime) is carried through.
