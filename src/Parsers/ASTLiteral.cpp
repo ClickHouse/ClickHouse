@@ -54,6 +54,7 @@ String ASTLiteral::getID(char delim) const
 
 ASTPtr ASTLiteral::clone() const
 {
+    /// The copy constructor clears the token-info bit - see `ASTLiteral(const ASTLiteral &)`.
     auto res = make_intrusive<ASTLiteral>(*this);
     res->unique_column_name = {};
     return res;
