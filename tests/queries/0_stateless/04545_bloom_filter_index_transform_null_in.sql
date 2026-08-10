@@ -79,11 +79,11 @@ SELECT count() FROM t_bf_null_in_arr WHERE x IN ([]) SETTINGS transform_null_in 
 
 DROP TABLE t_bf_null_in_arr;
 
--- Type-incompatible set: with transform_null_in=1 the set casts the key strictly (not
--- accurate_or_null), so a String index against an integer set throws at execution. The index
--- must NOT prune such a granule, otherwise the runtime error would be swallowed and the query
--- would wrongly return an empty result. Types are compared modulo Nullable / LowCardinality,
--- so the wrapper cases above are unaffected.
+-- Type-incompatible set: the index hashes the set value cast to the index type, while execution
+-- casts each column value to the set type. Those two casts are not inverse, so a matching row can
+-- hash differently from what the index searches for ('01' -> UInt8 1 -> '1'). Pruning such a
+-- granule loses that row, so the index must NOT be used. Types are compared modulo Nullable /
+-- LowCardinality, so the wrapper cases above are unaffected.
 DROP TABLE IF EXISTS t_bf_null_in_ty;
 CREATE TABLE t_bf_null_in_ty (x String, INDEX idx_x x TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
@@ -95,3 +95,20 @@ SELECT 'Type mismatch: query still raises the conversion error with transform_nu
 SELECT count() FROM t_bf_null_in_ty WHERE x IN (SELECT toUInt8(1)) SETTINGS transform_null_in = 1; -- { serverError CANNOT_PARSE_TEXT }
 
 DROP TABLE t_bf_null_in_ty;
+
+-- Lossy round trip: every value below parses as UInt8, so nothing throws, and '01' / '+1' both
+-- equal 1 at execution while hashing differently from the index's '1'. Pruning would silently
+-- drop them, so this arm fails if the type check above is ever removed.
+DROP TABLE IF EXISTS t_bf_null_in_lossy;
+CREATE TABLE t_bf_null_in_lossy (x String, INDEX idx_x x TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 4;
+INSERT INTO t_bf_null_in_lossy VALUES ('01'), ('+1'), ('2'), ('3');
+
+SELECT 'Lossy cast: results are identical with and without the skip index';
+SELECT
+    (SELECT count() FROM t_bf_null_in_lossy WHERE x IN (SELECT toUInt8(1)) SETTINGS transform_null_in = 1, use_skip_indexes = 0) =
+    (SELECT count() FROM t_bf_null_in_lossy WHERE x IN (SELECT toUInt8(1)) SETTINGS transform_null_in = 1);
+SELECT 'Lossy cast: both matching rows are returned';
+SELECT count() FROM t_bf_null_in_lossy WHERE x IN (SELECT toUInt8(1)) SETTINGS transform_null_in = 1;
+
+DROP TABLE t_bf_null_in_lossy;

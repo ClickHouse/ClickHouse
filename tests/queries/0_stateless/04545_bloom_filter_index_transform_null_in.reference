@@ -25,3 +25,7 @@ Array: IN empty array result is correct with transform_null_in=1
 Type mismatch: String index vs integer set does not prune with transform_null_in=1
 0
 Type mismatch: query still raises the conversion error with transform_null_in=1
+Lossy cast: results are identical with and without the skip index
+1
+Lossy cast: both matching rows are returned
+2
