@@ -2,8 +2,9 @@
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Common/getMultipleKeysFromConfig.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/MemoryTrackerUtils.h>
+#include <Common/getMultipleKeysFromConfig.h>
 
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -86,6 +87,7 @@ namespace Setting
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
     extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -313,7 +315,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     min_columns_for_join_lazy_indexing = from[Setting::query_plan_enable_optimizations] ? from[Setting::query_plan_min_columns_for_join_lazy_indexing] : 0;
     max_limit_for_join_lazy_indexing = from[Setting::query_plan_max_limit_for_join_lazy_indexing];
 
-    max_threads = from[Setting::max_threads];
+    max_threads = getMaxThreadsForAvailableMemory(from[Setting::max_threads], from[Setting::max_threads_min_free_memory_per_thread]);
 
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];

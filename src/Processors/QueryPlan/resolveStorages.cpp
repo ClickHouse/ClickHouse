@@ -26,9 +26,10 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
-#include <Storages/StorageMerge.h>
-#include <Planner/Utils.h>
 #include <Core/Settings.h>
+#include <Planner/Utils.h>
+#include <Storages/StorageMerge.h>
+#include <Common/MemoryTrackerUtils.h>
 
 #include <stack>
 
@@ -42,6 +43,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
@@ -324,8 +326,9 @@ static QueryPlanResourceHolder replaceReadingFromTable(
             mutable_context,
             QueryProcessingStage::FetchColumns,
             context->getSettingsRef()[Setting::max_block_size],
-            context->getSettingsRef()[Setting::max_threads]
-        );
+            getMaxThreadsForAvailableMemory(
+                context->getSettingsRef()[Setting::max_threads],
+                context->getSettingsRef()[Setting::max_threads_min_free_memory_per_thread]));
 
         /// Preserve the mutable_context for the lifetime of query execution
         /// because source processors (e.g., StorageKeeperMapSource) may hold weak_ptr to it

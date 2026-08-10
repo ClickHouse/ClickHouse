@@ -44,13 +44,13 @@ WHERE event_date >= yesterday()
   AND log_comment = 'plan_cache_test2'
 ORDER BY event_time_microseconds;
 
--- Test 3: Schema change on non-replicated table (schema content hash detects the change)
+-- Test 3: An unrelated schema change remains compatible.
 SYSTEM DROP QUERY PLAN CACHE;
 SELECT a FROM t_plan_cache SETTINGS log_comment = 'plan_cache_test3' FORMAT Null;
 ALTER TABLE t_plan_cache ADD COLUMN c UInt32 DEFAULT 0;
 SELECT a FROM t_plan_cache SETTINGS log_comment = 'plan_cache_test3' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 3: Schema change (non-replicated)';
+SELECT 'Test 3: Unrelated schema change remains compatible';
 SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
 FROM system.query_log
 WHERE event_date >= yesterday()
@@ -194,30 +194,12 @@ WHERE event_date >= yesterday()
 ORDER BY event_time_microseconds;
 DROP TABLE t_plan_cache2;
 
--- Test 12: Quota reset to 0 means unlimited
--- Setting quota > 0, then resetting to 0 should allow unlimited cache usage.
-SYSTEM DROP QUERY PLAN CACHE;
-SELECT a FROM t_plan_cache SETTINGS query_plan_cache_size_in_bytes_quota = 1, log_comment = 'plan_cache_test13a' FORMAT Null;
-SELECT a FROM t_plan_cache SETTINGS query_plan_cache_size_in_bytes_quota = 0, log_comment = 'plan_cache_test13b' FORMAT Null;
-SELECT a FROM t_plan_cache SETTINGS query_plan_cache_size_in_bytes_quota = 0, log_comment = 'plan_cache_test13b' FORMAT Null;
-SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 12: Quota reset to 0';
--- After resetting quota to 0 (unlimited), the second execution with quota=0 should be a cache hit
-SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
-FROM system.query_log
-WHERE event_date >= yesterday()
-  AND event_time >= (SELECT ts FROM test_start)
-  AND type = 'QueryFinish'
-  AND current_database = currentDatabase()
-  AND log_comment = 'plan_cache_test13b'
-ORDER BY event_time_microseconds;
-
--- Test 13: `query_plan_optimize_prewhere` changes the cache key
+-- Test 12: `query_plan_optimize_prewhere` changes the cache key
 SYSTEM DROP QUERY PLAN CACHE;
 SELECT a FROM t_plan_cache WHERE a = 1 SETTINGS query_plan_optimize_prewhere = 0, log_comment = 'plan_cache_test14' FORMAT Null;
 SELECT a FROM t_plan_cache WHERE a = 1 SETTINGS query_plan_optimize_prewhere = 1, log_comment = 'plan_cache_test14' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 13: query_plan_optimize_prewhere sensitivity';
+SELECT 'Test 12: query_plan_optimize_prewhere sensitivity';
 SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
 FROM system.query_log
 WHERE event_date >= yesterday()

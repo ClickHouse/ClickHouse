@@ -1,17 +1,14 @@
 #pragma once
 
-#include <Common/OwnedCacheBase.h>
-#include <Common/SipHash.h>
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/IASTHash.h>
 #include <Interpreters/StorageID.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <base/UUID.h>
+#include <Parsers/IASTHash.h>
+#include <Storages/ColumnDefault.h>
+#include <Common/CacheBase.h>
+#include <Common/SipHash.h>
 
-#include <map>
-#include <optional>
-#include <set>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,52 +18,22 @@ namespace DB
 
 struct Settings;
 
-/// Format version for cache entries. Must be incremented when the serialization format changes.
-inline constexpr UInt64 QUERY_PLAN_CACHE_FORMAT_VERSION = 3;
-
 /// Identifies a cached query plan. Two queries with the same key can safely share a cached plan.
-/// The key includes:
-///   - AST hash: captures the query shape independent of whitespace and case differences
-///   - Current database: affects resolution of unqualified identifiers in settings
-///   - Semantic settings hash: only settings that affect the query plan (not resource limits)
-///   - Per-table metadata versions: invalidates cache on schema changes (ALTER TABLE)
-///   - User identity: user_id + role IDs, prevents cross-user cache sharing (row policy isolation)
 struct QueryPlanCacheKey
 {
-    /// 128-bit CityHash of the query AST (same type used by QueryResultCache)
+    /// 128-bit hash of `ast_identity`, used only by the hasher.
     IASTHash ast_hash;
+
+    /// Exact one-line representation of the normalized AST. It contains secrets and must never
+    /// be exposed through logs or system tables.
+    String ast_identity;
 
     /// Session current database used to resolve unqualified identifiers, including table names
     /// in `additional_table_filters`.
     String current_database;
 
-    /// SipHash of plan-affecting settings only (see SemanticSettings)
+    /// SipHash of plan-affecting settings only (see SemanticSettings).
     UInt64 semantic_settings_hash = 0;
-
-    /// Per-table schema version: {database.table -> metadata_version}
-    /// Incremented by ReplicatedMergeTree on schema changes; for non-replicated tables,
-    /// we use a schema content hash as a stable proxy.
-    /// TODO: For View support, this map must also track the View definition version itself
-    /// (not just the underlying table versions). A change in the View's SQL definition must
-    /// invalidate cached plans even if the underlying table schema stays the same.
-    std::map<String, Int64> table_metadata_versions;
-
-    /// StorageID of the queried table; used for access rights revalidation on cache hit.
-    /// Only its `uuid` (when present) participates in hash/equality — this distinguishes
-    /// `DROP TABLE` + `CREATE TABLE` of the same name in an Atomic database from the
-    /// original table, even when their schemas are identical.
-    StorageID storage_id = StorageID::createEmpty();
-
-    /// Hash of the applicable row policy expression AST. Different row policies produce
-    /// different filtered views of the data, so cached plans must not be shared across them.
-    IASTHash row_policy_hash{};
-
-    /// User identity for row policy isolation.
-    /// INVARIANT: current_user_roles must be sorted before constructing the key.
-    /// Vector equality is order-sensitive; non-deterministic ordering would produce different
-    /// keys for semantically identical role sets.
-    std::optional<UUID> user_id;
-    std::vector<UUID> current_user_roles;
 
     bool operator==(const QueryPlanCacheKey & other) const;
 };
@@ -79,82 +46,90 @@ struct QueryPlanCacheLookupContext
     StorageID storage_id = StorageID::createEmpty();
 };
 
-/// Dependencies that must still match on a cache hit. This intentionally duplicates
-/// part of the key so that lookup and validation stay separate contracts.
-struct QueryPlanCacheDependencyFingerprint
+/// The part of a column definition that can affect a cached read plan. Comments, codecs,
+/// statistics and TTLs are intentionally excluded because they do not change read semantics.
+struct QueryPlanCacheColumnDependency
 {
-    StorageID storage_id = StorageID::createEmpty();
-    std::map<String, Int64> table_metadata_versions;
-    IASTHash row_policy_hash{};
-    UInt64 row_policy_names_hash = 0;
-    UInt64 semantic_settings_hash = 0;
-    Names selected_columns;
-    Names read_columns;
+    String name;
+    String type;
+    ColumnDefaultKind default_kind = ColumnDefaultKind::Default;
+    String default_expression;
+    bool ephemeral_default = false;
 
-    bool operator==(const QueryPlanCacheDependencyFingerprint & other) const;
+    bool operator==(const QueryPlanCacheColumnDependency & other) const = default;
+};
+
+/// Storage contract captured from every universalized `ReadFromTableStep`.
+struct QueryPlanCacheStorageDependency
+{
+    String table_name;
+    String engine_name;
+    std::vector<QueryPlanCacheColumnDependency> columns;
+    String sorting_key;
+    String primary_key;
+    std::vector<bool> sorting_key_reverse_flags;
+
+    bool operator==(const QueryPlanCacheStorageDependency & other) const = default;
 };
 
 /// A serialized query plan stored in the cache.
 struct QueryPlanCacheEntry
 {
-    /// Must match QUERY_PLAN_CACHE_FORMAT_VERSION. Entries with a different version are rejected.
-    UInt64 format_version = QUERY_PLAN_CACHE_FORMAT_VERSION;
-
-    /// Binary-serialized QueryPlan bytes (produced by QueryPlan::ensureSerialized / getSerializedData)
+    /// Binary-serialized `QueryPlan` bytes.
     std::string serialized_plan;
 
     /// Columns selected by query semantics. This can be empty for queries such as `SELECT count()`.
     Names selected_columns;
 
-    /// Physical columns read by the cached plan. Cache hits revalidate access to these columns,
-    /// because trivial queries may read a planner-chosen column even when `selected_columns` is empty.
+    /// Physical columns read by the cached plan. They are used for dependency validation and
+    /// query-access logging, but not as an additional privilege requirement.
     Names read_columns;
 
-    /// Row policy names applied when the plan was originally built.
-    /// Persisted so that cache-hit paths can propagate them to system.query_log.
-    std::set<String> used_row_policies;
+    /// Planner/storage dependencies captured from universalized read leaves.
+    std::vector<QueryPlanCacheStorageDependency> dependencies;
 
-    /// Planner/storage dependencies captured when the entry was created.
-    /// They are revalidated on every hit before the serialized plan is materialized.
-    QueryPlanCacheDependencyFingerprint dependencies;
-
+    /// Approximate key bytes charged to the cache entry weight.
+    size_t key_size_in_bytes = 0;
 };
 
-/// Hasher for QueryPlanCacheKey. Uses SipHash over all identifying fields.
+/// Hasher for `QueryPlanCacheKey`. The exact AST identity is checked by `operator==`.
 struct QueryPlanCacheKeyHasher
 {
     size_t operator()(const QueryPlanCacheKey & key) const;
 };
 
-/// Weight function for QueryPlanCacheEntry: returns the byte size of the serialized plan
-/// plus the byte size of selected column names.
 struct QueryPlanCacheEntryWeight
 {
     size_t operator()(const QueryPlanCacheEntry & entry) const
     {
-        size_t weight = entry.serialized_plan.size();
-        for (const auto & col : entry.selected_columns)
-            weight += col.size();
-        for (const auto & col : entry.read_columns)
-            weight += col.size();
-        for (const auto & policy : entry.used_row_policies)
-            weight += policy.size();
-        for (const auto & [table, _] : entry.dependencies.table_metadata_versions)
-            weight += table.size();
-        for (const auto & col : entry.dependencies.selected_columns)
-            weight += col.size();
-        for (const auto & col : entry.dependencies.read_columns)
-            weight += col.size();
+        size_t weight = entry.serialized_plan.size() + entry.key_size_in_bytes;
+        for (const auto & column : entry.selected_columns)
+            weight += column.size();
+        for (const auto & column : entry.read_columns)
+            weight += column.size();
+        for (const auto & dependency : entry.dependencies)
+        {
+            weight += dependency.table_name.size();
+            weight += dependency.engine_name.size();
+            weight += dependency.sorting_key.size();
+            weight += dependency.primary_key.size();
+            weight += dependency.sorting_key_reverse_flags.size();
+            for (const auto & column : dependency.columns)
+            {
+                weight += column.name.size();
+                weight += column.type.size();
+                weight += column.default_expression.size();
+            }
+        }
         return weight;
     }
 };
 
-/// Thread-safe LRU/SLRU cache mapping QueryPlanCacheKey -> QueryPlanCacheEntry.
-/// Uses `OwnedCacheBase` so per-user quota accounting follows cache entry lifetime.
-class QueryPlanCache : private OwnedCacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>
+/// Thread-safe LRU/SLRU cache mapping `QueryPlanCacheKey` to `QueryPlanCacheEntry`.
+class QueryPlanCache : private CacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>
 {
 private:
-    using Base = OwnedCacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>;
+    using Base = CacheBase<QueryPlanCacheKey, QueryPlanCacheEntry, QueryPlanCacheKeyHasher, QueryPlanCacheEntryWeight>;
 
 public:
     using Cache = Base;
@@ -165,45 +140,27 @@ public:
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries);
 
-    /// Looks up an entry. Returns nullptr on miss or version mismatch.
     MappedPtr get(const QueryPlanCacheKey & key);
-
-    /// Stores an entry. Takes ownership by value to allow move-construction and avoid copying
-    /// the serialized_plan string (which may be several kilobytes).
-    ///
-    /// `max_size_in_bytes_for_user` is interpreted only for this insertion attempt.
-    /// It comes from the current query's `query_plan_cache_size_in_bytes_quota` setting
-    /// and is not persisted in the cache. `0` means unlimited.
-    void set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entry, size_t max_size_in_bytes_for_user = 0);
+    void set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entry);
 
     void clear();
-
     size_t sizeInBytes() const;
     size_t count() const;
-
-    /// Exposes the underlying cache for system table introspection
     std::vector<KeyMapped> dump() const;
+
+private:
+    mutable std::mutex configuration_mutex;
+    size_t configured_max_size TSA_GUARDED_BY(configuration_mutex);
+    size_t configured_max_entries TSA_GUARDED_BY(configuration_mutex);
 };
 
 using QueryPlanCachePtr = std::shared_ptr<QueryPlanCache>;
 
-
-/// Computes a hash over all builtin settings except those explicitly known not to affect
-/// query planning. This is intentionally conservative: cache misses are cheaper than
-/// reusing a plan built under incompatible planner settings.
 struct SemanticSettings
 {
-    /// Computes a 64-bit hash over builtin settings from the provided Settings object,
-    /// excluding settings explicitly ignored by the query plan cache.
     static UInt64 computeHash(const Settings & settings);
 };
 
-/// Returns true for settings that must not affect the query plan cache key.
 bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name);
-
-/// Computes a stable hash over table schema for non-replicated tables whose
-/// `metadata_version` is always 0. Covers physical columns (names + types),
-/// sorting key, and partition key.
-Int64 computeSchemaHash(const StorageInMemoryMetadata & metadata);
 
 }

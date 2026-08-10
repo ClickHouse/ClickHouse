@@ -1,20 +1,22 @@
 #include <Interpreters/Cache/QueryPlanCache.h>
 
-#include <Core/UUID.h>
 #include <gtest/gtest.h>
+
+#include <thread>
+#include <vector>
 
 namespace DB
 {
 namespace
 {
 
-QueryPlanCacheKey makeKey(UInt64 id)
+QueryPlanCacheKey makeKey(UInt64 id, String ast_identity = {})
 {
     QueryPlanCacheKey key;
     key.ast_hash.low64 = id;
     key.ast_hash.high64 = id + 1;
+    key.ast_identity = ast_identity.empty() ? "SELECT " + std::to_string(id) : std::move(ast_identity);
     key.semantic_settings_hash = id + 2;
-    key.user_id = UUID(id + 3);
     return key;
 }
 
@@ -27,80 +29,67 @@ QueryPlanCacheEntry makeEntry(size_t size)
 
 }
 
-TEST(QueryPlanCache, RejectsAndRemovesStaleFormatVersionEntry)
+TEST(QueryPlanCache, ExactASTIdentityRejectsHashCollision)
+{
+    QueryPlanCache cache(/*max_size_in_bytes=*/1000, /*max_entries=*/10);
+    auto first = makeKey(1, "SELECT 1 AS value");
+    auto collision = makeKey(1, "SELECT 2 AS value");
+
+    cache.set(first, makeEntry(10));
+
+    EXPECT_NE(cache.get(first), nullptr);
+    EXPECT_EQ(cache.get(collision), nullptr);
+    EXPECT_EQ(cache.count(), 1);
+}
+
+TEST(QueryPlanCache, EqualCanonicalASTProducesEqualKeyAndHasher)
+{
+    auto first = makeKey(1, "SELECT value FROM default.t");
+    auto second = makeKey(1, "SELECT value FROM default.t");
+
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(QueryPlanCacheKeyHasher{}(first), QueryPlanCacheKeyHasher{}(second));
+}
+
+TEST(QueryPlanCache, SameKeyReplacementKeepsSingleEntry)
 {
     QueryPlanCache cache(/*max_size_in_bytes=*/100, /*max_entries=*/10);
     auto key = makeKey(1);
-    auto other_key = makeKey(2);
-    other_key.user_id = key.user_id;
 
-    auto stale_entry = makeEntry(10);
-    stale_entry.format_version = QUERY_PLAN_CACHE_FORMAT_VERSION - 1;
-    cache.set(key, std::move(stale_entry), /*max_size_in_bytes_for_user=*/10);
+    cache.set(key, makeEntry(4));
+    cache.set(key, makeEntry(6));
+
+    auto entry = cache.get(key);
+    ASSERT_NE(entry, nullptr);
+    EXPECT_EQ(entry->serialized_plan.size(), 6);
+    EXPECT_EQ(cache.count(), 1);
+}
+
+TEST(QueryPlanCache, ClearRemovesEntries)
+{
+    QueryPlanCache cache(/*max_size_in_bytes=*/100, /*max_entries=*/10);
+    auto key = makeKey(1);
+    cache.set(key, makeEntry(6));
+
+    cache.clear();
 
     EXPECT_EQ(cache.get(key), nullptr);
     EXPECT_EQ(cache.count(), 0);
+    EXPECT_EQ(cache.sizeInBytes(), 0);
+}
 
-    /// Removing the stale entry must also release its per-user quota charge.
-    cache.set(other_key, makeEntry(10), /*max_size_in_bytes_for_user=*/10);
+TEST(QueryPlanCache, GlobalSizeLimitEvictsEntries)
+{
+    QueryPlanCache cache(/*max_size_in_bytes=*/50, /*max_entries=*/10);
+    auto first = makeKey(1);
+    auto second = makeKey(2);
 
-    EXPECT_NE(cache.get(other_key), nullptr);
+    cache.set(first, makeEntry(30));
+    cache.set(second, makeEntry(30));
+
+    EXPECT_EQ(cache.get(first), nullptr);
+    EXPECT_NE(cache.get(second), nullptr);
     EXPECT_EQ(cache.count(), 1);
-}
-
-TEST(QueryPlanCache, SameKeyReplacementUpdatesUserQuotaAccounting)
-{
-    QueryPlanCache cache(/*max_size_in_bytes=*/100, /*max_entries=*/10);
-    auto key = makeKey(1);
-    auto other_key = makeKey(2);
-    other_key.user_id = key.user_id;
-
-    cache.set(key, makeEntry(4), /*max_size_in_bytes_for_user=*/10);
-    cache.set(key, makeEntry(6), /*max_size_in_bytes_for_user=*/10);
-    cache.set(other_key, makeEntry(4), /*max_size_in_bytes_for_user=*/10);
-
-    EXPECT_NE(cache.get(key), nullptr);
-    EXPECT_NE(cache.get(other_key), nullptr);
-    EXPECT_EQ(cache.count(), 2);
-}
-
-TEST(QueryPlanCache, ClearDropsUserQuotaAccounting)
-{
-    QueryPlanCache cache(/*max_size_in_bytes=*/100, /*max_entries=*/10);
-    auto key = makeKey(1);
-    auto other_key = makeKey(2);
-    other_key.user_id = key.user_id;
-
-    cache.set(key, makeEntry(6), /*max_size_in_bytes_for_user=*/10);
-    cache.clear();
-
-    cache.set(other_key, makeEntry(10), /*max_size_in_bytes_for_user=*/10);
-
-    EXPECT_EQ(cache.get(key), nullptr);
-    EXPECT_NE(cache.get(other_key), nullptr);
-    EXPECT_EQ(cache.count(), 1);
-}
-
-TEST(QueryPlanCache, GlobalEvictionDropsUserQuotaAccounting)
-{
-    QueryPlanCache cache(/*max_size_in_bytes=*/10, /*max_entries=*/10);
-    auto key = makeKey(1);
-    auto evicting_key = makeKey(2);
-    auto fitting_key = makeKey(3);
-    evicting_key.user_id = key.user_id;
-    fitting_key.user_id = key.user_id;
-
-    cache.set(key, makeEntry(6), /*max_size_in_bytes_for_user=*/20);
-    cache.set(evicting_key, makeEntry(6), /*max_size_in_bytes_for_user=*/20);
-
-    EXPECT_EQ(cache.get(key), nullptr);
-    EXPECT_NE(cache.get(evicting_key), nullptr);
-
-    cache.set(fitting_key, makeEntry(4), /*max_size_in_bytes_for_user=*/10);
-
-    EXPECT_NE(cache.get(evicting_key), nullptr);
-    EXPECT_NE(cache.get(fitting_key), nullptr);
-    EXPECT_EQ(cache.count(), 2);
 }
 
 TEST(QueryPlanCache, ZeroMaxEntriesDisablesZeroWeightInsert)
@@ -108,10 +97,24 @@ TEST(QueryPlanCache, ZeroMaxEntriesDisablesZeroWeightInsert)
     QueryPlanCache cache(/*max_size_in_bytes=*/100, /*max_entries=*/0);
     auto key = makeKey(1);
 
-    cache.set(key, makeEntry(0), /*max_size_in_bytes_for_user=*/0);
+    cache.set(key, makeEntry(0));
 
     EXPECT_EQ(cache.get(key), nullptr);
     EXPECT_EQ(cache.count(), 0);
 }
 
+TEST(QueryPlanCache, ConcurrentSameKeyInsertKeepsSingleEntry)
+{
+    QueryPlanCache cache(/*max_size_in_bytes=*/10000, /*max_entries=*/100);
+    auto key = makeKey(1);
+
+    std::vector<std::thread> threads;
+    for (size_t i = 0; i < 8; ++i)
+        threads.emplace_back([&, i] { cache.set(key, makeEntry(10 + i)); });
+    for (auto & thread : threads)
+        thread.join();
+
+    EXPECT_EQ(cache.count(), 1);
+    EXPECT_NE(cache.get(key), nullptr);
+}
 }

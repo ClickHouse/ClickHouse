@@ -54,7 +54,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
             {"allow_experimental_query_plan_cache", false, false, "New experimental setting to allow the query plan cache feature"},
             {"enable_query_plan_cache", false, false, "New setting to enable query plan cache for `SELECT` queries"},
-            {"query_plan_cache_size_in_bytes_quota", 0, 0, "New setting for query plan cache size quota"},
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
         });
         addSettingsChanges(settings_changes_history, "26.7",

@@ -115,3 +115,13 @@ TEST(QueryPlanSerialization, QueryPlanCacheSerializationUsesPrivateVersion)
     const auto & step = getReadFromTableStep(plan_and_sets.plan);
     EXPECT_FALSE(step.useParallelReplicas());
 }
+
+TEST(QueryPlanSerialization, QueryPlanCacheRejectsFuturePrivateVersion)
+{
+    WriteBufferFromOwnString out;
+    writeVarUInt(QUERY_PLAN_CACHE_SERIALIZATION_VERSION + 1, out);
+    out.finalize();
+
+    ReadBufferFromString in(out.str());
+    EXPECT_THROW(QueryPlan::deserializeForQueryPlanCache(in, getContext().context), DB::Exception);
+}

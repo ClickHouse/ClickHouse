@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# Tag no-parallel: resets the global query plan cache.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -31,8 +33,8 @@ ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT count() FROM ${table} FORM
 
 ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT(b) ON ${table} FROM ${user}"
 
-output=$(${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT count() FROM ${table} FORMAT Null" \
+${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT count() FROM ${table} FORMAT Null" \
     --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 \
-    --enable_parallel_replicas=0 --optimize_trivial_count_query=0 2>&1 || true)
+    --enable_parallel_replicas=0 --optimize_trivial_count_query=0
 
-echo "$output" | grep -o 'ACCESS_DENIED' | head -n1
+echo "ACCESS_ALLOWED"

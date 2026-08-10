@@ -4,8 +4,8 @@
 #include <Interpreters/Cache/QueryPlanCache.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Planner/Planner.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <optional>
@@ -13,10 +13,8 @@
 namespace DB
 {
 
-std::optional<QueryPlanCacheLookupContext> tryBuildPreAnalysisQueryPlanCacheLookup(
-    const ASTPtr & ast,
-    const ContextPtr & context,
-    UInt64 semantic_settings_hash);
+std::optional<QueryPlanCacheLookupContext>
+tryBuildPreAnalysisQueryPlanCacheLookup(const ASTPtr & ast, const ContextPtr & context, UInt64 semantic_settings_hash);
 
 bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast);
 
@@ -24,11 +22,8 @@ Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner
 
 Names getReadColumnsForQueryPlanCacheEntry(const QueryPlan & plan);
 
-QueryPlanCacheDependencyFingerprint buildQueryPlanCacheDependencyFingerprint(
-    const QueryPlanCacheLookupContext & lookup_context,
-    const ContextPtr & context,
-    const Names & selected_columns,
-    const Names & read_columns);
+std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
+    const QueryPlanCacheLookupContext & lookup_context, const QueryPlan & plan, const ContextPtr & context, const Names & selected_columns);
 
 struct ValidatedQueryPlanCacheEntry
 {
@@ -40,18 +35,11 @@ struct ValidatedQueryPlanCacheEntry
 };
 
 std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildSnapshot(
-    const QueryPlanCacheLookupContext & lookup_context,
-    const ContextPtr & context,
-    const QueryPlanCacheEntry & entry);
+    const QueryPlanCacheLookupContext & lookup_context, const ContextPtr & context, const QueryPlanCacheEntry & entry);
 
 void checkAccessForQueryPlanCacheHit(
-    const ContextPtr & context,
-    const StorageID & storage_id,
-    const StorageMetadataPtr & metadata_snapshot,
-    const Names & selected_columns);
+    const ContextPtr & context, const StorageID & storage_id, const StorageMetadataPtr & metadata_snapshot, const Names & selected_columns);
 
 void checkStoragesSupportTransactionsForQueryPlanCacheHit(
-    const ContextPtr & context,
-    const std::vector<QueryPlanStorageBinding> & storage_bindings);
-
+    const ContextPtr & context, const std::vector<QueryPlanStorageBinding> & storage_bindings);
 }

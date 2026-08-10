@@ -1401,10 +1401,8 @@ void addWindowSteps(QueryPlan & query_plan,
         bool need_sort = !window_description.full_sort_description.empty();
         if (need_sort && i != 0)
         {
-            const size_t effective_max_threads = getMaxThreadsForAvailableMemory(
-                settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
             need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
-                || (effective_max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
+                || window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size();
         }
         if (need_sort)
         {

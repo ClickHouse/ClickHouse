@@ -140,7 +140,6 @@ namespace ProfileEvents
     extern const Event ASTFuzzerQueries;
     extern const Event QueryPlanCachePreAnalysisHits;
     extern const Event QueryPlanCacheValidationMisses;
-    extern const Event QueryPlanCacheStaleMisses;
     extern const Event ASTFuzzerSkippedBackupRestore;
     extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event QueryParseMicroseconds;
@@ -171,7 +170,6 @@ namespace Setting
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool allow_experimental_query_plan_cache;
     extern const SettingsBool enable_query_plan_cache;
-    extern const SettingsUInt64 query_plan_cache_size_in_bytes_quota;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
@@ -1898,72 +1896,41 @@ static BlockIO executeQueryImpl(
                 {
                     if (auto cached_entry = query_plan_cache->get(query_plan_cache_lookup_context->key))
                     {
-                        try
+                        if (auto validated_cache_entry
+                            = validateQueryPlanCacheEntryAndBuildSnapshot(*query_plan_cache_lookup_context, context, *cached_entry))
                         {
-                            if (auto validated_cache_entry = validateQueryPlanCacheEntryAndBuildSnapshot(
-                                    *query_plan_cache_lookup_context, context, *cached_entry))
-                            {
-                                /// Revalidate access rights: permissions may have been revoked after the plan
-                                /// was cached. checkAccess throws ACCESS_DENIED on failure, which propagates
-                                /// to the user without falling through to normal planning.
-                                checkAccessForQueryPlanCacheHit(
-                                    context,
-                                    validated_cache_entry->storage_id,
-                                    validated_cache_entry->metadata_snapshot,
-                                    cached_entry->read_columns);
+                            /// Revalidate semantic access rights for the current user. The physical
+                            /// column selected for a trivial query is not an extra privilege requirement.
+                            checkAccessForQueryPlanCacheHit(
+                                context,
+                                validated_cache_entry->storage_id,
+                                validated_cache_entry->metadata_snapshot,
+                                cached_entry->selected_columns);
 
-                                checkStoragesSupportTransactionsForQueryPlanCacheHit(
-                                    context,
-                                    validated_cache_entry->storage_bindings);
+                            checkStoragesSupportTransactionsForQueryPlanCacheHit(context, validated_cache_entry->storage_bindings);
 
-                                if (context->getCurrentTransaction()
-                                    && settings[Setting::throw_on_unsupported_query_inside_transaction]
-                                    && settings[Setting::apply_mutations_on_fly])
-                                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                        "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
+                            if (context->getCurrentTransaction() && settings[Setting::throw_on_unsupported_query_inside_transaction]
+                                && settings[Setting::apply_mutations_on_fly])
+                                throw Exception(
+                                    ErrorCodes::NOT_IMPLEMENTED,
+                                    "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
 
-                                auto plan = materializePlan(
-                                    cached_entry->serialized_plan,
-                                    context,
-                                    std::move(validated_cache_entry->storage_bindings));
+                            auto plan = materializePlan(
+                                cached_entry->serialized_plan, context, std::move(validated_cache_entry->storage_bindings));
 
-                                /// The normal planner records query access info via Context::addQueryAccessInfo
-                                /// in PlannerJoinTree. On a cache hit the analyzer is skipped, so we restore it
-                                /// here to keep system.query_log.query_databases, query_tables, and query_columns
-                                /// populated. For SELECT count() the semantic selected_columns is empty, so record
-                                /// the physical read columns chosen when the cached plan was built.
-                                if (!internal && context->hasQueryContext())
-                                {
-                                    context->getQueryContext()->addQueryAccessInfo(
-                                        validated_cache_entry->storage_id,
-                                        cached_entry->read_columns);
-                                    for (const auto & row_policy : cached_entry->used_row_policies)
-                                        context->getQueryContext()->addUsedRowPolicy(row_policy);
-                                }
+                            /// Restore query-access logging skipped with analyzer construction.
+                            if (!internal && context->hasQueryContext())
+                                context->getQueryContext()->addQueryAccessInfo(
+                                    validated_cache_entry->storage_id, cached_entry->read_columns);
 
-                                interpreter = std::make_unique<InterpreterSelectQueryFromPlan>(
-                                    std::move(plan),
-                                    context,
-                                    select_query_options);
+                            interpreter = std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
 
-                                ProfileEvents::increment(ProfileEvents::QueryPlanCachePreAnalysisHits);
-                                query_plan_cache_hit = true;
-                            }
-                            else
-                            {
-                                ProfileEvents::increment(ProfileEvents::QueryPlanCacheValidationMisses);
-                            }
+                            ProfileEvents::increment(ProfileEvents::QueryPlanCachePreAnalysisHits);
+                            query_plan_cache_hit = true;
                         }
-                        catch (const Exception & e)
+                        else
                         {
-                            /// Only stale/corrupt cache state is silently recovered by re-planning.
-                            /// Anything else (access denial, logical error, cancellation, OOM, ...) must
-                            /// propagate so that incidents stay observable.
-                            if (e.code() != ErrorCodes::INCORRECT_DATA && e.code() != ErrorCodes::UNKNOWN_TABLE)
-                                throw;
-                            ProfileEvents::increment(ProfileEvents::QueryPlanCacheStaleMisses);
-                            tryLogCurrentException("QueryPlanCache",
-                                "Stale or corrupt cached plan, falling back to normal planning");
+                            ProfileEvents::increment(ProfileEvents::QueryPlanCacheValidationMisses);
                         }
                     }
                 }
@@ -2006,15 +1973,9 @@ static BlockIO executeQueryImpl(
                             entry.serialized_plan = serialized_plan.str();
                             entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(interpreter_with_analyzer->getPlanner().getPlannerContext());
                             entry.read_columns = getReadColumnsForQueryPlanCacheEntry(plan_copy);
-                            entry.used_row_policies = interpreter_with_analyzer->getPlanner().getUsedRowPolicies();
-                            entry.dependencies = buildQueryPlanCacheDependencyFingerprint(
-                                *query_plan_cache_lookup_context,
-                                context,
-                                entry.selected_columns,
-                                entry.read_columns);
-                            /// Quota is a per-query admission rule only. It is not stored in the cache state.
-                            const size_t plan_cache_quota = settings[Setting::query_plan_cache_size_in_bytes_quota];
-                            query_plan_cache->set(query_plan_cache_lookup_context->key, std::move(entry), plan_cache_quota);
+                            entry.dependencies = buildQueryPlanCacheDependencies(
+                                *query_plan_cache_lookup_context, plan_copy, context, entry.selected_columns);
+                            query_plan_cache->set(query_plan_cache_lookup_context->key, std::move(entry));
                         }
                         catch (const Exception & e)
                         {

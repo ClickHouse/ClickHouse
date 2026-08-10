@@ -5808,9 +5808,6 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(UInt64, query_plan_cache_size_in_bytes_quota, 0, R"(
-Maximum number of bytes a single user may store in the query plan cache. 0 means no quota.
-)", 0) \
     DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
 Minimum time of delay between 2 background compaction operations.
 )", 0) \
