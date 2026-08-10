@@ -27,7 +27,6 @@ static void addSettingsChanges(
 
 const VersionToSettingsChangesMap & getSettingsChangesHistory()
 {
-    using CompatibilityMode = SettingsChangesHistory::SettingChange::CompatibilityMode;
     static VersionToSettingsChangesMap settings_changes_history;
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
