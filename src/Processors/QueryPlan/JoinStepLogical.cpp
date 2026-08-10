@@ -927,7 +927,7 @@ tryGetIEJoinKeyCondition(const JoinActionRef & condition)
 /// not dropped).
 static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     std::vector<JoinActionRef> & join_expression,
-    const JoinOperator & join_operator,
+    JoinOperator & join_operator,
     std::vector<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context)
@@ -959,7 +959,7 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     for (size_t i = 0; i < keys.size(); ++i)
     {
         auto & [predicate_op, lhs, rhs] = keys[i];
-        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors);
 
         description.operators[i] = predicate_op;
         description.key_names_left.push_back(lhs.getColumnName());
