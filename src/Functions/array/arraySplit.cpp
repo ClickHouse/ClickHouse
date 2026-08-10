@@ -21,7 +21,7 @@ struct ArraySplitImpl
     /// type becomes the element type of the inner array. Lambda return type
     /// follows the boolean-predicate convention used by `arrayFilter`.
     static constexpr auto signature =
-        "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array(T : Any), ...) -> Array(Array(T))";
+        "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> Array(Array(T))";
 
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }

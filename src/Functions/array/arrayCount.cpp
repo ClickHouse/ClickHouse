@@ -21,7 +21,7 @@ struct ArrayCountImpl
     /// the lambda return type follows the boolean-predicate convention used
     /// by `arrayFilter` (UInt8, optionally Nullable, or Nothing).
     static constexpr auto signature =
-        "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array, ...) -> UInt32"
+        "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array, ...) -> UInt32"
         " OR (Array(UInt8)) -> UInt32";
 
     static bool needBoolean() { return true; }

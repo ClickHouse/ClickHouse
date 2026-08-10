@@ -660,7 +660,7 @@ struct NameMapFilter
     /// Docs-only — the lambda's argument types are bound after the adapter
     /// unwraps `Map(K, V)` into `Tuple(K, V)`-element-wise, which the DSL
     /// can't model in advance.
-    static constexpr auto signature_documentation = "(Function((Any, Any), MaybeNullable(UInt8 | IsNothing)), Map(K : Any, V : Any)) -> Map(K, V)";
+    static constexpr auto signature_documentation = "(Function((Any, Any), MaybeNullable(UInt8) | NULL | IsNothing), Map(K : Any, V : Any)) -> Map(K, V)";
 };
 using FunctionMapFilter = FunctionMapToArrayAdapter<FunctionArrayFilter, MapToNestedAdapter<NameMapFilter>, NameMapFilter>;
 
@@ -676,7 +676,7 @@ struct NameMapExists
 {
     static constexpr auto name = "mapExists";
     /// Docs-only — same lambda-unwrap reason as `mapFilter`.
-    static constexpr auto signature_documentation = "(Function((Any, Any), MaybeNullable(UInt8 | IsNothing)), Map(Any, Any)) -> UInt8";
+    static constexpr auto signature_documentation = "(Function((Any, Any), MaybeNullable(UInt8) | NULL | IsNothing), Map(Any, Any)) -> UInt8";
 };
 using FunctionMapExists = FunctionMapToArrayAdapter<FunctionArrayExists, MapToNestedAdapter<NameMapExists, false>, NameMapExists>;
 
@@ -684,7 +684,7 @@ struct NameMapAll
 {
     static constexpr auto name = "mapAll";
     /// Docs-only — same lambda-unwrap reason as `mapFilter`.
-    static constexpr auto signature_documentation = "(Function((Any, Any), MaybeNullable(UInt8 | IsNothing)), Map(Any, Any)) -> UInt8";
+    static constexpr auto signature_documentation = "(Function((Any, Any), MaybeNullable(UInt8) | NULL | IsNothing), Map(Any, Any)) -> UInt8";
 };
 using FunctionMapAll = FunctionMapToArrayAdapter<FunctionArrayAll, MapToNestedAdapter<NameMapAll, false>, NameMapAll>;
 

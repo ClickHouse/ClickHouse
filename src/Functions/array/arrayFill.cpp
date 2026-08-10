@@ -25,7 +25,7 @@ struct ArrayFillImpl
     /// element type of the source array is preserved. Lambda return type
     /// follows the boolean-predicate convention used by `arrayFilter`.
     static constexpr auto signature =
-        "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array(T : Any), ...) -> Array(T)";
+        "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> Array(T)";
 
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }

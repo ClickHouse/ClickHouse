@@ -34,8 +34,8 @@ struct ArrayFirstLastImpl
     /// convention used by `arrayFilter`.
     static constexpr auto signature =
         element_not_exists_strategy == ArrayFirstLastElementNotExistsStrategy::Null
-            ? "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array(T : Any), ...) -> Nullable(T)"
-            : "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array(T : Any), ...) -> T";
+            ? "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> Nullable(T)"
+            : "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> T";
 
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }

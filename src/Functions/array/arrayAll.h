@@ -16,7 +16,7 @@ struct ArrayAllImpl
     /// may be wrapped in `Nullable` or be `Nothing` (when short-circuited
     /// to `NULL`); see `arrayFilter` for details.
     static constexpr auto signature =
-        "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array, ...) -> UInt8"
+        "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array, ...) -> UInt8"
         " OR (Array(UInt8)) -> UInt8";
 
     static bool needBoolean() { return true; }

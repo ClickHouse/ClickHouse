@@ -12,12 +12,13 @@ struct ArrayFilterImpl
 {
     /// Declarative signature — keeps the first array's elements where the
     /// lambda returns truthy. The lambda may return `UInt8` (possibly wrapped
-    /// in `Nullable`), or `Nothing` / `Nullable(Nothing)` (when the lambda
-    /// short-circuits to `NULL`); the executor materialises these to a
-    /// `UInt8` filter at runtime. Element type of the result is the element
-    /// type of the first input array.
+    /// in `Nullable`), a `NULL` literal (`Nullable(Nothing)`, when the lambda
+    /// short-circuits to `NULL`), or the bare `Nothing` (the element type of an
+    /// empty array, as in `arrayFilter(x -> x, [])`); the executor materialises
+    /// all of these to a `UInt8` filter at runtime. Element type of the result
+    /// is the element type of the first input array.
     static constexpr auto signature =
-        "(Function((Any, ...), MaybeNullable(UInt8 | IsNothing)), Array(T : Any), ...) -> Array(T)";
+        "(Function((Any, ...), MaybeNullable(UInt8) | NULL | IsNothing), Array(T : Any), ...) -> Array(T)";
 
     static bool needBoolean() { return true; }
     static bool needExpression() { return true; }
