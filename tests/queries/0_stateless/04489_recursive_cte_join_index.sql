@@ -1185,6 +1185,51 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 DROP TABLE edges_alias_view_dist;
 DROP VIEW edges_view_wrapped_dist;
 
+-- A `Merge` whose children are all eligible can still mix engagement *flavors*: a view over
+-- a local `MergeTree` engages parallel replicas through its inner interpretation (subject to
+-- the `parallel_replicas_min_number_of_rows_per_replica` estimate), while a view over a
+-- `Distributed` table is served through `ClusterProxy` (never estimated). Since `_table`
+-- pruning may narrow such a `Merge` to the local child alone, the mixed set must not report
+-- itself as remote: with the threshold set the plain planner would silently disable parallel
+-- replicas for that child, so the recursive step must run plainly too instead of rejecting
+-- the query.
+DROP VIEW IF EXISTS edges_view_mixed_local;
+DROP VIEW IF EXISTS edges_view_mixed_dist;
+DROP TABLE IF EXISTS edges_merge_view_mixed;
+CREATE VIEW edges_view_mixed_local AS SELECT * FROM edges;
+CREATE VIEW edges_view_mixed_dist AS SELECT * FROM edges_dist_replicas;
+CREATE TABLE edges_merge_view_mixed AS edges ENGINE = Merge(currentDatabase(), '^edges_view_mixed_(local|dist)$');
+
+WITH RECURSIVE merge_view_mixed_minrows_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM merge_view_mixed_minrows_pr AS t INNER JOIN edges_merge_view_mixed AS e ON e.from_id = t.n
+    WHERE n < 10 AND e._table = 'edges_view_mixed_local'
+)
+SELECT sum(n) FROM merge_view_mixed_minrows_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    parallel_replicas_min_number_of_rows_per_replica = 1000000;
+
+-- Without the threshold the estimate cannot disable parallel replicas later, so the same
+-- mixed `Merge` still fails closed, exactly as an all-remote one does.
+WITH RECURSIVE merge_view_mixed_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM merge_view_mixed_pr_throw AS t INNER JOIN edges_merge_view_mixed AS e ON e.from_id = t.n
+    WHERE n < 10 AND e._table = 'edges_view_mixed_local'
+)
+SELECT sum(n) FROM merge_view_mixed_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    parallel_replicas_min_number_of_rows_per_replica = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE edges_merge_view_mixed;
+DROP VIEW edges_view_mixed_dist;
+DROP VIEW edges_view_mixed_local;
+
 DROP TABLE edges_dist_replicas;
 
 DROP TABLE edges;

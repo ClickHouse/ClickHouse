@@ -174,7 +174,9 @@ struct ParallelReplicasEngagement
 /// parallel replicas are just silently kept off for the recursive step. When every child
 /// is eligible, any non-empty pruned subset still is, so failing closed remains correct
 /// (a filter matching no child at all makes the step an empty plain read; over-throwing
-/// on that degenerate case is accepted). A `Merge` whose children are all local cannot
+/// on that degenerate case is accepted), except that a child set mixing engagement
+/// *flavors* keeps only the estimate-subject one, since pruning may leave the local
+/// `MergeTree` child alone (see the `Merge` branch below). A `Merge` whose children are all local cannot
 /// engage parallel replicas under the analyzer — the storage-level `MergeTree`
 /// parallel-replica paths are old-analyzer-only, and the planner's rule rejects `Merge`
 /// itself — so it counts as not eligible here.
@@ -216,6 +218,26 @@ ParallelReplicasEngagement mayEngageParallelReplicasForRemoteStorage(const IStor
         });
         if (!has_children || has_ineligible_child)
             return {};
+
+        /// The *flavor* of the engagement has to survive pruning as well. A `Merge` whose
+        /// children are all eligible can still mix flavors — say a view over a local
+        /// `MergeTree` (`local_merge_tree`) and a `Distributed` table (`remote`) — and the
+        /// two are not interchangeable: only a local `MergeTree` read runs the row-count
+        /// estimate that may silently disable parallel replicas afterwards (see
+        /// `ParallelReplicasEngagement`). Reporting `remote` for a child set the query may
+        /// narrow to the local-`MergeTree` child alone would suppress that escape hatch and
+        /// turn a query the plain planner runs into a `SUPPORT_IS_DISABLED` rejection.
+        /// Which children survive pruning is not known before planning, so a mixed set
+        /// keeps only the estimate-subject flavor: the step is still eligible (it fails
+        /// closed when the estimate cannot disable parallel replicas anyway — with
+        /// `parallel_replicas_min_number_of_rows_per_replica = 0` the rejection fires
+        /// exactly as for an all-remote `Merge`), and when the estimate could disable them
+        /// the step silently runs plainly instead. For a query that does read the remote
+        /// child with the threshold set this under-throws — the same documented trade-off
+        /// as above: the read stays correct, parallel replicas are just kept off.
+        if (children_engagement.local_merge_tree && children_engagement.remote)
+            children_engagement.remote = false;
+
         return children_engagement;
     }
 
