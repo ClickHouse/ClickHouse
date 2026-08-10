@@ -1519,6 +1519,11 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     bool skip_cache_on_disk_failure,
     LoggerPtr log)
 {
+    /// The check must stay outside LOG_TEST: the arguments are evaluated before the macro, and this
+    /// function runs once per buffer refill.
+    if (info.cache_settings.verbose_logging)
+        LOG_TEST(log, "Reading file segment: {}", getInfoForLog(&state, info, offset));
+
     const auto & current_read_range = file_segment.range();
     chassert(current_read_range.contains(offset));
 
@@ -1677,6 +1682,10 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         {
             size_t remaining_size_to_read = std::min(current_read_range.right, info.read_until_position - 1) - offset + 1;
 
+            if (info.cache_settings.verbose_logging)
+                LOG_TEST(log, "Remaining size to read: {}, read: {}. Resizing buffer to {}",
+                         remaining_size_to_read, size, state.buf->offset() + std::min(size, remaining_size_to_read));
+
             if (size > remaining_size_to_read)
             {
                 size = remaining_size_to_read;
@@ -1803,6 +1812,10 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             info.file_segments->size(),
             file_segment.getInfoForLog());
     }
+
+    if (info.cache_settings.verbose_logging)
+        LOG_TEST(log, "Read {} bytes (buffer size: {}). Read info: {}",
+                 size, state.buf->internalBuffer().size(), getInfoForLog(&state, info, offset + size));
 
     return size;
 }
@@ -1969,6 +1982,11 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             implementation_buffer_can_be_reused,
             skip_cache_on_disk_failure,
             log);
+
+        if (current_info.cache_settings.verbose_logging)
+            LOG_TEST(
+                log, "ReadBigAt() read {} bytes at offset: {}. Total: {}/{}",
+                size, offset, read_bytes + size, n);
 
         offset += size;
         read_bytes += size;

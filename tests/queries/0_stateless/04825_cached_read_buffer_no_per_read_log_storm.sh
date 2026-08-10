@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-# `CachedOnDiskReadBufferFromFile` must not emit TEST-level log lines once per buffer refill:
-# assert the TEST log count stays tiny while many cached reads happen.
+# `CachedOnDiskReadBufferFromFile` must not emit TEST-level log lines once per buffer refill unless
+# `filesystem_cache_verbose_logging` is on. Both directions are asserted: with the setting off the
+# TEST log count stays tiny while many cached reads happen, with it on the messages come back.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,41 +36,55 @@ $CLICKHOUSE_CLIENT -q "
 #                                                                  so the per-refill resize log fires
 #   min_bytes_to_use_direct_io / _mmap_io=0, local_filesystem_read_method='pread',
 #   local_filesystem_read_prefetch=0, max_threads=1              -- keep the cached read path
+#   enable_parallel_replicas=0                                  -- 1 sends the read to the replica
+#                                                                  cluster, so this server's cache
+#                                                                  buffer is not the one measured
 read_settings="enable_filesystem_cache = 1, max_read_buffer_size = 4096,
     max_read_buffer_size_local_fs = 4096, use_uncompressed_cache = 0,
     read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0,
     min_bytes_to_use_direct_io = 0, min_bytes_to_use_mmap_io = 0,
     local_filesystem_read_method = 'pread', local_filesystem_read_prefetch = 0,
-    filesystem_cache_prefer_bigger_buffer_size = 0,
+    filesystem_cache_prefer_bigger_buffer_size = 0, enable_parallel_replicas = 0,
     filesystem_cache_segments_batch_size = 1, max_threads = 1"
 
-# Warm the cache so the measured query reads from it (ReadType::CACHED) rather than downloading.
+# Warm the cache so the measured queries read from it (ReadType::CACHED) rather than downloading.
 $CLICKHOUSE_CLIENT -q "
     SELECT sum(cityHash64(s)), sum(k) FROM t_cached_read_log SETTINGS $read_settings
 " > /dev/null
 
-query_id="cached_read_log_${CLICKHOUSE_DATABASE}_$$"
-
 # send_logs_level=test makes the server evaluate the TEST-level logs (and hence the LogTest
 # ProfileEvent) regardless of the server's own log level.
-$CLICKHOUSE_CLIENT --send_logs_level=test --query_id="$query_id" -q "
-    SELECT sum(cityHash64(s)), sum(k) FROM t_cached_read_log SETTINGS $read_settings
-" > /dev/null 2>/dev/null
+for verbose in 0 1
+do
+    $CLICKHOUSE_CLIENT --send_logs_level=test --query_id="04825_${CLICKHOUSE_DATABASE}_$verbose" -q "
+        SELECT sum(cityHash64(s)), sum(k) FROM t_cached_read_log
+        SETTINGS $read_settings, filesystem_cache_verbose_logging = $verbose
+    " > /dev/null 2>/dev/null
+done
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-# With the fix, LogTest is a handful (buffer-open + seek lines), while thousands of cached reads
-# happen. Without the fix, LogTest ~= 3 * cached reads (>> 1000).
-# many_reads is what stops the test passing vacuously when nothing was read from the cache.
+# Default (setting off): LogTest is a handful of segment-level lines while thousands of cached reads
+# happen. Setting on: the per-refill lines are back, so LogTest exceeds the number of reads.
+# many_reads is what stops the test passing vacuously when nothing was read from the cache, and the
+# two arms must disagree - a run where both come out the same has not exercised the setting.
 $CLICKHOUSE_CLIENT -q "
     SELECT
-        ProfileEvents['CachedReadBufferReadFromCacheHits'] > 1000 AS many_reads,
-        ProfileEvents['LogTest'] < 1000 AS few_test_logs
-    FROM system.query_log
-    WHERE query_id = '$query_id' AND current_database = currentDatabase()
-      AND type = 'QueryFinish' AND read_rows > 0
-    ORDER BY event_time_microseconds DESC
-    LIMIT 1;
+        anyIf(reads, verbose = 0) > 1000 AS many_reads,
+        anyIf(test_logs, verbose = 0) < 1000 AS few_test_logs_by_default,
+        anyIf(test_logs, verbose = 1) > anyIf(reads, verbose = 1) AS verbose_logging_restores_them
+    FROM
+    (
+        SELECT
+            toUInt8(splitByChar('_', query_id)[-1]) AS verbose,
+            ProfileEvents['CachedReadBufferReadFromCacheHits'] AS reads,
+            ProfileEvents['LogTest'] AS test_logs
+        FROM system.query_log
+        WHERE query_id IN ('04825_${CLICKHOUSE_DATABASE}_0', '04825_${CLICKHOUSE_DATABASE}_1')
+          AND current_database = currentDatabase() AND type = 'QueryFinish' AND read_rows > 0
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1 BY verbose
+    );
 "
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_cached_read_log;"
