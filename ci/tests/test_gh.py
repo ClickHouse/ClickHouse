@@ -355,6 +355,27 @@ def test_request_team_reviews_adds_only_missing_teams(monkeypatch):
     ]
 
 
+def test_submit_team_review_requests_uses_pr_reviewer_cli(monkeypatch):
+    commands = []
+
+    def fake_submit(command, verbose=False):
+        commands.append(command)
+        return True
+
+    monkeypatch.setattr(GH, "do_command_with_retries", staticmethod(fake_submit))
+
+    GH._submit_team_review_requests(
+        team_slugs=["clickpipes", "docs"],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+
+    assert commands == [
+        "gh pr edit 42 --repo ClickHouse/ClickHouse "
+        "--add-reviewer ClickHouse/clickpipes --add-reviewer ClickHouse/docs"
+    ]
+
+
 def test_request_team_reviews_does_nothing_without_teams(monkeypatch):
     monkeypatch.setattr(
         GH,

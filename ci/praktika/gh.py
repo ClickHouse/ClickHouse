@@ -789,26 +789,18 @@ class GH:
     def _submit_team_review_requests(cls, team_slugs, pr, repo):
         assert team_slugs
 
-        payload = {"reviewers": [], "team_reviewers": team_slugs}
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False, encoding="utf-8"
-        ) as temp_file:
-            json.dump(payload, temp_file)
-            temp_file_path = temp_file.name
+        owner, separator, _ = repo.partition("/")
+        assert separator and owner, f"Invalid repository name [{repo}]"
 
-        try:
-            cmd = (
-                "gh api -X POST "
-                f'-H "Accept: application/vnd.github.v3+json" '
-                f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
-                f"--input {shlex.quote(temp_file_path)}"
+        reviewer_args = " ".join(
+            f"--add-reviewer {shlex.quote(f'{owner}/{team_slug}')}"
+            for team_slug in team_slugs
+        )
+        cmd = f"gh pr edit {pr} --repo {shlex.quote(repo)} {reviewer_args}"
+        if not cls.do_command_with_retries(cmd):
+            raise RuntimeError(
+                f"Failed to request team reviews for pull request [{pr}]"
             )
-            if not cls.do_command_with_retries(cmd):
-                raise RuntimeError(
-                    f"Failed to request team reviews for pull request [{pr}]"
-                )
-        finally:
-            os.unlink(temp_file_path)
 
     @classmethod
     def request_team_reviews(cls, team_slugs, pr=None, repo=None):
