@@ -309,7 +309,9 @@ void considerEnablingParallelReplicas(
         return;
     }
 
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder();
+    /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
+    /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
         return;
 
