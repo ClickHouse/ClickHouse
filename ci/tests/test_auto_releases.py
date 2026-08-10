@@ -225,11 +225,7 @@ def test_failed_statuses_keeps_newest_per_context(monkeypatch):
 
 
 def test_status_reads_are_strict():
-    """The `/statuses` and run-id reads must not fail open.
-
-    ``GH.get_output_with_retries`` returns ``""`` once retries are exhausted,
-    which is indistinguishable from an empty result.
-    """
+    """The `/statuses` and run-id reads must fail early, not return ``""``."""
     text = _read(JOB)
     for fn in ("_failed_statuses", "_latest_create_release_run_id"):
         body = text.split(f"def {fn}(", 1)[1].split("\ndef ", 1)[0]
@@ -238,11 +234,7 @@ def test_status_reads_are_strict():
 
 
 def test_fetch_history_does_not_swallow_unshallow_failures(monkeypatch):
-    """``--unshallow`` must run strictly, and only on a shallow clone.
-
-    It is the only fetch that deepens the clone, so a swallowed failure would
-    silently truncate the `rev-list` ranges the release decisions come from.
-    """
+    """``--unshallow`` must fail early, and run only on a shallow clone."""
     m = _job_module()
     calls = []
     monkeypatch.setattr(
@@ -280,10 +272,7 @@ def test_find_release_candidate_skips_new_branch(monkeypatch):
 
 
 def test_find_release_candidate_errors_without_release_tag(monkeypatch):
-    """A missing ``v<branch>.*`` tag must not be normalised to ``SKIPPED``.
-
-    It means broken release metadata, so the daily run must not stay green.
-    """
+    """A missing ``v<branch>.*`` tag means broken metadata, not ``SKIPPED``."""
     m = _job_module()
     monkeypatch.setattr(m, "_latest_release_tag", lambda branch: None)
     sha, reason, status = m._find_release_candidate("25.8")
