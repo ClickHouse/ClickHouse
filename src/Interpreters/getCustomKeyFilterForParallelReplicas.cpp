@@ -60,50 +60,56 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     RelativeSize range_upper = RelativeSize(0);
     RelativeSize range_lower = RelativeSize(filter.range_lower);
+
+    /// The custom key is an arbitrary expression, and it does not have to describe a single column.
+    /// `tuple()` describes no columns at all, so the number of the types has to be checked before reading them.
+    if (custom_key_description.data_types.size() != 1)
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+            "Invalid custom key expression: it describes {} columns. Must be one unsigned integer column",
+            custom_key_description.data_types.size());
+
     DataTypePtr custom_key_column_type = custom_key_description.data_types[0];
 
-    if (custom_key_description.data_types.size() == 1)
+    if (typeid_cast<const DataTypeUInt64 *>(custom_key_column_type.get()))
     {
-        if (typeid_cast<const DataTypeUInt64 *>(custom_key_column_type.get()))
-        {
-            range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
-                                                 : RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
-            if (range_upper > RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1))
-                throw Exception(
-                    ErrorCodes::INVALID_SETTING_VALUE,
-                    "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt64) max value",
-                    rational_cast<double>(range_upper));
-        }
-        else if (typeid_cast<const DataTypeUInt32 *>(custom_key_column_type.get()))
-        {
-            range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
-                                                 : RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
-            if (range_upper > RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1))
-                throw Exception(
-                    ErrorCodes::INVALID_SETTING_VALUE,
-                    "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt32) max value",
-                    rational_cast<double>(range_upper));
-        }
-        else if (typeid_cast<const DataTypeUInt16 *>(custom_key_column_type.get()))
-        {
-            range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
-                                                 : RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
-            if (range_upper > RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1))
-                throw Exception(
-                    ErrorCodes::INVALID_SETTING_VALUE,
-                    "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt16) max value",
-                    rational_cast<double>(range_upper));
-        }
-        else if (typeid_cast<const DataTypeUInt8 *>(custom_key_column_type.get()))
-        {
-            range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
-                                                 : RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
-            if (range_upper > RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1))
-                throw Exception(
-                    ErrorCodes::INVALID_SETTING_VALUE,
-                    "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt8) max value",
-                    rational_cast<double>(range_upper));
-        }
+        range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
+                                             : RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
+        if (range_upper > RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1))
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt64) max value",
+                rational_cast<double>(range_upper));
+    }
+    else if (typeid_cast<const DataTypeUInt32 *>(custom_key_column_type.get()))
+    {
+        range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
+                                             : RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1);
+        if (range_upper > RelativeSize(std::numeric_limits<UInt32>::max()) + RelativeSize(1))
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt32) max value",
+                rational_cast<double>(range_upper));
+    }
+    else if (typeid_cast<const DataTypeUInt16 *>(custom_key_column_type.get()))
+    {
+        range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
+                                             : RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1);
+        if (range_upper > RelativeSize(std::numeric_limits<UInt16>::max()) + RelativeSize(1))
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt16) max value",
+                rational_cast<double>(range_upper));
+    }
+    else if (typeid_cast<const DataTypeUInt8 *>(custom_key_column_type.get()))
+    {
+        range_upper = filter.range_upper > 0 ? RelativeSize(filter.range_upper) + RelativeSize(1)
+                                             : RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1);
+        if (range_upper > RelativeSize(std::numeric_limits<UInt8>::max()) + RelativeSize(1))
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt8) max value",
+                rational_cast<double>(range_upper));
     }
 
     if (range_upper == RelativeSize(0))
