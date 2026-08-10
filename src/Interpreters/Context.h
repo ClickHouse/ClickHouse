@@ -202,6 +202,8 @@ class AsyncLoader;
 class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
+struct QueryJoinsCounters;
+using QueryJoinsCountersPtr = std::shared_ptr<QueryJoinsCounters>;
 struct ICgroupsReader;
 class WasmModuleManager;
 
@@ -557,6 +559,8 @@ protected:
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
+    /// Query metrics about the executed JOINs.
+    mutable QueryJoinsCountersPtr query_joins_counters;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -1906,6 +1910,8 @@ public:
 #endif
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
+
+    QueryJoinsCountersPtr getQueryJoinsCounters() const;
 
     ThreadPool & getThreadPoolWriter() const;
 

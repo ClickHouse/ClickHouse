@@ -1,9 +1,12 @@
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/QueryJoinsCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/CurrentThread.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
@@ -68,6 +71,15 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
         description.emplace_back("Residual filter", mixed_expression->getSampleBlock().dumpNames());
 
     return description;
+}
+
+void countExecutedJoin()
+{
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+    {
+        if (auto counters = query_context->getQueryJoinsCounters())
+            counters->number_of_joins.fetch_add(1, std::memory_order_relaxed);
+    }
 }
 
 std::vector<size_t> getPermutationForBlock(
@@ -135,6 +147,8 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
+
+    countExecutedJoin();
 
     Block lhs_header = pipelines[0]->getHeader();
     Block rhs_header = pipelines[1]->getHeader();
@@ -418,6 +432,8 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
 
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    countExecutedJoin();
+
     bool default_totals = false;
     if (!pipeline.hasTotals() && !join->getTotals().empty())
     {
