@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings, no-distributed-cache
 
 # Regression guard: a warm ReaderExecutor read must not churn the server-shared
 # SourceBufferLimit slot. On a warm re-scan over an s3_cache disk the executor
@@ -9,8 +9,16 @@
 # bailed, reserving + releasing a slot on the process-wide limit per window
 # (~95 reservations for a single warm scan that did one tiny source read).
 #
-# Invariant checked: ReaderExecutorBufferSlotAcquired <= ReaderExecutorSourceRequests
+# Invariant checked: ReaderExecutorLongConnectionOpened <= ReaderExecutorSourceRequests
 # (every reserved slot backs a real source read), for both prefetch on and off.
+#
+# The counter this guard was originally written against, `ReaderExecutorBufferSlotAcquired`,
+# no longer exists: after the long-connection rework the slot is taken by
+# `ReaderExecutor::openLongConnection`, which counts `LongConnectionOpened` and
+# `SourceRequests` together, and a reservation that fails to turn into a read is counted as
+# `LongConnectionFallbacks` instead. Asserting on the removed event made the comparison
+# vacuously true (missing ProfileEvents read as 0), so it is expressed over the live
+# counters here.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -39,7 +47,7 @@ run_warm () {  # $1=label  $2=prefetch
     $CLICKHOUSE_CLIENT --query "
         SELECT
             ProfileEvents['ReaderExecutorBytesFromFilesystemCache'] > 0 AS served_from_cache,
-            ProfileEvents['ReaderExecutorBufferSlotAcquired']
+            ProfileEvents['ReaderExecutorLongConnectionOpened']
                 <= ProfileEvents['ReaderExecutorSourceRequests'] AS no_slot_churn
         FROM system.query_log
         WHERE query_id = '$id' AND type = 'QueryFinish' AND current_database = currentDatabase()

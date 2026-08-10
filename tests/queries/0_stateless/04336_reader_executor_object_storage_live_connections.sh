@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings
+# Tags: no-fasttest, no-random-settings, no-distributed-cache
 #
 # no-fasttest        -- needs minio (the s3() / object-storage source path)
 # no-random-settings -- the assertions read ReaderExecutor ProfileEvents, which
 #                       random read-path settings would perturb
+# no-distributed-cache -- `ReadPipeline::tryBuildReaderExecutor` falls back to the legacy
+#                       path when distributed cache is requested, so the executor
+#                       long-connection path under test is not exercised
 #
 # StorageObjectStorageSource (the object-storage table function/engine) must honor
 # reader_executor_use_long_connections the same way DiskObjectStorage::prepareRead does:

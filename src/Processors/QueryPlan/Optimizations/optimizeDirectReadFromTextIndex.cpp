@@ -74,6 +74,11 @@ String getNameWithoutAliases(const ActionsDAG::Node * node)
         return result_name;
     }
 
+    /// Render a constant by value: its result_name can differ between the query and preprocessor DAGs,
+    /// so comparing by value keeps the haystack and preprocessor names consistent.
+    if (node->type == ActionsDAG::ActionType::COLUMN && node->column)
+        return applyVisitor(FieldVisitorToString(), node->column->getField());
+
     return node->result_name;
 }
 

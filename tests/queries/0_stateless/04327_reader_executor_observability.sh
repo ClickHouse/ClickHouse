@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-distributed-cache
 
 # Verify the ReaderExecutor observability surface added together: per-query
 # ProfileEvents, registered HistogramMetrics, and rows in the

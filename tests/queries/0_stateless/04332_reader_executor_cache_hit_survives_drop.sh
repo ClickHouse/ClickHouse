@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-distributed-cache
 
 # A cache hit reported by DiskCacheHandle::status() must still be readable by
 # get() even when SYSTEM DROP FILESYSTEM CACHE runs in between. The handle holds
