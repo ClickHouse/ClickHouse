@@ -1,0 +1,9 @@
+1	1	Compact
+101
+1
+1
+1
+1001	1
+delta_tuple_mixed	CODEC(Delta, LZ4))
+fpc_tuple_mixed	CODEC(FPC, LZ4))
+fpc_tuple_same	CODEC(FPC(12), LZ4))
