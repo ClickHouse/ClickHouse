@@ -1533,6 +1533,8 @@ bool KeyCondition::hasOnlyConjunctions() const
 }
 
 
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
+
 static Field applyFunctionForField(
     const FunctionBasePtr & func,
     const DataTypePtr & arg_type,
@@ -1576,28 +1578,23 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-        /// Strip outer `LowCardinality` from the argument column and type before executing, keeping the
-        /// cached result full too. A monotonic-function chain is built against the outer-LowCardinality
-        /// stripped key type (`applyFunctionChainToColumn` strips it the same way), so a specialized
-        /// wrapper such as the UInt8->Bool `CAST` does `checkAndGetColumn<ColumnUInt8>` on the raw
-        /// column and aborts with a bad cast on a `ColumnLowCardinality` (e.g. a `LowCardinality(Bool)`
-        /// key compared with a `LowCardinality` constant). `removeLowCardinality` /
-        /// `convertToFullColumnIfLowCardinality` are no-ops for non-LC inputs.
-        if (args[0].column && args[0].column->lowCardinality())
+        /// Normalize the chain's input only: the incoming index column may still be `LowCardinality`
+        /// while the chain was built against a stripped key type. Interior links need nothing, because
+        /// each is built against the previous function's result type, which the cache below preserves.
+        if (args[0].column && args[0].column->lowCardinality() && !getArgumentTypeOfMonotonicFunction(*func)->lowCardinality())
         {
             args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
             args[0].type = removeLowCardinality(args[0].type);
         }
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, removeLowCardinality(func->getResultType()), result_name});
+        /// Invariant: every function receives the argument type it was built for, so the cached result
+        /// keeps this function's own result type and representation.
+        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column
-            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false)
-                  ->convertToFullColumnIfLowCardinality();
+            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false);
     }
 
     return {field.columns, field.row_idx, result_idx};
 }
-
-DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
@@ -3855,6 +3852,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 func_name = String(reversed);
             }
 
+            /// What the chain actually produces, which is what any cast appended below will be fed. This
+            /// stays unstripped: only the copy used to choose the comparison supertype is stripped.
+            DataTypePtr chain_result_type
+                = chain.empty() ? recursiveRemoveLowCardinality(key_expr_type) : chain.back()->getResultType();
+
             key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
             DataTypePtr key_expr_type_not_null;
             bool key_expr_type_is_nullable = false;
@@ -3970,7 +3972,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                                 : common_type;
 
-                            auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
+                            /// Declared against the type this cast is actually given, not the stripped
+                            /// `key_expr_type` used to pick the supertype.
+                            auto func_cast = createInternalCast({chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
 
                             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                             if (!single_point && !func_cast->hasInformationAboutMonotonicity())
@@ -5012,6 +5016,10 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
+    /// stripped type here rather than in each caller: several of them pass the key column's raw type.
+    current_type = recursiveRemoveLowCardinality(current_type);
+
     for (const auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
@@ -5524,12 +5532,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!element.monotonic_functions_chain.empty())
             {
                 key_range_storage = hyperrectangle[key_column];
-                /// The chain was built in `extractAtomFromTree` against an
-                /// `LowCardinality`-stripped key type; the runtime type must match.
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range_storage,
                     element.monotonic_functions_chain,
-                    recursiveRemoveLowCardinality(data_types[key_column]),
+                    data_types[key_column],
                     single_point
                 );
 
