@@ -105,9 +105,6 @@ public:
 
     void onBuildPhaseFinish() override;
 
-    bool hasPostBuildPhase() const override;
-    void runPostBuildPhase() override;
-
     void setEnableLazyColumnsIndexing(bool value) override;
 
 private:
