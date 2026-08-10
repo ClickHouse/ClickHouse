@@ -20,7 +20,12 @@ SELECT exponentialTimeDecayingFloat64(10)(1, toFloat64(0)); -- { serverError UNK
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
--- The decay length is encoded in the type; values store only value and anchor time.
+-- Function documentation must be materializable through system.functions.
+SELECT name
+FROM system.functions
+WHERE name = 'exponentialTimeDecayingDecayLength';
+
+-- The decay length is encoded in the type and validated against the stored marker.
 SELECT toTypeName(CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecayingFloat64(10)'));
 
 -- The stored marker is validated against the type parameter, including after explicit casts.

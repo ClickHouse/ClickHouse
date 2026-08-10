@@ -1,5 +1,6 @@
 1
 1
+exponentialTimeDecayingDecayLength
 ExponentialTimeDecayingFloat64(10)
 Float64	ExponentialTimeDecayingFloat64(10)
 0.735759	0.537883	1.367879

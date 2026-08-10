@@ -276,9 +276,9 @@ sensitive inputs when stronger numerical reproducibility is required.
 )",
         .syntax = "exponentialTimeDecayingAdd(a, b)",
         .arguments = {
-            {"a", "First decaying value.", {"ExponentialTimeDecayingFloat64(*)"}},
-            {"b", "Second decaying value with the same decay length.", {"ExponentialTimeDecayingFloat64(*)"}}},
-        .returned_value = {"Returns the combined decaying value with the same decay length.", {"ExponentialTimeDecayingFloat64(*)"}},
+            {"a", "First value of type `ExponentialTimeDecayingFloat64(decay_length)`.", {}},
+            {"b", "Second value with the same parameterized type.", {}}},
+        .returned_value = {"Returns the combined `ExponentialTimeDecayingFloat64(decay_length)` value.", {}},
         .examples = {{
             "Add values with the same decay length",
             "SELECT exponentialTimeDecayingAdd("
@@ -295,9 +295,9 @@ Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` a
 )",
         .syntax = "exponentialTimeDecayingValueAt(value, target_time)",
         .arguments = {
-            {"value", "Decaying value.", {"ExponentialTimeDecayingFloat64(*)"}},
+            {"value", "Value of type `ExponentialTimeDecayingFloat64(decay_length)`.", {}},
             {"target_time", "Evaluation time; it may be before, at, or after the anchor.",
-                {"Number", "DateTime", "DateTime64"}}},
+                {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}},
         .returned_value = {"Returns the decayed value at the target time.", {"Float64"}},
         .examples = {{
             "Evaluate one decay length later",
@@ -309,7 +309,7 @@ Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` a
     factory.registerFunction<FunctionExponentialTimeDecayingDecayLength>(FunctionDocumentation{
         .description = "Returns the decay length encoded in an `ExponentialTimeDecayingFloat64` type.",
         .syntax = "exponentialTimeDecayingDecayLength(value)",
-        .arguments = {{"value", "Decaying value.", {"ExponentialTimeDecayingFloat64(*)"}}},
+        .arguments = {{"value", "Value of type `ExponentialTimeDecayingFloat64(decay_length)`.", {}}},
         .returned_value = {"Returns the decay length.", {"Float64"}},
         .examples = {{
             "Read the decay length",

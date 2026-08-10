@@ -171,7 +171,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Float64 value = 1;
-        Float64 time;
+        Float64 time = std::numeric_limits<Float64>::quiet_NaN();
 
         if (input_is_decaying_value)
         {
