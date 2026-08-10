@@ -71,7 +71,6 @@ namespace Setting
     extern const SettingsBool transform_null_in;
     extern const SettingsBool use_index_for_in_with_subqueries;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
-    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace ErrorCodes
@@ -604,23 +603,14 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     }
 
     /// In-place build succeeded. On the non-destructive path, publish the fully-created temporary set into
-    /// the canonical `set_and_key`; the deferred build is then skipped (it checks `isCreated()` / `get()`),
-    /// so the original `source` plan is no longer needed. On the destructive fallback `source` was already
-    /// consumed by `build`, so `reset` is a no-op there. Reset only now, after the pipeline and executor have
-    /// been destroyed, so the resources held by `source` outlive every processor.
+    /// the canonical `set_and_key`; the deferred build is then skipped, because it checks `isCreated()` /
+    /// `get()` before looking at `source`. `source` is kept: it is the subquery plan `serializeSets` writes
+    /// when this set is referenced by a plan fragment shipped to parallel replicas, which re-build the set
+    /// themselves. Discarding it would make that serialization fail with `Cannot serialize
+    /// FutureSetFromSubquery with no query plan`, and keeping it cannot cause a rebuild. On the destructive
+    /// fallback `source` was already consumed by `build` and is gone.
     if (speculative_set)
         set_and_key->set = speculative_set;
-
-    /// Exception: under plan-based parallel replicas the shipped plan fragment references this set and is
-    /// serialized to the replicas (`serializeSets` writes `getQueryPlan()`), which re-build it themselves.
-    /// The non-destructive build above kept `source` intact, so keep it here too instead of discarding it,
-    /// otherwise serialization would fail with `Cannot serialize FutureSetFromSubquery with no query plan`.
-    /// Only the non-destructive path can preserve it (on the destructive fallback `source` is already gone).
-    const bool keep_source_for_serialization = speculative_set
-        && context->canUseParallelReplicasOnInitiator()
-        && context->getSettingsRef()[Setting::parallel_replicas_plan_based];
-    if (!keep_source_for_serialization)
-        source.reset();
 
     return set_and_key->set;
 }
