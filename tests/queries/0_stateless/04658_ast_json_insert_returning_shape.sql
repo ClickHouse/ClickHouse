@@ -2,8 +2,6 @@
 -- dedicated fields. AST JSON must carry them as well, otherwise JSON round-trip silently
 -- degrades `INSERT ... RETURNING ... SETTINGS ...` into plain `INSERT ... SELECT`.
 
-SET allow_experimental_json_ast_dialect = 1;
-
 SELECT formatQueryFromJSON(parseQueryToJSON(
     $$INSERT INTO t SELECT number FROM numbers(3) RETURNING (SELECT count()) SETTINGS max_threads = 1$$))
     = formatQuerySingleLine(
