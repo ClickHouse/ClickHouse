@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
@@ -626,6 +627,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             return false;
 
         auto key_type = key_node.getDAGNode()->result_type;
+        const auto format_settings = getFormatSettings(key_node.getTreeContext().getQueryContext());
         auto serialized_values = ColumnString::create();
         for (size_t row = 0; row < column->size(); ++row)
         {
@@ -633,6 +635,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
                 (*column)[row],
                 type,
                 json_info->is_string_cast ? nullptr : key_type,
+                format_settings,
                 json_info->unindexed_value);
             if (!serialized_value)
                 return false;
@@ -942,10 +945,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             return false;
 
         auto key_type = key_node.getDAGNode()->result_type;
+        const auto format_settings = getFormatSettings(key_node.getTreeContext().getQueryContext());
         auto serialized_value = tryConvertAndSerializeJSONValueAsText(
             value_field,
             value_type,
             json_info->is_string_cast ? nullptr : key_type,
+            format_settings,
             json_info->unindexed_value);
         if (!serialized_value)
             return false;

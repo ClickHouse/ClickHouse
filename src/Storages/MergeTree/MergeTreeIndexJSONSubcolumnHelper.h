@@ -9,6 +9,8 @@
 namespace DB
 {
 
+struct FormatSettings;
+
 /// Information extracted from a column name that references a JSON subcolumn
 /// matched against a JSONAllPaths(...) index column.
 struct JSONSubcolumnIndexInfo
@@ -94,13 +96,15 @@ bool isJSONPathFilterSafe(
 Field tryConvertJSONValueToType(
     const Field & value,
     const DataTypePtr & source_type,
-    const DataTypePtr & target_type);
+    const DataTypePtr & target_type,
+    const FormatSettings & format_settings);
 
 /// Convert a value to the target type, if specified, and then to the text representation stored by `JSONAllValues`.
 std::optional<String> tryConvertAndSerializeJSONValueAsText(
     const Field & value,
     const DataTypePtr & source_type,
     const DataTypePtr & target_type,
+    const FormatSettings & format_settings,
     const std::optional<Field> & unindexed_value,
     bool serialize_quoted = false);
 

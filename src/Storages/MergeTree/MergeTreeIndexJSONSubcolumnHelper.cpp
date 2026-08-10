@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
+#include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -130,6 +131,31 @@ static String serializeJSONValueAsText(const Field & value, const DataTypePtr & 
     return buf.str();
 }
 
+static bool hasSettingSensitiveStringSerialization(const IDataType & type, const FormatSettings & settings)
+{
+    const bool custom_bool = settings.bool_true_representation != "true" || settings.bool_false_representation != "false";
+    const bool custom_datetime = settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple;
+    const bool custom_decimal = settings.decimal_trailing_zeros || settings.always_write_decimal_point_in_float_and_decimal;
+    const bool custom_float = settings.always_write_decimal_point_in_float_and_decimal;
+
+    if (!custom_bool && !custom_datetime && !custom_decimal && !custom_float)
+        return false;
+
+    const auto is_sensitive = [&](const IDataType & child)
+    {
+        const WhichDataType which(child);
+        return isDynamic(child)
+            || (custom_bool && child.getName() == "Bool")
+            || (custom_datetime && which.isDateTimeOrDateTime64())
+            || (custom_decimal && which.isDecimal())
+            || (custom_float && which.isFloat());
+    };
+
+    bool result = is_sensitive(type);
+    type.forEachChild([&](const IDataType & child) { result |= is_sensitive(child); });
+    return result;
+}
+
 static bool isJSONAllValuesMatchSafe(
     const RPNBuilderTreeNode & node,
     bool is_string_cast)
@@ -182,6 +208,13 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
             /// granule pruning suppress `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN`.
             if (is_string_cast && isNullableOrLowCardinalityNullable(argument_dag->result_type)
                 && !isNullableOrLowCardinalityNullable(node_dag->result_type))
+                return std::nullopt;
+
+            /// `JSONAllValues` stores text with fixed format settings, while `CAST(... AS String)`
+            /// uses query settings. Do not build a probe when those representations can differ.
+            if (is_string_cast
+                && hasSettingSensitiveStringSerialization(
+                    *argument_dag->result_type, getFormatSettings(node.getTreeContext().getQueryContext())))
                 return std::nullopt;
 
             if (!isJSONAllValuesMatchSafe(node, is_string_cast))
@@ -245,7 +278,8 @@ bool isJSONPathFilterSafe(
 Field tryConvertJSONValueToType(
     const Field & value,
     const DataTypePtr & source_type,
-    const DataTypePtr & target_type)
+    const DataTypePtr & target_type,
+    const FormatSettings & format_settings)
 {
     const auto * source_array = typeid_cast<const DataTypeArray *>(source_type.get());
     const auto * target_array = typeid_cast<const DataTypeArray *>(target_type.get());
@@ -258,7 +292,7 @@ Field tryConvertJSONValueToType(
         for (const auto & source_value : source_values)
         {
             auto converted_value = tryConvertJSONValueToType(
-                source_value, source_array->getNestedType(), target_array->getNestedType());
+                source_value, source_array->getNestedType(), target_array->getNestedType(), format_settings);
             if (converted_value.isNull() && !canContainNull(*target_array->getNestedType()))
                 return {};
 
@@ -268,13 +302,14 @@ Field tryConvertJSONValueToType(
         return converted_values;
     }
 
-    return tryConvertFieldToType(value, *target_type, source_type.get());
+    return tryConvertFieldToType(value, *target_type, source_type.get(), format_settings);
 }
 
 std::optional<String> tryConvertAndSerializeJSONValueAsText(
     const Field & value,
     const DataTypePtr & source_type,
     const DataTypePtr & target_type,
+    const FormatSettings & format_settings,
     const std::optional<Field> & unindexed_value,
     bool serialize_quoted)
 {
@@ -282,7 +317,7 @@ std::optional<String> tryConvertAndSerializeJSONValueAsText(
     DataTypePtr serialization_type = source_type;
     if (target_type)
     {
-        converted_value = tryConvertJSONValueToType(value, source_type, target_type);
+        converted_value = tryConvertJSONValueToType(value, source_type, target_type, format_settings);
         if (converted_value.isNull())
             return std::nullopt;
 

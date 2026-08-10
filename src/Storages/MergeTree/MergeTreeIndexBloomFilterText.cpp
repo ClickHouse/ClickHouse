@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -498,6 +499,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         key_index = json_info->subcolumn.header_position;
 
         const auto key_type = key_node.getDAGNode()->result_type;
+        const auto format_settings = getFormatSettings(key_node.getTreeContext().getQueryContext());
         if (json_info->is_string_cast && unindexedValueCanMatch(
                 function_name,
                 const_value,
@@ -537,7 +539,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             for (const auto & value : values)
             {
                 auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-                    value, array_type->getNestedType(), target_type, std::nullopt, serialize_quoted);
+                    value, array_type->getNestedType(), target_type, format_settings, std::nullopt, serialize_quoted);
                 if (!serialized_value)
                     return false;
 
@@ -553,6 +555,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 const_value,
                 serialized_value_type,
                 target_type,
+                format_settings,
                 function_name == "equals" ? json_info->unindexed_value : std::nullopt,
                 serialize_quoted);
             if (!serialized_value)
@@ -883,6 +886,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
             return false;
 
         const auto key_type = left_argument.getDAGNode()->result_type;
+        const auto format_settings = getFormatSettings(left_argument.getTreeContext().getQueryContext());
         out.set_key_position.push_back(json_info->subcolumn.header_position);
         out.set_bloom_filters.emplace_back();
         auto & bloom_filters = out.set_bloom_filters.back();
@@ -894,6 +898,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
                 (*columns[0])[row],
                 data_types[0],
                 json_info->is_string_cast ? nullptr : key_type,
+                format_settings,
                 json_info->unindexed_value);
             if (!serialized_value)
                 return false;
