@@ -1956,16 +1956,16 @@ static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 }
 
 
-/// The select state is filled last while a view is being observed, so a view that failed
-/// mid-construction can reach the log without it. Log an empty query in that case.
+/// A half-built view can reach the log with its query stored but not its context. The context
+/// only supplies the log cut-off, so the init one stands in for a missing one.
 String InsertDependenciesBuilder::getViewQueryForLog(StorageID view_id) const
 {
     auto query_it = select_queries.find(view_id);
-    auto context_it = select_contexts.find(view_id);
-    if (query_it == select_queries.end() || context_it == select_contexts.end())
+    if (query_it == select_queries.end())
         return {};
 
-    return getCleanQueryAst(query_it->second, context_it->second);
+    auto context_it = select_contexts.find(view_id);
+    return getCleanQueryAst(query_it->second, context_it == select_contexts.end() ? init_context : context_it->second);
 }
 
 

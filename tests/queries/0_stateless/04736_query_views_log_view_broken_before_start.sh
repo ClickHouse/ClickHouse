@@ -42,13 +42,14 @@ INSERT INTO src SETTINGS materialized_views_ignore_errors = 1, log_queries = 1, 
 SYSTEM FLUSH LOGS query_views_log;
 "
 
-# The half-built view must still produce exactly one row, and it is the only one
-# whose logged query is empty. Before the fix the server aborted while logging it.
+# The half-built view must still produce exactly one row, and it keeps its query: the
+# select query is stored before the context that went missing. Before the fix the server
+# aborted while logging it.
 $CLICKHOUSE_CLIENT -q "
 SELECT
     substring(view_name, length(currentDatabase()) + 2) AS view,
     status,
-    view_query = '' AS view_query_is_empty,
+    view_query = 'SELECT x FROM ' || currentDatabase() || '.src' AS view_query_kept,
     count()
 FROM system.query_views_log
 WHERE event_date >= yesterday()
@@ -57,7 +58,7 @@ WHERE event_date >= yesterday()
       concatWithSeparator('.', currentDatabase(), 'mv_dangling'),
       concatWithSeparator('.', currentDatabase(), 'mv_present'),
       concatWithSeparator('.', currentDatabase(), 'mv_ok'))
-GROUP BY view, status, view_query_is_empty
+GROUP BY view, status, view_query_kept
 ORDER BY view
 "
 
