@@ -57,11 +57,9 @@ Int64 getRemainingMs(const Stopwatch & watch, Int64 timeout_ms)
     return std::max<Int64>(timeout_ms - static_cast<Int64>(watch.elapsedMilliseconds()), 0);
 }
 
-/// Waits for the watch the caller registered on `event`, in chunks that poll cancellation in
-/// between: Poco::Event observes neither KILL QUERY nor max_execution_time. The watch is registered
-/// once, because a timed out tryWait deregisters nothing and re-registering per chunk would leave a
-/// live callback per chunk on the same node. The event is deliberately not reset between chunks: the
-/// watch is one-shot, so a discarded signal is the only wakeup this wait would ever have got.
+/// Waits for the watch the caller registered on `event`, in chunks so that cancellation is polled
+/// in between. The watch must stay registered once and the event must not be reset between chunks:
+/// it is one-shot, and a timed out tryWait deregisters nothing.
 void waitInterruptibly(const ContextPtr & context, Poco::Event & event, const Stopwatch & watch, Int64 timeout_ms)
 {
     for (auto remaining_ms = getRemainingMs(watch, timeout_ms); remaining_ms > 0; remaining_ms = getRemainingMs(watch, timeout_ms))
@@ -69,7 +67,7 @@ void waitInterruptibly(const ContextPtr & context, Poco::Event & event, const St
         if (auto query_status = context->getProcessListElementSafe())
             query_status->checkTimeLimit();
 
-        if (event.tryWait(static_cast<long>(std::min(max_wait_chunk_ms, remaining_ms))))
+        if (event.tryWait(std::min(max_wait_chunk_ms, remaining_ms)))
             return;
     }
 }
