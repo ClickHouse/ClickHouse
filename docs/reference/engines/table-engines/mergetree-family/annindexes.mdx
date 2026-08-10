@@ -466,7 +466,7 @@ A query run without rescoring (`vector_search_with_rescoring = 0`) and with para
 **Tuning compression**
 
 In virtually all use cases, the vectors in the underlying column are dense and do not compress well.
-As a result, [compression](/reference/statements/create/table#column_compression_codec) slows down inserts and reads into/from the vector column.
+As a result, [compression](/reference/statements/create/table/codec) slows down inserts and reads into/from the vector column.
 We therefore recommend to disable compression.
 To do that, specify `CODEC(NONE)` for the vector column like this:
 
