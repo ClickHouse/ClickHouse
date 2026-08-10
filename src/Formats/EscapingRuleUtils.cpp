@@ -340,13 +340,11 @@ DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSet
 
             auto type = tryInferDataTypeForSingleField(field, format_settings);
 
-            /// A number starting with 0 must stay a String when the value parser cannot read the inferred type
-            /// back: an integer, because readIntTextUnsafe (see ReadHelpers.h) reads the leading '0' as the
-            /// whole value; or an exponent form, because inference accepts values such as `0.5e+` that
-            /// readFloatTextPrecise rejects. allow_number_leading_zeros (hive partitioning) opts out.
+            /// An integer starting with 0 must stay a String, because readIntTextUnsafe (see
+            /// ReadHelpers.h) reads the leading '0' as the whole value.
+            /// allow_number_leading_zeros (hive partitioning) opts out.
             if (type && field[0] == '0' && field.size() != 1 && !format_settings.allow_number_leading_zeros
-                && (isInteger(removeNullable(recursiveRemoveLowCardinality(type)))
-                    || field.find_first_of("eE") != String::npos))
+                && isInteger(removeNullable(recursiveRemoveLowCardinality(type))))
                 return std::make_shared<DataTypeString>();
 
             if (!type)

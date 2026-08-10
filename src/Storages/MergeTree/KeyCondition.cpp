@@ -26,6 +26,7 @@
 #include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/geometryConverters.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/RegexpUtils.h>
 #include <Common/HilbertUtils.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MortonUtils.h>
@@ -68,304 +69,6 @@ namespace Setting
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-}
-
-/// Returns true if '\' followed by this character means "match this character
-/// literally". For example, '\.' matches a literal dot, '\(' matches a
-/// literal '(', '\-' matches a literal '-'.
-/// Returns false for escape sequences where the matched character is different
-/// from what follows '\': '\n' matches a newline (not 'n'), '\d' matches any
-/// digit (not 'd'), '\x41' matches 'A' (not 'x').
-static bool isLiteralEscape(char c)
-{
-    switch (c)
-    {
-        case '|':
-        case '(':
-        case ')':
-        case '^':
-        case '$':
-        case '.':
-        case '[':
-        case ']':
-        case '?':
-        case '*':
-        case '+':
-        case '\\':
-        case '{':
-        case '}':
-        case '-':
-            return true;
-        default:
-            return false;
-    }
-
-    UNREACHABLE();
-}
-
-/// Extracts a conservative fixed literal prefix from a ^-anchored regular expression.
-///
-/// In regex, '^' means "must start at the beginning of the string".
-/// This function walks the pattern after '^' and collects characters that
-/// are guaranteed to appear, in order, at the start of every matching string.
-/// It stops as soon as it hits any metacharacter or special construct where it
-/// cannot guarantee a fixed character. The parser is conservative and may miss
-/// some cases where a guaranteed fixed prefix could be derived but would be
-/// complicated to do so. The result is a prefix that is common to all possible
-/// matching strings.
-///
-/// "^abc"
-///   Every matching string starts with exactly "abc".
-///   Prefix: "abc".
-///
-/// "^abc.*"
-///   '.' means "any single character" and '*' means "zero or more times".
-///   So after "abc" anything can follow. We can only guarantee "abc".
-///   Prefix: "abc".
-///
-/// "^abc\\|def"
-///   A backslash before a special character removes its special meaning.
-///   '|' normally means "or" (see below), but '\\|' means a literal '|'
-///   character. So this matches strings starting with the text "abc|def".
-///   Prefix: "abc|def".
-///
-/// "^abc\\d"
-///   '\\d' means "any digit" (0-9). It is not a single fixed character,
-///   so we stop. We can only guarantee "abc".
-///   Prefix: "abc".
-///
-/// "^abc|def"
-///   '|' means "or" — match the left side or the right side.
-///   This means: (string starts with "abc") OR (string contains "def" anywhere).
-///   The right side has no '^', so it can match in the middle of a string.
-///   We cannot guarantee any prefix at all.
-///   Prefix: "".
-///
-/// "^abc[12]"
-///   '[12]' is a character class — it matches either '1' or '2'.
-///   Since the next character is not fixed, we stop at "abc".
-///   Prefix: "abc".
-///
-/// '(' is treated as a stop character (')' cannot appear unescaped in a
-/// valid regex without a preceding '('). Patterns like
-/// "^(abc)def" could theoretically yield prefix "abcdef", but analyzing
-/// group semantics (optional groups, alternation inside groups, etc.)
-/// is complex and error-prone. The alternation helper
-/// `extractCommonPrefixFromAlternationBranches` handles the important case of
-/// "^(branch1|branch2|...)" separately.
-static String extractFixedPrefixFromRegularExpression(const String & regexp)
-{
-    /// We can only analyze regexes that start with '^' — those are the only ones that guarantee a fixed prefix.
-    if (regexp.size() <= 1 || regexp[0] != '^')
-        return {};
-
-    String fixed_prefix;
-    const char * begin = regexp.data() + 1;
-    const char * pos = begin;
-    const char * end = regexp.data() + regexp.size();
-
-    while (pos < end)
-    {
-        switch (*pos)
-        {
-            case '\0':
-                pos = end;
-            break;
-
-            case '\\':
-            {
-                ++pos;
-                if (pos == end)
-                    break;
-
-                if (isLiteralEscape(*pos))
-                {
-                    fixed_prefix += *pos;
-                    ++pos;
-                }
-                else
-                    pos = end;
-
-                break;
-            }
-
-            /// non-trivial cases
-            case '|':
-                fixed_prefix.clear();
-            [[fallthrough]];
-            case '(':
-            case '[':
-            case '^':
-            case '$':
-            case '.':
-            case '+':
-                pos = end;
-            break;
-
-            /// Quantifiers that allow a zero number of occurrences.
-            case '{':
-            case '?':
-            case '*':
-                if (!fixed_prefix.empty())
-                    fixed_prefix.pop_back();
-
-            pos = end;
-            break;
-            default:
-                fixed_prefix += *pos;
-            pos++;
-            break;
-        }
-    }
-
-    return fixed_prefix;
-}
-
-/// Returns true if the expression contains any unescaped '|'.
-static bool expressionHasUnescapedAlternation(const String & expression)
-{
-    for (size_t i = 0; i < expression.size(); ++i)
-    {
-        /// \\| is not an alternation, but a literal '|', so skip the next character after a backslash.
-        if (expression[i] == '\\' && i + 1 < expression.size())
-        {
-            ++i;
-            continue;
-        }
-        if (expression[i] == '|')
-            return true;
-    }
-    return false;
-}
-
-/// Handles the simple alternation pattern "^(branch1|branch2|...)$?" where
-/// each branch is a plain literal string (no metacharacters, no nesting).
-///
-/// This is called when the expression contains an unescaped '|', meaning
-/// `extractFixedPrefixFromRegularExpression` cannot be used (it would stop
-/// at '|' or '('). Returns empty for any pattern more complex than simple
-/// literal branches inside a single group.
-///
-/// "^(abc-xx|abc-yy)"
-///   The '|' gives two alternatives: the string starts with "abc-xx" or "abc-yy".
-///   Both start with "abc-", so every matching string begins with "abc-".
-///   Prefix: "abc-".
-///
-/// "^(abc-xx-1|abc-xx-2|abc-yy-1)"
-///   Three alternatives. All three start with "abc-", but they diverge
-///   after that ('x' vs 'y'). So "abc-" is the longest common start.
-///   Prefix: "abc-".
-///
-/// "^(abc|def)"
-///   Two alternatives: "abc" and "def". They share nothing at the start —
-///   'a' vs 'd' already differ. We cannot guarantee any prefix.
-///   Prefix: "".
-///
-/// "^(abc|def)$"
-///   '$' means "must end at the end of the string". It constrains what
-///   comes after the match, but does not change what the string starts
-///   with. So the prefix analysis is the same as without '$'.
-///   Prefix: "".
-///
-/// Not supported (returns empty — could be improved in the future):
-///
-/// "^(abc.*|abd.*)"
-///   Branches contain '.*' (wildcard). We only handle plain literal branches.
-///   The common prefix "ab" could theoretically be extracted, but is not.
-///   Prefix: "".
-///
-/// "^(abc|abd)+"
-///   The '+' after the group means it must appear at least once.
-///   We only handle patterns where the group is followed by '$' or end
-///   of expression. Prefix: "".
-///
-/// "^(abc(1|2)|abc(3|4))"
-///   Branches contain nested groups. We only handle flat literal branches.
-///   The common prefix "abc" could theoretically be extracted, but is not.
-///   Prefix: "".
-static String extractCommonPrefixFromAlternationBranches(const String & expression)
-{
-    /// We only handle "^(literal1|literal2|...)$?".
-    /// Reject anything that doesn't start with "^(".
-    if (expression.size() < 4 || expression[0] != '^' || expression[1] != '(')
-        return {};
-
-    const char * pos = expression.data() + 2; /// Start right after "^("
-    const char * end = expression.data() + expression.size();
-
-    /// Split branches by '|'. Each branch must be a plain literal —
-    /// no metacharacters, no nested groups, no character classes.
-    /// If we see anything other than a literal char, escaped char, or '|',
-    /// we give up.
-    std::vector<String> branches;
-    String current_branch;
-
-    while (pos < end)
-    {
-        if (*pos == '\\' && pos + 1 < end)
-        {
-            char next = *(pos + 1);
-            if (isLiteralEscape(next))
-            {
-                current_branch += next;
-                pos += 2;
-            }
-            else
-                return {};
-        }
-        else if (*pos == '|')
-        {
-            /// Branch separator — save the current branch and start a new one.
-            branches.push_back(std::move(current_branch));
-            current_branch.clear();
-            ++pos;
-        }
-        else if (*pos == ')')
-        {
-            /// End of the group. Save the last branch.
-            branches.push_back(std::move(current_branch));
-            ++pos;
-
-            /// Allow only '$' or end of expression after ')'.
-            if (pos < end && *pos == '$')
-                ++pos;
-            if (pos != end)
-                return {};
-
-            break;
-        }
-        else if (
-            *pos == '(' || *pos == '[' || *pos == '.' || *pos == '*' || *pos == '+' || *pos == '?' || *pos == '{' || *pos == '^'
-            || *pos == '$')
-        {
-            /// Any metacharacter inside a branch — too complex, give up.
-            return {};
-        }
-        else
-        {
-            /// Plain literal character.
-            current_branch += *pos;
-            ++pos;
-        }
-    }
-
-    if (branches.size() < 2)
-        return {};
-
-    /// Compute the longest prefix common to all branches.
-    String common_prefix = branches[0];
-    for (size_t i = 1; i < branches.size(); ++i)
-    {
-        size_t common_len = 0;
-        size_t max_len = std::min(common_prefix.size(), branches[i].size());
-        while (common_len < max_len && common_prefix[common_len] == branches[i][common_len])
-            ++common_len;
-        common_prefix.resize(common_len);
-        if (common_prefix.empty())
-            return {};
-    }
-
-    return common_prefix;
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -532,31 +235,31 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+                auto prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
 
                 /// A pattern without wildcards is equivalent to an equality, so use an exact point range.
                 /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
                 /// and equivalent to `value = ''`, so it needs the exact empty-string point range too.
-                if (is_exact)
+                if (prefix.is_exact)
                 {
                     out.function = RPNElement::FUNCTION_IN_RANGE;
-                    out.range = Range(prefix);
+                    out.range = Range(prefix.prefix);
                     return true;
                 }
 
                 /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
-                if (prefix.empty())
+                if (prefix.prefix.empty())
                     return false;
 
-                if (!is_perfect)
+                if (!prefix.is_perfect)
                     out.relaxed = true;
 
-                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
 
                 out.function = RPNElement::FUNCTION_IN_RANGE;
                 out.range = !right_bound.empty()
-                    ? Range(prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix, true);
+                    ? Range(prefix.prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix.prefix, true);
 
                 return true;
             }
@@ -568,30 +271,30 @@ const KeyCondition::AtomMap KeyCondition::atom_map
                 if (value.getType() != Field::Types::String)
                     return false;
 
-                auto [prefix, is_perfect, is_exact] = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+                auto prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
 
                 /// A pattern without wildcards is equivalent to an inequality, so exclude an exact point range.
                 /// This must come before the empty-prefix bailout below: the empty pattern is wildcard-free
                 /// and equivalent to `value != ''`, so it needs the exact empty-string point exclusion too.
-                if (is_exact)
+                if (prefix.is_exact)
                 {
                     out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-                    out.range = Range(prefix);
+                    out.range = Range(prefix.prefix);
                     return true;
                 }
 
                 /// A non-exact pattern with an empty prefix (e.g. '%' or '_foo') gives no usable bound.
-                if (prefix.empty())
+                if (prefix.prefix.empty())
                     return false;
 
-                chassert(is_perfect);
+                chassert(prefix.is_perfect);
 
-                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
 
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
                 out.range = !right_bound.empty()
-                    ? Range(prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix, true);
+                    ? Range(prefix.prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix.prefix, true);
 
                 return true;
             }
@@ -653,25 +356,32 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 
                 /// ClickHouse `match` patterns must not contain NUL bytes.
                 /// Do not attempt to optimize such patterns.
-                if (expression.find('\0') != String::npos)
+                if (expression.contains('\0'))
                     return false;
 
-                String prefix;
-                if (!expressionHasUnescapedAlternation(expression))
-                    prefix = extractFixedPrefixFromRegularExpression(expression);
-                else
-                    prefix = extractCommonPrefixFromAlternationBranches(expression);
+                auto prefix = extractFixedPrefixFromRegularExpression(expression, /*requires_perfect_prefix*/ false);
 
-                if (prefix.empty())
+                /// A pattern that matches a single string is equivalent to an equality, so use an exact point range.
+                /// This must come before the empty-prefix bailout below: "^$" is equivalent to `value = ''`.
+                if (prefix.is_exact)
+                {
+                    out.function = RPNElement::FUNCTION_IN_RANGE;
+                    out.range = Range(prefix.prefix);
+                    return true;
+                }
+
+                if (prefix.prefix.empty())
                     return false;
 
-                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
+                if (!prefix.is_perfect)
+                    out.relaxed = true;
+
+                String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix.prefix);
 
                 out.function = RPNElement::FUNCTION_IN_RANGE;
                 out.range = !right_bound.empty()
-                    ? Range(prefix, true, right_bound, false)
-                    : Range::createLeftBounded(prefix, true);
-                out.relaxed = true;
+                    ? Range(prefix.prefix, true, right_bound, false)
+                    : Range::createLeftBounded(prefix.prefix, true);
 
                 return true;
             }
@@ -1399,7 +1109,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
 
     switch (node.type)
     {
-        case (ActionsDAG::ActionType::INPUT):
+        case ActionsDAG::ActionType::INPUT:
         {
             auto & input = inputs_mapping[&node];
             if (input == nullptr)
@@ -1409,7 +1119,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             res = input;
             break;
         }
-        case (ActionsDAG::ActionType::COLUMN):
+        case ActionsDAG::ActionType::COLUMN:
         {
             String name;
             if (node.column && node.column->getDataType() != TypeIndex::Function)
@@ -1426,20 +1136,20 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             res = &inverted_dag.addColumn(node.column, node.result_type, name);
             break;
         }
-        case (ActionsDAG::ActionType::ALIAS):
+        case ActionsDAG::ActionType::ALIAS:
         {
             /// Ignore aliases
             res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
             handled_inversion = true;
             break;
         }
-        case (ActionsDAG::ActionType::ARRAY_JOIN):
+        case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             const auto & arg = cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, false, /* boolean_context */ false);
             res = &inverted_dag.addArrayJoin(arg, {});
             break;
         }
-        case (ActionsDAG::ActionType::FUNCTION):
+        case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
             if (name == "not")
@@ -1823,6 +1533,8 @@ bool KeyCondition::hasOnlyConjunctions() const
 }
 
 
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
+
 static Field applyFunctionForField(
     const FunctionBasePtr & func,
     const DataTypePtr & arg_type,
@@ -1866,28 +1578,23 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-        /// Strip outer `LowCardinality` from the argument column and type before executing, keeping the
-        /// cached result full too. A monotonic-function chain is built against the outer-LowCardinality
-        /// stripped key type (`applyFunctionChainToColumn` strips it the same way), so a specialized
-        /// wrapper such as the UInt8->Bool `CAST` does `checkAndGetColumn<ColumnUInt8>` on the raw
-        /// column and aborts with a bad cast on a `ColumnLowCardinality` (e.g. a `LowCardinality(Bool)`
-        /// key compared with a `LowCardinality` constant). `removeLowCardinality` /
-        /// `convertToFullColumnIfLowCardinality` are no-ops for non-LC inputs.
-        if (args[0].column && args[0].column->lowCardinality())
+        /// Normalize the chain's input only: the incoming index column may still be `LowCardinality`
+        /// while the chain was built against a stripped key type. Interior links need nothing, because
+        /// each is built against the previous function's result type, which the cache below preserves.
+        if (args[0].column && args[0].column->lowCardinality() && !getArgumentTypeOfMonotonicFunction(*func)->lowCardinality())
         {
             args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
             args[0].type = removeLowCardinality(args[0].type);
         }
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, removeLowCardinality(func->getResultType()), result_name});
+        /// Invariant: every function receives the argument type it was built for, so the cached result
+        /// keeps this function's own result type and representation.
+        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column
-            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false)
-                  ->convertToFullColumnIfLowCardinality();
+            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false);
     }
 
     return {field.columns, field.row_idx, result_idx};
 }
-
-DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
@@ -3883,22 +3590,47 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             const auto atom_it = atom_map.find(func_name);
 
-            /// Analyze (x, y)
+            /// Analyze the point argument. It is either a `tuple` function of two key columns,
+            /// as in pointInPolygon((x, y), ...), or a single key column of type `Point`
+            /// (or another Tuple of two numeric elements), as in pointInPolygon(coord, ...).
 
-            /// TODO: support index analysis for first argument of Point/Tuple type.
-            if (!func.getArgumentAt(0).isFunction())
-                return false;
-
-            auto first_argument = func.getArgumentAt(0).toFunctionNode();
-            if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
-                return false;
-
-            for (size_t i = 0; i < 2; ++i)
+            auto point_argument = func.getArgumentAt(0);
+            if (point_argument.isFunction()
+                && point_argument.toFunctionNode().getFunctionName() == "tuple"
+                && point_argument.toFunctionNode().getArgumentsSize() == 2)
             {
-                auto name = first_argument.getArgumentAt(i).getColumnName();
+                auto first_argument = point_argument.toFunctionNode();
+                for (size_t i = 0; i < 2; ++i)
+                {
+                    auto name = first_argument.getArgumentAt(i).getColumnName();
+                    auto it = key_columns.find(name);
+                    if (it == key_columns.end())
+                    {
+                        out.key_columns.clear();
+                        break;
+                    }
+                    out.key_columns.push_back(it->second);
+                }
+            }
+
+            if (out.key_columns.empty())
+            {
+                /// A whole key column (or key expression) of type Tuple of two coordinates,
+                /// e.g. a `Point` column. Tuple values are ordered lexicographically, so the range
+                /// of such key column constrains the coordinates of the point - see the evaluation
+                /// in `checkInHyperrectangle`.
+                auto name = point_argument.getColumnName();
                 auto it = key_columns.find(name);
                 if (it == key_columns.end())
                     return false;
+
+                const auto * tuple_type = typeid_cast<const DataTypeTuple *>(
+                    info.key_expr->getSampleBlock().getByName(name).type.get());
+                if (!tuple_type || tuple_type->getElements().size() != 2
+                    || !isNativeNumber(tuple_type->getElements()[0])
+                    || !isNativeNumber(tuple_type->getElements()[1]))
+                    return false;
+
                 out.key_columns.push_back(it->second);
             }
             out.point_in_polygon_function_name = func_name;
@@ -4120,6 +3852,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 func_name = String(reversed);
             }
 
+            /// What the chain actually produces, which is what any cast appended below will be fed. This
+            /// stays unstripped: only the copy used to choose the comparison supertype is stripped.
+            DataTypePtr chain_result_type
+                = chain.empty() ? recursiveRemoveLowCardinality(key_expr_type) : chain.back()->getResultType();
+
             key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
             DataTypePtr key_expr_type_not_null;
             bool key_expr_type_is_nullable = false;
@@ -4235,7 +3972,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                                 : common_type;
 
-                            auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
+                            /// Declared against the type this cast is actually given, not the stripped
+                            /// `key_expr_type` used to pick the supertype.
+                            auto func_cast = createInternalCast({chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
 
                             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                             if (!single_point && !func_cast->hasInformationAboutMonotonicity())
@@ -5277,6 +5016,10 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
+    /// stripped type here rather than in each caller: several of them pass the key column's raw type.
+    current_type = recursiveRemoveLowCardinality(current_type);
+
     for (const auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
@@ -5706,6 +5449,42 @@ Ranges KeyCondition::extractBounds() const
     return std::move(bounds.ranges);
 }
 
+/// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`
+/// (an unbounded side of a `Range` is represented by a null-like Field), so map it to infinity.
+static Float64 coordinateBoundToFloat64(const Field & field, bool is_left_bound)
+{
+    if (field.isNull())
+        return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
+
+    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), field);
+}
+
+/// For pointInPolygon over a single key column of type Tuple of two coordinates (e.g. `Point`):
+/// derive the bounding box of the coordinates from the range of tuple values. Tuples are ordered
+/// lexicographically: the range [(x1, y1), (x2, y2)] constrains the first coordinate to [x1, x2]
+/// and constrains the second coordinate only if the first coordinate is fixed (x1 = x2).
+static void tupleRangeToBoundingBox(const Range & tuple_range, Float64 & x_min, Float64 & x_max, Float64 & y_min, Float64 & y_max)
+{
+    x_min = -std::numeric_limits<Float64>::infinity();
+    x_max = std::numeric_limits<Float64>::infinity();
+    y_min = -std::numeric_limits<Float64>::infinity();
+    y_max = std::numeric_limits<Float64>::infinity();
+
+    const Tuple * left = tuple_range.left.getType() == Field::Types::Tuple ? &tuple_range.left.safeGet<Tuple>() : nullptr;
+    const Tuple * right = tuple_range.right.getType() == Field::Types::Tuple ? &tuple_range.right.safeGet<Tuple>() : nullptr;
+
+    if (left && !left->empty())
+        x_min = coordinateBoundToFloat64((*left)[0], /*is_left_bound*/ true);
+    if (right && !right->empty())
+        x_max = coordinateBoundToFloat64((*right)[0], /*is_left_bound*/ false);
+
+    if (left && right && left->size() == 2 && right->size() == 2 && (*left)[0] == (*right)[0])
+    {
+        y_min = coordinateBoundToFloat64((*left)[1], /*is_left_bound*/ true);
+        y_max = coordinateBoundToFloat64((*right)[1], /*is_left_bound*/ false);
+    }
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -5753,12 +5532,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!element.monotonic_functions_chain.empty())
             {
                 key_range_storage = hyperrectangle[key_column];
-                /// The chain was built in `extractAtomFromTree` against an
-                /// `LowCardinality`-stripped key type; the runtime type must match.
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range_storage,
                     element.monotonic_functions_chain,
-                    recursiveRemoveLowCardinality(data_types[key_column]),
+                    data_types[key_column],
                     single_point
                 );
 
@@ -5942,30 +5719,38 @@ BoolMask KeyCondition::checkInHyperrectangle(
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
 
-            /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`. So we need to separately handle `Null` case here.
-            auto convert_to_float64 = [](const FieldRef & ref, bool is_left_bound) -> Float64
+            Float64 x_min = std::numeric_limits<Float64>::quiet_NaN();
+            Float64 x_max = std::numeric_limits<Float64>::quiet_NaN();
+            Float64 y_min = std::numeric_limits<Float64>::quiet_NaN();
+            Float64 y_max = std::numeric_limits<Float64>::quiet_NaN();
+
+            if (element.key_columns.size() == 1)
             {
-                if (ref.isNull())
+                /// The point is a whole key column of type Tuple of two coordinates (e.g. `Point`).
+                if (element.key_columns[0] >= hyperrectangle.size())
                 {
-                    return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
+                    rpn_stack.emplace_back(true, true);
+                    continue;
                 }
 
-                return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
-            };
-
-            if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
+                tupleRangeToBoundingBox(hyperrectangle[element.key_columns[0]], x_min, x_max, y_min, y_max);
             }
+            else
+            {
+                if (element.key_columns[0] >= hyperrectangle.size() || element.key_columns[1] >= hyperrectangle.size())
+                {
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
 
-            const auto & range_x = hyperrectangle[element.key_columns[0]];
-            const auto & range_y = hyperrectangle[element.key_columns[1]];
+                const auto & range_x = hyperrectangle[element.key_columns[0]];
+                const auto & range_y = hyperrectangle[element.key_columns[1]];
 
-            Float64 x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
-            Float64 x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
-            Float64 y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
-            Float64 y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
+                x_min = coordinateBoundToFloat64(range_x.left, /*is_left_bound*/ true);
+                x_max = coordinateBoundToFloat64(range_x.right, /*is_left_bound*/ false);
+                y_min = coordinateBoundToFloat64(range_y.left, /*is_left_bound*/ true);
+                y_max = coordinateBoundToFloat64(range_y.right, /*is_left_bound*/ false);
+            }
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))
             {
@@ -6402,59 +6187,62 @@ BoolMask KeyCondition::checkInHyperrectangle(
               *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
               */
 
-            if (element.key_columns.size() != 2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Point-in-polygon requires 2 key columns.");
-
-            size_t x_key_column = element.key_columns[0];
-            size_t y_key_column = element.key_columns[1];
-
-            auto [is_x_key_col_present, x_sparse_pos] = get_sparse_info(x_key_column);
-            auto [is_y_key_col_present, y_sparse_pos] = get_sparse_info(y_key_column);
-
-            if (!is_x_key_col_present && !is_y_key_col_present)
-            {
-                /// Neither coordinate is available — nothing to prune on.
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
-
-            /// `FieldVisitorConvertToNumber` cannot handle if `Field` is `Null`. So we need to separately handle `Null` case here.
-            auto convert_to_float64 = [](const FieldRef & ref, bool is_left_bound) -> Float64
-            {
-                if (ref.isNull())
-                {
-                    return is_left_bound ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity();
-                }
-
-                return applyVisitor(FieldVisitorConvertToNumber<Float64>(), static_cast<const Field &>(ref));
-            };
-
-            /// For missing coordinates, assume (-inf, +inf) — we can still prune on the available coordinate.
             Float64 x_min = std::numeric_limits<Float64>::quiet_NaN();
             Float64 x_max = std::numeric_limits<Float64>::quiet_NaN();
             Float64 y_min = std::numeric_limits<Float64>::quiet_NaN();
             Float64 y_max = std::numeric_limits<Float64>::quiet_NaN();
-            if (is_x_key_col_present)
+
+            if (element.key_columns.size() == 1)
             {
-                const auto & range_x = sparse_hyperrectangle[x_sparse_pos];
-                x_min = convert_to_float64(range_x.left, /*is_left_bound*/ true);
-                x_max = convert_to_float64(range_x.right, /*is_left_bound*/ false);
+                /// The point is a whole key column of type Tuple of two coordinates (e.g. `Point`).
+                auto [is_key_col_present, sparse_pos] = get_sparse_info(element.key_columns[0]);
+
+                if (!is_key_col_present)
+                {
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
+
+                tupleRangeToBoundingBox(sparse_hyperrectangle[sparse_pos], x_min, x_max, y_min, y_max);
             }
             else
             {
-                x_min = -std::numeric_limits<Float64>::infinity();
-                x_max = std::numeric_limits<Float64>::infinity();
-            }
-            if (is_y_key_col_present)
-            {
-                const auto & range_y = sparse_hyperrectangle[y_sparse_pos];
-                y_min = convert_to_float64(range_y.left, /*is_left_bound*/ true);
-                y_max = convert_to_float64(range_y.right, /*is_left_bound*/ false);
-            }
-            else
-            {
-                y_min = -std::numeric_limits<Float64>::infinity();
-                y_max = std::numeric_limits<Float64>::infinity();
+                size_t x_key_column = element.key_columns[0];
+                size_t y_key_column = element.key_columns[1];
+
+                auto [is_x_key_col_present, x_sparse_pos] = get_sparse_info(x_key_column);
+                auto [is_y_key_col_present, y_sparse_pos] = get_sparse_info(y_key_column);
+
+                if (!is_x_key_col_present && !is_y_key_col_present)
+                {
+                    /// Neither coordinate is available — nothing to prune on.
+                    rpn_stack.emplace_back(true, true);
+                    continue;
+                }
+
+                /// For missing coordinates, assume (-inf, +inf) — we can still prune on the available coordinate.
+                if (is_x_key_col_present)
+                {
+                    const auto & range_x = sparse_hyperrectangle[x_sparse_pos];
+                    x_min = coordinateBoundToFloat64(range_x.left, /*is_left_bound*/ true);
+                    x_max = coordinateBoundToFloat64(range_x.right, /*is_left_bound*/ false);
+                }
+                else
+                {
+                    x_min = -std::numeric_limits<Float64>::infinity();
+                    x_max = std::numeric_limits<Float64>::infinity();
+                }
+                if (is_y_key_col_present)
+                {
+                    const auto & range_y = sparse_hyperrectangle[y_sparse_pos];
+                    y_min = coordinateBoundToFloat64(range_y.left, /*is_left_bound*/ true);
+                    y_max = coordinateBoundToFloat64(range_y.right, /*is_left_bound*/ false);
+                }
+                else
+                {
+                    y_min = -std::numeric_limits<Float64>::infinity();
+                    y_max = std::numeric_limits<Float64>::infinity();
+                }
             }
 
             if (unlikely(std::isnan(x_min) || std::isnan(x_max) || std::isnan(y_min) || std::isnan(y_max)))

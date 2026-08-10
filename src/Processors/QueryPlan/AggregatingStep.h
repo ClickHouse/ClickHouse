@@ -13,6 +13,13 @@ namespace DB
 Block appendGroupingSetColumn(Block header);
 Block generateOutputHeader(const Block & input_header, const Names & keys, bool use_nulls);
 
+/// Whether an aggregation over `keys` - or, when `grouping_sets_params` is not empty, over any of its grouping sets -
+/// can dispatch to the single-`String` method, i.e. whether `enable_packed_string_keys_in_aggregation` can affect it
+/// at all. See `AggregatedDataVariants::chooseMethod` and `Aggregator::Params::enable_packed_string_keys`.
+/// Returns `true` when a key type cannot be resolved from `header`, so that a caller which uses this to decide whether
+/// the choice has to be communicated to a remote peer errs on the side of communicating it.
+bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
+
 class AggregatingProjectionStep;
 
 /// Aggregation. See AggregatingTransform.
@@ -94,7 +101,7 @@ public:
         UInt64 group,
         bool group_by_use_nulls);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override
     {
