@@ -1093,6 +1093,8 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
 
     auto emplace = [&](size_t row)
     {
+        // For some methods we simply don't have a set counterpart, so a map method is used.
+        // Thus we have to set a `mapped` even though it will be unused.
         if constexpr (State::has_mapped)
             state.emplaceKey(method.data, row, *aggregates_pool).setMapped(place);
         else
@@ -3285,8 +3287,6 @@ void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst, Table & table_src, Arena * arena, bool, bool prefetch, std::atomic<bool> &, const ParallelMergeWorker *)
     const
 {
-    /// A set method has no aggregate states, so merging two tables is a plain key union. The null group is
-    /// merged separately: `mergeDataNullKey` moves its presence over, its state-merging loops being empty.
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
@@ -3399,9 +3399,6 @@ requires SetAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
     Table & table_dst, AggregatedDataWithoutKey &, Table & table_src, Arena * arena) const
 {
-    /// The NULL group is carried over even here, exactly as the map version does: it lives outside the
-    /// cells, so the "no more keys" cutoff does not apply to it and dropping it would lose a group the
-    /// query is meant to return.
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
