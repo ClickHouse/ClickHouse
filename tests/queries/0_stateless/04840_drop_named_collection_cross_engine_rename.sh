@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-replicated-database
 # no-fasttest: named collections are stored in SQL, which the fast test does not set up.
-# no-replicated-database: the test creates databases with explicit engines and detaches them.
+# no-replicated-database: the test creates a database with the `Ordinary` engine and detaches databases.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,7 +18,8 @@ NC="nc_${CLICKHOUSE_DATABASE}"
 ORD="${CLICKHOUSE_DATABASE}_ordinary"
 ATOM="${CLICKHOUSE_DATABASE}_atomic"
 
-${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 -m -q "
+${CLICKHOUSE_CLIENT} --send_logs_level=error -m -q "
+SET allow_deprecated_database_ordinary = 1;
 CREATE DATABASE ${ORD} ENGINE = Ordinary;
 CREATE DATABASE ${ATOM} ENGINE = Atomic;
 "
