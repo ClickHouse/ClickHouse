@@ -30,28 +30,28 @@ ClickHouse 提供了多种机制，可在实时场景下加速海量数据上的
 </Frame>
 
 <div id="how-do-projections-work">
-  ## 投影 如何工作？
+  ## 投影如何工作？
 </div>
 
-实际上，Projection 可以视为原始表的一个额外隐藏表。Projection 可以采用与原始表不同的行顺序，因此也会拥有
+实际上，Projection 可以看作原始表的一个额外隐藏表。Projection 可以采用与原始表不同的行顺序，因此也会拥有
 不同于原始表的主索引，还能够自动
-以增量方式预先计算聚合值。因此，使用 投影
+以增量方式预先计算聚合值。因此，使用投影
 可以通过两个“调优旋钮”来加速查询执行：
 
 * **合理使用主索引**
 * **预先计算聚合**
 
-在某些方面，投影 与 [Materialized Views](/zh/concepts/features/materialized-views/index)
+投影在某些方面与 [Materialized Views](/zh/concepts/features/materialized-views/index)
 类似，后者同样允许使用多种行顺序，并在
 写入时预先计算聚合。
-不过，投影 会自动更新，
+不过，投影会自动更新，
 并与原始表保持同步；而 Materialized Views 则需要
 显式更新。当查询针对原始表时，
 ClickHouse 会自动对主键进行采样，并选择一个能够
 生成相同正确结果、但需要读取数据量最少的表，
 如下图所示：
 
-<Image img="/images/data-modeling/projections_1.webp" size="md" alt="ClickHouse 中的 投影" />
+<Image img="/images/data-modeling/projections_1.webp" size="md" alt="ClickHouse 中的投影" />
 
 <div id="smarter_storage_with_part_offset">
   ### 使用 `_part_offset` 实现更智能的存储
@@ -204,10 +204,10 @@ WHERE query_id='<query_id>'
 ```
 
 <div id="using-projections-to-speed-up-UK-price-paid">
-  ### 使用 projections 加速英国房产成交价查询
+  ### 使用 投影 加速英国房产成交价查询
 </div>
 
-为了演示如何使用 projections 提升查询性能，我们来看一个基于真实数据集的示例。在这个示例中，我们将使用 [UK Property Price Paid](/zh/get-started/sample-datasets/uk-price-paid) 教程中的表，该表包含 3003 万行。这个数据集也可以在我们的 [sql.clickhouse.com](https://sql.clickhouse.com/?query_id=6IDMHK3OMR1C97J6M9EUQS) 环境中查看。
+为了演示如何使用 投影 提升查询性能，我们来看一个基于真实数据集的示例。在这个示例中，我们将使用 [UK Property Price Paid](/zh/get-started/sample-datasets/uk-price-paid) 教程中的表，该表包含 3003 万行。这个数据集也可以在我们的 [sql.clickhouse.com](https://sql.clickhouse.com/?query_id=6IDMHK3OMR1C97J6M9EUQS) 环境中查看。
 
 如果你想了解这张表是如何创建的以及数据是如何插入的，可以参考[“The UK property prices dataset”](/zh/get-started/sample-datasets/uk-price-paid)页面。
 
@@ -248,7 +248,7 @@ ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2);
 ```
 
-让我们看看能否利用 projections 来加快这个查询。
+让我们看看能否利用 投影 来加快这个查询。
 
 为了保留原始表和查询结果，我们将创建一个新表，并使用 `INSERT INTO SELECT` 复制数据：
 

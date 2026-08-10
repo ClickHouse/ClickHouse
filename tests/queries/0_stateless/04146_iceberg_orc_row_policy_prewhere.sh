@@ -36,6 +36,9 @@ rm -rf "${ICEBERG_PATH}"
 # passes) but write a mix of ORC and Parquet data files into it.
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_insert_into_iceberg = 1;
+    -- StorageObjectStorage caches supportsPrewhere() at CREATE time from this
+    -- session setting; pinning it only on the SELECTs below is too late.
+    SET input_format_parquet_use_native_reader_v3 = 1;
 
     CREATE TABLE ${TEST_TABLE} (c0 Int64, c1 String)
         ENGINE = IcebergLocal('${ICEBERG_PATH}', 'Parquet');

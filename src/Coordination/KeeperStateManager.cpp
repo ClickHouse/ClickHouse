@@ -26,14 +26,15 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 log_file_overallocate_size;
     extern const CoordinationSettingsUInt64 max_flush_batch_size;
     extern const CoordinationSettingsUInt64 max_log_file_size;
-    extern const CoordinationSettingsUInt64 log_readahead_chunk_size;
+    extern const CoordinationSettingsNonZeroUInt64 log_readahead_chunk_size;
     extern const CoordinationSettingsUInt64 log_readahead_commit_window_bytes;
-    extern const CoordinationSettingsUInt64 log_readahead_eviction_timeout_ms;
+    extern const CoordinationSettingsNonZeroUInt64 log_readahead_eviction_timeout_ms;
     extern const CoordinationSettingsBool log_readahead_enabled;
-    extern const CoordinationSettingsUInt64 log_readahead_max_peer_readers;
+    extern const CoordinationSettingsNonZeroUInt64 log_readahead_max_peer_readers;
     extern const CoordinationSettingsUInt64 log_readahead_pool_threads;
     extern const CoordinationSettingsUInt64 log_readahead_serve_wait_timeout_ms;
-    extern const CoordinationSettingsUInt64 log_readahead_window_bytes;
+    extern const CoordinationSettingsNonZeroUInt64 log_readahead_window_bytes;
+    extern const CoordinationSettingsUInt64 min_time_between_fsyncs_ms;
     extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
     extern const CoordinationSettingsUInt64 log_startup_read_max_streams;
     extern const CoordinationSettingsNonZeroUInt64 log_startup_read_buffer_size;
@@ -344,6 +345,7 @@ KeeperStateManager::KeeperStateManager(
           FlushSettings
           {
               .max_flush_batch_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_flush_batch_size],
+              .min_time_between_fsyncs_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::min_time_between_fsyncs_ms],
           },
           buildReadAheadSettings(keeper_context_),
           keeper_context_))
@@ -428,11 +430,13 @@ void KeeperStateManager::save_state(const nuraft::srv_state & state)
 
     if (disk->existsFile(server_state_file_name))
     {
+        /// Back up the current state so it survives the rewrite below. The backup is kept
+        /// until the new state file is fully written and synced (removed at the end), so a
+        /// crash during the rewrite can always recover the previous state via read_state.
         auto buf = disk->writeFile(copy_lock_file);
         buf->finalize();
         disk->copyFile(server_state_file_name, *disk, old_path, ReadSettings{});
         disk->removeFile(copy_lock_file);
-        disk->removeFile(old_path);
     }
 
     auto server_state_file = disk->writeFile(server_state_file_name);
@@ -539,7 +543,12 @@ nuraft::ptr<nuraft::srv_state> KeeperStateManager::read_state()
             auto state = try_read_file(old_path);
             if (state)
             {
-                disk->moveFile(old_path, server_state_file_name);
+                /// Promote the backup to the live state file. Use copy + remove rather than
+                /// moveFile because moveFile is not implemented for plain (s3_plain) metadata,
+                /// which is a supported state disk; copyFile/removeFile are used by save_state
+                /// on the same disk and are supported everywhere.
+                disk->copyFile(old_path, *disk, server_state_file_name, ReadSettings{});
+                disk->removeFileIfExists(old_path);
                 return state;
             }
             disk->removeFile(old_path);

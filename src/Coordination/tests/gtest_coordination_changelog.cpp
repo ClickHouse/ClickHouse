@@ -4,6 +4,7 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -170,7 +171,7 @@ TEST(ChangelogValidRuns, ForwardGapAfterCompactionStartsNewRun)
     EXPECT_EQ(runs.end_position, 40u);
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestSimple)
+TEST_P(CoordinationTestWithCompression, ChangelogTestSimple)
 {
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
@@ -192,7 +193,34 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestSimple)
     EXPECT_EQ(changelog.log_entries(1, 2)->size(), 1);
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestFile)
+TEST_P(CoordinationTestWithCompression, ChangelogTestFlushThrottling)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000},
+        DB::FlushSettings{.max_flush_batch_size = 1000, .min_time_between_fsyncs_ms = 100},
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    Stopwatch watch;
+
+    /// The first flush is not throttled.
+    auto entry = getLogEntry("hello world", 77);
+    changelog.append(entry);
+    EXPECT_TRUE(changelog.flush());
+
+    /// The second flush must not start earlier than min_time_between_fsyncs_ms
+    /// after the start of the first one.
+    changelog.append(entry);
+    EXPECT_TRUE(changelog.flush());
+
+    EXPECT_GE(watch.elapsedMilliseconds(), 100);
+}
+
+TEST_P(CoordinationTestWithCompression, ChangelogTestFile)
 {
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
@@ -226,7 +254,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestFile)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + this->extension));
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogReadWrite)
+TEST_P(CoordinationTestWithCompression, ChangelogReadWrite)
 {
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
@@ -269,7 +297,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogReadWrite)
     EXPECT_EQ(10, entries_from_range->size());
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogWriteAt)
+TEST_P(CoordinationTestWithCompression, ChangelogWriteAt)
 {
 
     ChangelogDirTest test("./logs");
@@ -315,7 +343,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogWriteAt)
 }
 
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestAppendAfterRead)
+TEST_P(CoordinationTestWithCompression, ChangelogTestAppendAfterRead)
 {
 
     ChangelogDirTest test("./logs");
@@ -390,7 +418,7 @@ namespace
 
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestCompaction)
+TEST_P(CoordinationTestWithCompression, ChangelogTestCompaction)
 {
 
     ChangelogDirTest test("./logs");
@@ -464,7 +492,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestCompaction)
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 60);
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperations)
+TEST_P(CoordinationTestWithCompression, ChangelogTestBatchOperations)
 {
 
     ChangelogDirTest test("./logs");
@@ -521,7 +549,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperations)
     EXPECT_EQ(apply_changelog.entry_at(12)->get_term(), 40);
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperationsEmpty)
+TEST_P(CoordinationTestWithCompression, ChangelogTestBatchOperationsEmpty)
 {
 
     ChangelogDirTest test("./logs");
@@ -577,6 +605,8 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperationsEmpty)
     EXPECT_EQ(changelog_new.start_index(), 5);
     EXPECT_EQ(changelog_new.next_slot(), 11);
 
+    waitDurableLogs(changelog_new);
+
     DB::KeeperLogStore changelog_reader(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),
@@ -586,7 +616,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBatchOperationsEmpty)
 }
 
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtPreviousFile)
+TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtPreviousFile)
 {
 
     ChangelogDirTest test("./logs");
@@ -649,7 +679,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtPreviousFile)
     EXPECT_EQ(changelog_read.last_entry()->get_term(), 5555);
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtFileBorder)
+TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtFileBorder)
 {
 
     ChangelogDirTest test("./logs");
@@ -712,7 +742,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtFileBorder)
     EXPECT_EQ(changelog_read.last_entry()->get_term(), 5555);
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtAllFiles)
+TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtAllFiles)
 {
 
     ChangelogDirTest test("./logs");
@@ -763,7 +793,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestWriteAtAllFiles)
     EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + this->extension));
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestStartNewLogAfterRead)
+TEST_P(CoordinationTestWithCompression, ChangelogTestStartNewLogAfterRead)
 {
 
     ChangelogDirTest test("./logs");
@@ -836,7 +866,7 @@ void assertBrokenFileRemoved(const fs::path & directory, const fs::path & filena
 
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate)
+TEST_P(CoordinationTestWithCompression, ChangelogTestReadAfterBrokenTruncate)
 {
     static const fs::path log_folder{"./logs"};
 
@@ -923,7 +953,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate)
 }
 
 /// Truncating all entries
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate2)
+TEST_P(CoordinationTestWithCompression, ChangelogTestReadAfterBrokenTruncate2)
 {
 
     ChangelogDirTest test("./logs");
@@ -994,7 +1024,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate2)
 /// Truncating only some entries from the end
 /// For compressed logs we have no reliable way of knowing how many log entries were lost
 /// after we truncate some bytes from the end
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate3)
+TEST_P(CoordinationTestWithCompression, ChangelogTestReadAfterBrokenTruncate3)
 {
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
@@ -1044,7 +1074,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestReadAfterBrokenTruncate3)
     EXPECT_EQ(changelog_reader.last_entry()->get_term(), 7777);
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestMixedLogTypes)
+TEST_P(CoordinationTestWithCompression, ChangelogTestMixedLogTypes)
 {
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
@@ -1143,7 +1173,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestMixedLogTypes)
     }
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestLostFiles)
+TEST_P(CoordinationTestWithCompression, ChangelogTestLostFiles)
 {
 
     ChangelogDirTest test("./logs");
@@ -1178,7 +1208,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestLostFiles)
     ASSERT_THROW(changelog_reader.init(5, 0), DB::Exception);
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestLostFiles2)
+TEST_P(CoordinationTestWithCompression, ChangelogTestLostFiles2)
 {
 
     ChangelogDirTest test("./logs");
@@ -1216,7 +1246,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestLostFiles2)
     ASSERT_THROW(changelog_reader.init(5, 0), DB::Exception);
 }
 
-TYPED_TEST(CoordinationChangelogTest, TestRotateIntervalChanges)
+TEST_P(CoordinationTestWithCompression, TestRotateIntervalChanges)
 {
     using namespace Coordination;
 
@@ -1323,7 +1353,7 @@ TYPED_TEST(CoordinationChangelogTest, TestRotateIntervalChanges)
     EXPECT_TRUE(fs::exists("./logs/changelog_142_146.bin" + this->extension));
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestMaxLogSize)
+TEST_P(CoordinationTestWithCompression, ChangelogTestMaxLogSize)
 {
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
@@ -1387,7 +1417,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestMaxLogSize)
     }
 }
 
-TYPED_TEST(CoordinationChangelogTest, TestCompressedLogsMultipleRewrite)
+TEST_P(CoordinationTestWithCompression, TestCompressedLogsMultipleRewrite)
 {
     using namespace Coordination;
     ChangelogDirTest logs("./logs");
@@ -1443,7 +1473,7 @@ TYPED_TEST(CoordinationChangelogTest, TestCompressedLogsMultipleRewrite)
     }
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesSmooth)
+TEST_P(CoordinationTestWithCompression, ChangelogInsertThreeTimesSmooth)
 {
 
     ChangelogDirTest test("./logs");
@@ -1510,7 +1540,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesSmooth)
 }
 
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogInsertMultipleTimesSmooth)
+TEST_P(CoordinationTestWithCompression, ChangelogInsertMultipleTimesSmooth)
 {
 
     ChangelogDirTest test("./logs");
@@ -1542,7 +1572,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertMultipleTimesSmooth)
     EXPECT_EQ(changelog.next_slot(), 36 * 7 + 1);
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesHard)
+TEST_P(CoordinationTestWithCompression, ChangelogInsertThreeTimesHard)
 {
 
     ChangelogDirTest test("./logs");
@@ -1608,7 +1638,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogInsertThreeTimesHard)
     }
 }
 
-TYPED_TEST(CoordinationChangelogTest, TestLogGap)
+TEST_P(CoordinationTestWithCompression, TestLogGap)
 {
     using namespace Coordination;
     ChangelogDirTest logs("./logs");
@@ -1648,7 +1678,7 @@ TYPED_TEST(CoordinationChangelogTest, TestLogGap)
     EXPECT_EQ(changelog1.next_slot(), 61);
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogTestBrokenWriteAt)
+TEST_P(CoordinationTestWithCompression, ChangelogTestBrokenWriteAt)
 {
     if (this->enable_compression)
         GTEST_SKIP() << "Body always writes with compress_logs=false; running under the compressed type "
@@ -1726,7 +1756,7 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBrokenWriteAt)
     }
 }
 
-TYPED_TEST(CoordinationChangelogTest, ChangelogLoadingFromInvalidName)
+TEST_P(CoordinationTestWithCompression, ChangelogLoadingFromInvalidName)
 {
     if (this->enable_compression)
         GTEST_SKIP() << "The renamed changelog path below hardcodes the .bin extension, which is "
@@ -1854,7 +1884,7 @@ TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendWhileHistoricalReadPaused)
     ASSERT_NE(entries, nullptr);
     ASSERT_EQ(entries->size(), 5u);
     for (size_t i = 0; i < 5; ++i)
-        EXPECT_EQ((*entries)[i]->get_term(), static_cast<ulong>(i + 1));
+        EXPECT_EQ((*entries)[i]->get_term(), static_cast<uint64_t>(i + 1));
 }
 
 
@@ -2009,7 +2039,7 @@ TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
         for (size_t i = 0; i < entries->size(); ++i)
         {
             const auto term = (*entries)[i]->get_term();
-            EXPECT_TRUE(term == static_cast<ulong>(i + 1) || term == 999u) << "Unexpected term " << term << " at position " << i;
+            EXPECT_TRUE(term == static_cast<uint64_t>(i + 1) || term == 999u) << "Unexpected term " << term << " at position " << i;
             if (term == 999u)
                 seen_new_term = true;
             else
@@ -2022,7 +2052,7 @@ TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
     ASSERT_NE(follow_up, nullptr);
     ASSERT_EQ(follow_up->size(), 5u);
     for (size_t i = 0; i < 4; ++i)
-        EXPECT_EQ((*follow_up)[i]->get_term(), static_cast<ulong>(i + 1));
+        EXPECT_EQ((*follow_up)[i]->get_term(), static_cast<uint64_t>(i + 1));
     EXPECT_EQ((*follow_up)[4]->get_term(), 999u);
 }
 
@@ -2217,7 +2247,7 @@ TYPED_TEST(CoordinationChangelogTest, DirectPathEvictedReadsAndByteHints)
 
     for (size_t i = 0; i < 10; ++i)
     {
-        EXPECT_EQ((*entries)[i]->get_term(), static_cast<ulong>(i + 1))
+        EXPECT_EQ((*entries)[i]->get_term(), static_cast<uint64_t>(i + 1))
             << "Wrong term at index " << (i + 1);
     }
 

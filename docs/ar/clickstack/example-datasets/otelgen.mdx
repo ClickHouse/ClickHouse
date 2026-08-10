@@ -15,51 +15,43 @@ keywords: ['clickstack', 'otelgen', 'بيانات اصطناعية', 'OpenTeleme
 <Tabs>
   <Tab title="ClickStack المُدار">
     <Steps>
-      <Step>
-        ### المتطلبات الأساسية
-
-        يفترض هذا الدليل أنك أكملت [دليل البدء الخاص بـ Managed ClickStack](/ar/clickstack/deployment/managed)، وأن لديك OpenTelemetry Collector قيد التشغيل مع نقاط نهاية OTLP gRPC (`4317`) وHTTP (`4318`) بحيث يمكن الوصول إليهما من الجهاز الذي تشغّل عليه `otelgen`. وإذا كنت قد [أمّنت الـ collector](/ar/clickstack/ingesting-data/collector#securing-the-collector) باستخدام `OTLP_AUTH_TOKEN`، فاحتفظ بهذه القيمة في متناولك.
+      <Step title="المتطلبات المسبقة" id="prerequisites-managed">
+        يفترض هذا الدليل أنك أكملت [دليل Getting Started لـ Managed ClickStack](/ar/clickstack/deployment/managed)، وأن لديك OpenTelemetry Collector قيد التشغيل مع إتاحة الوصول إلى نقطتَي نهاية OTLP عبر gRPC (`4317`) وHTTP (`4318`) من الجهاز الذي تشغّل عليه `otelgen`. وإذا كنت قد [أمّنت المجمّع](/ar/clickstack/ingesting-data/collector#securing-the-collector) باستخدام `OTLP_AUTH_TOKEN`، فاحتفظ بهذه القيمة في متناول اليد.
       </Step>
 
-      <Step>
-        ### تثبيت otelgen
-
-        ثبّته باستخدام Homebrew:
+      <Step title="تثبيت otelgen" id="install-otelgen-managed">
+        ثبّت الأداة باستخدام Homebrew:
 
         ```shell
         brew install krzko/tap/otelgen
         ```
 
-        أو ثبّته باستخدام Go:
+        أو ثبّتها باستخدام Go:
 
         ```shell
         go install github.com/krzko/otelgen@latest
         ```
       </Step>
 
-      <Step>
-        ### تعيين متغيرات البيئة
-
-        صدّر نقطة نهاية الـ collector، ورمز المصادقة إذا كان الـ collector مؤمّنًا:
+      <Step title="تعيين متغيرات البيئة" id="set-env-vars-managed">
+        صدّر نقطة نهاية المجمّع، وإذا كان المجمّع مؤمّنًا، فصدّر أيضًا رمز المصادقة:
 
         ```shell
         export OTEL_ENDPOINT=<host>:4317
         export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
         ```
 
-        استخدم المضيف والمنفذ الخاصين بالـ collector. وإذا كان الـ collector يعمل على الجهاز نفسه، فستكون القيمة `localhost:4317`.
+        استخدم اسم المضيف والمنفذ الخاصين بالمجمّع. وإذا كان المجمّع يعمل على الجهاز نفسه، فستكون القيمة `localhost:4317`.
 
         <Info>
-          **collector غير مؤمّن**
+          **مجمّع غير مؤمّن**
 
-          يكون ClickStack OpenTelemetry collector بدون مصادقة افتراضيًا. إذا لم تتبع [تأمين الـ collector](/ar/clickstack/ingesting-data/collector#securing-the-collector) لتعيين `OTLP_AUTH_TOKEN`، فتجاوز `OTLP_AUTH_TOKEN` هنا واحذف الخيار `--header` من الأوامر أدناه.
+          يكون ClickStack OpenTelemetry collector غير موثَّق افتراضيًا. إذا لم تتبع [تأمين المجمّع](/ar/clickstack/ingesting-data/collector#securing-the-collector) لتعيين `OTLP_AUTH_TOKEN`، فتخطَّ `OTLP_AUTH_TOKEN` هنا واحذف الخيار `--header` من الأوامر أدناه.
         </Info>
       </Step>
 
-      <Step>
-        ### إنشاء traces
-
-        أرسل دفعة قصيرة من traces متعددة الـ span:
+      <Step title="توليد التتبعات" id="generate-traces-managed">
+        أرسل دفعة قصيرة من traces متعددة الـ spans:
 
         ```shell
         otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
@@ -69,12 +61,10 @@ keywords: ['clickstack', 'otelgen', 'بيانات اصطناعية', 'OpenTeleme
           traces multi
         ```
 
-        يشير `--rate` إلى عدد الـ traces في الثانية، وتشير `--duration` إلى مدة التشغيل بالثواني. ويعطّل `--insecure` استخدام TLS لاتصال gRPC، وهو مطلوب عند توجيه `otelgen` إلى منفذ OTLP غير المشفّر الخاص بالـ collector.
+        يشير `--rate` إلى عدد traces في الثانية، ويشير `--duration` إلى مدة التشغيل بالثواني. ويعطّل `--insecure` بروتوكول TLS لاتصال gRPC، وهذا مطلوب عند توجيه `otelgen` إلى منفذ OTLP غير المشفّر الخاص بالمجمّع.
       </Step>
 
-      <Step>
-        ### إنشاء logs
-
+      <Step title="توليد السجلات" id="generate-logs-managed">
         ```shell
         otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
           --header "authorization=${OTLP_AUTH_TOKEN}" \
@@ -84,10 +74,8 @@ keywords: ['clickstack', 'otelgen', 'بيانات اصطناعية', 'OpenTeleme
         ```
       </Step>
 
-      <Step>
-        ### إنشاء metrics
-
-        لا تراعي الأوامر الفرعية الخاصة بـ metrics الخيار `--duration`. شغّل الأمر ثم اضغط `Ctrl+C` بعد بضع ثوانٍ لإيقافه.
+      <Step title="توليد المقاييس" id="generate-metrics-managed">
+        لا تراعي الأوامر الفرعية الخاصة بـ `metrics` الخيار `--duration`. شغّل الأمر ثم اضغط `Ctrl+C` بعد بضع ثوانٍ لإيقافه.
 
         ```shell
         otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
@@ -100,41 +88,33 @@ keywords: ['clickstack', 'otelgen', 'بيانات اصطناعية', 'OpenTeleme
         يدعم `otelgen` أيضًا الأوامر الفرعية `gauge` و`histogram` و`up-down-counter` و`exponential-histogram` ضمن `metrics`.
       </Step>
 
-      <Step>
-        ### التحقق في ClickStack
-
-        افتح ClickStack UI من ClickHouse Cloud console. في عرض `Search`، بدّل المصدر بين `Logs` و`Traces` للتأكد من ظهور أحداث جديدة. اضبط النطاق الزمني على `Last 15 minutes`. ثم افتح `Chart Explorer`، وحدد `Metrics`، وأنشئ مخططًا لأحد أسماء المقاييس التي ينتجها `otelgen` (مثل `otelgen.metrics.sum`) للتحقق من استيعاب المقاييس.
+      <Step title="التحقق في ClickStack" id="verify-managed">
+        افتح واجهة ClickStack من ClickHouse Cloud console. في عرض `Search`، بدّل الـ source بين `Logs` و`Traces` للتأكد من ظهور الأحداث الجديدة. اضبط النطاق الزمني على `Last 15 minutes`. افتح `Chart Explorer`، ثم حدّد `Metrics`، وأنشئ chart لأحد metric names التي يُنتجها `otelgen` (على سبيل المثال `otelgen.metrics.sum`) للتحقق من استيعاب المقاييس.
       </Step>
     </Steps>
   </Tab>
 
   <Tab title="ClickStack مفتوح المصدر">
     <Steps>
-      <Step>
-        ### المتطلبات الأساسية
-
-        يفترض هذا الدليل أنك بدأت تشغيل Open Source ClickStack باستخدام [إرشادات الصورة الشاملة](/ar/clickstack/getting-started/oss)، وأن نقاط نهاية OTLP (`4317` لـ gRPC و`4318` لـ HTTP) متاحة للوصول. كما تحتاج إلى مفتاح API للإدخال من واجهة HyperDX ضمن `Team Settings > API Keys`.
+      <Step title="المتطلبات المسبقة" id="prerequisites-oss">
+        يفترض هذا الدليل أنك شغّلت Open Source ClickStack باستخدام [تعليمات صورة الكل في واحد](/ar/clickstack/getting-started/oss)، وأن نقاط نهاية OTLP (`4317` لـ gRPC و`4318` لـ HTTP) يمكن الوصول إليها. كما ستحتاج إلى مفتاح API للإدخال من واجهة HyperDX ضمن `Team Settings > API Keys`.
       </Step>
 
-      <Step>
-        ### تثبيت otelgen
-
-        ثبّت باستخدام Homebrew:
+      <Step title="تثبيت otelgen" id="install-otelgen-oss">
+        ثبّت الأداة باستخدام Homebrew:
 
         ```shell
         brew install krzko/tap/otelgen
         ```
 
-        أو ثبّته باستخدام Go:
+        أو ثبّتها باستخدام Go:
 
         ```shell
         go install github.com/krzko/otelgen@latest
         ```
       </Step>
 
-      <Step>
-        ### تعيين متغيرات البيئة
-
+      <Step title="تعيين متغيرات البيئة" id="set-env-vars-oss">
         صدّر نقطة نهاية المجمّع ومفتاح API للإدخال:
 
         ```shell
@@ -143,10 +123,8 @@ keywords: ['clickstack', 'otelgen', 'بيانات اصطناعية', 'OpenTeleme
         ```
       </Step>
 
-      <Step>
-        ### إنشاء التتبعات
-
-        أرسل دفعة قصيرة من التتبعات متعددة الـspan:
+      <Step title="إنشاء التتبعات" id="generate-traces-oss">
+        أرسل دفعة قصيرة من التتبعات متعددة الـ span:
 
         ```shell
         otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
@@ -156,12 +134,10 @@ keywords: ['clickstack', 'otelgen', 'بيانات اصطناعية', 'OpenTeleme
           traces multi
         ```
 
-        يشير `--rate` إلى عدد التتبعات في الثانية، ويشير `--duration` إلى مدة التشغيل بالثواني. ويؤدي `--insecure` إلى تفعيل اتصال gRPC غير مشفّر مع المجمّع المحلي.
+        يشير `--rate` إلى عدد التتبعات في الثانية، بينما يشير `--duration` إلى مدة التشغيل بالثواني. ويُفعّل `--insecure` استخدام gRPC بنص صريح مع المجمّع المحلي.
       </Step>
 
-      <Step>
-        ### إنشاء السجلات
-
+      <Step title="إنشاء السجلات" id="generate-logs-oss">
         ```shell
         otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
           --header "authorization=${CLICKSTACK_API_KEY}" \
@@ -171,10 +147,8 @@ keywords: ['clickstack', 'otelgen', 'بيانات اصطناعية', 'OpenTeleme
         ```
       </Step>
 
-      <Step>
-        ### إنشاء المقاييس
-
-        لا تدعم الأوامر الفرعية الخاصة بـ`metrics` الخيار `--duration`. شغّل الأمر ثم اضغط `Ctrl+C` بعد بضع ثوانٍ لإيقافه.
+      <Step title="إنشاء المقاييس" id="generate-metrics-oss">
+        لا تدعم الأوامر الفرعية `metrics` الخيار `--duration`. شغّل الأمر ثم اضغط `Ctrl+C` بعد بضع ثوانٍ لإيقافه.
 
         ```shell
         otelgen --otel-exporter-otlp-endpoint ${OTEL_ENDPOINT} \
@@ -187,10 +161,8 @@ keywords: ['clickstack', 'otelgen', 'بيانات اصطناعية', 'OpenTeleme
         يدعم `otelgen` أيضًا الأوامر الفرعية `gauge` و`histogram` و`up-down-counter` و`exponential-histogram` ضمن `metrics`.
       </Step>
 
-      <Step>
-        ### التحقق في ClickStack
-
-        زُر [http://localhost:8080](http://localhost:8080) لفتح واجهة ClickStack. في عرض `Search`، بدّل المصدر بين `Logs` و`Traces` للتأكد من ظهور أحداث جديدة. اضبط النطاق الزمني على `Last 15 minutes`. ثم افتح `Chart Explorer`، وحدد `Metrics`، وأنشئ مخططًا لأحد أسماء المقاييس التي ينتجها `otelgen` (على سبيل المثال `otelgen.metrics.sum`) للتحقق من إدخال المقاييس.
+      <Step title="التحقق في ClickStack" id="verify-oss">
+        انتقل إلى [http://localhost:8080](http://localhost:8080) لفتح واجهة ClickStack. في عرض `Search`، بدّل الـ source بين `Logs` و`Traces` للتأكد من ظهور أحداث جديدة. اضبط النطاق الزمني على `Last 15 minutes`. ثم افتح `Chart Explorer`، واختر `Metrics`، وأنشئ chart لأحد أسماء المقاييس التي ينتجها `otelgen` (مثل `otelgen.metrics.sum`) للتحقق من إدخال المقاييس.
       </Step>
     </Steps>
   </Tab>

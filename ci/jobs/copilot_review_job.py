@@ -206,17 +206,6 @@ def _pre_review_prompt(info):
     )
 
 
-def _reauth_gh():
-    """Force re-auth of the main gh context (outside any GH_CONFIG_DIR override).
-
-    Called at job start regardless of current auth status, so the token is
-    always fresh when the agent invokes `env -u GH_CONFIG_DIR`.
-    """
-    from ci.praktika.gh_auth import GHAuth
-
-    GHAuth.auth_from_settings()
-
-
 def _post_review():
     """Post REVIEW_FILE as a PR comment. Raises on failure, failing the job."""
     subprocess.run(
@@ -377,7 +366,6 @@ def review(run_once, agent_name):
         print("Not a PR, skipping")
         return
 
-    _reauth_gh()
     os.makedirs("./ci/tmp", exist_ok=True)
     prompt = _pre_review_prompt(info)
     _run(prompt, run_once, agent_name)

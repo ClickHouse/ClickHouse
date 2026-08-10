@@ -71,8 +71,8 @@ SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ```response title=Response
--- O campo `trace` contém o stack trace no momento da amostragem.
-Row 1:
+-- The `trace` field contains the stack trace at the moment of sampling.
+Linha 1:
 ──────
 event_date:              2019-11-19
 event_time:              2019-11-19 18:57:23
@@ -99,8 +99,8 @@ addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadP
 **Aplicando a função ao stack trace completo**
 
 ```sql title=Query
--- A função arrayMap neste exemplo processa cada elemento individual do array trace pela função addressToLine.
--- O resultado desse processamento é exibido na coluna trace_source_code_lines da saída.
+-- The arrayMap function in this example processing each individual element of the trace array by the addressToLine function.
+-- The result of this processing is seen in the trace_source_code_lines column of output.
 
 SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
@@ -110,7 +110,7 @@ LIMIT 1
 ```
 
 ```response title=Response
-Row 1:
+Linha 1:
 ──────
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /usr/lib/debug/usr/bin/clickhouse

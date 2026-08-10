@@ -37,7 +37,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <fmt/core.h>
 
 using namespace std::literals;
@@ -470,6 +469,8 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
+
+    ParserAllCollectionsOfLiterals collections_parser(/* allow_map_= */ false);
     ParserFunction func_parser;
 
     ASTPtr identifier;
@@ -478,8 +479,10 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    /// If it's neither literal, nor identifier, nor function, than it's possible list of pairs
-    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    /// If it's neither literal (scalar or collection), nor identifier, nor function, then it's possibly a list of pairs
+    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected)
+        && !(pos->type == TokenType::OpeningSquareBracket && collections_parser.parse(pos, value, expected))
+        && !id_parser.parse(pos, value, expected))
     {
         ParserKeyValuePairsList kv_pairs_list;
         ParserToken open(TokenType::OpeningRoundBracket);
@@ -952,18 +955,23 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!literal || literal->value.getType() != Field::Types::String)
         return;
 
+    /// Only literals actually tokenized from the query carry valid token info; a synthesized
+    /// literal may have inherited a stale map entry from a freed literal that reused its address.
+    if (!literal->hasTokenInfo())
+        return;
+
     /// Look up token position from the map stored in Expected
     if (!expected.literal_token_map)
         return;
 
-    auto it = expected.literal_token_map->find(literal);
-    if (it == expected.literal_token_map->end())
+    const auto * token_info = expected.literal_token_map->find(literal);
+    if (!token_info)
         return;
 
     chassert(is_like || is_regexp);
     expected.highlight({
-       .begin = it->second.begin,
-       .end = it->second.end,
+       .begin = token_info->begin,
+       .end = token_info->end,
        .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
@@ -1516,7 +1524,7 @@ public:
         /// expr AS type
         if (state == 0)
         {
-            ASTPtr type_node;
+            std::optional<String> type_text;
 
             if (as_keyword_parser.ignore(pos, expected))
             {
@@ -1524,7 +1532,7 @@ public:
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
                     as_keyword_parser.ignore(pos, expected) &&
-                    ParserDataType().parse(pos, type_node, expected) &&
+                    (type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!insertAlias(alias))
@@ -1533,7 +1541,7 @@ public:
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], type_node)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1556,13 +1564,13 @@ public:
 
                 pos = old_pos;
 
-                if (ParserDataType().parse(pos, type_node, expected) &&
+                if ((type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], type_node)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1920,23 +1928,36 @@ protected:
 
 class SubstringLayer : public Layer
 {
+    bool comma_mode = false; /// true when the first separator was a comma
+    bool second_separator_was_comma = false; /// true when the second separator was a comma
 public:
     SubstringLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
+        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length, ...)
         ///
         /// 0: Parse first separator: FROM or comma (-> 1), or closing bracket
         ///    when a lambda is pending (round-trip for the merged-tuple lambda
         ///    sugar, see issue #104605)
         /// 1: Parse second separator: FOR or comma (-> 2)
+        /// 2: Parse further commas, but only when every separator so far was a
+        ///    comma, i.e. in the purely functional form (stays at 2)
         /// 1 or 2: Parse closing bracket (finished)
 
         if (state == 0)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FROM).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                comma_mode = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 1;
+            }
+            else if (ParserKeyword(Keyword::FROM).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1972,8 +1993,17 @@ public:
 
         if (state == 1)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                second_separator_was_comma = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 2;
+            }
+            else if (ParserKeyword(Keyword::FOR).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1981,6 +2011,26 @@ public:
                     return false;
 
                 state = 2;
+            }
+        }
+        /// In the purely functional form, accept further arguments so that a too-long call is
+        /// reported by the function as `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` rather than as a
+        /// syntax error. `substr`/`mid`/`byteSlice` go through the generic `FunctionLayer` and
+        /// already accept any argument count, so a definition that was persisted after DDL
+        /// normalization rewrote one of them to `substring` (see `canonicalNameCanReparseShape`
+        /// in `FunctionNameNormalizer.cpp`, which now prevents that rewrite) would otherwise
+        /// not re-parse.
+        /// Both flags are required: a further comma is accepted only when EVERY separator so
+        /// far was a comma, so a form that used the SQL-standard FROM or FOR keyword anywhere
+        /// keeps its fixed shape and stays a syntax error, exactly as before this change.
+        else if (comma_mode && second_separator_was_comma && state == 2)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
             }
         }
 
@@ -2987,6 +3037,61 @@ private:
     bool if_permitted;
 };
 
+/// Layer for table function `eval`, which accepts either a usual expression argument
+/// or a bare `SELECT` query argument. The query argument is wrapped into a subquery,
+/// so `eval(SELECT ...)` is just syntactic sugar for `eval((SELECT ...))`.
+class EvalLayer : public Layer
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        if (state == 0)
+        {
+            state = 1;
+
+            ASTPtr query;
+            auto select_pos = pos;
+            auto select_expected = expected;
+
+            if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
+            {
+                pos = select_pos;
+                expected = select_expected;
+                elements = {make_intrusive<ASTSubquery>(std::move(query))};
+                finished = true;
+                return true;
+            }
+        }
+
+        if (ParserToken(TokenType::Comma).ignore(pos, expected))
+        {
+            action = Action::OPERAND;
+            return mergeElement();
+        }
+
+        if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        {
+            action = Action::OPERATOR;
+
+            if (!isCurrentElementEmpty() || !elements.empty())
+                if (!mergeElement())
+                    return false;
+
+            finished = true;
+        }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("eval", std::move(elements));
+        return true;
+    }
+};
+
 /// We use Layers to parse elements consisting of other elements.
 /// In some cases, we are interested in the first element that is an identifier
 /// e.g. for a table function it would be the name of the function
@@ -3033,6 +3138,8 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
             return std::make_unique<ViewLayer>(false);
         if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
+        if (function_name_lowercase == "eval")
+            return std::make_unique<EvalLayer>();
     }
 
     if (function_name == "tuple")
@@ -3960,11 +4067,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (op.type == OperatorType::Cast)
     {
-        ASTPtr type_ast;
-        if (!ParserDataType().parse(pos, type_ast, expected))
+        std::optional<String> type_text = parseDataTypeAsText(pos, expected);
+        if (!type_text)
             return Action::NONE;
 
-        layers.back()->pushOperand(make_intrusive<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
+        layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
         return Action::OPERATOR;
     }
 

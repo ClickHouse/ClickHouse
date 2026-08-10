@@ -106,9 +106,9 @@ KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size
     }
     catch (...)
     {
-        // NuRaft's log_entries_ext contract: return nullptr when an entry cannot be retrieved
-        // (e.g. a concurrent writeAt truncation races with the lock-free read phase).
-        // NuRaft treats nullptr as a signal to trigger snapshot fallback.
+        /// NuRaft's log_entries_ext contract: return nullptr when an entry cannot be retrieved
+        /// (e.g. a concurrent writeAt truncation races with the lock-free read phase).
+        /// NuRaft treats nullptr as a signal to trigger snapshot fallback.
         tryLogCurrentException(log, fmt::format("While reading changelog entries [{}, {})", start, end));
         return nullptr;
     }

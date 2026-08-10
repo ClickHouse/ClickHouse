@@ -36,8 +36,7 @@ If you would like to test the EC2 host logs integration before configuring your 
 - EC2 instance metadata service accessible (enabled by default)
 
 <Steps>
-<Step>
-#### Verify EC2 metadata is accessible {#verify-metadata}
+<Step title="Verify EC2 metadata is accessible" id="verify-metadata">
 
 From your EC2 instance, verify the metadata service is accessible:
 ```bash
@@ -59,8 +58,7 @@ You should see your instance ID, region, and instance type. If these commands fa
 EC2 metadata is available at `http://169.254.169.254` from within the instance. The OpenTelemetry `resourcedetection` processor uses this endpoint to automatically enrich logs with cloud context.
 </Note>
 </Step>
-<Step>
-#### Verify syslog files exist {#verify-syslog}
+<Step title="Verify syslog files exist" id="verify-syslog">
 
 Verify that your EC2 instance is writing syslog files:
 ```bash
@@ -76,8 +74,7 @@ tail -20 /var/log/syslog
 tail -20 /var/log/messages
 ```
 </Step>
-<Step>
-#### Install OpenTelemetry Collector {#install-collector}
+<Step title="Install OpenTelemetry Collector" id="install-collector">
 
 Install the OpenTelemetry Collector Contrib distribution on your EC2 instance:
 ```bash
@@ -92,8 +89,7 @@ sudo mv otelcol-contrib /usr/local/bin/
 otelcol-contrib --version
 ```
 </Step>
-<Step>
-#### Create collector configuration {#create-config}
+<Step title="Create collector configuration" id="create-config">
 
 Create a configuration file for the OpenTelemetry Collector at `/etc/otelcol-contrib/config.yaml`:
 ```bash
@@ -242,8 +238,7 @@ The `resourcedetection` processor automatically adds these attributes to every l
 - `host.name`: Instance hostname
 </Info>
 </Step>
-<Step>
-#### Set ClickStack API key {#set-api-key}
+<Step title="Set ClickStack API key" id="set-api-key">
 
 Export your ClickStack API key as an environment variable:
 ```bash
@@ -256,8 +251,7 @@ echo 'export CLICKSTACK_API_KEY="your-api-key-here"' >> ~/.bashrc
 source ~/.bashrc
 ```
 </Step>
-<Step>
-#### Run the collector {#run-collector}
+<Step title="Run the collector" id="run-collector">
 
 Start the OpenTelemetry Collector:
 ```bash
@@ -270,8 +264,7 @@ CLICKSTACK_API_KEY="your-api-key-here" /usr/local/bin/otelcol-contrib --config /
 Configure the collector to run as a systemd service so it starts automatically on boot and restarts on failure. See the [OpenTelemetry Collector documentation](https://opentelemetry.io/docs/collector/deployment/) for details.
 </Info>
 </Step>
-<Step>
-#### Verifying Logs in HyperDX {#verifying-logs}
+<Step title="Verifying Logs in HyperDX" id="verifying-logs">
 
 Once the collector is running, log into HyperDX and verify logs are flowing with EC2 metadata:
 
@@ -296,8 +289,7 @@ Once the collector is running, log into HyperDX and verify logs are flowing with
 For users who want to test the EC2 host logs integration before configuring their production instances, we provide a sample dataset with simulated EC2 metadata.
 
 <Steps>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 Download the sample log file:
 ```bash
@@ -313,8 +305,7 @@ The dataset includes:
 - Kernel messages and firewall activity
 - Mix of normal operations and notable events
 </Step>
-<Step>
-#### Create test collector configuration {#test-config}
+<Step title="Create test collector configuration" id="test-config">
 
 Create a file named `ec2-host-logs-demo.yaml` with the following configuration:
 ```yaml
@@ -385,8 +376,7 @@ EOF
 For demo purposes, we manually add EC2 metadata using the `resource` processor. In production with real EC2 instances, use the `resourcedetection` processor which automatically queries the EC2 metadata API.
 </Note>
 </Step>
-<Step>
-#### Run ClickStack with demo configuration {#run-demo}
+<Step title="Run ClickStack with demo configuration" id="run-demo">
 
 Run ClickStack with the demo logs and configuration:
 
@@ -399,8 +389,7 @@ docker run --name clickstack-demo \
   docker.hyperdx.io/hyperdx/hyperdx-all-in-one:latest
 ```
 </Step>
-<Step>
-#### Verify logs in HyperDX {#verify-demo-logs}
+<Step title="Verify logs in HyperDX" id="verify-demo-logs">
 
 Once the collector is running:
 
@@ -432,11 +421,11 @@ You should see logs with simulated EC2 context including:
 To help you get started monitoring EC2 host logs with ClickStack, we provide essential visualizations with cloud context.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Import the pre-built dashboard" id="import-dashboard">
 
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
@@ -447,8 +436,7 @@ To help you get started monitoring EC2 host logs with ClickStack, we provide ess
 
 <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Finish import"/>
 </Step>
-<Step>
-#### View the dashboard {#created-dashboard}
+<Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 

@@ -1,5 +1,8 @@
 #include <Storages/System/StorageSystemTables.h>
+#include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
+
+#include <set>
 
 #include <Access/ContextAccess.h>
 #include <Core/UUID.h>
@@ -277,13 +280,16 @@ ColumnPtr getFilteredTables(
                 for (; table_it->isValid(); table_it->next())
                 {
                     const auto & table = table_it->table();
-                    if (!table)
-                        continue; /// Table was concurrently dropped and should be skipped
+                    /// A null table means the storage object could not be resolved (concurrent
+                    /// drop, or unresolvable DataLakeCatalog metadata). Keep the name with an
+                    /// empty engine / Nil uuid rather than dropping the row, so predicates on
+                    /// `engine`/`uuid` see it (and it can be filtered out) instead of the table
+                    /// silently vanishing from system.tables.
                     table_column->insert(table_it->name());
                     if (engine_column)
-                        engine_column->insert(table->getName());
+                        engine_column->insert(table ? table->getName() : "");
                     if (uuid_column)
-                        uuid_column->insert(table->getStorageID().uuid);
+                        uuid_column->insert(table ? table->getStorageID().uuid : UUIDHelpers::Nil);
                 }
             }
             else
@@ -343,6 +349,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
         {"unique_key", std::make_shared<DataTypeString>(), "The unique key expression specified in the table (UNIQUE KEY clause)."},
+        {"skipping_indices_types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the distinct types of data skipping indices defined on the table (for example minmax, set, bloom_filter, ngrambf_v1, tokenbf_v1, text, vector_similarity). Empty for tables without skip indices."},
         {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
@@ -428,7 +435,7 @@ public:
         : ISource(std::move(header))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
-        , databases(std::move(databases_))
+        , databases_cursor(std::move(databases_))
         , context(Context::createCopy(context_))
         , tables_filter(std::move(tables_filter_))
     {
@@ -451,28 +458,48 @@ protected:
         return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
     }
 
+    void fillSkippingIndicesTypes(MutableColumns & columns, const StorageMetadataPtr & metadata_snapshot, size_t & res_index)
+    {
+        Array skipping_indices_types;
+        if (metadata_snapshot)
+        {
+            /// Collect distinct types, sorted, so the result is deterministic.
+            /// Skip implicitly created indices (e.g. via add_minmax_index_for_numeric_columns)
+            /// so the column reports only skip indices explicitly defined on the table.
+            std::set<String> types;
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                if (!index.isImplicitlyCreated())
+                    types.insert(index.type);
+
+            skipping_indices_types.reserve(types.size());
+            for (const auto & type : types)
+                skipping_indices_types.push_back(type);
+        }
+        columns[res_index++]->insert(skipping_indices_types);
+    }
+
     void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
     {
-        if (table)
+        /// `table` can be null for an unresolvable table (e.g. a DataLakeCatalog table whose
+        /// metadata cannot be fetched). Always advance `res_index` so the column stays aligned
+        /// with the others; otherwise the whole system.tables scan aborts.
+        const auto metadata_snapshot = table ? table->getInMemoryMetadataPtr(context, false) : nullptr;
+        if (!metadata_snapshot)
         {
-            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
-            if (!metadata_snapshot)
-            {
-                columns[res_index++]->insertDefault();
-                return;
-            }
-
-            NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
-            if (!query_parameters_array.empty())
-            {
-                Array changes;
-                for (const auto & [key, value] : query_parameters_array)
-                    changes.push_back(Tuple{key, value});
-                columns[res_index++]->insert(changes);
-            }
-            else
-                columns[res_index++]->insertDefault();
+            columns[res_index++]->insertDefault();
+            return;
         }
+
+        NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
+        if (!query_parameters_array.empty())
+        {
+            Array changes;
+            for (const auto & [key, value] : query_parameters_array)
+                changes.push_back(Tuple{key, value});
+            columns[res_index++]->insert(changes);
+        }
+        else
+            columns[res_index++]->insertDefault();
     }
 
 
@@ -480,7 +507,7 @@ protected:
     /// so no per-table access check is needed.
     size_t fillTableNamesOnly(MutableColumns & res_columns)
     {
-        auto table_details = database->getLightweightTablesIteratorWithHint(context,
+        auto table_details = databases_cursor.getDatabase()->getLightweightTablesIteratorWithHint(context,
                                 /* filter_by_table_name */ {},
                                 /* skip_not_loaded */ false,
                                 tables_filter);
@@ -496,14 +523,13 @@ protected:
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(database_name);
+                res_columns[res_index++]->insert(databases_cursor.getDatabaseName());
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(table_detail.name);
 
             ++count;
         }
-        ++database_idx;
         return count;
     }
 
@@ -522,26 +548,8 @@ protected:
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
-            if (tables_it && !tables_it->isValid())
-                ++database_idx;
-
-            while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
-            {
-                database_name = databases->getDataAt(database_idx);
-                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-
-                if (!database)
-                {
-                    /// Database was deleted just now or the user has no access.
-                    ++database_idx;
-                    continue;
-                }
-
-                break;
-            }
-
             /// This is for temporary tables. They are output in single block regardless to max_block_size.
-            if (database_idx >= databases->size())
+            if (!databases_cursor.advanceToNextDatabase())
             {
                 if (context->hasSessionContext())
                 {
@@ -617,7 +625,13 @@ protected:
                                 // parameterized view parameters
                                 fillParametralizedViewData(res_columns, table.second, res_index);
                             }
-                            else if (src_index == 21 && columns_mask[src_index])
+                            // skipping_indices_types
+                            else if (src_index == 20 && columns_mask[src_index])
+                            {
+                                const auto metadata_snapshot = table.second->getInMemoryMetadataPtr(context, false);
+                                fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
+                            }
+                            else if (src_index == 22 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -635,7 +649,7 @@ protected:
                                 ++res_index;
                             }
                             // total_bytes
-                            else if (src_index == 22 && columns_mask[src_index])
+                            else if (src_index == 23 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -665,6 +679,7 @@ protected:
                 return Chunk(std::move(res_columns), num_rows);
             }
 
+            const String & database_name = databases_cursor.getDatabaseName();
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             /// This is for queries similar to 'show tables', where only name of the table is needed
@@ -675,38 +690,48 @@ protected:
                         ((needed_columns[0].name == "name" && needed_columns[1].name == "database") ||
                             (needed_columns[0].name == "database" && needed_columns[1].name == "name")));
 
-            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables)
+            /// A database whose iterator survived a block boundary was started on the
+            /// slow path and must be finished there, not re-emitted whole.
+            if ((needs_one_column || needs_two_columns) && !need_to_check_access_for_tables && !databases_cursor.hasTablesIterator())
             {
                 size_t rows_added = fillTableNamesOnly(res_columns);
                 rows_count += rows_added;
+                databases_cursor.skipCurrentDatabase();
                 continue;
             }
 
-            if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIteratorWithHint(context,
+            const DatabasePtr & database = databases_cursor.getDatabase();
+            if (!databases_cursor.hasTablesIterator())
+                databases_cursor.setTablesIterator(database->getTablesIteratorWithHint(context,
                         /* filter_by_table_name */ {},
                         /* skip_not_loaded */ false,
-                        tables_filter);
+                        tables_filter));
 
-            for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
+            auto & tables_it = databases_cursor.getTablesIterator();
+            for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())
             {
-                auto table_name = tables_it->name();
+                auto table_name = tables_it.name();
                 if (!tables.contains(table_name))
                     continue;
 
                 if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                StoragePtr table = tables_it->table();
-                if (!table)
-                    continue; /// Table was concurrently dropped between iterator snapshot and table() call so we should skip it
+                StoragePtr table = tables_it.table();
+                /// A null table means the storage object could not be resolved: either the table
+                /// was concurrently dropped between the iterator snapshot and this table() call, or
+                /// (for DataLakeCatalog databases) its metadata is unresolvable. We still emit a row
+                /// for it -- with defaults/NULL for every column that needs the opened storage object
+                /// -- so a single broken table neither drops itself from the listing nor aborts the
+                /// whole system.tables scan. Every metadata-dependent column below is guarded on
+                /// `table` being non-null.
 
                 TableLockHolder lock;
 
                 /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
                 /// and it's not protected internally by other mutexes
                 static const size_t DATA_PATHS_INDEX = 5;
-                if (columns_mask[DATA_PATHS_INDEX])
+                if (table && columns_mask[DATA_PATHS_INDEX])
                 {
                     lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
                     if (!lock)
@@ -726,12 +751,14 @@ protected:
                     res_columns[res_index++]->insert(table_name);
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(tables_it->uuid());
+                    res_columns[res_index++]->insert(tables_it.uuid());
 
                 if (columns_mask[src_index++])
                 {
-                    chassert(table != nullptr);
-                    res_columns[res_index++]->insert(table->getName());
+                    if (table)
+                        res_columns[res_index++]->insert(table->getName());
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])
@@ -739,13 +766,17 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    chassert(lock != nullptr);
                     Array table_paths_array;
-                    if (auto paths = table->tryGetDataPaths())
+                    /// `lock` is only acquired above when `table` is non-null.
+                    if (table)
                     {
-                        table_paths_array.reserve(paths->size());
-                        for (const String & path : *paths)
-                            table_paths_array.push_back(path);
+                        chassert(lock != nullptr);
+                        if (auto paths = table->tryGetDataPaths())
+                        {
+                            table_paths_array.reserve(paths->size());
+                            for (const String & path : *paths)
+                                table_paths_array.push_back(path);
+                        }
                     }
                     res_columns[res_index++]->insert(table_paths_array);
                     /// We don't need the lock anymore
@@ -795,7 +826,11 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
                 {
-                    ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
+                    /// Skip the catalog query for a null-storage row (unresolvable DataLakeCatalog
+                    /// table, or one dropped concurrently with the scan): tryGetCreateTableQuery
+                    /// re-enters DatabaseDataLake::getCreateTableQueryImpl, which can throw again
+                    /// and abort the whole scan. A null ast makes the block below emit defaults.
+                    ASTPtr ast = table ? database->tryGetCreateTableQuery(table_name, context) : nullptr;
                     auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
                     if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
@@ -881,6 +916,9 @@ protected:
                 }
 
                 if (columns_mask[src_index++])
+                    fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
+
+                if (columns_mask[src_index++])
                 {
                     auto policy = table ? table->tryGetStoragePolicy().value_or(nullptr) : nullptr;
                     if (policy)
@@ -917,7 +955,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table->totalBytes(context_copy);
+                        auto total_bytes = table ? table->totalBytes(context_copy) : std::nullopt;
                         if (total_bytes)
                             res_columns[res_index]->insert(*total_bytes);
                         else
@@ -936,7 +974,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes_uncompressed = table->totalBytesUncompressed(context_copy->getSettingsRef());
+                        auto total_bytes_uncompressed = table ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
                         if (total_bytes_uncompressed)
                             res_columns[res_index]->insert(*total_bytes_uncompressed);
                         else
@@ -1116,14 +1154,10 @@ protected:
 private:
     std::vector<UInt8> columns_mask;
     UInt64 max_block_size;
-    ColumnPtr databases;
+    DatabaseTablesCursor databases_cursor;
     NameSet tables;
-    size_t database_idx = 0;
-    DatabaseTablesIteratorPtr tables_it;
     ContextPtr context;
     bool done = false;
-    DatabasePtr database;
-    std::string database_name;
     TablesFilter tables_filter;
 };
 

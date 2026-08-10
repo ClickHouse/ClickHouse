@@ -23,7 +23,7 @@ A ingestão eficiente de dados é a base de implantações do ClickHouse com alt
   ## Inserções síncronas por padrão
 </div>
 
-Por padrão, as inserções no ClickHouse são síncronas. Cada consulta de inserção cria imediatamente uma parte de armazenamento em disco, incluindo metadados e índices.
+Por padrão, as inserções no ClickHouse são síncronas.  Cada consulta de inserção cria imediatamente uma parte de armazenamento em disco, incluindo metadados e índices.
 
 <Info>
   **Use inserções síncronas se puder agrupar os dados em lotes no cliente**
@@ -170,10 +170,10 @@ Ela ainda permite calcular, no lado do cliente, os valores de colunas MATERIALIZ
   ### HTTP
 </div>
 
-Ao contrário de muitos bancos de dados tradicionais, o ClickHouse também oferece uma interface HTTP. **Ela, por sua vez, prioriza compatibilidade e flexibilidade.** Ela permite enviar dados em [qualquer formato compatível](/pt-BR/guides/clickhouse/data-formats/intro) — incluindo JSON, CSV, Parquet e outros — e tem amplo suporte na maioria dos clientes ClickHouse, incluindo Python, Java, JavaScript e Rust.
+Diferentemente de muitos bancos de dados tradicionais, o ClickHouse também oferece uma interface HTTP. **Esta, por sua vez, prioriza compatibilidade e flexibilidade.** Ela permite enviar dados em [qualquer formato compatível](/pt-BR/guides/clickhouse/data-formats/intro)—incluindo JSON, CSV, Parquet e outros—e tem amplo suporte na maioria dos clientes ClickHouse, incluindo Python, Java, JavaScript e Rust.
 
-Isso costuma ser preferível ao protocolo nativo do ClickHouse, pois permite que o tráfego seja redirecionado facilmente por balanceadores de carga. Esperamos pequenas diferenças no desempenho de inserção em relação ao protocolo nativo, que tem um pouco menos de sobrecarga.
+Isso costuma ser preferível ao protocolo nativo do ClickHouse, pois permite que o tráfego seja facilmente direcionado por balanceadores de carga. É de se esperar uma pequena diferença no desempenho de inserção com o protocolo nativo, que tem um pouco menos de sobrecarga.
 
-No entanto, ela não oferece a integração mais profunda do protocolo nativo e não pode realizar otimizações no lado do cliente, como o cálculo de valores materializados ou a conversão automática para o formato Native. Embora inserções via HTTP ainda possam ser compactadas usando headers HTTP padrão (por exemplo, `Content-Encoding: lz4`), a compressão é aplicada ao payload inteiro, e não a blocos de dados individuais. Essa interface costuma ser preferida em ambientes nos quais simplicidade de protocolo, balanceamento de carga ou ampla compatibilidade de formatos são mais importantes do que desempenho bruto.
+No entanto, ela não conta com a integração mais profunda do protocolo nativo e não consegue realizar otimizações no lado do cliente, como o cálculo de valores materializados ou a conversão automática para o formato Native. Embora inserções via HTTP ainda possam ser comprimidas usando cabeçalhos HTTP padrão (por exemplo, `Content-Encoding: lz4`), a compressão é aplicada ao payload inteiro, e não a blocos de dados individuais. Essa interface costuma ser preferida em ambientes em que a simplicidade do protocolo, o balanceamento de carga ou a ampla compatibilidade de formatos são mais importantes do que o desempenho bruto.
 
-Para uma descrição mais detalhada dessas interfaces, consulte [aqui](/pt-BR/concepts/features/interfaces/overview).
+Para uma descrição mais detalhada dessas interfaces, veja [aqui](/pt-BR/concepts/features/interfaces/overview).

@@ -206,6 +206,7 @@ struct LogFileSettings
 struct FlushSettings
 {
     uint64_t max_flush_batch_size = 1000;
+    uint64_t min_time_between_fsyncs_ms = 5;
 };
 
 struct LogLocation
@@ -226,9 +227,9 @@ struct LogReadPlan
     struct FileSpan
     {
         ChangelogFileDescriptionPtr file_description;
-        size_t position = 0;
-        uint64_t first_index = 0;
-        size_t count = 0;
+        size_t position = 0; /// byte offset of the first record in the file
+        uint64_t first_index = 0; /// log index of the record at `position`
+        size_t count = 0; /// number of consecutive records covered by this span
     };
 
     /// Speculative fill cursors. Present only when read-ahead is engaged.
@@ -333,7 +334,7 @@ struct LogEntryStorage
     /// returns the prefix decoded so far.
     /// TSA: changelog_lock released by caller after plan build; file lifetime held by ChangelogFileDescriptionPtr
     /// refs in the plan.
-    LogEntriesPtr executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms = 0) const TSA_NO_THREAD_SAFETY_ANALYSIS;
+    LogEntriesPtr executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms) const TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Build a read-ahead plan. Must be called under changelog_lock (shared).
     /// Returns a plan with read_ahead_window set if read-ahead is active, absent to fall back to executeReadPlan.
@@ -341,7 +342,7 @@ struct LogEntryStorage
 
     /// Serve a read-ahead request for reader_id. Must be called without changelog_lock.
     /// Returns nullptr on compaction or snapshot fallback.
-    /// TSA: takes readers_mutex briefly then releases; fill/serve coordination under ReadAheadReader::deque_mutex.
+    /// TSA: takes readers_mutex briefly then releases; fill/serve coordination under ReadAheadReader::fill_serve_mutex.
     LogEntriesPtr serveReadAhead(int32_t reader_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     bool isPeerReadAheadEnabled() const { return readahead_settings.enabled; }
@@ -495,7 +496,7 @@ private:
     void evictIdleReadersLocked(std::chrono::steady_clock::time_point now) TSA_REQUIRES(readers_mutex);
 
     /// Self-locking wrapper for callers that don't already hold readers_mutex.
-    void maybeEvictIdleReaders();
+    void evictIdleReadersIfNeeded();
 
     /// Reap a terminal reader for reader_id (if any), enforce max_peer_readers, and create/schedule a new
     /// reader. Returns nullptr when at capacity (caller should fall back to direct read).
@@ -508,7 +509,7 @@ private:
         TSA_REQUIRES(readers_mutex);
 
     /// Install the new plan into an existing reader (rewind if non-sequential, push fill cursors).
-    /// Caller holds reader.deque_mutex.
+    /// Caller holds reader.fill_serve_mutex.
     void installPlanLocked(ReadAheadReader & reader, const LogReadPlan & plan);
 
     /// Serve items from reader's deque, falling back to direct read for any tail that is not available.
@@ -525,7 +526,7 @@ private:
     mutable std::mutex readers_mutex;
     std::unordered_map<int32_t, std::shared_ptr<ReadAheadReader>> peer_readers TSA_GUARDED_BY(readers_mutex);
     std::unique_ptr<ThreadPool> readahead_pool TSA_GUARDED_BY(readers_mutex);
-    /// Written under readers_mutex; read via relaxed load by maybeEvictIdleReaders' fast-path gate.
+    /// Written under readers_mutex; read via relaxed load by evictIdleReadersIfNeeded's fast-path gate.
     /// Stores the raw tick count since std::atomic<time_point> would need an internal lock.
     std::atomic<std::chrono::steady_clock::rep> last_eviction_scan_ticks{0};
 

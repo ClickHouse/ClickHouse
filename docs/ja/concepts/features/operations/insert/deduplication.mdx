@@ -18,8 +18,8 @@ ClickHouse は、高速なデータ挿入を重視して設計されています
 * クエリでは、重複が存在する可能性を考慮する必要があります
 
 <div class="transparent-table">
-  |                                                                                     |                                                                                                                                                                                                                                |
-  | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  |                                                                                      |                                                                                                                                                                                                                                |
+  | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
   | <Image img="/images/guides/developer/de_duplication.webp" alt="重複排除のロゴ" size="sm" /> | ClickHouse では、重複排除をはじめとするさまざまなトピックについて、無料のトレーニングを提供しています。[Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) は、その出発点として最適です。 |
 </div>
 
@@ -345,9 +345,9 @@ FROM hackernews_views_vcmt
 複数のクライアントやスレッドから行を挿入する際に重複排除を実装したい場合、`VersionedCollapsingMergeTree` テーブルは非常に便利です。
 
 <div id="why-arent-my-rows-being-deduplicated">
-  ## 行が重複排除されないのはなぜですか？
+  ## なぜ行が重複排除されないのですか？
 </div>
 
-挿入した行が重複排除されない理由の 1 つは、`INSERT` ステートメントで非冪等な関数または式を使用していることです。たとえば、`createdAt DateTime64(3) DEFAULT now()` というカラムを含む行を挿入している場合、各行の `createdAt` カラムには一意のデフォルト値が設定されるため、それらの行は必ず一意になります。MergeTree / ReplicatedMergeTree テーブルエンジンは、挿入された各行が一意のチェックサムを生成するため、それらの行を重複排除すべきものとして認識できません。
+挿入された行が重複排除されない理由の 1 つとして、`INSERT` ステートメント内で非冪等な関数や式を使用していることが挙げられます。たとえば、`createdAt DateTime64(3) DEFAULT now()` というカラム定義を含む行を挿入している場合、各行の `createdAt` カラムには一意のデフォルト値が入るため、行は必ず一意になります。MergeTree / ReplicatedMergeTree テーブルエンジンは、挿入される各行ごとに一意のチェックサムが生成されるため、それらを重複行として判別できません。
 
-この場合、行の各 Batch に対して独自の `insert_deduplication_token` を指定することで、同じ Batch を複数回 insert しても同じ行が再度挿入されないようにできます。この設定の使い方の詳細については、[`insert_deduplication_token` のドキュメント](/ja/reference/settings/session-settings#insert_deduplication_token)を参照してください。
+この場合は、同じバッチを複数回 insert しても同じ行が再度挿入されないように、各バッチに対して独自の `insert_deduplication_token` を指定できます。この設定の使い方の詳細については、[`insert_deduplication_token` のドキュメント](/ja/reference/settings/session-settings#insert_deduplication_token)を参照してください。

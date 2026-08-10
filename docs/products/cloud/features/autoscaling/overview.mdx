@@ -7,7 +7,7 @@ title: 'Automatic scaling'
 doc_type: 'guide'
 ---
 
-import ScalePlanFeatureBadge from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 Scaling is the ability to adjust available resources to meet client demands. Scale and Enterprise (with standard 1:4 profile) tier services can be scaled horizontally by calling an API programmatically, or changing settings on the UI to adjust system resources. These services can also be **autoscaled** vertically to meet application demands.
 
@@ -19,7 +19,7 @@ Scale and Enterprise tiers support both single and multi-replica services, where
 
 ## How scaling works in ClickHouse Cloud {#how-scaling-works-in-clickhouse-cloud}
 
-Currently, ClickHouse Cloud supports vertical autoscaling and manual horizontal scaling for Scale tier services.
+ClickHouse Cloud supports manual horizontal scaling for Scale and Enterprise tier services. Scale tier services also support vertical autoscaling; Enterprise tier vertical autoscaling support depends on the profile, as described below. [Horizontal autoscaling](/products/cloud/features/autoscaling/horizontal-autoscaling) is available in Private Preview for Scale and Enterprise tier services.
 
 For Enterprise tier services scaling works as follows:
 
@@ -40,6 +40,7 @@ This balances the need for existing queries to complete, while at the same time 
 ## Learn more {#learn-more}
 
 - [Vertical autoscaling](/products/cloud/features/autoscaling/vertical) — Automatic CPU and memory scaling based on usage
+- [Horizontal autoscaling](/products/cloud/features/autoscaling/horizontal-autoscaling) — Automatic replica scaling based on workload demand
 - [Horizontal scaling](/products/cloud/features/autoscaling/horizontal) — Manual replica scaling via API or UI
 - [Make Before Break (MBB)](/products/cloud/features/autoscaling/make-before-break) — How ClickHouse Cloud performs seamless scaling operations
 - [Automatic idling](/products/cloud/features/autoscaling/idling) — Cost savings through automatic service suspension

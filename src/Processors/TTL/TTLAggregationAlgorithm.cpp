@@ -1,8 +1,13 @@
-#include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
+#include <Processors/TTL/TTLAggregationAlgorithm.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Processors/TTL/TTLAggregationAlgorithm.h>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <DataTypes/DataTypeLowCardinality.h>
+
+#include <Core/Settings.h>
 
 #include <unordered_set>
 
@@ -19,12 +24,56 @@ namespace Setting
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsBool optimize_group_by_constant_keys;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
+}
+
+namespace
+{
+
+bool isCoveredByGroupByOrSet(const TTLDescription & description, const std::string & column_name)
+{
+    return std::ranges::contains(description.group_by_keys, column_name)
+        || std::ranges::contains(description.set_parts | std::views::transform(&TTLAggregateDescription::column_name), column_name);
+}
+
+std::pair<AggregateDescription, TTLAggregateDescription> prepareAnyAggregate(const ColumnWithTypeAndName & column, const ContextPtr & context)
+{
+    AggregateDescription aggregate;
+    aggregate.column_name = column.name;
+    aggregate.argument_names = {column.name};
+    AggregateFunctionProperties properties;
+    aggregate.function = AggregateFunctionFactory::instance().get("any", NullsAction::EMPTY, {column.type}, {}, properties);
+
+    TTLAggregateDescription set_part;
+    set_part.column_name = column.name;
+    set_part.expression_result_column_name = column.name;
+    set_part.expression = std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{{column.name, aggregate.function->getResultType()}}), ExpressionActionsSettings(context));
+
+    return {std::move(aggregate), std::move(set_part)};
+}
+
+TTLDescription addImplicitlyAggregatedColumns(TTLDescription description, const Block & header, const ContextPtr & context)
+{
+    for (const auto & column : header)
+    {
+        if (isCoveredByGroupByOrSet(description, column.name))
+            continue;
+
+        auto [aggregate, set_part] = prepareAnyAggregate(column, context);
+
+        description.aggregate_descriptions.push_back(std::move(aggregate));
+        description.set_parts.push_back(std::move(set_part));
+    }
+
+    return description;
+}
+
 }
 
 TTLAggregationAlgorithm::TTLAggregationAlgorithm(
@@ -35,7 +84,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     bool force_,
     const Block & header_,
     const MergeTreeData & storage_)
-    : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
+    : ITTLAlgorithm(ttl_expressions_, addImplicitlyAggregatedColumns(description_, header_, storage_.getContext()), old_ttl_info_, current_time_, force_)
     , header(header_)
 {
     current_key_value.resize(description.group_by_keys.size());
@@ -68,10 +117,12 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         settings[Setting::enable_software_prefetch_in_aggregation],
         /*only_merge=*/false,
         settings[Setting::optimize_group_by_constant_keys],
-        static_cast<float>(settings[Setting::min_chunk_bytes_for_parallel_parsing]),
+        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         /*stats_collecting_params_=*/{},
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
-        settings[Setting::serialize_string_in_memory_with_zero_byte]);
+        settings[Setting::serialize_string_in_memory_with_zero_byte],
+        /*enable_parallel_single_level_merge_=*/false,
+        settings[Setting::enable_packed_string_keys_in_aggregation]);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 

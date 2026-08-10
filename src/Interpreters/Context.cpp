@@ -9,6 +9,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/config_version.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -54,6 +55,7 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -75,12 +77,14 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/WasmModuleManager.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
 #include <Core/SettingsQuirks.h>
@@ -135,7 +139,7 @@
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -234,6 +238,8 @@ namespace CurrentMetrics
     extern const Metric BackgroundCommonPoolSize;
     extern const Metric IcebergSchedulePoolTask;
     extern const Metric IcebergSchedulePoolSize;
+    extern const Metric BackgroundStreamingSchedulePoolTask;
+    extern const Metric BackgroundStreamingSchedulePoolSize;
     extern const Metric MarksLoaderThreads;
     extern const Metric MarksLoaderThreadsActive;
     extern const Metric MarksLoaderThreadsScheduled;
@@ -280,6 +286,9 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+ContextPtr ContextData::global_context_instance;
+ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -289,6 +298,8 @@ namespace Setting
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool cloud_mode;
+    extern const SettingsBool read_through_distributed_cache;
+    extern const SettingsBool write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -297,6 +308,7 @@ namespace Setting
     extern const SettingsBool enable_blob_storage_log_for_read_operations;
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
+    extern const SettingsUInt64 filesystem_cache_wait_for_concurrent_download_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
     extern const SettingsBool filesystem_cache_allow_background_download;
     extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
@@ -388,6 +400,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_schedule_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_initial_size;
     extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
+    extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
     extern const ServerSettingsBool disable_insertion_and_mutation;
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
@@ -498,7 +511,6 @@ struct ContextSharedPart : boost::noncopyable
     String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
     String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
     String user_files_path TSA_GUARDED_BY(mutex);            /// Path to the directory with user provided files, usable by 'file' table function.
-    String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
     String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
     String dynamic_user_defined_executable_functions_path TSA_GUARDED_BY(mutex); /// Path to the directory for executable UDF configs created by drivers.
     String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
@@ -596,11 +608,13 @@ struct ContextSharedPart : boost::noncopyable
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
+    mutable EncryptionHeaderCachePtr encryption_header_cache TSA_GUARDED_BY(mutex);   /// Cache of raw encryption-header bytes by file path
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
     mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized iceberg metadata files.
+    mutable PaimonMetadataFilesCachePtr paimon_metadata_files_cache TSA_GUARDED_BY(mutex);     /// Cache of deserialized paimon metadata files.
 #endif
 #if USE_PARQUET
     mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
@@ -617,16 +631,22 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr users_config TSA_GUARDED_BY(mutex);                              /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;                /// Handler for interserver communication.
 
+    /// Guards the six schedule pool members below. Not `mutex`: a getter can be reached from a
+    /// chain already holding `mutex` exclusively, and neither mutex is recursive. Each pool is
+    /// created outside the lock (that spawns threads and can throw) and published under it.
+    mutable SharedMutex schedule_pools_mutex;
     OnceFlag buffer_flush_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
+    mutable BackgroundSchedulePoolPtr buffer_flush_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that can do background flush for Buffer tables.
     OnceFlag schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
+    mutable BackgroundSchedulePoolPtr schedule_pool TSA_GUARDED_BY(schedule_pools_mutex);    /// A thread pool that can run different jobs in background (used in replicated tables)
     OnceFlag distributed_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    mutable BackgroundSchedulePoolPtr distributed_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that can run different jobs in background (used for distributed sends)
     OnceFlag message_broker_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+    mutable BackgroundSchedulePoolPtr message_broker_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
     OnceFlag iceberg_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr iceberg_schedule_pool; /// A thread pool that runs background metadata refresh for all active Iceberg tables
+    mutable BackgroundSchedulePoolPtr iceberg_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that runs background metadata refresh for all active Iceberg tables
+    OnceFlag streaming_schedule_pool_initialized;
+    mutable BackgroundSchedulePoolPtr streaming_schedule_pool TSA_GUARDED_BY(schedule_pools_mutex); /// A thread pool that runs streaming background jobs
 
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
@@ -692,7 +712,7 @@ struct ContextSharedPart : boost::noncopyable
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
-    /// Optional server-wide override for the new analyzer in mutations.
+    /// Optional server-wide override for the analyzer in mutations.
     /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
     /// Refreshed on config reload.
     std::atomic<int8_t> mutations_use_analyzer_override = -1;
@@ -736,8 +756,10 @@ struct ContextSharedPart : boost::noncopyable
     RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
     HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
 
-    /// No lock required for trace_collector modified only during initialization
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
+    /// Presence flag read concurrently by worker threads (ThreadStatus::initGlobalProfiler)
+    /// while shutdown() destroys trace_collector, so it must be atomic rather than optional::has_value().
+    std::atomic<bool> has_trace_collector = false;
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -749,6 +771,8 @@ struct ContextSharedPart : boost::noncopyable
 
     /// No lock required for async_insert_queue modified only during initialization
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
+
+    std::atomic_bool is_distributed_cache_server = false;
 
     /// Server listener port registry. Reads come from concurrent SQL contexts
     /// (the `getServerPort` SQL function); writes happen during server startup
@@ -1043,6 +1067,7 @@ struct ContextSharedPart : boost::noncopyable
         BackgroundSchedulePoolPtr delete_distributed_schedule_pool;
         BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
         BackgroundSchedulePoolPtr delete_iceberg_schedule_pool;
+        BackgroundSchedulePoolPtr delete_streaming_schedule_pool;
 
         std::unique_ptr<AccessControl> delete_access_control;
 
@@ -1112,16 +1137,21 @@ struct ContextSharedPart : boost::noncopyable
             delete_workload_entity_storage = std::move(workload_entity_storage);
             delete_ddl_worker = std::move(ddl_worker);
 
+            delete_access_control = std::move(access_control);
+
+            /// Stop trace collector if any
+            has_trace_collector = false;
+            trace_collector.reset();
+        }
+
+        {
+            std::lock_guard lock(schedule_pools_mutex);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
             delete_schedule_pool = std::move(schedule_pool);
             delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
             delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
             delete_iceberg_schedule_pool = std::move(iceberg_schedule_pool);
-
-            delete_access_control = std::move(access_control);
-
-            /// Stop trace collector if any
-            trace_collector.reset();
+            delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
         }
 
         zkutil::ZooKeeperPtr delete_zookeeper;
@@ -1175,6 +1205,7 @@ struct ContextSharedPart : boost::noncopyable
         join_background_pool(std::move(delete_distributed_schedule_pool));
         join_background_pool(std::move(delete_message_broker_schedule_pool));
         join_background_pool(std::move(delete_iceberg_schedule_pool));
+        join_background_pool(std::move(delete_streaming_schedule_pool));
 
         delete_access_control.reset();
 
@@ -1184,7 +1215,7 @@ struct ContextSharedPart : boost::noncopyable
 
     bool hasTraceCollector() const
     {
-        return trace_collector.has_value();
+        return has_trace_collector.load();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
@@ -1197,10 +1228,11 @@ struct ContextSharedPart : boost::noncopyable
 
     void createTraceCollector()
     {
-        if (hasTraceCollector())
+        if (trace_collector.has_value())
             return;
 
         trace_collector.emplace();
+        has_trace_collector = true;
     }
 
     void addOrUpdateWarningMessage(Context::WarningType warning, const PreformattedMessage & message) TSA_REQUIRES(mutex)
@@ -1457,12 +1489,6 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
-String Context::getDictionariesLibPath() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->dictionaries_lib_path;
-}
-
 String Context::getUserScriptsPath() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -1531,25 +1557,25 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     if (auto it = shard.set.find(id); it != shard.set.end())
     {
         DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`), so a hit can
-        /// carry a UUID that no longer matches the name we are resolving. Return the cached storage
-        /// only if it is still fresh. Otherwise the entry is stale and must not be reused:
-        ///  - the table no longer exists by its UUID (e.g. a refreshable materialized view's inner
-        ///    table was dropped and recreated), or
-        ///  - the UUID still exists but the name was reassigned to a different table by a rename or
-        ///    exchange within the same query. This happens during `CREATE OR REPLACE`, which creates a
-        ///    temporary table, populates it (caching the temporary name -> temporary UUID here), then
-        ///    atomically swaps it with the target via `EXCHANGE`. After the swap the temporary name
-        ///    refers to the old table that is about to be dropped, but the cache would still hand out
-        ///    the new (now live) table - so dropping by the temporary name would shut down the live
-        ///    table instead and break it (e.g. detaching a materialized view from its source), or
-        ///  - the caller asked for a specific UUID but the cached entry resolves to a different one
-        ///    (a same-name replacement); returning it would silently substitute the wrong table
-        ///    instead of letting the fresh lookup report `UNKNOWN_TABLE`/`TABLE_UUID_MISMATCH`.
-        /// In all cases remove the stale entry and fall through to a fresh lookup by name.
-        if (storage.second
-            && storage.second->getStorageID().getQualifiedName() == id.getQualifiedName()
-            && (!id.hasUUID() || it->uuid == id.uuid))
+        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`) and pins a name
+        /// to the storage it first resolved to in this query. That is the whole point of the cache: a
+        /// running query must keep seeing the table version it was planned against even if a
+        /// concurrent query renames or exchanges that table underneath it (see
+        /// `03915_exchange_tables_race` - otherwise the query is analyzed for one column type and
+        /// executed against another, raising a `LOGICAL_ERROR`). So a cache hit whose name was since
+        /// reassigned (by a rename/exchange, so the cached UUID now maps to a different qualified
+        /// name, or a different UUID now maps to the requested name) is NOT stale - the pinned UUID is
+        /// exactly what we want to return. Return it as long as it still resolves to a live table;
+        /// only drop the entry when the cached UUID no longer exists at all (e.g. a refreshable
+        /// materialized view's inner table was dropped and recreated with a new UUID), and fall
+        /// through to a fresh lookup by name.
+        ///
+        /// A rename or exchange performed BY THIS query drops the affected names from this cache (see
+        /// `dropStorageCacheEntry`, called from `InterpreterRenameQuery`), so the query's own later
+        /// lookups of those names re-resolve to the current tables. This is what lets
+        /// `CREATE OR REPLACE ... POPULATE` drop the old table by the temporary name after its
+        /// internal `EXCHANGE` instead of shutting down the live one (see #108726).
+        if (storage.second)
             return storage;
 
         shard.set.erase(it);
@@ -1567,6 +1593,15 @@ DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<
     }
 
     return storage;
+}
+
+void Context::dropStorageCacheEntry(const StorageID & id) const
+{
+    auto & shard = storage_cache.shards[StorageCache::shardIndex(id)];
+    std::lock_guard lock(shard.mutex);
+    /// The set uses name-only equality (`StorageID::DatabaseAndTableNameEqual`), so this erases the
+    /// pinned entry for the qualified name regardless of the UUID it was cached with.
+    shard.set.erase(id);
 }
 
 std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnings() const
@@ -1774,9 +1809,6 @@ void Context::setPath(const String & path)
     if (shared->user_files_path.empty())
         shared->user_files_path = shared->path + "user_files/";
 
-    if (shared->dictionaries_lib_path.empty())
-        shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
-
     if (shared->user_scripts_path.empty())
         shared->user_scripts_path = shared->path + "user_scripts/";
 }
@@ -1791,7 +1823,7 @@ void Context::setFilesystemCachesPath(const String & path)
     shared->filesystem_caches_path = path;
 }
 
-void Context::setFilesystemCacheUser(const String & user)
+void Context::setFilesystemCacheUser(const String & user) const
 {
     std::lock_guard lock(shared->mutex);
     shared->filesystem_cache_user = user;
@@ -1948,12 +1980,6 @@ void Context::setUserFilesPath(const String & path)
 {
     std::lock_guard lock(shared->mutex);
     shared->user_files_path = path;
-}
-
-void Context::setDictionariesLibPath(const String & path)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->dictionaries_lib_path = path;
 }
 
 void Context::setUserScriptsPath(const String & path)
@@ -2801,6 +2827,20 @@ void Context::addQueryAccessInfo(
         query_access_info->columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
 }
 
+void Context::removeQueryAccessInfoTable(const String & full_quoted_table_name)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard lock(query_access_info->mutex);
+    query_access_info->tables.erase(full_quoted_table_name);
+
+    /// Also drop any columns recorded under this table. The internal temporary table is normally recorded
+    /// without columns, so this is defensive.
+    const String prefix = full_quoted_table_name + ".";
+    std::erase_if(query_access_info->columns, [&](const String & column) { return column.starts_with(prefix); });
+}
+
 void Context::addQueryAccessInfo(const Names & partition_names)
 {
     if (isGlobalContext())
@@ -2969,7 +3009,17 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             ASTCreateQuery create;
             create.set(create.select, query);
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
+
+            /// The sample block must be analyzed under the view's SQL security context, not the
+            /// invoker's (mirrors buildParameterizedViewStorage).
+            auto sql_security = make_intrusive<ASTSQLSecurity>();
+            sql_security->type = view_metadata->sql_security_type;
+            if (view_metadata->definer)
+                sql_security->definer = make_intrusive<ASTUserNameWithHost>(*view_metadata->definer);
+            create.set(create.sql_security, sql_security);
+
+            auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
@@ -3305,6 +3355,10 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
 {
     try
     {
+        /// `SET name` with no value only makes sense for a Bool setting, and the parser cannot tell:
+        /// it does not know the settings schema. `setSettingWithLock` takes a name and a value, so
+        /// the check has to happen here, where the change is still whole.
+        settings->checkShorthandChange(change);
         setSettingWithLock(change.name, change.value, lock);
         contextSanityClampSettingsWithLock(*this, *settings, lock);
     }
@@ -3322,6 +3376,7 @@ void Context::applySettingsChangesWithLock(const SettingsChanges & changes, cons
     for (const SettingChange & change : changes)
         applySettingChangeWithLock(change, lock);
     applySettingsQuirks(*settings);
+    adjustSettingsForMakeDistributedPlan(*settings);
 }
 
 void Context::setSetting(std::string_view name, const String & value)
@@ -3347,6 +3402,7 @@ void Context::applySettingChange(const SettingChange & change)
 {
     try
     {
+        settings->checkShorthandChange(change);
         setSetting(change.name, change.value);
     }
     catch (Exception & e)
@@ -3374,6 +3430,7 @@ void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElement
 
 void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source)
 {
+    settings->checkShorthandChange(change);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, change, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
@@ -3381,6 +3438,7 @@ void Context::checkSettingsConstraintsWithLock(const SettingChange & change, Set
 
 void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source)
 {
+    settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
@@ -3388,6 +3446,7 @@ void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, 
 
 void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
 {
+    settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
         doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
@@ -3420,6 +3479,7 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
     SharedLockGuard lock(mutex);
+    settings->checkShorthandChanges(changes);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
@@ -3688,6 +3748,21 @@ void Context::makeQueryContext()
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
+
+    /// A context that becomes a query context without going through a client-facing handshake -
+    /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
+    /// (`Kafka`, `NATS`, `RabbitMQ`, `FileLog`, `ObjectStorageQueue`), `MaterializedPostgreSQL`
+    /// replication, dictionary reloads, or asynchronous insert flushes - inherits the empty (zero)
+    /// client version of the global context. This server is the real initiator of such queries, so
+    /// fill the version with this server's version. Otherwise remote shards of any distributed
+    /// sub-query would treat the initiator as an ancient server and apply legacy compatibility
+    /// downgrades, and `RemoteQueryExecutor` rejects a zero version outright.
+    /// Contexts created for real client queries overwrite the client info afterwards
+    /// (see `Session::makeQueryContextImpl`), so this does not mask a client-reported version.
+    if (client_info.client_version_major == 0
+        && client_info.client_version_minor == 0
+        && client_info.client_version_patch == 0)
+        setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 }
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
@@ -3884,7 +3959,7 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
 void Context::waitForDictionariesLoad() const
 {
     LOG_INFO(shared->log, "Waiting for dictionaries to be loaded");
-    auto results = getExternalDictionariesLoader().tryLoadAll<ExternalLoader::LoadResults>();
+    auto results = getExternalDictionariesLoader().tryLoadAllExceptLazy<ExternalLoader::LoadResults>();
     bool all_dictionaries_loaded = true;
     for (const auto & result : results)
     {
@@ -4910,6 +4985,49 @@ void Context::clearIcebergMetadataFilesCache() const
     if (cache)
         cache->clear();
 }
+
+void Context::setPaimonMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->paimon_metadata_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon metadata cache has been already created.");
+
+    shared->paimon_metadata_files_cache = std::make_shared<PaimonMetadataFilesCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updatePaimonMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->paimon_metadata_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon metadata cache was not created yet.");
+
+    size_t size = config.getUInt64("paimon_metadata_files_cache_size", DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("paimon_metadata_files_cache_max_entries", DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->paimon_metadata_files_cache->setMaxSizeInBytes(size);
+    shared->paimon_metadata_files_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<PaimonMetadataFilesCache> Context::getPaimonMetadataFilesCache() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->paimon_metadata_files_cache;
+}
+
+void Context::clearPaimonMetadataFilesCache() const
+{
+    auto cache = getPaimonMetadataFilesCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
 #endif
 
 #if USE_PARQUET
@@ -5006,6 +5124,46 @@ void Context::clearQueryConditionCache() const
         shared->query_condition_cache->clear();
 }
 
+void Context::setEncryptionHeaderCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->encryption_header_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Encryption header cache has been already created.");
+
+    shared->encryption_header_cache = std::make_shared<EncryptionHeaderCache>(cache_policy, max_size_in_bytes, size_ratio);
+}
+
+EncryptionHeaderCachePtr Context::getEncryptionHeaderCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->encryption_header_cache;
+}
+
+void Context::updateEncryptionHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->encryption_header_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Encryption header cache was not created yet.");
+
+    size_t size = config.getUInt64("encryption_header_cache_size", DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered encryption header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->encryption_header_cache->setMaxSizeInBytes(size);
+}
+
+void Context::clearEncryptionHeaderCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->encryption_header_cache)
+        shared->encryption_header_cache->clear();
+}
+
 
 void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
 {
@@ -5092,6 +5250,10 @@ void Context::clearCaches() const
     if (shared->query_condition_cache)
         shared->query_condition_cache->clear();
 
+    /// Path-keyed like the delete-bitmap cache below; clear it here too (see the note there).
+    if (shared->encryption_header_cache)
+        shared->encryption_header_cache->clear();
+
     /// UNIQUE KEY delete-bitmap cache is optional (zero size disables it),
     /// so the null check stays non-fatal. Without clearing, a renamed /
     /// dropped non-UUID table whose `disk:relpath` cache identity gets
@@ -5160,19 +5322,22 @@ ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
     return *shared->build_vector_similarity_index_threadpool;
 }
 
-BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
+BackgroundSchedulePoolPtr Context::getBufferFlushSchedulePool() const
 {
     callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
-        shared->buffer_flush_schedule_pool = BackgroundSchedulePool::create(
+        auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
+        std::lock_guard lock(shared->schedule_pools_mutex);
+        shared->buffer_flush_schedule_pool = std::move(created_pool);
     });
 
-    return *shared->buffer_flush_schedule_pool;
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->buffer_flush_schedule_pool;
 }
 
 BackgroundTaskSchedulingSettings Context::getBackgroundProcessingTaskSchedulingSettings() const
@@ -5206,7 +5371,23 @@ BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSetting
     return task_settings;
 }
 
-BackgroundSchedulePool & Context::getSchedulePool() const
+BackgroundTaskSchedulingSettings Context::getBackgroundStreamingTaskSchedulingSettings() const
+{
+    BackgroundTaskSchedulingSettings task_settings;
+
+    const auto & config = getConfigRef();
+    task_settings.thread_sleep_seconds = config.getDouble("background_streaming_processing_pool_thread_sleep_seconds", 10);
+    task_settings.thread_sleep_seconds_random_part = config.getDouble("background_streaming_processing_pool_thread_sleep_seconds_random_part", 1.0);
+    task_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_streaming_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+    task_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_streaming_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+    task_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_streaming_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+    task_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_streaming_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+    task_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_streaming_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+
+    return task_settings;
+}
+
+BackgroundSchedulePoolPtr Context::getSchedulePool() const
 {
     size_t max_parallel_tasks_per_type = static_cast<size_t>(
         static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_size])
@@ -5215,61 +5396,127 @@ BackgroundSchedulePool & Context::getSchedulePool() const
         shared->schedule_pool_initialized,
         [&]
         {
-            shared->schedule_pool = BackgroundSchedulePool::create(
+            auto created_pool = BackgroundSchedulePool::create(
                 shared->server_settings[ServerSetting::background_schedule_pool_size],
                 shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
                 max_parallel_tasks_per_type,
                 CurrentMetrics::BackgroundSchedulePoolTask,
                 CurrentMetrics::BackgroundSchedulePoolSize,
                 DB::ThreadName::BACKGROUND_SCHEDULE_POOL);
+            std::lock_guard lock(shared->schedule_pools_mutex);
+            shared->schedule_pool = std::move(created_pool);
         });
 
-    return *shared->schedule_pool;
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->schedule_pool;
 }
 
-BackgroundSchedulePool & Context::getDistributedSchedulePool() const
+BackgroundSchedulePoolPtr Context::getDistributedSchedulePool() const
 {
     callOnce(shared->distributed_schedule_pool_initialized, [&] {
-        shared->distributed_schedule_pool = BackgroundSchedulePool::create(
+        auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             DB::ThreadName::DISTRIBUTED_SCHEDULE_POOL);
+        std::lock_guard lock(shared->schedule_pools_mutex);
+        shared->distributed_schedule_pool = std::move(created_pool);
     });
 
-    return *shared->distributed_schedule_pool;
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->distributed_schedule_pool;
 }
 
-BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
+BackgroundSchedulePoolPtr Context::getMessageBrokerSchedulePool() const
 {
     callOnce(shared->message_broker_schedule_pool_initialized, [&] {
-        shared->message_broker_schedule_pool = BackgroundSchedulePool::create(
+        auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             DB::ThreadName::MSG_BROKER_SCHEDULE_POOL);
+        std::lock_guard lock(shared->schedule_pools_mutex);
+        shared->message_broker_schedule_pool = std::move(created_pool);
     });
 
-    return *shared->message_broker_schedule_pool;
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->message_broker_schedule_pool;
 }
 
-BackgroundSchedulePool & Context::getIcebergSchedulePool() const
+BackgroundSchedulePoolPtr Context::getIcebergSchedulePool() const
 {
     callOnce(shared->iceberg_schedule_pool_initialized, [&] {
-        shared->iceberg_schedule_pool = BackgroundSchedulePool::create(
+        auto created_pool = BackgroundSchedulePool::create(
             shared->server_settings[ServerSetting::iceberg_background_schedule_pool_size],
             shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::IcebergSchedulePoolTask,
             CurrentMetrics::IcebergSchedulePoolSize,
             DB::ThreadName::ICEBERG_SCHEDULE_POOL);
+        std::lock_guard lock(shared->schedule_pools_mutex);
+        shared->iceberg_schedule_pool = std::move(created_pool);
     });
 
-    return *shared->iceberg_schedule_pool;
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->iceberg_schedule_pool;
+}
+
+BackgroundSchedulePoolPtr Context::getStreamingSchedulePool() const
+{
+    callOnce(shared->streaming_schedule_pool_initialized, [&] {
+        auto created_pool = BackgroundSchedulePool::create(
+            shared->server_settings[ServerSetting::background_streaming_schedule_pool_size],
+            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
+            /*max_parallel_tasks_per_type*/ 0,
+            CurrentMetrics::BackgroundStreamingSchedulePoolTask,
+            CurrentMetrics::BackgroundStreamingSchedulePoolSize,
+            DB::ThreadName::BACKGROUND_STREAMING_SCHEDULE_POOL);
+        std::lock_guard lock(shared->schedule_pools_mutex);
+        shared->streaming_schedule_pool = std::move(created_pool);
+    });
+
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->streaming_schedule_pool;
+}
+
+BackgroundSchedulePoolPtr Context::getBufferFlushSchedulePoolIfExists() const
+{
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->buffer_flush_schedule_pool;
+}
+
+BackgroundSchedulePoolPtr Context::getSchedulePoolIfExists() const
+{
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->schedule_pool;
+}
+
+BackgroundSchedulePoolPtr Context::getDistributedSchedulePoolIfExists() const
+{
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->distributed_schedule_pool;
+}
+
+BackgroundSchedulePoolPtr Context::getMessageBrokerSchedulePoolIfExists() const
+{
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->message_broker_schedule_pool;
+}
+
+BackgroundSchedulePoolPtr Context::getIcebergSchedulePoolIfExists() const
+{
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->iceberg_schedule_pool;
+}
+
+BackgroundSchedulePoolPtr Context::getStreamingSchedulePoolIfExists() const
+{
+    SharedLockGuard lock(shared->schedule_pools_mutex);
+    return shared->streaming_schedule_pool;
 }
 
 void Context::configureServerWideThrottling()
@@ -6230,6 +6477,17 @@ void Context::reloadClusterConfig() const
     }
 }
 
+bool Context::isDistributedCacheServer() const
+{
+    return shared->is_distributed_cache_server.load(std::memory_order_relaxed);
+}
+
+void Context::setDistributedCacheServer()
+{
+    /// This is set only once on server startup, so atomic is ok.
+    shared->is_distributed_cache_server.store(true);
+}
+
 std::map<String, ClusterPtr> Context::getClusters() const
 {
     std::lock_guard lock(shared->clusters_mutex);
@@ -6557,6 +6815,26 @@ std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
 
     return shared->system_logs->filesystem_cache_log;
 }
+
+#if ENABLE_DISTRIBUTED_CACHE
+std::shared_ptr<DistributedCacheLog> Context::getDistributedCacheLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->distributed_cache_log;
+}
+
+std::shared_ptr<DistributedCacheServerLog> Context::getDistributedCacheServerLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->distributed_cache_server_log;
+}
+#endif
 
 std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
 {
@@ -7284,6 +7562,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
     applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
+    adjustSettingsForMakeDistributedPlan(*settings);
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 
     makeBackgroundContext(config);
@@ -7543,7 +7822,7 @@ void Context::setCurrentUserName(const String & current_user_name)
 
 void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address)
 {
-    client_info.current_address = std::make_shared<Poco::Net::SocketAddress>(current_address);
+    client_info.current_address = Poco::Net::SocketAddress(current_address);
     need_recalculate_access = true;
 }
 
@@ -7561,7 +7840,7 @@ void Context::setAuthenticatedUserName(const String & authenticated_user_name)
 
 void Context::setInitialAddress(const Poco::Net::SocketAddress & initial_address)
 {
-    client_info.initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address);
+    client_info.initial_address = Poco::Net::SocketAddress(initial_address);
 }
 
 void Context::setInitialQueryId(const String & initial_query_id)
@@ -8165,6 +8444,8 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_settings.reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_settings.wait_for_concurrent_download_timeout_milliseconds
+        = settings_ref[Setting::filesystem_cache_wait_for_concurrent_download_timeout_milliseconds];
     res.filesystem_cache_settings.allow_background_download = settings_ref[Setting::filesystem_cache_allow_background_download];
     res.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage
         = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
@@ -8223,6 +8504,12 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
+    res.read_through_distributed_cache = settings_ref[Setting::read_through_distributed_cache];
+#if ENABLE_DISTRIBUTED_CACHE
+    res.distributed_cache_settings.load(settings_ref);
+    res.distributed_cache_settings.validate();
+#endif
+
     return res;
 }
 
@@ -8242,6 +8529,11 @@ WriteSettings Context::getWriteSettings() const
 
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
+
+    res.write_through_distributed_cache = settings_ref[Setting::write_through_distributed_cache];
+#if ENABLE_DISTRIBUTED_CACHE
+    res.distributed_cache_settings.load(settings_ref);
+#endif
 
     return res;
 }

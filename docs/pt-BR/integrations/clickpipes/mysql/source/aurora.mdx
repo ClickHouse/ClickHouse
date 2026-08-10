@@ -18,35 +18,33 @@ Este guia passo a passo mostra como configurar o Amazon Aurora MySQL para replic
   ## Habilite a retenção do log binário
 </div>
 
-O log binário é um conjunto de arquivos de log que contém informações sobre alterações de dados feitas em uma instância de servidor MySQL, e esses arquivos são necessários para a replicação. Para configurar a retenção do log binário no Aurora MySQL, você deve [habilitar o binary logging](#enable-binlog-logging) e [aumentar o intervalo de retenção do binlog](#binlog-retention-interval).
+O log binário é um conjunto de arquivos de log que contém informações sobre modificações de dados feitas em uma instância de servidor MySQL, e os arquivos de log binário são necessários para a replicação. Para configurar a retenção do log binário no Aurora MySQL, você deve [habilitar o log binário](#enable-binlog-logging) e [aumentar o intervalo de retenção do binlog](#binlog-retention-interval).
 
-<div id="enable-binlog-logging">
-  ### 1. Ative o log binário por meio de backup automatizado
-</div>
+<Steps>
+  <Step title="Habilite o log binário por meio do backup automatizado" id="enable-binlog-logging">
+    O recurso de backups automatizados determina se o log binário está ativado ou desativado no MySQL. Os backups automatizados podem ser configurados para sua instância no RDS Console navegando até **Modify** &gt; **Additional configuration** &gt; **Backup** e marcando a caixa de seleção **Enable automated backups** (se ainda não estiver marcada).
 
-O recurso de backups automatizados determina se o log binário está ativado ou desativado no MySQL. Os backups automatizados podem ser configurados para sua instância no RDS Console acessando **Modify** &gt; **Additional configuration** &gt; **Backup** e marcando a caixa de seleção **Enable automated backups** (caso ainda não esteja marcada).
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Habilitando backups automatizados no Aurora" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Ativando backups automatizados no Aurora" size="lg" border />
+    Recomendamos definir o **Backup retention period** como um valor razoavelmente longo, dependendo do caso de uso da replicação.
+  </Step>
 
-Recomendamos definir o **Backup retention period** com um valor razoavelmente alto, dependendo do caso de uso da replicação.
+  <Step title="Aumente o intervalo de retenção do binlog" id="binlog-retention-interval">
+    <Warning>
+      Se o ClickPipes tentar retomar a replicação e os arquivos de log binário necessários tiverem sido removidos devido ao valor de retenção de binlog configurado, o ClickPipe entrará em estado de erro, e será necessário fazer uma ressincronização.
+    </Warning>
 
-<div id="binlog-retention-interval">
-  ### 2. Aumente o intervalo de retenção do binlog
-</div>
+    Por padrão, o Aurora MySQL remove o log binário o mais rápido possível (ou seja, *lazy purging*). Recomendamos aumentar o intervalo de retenção do binlog para pelo menos **72 horas**, para garantir a disponibilidade dos arquivos de log binário para replicação em cenários de falha. Para definir um intervalo de retenção do log binário ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), use o procedimento [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
 
-<Warning>
-  Se o ClickPipes tentar retomar a replicação e os arquivos de log binário necessários tiverem sido removidos devido ao valor de retenção de binlog configurado, o ClickPipe entrará em estado de erro, e será necessário fazer uma ressincronização.
-</Warning>
+    [//]: # "OBSERVAÇÃO A maioria dos provedores de CDC recomenda o período máximo de retenção para o Aurora RDS (7 dias/168 horas). Como isso afeta o uso de disco, recomendamos de forma conservadora um mínimo de 3 dias/72 horas."
 
-Por padrão, o Aurora MySQL remove o log binário o mais rápido possível (ou seja, *lazy purging*). Recomendamos aumentar o intervalo de retenção do binlog para pelo menos **72 horas**, para garantir a disponibilidade dos arquivos de log binário para replicação em cenários de falha. Para definir um intervalo de retenção do log binário ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)), use o procedimento [`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration):
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+    ```
 
-[//]: # "OBSERVAÇÃO A maioria dos provedores de CDC recomenda o período máximo de retenção para o Aurora RDS (7 dias/168 horas). Como isso afeta o uso de disco, recomendamos de forma conservadora um mínimo de 3 dias/72 horas."
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
-```
-
-Se essa configuração não estiver definida ou estiver configurada com um intervalo muito baixo, isso pode causar lacunas nos logs binários, comprometendo a capacidade do ClickPipes de retomar a replicação.
+    Se essa configuração não estiver definida ou estiver configurada com um intervalo muito baixo, isso pode causar lacunas nos logs binários, comprometendo a capacidade do ClickPipes de retomar a replicação.
+  </Step>
+</Steps>
 
 <div id="binlog-settings">
   ## Configure as configurações do binlog
@@ -134,6 +132,18 @@ Conecte-se à sua instância do Aurora MySQL como usuário administrador e execu
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
+<div id="iam-authentication">
+  ### Usando autenticação IAM (opcional)
+</div>
+
+Em vez de uma senha, você pode autenticar o usuário do ClickPipes por meio do acesso baseado em função do AWS IAM. Crie o usuário da seguinte forma e, em seguida, conceda a ele os mesmos privilégios de schema e replicação mostrados acima:
+
+```sql
+CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+```
+
+Consulte [AWS IAM DB authentication (RDS/Aurora)](/pt-BR/integrations/clickpipes/postgres/auth) para ver o passo a passo completo de configuração da IAM role e da política necessárias para que o ClickPipes se autentique dessa forma.
+
 <div id="configure-network-access">
   ## Configurar o acesso à rede
 </div>
@@ -158,4 +168,4 @@ Para se conectar à sua instância do Aurora MySQL por uma rede privada, você p
   ## O que vem a seguir?
 </div>
 
-Agora que sua instância do Amazon Aurora MySQL está configurada para replicação via binlog e conectada com segurança ao ClickHouse Cloud, você pode [criar seu primeiro ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index#create-your-clickpipe). Para dúvidas comuns sobre CDC do MySQL, consulte a [página de perguntas frequentes do MySQL](/pt-BR/integrations/clickpipes/mysql/faq).
+Agora que sua instância do Amazon Aurora MySQL está configurada para replicação via binlog e se conecta com segurança ao ClickHouse Cloud, você pode [criar seu primeiro ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index#create-your-clickpipe). Para perguntas frequentes sobre MySQL CDC, consulte a [página de perguntas frequentes do MySQL](/pt-BR/integrations/clickpipes/mysql/faq).
