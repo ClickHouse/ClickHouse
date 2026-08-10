@@ -180,10 +180,9 @@ bool joinDefeatsReadInOrderThroughJoin(const IQueryPlanStep & step)
     return true;
 }
 
-/// Walk down a single-child chain looking for a `ReadFromMergeTree` step. We use this
-/// to defer to `optimizeReadInOrder`'s through-join pass when the preserved input can
-/// stream rows in sort-key order from MergeTree's primary key. Inserting our explicit
-/// `Sort + Limit n` would mask that opportunity and force a materializing sort.
+/// Walk down a single-child chain looking for a `ReadFromMergeTree` step. Used for the
+/// `MergeTree`-specific guards below (parallel replicas, `FINAL`); the deferral itself
+/// probes every reader `optimizeReadInOrder` supports, not only `MergeTree`.
 const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
 {
     while (node)
@@ -397,7 +396,7 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     }
 
     /// Defer to `optimizeReadInOrder` (second-pass) when the preserved input can stream
-    /// rows in the requested sort order from MergeTree's primary key. That path scans
+    /// rows in the requested sort order from the storage's sorting key. That path scans
     /// only the rows the LIMIT will keep, without materializing a sort - strictly better
     /// than what we would do here. This mirrors the soundness sketch in the file header
     /// without the cost of an explicit Sort + Limit on top of the storage step.
@@ -445,40 +444,44 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         && !joinDefeatsReadInOrderThroughJoin(*join_node->step);
     if (second_pass_can_apply)
     {
-        if (const auto * reading = findMergeTreeRead(preserved_input_node))
-        {
-            /// Probe full read-in-order applicability (direction, nulls direction,
-            /// collator, key-expression mapping) rather than just matching column names.
-            /// A name-only match defers even when `optimizeReadInOrder` cannot actually
-            /// satisfy the `SortingStep` (e.g. `ORDER BY ... COLLATE`), which would
-            /// silently disable both optimizations.
-            SortingStep probe_sort_step(
-                preserved_input_node->step->getOutputHeader(),
-                description,
-                n,
-                sort_step->getSettings());
-            const bool read_in_order_useful = wouldReadInOrderBeUseful(
-                probe_sort_step,
-                reading->getStorageMetadata()->getSortingKey(),
-                *preserved_input_node);
+        /// Probe full read-in-order applicability (direction, nulls direction, collator,
+        /// key-expression mapping) rather than just matching column names. A name-only match
+        /// defers even when `optimizeReadInOrder` cannot actually satisfy the `SortingStep`
+        /// (e.g. `ORDER BY ... COLLATE`), which would silently disable both optimizations.
+        ///
+        /// The probe covers every reading step pass 2 supports - `ReadFromMergeTree`,
+        /// `ReadFromMerge` and `ReadFromObjectStorageStep` - because
+        /// `buildInputOrderInfo(SortingStep &, ...)` installs the through-`JOIN` read-in-order
+        /// plan for all three. Probing only `ReadFromMergeTree` would keep the pushed-down
+        /// `Sort` + `Limit` for a preserved side reading from a `Merge` table or from object
+        /// storage even though pass 2 could have streamed it in order.
+        SortingStep probe_sort_step(
+            preserved_input_node->step->getOutputHeader(),
+            description,
+            n,
+            sort_step->getSettings());
+        const bool read_in_order_useful = wouldReadInOrderBeUseful(
+            probe_sort_step,
+            *preserved_input_node,
+            settings.read_in_order_through_join,
+            settings.read_in_order_through_spilling_join);
 
-            /// `wouldReadInOrderBeUseful` is unaware of `FINAL`-time gating: even when
-            /// the sort description matches the storage's sorting key, pass 2's
-            /// `ReadFromMergeTree::requestReadingInOrder` returns `false` for
-            /// `direction != 1 && query_info.isFinal()`. If we deferred here on the
-            /// strength of the column match, both optimizations would silently disable.
-            /// Guard conservatively: when reading `FINAL`, only defer if all sort columns
-            /// are ascending, since a single descending column is enough for the eventual
-            /// read direction to be -1 in the common case (storage key without reverse
-            /// flags). This may miss the rare reverse-storage-key case where pass 2 would
-            /// have succeeded, but never silently disables both passes.
-            const bool any_desc = std::ranges::any_of(
-                description, [](const SortColumnDescription & c) { return c.direction != 1; });
-            const bool final_blocks_pass2 = reading->isQueryWithFinal() && any_desc;
+        /// The probe is unaware of `FINAL`-time gating: even when the sort description matches
+        /// the storage's sorting key, pass 2's `ReadFromMergeTree::requestReadingInOrder`
+        /// returns `false` for `direction != 1 && query_info.isFinal()`. If we deferred here on
+        /// the strength of the column match, both optimizations would silently disable.
+        /// Guard conservatively: when reading `FINAL`, only defer if all sort columns are
+        /// ascending, since a single descending column is enough for the eventual read
+        /// direction to be -1 in the common case (storage key without reverse flags). This may
+        /// miss the rare reverse-storage-key case where pass 2 would have succeeded, but never
+        /// silently disables both passes.
+        const auto * merge_tree_read = findMergeTreeRead(preserved_input_node);
+        const bool any_desc = std::ranges::any_of(
+            description, [](const SortColumnDescription & c) { return c.direction != 1; });
+        const bool final_blocks_pass2 = merge_tree_read && merge_tree_read->isQueryWithFinal() && any_desc;
 
-            if (read_in_order_useful && !final_blocks_pass2)
-                return 0;
-        }
+        if (read_in_order_useful && !final_blocks_pass2)
+            return 0;
     }
 
     /// Build `Limit(n) <- Sort(K, limit=n)` and graft it on top of the preserved input.

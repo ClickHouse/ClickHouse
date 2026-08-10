@@ -1612,6 +1612,54 @@ bool wouldReadInOrderBeUseful(
     return order_info.input_order != nullptr;
 }
 
+bool wouldReadInOrderBeUseful(
+    const SortingStep & sorting,
+    QueryPlan::Node & subtree_above_reading,
+    bool read_in_order_through_join,
+    bool read_in_order_through_spilling_join)
+{
+    if (sorting.getType() != SortingStep::Type::Full)
+        return false;
+
+    /// Mirror `buildInputOrderInfo(SortingStep &, ...)` exactly, minus the mutating parts
+    /// (`requestReadingInOrder` and `keepLeftPipelineInOrder`), so that a caller can ask
+    /// "would pass 2 install a read-in-order plan here?" without committing to it.
+    FindReadingStepContext find_reading_ctx{
+        .allow_existing_order = false,
+        .read_in_order_through_join = read_in_order_through_join,
+        .read_in_order_through_spilling_join = read_in_order_through_spilling_join,
+    };
+    QueryPlan::Node * reading_node = findReadingStep(subtree_above_reading, find_reading_ctx);
+    if (!reading_node)
+        return false;
+
+    const auto & description = sorting.getSortDescription();
+    size_t limit = sorting.getLimit();
+
+    std::optional<ActionsDAG> dag;
+    FixedColumns fixed_columns;
+    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns);
+
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
+    {
+        /// Pass 2 bails out for parallel replicas reached through a `JOIN`, because the
+        /// initiator and the replicas can disagree on the plan.
+        if (reading->isParallelReadingFromReplicas() && !find_reading_ctx.joins_to_keep_in_order.empty())
+            return false;
+
+        return buildInputOrderFromSortDescription(reading, fixed_columns, dag, description, limit).input_order != nullptr;
+    }
+    if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+        return buildInputOrderFromSortDescription(merge, fixed_columns, dag, description, limit).input_order != nullptr;
+    if (auto * object_storage_step = typeid_cast<ReadFromObjectStorageStep *>(reading_node->step.get()))
+        return buildInputOrderFromSortDescription(object_storage_step, fixed_columns, dag, description, limit).input_order != nullptr;
+
+    return false;
+}
+
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (node.children.size() != 1)
