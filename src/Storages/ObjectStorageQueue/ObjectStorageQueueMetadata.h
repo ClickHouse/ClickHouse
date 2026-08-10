@@ -125,6 +125,10 @@ public:
     /// Acquires the same cleanup_lock as the periodic cleanup sweep.
     void dropFailedFiles();
 
+    /// Reconcile local cache with Keeper state after another replica completes cleanup.
+    /// Removes cache entries for files that no longer have /failed nodes in Keeper.
+    void reconcileFailedFilesCache();
+
     /// Get TableMetadata, which is the exact information we store in keeper.
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }

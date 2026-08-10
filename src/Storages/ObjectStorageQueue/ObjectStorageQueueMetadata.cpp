@@ -1511,6 +1511,111 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         remove_nodes(/*node_limit=*/false);
 }
 
+void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
+{
+    /// Reconcile local cache with Keeper state by removing cache entries
+    /// for files that no longer have /failed nodes in Keeper.
+    /// Used by losing replicas in ON CLUSTER execution to achieve cache consistency
+    /// after the winning replica completes the cleanup.
+
+    const std::string failed_path = zookeeper_path / "failed";
+    auto zk_client = getZooKeeper();
+    auto zk_retries = getKeeperRetriesControl(log);
+
+    /// List current failed nodes in Keeper
+    Strings keeper_failed_nodes;
+    Coordination::Error code = {};
+    zk_retries.retryLoop([&]
+    {
+        code = zk_client->tryGetChildren(failed_path, keeper_failed_nodes);
+    });
+
+    if (code == Coordination::Error::ZNONODE || (code == Coordination::Error::ZOK && keeper_failed_nodes.empty()))
+    {
+        /// No /failed path or empty /failed means all failed files were deleted
+        /// Clear entire failed cache
+        size_t removed = 0;
+        using KeyType = UInt128;
+        using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+        local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+            [&removed](const KeyType & /* key */, const StatusPtr & status)
+            {
+                if (status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                {
+                    ++removed;
+                    return true;
+                }
+                return false;
+            }
+        ));
+        LOG_INFO(log, "Reconciled cache: removed {} Failed entries (no /failed nodes in Keeper)", removed);
+        return;
+    }
+
+    if (code != Coordination::Error::ZOK)
+    {
+        LOG_WARNING(log, "Failed to list /failed nodes for cache reconciliation: {}", magic_enum::enum_name(code));
+        return;
+    }
+
+    /// Build set of file paths that still exist in Keeper
+    std::unordered_set<std::string> keeper_file_paths;
+    const size_t batch_size = keeper_multiread_batch_size;
+    std::filesystem::path failed_fs_path(failed_path);
+
+    for (size_t i = 0; i < keeper_failed_nodes.size(); i += batch_size)
+    {
+        size_t batch_end = std::min(i + batch_size, keeper_failed_nodes.size());
+        std::vector<std::string> batch_paths;
+        batch_paths.reserve(batch_end - i);
+
+        for (size_t j = i; j < batch_end; ++j)
+        {
+            /// Skip .retriable nodes, only track terminal failed nodes
+            if (!keeper_failed_nodes[j].ends_with(".retriable"))
+                batch_paths.push_back(failed_fs_path / keeper_failed_nodes[j]);
+        }
+
+        if (batch_paths.empty())
+            continue;
+
+        zkutil::ZooKeeper::MultiTryGetResponse response;
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&]
+        {
+            response = zk_client->tryGet(batch_paths);
+        });
+
+        for (size_t j = 0; j < response.size(); ++j)
+        {
+            if (response[j].error == Coordination::Error::ZOK)
+            {
+                auto metadata = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[j].data);
+                keeper_file_paths.insert(metadata.file_path);
+            }
+        }
+    }
+
+    /// Remove cache entries for Failed files not in Keeper
+    size_t removed = 0;
+    using KeyType = UInt128;
+    using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+    local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+        [&keeper_file_paths, &removed](const KeyType & /* key */, const StatusPtr & status)
+        {
+            if (status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed
+                && !keeper_file_paths.contains(status->path))
+            {
+                ++removed;
+                return true;
+            }
+            return false;
+        }
+    ));
+
+    LOG_INFO(log, "Reconciled cache: removed {} stale Failed entries", removed);
+}
+
 void ObjectStorageQueueMetadata::dropFailedFiles()
 {
     if (!isUnordered(mode))
@@ -1551,8 +1656,9 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
             {
                 /// The ephemeral lock node disappeared between our tryCreate and get,
                 /// meaning another replica already completed the cleanup and released the lock.
-                /// This is the expected outcome for ON CLUSTER execution - treat as idempotent success.
-                LOG_INFO(log, "Cleanup lock was released (cleanup already completed by another replica), treating as success");
+                /// Reconcile local cache to match Keeper state.
+                LOG_INFO(log, "Cleanup lock was released (cleanup already completed by another replica), reconciling cache");
+                reconcileFailedFilesCache();
                 return;
             }
 
