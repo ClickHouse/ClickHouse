@@ -13,17 +13,19 @@ namespace DB
 
 std::optional<std::string> getClientConfigPath(const std::string & home_path)
 {
-    std::string config_path;
-
-    std::vector<std::string> names;
+    /// The candidates stay `std::filesystem::path` throughout: on Windows, building a `path` from a
+    /// byte string mangles anything outside the active code page just as reading one back out does,
+    /// so the UTF-8 boundary is crossed exactly once on each side - `pathFromString` for the
+    /// incoming home directory, `pathToGenericString` for the path we return.
+    std::vector<fs::path> names;
     names.emplace_back("./clickhouse-client");
 
     auto xdg_config_home = XDGBaseDirectories::getConfigurationHome();
     if (!xdg_config_home.empty())
-        names.emplace_back(pathToString(xdg_config_home / "config"));
+        names.emplace_back(xdg_config_home / "config");
 
     if (!home_path.empty())
-        names.emplace_back(home_path + "/.clickhouse-client/config");
+        names.emplace_back(pathFromString(home_path) / ".clickhouse-client" / "config");
 
     names.emplace_back("/etc/clickhouse-client/config");
 
@@ -31,11 +33,12 @@ std::optional<std::string> getClientConfigPath(const std::string & home_path)
     {
         for (const auto & extension : {".xml", ".yaml", ".yml"})
         {
-            config_path = name + extension;
+            fs::path config_path = name;
+            config_path += extension;
 
             std::error_code ec;
             if (fs::exists(config_path, ec))
-                return config_path;
+                return pathToGenericString(config_path);
         }
     }
 

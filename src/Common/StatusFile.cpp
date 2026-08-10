@@ -8,6 +8,7 @@
 #include <Common/ErrnoException.h>
 #include <base/errnoToString.h>
 #include <base/defines.h>
+#include <base/pathToString.h>
 
 #include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFile.h>
@@ -46,7 +47,10 @@ StatusFile::StatusFile(std::string path_, FillFunction fill)
     : path(std::move(path_))
 {
     /// If file already exists. NOTE Minor race condition.
-    if (fs::exists(path))
+    /// `path` is UTF-8, so every filesystem operation on it here has to go through either
+    /// `pathFromString` or one of the `platform*` wrappers - the narrow `std::filesystem` and CRT
+    /// entrypoints convert through the Windows active code page and lose non-ASCII path components.
+    if (fs::exists(pathFromString(path)))
     {
         std::string contents;
         {
@@ -61,7 +65,7 @@ StatusFile::StatusFile(std::string path_, FillFunction fill)
             LOG_INFO(getLogger("StatusFile"), "Status file {} already exists and is empty - probably unclean hardware restart.", path);
     }
 
-    fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
+    fd = platformOpenFile(path, O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
 
     if (-1 == fd)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
@@ -109,7 +113,7 @@ StatusFile::~StatusFile()
     if (0 != close(fd))
         LOG_ERROR(getLogger("StatusFile"), "Cannot close file {}, {}", path, errnoToString());
 
-    if (0 != unlink(path.c_str()))
+    if (0 != platformUnlink(path))
         LOG_ERROR(getLogger("StatusFile"), "Cannot unlink file {}, {}", path, errnoToString());
 }
 
