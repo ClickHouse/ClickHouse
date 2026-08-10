@@ -165,7 +165,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     if (metadata->size_bytes == 0)
                         LOG_TRACE(log, "The object with the key '{}' has size 0, skipping the read", object_path);
                     else
-                    else
                     {
                         /// Retry transient NO_SUCH_KEY (transient 404) on the prefix.path read.
                         /// A momentary object-store blip (eventual-consistency 404, proxy hiccup,
