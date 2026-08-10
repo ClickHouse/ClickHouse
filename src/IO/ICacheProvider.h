@@ -78,13 +78,10 @@ public:
     /// segments/cells, without a source round-trip.
     virtual ChainedBuffers read(ByteRange sub) = 0;
 
-    /// One sibling-led sub-range to serve from cache (the writer that owns it + the sub-range).
-
-
     /// The result of `claim`: the downloader roles the calling thread holds over one window,
-    /// plus the window's decomposition into runs to fetch (`to_fetch` - roles won, or
-    /// uncoordinated bytes) and runs a sibling leads (`sibling_led` - already cached, or
-    /// being downloaded by another reader; serve them from cache after). Move-only RAII:
+    /// plus the window's decomposition into runs already committed (`available` - read from
+    /// cache) and runs whose role we won and must fetch (`to_fetch`). A run a sibling leads is
+    /// neither - the caller derives that contended remainder and resolves it. Move-only RAII:
     /// roles are thread-affine (the downloader id is the caller id), so the token must be
     /// created, written through, and destroyed on ONE thread; the destructor
     /// completes-and-releases exactly the roles this claim NEWLY won - a nested claim over
@@ -97,7 +94,6 @@ public:
         FillClaim(FillClaim && other) noexcept
             : available(std::move(other.available))
             , to_fetch(std::move(other.to_fetch))
-            , sibling_led(std::move(other.sibling_led))
             , release(std::exchange(other.release, nullptr))
         {
         }
@@ -108,7 +104,6 @@ public:
                 reset();
                 available = std::move(other.available);
                 to_fetch = std::move(other.to_fetch);
-                sibling_led = std::move(other.sibling_led);
                 release = std::exchange(other.release, nullptr);
             }
             return *this;
@@ -123,12 +118,14 @@ public:
                 r();
         }
 
-        /// Already committed in this thread's own cells (a prior downloader's partial
-        /// that we resumed): read it from cache, never fetch it from the source. Carries
-        /// NO contention meaning - unlike `sibling_led`, it does not flag `m.contended`.
+        /// The segment's already-committed prefix (a prior or concurrent downloader's partial,
+        /// or a fully DOWNLOADED segment): read it from cache, never fetch it from the source -
+        /// progress the caller accounts as covered.
         VectorWithMemoryTracking<ByteRange> available;
+        /// The uncommitted tail whose downloader role THIS thread holds: fetch+write it while
+        /// the claim is open. A tail a sibling leads is neither `available` nor `to_fetch` - the
+        /// caller derives that contended remainder as `window \ available \ to_fetch`.
         VectorWithMemoryTracking<ByteRange> to_fetch;
-        VectorWithMemoryTracking<ByteRange> sibling_led;
         /// Completes-and-releases the newly-won roles; noexcept by construction (the
         /// provider wraps its body in try/catch). Empty when nothing was won.
         std::function<void()> release;

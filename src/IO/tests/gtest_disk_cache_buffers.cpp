@@ -497,8 +497,7 @@ TEST_F(DiskCacheBuffers, SecondWriterContinuesFromCommittedFrontier)
 /// A FRESH claim whose range covers an already-committed prefix of a
 /// PARTIALLY_DOWNLOADED segment must return that prefix as `available` (read from
 /// cache) and put ONLY the missing tail in `to_fetch` - never refetch the cached
-/// prefix from the source. Crucially `available` is NOT `sibling_led`, so it carries
-/// no contention meaning. This is the concurrent-populate race: one reader commits a
+/// prefix from the source. This is the concurrent-populate race: one reader commits a
 /// prefix and releases, then a reader whose plan predates the commit claims the range.
 TEST_F(DiskCacheBuffers, FreshClaimServesCommittedPrefixInsteadOfRefetching)
 {
@@ -525,10 +524,39 @@ TEST_F(DiskCacheBuffers, FreshClaimServesCommittedPrefixInsteadOfRefetching)
     EXPECT_EQ(claim.to_fetch[0].offset, half);
     EXPECT_EQ(claim.to_fetch[0].size, kSegmentSize - half);
 
-    EXPECT_TRUE(claim.sibling_led.empty()) << "our own committed prefix is not contention";
-
     /// The won role still fills the tail; the segment completes across the two claims.
     ASSERT_EQ(writer.write(makeChain(half, kSegmentSize - half, 'B')), kSegmentSize - half);
+}
+
+/// A fresh claim whose overlap is ALREADY fully committed (a partial segment's prefix covers
+/// the whole ask) still takes the downloader role via `getOrSetDownloader` - so it MUST record
+/// that role for release even though there is nothing to fetch. Otherwise the role leaks and a
+/// later `waitAndReadSiblingLed` self-deadlocks: a thread cannot wait on a segment it downloads
+/// (`FileSegment::wait` asserts `!isDownloaderUnlocked`). Pins the Step-1 regression the
+/// real-disk sequential-eviction test caught.
+TEST_F(DiskCacheBuffers, ClaimOverFullyCommittedOverlapReleasesRole)
+{
+    auto provider = makeProvider();
+    auto object = makeObject("obj_fullcommit", kSegmentSize);
+    const size_t half = kSegmentSize / 2;
+
+    auto view = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}});
+    ASSERT_EQ(view->misses().size(), 1u);
+    auto & writer = *view->misses()[0].writer;
+    ASSERT_EQ(claimedWrite(writer, makeChain(0, half, 'A')), half);   /// partial: cwo = half
+
+    {
+        /// Claim ONLY the committed prefix: `available` covers it, nothing to fetch - but the
+        /// role is taken and must be released when the claim is destroyed.
+        auto claim = writer.claim(ByteRange{0, half});
+        ASSERT_EQ(claim.available.size(), 1u);
+        EXPECT_TRUE(claim.to_fetch.empty()) << "a fully-committed overlap leaves nothing to fetch";
+    }   /// claim destroyed -> the role must be released here
+
+    /// If the role leaked, this self-waits and trips `chassert(!isDownloaderUnlocked)`.
+    ChainedBuffers got = writer.waitAndReadSiblingLed(ByteRange{0, half});
+    ASSERT_TRUE(got.covers(ByteRange{0, half}));
+    EXPECT_EQ(flatten(got), std::string(half, 'A'));
 }
 
 /// RM1 pin: while a sibling HOLDS the claim, a second writer's write is a

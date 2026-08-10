@@ -1029,8 +1029,9 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     /// fetch can never leak a segment DOWNLOADING (which would abort the writer's holder dtor
     /// on `chassert(!is_last_holder)` - the foreground teardown cannot reset a foreign
     /// downloader).
-    VectorWithMemoryTracking<ByteRange> led_misses;
-    VectorWithMemoryTracking<ByteRange> sibling_led;
+    VectorWithMemoryTracking<ByteRange> led_misses;   /// the uncommitted tails WE won -> fetch here
+    IntervalSet available_cov;      /// committed prefixes: read from cache, ACCOUNTED as covered - never fetched
+    IntervalSet writer_coverage;    /// union of fill-target writer overlaps in the window
     VectorWithMemoryTracking<CacheWriter::FillClaim> claims;
     for (const auto & view : m.writer_views)
     {
@@ -1040,39 +1041,38 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         const size_t hi = std::min(window.end(), view.writer->range().end());
         if (lo >= hi)
             continue;
+        writer_coverage.add(ByteRange{lo, hi - lo});
         auto fill_claim = view.writer->claim(ByteRange{lo, hi - lo});
+        for (const auto & r : fill_claim.available)
+            available_cov.add(r);
         for (const auto & r : fill_claim.to_fetch)
             led_misses.push_back(r);
-        for (const auto & sl : fill_claim.sibling_led)
-            sibling_led.push_back(sl);
         claims.push_back(std::move(fill_claim));
     }
-    /// Record contention for the collect side (the led set itself stays worker-local: the
-    /// foreground only needs to know WHETHER a sibling lead exists, to revoke to the sync path).
-    m.contended = !sibling_led.empty();
 
-    /// "Stop at the first loss" (inline serve only): bound the fetch at the first sibling-led
-    /// segment so this thread fetches just the contiguous LED PREFIX `[window.offset, fetch_bound)`.
-    /// The serve reads that prefix (we are its downloader, so it is committed to our cells) as a
-    /// short window; the caller's next read resolves the sibling boundary (claim/wait). A led
-    /// segment past the boundary was claimed above but is NOT fetched here - its claim's
-    /// destructor resets the downloader. A pool worker leaves `fetch_bound` at the window end (it fetches the
-    /// whole led set and revokes on contention at collect), keeping its read-ahead behavior.
+    /// A window byte no fill-target writer covers cannot be deduped (no cache tier populates
+    /// it): fetch it plainly.
+    for (const auto & g : writer_coverage.subtract(window))
+        led_misses.push_back(g);
+
+    /// CONTENDED = the window minus what is `available` (committed, read from cache) and what we
+    /// fetch: the uncommitted tails a sibling leads. We neither fetch nor wait on them - `available`
+    /// is progress accepted as-is; a leftover contended gap records contention so the collect
+    /// revokes to the sync path (a sparse window must not be assembled here) and the foreground
+    /// resolves it.
+    IntervalSet resolved = available_cov;
+    for (const auto & r : led_misses)
+        resolved.add(r);
+    const auto contended = resolved.subtract(window);
+    m.contended = !contended.empty();
+
+    /// "Stop at the first loss" (inline serve only): fetch just the contiguous prefix up to the
+    /// first contended byte; the serve returns that prefix short and the next read resolves the
+    /// boundary. A pool worker fetches the whole led set (fetch_bound = window end).
     size_t fetch_bound = window.end();
     if (m.inline_serve)
-        for (const auto & sl : sibling_led)
-            fetch_bound = std::min(fetch_bound, sl.offset);
-
-    /// A window byte that no fill-target writer covers cannot be deduped (no cache tier
-    /// populates it): fetch it plainly. Add the window remainder (minus elected + sibling-led)
-    /// to the led set.
-    IntervalSet elected;
-    for (const auto & r : led_misses)
-        elected.add(r);
-    for (const auto & sl : sibling_led)
-        elected.add(sl);
-    for (const auto & g : elected.subtract(window))
-        led_misses.push_back(g);
+        for (const auto & c : contended)
+            fetch_bound = std::min(fetch_bound, c.offset);
 
     /// Coalesce the led ranges into a DISJOINT set clamped to the window (overlapping tier
     /// writers can elect the same bytes; round-trip through `IntervalSet`).

@@ -413,12 +413,12 @@ ChainedBuffers DiskCacheWriter::read(ByteRange sub)
 
 CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 {
-    /// `window` is FILE-space, clamped per segment. For each held segment overlapping it:
-    /// a DOWNLOADED segment is already cached (`sibling_led`: serve from cache, a wait on
-    /// it returns immediately); for an undownloaded one, `getOrSetDownloader` either makes
-    /// us the downloader or a sibling leads it (`sibling_led`). When we hold the role, the
-    /// segment's already-committed prefix is `available` (read from cache, never refetched)
-    /// and only the missing tail is `to_fetch`. Only roles NEWLY won here enter the claim's
+    /// `window` is FILE-space, clamped per segment. For each held segment overlapping it, the
+    /// already-committed prefix is `available` (readable from cache now, whoever holds the role;
+    /// a DOWNLOADED segment is wholly `available`). For the uncommitted tail `getOrSetDownloader`
+    /// either makes us the downloader (`to_fetch`: fetch+write it on this thread while the claim
+    /// is open) or a sibling leads it - then the tail is CONTENDED and left unlisted (the caller
+    /// derives it as the window minus `available` minus `to_fetch`). Only roles NEWLY won here enter the claim's
     /// release set: a nested claim over segments this thread already leads (a tile write
     /// inside a window-long claim) must not release the outer claim's roles. The release
     /// completes-and-resets exactly those segments - a claim whose fetch never reached a
@@ -449,34 +449,39 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 
         if (segment.state() == FileSegmentState::DOWNLOADED)
         {
-            c.sibling_led.push_back(ByteRange{lo, hi - lo});
+            /// Fully cached: the whole overlap is readable now.
+            c.available.push_back(ByteRange{lo, hi - lo});
             continue;
         }
 
         const bool already_mine = segment.isDownloader();
         if (!already_mine)
             segment.getOrSetDownloader();
+
+        /// Read `cwo` AFTER the role decision: if we hold the role only WE advance it, so the
+        /// committed prefix `[lo, cwo)` / tail `[cwo, hi)` split is exact; if a sibling holds it,
+        /// `cwo` is a monotone lower bound - we under-report `available`, never over. `cwo` is
+        /// object-local; shift to file space. The committed prefix is readable now regardless of
+        /// who holds the role, so it is always `available` (an EMPTY segment has `cwo` at its
+        /// start, so `available` is empty - the whole overlap is the tail).
+        const size_t cwo_file = segment.getCurrentWriteOffset() + object_file_offset;
+        const size_t avail_hi = std::min(hi, cwo_file);
+        if (avail_hi > lo)
+            c.available.push_back(ByteRange{lo, avail_hi - lo});
+        const size_t fetch_lo = std::max(lo, cwo_file);
+
+        /// If we hold the role, RECORD IT FOR RELEASE unconditionally - even when the committed
+        /// prefix already covers the overlap (`fetch_lo >= hi`, nothing to fetch), winning the
+        /// role still leaves us holding it, and a leaked role self-deadlocks a later
+        /// `waitAndReadSiblingLed` (a thread cannot wait on a segment it downloads). The
+        /// uncommitted tail is `to_fetch`; a tail a sibling leads is CONTENDED - left unlisted
+        /// (the caller derives it and neither fetches nor waits on it here).
         if (segment.isDownloader())
         {
-            /// We hold the role (won it now, or already had it). Only WE advance `cwo`, so it is
-            /// stable here: the committed prefix `[lo, cwo)` is `available` (read from cache, never
-            /// refetched from the source - a prior downloader's partial we resumed), the tail
-            /// `[cwo, hi)` is `to_fetch`. `cwo` is object-local; shift to file space. An EMPTY
-            /// segment has `cwo` at its start, so `available` is empty and the whole overlap is
-            /// `to_fetch` - identical to before.
-            const size_t cwo_file = segment.getCurrentWriteOffset() + object_file_offset;
-            const size_t avail_hi = std::min(hi, cwo_file);
-            if (avail_hi > lo)
-                c.available.push_back(ByteRange{lo, avail_hi - lo});
-            const size_t fetch_lo = std::max(lo, cwo_file);
-            if (hi > fetch_lo)
+            if (fetch_lo < hi)
                 c.to_fetch.push_back(ByteRange{fetch_lo, hi - fetch_lo});
             if (!already_mine)
                 won->push_back(segment_ptr);
-        }
-        else
-        {
-            c.sibling_led.push_back(ByteRange{lo, hi - lo});
         }
     }
 
