@@ -64,6 +64,16 @@ public:
         if (is_inside_index_hint_function && isColumnSourceMergeTree(*column_node))
             return;
 
+        /// For non-MergeTree storages, also skip virtual columns inside indexHint
+        /// (e.g. _table for Merge) — they are materialized after the read step and are
+        /// not available as inputs of the child read step.
+        if (is_inside_index_hint_function)
+        {
+            auto * source_table = column_node->getColumnSource()->as<TableNode>();
+            if (source_table && source_table->getStorageSnapshot()->metadata->isVirtualColumn(column_node->getColumnName()))
+                return;
+        }
+
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 

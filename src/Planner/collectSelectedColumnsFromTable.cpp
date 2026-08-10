@@ -41,7 +41,11 @@ public:
         /// A special case for the "indexHint" function. We don't need its arguments for execution if column's source table is MergeTree.
         /// Instead, we prepare an ActionsDAG for its arguments and store it inside a function (see ActionsDAG::buildFilterActionsDAG).
         /// So this optimization allows not to read arguments of "indexHint" (if not needed in other contexts) but only to use index analysis for them.
-        if (is_inside_index_hint_function && source_table->getStorage()->isMergeTree())
+        /// For non-MergeTree storages, skip virtual columns (e.g. _table for Merge) inside indexHint
+        /// for the same reason — they are materialized after the read step and are not available as inputs of the child read step.
+        if (is_inside_index_hint_function
+            && (source_table->getStorage()->isMergeTree()
+                || source_table->getStorageSnapshot()->metadata->isVirtualColumn(column_node->getColumnName())))
             return;
 
         selected_columns.insert(column_node->getColumnName());
