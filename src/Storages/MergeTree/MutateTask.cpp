@@ -48,6 +48,8 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/FailPoint.h>
 #include <Common/Jemalloc.h>
+#include <Common/thread_local_rng.h>
+#include <base/sleep.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
@@ -106,6 +108,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
+    extern const char mutate_task_random_sleep_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
     extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
 }
@@ -3686,6 +3689,13 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 bool MutateTask::prepare()
 {
     FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_in_prepare);
+    fiu_do_on(FailPoints::mutate_task_random_sleep_in_prepare,
+    {
+        /// Deliberate fault injection for stress tests: widen the window between an ALTER and the
+        /// part rewrite, so concurrent queries routinely read parts the mutation has not rewritten
+        /// yet. The delay is bounded, so tests that wait for mutations finish only a little later.
+        sleepForMilliseconds(thread_local_rng() % 3000);
+    });
 
     ProfileEvents::increment(ProfileEvents::MutationTotalParts);
     ctx->checkOperationIsNotCanceled();
