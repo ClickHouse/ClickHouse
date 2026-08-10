@@ -26,9 +26,9 @@ SELECT
     tuple(),
     tuple(number),
     tuple(tuple()),
-    tuple(CAST(if(number < 4, NULL, tuple()), 'Nullable(Tuple())')),
+    tuple(CAST(if(number >= 99996, NULL, tuple()), 'Nullable(Tuple())')),
     tuple(number, tuple()),
-    if(number < 4, [tuple(), tuple()], if(number = 4, [tuple()], [])),
+    if(number >= 99996, [tuple(), tuple()], if(number = 99995, [tuple()], [])),
     number
 FROM numbers(100000);
 
