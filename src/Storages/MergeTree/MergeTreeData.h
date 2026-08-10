@@ -2155,6 +2155,20 @@ private:
     mutable std::set<String> query_id_set TSA_GUARDED_BY(query_id_set_mutex);
     mutable std::mutex query_id_set_mutex;
 
+    /// Counts one rejected insert in `ProfileEvents::RejectedInserts`, at most once per query.
+    ///
+    /// A plain `INSERT` fans out to `max_insert_threads` parallel sinks, and every sink evaluates
+    /// the "too many parts" check in its constructor, while the insert chain is being built, so a
+    /// single rejected `INSERT` reaches the throw path once per sink stream. The event, however,
+    /// counts rejected inserts, so the sibling sinks of one query must bump it only once.
+    void countRejectedInsert(const ContextPtr & query_context) const;
+
+    /// The query for which `countRejectedInsert` was called last. The address of the `QueryStatus`
+    /// is part of the key - it is only compared, never dereferenced - so that a retry of a query
+    /// which reuses its `query_id` is still counted.
+    mutable std::mutex last_rejected_insert_mutex;
+    mutable std::pair<String, const void *> last_rejected_insert TSA_GUARDED_BY(last_rejected_insert_mutex);
+
     // Get partition matcher for FREEZE / UNFREEZE queries.
     MatcherFn getPartitionMatcher(const ASTPtr & partition, ContextPtr context) const;
 

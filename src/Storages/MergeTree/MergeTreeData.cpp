@@ -6994,6 +6994,23 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
+void MergeTreeData::countRejectedInsert(const ContextPtr & query_context) const
+{
+    std::pair<String, const void *> query{query_context->getCurrentQueryId(), query_context->getProcessListElement().get()};
+
+    /// Without a process list element there is nothing to identify the query by, so count every rejection.
+    if (query.second)
+    {
+        std::lock_guard lock(last_rejected_insert_mutex);
+        if (last_rejected_insert == query)
+            return;
+        last_rejected_insert = std::move(query);
+    }
+
+    ProfileEvents::increment(ProfileEvents::RejectedInserts);
+}
+
+
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
 {
     const auto settings = getSettings();
@@ -7008,7 +7025,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
     /// Check if we have too many parts in total
     if (allow_throw && parts_count_in_total >= (*settings)[MergeTreeSetting::max_parts_in_total])
     {
-        ProfileEvents::increment(ProfileEvents::RejectedInserts);
+        countRejectedInsert(query_context);
         throw Exception(
             ErrorCodes::TOO_MANY_PARTS,
             "Too many parts ({}) in all partitions in total in table '{}'. This indicates wrong choice of partition key. The threshold can be modified "
@@ -7024,7 +7041,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
 
         if (allow_throw && (*settings)[MergeTreeSetting::inactive_parts_to_throw_insert] > 0 && outdated_parts_count_in_partition >= (*settings)[MergeTreeSetting::inactive_parts_to_throw_insert])
         {
-            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            countRejectedInsert(query_context);
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTS,
                 "Too many inactive parts ({}) in table '{}'. Parts cleaning are processing significantly slower than inserts",
@@ -7051,7 +7068,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
 
         if (allow_throw && dead_blobs_to_throw_insert > 0 && dead_blobs_count >= dead_blobs_to_throw_insert)
         {
-            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            countRejectedInsert(query_context);
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTS,
                 "Too many dead blobs in queue ({}) on disks of table '{}'. Blobs cleanup is processing significantly slower than inserts",
@@ -7071,7 +7088,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
 
         if (allow_throw && parts_count_in_partition >= active_parts_to_throw_insert && !parts_are_large_enough_in_average)
         {
-            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            countRejectedInsert(query_context);
             throw Exception(
                 ErrorCodes::TOO_MANY_PARTS,
                 "Too many parts ({} with average size of {}) in table '{}'. Merges are processing significantly slower than inserts",
