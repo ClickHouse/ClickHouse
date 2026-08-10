@@ -477,7 +477,10 @@ def test_text_index_marks_empty_part(started_cluster):
         ORDER BY tuple()
         -- min_bytes_for_full_part_storage=0: the test edits/removes raw part files (skp_idx_idx.mrk4,
         -- checksums.txt); a packed part keeps them inside the single data.packed archive, not on disk.
-        SETTINGS prewarm_mark_cache = true, compress_marks = 0, min_bytes_for_full_part_storage = 0
+        -- remove_empty_parts=0: the whole test operates on the empty part left by the DELETE mutation;
+        -- otherwise the cleanup thread may drop it before the checks below see it in system.parts.
+        SETTINGS prewarm_mark_cache = true, compress_marks = 0, min_bytes_for_full_part_storage = 0,
+                 remove_empty_parts = 0
         """
     )
 
