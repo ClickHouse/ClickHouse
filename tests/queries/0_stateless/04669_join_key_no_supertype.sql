@@ -161,5 +161,33 @@ DROP TABLE t_join_unsigned_lc;
 DROP TABLE t_join_unsigned_nullable;
 DROP TABLE t_join_signed_lc;
 
+SELECT 'A LEFT ANTI JOIN gets no runtime filter under the fallback: the values out of the common range become NULL, and `NOT IN` a set with NULL would drop the rows that have to be preserved';
+DROP TABLE IF EXISTS t_probe;
+DROP TABLE IF EXISTS t_build_unsigned;
+DROP TABLE IF EXISTS t_build_signed;
+CREATE TABLE t_probe (x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t_build_unsigned (y UInt64) ENGINE = MergeTree ORDER BY y;
+CREATE TABLE t_build_signed (y Int64) ENGINE = MergeTree ORDER BY y;
+INSERT INTO t_probe SELECT number + 2 FROM numbers(500);
+INSERT INTO t_build_unsigned VALUES (3), (4);
+INSERT INTO t_build_signed VALUES (-1), (3), (4);
+
+SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, join_algorithm = 'hash';
+SET enable_parallel_replicas = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
+SET explain_query_plan_default = 'legacy'; -- only this format renders the runtime filter nodes
+
+SELECT 'The keys of the same type get a runtime filter';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT x FROM t_probe LEFT ANTI JOIN t_build_unsigned AS b ON t_probe.x = b.y) WHERE explain LIKE '%_runtime_filter_%';
+SELECT 'The keys with no least supertype do not';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT x FROM t_probe LEFT ANTI JOIN t_build_signed AS b ON t_probe.x = b.y) WHERE explain LIKE '%_runtime_filter_%';
+
+SELECT 'The result is the same with and without the runtime filters';
+SELECT count(), min(x), max(x) FROM (SELECT x FROM t_probe LEFT ANTI JOIN t_build_signed AS b ON t_probe.x = b.y);
+SELECT count(), min(x), max(x) FROM (SELECT x FROM t_probe LEFT ANTI JOIN t_build_signed AS b ON t_probe.x = b.y) SETTINGS enable_join_runtime_filters = 0;
+
+DROP TABLE t_probe;
+DROP TABLE t_build_unsigned;
+DROP TABLE t_build_signed;
+
 DROP TABLE t_unsigned;
 DROP TABLE t_signed;

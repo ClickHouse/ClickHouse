@@ -91,3 +91,11 @@ A stored key wrapped in LowCardinality or Nullable is served by the prebuilt has
 A probe value converted to NULL does not match the NULL of the stored key
 1	a
 The wrappers of the stored key do not relax the unsupported direction
+A LEFT ANTI JOIN gets no runtime filter under the fallback: the values out of the common range become NULL, and `NOT IN` a set with NULL would drop the rows that have to be preserved
+The keys of the same type get a runtime filter
+1
+The keys with no least supertype do not
+0
+The result is the same with and without the runtime filters
+498	2	501
+498	2	501

@@ -413,6 +413,13 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 /// the values that are out of the common range become NULL, and for `NOT IN` that would
                 /// filter out the rows that have to be preserved. Give up on the filter, it is only an optimization.
                 /// If the JOIN itself cannot be performed, it will report this type mismatch on its own.
+                ///
+                /// The types compared here are always the ORIGINAL key types: the subtype fallback rewrites the
+                /// keys to `accurateCastOrNull` in `JoinStepLogical::predicateOperandsToCommonType`, which runs
+                /// from `addJoinPredicatesToTableJoin` while the logical step is converted to a physical one —
+                /// that is, after every query plan optimization pass, including this one. So the rewrite can
+                /// never hide the mismatch from this check, and a fallback JOIN never keeps a runtime filter
+                /// (`04669_join_key_no_supertype` asserts this for `LEFT ANTI`, where it would change results).
                 return false;
             }
             common_types.push_back(std::move(common_type));
