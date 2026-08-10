@@ -41,6 +41,7 @@
                   "pages": [
                     "products/cloud/features/autoscaling/overview",
                     "products/cloud/features/autoscaling/vertical",
+                    "products/cloud/features/autoscaling/horizontal-autoscaling",
                     "products/cloud/features/autoscaling/horizontal",
                     "products/cloud/features/autoscaling/make-before-break",
                     "products/cloud/features/autoscaling/idling",
@@ -48,6 +49,7 @@
                     "products/cloud/features/autoscaling/scheduled-scaling"
                   ]
                 },
+                "products/cloud/features/large-single-replica-services",
                 "products/cloud/features/infrastructure/parallel-replicas",
                 "products/cloud/features/infrastructure/deployment-options",
                 "products/cloud/features/infrastructure/shared-catalog",

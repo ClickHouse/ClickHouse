@@ -314,13 +314,15 @@ public:
             const auto * durations = checkAndGetColumn<ColumnDateTime>(arguments[1].column.get());
             const auto * const_durations = checkAndGetColumnConst<ColumnDateTime>(arguments[1].column.get());
 
-            auto res = ColumnArray::create(ColumnUInt32::create());
-            ColumnUInt32::Container & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
+            auto res_values_column = ColumnUInt32::create();
+            auto res_offsets_column = ColumnArray::ColumnOffsets::create();
+            ColumnUInt32::Container & res_values = res_values_column->getData();
+            ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
 
             if (dt_starts && durations)
             {
-                TimeSlotsImpl::vectorVector(dt_starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets(), input_rows_count);
-                return res;
+                TimeSlotsImpl::vectorVector(dt_starts->getData(), durations->getData(), time_slot_size, res_values, res_offsets, input_rows_count);
+                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
             }
             if (dt_starts && const_durations)
             {
@@ -329,9 +331,9 @@ public:
                     const_durations->getValue<UInt32>(),
                     time_slot_size,
                     res_values,
-                    res->getOffsets(),
+                    res_offsets,
                     input_rows_count);
-                return res;
+                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
             }
             if (dt_const_starts && durations)
             {
@@ -340,9 +342,9 @@ public:
                     durations->getData(),
                     time_slot_size,
                     res_values,
-                    res->getOffsets(),
+                    res_offsets,
                     input_rows_count);
-                return res;
+                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
             }
         }
         else
@@ -378,8 +380,11 @@ public:
             const auto result_scale = assert_cast<const DataTypeDateTime64 &>(
                 *assert_cast<const DataTypeArray &>(*result_type).getNestedType()).getScale();
 
-            auto res = ColumnArray::create(DataTypeDateTime64(result_scale).createColumn());
-            DataTypeDateTime64::ColumnType::Container & res_values = typeid_cast<DataTypeDateTime64::ColumnType &>(res->getData()).getData();
+            auto res_values_column = DataTypeDateTime64(result_scale).createColumn();
+            auto res_offsets_column = ColumnArray::ColumnOffsets::create();
+            DataTypeDateTime64::ColumnType::Container & res_values
+                = typeid_cast<DataTypeDateTime64::ColumnType &>(*res_values_column).getData();
+            ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
 
             if (starts && durations)
             {
@@ -388,12 +393,12 @@ public:
                     durations->getData(),
                     time_slot_size,
                     res_values,
-                    res->getOffsets(),
+                    res_offsets,
                     static_cast<UInt16>(start_time_scale),
                     static_cast<UInt16>(duration_scale),
                     time_slot_scale,
                     input_rows_count);
-                return res;
+                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
             }
             if (starts && const_durations)
             {
@@ -402,12 +407,12 @@ public:
                     const_durations->getValue<Decimal64>(),
                     time_slot_size,
                     res_values,
-                    res->getOffsets(),
+                    res_offsets,
                     static_cast<UInt16>(start_time_scale),
                     static_cast<UInt16>(duration_scale),
                     time_slot_scale,
                     input_rows_count);
-                return res;
+                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
             }
             if (const_starts && durations)
             {
@@ -416,12 +421,12 @@ public:
                     durations->getData(),
                     time_slot_size,
                     res_values,
-                    res->getOffsets(),
+                    res_offsets,
                     static_cast<UInt16>(start_time_scale),
                     static_cast<UInt16>(duration_scale),
                     time_slot_scale,
                     input_rows_count);
-                return res;
+                return ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
             }
         }
 

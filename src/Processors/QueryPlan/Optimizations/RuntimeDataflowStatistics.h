@@ -4,6 +4,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
@@ -106,6 +107,7 @@ public:
     /// so should_continue_sampling remains true for subsequent calls for the same logical block.
     void recordInputColumns(
         const ColumnsWithTypeAndName & input_columns,
+        const NameSet & partially_read_columns,
         const NamesAndTypesList & part_columns,
         const ColumnSizeByName & column_sizes,
         size_t read_bytes,

@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 
@@ -59,6 +60,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        std::function<void()> check_cancellation = makeCancellationCheck(name);
+
+        /// The bulk paths below return without entering the match loop, so they are covered only here.
+        if (check_cancellation)
+            check_cancellation();
+
         const IColumn * col_pattern = arguments[1].column.get();
         const ColumnConst * col_pattern_const = checkAndGetColumnConst<ColumnString>(col_pattern);
         if (col_pattern_const == nullptr)
@@ -68,11 +75,14 @@ public:
 
         const IColumn * col_haystack = arguments[0].column.get();
         OptimizedRegularExpression::MatchVec matches;
+        /// One budget for the whole call, so a block of cheap rows accumulates towards a check instead of
+        /// resetting per row.
+        CancellationBudget budget(check_cancellation);
 
         if (const ColumnConst * col_haystack_const = checkAndGetColumnConstStringOrFixedString(col_haystack))
         {
             auto str = col_haystack_const->getDataColumn().getDataAt(0);
-            uint64_t matches_count = countMatches(str, re, matches);
+            uint64_t matches_count = countMatches(str, re, matches, budget);
             return result_type->createColumnConst(input_rows_count, matches_count);
         }
         if (const ColumnString * col_haystack_string = checkAndGetColumn<ColumnString>(col_haystack))
@@ -94,7 +104,7 @@ public:
                 Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
 
                 std::string_view str(pos, end - pos);
-                vec_res[i] = countMatches(str, re, matches);
+                vec_res[i] = countMatches(str, re, matches, budget);
             }
 
             return col_res;
@@ -109,7 +119,7 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 std::string_view str = col_haystack_fixedstring->getDataAt(i);
-                vec_res[i] = countMatches(str, re, matches);
+                vec_res[i] = countMatches(str, re, matches, budget);
             }
 
             return col_res;
@@ -117,7 +127,11 @@ public:
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Could not cast haystack argument to String or FixedString");
     }
 
-    uint64_t countMatches(std::string_view src, const OptimizedRegularExpression & re, OptimizedRegularExpression::MatchVec & matches) const
+    uint64_t countMatches(
+        std::string_view src,
+        const OptimizedRegularExpression & re,
+        OptimizedRegularExpression::MatchVec & matches,
+        CancellationBudget & budget) const
     {
         /// Only one match is required, no need to copy more.
         static const unsigned matches_limit = 1;
@@ -135,14 +149,23 @@ public:
             {
                 if (matches[0].length > 0)
                 {
+                    /// Charged for the distance scanned, which is not the distance `pos` advances.
+                    budget.charge(matches[0].offset + matches[0].length - (pos - begin));
                     pos = begin + matches[0].offset + matches[0].length;
                     ++match_count;
                 }
                 else
                 {
+                    /// `offset` is not a position for an empty match, so only the byte `pos` advances is charged.
+                    budget.charge();
+
                     if (count_matches_stop_at_empty_match)
+                    {
+                        /// The matcher may have scanned the rest of the value to find this match.
+                        budget.charge(end - pos);
                         /// Progress should be made, but with empty match the progress will not be done.
                         break;
+                    }
 
                     /// Progress is made by a single character in case the pattern does not match or have zero-byte match.
                     /// The reason is simply because the pattern could match another part of input when forwarded.
@@ -150,7 +173,11 @@ public:
                 }
             }
             else
+            {
+                /// A failing match scans the rest of the string before the loop is left.
+                budget.charge(end - pos);
                 break;
+            }
         }
 
         return match_count;

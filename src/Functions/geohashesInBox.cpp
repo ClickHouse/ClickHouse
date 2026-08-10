@@ -100,9 +100,10 @@ public:
                             lat_min_column->getName(), lon_max_column->getName(), lat_max_column->getName());
         }
 
-        auto col_res = ColumnArray::create(ColumnString::create());
-        ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
-        ColumnArray::Offsets & res_offsets = col_res->getOffsets();
+        auto res_strings_column = ColumnString::create();
+        auto res_offsets_column = ColumnArray::ColumnOffsets::create();
+        ColumnString & res_strings = *res_strings_column;
+        ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
         ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
@@ -163,7 +164,7 @@ public:
                             res_offsets.back(), std::to_string(res_strings.size()));
         }
 
-        result = std::move(col_res);
+        result = ColumnArray::create(std::move(res_strings_column), std::move(res_offsets_column));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
