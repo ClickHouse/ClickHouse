@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "ClickPipes для объектного хранилища",
+      "group": "ClickPipes for Object Storage",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
         "ru/integrations/clickpipes/home",
@@ -34,7 +34,7 @@
       ]
     },
     {
-      "group": "ClickPipes для Postgres",
+      "group": "ClickPipes for Postgres",
       "icon": "/images/integrations/logos/postgresql.svg",
       "pages": [
         "ru/integrations/clickpipes/postgres/index",
@@ -61,7 +61,7 @@
           ]
         },
         {
-          "group": "Источник",
+          "group": "Source",
           "pages": [
             "ru/integrations/clickpipes/postgres/source/alloydb",
             "ru/integrations/clickpipes/postgres/source/rds",
@@ -79,7 +79,7 @@
       ]
     },
     {
-      "group": "ClickPipes для Kafka",
+      "group": "ClickPipes for Kafka",
       "icon": "/images/integrations/logos/kafka.svg",
       "pages": [
         "ru/integrations/clickpipes/kafka/index",
@@ -91,7 +91,7 @@
       ]
     },
     {
-      "group": "ClickPipes для Kinesis",
+      "group": "ClickPipes for Kinesis",
       "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
       "pages": [
         "ru/integrations/clickpipes/kinesis/overview",
@@ -99,7 +99,7 @@
       ]
     },
     {
-      "group": "ClickPipes для GCP Pub/Sub",
+      "group": "ClickPipes for GCP Pub/Sub",
       "icon": "/images/integrations/logos/google_pubsub.svg",
       "pages": [
         "ru/integrations/clickpipes/pubsub/overview",
@@ -107,7 +107,7 @@
       ]
     },
     {
-      "group": "ClickPipes для MySQL",
+      "group": "ClickPipes for MySQL",
       "icon": "/images/integrations/logos/mysql.svg",
       "pages": [
         "ru/integrations/clickpipes/mysql/index",
@@ -129,7 +129,7 @@
           ]
         },
         {
-          "group": "Источник",
+          "group": "Source",
           "pages": [
             "ru/integrations/clickpipes/mysql/source/rds",
             "ru/integrations/clickpipes/mysql/source/aurora",
@@ -143,7 +143,7 @@
       ]
     },
     {
-      "group": "ClickPipes для MongoDB",
+      "group": "ClickPipes for MongoDB",
       "icon": "/images/integrations/logos/mongodb.svg",
       "pages": [
         "ru/integrations/clickpipes/mongodb/index",
@@ -164,7 +164,7 @@
           ]
         },
         {
-          "group": "Источник",
+          "group": "Source",
           "pages": [
             "ru/integrations/clickpipes/mongodb/source/atlas",
             "ru/integrations/clickpipes/mongodb/source/generic",
@@ -174,7 +174,7 @@
       ]
     },
     {
-      "group": "ClickPipes для BigQuery",
+      "group": "ClickPipes for BigQuery",
       "icon": "/images/logo-bigquery.svg",
       "pages": [
         "ru/integrations/clickpipes/bigquery/overview",
@@ -182,7 +182,7 @@
       ]
     },
     {
-      "group": "Программный доступ",
+      "group": "Programmatic access",
       "icon": "code",
       "pages": [
         "ru/integrations/clickpipes/programmatic-access/openapi",
@@ -190,7 +190,7 @@
       ]
     },
     {
-      "group": "Сеть",
+      "group": "Networking",
       "icon": "network-wired",
       "pages": [
         "ru/integrations/clickpipes/networking/index",
@@ -201,7 +201,7 @@
       ]
     },
     {
-      "group": "Другое",
+      "group": "Other",
       "icon": "ellipsis",
       "pages": [
         "ru/integrations/clickpipes/dynamodb",

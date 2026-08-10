@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "データソース",
+      "group": "Data sources",
       "pages": [
         "ja/integrations/connectors/data-sources/index",
         {
@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "データ可視化",
+      "group": "Data visualization",
       "pages": [
         "ja/integrations/connectors/data-visualization/index",
         {
@@ -77,7 +77,7 @@
         },
         {
           "expanded": false,
-          "group": "コミュニティインテグレーション",
+          "group": "Community integrations",
           "pages": [
             "ja/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "ja/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
@@ -100,7 +100,7 @@
     },
     {
       "expanded": true,
-      "group": "データ取り込み",
+      "group": "Data ingestion",
       "pages": [
         "ja/integrations/connectors/data-ingestion/index",
         "ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
@@ -139,7 +139,7 @@
             "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Dataflow テンプレート",
+              "group": "Dataflow templates",
               "pages": [
                 "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -180,7 +180,7 @@
         },
         {
           "expanded": false,
-          "group": "コミュニティインテグレーション",
+          "group": "Community integrations",
           "pages": [
             "ja/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             {
@@ -197,7 +197,7 @@
     },
     {
       "expanded": true,
-      "group": "データインテグレーション",
+      "group": "Data integrations",
       "pages": [
         "ja/integrations/connectors/tools/data-integration-index",
         "ja/integrations/connectors/data-integrations/integrations/retool",
@@ -209,7 +209,7 @@
     },
     {
       "expanded": true,
-      "group": "SQLクライアント",
+      "group": "SQL-clients",
       "pages": [
         "ja/integrations/connectors/sql-clients/index",
         "ja/integrations/connectors/sql-clients/sql-console",
@@ -224,7 +224,7 @@
     },
     {
       "expanded": true,
-      "group": "ツール",
+      "group": "Tools",
       "pages": [
         "ja/integrations/connectors/tools/index",
         "ja/integrations/connectors/tools/gui",
@@ -234,5 +234,5 @@
     }
   ],
   "icon": "/images/icons/icon-connectors.svg",
-  "item": "コネクタ"
+  "item": "Connectors"
 }

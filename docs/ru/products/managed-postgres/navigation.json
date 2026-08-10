@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Начало работы",
+      "group": "Get started",
       "pages": [
         "ru/products/managed-postgres/overview",
         "ru/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Функции",
+      "group": "Features",
       "pages": [
         "ru/products/managed-postgres/connection",
         "ru/products/managed-postgres/settings",
@@ -34,19 +34,19 @@
       ]
     },
     {
-      "group": "Тарифы",
+      "group": "Pricing",
       "pages": [
         "ru/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "Интеграция с ClickHouse",
+      "group": "ClickHouse Integration",
       "pages": [
         "ru/products/managed-postgres/clickhouse-integration"
       ]
     },
     {
-      "group": "Миграции",
+      "group": "Migrations",
       "pages": [
         "ru/products/managed-postgres/migrations/overview",
         "ru/products/managed-postgres/migrations/pg_dump-pg_restore",
@@ -58,7 +58,7 @@
       ]
     },
     {
-      "group": "Мониторинг",
+      "group": "Monitoring",
       "pages": [
         "ru/products/managed-postgres/monitoring/overview",
         "ru/products/managed-postgres/monitoring/dashboard",

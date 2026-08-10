@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "セッション設定",
+  "group": "Session Settings",
   "pages": [
     "ja/reference/settings/session-settings/additional",
     "ja/reference/settings/session-settings/aggregate",

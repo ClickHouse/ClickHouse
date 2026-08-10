@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "はじめに",
+      "group": "Get started",
       "pages": [
         "ja/products/managed-postgres/overview",
         "ja/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "機能",
+      "group": "Features",
       "pages": [
         "ja/products/managed-postgres/connection",
         "ja/products/managed-postgres/settings",
@@ -34,7 +34,7 @@
       ]
     },
     {
-      "group": "料金",
+      "group": "Pricing",
       "pages": [
         "ja/products/managed-postgres/pricing"
       ]
@@ -46,7 +46,7 @@
       ]
     },
     {
-      "group": "移行",
+      "group": "Migrations",
       "pages": [
         "ja/products/managed-postgres/migrations/overview",
         "ja/products/managed-postgres/migrations/pg_dump-pg_restore",
@@ -58,7 +58,7 @@
       ]
     },
     {
-      "group": "監視",
+      "group": "Monitoring",
       "pages": [
         "ja/products/managed-postgres/monitoring/overview",
         "ja/products/managed-postgres/monitoring/dashboard",
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "group": "よくある質問",
+      "group": "FAQ",
       "pages": [
         "ja/products/managed-postgres/faq"
       ]

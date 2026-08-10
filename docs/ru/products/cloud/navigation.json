@@ -4,7 +4,7 @@
       "group": "ClickHouse Cloud",
       "pages": [
         {
-          "group": "Начало работы",
+          "group": "Get started",
           "pages": [
             "ru/products/cloud/getting-started/cloud-get-started",
             "ru/products/cloud/getting-started/intro",
@@ -12,7 +12,7 @@
           ]
         },
         {
-          "group": "Возможности",
+          "group": "Features",
           "pages": [
             "ru/products/cloud/features/cloud-tiers",
             "ru/products/cloud/features/cli",
@@ -22,7 +22,7 @@
             "ru/products/cloud/reference/supported-regions",
             {
               "expanded": false,
-              "group": "SQL-консоль",
+              "group": "SQL console",
               "pages": [
                 "ru/products/cloud/features/sql-console-features/sql-console",
                 "ru/products/cloud/features/sql-console-features/query-insights",
@@ -34,10 +34,10 @@
             },
             {
               "expanded": false,
-              "group": "Инфраструктура",
+              "group": "Infrastructure",
               "pages": [
                 {
-                  "group": "Автоматическое масштабирование",
+                  "group": "Automatic scaling",
                   "pages": [
                     "ru/products/cloud/features/autoscaling/overview",
                     "ru/products/cloud/features/autoscaling/vertical",
@@ -75,7 +75,7 @@
             "ru/products/cloud/features/security",
             {
               "expanded": false,
-              "group": "Мониторинг",
+              "group": "Monitoring",
               "pages": [
                 "ru/products/cloud/features/monitoring/overview",
                 "ru/products/cloud/features/monitoring/cloud-console",
@@ -87,7 +87,7 @@
               ]
             },
             {
-              "group": "Резервные копии",
+              "group": "Backups",
               "pages": [
                 "ru/products/cloud/features/backups/overview",
                 "ru/products/cloud/features/backups/faq"
@@ -112,7 +112,7 @@
                     "ru/products/cloud/features/ai-ml/agents/quickstart",
                     "ru/products/cloud/features/ai-ml/agents/chat",
                     {
-                      "group": "Конструктор агентов",
+                      "group": "Agent Builder",
                       "pages": [
                         "ru/products/cloud/features/ai-ml/agents/builder/index",
                         "ru/products/cloud/features/ai-ml/agents/builder/model-parameters",
@@ -137,7 +137,7 @@
           ]
         },
         {
-          "group": "Справочник по Cloud",
+          "group": "Cloud reference",
           "pages": [
             "ru/products/cloud/reference/index",
             "ru/products/cloud/reference/service-uptime",
@@ -152,12 +152,12 @@
           ]
         },
         {
-          "group": "Биллинг",
+          "group": "Billing",
           "pages": [
             "ru/products/cloud/reference/billing/billing-overview",
             {
               "expanded": false,
-              "group": "Маркетплейс",
+              "group": "Marketplace",
               "pages": [
                 "ru/products/cloud/reference/billing/marketplace/overview",
                 "ru/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
@@ -186,11 +186,11 @@
           ]
         },
         {
-          "group": "Руководства",
+          "group": "Guides",
           "pages": [
             "ru/products/cloud/guides/index",
             {
-              "group": "Рекомендации",
+              "group": "Best practices",
               "pages": [
                 "ru/products/cloud/guides/best-practices/index",
                 "ru/products/cloud/guides/best-practices/multitenancy",
@@ -199,7 +199,7 @@
             },
             {
               "expanded": false,
-              "group": "Общие",
+              "group": "General",
               "pages": [
                 "ru/products/cloud/guides/cloud-compatibility",
                 "ru/products/cloud/guides/production-readiness"
@@ -207,14 +207,14 @@
             },
             {
               "expanded": false,
-              "group": "Миграция",
+              "group": "Migration",
               "pages": [
                 "ru/products/cloud/guides/migration/upload-a-csv-file"
               ]
             },
             {
               "expanded": false,
-              "group": "SQL-консоль",
+              "group": "SQL console",
               "pages": [
                 "ru/products/cloud/guides/sql-console/connection-details",
                 "ru/products/cloud/guides/sql-console/query-endpoints"
@@ -222,14 +222,14 @@
             },
             {
               "expanded": false,
-              "group": "Резервные копии",
+              "group": "Backups",
               "pages": [
                 "ru/products/cloud/guides/backups/index",
                 "ru/products/cloud/guides/backups/review-and-restore-backups",
                 "ru/products/cloud/guides/backups/configurable-backups",
                 {
                   "expanded": false,
-                  "group": "Использование собственной резервной копии",
+                  "group": "Bring Your Own Backup",
                   "pages": [
                     "ru/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "ru/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -240,7 +240,7 @@
             },
             {
               "expanded": false,
-              "group": "Источники данных",
+              "group": "Data sources",
               "pages": [
                 "ru/products/cloud/guides/data-sources/index",
                 "ru/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -252,11 +252,11 @@
             },
             {
               "expanded": false,
-              "group": "Инфраструктура",
+              "group": "Infrastructure",
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Режимы развертывания",
+                  "group": "Deployment modes",
                   "pages": [
                     "ru/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
                     "ru/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
@@ -266,11 +266,11 @@
             },
             {
               "expanded": false,
-              "group": "Безопасность",
+              "group": "Security",
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Управление доступом в Cloud",
+                  "group": "Cloud access management",
                   "pages": [
                     "ru/products/cloud/guides/security/cloud-access-management/index",
                     "ru/products/cloud/guides/security/cloud-access-management/manage-my-account",
@@ -289,12 +289,12 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Подключение",
+                  "group": "Connectivity",
                   "pages": [
                     "ru/products/cloud/guides/security/connectivity/setting-ip-filters",
                     {
                       "expanded": false,
-                      "group": "Частное сетевое подключение",
+                      "group": "Private networking",
                       "pages": [
                         "ru/products/cloud/guides/security/connectivity/private-networking/index",
                         "ru/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
@@ -306,7 +306,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Журнал аудита",
+                  "group": "Audit logging",
                   "pages": [
                     "ru/products/cloud/guides/security/audit-logging/index",
                     "ru/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -316,7 +316,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Безопасность данных",
+                  "group": "Data security",
                   "pages": [
                     "ru/products/cloud/guides/security/data-masking",
                     "ru/products/cloud/guides/security/cmek"
@@ -324,7 +324,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Соответствие требованиям",
+                  "group": "Compliance",
                   "pages": [
                     "ru/products/cloud/guides/security/compliance/hipaa-onboarding",
                     "ru/products/cloud/guides/security/compliance/pci-onboarding"
@@ -335,7 +335,7 @@
           ]
         },
         {
-          "group": "Справочник API",
+          "group": "API reference",
           "openapi": {
             "directory": "ru/products/cloud/api-reference",
             "source": "_specs/cloud-openapi.json"

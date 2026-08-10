@@ -1,15 +1,13 @@
 ---
-description: 'TPC-DS ベンチマークのデータセットとクエリ。'
-sidebarTitle: 'TPC-DS'
-slug: /getting-started/example-datasets/tpcds
-title: 'TPC-DS (2012)'
-doc_type: 'guide'
-keywords: ['サンプルデータセット', 'tpcds', 'ベンチマーク', 'サンプルデータ', '性能テスト']
+title: "TPC-DS (2012)"
+description: "TPC-DS ベンチマークのデータセットとクエリ。"
+sidebarTitle: "TPC-DS"
+slug: "/getting-started/example-datasets/tpcds"
+doc_type: "guide"
+keywords: ["サンプルデータセット", "tpcds", "ベンチマーク", "サンプルデータ", "性能テスト"]
 ---
 
-[Star Schema Benchmark (SSB)](/ja/get-started/sample-datasets/star-schema) と同様、TPC-DS は [TPC-H](/ja/get-started/sample-datasets/tpch) をベースにしていますが、これとは対照的なアプローチを取っています。つまり、データを複雑なスノーフレークスキーマ (8 テーブルではなく 24 テーブル) で格納することで、必要な JOIN の数を増やしています。
-データ分布には偏りがあり (たとえば、正規分布やポアソン分布) 、一様ではありません。
-また、ランダムな置換を含むレポートクエリおよびアドホッククエリが 99 個含まれています。
+[Star Schema Benchmark (SSB)](/ja/get-started/sample-datasets/star-schema) と同様、TPC-DS は [TPC-H](/ja/get-started/sample-datasets/tpch) をベースにしていますが、これとは対照的なアプローチを取っています。つまり、データを複雑なスノーフレークスキーマ (8 テーブルではなく 24 テーブル) で格納することで、必要な JOIN の数を増やしています。データ分布には偏りがあり (たとえば、正規分布やポアソン分布) 、一様ではありません。また、ランダムな置換を含むレポートクエリおよびアドホッククエリが 99 個含まれています。
 
 **参考文献**
 
@@ -72,9 +70,14 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO web_site FORMA
 
 99 個の TPC-DS クエリは、ClickHouse リポジトリの[こちら](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-ds/queries)にあります。
 
-SQL 標準に準拠した動作と期待どおりの結果を得るには、[`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/settings.json) の設定を適用してください。
-既知の問題や特定のクエリに関する注意事項については、[README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/README.md) を参照してください。
+SQL 標準に準拠した動作と期待どおりの結果を得るには、[`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/settings.json) の設定を適用してください。既知の問題や特定のクエリに関する注意事項については、[README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-ds/README.md) を参照してください。
 
 **正確性**
 
 特に断りがない限り、クエリの結果は公式結果と一致します。TPC-DS の仕様で許容されているため、わずかな精度差が生じる場合があります。
+
+<div id="performance-benchmark">
+  ## パフォーマンスベンチマーク
+</div>
+
+ClickHouse は、リリースされたすべてのバージョンについて TPC-DS クエリパフォーマンスを追跡しています。[ClickHouse versions benchmark](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ps\&metric=hot\&queries=-) ページでは、99 個すべての TPC-DS クエリ (スケール係数 32) の実行時間を確認し、パフォーマンスが時間の経過とともにどのように向上してきたかを確認できます。

@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organisation",
+    "group": "Organization",
     "pages": [
       {
-        "group": "Organisation",
+        "group": "Organization",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -19,14 +19,14 @@
         ]
       },
       {
-        "group": "Facturation",
+        "group": "Billing",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "fr/products/cloud/api-reference/billing/active-balances-get"
         ]
       },
       {
-        "group": "Gestion des utilisateurs",
+        "group": "User management",
         "pages": [
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
@@ -39,7 +39,7 @@
         ]
       },
       {
-        "group": "Gestion des rôles",
+        "group": "Role Management",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",

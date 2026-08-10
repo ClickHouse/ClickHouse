@@ -12,7 +12,7 @@
           ]
         },
         {
-          "group": "기능",
+          "group": "Features",
           "pages": [
             "ko/products/cloud/features/cloud-tiers",
             "ko/products/cloud/features/cli",
@@ -22,7 +22,7 @@
             "ko/products/cloud/reference/supported-regions",
             {
               "expanded": false,
-              "group": "SQL 콘솔",
+              "group": "SQL console",
               "pages": [
                 "ko/products/cloud/features/sql-console-features/sql-console",
                 "ko/products/cloud/features/sql-console-features/query-insights",
@@ -34,10 +34,10 @@
             },
             {
               "expanded": false,
-              "group": "인프라",
+              "group": "Infrastructure",
               "pages": [
                 {
-                  "group": "자동 스케일링",
+                  "group": "Automatic scaling",
                   "pages": [
                     "ko/products/cloud/features/autoscaling/overview",
                     "ko/products/cloud/features/autoscaling/vertical",
@@ -59,7 +59,7 @@
             },
             {
               "expanded": false,
-              "group": "관리자",
+              "group": "Admin",
               "pages": [
                 {
                   "group": "Cloud API",
@@ -75,7 +75,7 @@
             "ko/products/cloud/features/security",
             {
               "expanded": false,
-              "group": "모니터링",
+              "group": "Monitoring",
               "pages": [
                 "ko/products/cloud/features/monitoring/overview",
                 "ko/products/cloud/features/monitoring/cloud-console",
@@ -87,7 +87,7 @@
               ]
             },
             {
-              "group": "백업",
+              "group": "Backups",
               "pages": [
                 "ko/products/cloud/features/backups/overview",
                 "ko/products/cloud/features/backups/faq"
@@ -137,7 +137,7 @@
           ]
         },
         {
-          "group": "Cloud 참고",
+          "group": "Cloud reference",
           "pages": [
             "ko/products/cloud/reference/index",
             "ko/products/cloud/reference/service-uptime",
@@ -152,12 +152,12 @@
           ]
         },
         {
-          "group": "청구",
+          "group": "Billing",
           "pages": [
             "ko/products/cloud/reference/billing/billing-overview",
             {
               "expanded": false,
-              "group": "마켓플레이스",
+              "group": "Marketplace",
               "pages": [
                 "ko/products/cloud/reference/billing/marketplace/overview",
                 "ko/products/cloud/reference/billing/marketplace/aws-marketplace-committed",
@@ -186,11 +186,11 @@
           ]
         },
         {
-          "group": "가이드",
+          "group": "Guides",
           "pages": [
             "ko/products/cloud/guides/index",
             {
-              "group": "모범 사례",
+              "group": "Best practices",
               "pages": [
                 "ko/products/cloud/guides/best-practices/index",
                 "ko/products/cloud/guides/best-practices/multitenancy",
@@ -199,7 +199,7 @@
             },
             {
               "expanded": false,
-              "group": "일반",
+              "group": "General",
               "pages": [
                 "ko/products/cloud/guides/cloud-compatibility",
                 "ko/products/cloud/guides/production-readiness"
@@ -207,14 +207,14 @@
             },
             {
               "expanded": false,
-              "group": "마이그레이션",
+              "group": "Migration",
               "pages": [
                 "ko/products/cloud/guides/migration/upload-a-csv-file"
               ]
             },
             {
               "expanded": false,
-              "group": "SQL 콘솔",
+              "group": "SQL console",
               "pages": [
                 "ko/products/cloud/guides/sql-console/connection-details",
                 "ko/products/cloud/guides/sql-console/query-endpoints"
@@ -222,14 +222,14 @@
             },
             {
               "expanded": false,
-              "group": "백업",
+              "group": "Backups",
               "pages": [
                 "ko/products/cloud/guides/backups/index",
                 "ko/products/cloud/guides/backups/review-and-restore-backups",
                 "ko/products/cloud/guides/backups/configurable-backups",
                 {
                   "expanded": false,
-                  "group": "자체 백업 가져오기",
+                  "group": "Bring Your Own Backup",
                   "pages": [
                     "ko/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "ko/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -240,7 +240,7 @@
             },
             {
               "expanded": false,
-              "group": "데이터 소스",
+              "group": "Data sources",
               "pages": [
                 "ko/products/cloud/guides/data-sources/index",
                 "ko/products/cloud/guides/data-sources/cloud-endpoints-api",
@@ -252,11 +252,11 @@
             },
             {
               "expanded": false,
-              "group": "인프라",
+              "group": "Infrastructure",
               "pages": [
                 {
                   "expanded": false,
-                  "group": "배포 모드",
+                  "group": "Deployment modes",
                   "pages": [
                     "ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
                     "ko/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
@@ -266,11 +266,11 @@
             },
             {
               "expanded": false,
-              "group": "보안",
+              "group": "Security",
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Cloud 접근 관리",
+                  "group": "Cloud access management",
                   "pages": [
                     "ko/products/cloud/guides/security/cloud-access-management/index",
                     "ko/products/cloud/guides/security/cloud-access-management/manage-my-account",
@@ -289,12 +289,12 @@
                 },
                 {
                   "expanded": false,
-                  "group": "연결성",
+                  "group": "Connectivity",
                   "pages": [
                     "ko/products/cloud/guides/security/connectivity/setting-ip-filters",
                     {
                       "expanded": false,
-                      "group": "프라이빗 네트워킹",
+                      "group": "Private networking",
                       "pages": [
                         "ko/products/cloud/guides/security/connectivity/private-networking/index",
                         "ko/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
@@ -306,7 +306,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "감사 로깅",
+                  "group": "Audit logging",
                   "pages": [
                     "ko/products/cloud/guides/security/audit-logging/index",
                     "ko/products/cloud/guides/security/audit-logging/console-audit-log",
@@ -316,7 +316,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "데이터 보안",
+                  "group": "Data security",
                   "pages": [
                     "ko/products/cloud/guides/security/data-masking",
                     "ko/products/cloud/guides/security/cmek"
@@ -324,7 +324,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "컴플라이언스",
+                  "group": "Compliance",
                   "pages": [
                     "ko/products/cloud/guides/security/compliance/hipaa-onboarding",
                     "ko/products/cloud/guides/security/compliance/pci-onboarding"
@@ -335,7 +335,7 @@
           ]
         },
         {
-          "group": "API 참조",
+          "group": "API reference",
           "openapi": {
             "directory": "ko/products/cloud/api-reference",
             "source": "_specs/cloud-openapi.json"

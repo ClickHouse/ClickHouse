@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "ClickPipes لتخزين الكائنات",
+      "group": "ClickPipes for Object Storage",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
         "ar/integrations/clickpipes/home",
@@ -49,7 +49,7 @@
         "ar/integrations/clickpipes/postgres/parallel-initial-load",
         "ar/integrations/clickpipes/postgres/lifecycle",
         {
-          "group": "العمليات",
+          "group": "Operations",
           "pages": [
             "ar/integrations/clickpipes/postgres/add-table",
             "ar/integrations/clickpipes/postgres/pause-and-resume",
@@ -61,7 +61,7 @@
           ]
         },
         {
-          "group": "المصدر",
+          "group": "Source",
           "pages": [
             "ar/integrations/clickpipes/postgres/source/alloydb",
             "ar/integrations/clickpipes/postgres/source/rds",
@@ -117,7 +117,7 @@
         "ar/integrations/clickpipes/mysql/schema-changes",
         "ar/integrations/clickpipes/mysql/lifecycle",
         {
-          "group": "العمليات",
+          "group": "Operations",
           "pages": [
             "ar/integrations/clickpipes/mysql/add-table",
             "ar/integrations/clickpipes/mysql/pause-and-resume",
@@ -129,7 +129,7 @@
           ]
         },
         {
-          "group": "المصدر",
+          "group": "Source",
           "pages": [
             "ar/integrations/clickpipes/mysql/source/rds",
             "ar/integrations/clickpipes/mysql/source/aurora",
@@ -152,7 +152,7 @@
         "ar/integrations/clickpipes/mongodb/lifecycle",
         "ar/integrations/clickpipes/mongodb/faq",
         {
-          "group": "العمليات",
+          "group": "Operations",
           "pages": [
             "ar/integrations/clickpipes/mongodb/add-table",
             "ar/integrations/clickpipes/mongodb/remove-table",
@@ -164,7 +164,7 @@
           ]
         },
         {
-          "group": "المصدر",
+          "group": "Source",
           "pages": [
             "ar/integrations/clickpipes/mongodb/source/atlas",
             "ar/integrations/clickpipes/mongodb/source/generic",
@@ -182,7 +182,7 @@
       ]
     },
     {
-      "group": "الوصول البرمجي",
+      "group": "Programmatic access",
       "icon": "code",
       "pages": [
         "ar/integrations/clickpipes/programmatic-access/openapi",
@@ -190,7 +190,7 @@
       ]
     },
     {
-      "group": "الشبكات",
+      "group": "Networking",
       "icon": "network-wired",
       "pages": [
         "ar/integrations/clickpipes/networking/index",
@@ -201,7 +201,7 @@
       ]
     },
     {
-      "group": "أخرى",
+      "group": "Other",
       "icon": "ellipsis",
       "pages": [
         "ar/integrations/clickpipes/dynamodb",
