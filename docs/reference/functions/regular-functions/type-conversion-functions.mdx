@@ -8488,6 +8488,85 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 └──────────────────────────────────────┘
 ```
 
+## toUUID2 {#toUUID2}
+
+Introduced in: v26.8.0
+
+Converts a String value to a [UUID2](/reference/data-types/uuid2) value (the correctly-sorting variant of UUID).
+    
+
+**Syntax**
+
+```sql
+toUUID2(string)
+```
+
+**Arguments**
+
+- `string` — UUID as a string. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
+
+**Returned value**
+
+Returns a UUID2 from the string representation of the UUID. [`UUID2`](/reference/data-types/uuid2)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT toUUID2('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
+```
+
+```response title=Response
+┌─────────────────────────────────uuid─┐
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
+└──────────────────────────────────────┘
+```
+
+## toUUID2OrNull {#toUUID2OrNull}
+
+Introduced in: v26.8.0
+
+Like [`toUUID2`](#toUUID2) but returns NULL if the string cannot be parsed.
+
+**Syntax**
+
+```sql
+toUUID2OrNull(string)
+```
+
+**Arguments**
+
+- `string` — UUID as a string. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
+
+**Returned value**
+
+Returns a UUID2, or NULL on parse failure. [`Nullable(UUID2)`](/reference/data-types/nullable)
+
+**Examples**
+
+## toUUID2OrZero {#toUUID2OrZero}
+
+Introduced in: v26.8.0
+
+Like [`toUUID2`](#toUUID2) but returns a zero UUID2 if the string cannot be parsed.
+
+**Syntax**
+
+```sql
+toUUID2OrZero(string)
+```
+
+**Arguments**
+
+- `string` — UUID as a string. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring)
+
+**Returned value**
+
+Returns a UUID2, or a zero UUID2 on parse failure. [`UUID2`](/reference/data-types/uuid2)
+
+**Examples**
+
 ## toUUIDOrZero {#toUUIDOrZero}
 
 Introduced in: v20.12.0

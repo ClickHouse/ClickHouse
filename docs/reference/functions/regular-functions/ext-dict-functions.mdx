@@ -2379,6 +2379,110 @@ SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
 └──────────────────────────────────────┘
 ```
 
+## dictGetUUID2 {#dictGetUUID2}
+
+Introduced in: v26.8.0
+
+Converts a dictionary attribute value to `UUID2` data type regardless of the dictionary configuration.
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
+**Syntax**
+
+```sql
+dictGetUUID2(dict_name, attr_name, id_expr)
+```
+
+**Arguments**
+
+- `dict_name` — Name of the dictionary. [`String`](/reference/data-types/string)
+- `attr_name` — Name of the column of the dictionary. [`String`](/reference/data-types/string) or [`Tuple(String)`](/reference/data-types/tuple)
+- `id_expr` — Key value. An expression returning a dictionary key-type value or tuple value (dictionary configuration dependent). [`Expression`](/reference/data-types/special-data-types/expression) or [`Tuple(T)`](/reference/data-types/tuple)
+
+**Returned value**
+
+Returns the value of the dictionary attribute that corresponds to `id_expr`,
+otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
+
+<Note>
+ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
+</Note>
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UUID2_value UUID2) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '123e4567-e89b-12d3-a456-426614174000');
+CREATE DICTIONARY all_types_dict (id UInt32, UUID2_value UUID2) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+SELECT dictGetUUID2('all_types_dict', 'UUID2_value', 1)
+```
+
+```response title=Response
+┌─dictGetUUID2⋯_value', 1)─────────────┐
+│ 123e4567-e89b-12d3-a456-426614174000 │
+└──────────────────────────────────────┘
+```
+
+## dictGetUUID2OrDefault {#dictGetUUID2OrDefault}
+
+Introduced in: v26.8.0
+
+Converts a dictionary attribute value to `UUID2` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
+**Syntax**
+
+```sql
+dictGetUUID2OrDefault(dict_name, attr_name, id_expr, default_value_expr)
+```
+
+**Arguments**
+
+- `dict_name` — Name of the dictionary. [`String`](/reference/data-types/string)
+- `attr_name` — Name of the column of the dictionary. [`String`](/reference/data-types/string) or [`Tuple(String)`](/reference/data-types/tuple)
+- `id_expr` — Key value. Expression returning dictionary key-type value or tuple value (dictionary configuration dependent). [`Expression`](/reference/data-types/special-data-types/expression) or [`Tuple(T)`](/reference/data-types/tuple)
+- `default_value_expr` — Value(s) returned if the dictionary does not contain a row with the `id_expr` key. [`Expression`](/reference/data-types/special-data-types/expression) or [`Tuple(T)`](/reference/data-types/tuple)
+
+**Returned value**
+
+Returns the value of the dictionary attribute that corresponds to `id_expr`,
+otherwise returns the value passed as the `default_value_expr` parameter.
+
+<Note>
+ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
+</Note>
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UUID2_value UUID2) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '550e8400-e29b-41d4-a716-446655440000');
+CREATE DICTIONARY all_types_dict (id UInt32, UUID2_value UUID2) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
+SELECT dictGetUUID2('all_types_dict', 'UUID2_value', 1);
+
+-- for key which does not exist, returns the provided default value
+SELECT dictGetUUID2OrDefault('all_types_dict', 'UUID2_value', 999, '00000000-0000-0000-0000-000000000000'::UUID2);
+```
+
+```response title=Response
+┌─dictGetUUID2('all_⋯ 'UUID2_value', 1)─┐
+│ 550e8400-e29b-41d4-a716-446655440000  │
+└───────────────────────────────────────┘
+┌─dictGetUUID2OrDefa⋯00000000000'::UUID2)─┐
+│ 00000000-0000-0000-0000-000000000000    │
+└─────────────────────────────────────────┘
+```
+
 ## dictGetUUIDOrDefault {#dictGetUUIDOrDefault}
 
 Introduced in: v1.1.0
