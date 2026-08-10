@@ -3,6 +3,14 @@ SET allow_experimental_statistics = 1;
 SET allow_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 
+-- The assertions match plan text, so pin the settings that reshape it. Keep
+-- `optimize_use_implicit_projections = 1`: at 0 the first query prunes nothing even without the fix.
+SET enable_analyzer = 1;
+SET parallel_replicas_local_plan = 1;
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_use_implicit_projections = 1;
+
 DROP TABLE IF EXISTS t_stats_prune_in;
 
 -- `c` carries min/max statistics (`basic` on a numeric type) and is NOT in the primary key, so
@@ -11,13 +19,16 @@ CREATE TABLE t_stats_prune_in (a String, c UInt64)
 ENGINE = MergeTree ORDER BY a
 SETTINGS auto_statistics_types = 'basic', index_granularity = 1;
 
+-- A merge of the three level-0 parts would change the pinned part counts.
+SYSTEM STOP MERGES t_stats_prune_in;
+
 INSERT INTO t_stats_prune_in VALUES ('a', 1);
 INSERT INTO t_stats_prune_in VALUES ('a', 100);
 INSERT INTO t_stats_prune_in VALUES ('a', 200);
 
--- Statistics pruning must not execute an `IN` subquery to build its set: doing so runs a user
--- subquery during index analysis and consumes its plan, leaving the set unbuildable if it fails.
--- The set is unbuilt here, so the atom is declined and all 3 parts are read.
+-- Statistics pruning declines an `IN` atom whose set is not built yet, so it prunes nothing and
+-- all 3 parts are read. (Absence of the `Statistics` row is the observable; the subquery-execution
+-- count itself is proven by the swallow-counter A/B in the PR, not by this assertion.)
 SELECT count() FROM (EXPLAIN indexes = 1
     SELECT count() FROM t_stats_prune_in WHERE c IN (SELECT 1)
     SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 1
@@ -39,14 +50,15 @@ CREATE TABLE t_stats_prune_in_pk (a String, c UInt64)
 ENGINE = MergeTree ORDER BY c
 SETTINGS auto_statistics_types = 'basic', index_granularity = 1;
 
+SYSTEM STOP MERGES t_stats_prune_in_pk;
+
 INSERT INTO t_stats_prune_in_pk VALUES ('a', 1);
 INSERT INTO t_stats_prune_in_pk VALUES ('a', 100);
 INSERT INTO t_stats_prune_in_pk VALUES ('a', 200);
 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1
     SELECT sum(c) FROM t_stats_prune_in_pk WHERE c IN (SELECT 1)
-    SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 1,
-             optimize_use_implicit_projections = 0
+    SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 1
 ) WHERE explain LIKE '%Statistics%' OR explain LIKE '%Parts: 1/3%';
 
 DROP TABLE t_stats_prune_in_pk;
