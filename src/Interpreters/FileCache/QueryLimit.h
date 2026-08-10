@@ -29,6 +29,10 @@ public:
     /// a new budget for the same query.
     std::vector<QueryContextPtr> removeQueryContext(QueryContextPtr & context);
 
+    /// Uncharge an evicted segment from every live query: it may have been cached by a query
+    /// other than the one which evicted it (or by several queries at once).
+    void unchargeEvictedSegment(const FileCacheKey & key, size_t offset, const CachePriorityGuard::WriteLock &);
+
     class QueryContext
     {
     public:

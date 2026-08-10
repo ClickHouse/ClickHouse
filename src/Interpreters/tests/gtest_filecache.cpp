@@ -3745,6 +3745,35 @@ TEST_F(FileCacheTest, RenameToIncludeSizeInNameFailureKeepsSegmentConsistent)
 
 namespace
 {
+/// Reserves `size` for a new file segment under `key_name` and downloads `downloaded_size` bytes.
+/// Returns whether the reservation succeeded.
+bool reserveAndDownloadSegment(
+    DB::FileCache & cache,
+    const std::string & cache_path,
+    const std::string & key_name,
+    size_t offset,
+    size_t size,
+    size_t downloaded_size)
+{
+    auto segments = cache.getOrSet(
+        DB::FileCacheKey::fromPath(key_name), offset, size, INT_MAX, {}, 0, FileCache::getCommonOrigin());
+    auto segment = *segments->begin();
+    EXPECT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
+
+    std::string failure_reason;
+    if (!segment->reserve(size, 1000, failure_reason))
+        return false;
+
+    auto key_str = segment->key().toString();
+    fs::create_directories(fs::path(cache_path) / key_str.substr(0, 3) / key_str);
+
+    std::string data(downloaded_size, '0');
+    segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
+    FileSegment::complete(
+        FileSegmentPtr(segment), /* allow_background_download */false, /* force_shrink_to_downloaded_size */false);
+    return true;
+}
+
 /// A cache with the per-query limit enabled, plus a query context holder for `query_id`,
 /// as `CachedOnDiskReadBufferFromFile` creates it.
 struct QueryLimitFixture
@@ -3783,27 +3812,9 @@ struct QueryLimitFixture
         holder = cache->getQueryContextHolder(query_id, read_settings);
     }
 
-    /// Reserves `size` for a new file segment and downloads `downloaded_size` bytes of it.
-    /// Returns whether the reservation succeeded.
-    bool reserveAndDownload(size_t offset, size_t size, size_t downloaded_size, const std::string & cache_path)
+    bool reserveAndDownload(size_t offset, size_t size, size_t downloaded_size, const std::string & cache_path) const
     {
-        auto segments = cache->getOrSet(
-            DB::FileCacheKey::fromPath("query_limit_key"), offset, size, INT_MAX, {}, 0, FileCache::getCommonOrigin());
-        auto segment = *segments->begin();
-        EXPECT_EQ(segment->getOrSetDownloader(), FileSegment::getCallerId());
-
-        std::string failure_reason;
-        if (!segment->reserve(size, 1000, failure_reason))
-            return false;
-
-        auto key_str = segment->key().toString();
-        fs::create_directories(fs::path(cache_path) / key_str.substr(0, 3) / key_str);
-
-        std::string data(downloaded_size, '0');
-        segment->write(data.data(), data.size(), segment->getCurrentWriteOffset());
-        FileSegment::complete(
-            FileSegmentPtr(segment), /* allow_background_download */false, /* force_shrink_to_downloaded_size */false);
-        return true;
+        return reserveAndDownloadSegment(*cache, cache_path, "query_limit_key", offset, size, downloaded_size);
     }
 
     std::unique_ptr<DB::FileCache> cache;
@@ -3837,6 +3848,97 @@ TEST_F(FileCacheTest, QueryLimitUnchargesEvictedSegments)
     ASSERT_TRUE(fixture.reserveAndDownload(200, 5, 5, cache_base_path));
     /// 10 (evicted) + 10 + 5 exceeds the budget, 10 + 5 does not.
     ASSERT_TRUE(fixture.reserveAndDownload(300, 10, 10, cache_base_path));
+}
+
+TEST_F(FileCacheTest, QueryLimitUnchargesSegmentsEvictedByAnotherQuery)
+{
+    /// A segment is evicted by a query other than the one which cached it: it must stop counting
+    /// against the budget of the query which cached it, the same as for self-eviction.
+    ServerUUID::setRandomForUnitTests();
+
+    const std::string cache_path = cache_base_path2;
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_path;
+    settings[FileCacheSetting::max_size] = 25;
+    settings[FileCacheSetting::max_elements] = 100;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    settings[FileCacheSetting::enable_filesystem_query_cache_limit] = true;
+    settings[FileCacheSetting::reserve_granularity] = 0;
+
+    DB::FileCache cache("query_limit_cross_query", settings);
+    cache.initialize();
+
+    FilesystemCacheSettings limited_settings;
+    limited_settings.max_download_size_per_query = 12;
+    limited_settings.skip_download_if_exceeds_per_query_cache_write_limit = true;
+
+    /// The evicting query must not be limited itself, it has to reserve more than the cache holds.
+    FilesystemCacheSettings unlimited_settings;
+    unlimited_settings.max_download_size_per_query = 1000;
+    unlimited_settings.skip_download_if_exceeds_per_query_cache_write_limit = true;
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    /// 1: the limited query cached its segments, 2: the other query evicted them.
+    int stage = 0;
+    bool cached_after_eviction = false;
+
+    /// The limited query stays alive (thread group and holder) while the other query evicts.
+    std::thread limited_query([&]
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId("cross_query_limited");
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+        auto holder = cache.getQueryContextHolder("cross_query_limited", limited_settings);
+
+        /// 5 + 5 of the 12 byte budget.
+        EXPECT_TRUE(reserveAndDownloadSegment(cache, cache_path, "cross_query_a", 0, 5, 5));
+        EXPECT_TRUE(reserveAndDownloadSegment(cache, cache_path, "cross_query_b", 0, 5, 5));
+
+        {
+            std::lock_guard lock(mutex);
+            stage = 1;
+        }
+        cv.notify_all();
+        {
+            std::unique_lock lock(mutex);
+            cv.wait(lock, [&] { return stage == 2; });
+        }
+
+        /// Both segments of this query are gone from the cache, so 5 more bytes fit into the
+        /// budget again. While they were still charged, 10 + 5 exceeded the 12 byte limit.
+        cached_after_eviction = reserveAndDownloadSegment(cache, cache_path, "cross_query_c", 0, 5, 5);
+    });
+
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [&] { return stage == 1; });
+    }
+
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId("cross_query_evicting");
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+        auto holder = cache.getQueryContextHolder("cross_query_evicting", unlimited_settings);
+
+        /// 10 + 21 does not fit into the 25 byte cache, so this evicts both segments above.
+        ASSERT_TRUE(reserveAndDownloadSegment(cache, cache_path, "cross_query_d", 0, 21, 21));
+    }
+
+    {
+        std::lock_guard lock(mutex);
+        stage = 2;
+    }
+    cv.notify_all();
+    limited_query.join();
+
+    ASSERT_TRUE(cached_after_eviction);
 }
 
 TEST_F(FileCacheTest, QueryLimitIsCumulative)

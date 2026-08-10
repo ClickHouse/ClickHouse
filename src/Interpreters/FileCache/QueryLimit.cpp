@@ -67,6 +67,14 @@ FileCacheQueryLimit::removeQueryContext(QueryContextPtr & context)
     return doomed;
 }
 
+void FileCacheQueryLimit::unchargeEvictedSegment(
+    const FileCacheKey & key, size_t offset, const CachePriorityGuard::WriteLock & lock)
+{
+    std::lock_guard map_lock(query_map_mutex);
+    for (auto & [_, context] : query_map)
+        context->tryRemove(key, offset, lock);
+}
+
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     const std::string & query_id,
     const FilesystemCacheSettings & settings)

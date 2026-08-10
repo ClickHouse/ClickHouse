@@ -1005,7 +1005,14 @@ size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard:
     desired_size = std::min(desired_size, range().size());
     chassert(desired_size >= downloaded_size);
 
-    return desired_size - downloaded_size;
+    const size_t size_to_download = desired_size - downloaded_size;
+
+    /// A background download writes from a thread which has no query context, so its bytes are not
+    /// charged to the query which started it. Do not queue more than that query has left to write.
+    if (!cache->fitsIntoCurrentQueryLimit(size_to_download))
+        return 0;
+
+    return size_to_download;
 }
 
 void FileSegment::complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size)

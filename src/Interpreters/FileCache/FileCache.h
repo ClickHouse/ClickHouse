@@ -260,6 +260,10 @@ public:
     /// Uncharge `size` from the current query's per-query limit accounting for `key`:`offset`.
     void decrementQueryLimitSize(const Key & key, size_t offset, size_t size);
 
+    /// Whether `size` still fits into the per-query write limit of the current query.
+    /// True when there is no such limit.
+    bool fitsIntoCurrentQueryLimit(size_t size) const;
+
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
 

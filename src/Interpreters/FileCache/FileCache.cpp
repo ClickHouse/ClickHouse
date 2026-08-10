@@ -1449,7 +1449,8 @@ bool FileCache::doTryReserve(
 
     /// With a per-query limit the write lock is taken on every reservation, because the
     /// per-query mirror is guarded by it and has to be updated on every reservation.
-    if (!main_priority_iterator || eviction_candidates.requiresAfterEvictWrite() || query_context)
+    if (!main_priority_iterator || eviction_candidates.requiresAfterEvictWrite()
+        || query_context || !evicted_entries.empty())
     {
         auto lock = cache_guard.writeLock();
         eviction_candidates.afterEvictWrite(lock);
@@ -1466,13 +1467,13 @@ bool FileCache::doTryReserve(
                 nullptr);
         }
 
+        /// Evicted segments are gone from the cache, so they must stop counting against the
+        /// queries which cached them - which are not necessarily the query evicting them here.
+        for (const auto & [key, offset] : evicted_entries)
+            query_limit->unchargeEvictedSegment(key, offset, lock);
+
         if (query_context)
         {
-            /// Evicted segments are gone from the cache, so the per-query priority must stop
-            /// counting their size and must not keep an iterator for their key/offset.
-            for (const auto & [key, offset] : evicted_entries)
-                query_context->tryRemove(key, offset, lock);
-
             /// Query-side accounting must mirror every reservation, not only the first one for
             /// this file segment: a segment is reserved in steps, and all the following steps
             /// would otherwise bypass the per-query limit.
@@ -1634,9 +1635,9 @@ bool FileCache::doEviction(
             return false;
         }
 
-        /// Captured before `evict()` empties the candidates. The main-priority pass can also
-        /// evict segments cached by the current query, so both passes are taken into account.
-        if (query_priority)
+        /// Captured before `evict()` empties the candidates. Both passes are taken into account:
+        /// the segments being evicted may have been cached by any query, not only by this one.
+        if (query_limit)
         {
             for (const auto & [key, key_candidates] : eviction_candidates)
                 for (const auto & candidate : key_candidates.candidates)
@@ -3315,6 +3316,21 @@ FileCache::QueryContextHolderPtr FileCache::getQueryContextHolder(
 
     auto context = query_limit->getOrSetQueryContext(query_id, cache_settings);
     return std::make_unique<QueryContextHolder>(query_id, query_limit.get(), std::move(context));
+}
+
+bool FileCache::fitsIntoCurrentQueryLimit(size_t size) const
+{
+    if (!query_limit)
+        return true;
+
+    auto query_context = query_limit->tryGetQueryContext();
+    if (!query_context)
+        return true;
+
+    /// Approximate values are enough here: this only decides whether to start writing more.
+    const auto & priority = query_context->getPriority();
+    const size_t limit = priority.getSizeLimitApprox();
+    return limit == 0 || priority.getSizeApprox() + size <= limit;
 }
 
 void FileCache::decrementQueryLimitSize(const Key & key, size_t offset, size_t size)
