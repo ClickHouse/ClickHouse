@@ -23,6 +23,8 @@
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperRequestDispatcher.h>
 
+#include <future>
+
 class KeeperSaturatedWaitTest_InterruptibleSleepKeepsHugePeriod_Test;
 class KeeperSaturatedWaitTest_InterruptibleSleepReturnsAtOnceForNonPositivePeriod_Test;
 
