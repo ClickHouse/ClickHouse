@@ -196,8 +196,11 @@ function stop_logs_replication()
     # Kept here (rather than in the caller) so it obeys the same
     # "the harness's own queries are not fuzzed" contract as the rest of this
     # script via `NO_AST_FUZZER`.
+    # Fail-close, as it was when the callers ran this flush themselves: a failing
+    # flush means the final buffered system-log rows are lost, and `set -e` above
+    # propagates that to the caller instead of silently reporting success.
     echo "Flush system logs"
-    clickhouse-client ${NO_AST_FUZZER:-} --query "SYSTEM FLUSH LOGS" || echo "WARNING: failed to flush system logs, some rows may be lost"
+    clickhouse-client ${NO_AST_FUZZER:-} --query "SYSTEM FLUSH LOGS"
 
     # The `_sender` tables are `Distributed` engine with `flush_on_detach=0`
     # (set so a slow/unreachable remote cluster can't hang server shutdown),
