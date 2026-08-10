@@ -1571,9 +1571,10 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
 
         for (size_t j = i; j < batch_end; ++j)
         {
-            /// Skip .retriable nodes, only track terminal failed nodes
-            if (!keeper_failed_nodes[j].ends_with(".retriable"))
-                batch_paths.push_back(failed_fs_path / keeper_failed_nodes[j]);
+            /// Include both terminal and .retriable nodes in the preservation set.
+            /// Cache entries for files with .retriable state should survive reconciliation
+            /// because their Keeper nodes are still present and actively tracking retries.
+            batch_paths.push_back(failed_fs_path / keeper_failed_nodes[j]);
         }
 
         if (batch_paths.empty())
