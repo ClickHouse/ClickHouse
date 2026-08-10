@@ -39,7 +39,12 @@ SELECT count() FROM t_json_all_values_representation_types WHERE data.implicit_d
 -- The runtime type of a dynamic path cannot prove representation compatibility.
 SELECT count() FROM t_json_all_values_representation_types WHERE data.dynamic_dt = '2040-03-03 03:00:00';
 SELECT count() FROM t_json_all_values_representation_types WHERE data.dynamic_dt = toDateTime('2040-03-03 03:00:00', 'Europe/Moscow');
-SELECT count() FROM t_json_all_values_representation_types WHERE data.dynamic_dt::String = '2040-03-03 03:00:00';
+SELECT count() FROM
+(
+    EXPLAIN indexes = 1
+    SELECT count() FROM t_json_all_values_representation_types WHERE data.dynamic_dt::String = '2040-03-03 03:00:00'
+)
+WHERE explain LIKE '%idx_values%';
 SELECT count() FROM t_json_all_values_representation_types WHERE data.labels[].name::String = '[''bug'']';
 SELECT count() FROM t_json_all_values_representation_types WHERE data.labels[].name::String IN (SELECT '[''bug'']');
 
@@ -49,7 +54,6 @@ SELECT count() FROM t_json_all_values_representation_types WHERE data.flag = 1 S
 SELECT count() FROM t_json_all_values_representation_types WHERE data.implicit_dt = toDateTime('2030-02-02 03:00:00') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_json_all_values_representation_types WHERE data.dynamic_dt = '2040-03-03 03:00:00' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_json_all_values_representation_types WHERE data.dynamic_dt = toDateTime('2040-03-03 03:00:00', 'Europe/Moscow') SETTINGS use_skip_indexes = 0;
-SELECT count() FROM t_json_all_values_representation_types WHERE data.dynamic_dt::String = '2040-03-03 03:00:00' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_json_all_values_representation_types WHERE data.labels[].name::String = '[''bug'']' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM t_json_all_values_representation_types WHERE data.labels[].name::String IN (SELECT '[''bug'']') SETTINGS use_skip_indexes = 0;
 
