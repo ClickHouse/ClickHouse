@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -205,4 +206,62 @@ TEST(RuntimeDataflowStatisticsStateSampling, MixedWrapperSamplesNonStatePayloadC
     ASSERT_TRUE(stats.has_value());
     EXPECT_GE(stats->output_bytes, exact.compressed_bytes / 2);
     EXPECT_LE(stats->output_bytes, exact.compressed_bytes * 2);
+}
+
+/// A state-bearing carrier can also be a constant - e.g. a scalar subquery returning a `-State` value, which
+/// reaches the output as a `ColumnConst` around the state (or around a tuple holding one). `ColumnConst`
+/// stores its single row once, but the data type cannot serialize constants, so `NativeWriter::writeData`
+/// materializes them and the wire carries that row once per row of the block. Both the uncompressed figure
+/// and the compression sample of everything below such a carrier must therefore count the whole block, not
+/// the one stored row, or the statistic under-measures the output by the block's row count.
+TEST(RuntimeDataflowStatisticsStateSampling, ConstantCarrierCountsEveryRowOfTheBlock)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 512;
+    constexpr size_t elements_in_giant_state = 100000;
+    constexpr size_t string_size = 10240;
+
+    /// One row: a giant incompressible state in a foreign arena, and a large constant sibling string.
+    auto states_arena = std::make_shared<Arena>();
+    AggregateFunctionPtr function;
+    auto column = createSkewedGroupArrayColumn(
+        /*rows=*/1, /*giant_state_row=*/0, elements_in_giant_state, function, states_arena.get());
+    column->addArena(states_arena);
+
+    const auto exact = column->sampledStateSizes(1);
+    ASSERT_EQ(exact.bytes, exact.sample_bytes);
+    ASSERT_GT(exact.compressed_bytes, elements_in_giant_state * sizeof(UInt64) / 2);
+
+    auto string_column = ColumnString::create();
+    const std::string value(string_size, 'a');
+    string_column->insertData(value.data(), value.size());
+
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+
+    const size_t cache_key = 0x111985 + 3;
+
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+
+        Block header;
+        header.insert(ColumnWithTypeAndName{
+            nullptr,
+            std::make_shared<DataTypeTuple>(DataTypes{state_type, std::make_shared<DataTypeString>()}),
+            "constant_wrapped_state"});
+
+        Columns tuple_elements;
+        tuple_elements.emplace_back(std::move(column));
+        tuple_elements.emplace_back(std::move(string_column));
+        Chunk chunk(Columns{ColumnConst::create(ColumnTuple::create(std::move(tuple_elements)), rows)}, rows);
+        updater.recordOutputChunk(chunk, header);
+    }
+
+    /// The state repeats `rows` times on the wire and does not compress; the constant string does, so the
+    /// whole column's compressed size is the repeated states'. Sizing the carrier from its single stored
+    /// row instead lands a factor of `rows` below the lower bound.
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, rows * exact.compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, rows * exact.compressed_bytes * 2);
 }

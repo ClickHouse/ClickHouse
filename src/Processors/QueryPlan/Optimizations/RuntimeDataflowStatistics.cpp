@@ -157,8 +157,12 @@ static bool hasAggregateStateLeaf(const IColumn & column)
 /// non-state payload still needs a compression sample of its own, otherwise the leaf-only ratio is applied
 /// to it - e.g. `tuple(groupArrayState(x), s)` would estimate the sibling string's bytes with the states'
 /// compression ratio.
+///
+/// `repetitions` is how many times each row of `column` appears on the wire: a state-bearing `ColumnConst`
+/// is taken apart into its one-row payload, which `NativeWriter::writeData` materializes back to the
+/// column's row count, so everything below such a carrier counts that many times.
 static void sampleNonStatePartsCompression(
-    const ColumnPtr & column, const DataTypePtr & type, size_t & sample_bytes, size_t & compressed_bytes)
+    const ColumnPtr & column, const DataTypePtr & type, size_t repetitions, size_t & sample_bytes, size_t & compressed_bytes)
 {
     /// The leaf itself is measured from its serialized states by the caller.
     if (typeid_cast<const ColumnAggregateFunction *>(column.get()))
@@ -167,7 +171,19 @@ static void sampleNonStatePartsCompression(
     /// A state-free subtree is a plain column; serialize a sample of it as a whole.
     if (!hasAggregateStateLeaf(*column))
     {
-        const auto [sample, compressed] = estimateCompressedColumnSize(ColumnWithTypeAndName{column, type, {}});
+        /// A one-row subtree of a `ColumnConst` is put back into a constant of the original row count, so
+        /// that the sample measures the repeated payload the wire carries, compressibility included.
+        const ColumnWithTypeAndName to_sample{
+            repetitions > 1 && column->size() == 1 ? ColumnConst::create(column, repetitions) : column, type, {}};
+        auto [sample, compressed] = estimateCompressedColumnSize(to_sample);
+        /// Deeper than the constant's own row - e.g. the elements of a constant array of states - the
+        /// payload cannot be wrapped in a constant, so scale the sample instead. That keeps the
+        /// uncompressed bytes exact and reports the repetitions as no more compressible than one copy.
+        if (to_sample.column == column && repetitions > 1)
+        {
+            sample *= repetitions;
+            compressed *= repetitions;
+        }
         sample_bytes += sample;
         compressed_bytes += compressed;
         return;
@@ -176,7 +192,8 @@ static void sampleNonStatePartsCompression(
     /// A carrier with state leaves somewhere below: take it apart and recurse, sampling its own payload.
     if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
     {
-        sampleNonStatePartsCompression(const_column->getDataColumnPtr(), type, sample_bytes, compressed_bytes);
+        sampleNonStatePartsCompression(
+            const_column->getDataColumnPtr(), type, repetitions * column->size(), sample_bytes, compressed_bytes);
         return;
     }
     if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get()))
@@ -184,9 +201,9 @@ static void sampleNonStatePartsCompression(
         if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
         {
             sampleNonStatePartsCompression(
-                nullable_column->getNullMapColumnPtr(), std::make_shared<DataTypeUInt8>(), sample_bytes, compressed_bytes);
+                nullable_column->getNullMapColumnPtr(), std::make_shared<DataTypeUInt8>(), repetitions, sample_bytes, compressed_bytes);
             sampleNonStatePartsCompression(
-                nullable_column->getNestedColumnPtr(), nullable_type->getNestedType(), sample_bytes, compressed_bytes);
+                nullable_column->getNestedColumnPtr(), nullable_type->getNestedType(), repetitions, sample_bytes, compressed_bytes);
             return;
         }
     }
@@ -197,7 +214,7 @@ static void sampleNonStatePartsCompression(
         {
             for (size_t i = 0; i < tuple_column->tupleSize(); ++i)
                 sampleNonStatePartsCompression(
-                    tuple_column->getColumnPtr(i), tuple_type->getElements()[i], sample_bytes, compressed_bytes);
+                    tuple_column->getColumnPtr(i), tuple_type->getElements()[i], repetitions, sample_bytes, compressed_bytes);
             return;
         }
     }
@@ -206,8 +223,9 @@ static void sampleNonStatePartsCompression(
         if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
             sampleNonStatePartsCompression(
-                array_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), sample_bytes, compressed_bytes);
-            sampleNonStatePartsCompression(array_column->getDataPtr(), array_type->getNestedType(), sample_bytes, compressed_bytes);
+                array_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, sample_bytes, compressed_bytes);
+            sampleNonStatePartsCompression(
+                array_column->getDataPtr(), array_type->getNestedType(), repetitions, sample_bytes, compressed_bytes);
             return;
         }
     }
@@ -215,15 +233,16 @@ static void sampleNonStatePartsCompression(
     {
         if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
         {
-            sampleNonStatePartsCompression(map_column->getNestedColumnPtr(), map_type->getNestedType(), sample_bytes, compressed_bytes);
+            sampleNonStatePartsCompression(
+                map_column->getNestedColumnPtr(), map_type->getNestedType(), repetitions, sample_bytes, compressed_bytes);
             return;
         }
     }
     else if (const auto * sparse_column = typeid_cast<const ColumnSparse *>(column.get()))
     {
         sampleNonStatePartsCompression(
-            sparse_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), sample_bytes, compressed_bytes);
-        sampleNonStatePartsCompression(sparse_column->getValuesPtr(), type, sample_bytes, compressed_bytes);
+            sparse_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, sample_bytes, compressed_bytes);
+        sampleNonStatePartsCompression(sparse_column->getValuesPtr(), type, repetitions, sample_bytes, compressed_bytes);
         return;
     }
 
@@ -231,7 +250,7 @@ static void sampleNonStatePartsCompression(
     /// structure): count its own payload as incompressible rather than applying the leaves' ratio to it.
     size_t leaves_byte_size = 0;
     forEachAggregateStateLeaf(*column, [&](const ColumnAggregateFunction & leaf) { leaves_byte_size += leaf.byteSize(); });
-    const size_t carrier_bytes = column->byteSize() - leaves_byte_size;
+    const size_t carrier_bytes = (column->byteSize() - leaves_byte_size) * repetitions;
     sample_bytes += carrier_bytes;
     compressed_bytes += carrier_bytes;
 }
@@ -264,25 +283,35 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
     /// extrapolated from the per-row figure the sampled blocks give, like the compression ratio is.
     /// Aggregate-state leaves of every column, top-level or wrapped: the wrappers' `byteSize` just sums the
     /// nested `byteSize`, so a wrapped leaf drops its shared-arena payload the same way a top-level one does.
-    std::vector<const ColumnAggregateFunction *> state_leaves;
+    /// Every aggregate-state leaf with the number of times each of its rows appears on the wire.
+    std::vector<std::pair<const ColumnAggregateFunction *, size_t>> state_leaves;
     /// Whether cols[i] contains (or is) an aggregate-state leaf.
     std::vector<UInt8> col_has_states(cols.size(), 0);
     size_t plain_bytes = 0;
     for (size_t i = 0; i < cols.size(); ++i)
     {
-        const auto & col = cols[i];
+        /// `NativeWriter::writeData` materializes constants - the data type cannot serialize them - so a
+        /// constant column puts its single stored row on the wire once per row of the block, while
+        /// `ColumnConst::byteSize` counts that row once. Size the stored payload and repeat it instead.
+        ColumnPtr column = cols[i].column;
+        size_t repetitions = 1;
+        if (const auto * const_column = typeid_cast<const ColumnConst *>(column.get()))
+        {
+            repetitions = column->size();
+            column = const_column->getDataColumnPtr();
+        }
         size_t state_leaves_byte_size = 0;
         forEachAggregateStateLeaf(
-            *col.column,
+            *column,
             [&](const ColumnAggregateFunction & leaf)
             {
                 col_has_states[i] = 1;
-                state_leaves.push_back(&leaf);
+                state_leaves.emplace_back(&leaf, repetitions);
                 state_leaves_byte_size += leaf.byteSize();
             });
         /// The carrier's own payload (null maps, sibling tuple elements, array offsets, ...) is sized by
         /// `byteSize` like any plain column; the state leaves are sized from their serialized states below.
-        plain_bytes += col.column->byteSize() - state_leaves_byte_size;
+        plain_bytes += (column->byteSize() - state_leaves_byte_size) * repetitions;
     }
     const bool has_aggregate_states = !state_leaves.empty();
 
@@ -300,7 +329,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
         /// swings the extrapolation several-fold depending on whether the few giant states land on the
         /// sampled positions. Blocks of up to 1000 states are measured exactly.
         static constexpr size_t max_states_to_serialize = 1000;
-        for (const auto * aggregate_column : state_leaves)
+        for (const auto & [aggregate_column, repetitions] : state_leaves)
         {
             /// One periodic sample yields both the uncompressed figure and the compression sample, so
             /// the `bytes / (sample_bytes / compressed_bytes)` estimate is derived from a single
@@ -310,9 +339,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
             /// compressed size to the sample size - a sample of tiny states must read as
             /// incompressible, not as expanding - lives in `sampledStateSizes`.
             const auto sizes = aggregate_column->sampledStateSizes(max_states_to_serialize);
-            serialized_state_bytes += sizes.bytes;
-            sample_bytes += sizes.sample_bytes;
-            compressed_bytes += sizes.compressed_bytes;
+            serialized_state_bytes += sizes.bytes * repetitions;
+            sample_bytes += sizes.sample_bytes * repetitions;
+            compressed_bytes += sizes.compressed_bytes * repetitions;
         }
     }
 
@@ -327,7 +356,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
             /// sample of their own instead of inheriting the leaf-only ratio.
             if (col_has_states[i])
             {
-                sampleNonStatePartsCompression(cols[i].column, cols[i].type, sample_bytes, compressed_bytes);
+                sampleNonStatePartsCompression(cols[i].column, cols[i].type, 1, sample_bytes, compressed_bytes);
                 continue;
             }
             auto [sample, compressed] = estimateCompressedColumnSize(cols[i]);
