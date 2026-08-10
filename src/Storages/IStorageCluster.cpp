@@ -127,6 +127,14 @@ void IStorageCluster::read(
         {
             TreeRewriterResult rewriter_result = *interpreter.getQueryInfo().syntax_analyzer_result;
             removeJoin(*select_to_send, rewriter_result, context);
+
+            /// removeJoin() leaves these, but they may reference the joined side, and WITH TIES
+            /// needs the ORDER BY it just dropped. The initiator applies them after the join.
+            select_to_send->setExpression(ASTSelectQuery::Expression::WINDOW, {});
+            select_to_send->setExpression(ASTSelectQuery::Expression::LIMIT_BY, {});
+            select_to_send->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
+            select_to_send->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
+            select_to_send->limit_with_ties = false;
         }
     }
 

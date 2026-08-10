@@ -46,6 +46,12 @@ run "WHERE spanning both sides" "SELECT a, lm, rm FROM $L AS x INNER JOIN $R AS 
 run "HAVING" "SELECT a, count() AS c FROM $L AS x INNER JOIN $R AS y USING (a) GROUP BY a HAVING c = 1 ORDER BY a FORMAT CSV"
 run "ORDER BY and LIMIT" "SELECT a, lm, rm FROM $L AS x INNER JOIN $R AS y USING (a) ORDER BY a DESC LIMIT 2 FORMAT CSV"
 
+# Clauses the shard query must not keep: they may name the joined side, and WITH TIES needs the
+# ORDER BY that the join strip removes.
+run "LIMIT BY the joined side" "SELECT a, lm, rm FROM $L AS x INNER JOIN $R AS y USING (a) ORDER BY a LIMIT 1 BY y.rm FORMAT CSV"
+run "named WINDOW over the joined side" "SELECT a, count() OVER w FROM $L AS x INNER JOIN $R AS y USING (a) WINDOW w AS (PARTITION BY y.rm) ORDER BY a FORMAT CSV"
+run "LIMIT WITH TIES" "SELECT a, lm, rm FROM $L AS x INNER JOIN $R AS y USING (a) ORDER BY a LIMIT 2 WITH TIES FORMAT CSV"
+
 printf "SELECT '-- shapes that must not change';\n"
 run "single cluster function" "SELECT * FROM $L ORDER BY a FORMAT CSV"
 run "cluster JOIN plain file" "SELECT a, lm, rm FROM $L AS x INNER JOIN $PR AS y USING (a) ORDER BY a FORMAT CSV"
