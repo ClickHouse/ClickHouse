@@ -2931,6 +2931,37 @@ static void paranoidCheckForCoveredPartsInZooKeeper(
         covering_part_name);
 }
 
+void StorageReplicatedMergeTree::removeStrandedPartsInRangeFromZooKeeper(const MergeTreePartInfo & drop_range)
+{
+    /// `removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper` only sees parts that are
+    /// in the in-memory index (Active/Outdated/Deleting), so a part missing from it in every state
+    /// keeps its ZooKeeper node. Such a node is legal while an active part covers it (see
+    /// `paranoidCheckForCoveredPartsInZooKeeperOnStart`), but this drop removes every part of the
+    /// range: afterwards nothing covers the node, no replica can serve a fetch for it, and the
+    /// Outdated-driven cleanup thread never sees it. So it is garbage and we remove it here.
+    ///
+    /// Only valid for a full (fake) drop range: for a single-part DROP PART an empty removal set
+    /// instead means the drop is already satisfied by a live covering part, whose node must stay.
+    chassert(drop_range.isFakeDropRangePart());
+
+    auto zookeeper = getZooKeeper();
+    Strings stranded_parts;
+    for (const auto & part_name : zookeeper->getChildren(replica_path + "/parts"))
+    {
+        auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
+        if (part_info && drop_range.contains(*part_info))
+            stranded_parts.push_back(part_name);
+    }
+
+    if (stranded_parts.empty())
+        return;
+
+    LOG_WARNING(log, "Removing {} part(s) [{}] from ZooKeeper: covered by DROP_RANGE {}, but not present in the working set",
+        stranded_parts.size(), fmt::join(stranded_parts, ", "), drop_range.getPartNameForLogs());
+
+    removePartsFromZooKeeperWithRetries(stranded_parts);
+}
+
 void StorageReplicatedMergeTree::waitForPreActivePartsInRange(const MergeTreePartInfo & drop_range) const
 {
     /// An INSERT on the originating replica commits a part to ZooKeeper (via the ZK multi-op
@@ -3005,16 +3036,20 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
         parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range_info, data_parts_lock, /*create_empty_part=*/ true, clone_to_detached);
 
-        if (parts_to_remove.empty())
+        /// For a single-part DROP PART an empty set means the drop is already satisfied by a live
+        /// covering part, so there is nothing to do. For a full drop range it instead means no part
+        /// of the range is in the working set, and a covered ZooKeeper node may still be stranded.
+        if (parts_to_remove.empty() && !drop_range_info.isFakeDropRangePart())
         {
-            if (!drop_range_info.isFakeDropRangePart())
-                LOG_INFO(log, "Log entry {} tried to drop single part {}, but part does not exist", entry.znode_name, entry.new_part_name);
+            LOG_INFO(log, "Log entry {} tried to drop single part {}, but part does not exist", entry.znode_name, entry.new_part_name);
             return;
         }
     }
 
     /// Forcibly remove parts from ZooKeeper
     removePartsFromZooKeeperWithRetries(parts_to_remove);
+    if (drop_range_info.isFakeDropRangePart())
+        removeStrandedPartsInRangeFromZooKeeper(drop_range_info);
     paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry.new_part_name, *this);
 
     if (entry.detach)
@@ -3157,8 +3192,12 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
         LOG_INFO(log, "All parts from REPLACE PARTITION command have been already attached");
         removePartsFromZooKeeperWithRetries(parts_to_remove);
         if (replace)
+        {
+            if (drop_range.isFakeDropRangePart())
+                removeStrandedPartsInRangeFromZooKeeper(drop_range);
             paranoidCheckForCoveredPartsInZooKeeper(
                 getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name, *this);
+        }
         return true;
     }
 
@@ -3484,7 +3523,11 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
     removePartsFromZooKeeperWithRetries(parts_to_remove);
     if (replace)
+    {
+        if (drop_range.isFakeDropRangePart())
+            removeStrandedPartsInRangeFromZooKeeper(drop_range);
         paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry_replace.drop_range_part_name, *this);
+    }
     res_parts.clear();
     parts_to_remove.clear();
     cleanup_thread.wakeup();
