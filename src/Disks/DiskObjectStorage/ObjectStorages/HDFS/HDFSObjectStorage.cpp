@@ -222,7 +222,9 @@ void HDFSObjectStorage::removeObjectIfExists(const StoredObject & object)
         removeObject(object);
 }
 
-void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects)
+void HDFSObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     initializeHDFSFS();
     for (const auto & object : objects)

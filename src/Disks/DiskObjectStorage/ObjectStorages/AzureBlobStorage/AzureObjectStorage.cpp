@@ -515,7 +515,9 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
     }
 }
 
-void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects)
+void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     if (objects.empty())
         return;
@@ -566,7 +568,7 @@ static void setAzureBlobTag(
     }
 }
 
-void AzureObjectStorage::tagObjects(
+void AzureObjectStorage::tagObjects( /// NOLINT
     const StoredObjects & objects,
     const std::string & tag_key,
     const std::string & tag_value,

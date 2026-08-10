@@ -709,7 +709,9 @@ void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
     });
 }
 
-void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects)
+void LocalObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     throwIfReadonly();
     for (const auto & object : objects)

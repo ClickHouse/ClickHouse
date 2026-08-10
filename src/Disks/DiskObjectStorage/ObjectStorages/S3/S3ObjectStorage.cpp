@@ -459,7 +459,9 @@ void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeObjectImpl(object, true);
 }
 
-void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects, StoredObjects * successful_objects)
+void S3ObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     removeObjectsImpl(objects, true, successful_objects);
 }
@@ -538,7 +540,7 @@ static void putObjectsTagOnS3(
 
 }
 
-void S3ObjectStorage::tagObjects(
+void S3ObjectStorage::tagObjects( /// NOLINT
     const StoredObjects & objects,
     const std::string & tag_key,
     const std::string & tag_value,
