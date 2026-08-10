@@ -149,7 +149,7 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     if (storage.sample_by)
         KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, virtuals, context);
     if (storage.ttl_table && primary_key.has_value())
-        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, true);
+        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, TTLValidationMode::Attach);
 }
 }
 
