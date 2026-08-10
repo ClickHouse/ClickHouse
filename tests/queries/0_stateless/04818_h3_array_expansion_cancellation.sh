@@ -218,7 +218,9 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count(), sum(length(h3ToChildren($BAD, 9))) FROM
 # permanent `CurrentMetrics::QueryNonInternal` leak. All four are here because that resolution is
 # implemented separately in each of the four files, so one case would leave three of them unpinned.
 # The rows must arrive in one block, or the pipeline's own check bounds the INSERT whatever the
-# function does, and every distinct array length is a partition.
+# function does, and every distinct array length is a partition. A row count alone does not buy that
+# block: the squasher also flushes on `min_insert_block_size_bytes`, whose 256MiB default caps a
+# UInt64 column at 33550368 rows, so it is pinned here to the size of the block being asked for.
 # $1 = label, $2 = the partition expression over the column `c`, $3 = the cell to insert, $4 = rows
 run_stored_case() {
     local label="$1" partition_expr="$2" cell="$3" rows="$4"
@@ -232,7 +234,8 @@ run_stored_case() {
         SETTINGS max_partitions_per_insert_block = 0"
     output=$(timeout 600 ${CLICKHOUSE_CLIENT} --query_id "$query_id" --max_execution_time "$DEADLINE" --timeout_overflow_mode throw \
         -q "INSERT INTO $table SELECT $cell FROM numbers($rows)
-            SETTINGS max_insert_block_size = $rows, min_insert_block_size_rows = $rows, $LIMITS" 2>&1)
+            SETTINGS max_insert_block_size = $rows, min_insert_block_size_rows = $rows,
+                     min_insert_block_size_bytes = $((rows * 8 + 1024)), $LIMITS" 2>&1)
     if printf '%s' "$output" | grep -q 'elapsed'; then
         report_cpu "$query_id" "stored $label"
     elif ! printf '%s' "$output" | grep -q TIMEOUT_EXCEEDED; then
@@ -245,5 +248,5 @@ run_stored_case() {
 
 run_stored_case kring      "h3kRing(c, 1)"              644325529233966508 16000000
 run_stored_case hexring    "h3HexRing(c, toUInt16(20))" 644325529233966508  2230000
-run_stored_case line       "h3Line(c, c)"               621807531097128959 50000000
+run_stored_case line       "h3Line(c, c)"               621807531097128959 16000000
 run_stored_case tochildren "h3ToChildren(c, 10)"        617303931469955071 18000000
