@@ -124,8 +124,6 @@ struct FilesystemCacheSettings
     size_t max_download_size_per_query = (128UL * 1024 * 1024 * 1024);
     bool skip_download_if_exceeds_per_query_cache_write_limit = true;
     bool enable_log = false;
-    /// Emit a TEST-level message per buffer refill. Off by default: the message is formatted once
-    /// per read rather than once per file segment, so it costs the reading thread proportionally.
     bool verbose_logging = false;
 };
 
