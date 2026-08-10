@@ -1413,6 +1413,39 @@ def test_conversion_functions():
         [],
     )
 
+    # Behavior: `scalar` counts only present samples, and a stale sample is an absent sample,
+    # so a stale-only series collapses to `NaN` exactly like an empty instant vector does.
+    do_query_test(
+        "scalar(stale_test)",
+        160,
+        '{"resultType": "scalar", "result": [160, "NaN"]}',
+        [["1970-01-01 00:02:40.000", "nan"]],
+    )
+
+    do_query_test(
+        "vector(scalar(stale_test))[40:10]",
+        160,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[130, "NaN"], [140, "NaN"], [150, "NaN"], [160, "NaN"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:10.000',nan),('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',nan),('1970-01-01 00:02:40.000',nan)]",
+            ]
+        ],
+    )
+
+    # The `NaN` returned by `scalar` above must be an ordinary `NaN` and must not carry the
+    # Prometheus stale-marker payload (0x7ff0000000000002), otherwise the absent sample would
+    # survive as a value in every expression built on top of that scalar. Both spellings look
+    # alike over the HTTP API (both print as `NaN`), so the bit pattern is checked directly.
+    assert (
+        node.query(
+            "SELECT hex(reinterpretAsUInt64(value)) "
+            "FROM prometheusQuery(prometheus, 'scalar(stale_test)', 160)"
+        ).strip()
+        == "7FF8000000000000"
+    )
+
     # Behavior: Prometheus `scalar` returns the only float sample value.
     do_query_test(
         "scalar(vector(1))",

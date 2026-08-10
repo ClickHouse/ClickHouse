@@ -24,4 +24,9 @@ ASTPtr keepStaleMarker(const ASTPtr & value, ASTPtr transformed_value);
 /// the result of such a transformation must be discarded with `keepStaleMarker`.
 ASTPtr replaceStaleMarker(const ASTPtr & value, ASTPtr replacement);
 
+/// Returns `NULL` when `value` carries the Prometheus stale marker, and `value` otherwise.
+/// Useful where a stale sample must be treated as an absent sample rather than passed through,
+/// for example before aggregations such as `count` or `any` which skip `NULL`s.
+ASTPtr nullifyStaleMarker(const ASTPtr & value);
+
 }

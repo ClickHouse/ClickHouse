@@ -27,4 +27,10 @@ ASTPtr replaceStaleMarker(const ASTPtr & value, ASTPtr replacement)
     return makeASTFunction("if", isStaleMarker(value), std::move(replacement), value->clone());
 }
 
+
+ASTPtr nullifyStaleMarker(const ASTPtr & value)
+{
+    return makeASTFunction("if", isStaleMarker(value), make_intrusive<ASTLiteral>(Field{} /* NULL */), value->clone());
+}
+
 }

@@ -6,6 +6,7 @@
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/staleMarker.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -72,25 +73,20 @@ SQLQueryPiece applyFunctionScalar(
             /// If the argument contains time series we have to do some aggregation.
             SelectQueryBuilder builder;
 
+            /// A sample carrying the Prometheus stale marker is an absent sample, so it must neither be counted
+            /// as a present value here, nor let its payload survive into the result.
             if (argument.start_time == argument.end_time)
             {
-                /// SELECT if(count(values[1]) = 1, assumeNotNull(any(values[1])), NaN) AS value
+                /// SELECT if(count(<sample_value>) = 1, assumeNotNull(any(<sample_value>)), NaN) AS value
                 /// FROM <vector_grid>
+                /// where <sample_value> is values[1] with a stale marker turned into NULL.
+                auto sample_value = nullifyStaleMarker(makeASTFunction(
+                    "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
+
                 builder.select_list.push_back(makeASTFunction(
                     "if",
-                    makeASTFunction(
-                        "equals",
-                        makeASTFunction(
-                            "count",
-                            makeASTFunction(
-                                "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u))),
-                        make_intrusive<ASTLiteral>(1)),
-                    makeASTFunction(
-                        "assumeNotNull",
-                        makeASTFunction(
-                            "any",
-                            makeASTFunction(
-                                "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)))),
+                    makeASTFunction("equals", makeASTFunction("count", sample_value->clone()), make_intrusive<ASTLiteral>(1)),
+                    makeASTFunction("assumeNotNull", makeASTFunction("any", sample_value->clone())),
                     timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type)));
 
                 builder.select_list.back()->setAlias(ColumnNames::Value);
@@ -102,8 +98,17 @@ SQLQueryPiece applyFunctionScalar(
                 ///                 if(empty(counts), arrayResize(CAST([], 'Array(UInt64)'), <count_of_time_steps>, CAST(0, 'UInt64')), counts),
                 ///                 if(empty(any_values), arrayResize(CAST([], 'Array(Nullable(scalar_data_type))'), <count_of_time_steps>, CAST(NaN, 'Nullable(scalar_data_type)')), any_values)) AS values
                 /// FROM <vector_grid>
-                auto counts = makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values));
-                auto any_values = makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values));
+                /// where `counts` and `any_values` aggregate the values with stale markers turned into NULL.
+                auto samples_without_stale_markers = makeASTFunction(
+                    "arrayMap",
+                    makeASTFunction(
+                        "lambda",
+                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("value")),
+                        nullifyStaleMarker(make_intrusive<ASTIdentifier>("value"))),
+                    make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+                auto counts = makeASTFunction("countForEach", samples_without_stale_markers->clone());
+                auto any_values = makeASTFunction("anyForEach", samples_without_stale_markers->clone());
                 auto count_of_time_steps = make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(argument.start_time, argument.end_time, argument.step));
                 auto nan = timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type);
 
