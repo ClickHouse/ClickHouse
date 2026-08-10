@@ -96,6 +96,12 @@ public:
     void addDependency(const String & collection_name, const StorageID & table_id);
     void removeDependencies(const StorageID & table_id);
     void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
+    /// A `RENAME TABLE` that moves a table between an `Ordinary` and an `Atomic` database changes the
+    /// identity the dependency is keyed by: the move into `Atomic` assigns a fresh UUID to the table and
+    /// the move out of it drops the UUID, while the rename interpreter only knows the names. Re-key the
+    /// entries of the moved table to its new `StorageID` so that a later `DETACH`, `DROP` or `RENAME`
+    /// still finds them.
+    void rekeyDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     std::vector<StorageID> getDependents(const String & collection_name) const;
 
     /// `DETACH TABLE` moves the dependencies of the table here: a detached table is not in

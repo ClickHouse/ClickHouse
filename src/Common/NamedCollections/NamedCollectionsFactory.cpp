@@ -515,6 +515,52 @@ void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id,
         dependencies.emplace(name, to_table_id);
 }
 
+void NamedCollectionFactory::rekeyDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
+{
+    std::lock_guard lock(mutex);
+
+    LOG_TRACE(
+        log,
+        "Re-keying dependencies of table {} to {}",
+        from_table_id.getNameForLogs(),
+        to_table_id.getNameForLogs());
+
+    std::vector<String> collection_names;
+
+    /// The table is identified by its UUID while it belongs to an `Atomic` database and by its name
+    /// while it belongs to an `Ordinary` one, so exactly one of the two lookups can find the entries.
+    if (from_table_id.hasUUID())
+    {
+        auto & uuid_idx = dependencies.get<TableUUID>();
+        auto range = uuid_idx.equal_range(from_table_id.uuid);
+        for (auto it = range.first; it != range.second; ++it)
+            collection_names.push_back(it->collection_name);
+        uuid_idx.erase(range.first, range.second);
+    }
+    else
+    {
+        /// Like in `removeDependencies`: entries with UUIDs belong to tables of `Atomic` databases.
+        auto & name_idx = dependencies.get<TableName>();
+        auto range = name_idx.equal_range(std::make_tuple(from_table_id.database_name, from_table_id.table_name));
+
+        std::vector<decltype(range.first)> to_erase;
+        for (auto it = range.first; it != range.second; ++it)
+        {
+            if (it->table_id.uuid == UUIDHelpers::Nil)
+            {
+                collection_names.push_back(it->collection_name);
+                to_erase.push_back(it);
+            }
+        }
+
+        for (auto it : to_erase)
+            name_idx.erase(it);
+    }
+
+    for (const auto & collection_name : collection_names)
+        dependencies.emplace(collection_name, to_table_id);
+}
+
 std::vector<StorageID> NamedCollectionFactory::getDependents(const String & collection_name) const
 {
     std::lock_guard lock(mutex);

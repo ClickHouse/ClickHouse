@@ -37,6 +37,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 
@@ -530,6 +531,15 @@ void DatabaseOnDisk::renameTable(
 
     /// Now table data are moved to new database, so we must add metadata and attach table to new database
     to_database.createTable(local_context, to_table_name, table, attach_query);
+
+    /// A move between an `Ordinary` and an `Atomic` database changes the identity the named collection
+    /// dependencies of the table are keyed by: the move into `Atomic` assigns a fresh UUID, the move out
+    /// of it drops the UUID. The rename interpreter only knows the names, so re-key the entries here,
+    /// where both identities are known - otherwise a later `DETACH` of the moved table finds no
+    /// dependency and `DROP NAMED COLLECTION` is allowed while the metadata still references it.
+    if (from_ordinary_to_atomic || from_atomic_to_ordinary)
+        NamedCollectionFactory::instance().rekeyDependencies(
+            StorageID(getDatabaseName(), table_name, prev_uuid), table->getStorageID());
 
     db_disk->removeFileIfExists(table_metadata_path);
 
