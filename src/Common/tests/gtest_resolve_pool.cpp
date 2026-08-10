@@ -577,9 +577,15 @@ TEST_F(ResolvePoolTest, DuplicatesInAddresses)
     ASSERT_EQ(3, DB::CurrentThread::getProfileEvents()[metrics.discovered]);
 }
 
-void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses, auto & failed_addr, auto & metrics, auto deadline)
+void check_no_failed_address(size_t iteration, auto & resolver, auto & addresses, auto & failed_addr, auto & metrics, auto deadline,
+                             std::optional<std::chrono::milliseconds> deadline_from_entry = std::nullopt)
 {
     ASSERT_EQ(iteration, DB::CurrentThread::getProfileEvents()[metrics.failed]);
+
+    /// Tests pinning the entry path derive the deadline here, so a preemption between the
+    /// caller's clock reading and the guard below cannot consume it.
+    if (deadline_from_entry)
+        deadline = now() + *deadline_from_entry;
 
     /// The ban window can already be over when this is called: the caller's anchor is a lower
     /// bound on the ban's own timestamp, so it may sit a whole DNS refresh earlier. Nothing can
@@ -725,7 +731,7 @@ TEST_F(ResolvePoolTest, NoSampleBeforeDeadlineIsNotAFailure)
     /// The deadline is alive on entry and expires during that first refresh, so the helper
     /// crosses it having sampled nothing. There is no observation to judge, so it must return
     /// rather than report the absence of samples as a defect.
-    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, now() + 5ms);
+    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, now() + 5ms, 5ms);
 
     /// The armed refresh must have been spent, otherwise the deadline expired before the first
     /// `resolve()` and the crossing this test pins was never reached.
@@ -747,16 +753,17 @@ TEST_F(ResolvePoolTest, BanWindowAnchoredOnFailTimestamp)
     resolver->update();
     ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
 
-    /// Both refreshes below are slow, which is what separates the ban's own timestamp from a
-    /// reading taken after `setFail`. Only the earlier of the two bounds the ban window; anchored
-    /// on the later one the deadline outlives the ban it is meant to gate.
-    slow_down_refreshes(2, 55ms);
+    /// Only `setFail`'s own refresh separates the ban's timestamp from a reading taken after it,
+    /// so it is long; the second merely delays the final reading and would eat the margin of the
+    /// `ASSERT_LE` below, so it is short.
+    slow_down_refreshes(1, 150ms);
 
     auto before = now();
     failed_addr.setFail();
     auto after = now();
 
     sleep_until(after + history + epsilon);
+    slow_down_refreshes(1, 5ms);
     resolver->update();
 
     /// Measured from `before` the window is provably over, so declining to assert is the only
@@ -768,6 +775,10 @@ TEST_F(ResolvePoolTest, BanWindowAnchoredOnFailTimestamp)
 
     ASSERT_TRUE(window_over);
     ASSERT_EQ(0, CurrentMetrics::get(metrics.banned_count));
+
+    /// An `after`-anchored deadline must still be open here, otherwise both anchors agree and this
+    /// test no longer discriminates the mechanism it exists to pin.
+    ASSERT_LE(now(), after + 2*history - epsilon);
 
     /// An expired deadline has to be declined by the helper rather than reported as a defect.
     check_no_failed_address(2, resolver, addresses, failed_addr, metrics, before + 2*history - epsilon);
