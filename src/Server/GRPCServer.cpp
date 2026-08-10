@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SettingsChanges.h>
@@ -85,6 +86,11 @@ namespace Setting
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSnappyMode snappy_mode;
+}
+
+namespace FailPoints
+{
+    extern const char grpc_call_close_with_outstanding_read[];
 }
 
 namespace ErrorCodes
@@ -1482,6 +1488,16 @@ namespace
 
     void Call::close()
     {
+        fiu_do_on(FailPoints::grpc_call_close_with_outstanding_read,
+        {
+            /// Arms a read that is still outstanding at the guard below.
+            if (responder && isInputStreaming(call_type) && !reading_query_info.get())
+            {
+                reading_query_info.set(true);
+                responder->read(next_query_info_while_reading, [this](bool) { reading_query_info.set(false); });
+            }
+        });
+
         /// gRPC tags each operation with a pointer inside the responder, so the responder must
         /// outlive every operation started on it.
         if (responder && (reading_query_info.get() || sending_result.get()))
