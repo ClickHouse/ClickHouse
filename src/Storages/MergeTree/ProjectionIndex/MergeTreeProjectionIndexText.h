@@ -72,6 +72,10 @@ struct MergeTreeProjectionIndexGranuleText final : public IMergeTreeIndexGranule
 
 private:
     std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
+
+    /// Opens the `.pst` stream that mark filtering decodes packed blocks from. Normally the
+    /// dictionary read does this; needed separately when every token was a tokens-cache hit.
+    void openPostingStreamForMarkFiltering();
 };
 
 class MergeTreeProjectionIndexText final : public IMergeTreeIndex

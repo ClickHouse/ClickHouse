@@ -11,9 +11,11 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/ProjectionIndex/PostingListData.h>
 #include <Storages/MergeTree/ProjectionIndex/PostingListState.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexSerializationContext.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionIndexText.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ProjectionsDescription.h>
@@ -59,6 +61,43 @@ PostingListPtr MergeTreeProjectionIndexGranuleText::getPostingsForRareToken(std:
     if (it != rare_tokens_postings.end())
         return it->second;
     return nullptr;
+}
+
+void MergeTreeProjectionIndexGranuleText::openPostingStreamForMarkFiltering()
+{
+    if (pst_stream || !projection_part)
+        return;
+
+    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+        "posting", {}, PROJECTION_INDEX_LARGE_POSTING_SUFFIX, projection_part->checksums, projection_part->storage.getSettings());
+    if (!stream_name)
+        return;
+
+    auto proj_storage = projection_part->getDataPartStoragePtr();
+    size_t file_size = proj_storage->getFileSize(*stream_name + PROJECTION_INDEX_LARGE_POSTING_SUFFIX);
+    if (file_size == 0)
+        return;
+
+    /// The whole `.pst` file is one mark, and it is stored uncompressed.
+    static constexpr size_t marks_count = 1;
+    auto stream_settings = MergeTreeReaderSettings::createFromSettings();
+    stream_settings.is_compressed = false;
+
+    pst_stream = std::make_shared<LargePostingListReaderStream>(
+        /*merged_part_offsets_=*/nullptr,
+        /*part_index_=*/0,
+        /*part_starting_offset_=*/0,
+        proj_storage,
+        *stream_name,
+        PROJECTION_INDEX_LARGE_POSTING_SUFFIX,
+        marks_count,
+        MarkRanges{{0, marks_count}},
+        stream_settings,
+        /*uncompressed_cache=*/nullptr,
+        file_size,
+        /*marks_loader=*/nullptr,
+        ReadBufferFromFileBase::ProfileCallback{},
+        CLOCK_MONOTONIC_COARSE);
 }
 
 std::vector<String> MergeTreeProjectionIndexGranuleText::fillTokensFromCache(MergeTreeIndexDeserializationState & state)
@@ -116,7 +155,15 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
 
     auto tokens_to_read = fillTokensFromCache(state);
     if (tokens_to_read.empty())
+    {
+        /// Every token came from TextIndexTokensCache, so the dictionary read below is
+        /// skipped — and with it the `.pst` stream it opens. Mark filtering still needs
+        /// that stream: `ProjectionTokenInfo::hasDocInRange` decodes a packed block to
+        /// answer precisely, and without a stream it has to assume the mark matches, so
+        /// pruning silently degrades to "read everything" on every cache hit.
+        openPostingStreamForMarkFiltering();
         return;
+    }
 
     /// The former `DictionaryBlockBase` wrapper was removed on master; binary-search the
     /// projection part's primary-index `term` column directly (same as its `upperBound`).
