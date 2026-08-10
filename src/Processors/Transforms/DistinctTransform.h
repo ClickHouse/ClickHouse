@@ -142,10 +142,18 @@ private:
     LowCardinalityMaskResult buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows);
 
     /// Returns true when the query's max_execution_time was exceeded in `timeout_overflow_mode = 'break'`
-    /// (soft timeout). Hard cancellations (KILL QUERY, Ctrl+C, executor cancel) are surfaced through
-    /// `isCancelled()` and are deliberately not treated as soft timeouts, so `transform()` keeps dropping
-    /// the chunk in that case.
+    /// (soft timeout). Hard cancellations (KILL QUERY, Ctrl+C) are surfaced through `isCancelled()`
+    /// together with a non-`UNDEFINED` cancel reason and are deliberately not treated as soft timeouts,
+    /// so `transform()` keeps dropping the chunk in that case.
     bool isSoftTimeout() const;
+
+    /// Like `isSoftTimeout`, but additionally recognizes the case where the break-mode deadline was
+    /// observed by the executor poll loop (`PipelineExecutor::checkTimeLimitSoft`) instead of by this
+    /// transform: the executor cancels the whole pipeline with `CancelledByTimeout`, which sets
+    /// `is_cancelled` on every processor without setting a user-facing cancel reason. Such a cancel
+    /// must be treated as a soft timeout, so the already-committed chunk prefix is preserved instead
+    /// of being cleared like a real user cancellation. Uses `checkTimeLimitSoft`, so it never throws.
+    bool isCancelledBySoftTimeout() const;
 };
 
 }

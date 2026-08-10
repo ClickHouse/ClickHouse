@@ -82,10 +82,19 @@ void DistinctTransform::buildFilter(
                 /// Rows in [0, processed_prefix) are already committed work of a preceding
                 /// `buildLowCardinalityMask` call and must be hashed even if the soft timeout
                 /// already fired, so the processed prefix is preserved instead of dropped.
-                /// A hard cancellation is checked unconditionally: it must not be suppressed by
-                /// the processed prefix, otherwise `KILL QUERY` after a soft timeout would keep
-                /// hashing every committed row before it is noticed.
-                if (isCancelled() || (i >= processed_prefix && isSoftTimeout()))
+                /// A hard cancellation is checked first and must not be suppressed by the
+                /// processed prefix, otherwise `KILL QUERY` after a soft timeout would keep
+                /// hashing every committed row before it is noticed. `isCancelledBySoftTimeout`
+                /// recognizes the executor-side break-mode cancel
+                /// (`PipelineExecutor::checkTimeLimitSoft` -> `CancelledByTimeout`), which leaves
+                /// `cancel_reason` `UNDEFINED` and must still preserve the prefix.
+                if (isCancelled() && !isCancelledBySoftTimeout())
+                {
+                    std::fill(filter.begin() + i, filter.end(), 0);
+                    return;
+                }
+
+                if (i >= processed_prefix && isSoftTimeout())
                 {
                     std::fill(filter.begin() + i, filter.end(), 0);
                     return;
@@ -111,7 +120,13 @@ void DistinctTransform::buildFilter(
             {
                 if (i > 0) [[unlikely]]
                     FailPointInjection::pauseFailPoint("distinct_transform_pause");
-                if (isCancelled() || (i >= processed_prefix && isSoftTimeout()))
+                if (isCancelled() && !isCancelledBySoftTimeout())
+                {
+                    std::fill(filter.begin() + i, filter.end(), 0);
+                    return;
+                }
+
+                if (i >= processed_prefix && isSoftTimeout())
                 {
                     std::fill(filter.begin() + i, filter.end(), 0);
                     return;
@@ -257,9 +272,12 @@ bool DistinctTransform::isSoftTimeout() const
     if (!process_list_element)
         return false;
 
-    /// Hard cancellations (KILL QUERY, Ctrl+C, executor cancellation) are surfaced through
-    /// `isCancelled`. Do not treat them as soft timeouts, and do not call `checkTimeLimit`
-    /// for them either - it would throw the cancellation exception from the hot loop.
+    /// Hard cancellations (KILL QUERY, Ctrl+C) are surfaced through `isCancelled` with a
+    /// non-`UNDEFINED` cancel reason. Do not treat them as soft timeouts, and do not call
+    /// `checkTimeLimit` for them either - it would throw the cancellation exception from the hot
+    /// loop. An executor-side break-mode cancel (`CancelledByTimeout`) leaves the cancel reason
+    /// `UNDEFINED`, so it is still recognized here as a soft timeout and the committed prefix is
+    /// preserved (see the two-part checks in `buildFilter` and `isCancelledBySoftTimeout`).
     if (process_list_element->getCancelReason() != DB::CancelReason::UNDEFINED)
         return false;
 
@@ -272,6 +290,29 @@ bool DistinctTransform::isSoftTimeout() const
     }
 
     return false;
+}
+
+bool DistinctTransform::isCancelledBySoftTimeout() const
+{
+    if (!process_list_element)
+        return false;
+
+    /// User-facing hard cancellations (KILL QUERY, Ctrl+C) always set a cancel reason; they win
+    /// over any previously latched soft timeout, so the chunk must be dropped rather than kept.
+    if (process_list_element->getCancelReason() != DB::CancelReason::UNDEFINED)
+        return false;
+
+    if (time_limit_exceeded)
+        return true;
+
+    /// The break-mode `max_execution_time` may be observed by the executor poll loop
+    /// (`PipelineExecutor::checkTimeLimitSoft`), which cancels the whole pipeline with
+    /// `CancelledByTimeout` without setting a user-facing cancel reason: `isCancelled()` is true
+    /// while `cancel_reason` is still `UNDEFINED`. Recognizing that as a soft timeout keeps the
+    /// already-committed chunk prefix instead of dropping it. `checkTimeLimitSoft` never throws (it
+    /// uses `OverflowMode::BREAK` semantics internally), so it is safe here after the hot loops.
+    time_limit_exceeded = !process_list_element->checkTimeLimitSoft();
+    return time_limit_exceeded;
 }
 
 void DistinctTransform::transform(Chunk & chunk)
@@ -319,7 +360,7 @@ void DistinctTransform::transform(Chunk & chunk)
             auto [mask, new_indices_count, processed_rows] = buildLowCardinalityMask(*lc, num_rows);
             lc_optimization_controller.update(num_rows, new_indices_count);
 
-            if (isCancelled())
+            if (isCancelled() && !isCancelledBySoftTimeout())
             {
                 chunk.clear();
                 stopReading();
@@ -361,7 +402,7 @@ void DistinctTransform::transform(Chunk & chunk)
 #undef M
     }
 
-    if (isCancelled())
+    if (isCancelled() && !isCancelledBySoftTimeout())
     {
         chunk.clear();
         stopReading();

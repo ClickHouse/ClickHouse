@@ -369,3 +369,109 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
         f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
+
+
+def test_lc_soft_timeout_executor_cancel(started_cluster):
+    """A break-mode `max_execution_time` observed by the executor poll loop instead of by the
+    transform must still preserve the committed chunk prefix.
+
+    The query runs with the default `interactive_delay`, so TCPHandler drives the pipeline via
+    `PullingAsyncPipelineExecutor` and its `pull()` polls `checkTimeLimitSoft()` every
+    `interactive_delay` ms. When the deadline expires while the LC scan is paused at the failpoint,
+    that poll cancels the whole pipeline with `CancelledByTimeout`: `is_cancelled` is set on every
+    processor while `cancel_reason` stays `UNDEFINED`. The old code short-circuited on
+    `isCancelled()` before latching the soft timeout and then `chunk.clear()`ed the chunk, dropping
+    the already-committed [0, 4096) prefix. The fix treats the executor-side cancel as a soft
+    timeout, so the partial mask is kept, `buildFilter` runs with `processed_prefix = 4096`, and it
+    pauses at the re-armed `distinct_transform_pause` at row 4096. Without the fix `buildFilter`
+    never runs and the re-armed failpoint is never hit, so the discriminator WAIT below times out.
+    """
+    node1.query("CREATE TABLE IF NOT EXISTS lc_test (key LowCardinality(String)) ENGINE = Memory")
+    node1.query("TRUNCATE TABLE IF EXISTS lc_test")
+    node1.query("INSERT INTO lc_test SELECT toString(number % 1000) FROM numbers(10000)")
+
+    query = """SELECT DISTINCT key FROM lc_test
+FORMAT Null
+SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
+    timeout_overflow_mode='break', max_rows_to_read=0"""
+
+    query_id = str(uuid.uuid4())
+
+    node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+
+    thread_error = [None]
+    query_error = [None]
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                query,
+                ## Deliberately no `interactive_delay` override, so the TCPHandler pull loop's
+                ## `checkTimeLimitSoft()` polling stays enabled and cancels the pipeline by timeout
+                ## while the transform is held at the failpoint.
+                query_id=query_id,
+            )
+            query_error[0] = error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        ## The LC scan pauses at row 4096 with rows [0, 4096) already committed.
+        wait_failpoint(LC_FAULT_NAME)
+
+        ## Hold past max_execution_time so the deadline expires mid-hold. With the default
+        ## interactive_delay the pull loop observes it via checkTimeLimitSoft() and cancels the
+        ## pipeline with CancelledByTimeout (`cancel_reason` stays UNDEFINED), then joins the
+        ## pipeline thread, which is still blocked at the failpoint.
+        time.sleep(30)
+
+        ## Arm the buildFilter failpoint, then let the LC scan resume. `is_cancelled` is set, so the
+        ## scan returns a partial mask for [0, 4096). With the fix the chunk is kept (the executor-
+        ## side cancel is a soft timeout), `buildFilter` runs with `processed_prefix = 4096` and
+        ## pauses at the re-armed `distinct_transform_pause` at row 4096. Without the fix the chunk
+        ## is cleared and `buildFilter` never runs, so this WAIT times out.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {HASHMAP_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
+
+        build_filter_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {HASHMAP_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([build_filter_pause_future], timeout=10)
+        if not done:
+            assert False, "buildFilter did not run on the committed prefix after the executor-side cancel"
+        build_filter_pause_future.result()
+
+        ## Let `buildFilter` finish: it breaks at the paused row (soft timeout latched) and the
+        ## query completes break-mode successfully.
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {HASHMAP_FAULT_NAME}")
+    finally:
+        ## DISABLE both failpoints: this also unblocks any still-running WAIT ... PAUSE query.
+        node1.query(f"SYSTEM DISABLE FAILPOINT {LC_FAULT_NAME}")
+        node1.query(f"SYSTEM DISABLE FAILPOINT {HASHMAP_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "query did not terminate after the executor-side soft timeout"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+
+    ## In break mode the soft timeout must not surface any error to the client.
+    assert query_error[0] == "", f"break-mode soft timeout raised an error: {query_error[0]}"
+
+    result = node1.query(
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+    )
+    assert int(result.strip()) == 0
