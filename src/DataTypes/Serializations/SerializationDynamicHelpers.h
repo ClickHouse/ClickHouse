@@ -44,6 +44,7 @@ bool areDynamicSubcolumnTypesCompatible(const DataTypePtr & lhs, const DataTypeP
 /// Same, but for nested subcolumn reads (e.g. `d.JSON.a`), where compatibility is path-local:
 /// stored values are converted to the requested type before the subcolumn is extracted, so
 /// `JSON(...)` variants with different declared (typed/skipped) path sets are also compatible.
+/// The same holds for a nested `Dynamic` carrier differing only in `max_dynamic_types`.
 /// Do not use for insertion: values of such types cannot be stored in one variant column.
 bool areDynamicSubcolumnTypesCompatibleForRead(const DataTypePtr & stored_type, const DataTypePtr & requested_type);
 

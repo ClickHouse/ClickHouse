@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -91,6 +92,23 @@ bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataTy
         if (const auto * rhs_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&rhs))
             return areDynamicSubcolumnTypesCompatibleImpl(*lhs_low_cardinality->getDictionaryType(), *rhs_low_cardinality->getDictionaryType(), for_read);
     }
+
+    /// `Dynamic` carries dynamic subcolumns itself, so a request like `Array(Dynamic)` must also see
+    /// rows stored as `Array(Dynamic(max_types=2))`: the two differ only in `max_dynamic_types` and
+    /// are convertible to each other. This is sound only on the read path, where the stored value is
+    /// cast to the requested type before the requested subcolumn is extracted from it. On the
+    /// insert/merge path such types must stay partitioned by their exact storage type (see
+    /// `typeRequiresExactStorageMatch`), because inserting into an existing variant column requires
+    /// an identical layout.
+    ///
+    /// A nested `Variant` carrier is deliberately NOT handled here. `CAST` between two `Variant`
+    /// types is only allowed when the target is an extension of the source, so there is no
+    /// conversion between e.g. `Variant(JSON(a UInt64), Int64)` and `Variant(JSON, Int64)` in either
+    /// direction; declaring them compatible would only replace the current "row reads as absent"
+    /// behaviour with a `CANNOT_CONVERT_TYPE` exception. Supporting it needs a member-wise `Variant`
+    /// to `Variant` conversion in `FunctionCast` first.
+    if (for_read && typeid_cast<const DataTypeDynamic *>(&lhs) && typeid_cast<const DataTypeDynamic *>(&rhs))
+        return true;
 
     if (const auto * lhs_tuple = typeid_cast<const DataTypeTuple *>(&lhs))
     {
