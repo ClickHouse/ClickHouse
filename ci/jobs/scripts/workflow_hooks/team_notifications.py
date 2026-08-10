@@ -12,7 +12,6 @@ INTEGRATIONS_DOCS_PREFIXES = (
     "docs/integrations/language-clients/",
     "docs/integrations/connectors/",
 )
-SPECIALIZED_DOCS_PREFIXES = (CLICKPIPES_DOCS_PREFIX, *INTEGRATIONS_DOCS_PREFIXES)
 
 DOCS_TEAM = "docs"
 CLICKPIPES_TEAM = "clickpipes"
@@ -44,8 +43,7 @@ def get_docs_teams_to_request(changed_files):
     ):
         teams.append(INTEGRATIONS_ECOSYSTEM_TEAM)
 
-    if any(not file.startswith(SPECIALIZED_DOCS_PREFIXES) for file in files):
-        teams.append(DOCS_TEAM)
+    teams.append(DOCS_TEAM)
     return teams
 
 

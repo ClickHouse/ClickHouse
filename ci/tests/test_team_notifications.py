@@ -9,22 +9,22 @@ from ci.jobs.scripts.workflow_hooks import team_notifications
         (["docs/reference/functions/array-functions.mdx"], ["docs"]),
         (
             ["docs/integrations/clickpipes/kafka/index.mdx"],
-            ["clickpipes"],
+            ["clickpipes", "docs"],
         ),
         (
             ["docs/integrations/language-clients/python/index.mdx"],
-            ["integrations-ecosystem"],
+            ["integrations-ecosystem", "docs"],
         ),
         (
             ["docs/integrations/connectors/data-ingestion/index.mdx"],
-            ["integrations-ecosystem"],
+            ["integrations-ecosystem", "docs"],
         ),
         (
             [
                 "docs/integrations/language-clients/python/index.mdx",
                 "docs/integrations/connectors/data-ingestion/index.mdx",
             ],
-            ["integrations-ecosystem"],
+            ["integrations-ecosystem", "docs"],
         ),
         (
             [
@@ -34,6 +34,7 @@ from ci.jobs.scripts.workflow_hooks import team_notifications
             [
                 "clickpipes",
                 "integrations-ecosystem",
+                "docs",
             ],
         ),
         (
@@ -63,7 +64,7 @@ from ci.jobs.scripts.workflow_hooks import team_notifications
                 "ci/jobs/scripts/workflow_hooks/team_notifications.py",
                 "docs/integrations/clickpipes/home.mdx",
             ],
-            ["clickpipes"],
+            ["clickpipes", "docs"],
         ),
         (["src/Core/TypeId.h"], []),
         ([], []),
@@ -95,7 +96,7 @@ def test_check_requests_docs_teams(monkeypatch):
     )
 
     assert team_notifications.check()
-    assert requested == ["clickpipes", "integrations-ecosystem"]
+    assert requested == ["clickpipes", "integrations-ecosystem", "docs"]
 
 
 def test_check_does_not_manage_docs_reviews_after_open(monkeypatch):
