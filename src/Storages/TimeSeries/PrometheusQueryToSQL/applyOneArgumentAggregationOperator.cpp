@@ -101,13 +101,13 @@ namespace
             {"stddev",
              {
                 [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
-                { return makeASTFunction("stddevPopForEach", std::move(v)); },
+                { return makeASTFunction("stddevPopStableForEach", std::move(v)); },
             }},
 
             {"stdvar",
              {
                 [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
-                { return makeASTFunction("varPopForEach", std::move(v)); },
+                { return makeASTFunction("varPopStableForEach", std::move(v)); },
             }},
 
             {"group",
