@@ -1,5 +1,9 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 -- Tag no-fasttest: requires S3/minio-backed storage with a filesystem cache.
+-- Tag no-parallel: the cold->warm assertion needs the cold read's populated segments to survive in
+-- the process-wide `s3_cache` FileCache until the warm read. Under the flaky check's self-parallel
+-- reruns, concurrent copies share that one cache and evict each other's segments before the warm
+-- read, so the copies must not run concurrently.
 
 DROP TABLE IF EXISTS t_re_disk_cache;
 
