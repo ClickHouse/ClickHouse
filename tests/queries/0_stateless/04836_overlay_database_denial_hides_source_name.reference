@@ -1,0 +1,10 @@
+Sanity: the default user reads through the facade
+1
+A facade-only grant is denied without naming the source database
+SELECT with enable_analyzer = 0: OK
+SELECT with enable_analyzer = 1: OK
+DESCRIBE: OK
+SHOW CREATE TABLE: OK
+A facade nested by a late reconfiguration is rejected without naming the source database
+SHOW TABLES: OK
+SELECT: OK

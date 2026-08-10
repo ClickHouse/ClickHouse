@@ -121,6 +121,23 @@ bool DatabaseOverlay::isSourceTableVisibleNoLoad(const String & table_name, Cont
 
 void DatabaseOverlay::checkSourceTableAccess(const String & table_name, ContextPtr context_, AccessType access_to_check) const
 {
+    /// The denial names the facade exactly as it was written in the query, never the resolved
+    /// source id. `ContextAccess` formats `ACCESS_DENIED` from the real `db.table`, and its hint
+    /// filter only strips column names, so letting `checkAccess` throw here would tell a caller
+    /// that holds the facade-side grant alone both that the name exists behind the facade and
+    /// which source database owns it - precisely what the source-side grant exists to hide.
+    auto deny = [&]
+    {
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "{}: Not enough privileges. To execute this query, it's necessary to have the grant {} ON {}.{} in the "
+            "underlying source database of this Overlay facade",
+            context_->getUserName(),
+            toString(access_to_check),
+            backQuote(getDatabaseName()),
+            backQuote(table_name));
+    };
+
     for (const auto & db : resolveDatabases())
     {
         bool exists = false;
@@ -132,16 +149,17 @@ void DatabaseOverlay::checkSourceTableAccess(const String & table_name, ContextP
         {
             /// Same fencing as in `isSourceTableVisibleNoLoad`: the probe can throw a remote
             /// source's own error before the source-side grant is proven. Deny exactly as if the
-            /// name had resolved to this source and the grant check failed — `checkAccess` throws
-            /// `ACCESS_DENIED` for a non-granted caller, keeping a broken hidden source and a
-            /// denied healthy one indistinguishable; for a granted caller it returns, and the
+            /// name had resolved to this source and the grant check failed, keeping a broken
+            /// hidden source and a denied healthy one indistinguishable; for a granted caller the
             /// source's own error is rethrown as theirs to see.
-            context_->checkAccess(access_to_check, db->getDatabaseName(), table_name);
+            if (!context_->getAccess()->isGranted(access_to_check, db->getDatabaseName(), table_name))
+                deny();
             throw;
         }
         if (exists)
         {
-            context_->checkAccess(access_to_check, db->getDatabaseName(), table_name);
+            if (!context_->getAccess()->isGranted(access_to_check, db->getDatabaseName(), table_name))
+                deny();
             return;
         }
     }
@@ -238,12 +256,18 @@ std::vector<DatabasePtr> DatabaseOverlay::resolveDatabases() const
         /// This also covers reference cycles that can only form after creation (create `db_b` as
         /// `Overlay('db_a')`, drop `db_a`, re-create `db_a` as `Overlay('db_b')`), which the
         /// per-database self-reference check at CREATE time cannot see.
+        ///
+        /// The message deliberately names only the facade: this rejection is reached from ordinary
+        /// listing and lookup paths (`SHOW TABLES FROM ov`, `system.tables`, `tryGetTable`), which
+        /// run before the source-name masking of `SHOW CREATE DATABASE` / `system.databases`, so
+        /// naming the offending source would disclose a hidden source database to a caller that is
+        /// not allowed to see it. The definition - and with it the source names - stays available
+        /// through `SHOW CREATE DATABASE` to a caller with `SHOW DATABASES` on every source.
         if (const auto * nested = typeid_cast<const DatabaseOverlay *>(db.get()); nested && nested->readonly)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Overlay database {} cannot use another Overlay database {} as a source",
-                backQuote(getDatabaseName()),
-                backQuote(name));
+                "Overlay database {} cannot use another Overlay database as a source",
+                backQuote(getDatabaseName()));
 
         resolved.push_back(std::move(db));
     }
@@ -1254,6 +1278,8 @@ System views and metrics that aggregate or enumerate tables across all databases
 For the same reason a read-only `Overlay` reports no detached tables in `system.detached_tables`: `ATTACH` and `DETACH` through the facade are rejected, so a table detached in a source database is not part of the facade's namespace and is reported for the source database only. A facade being present never makes a whole-server scan of the detached tables fail.
 
 The dual-grant checks are fail-closed even when a source database is broken or unreachable (for example a `PostgreSQL` or `MySQL` source whose server is down). The data entrypoints that resolve a facade name to a source table (`SELECT`, `INSERT`, `WATCH`, `CHECK TABLE`) prove source-side visibility **before** the source table is resolved and loaded — for every table of the query, including the tables of a `JOIN`, the right-hand side of an `IN` and the tables of the subqueries of a distributed query, and both with and without the analyzer — so a user without a grant on the source receives the same access-denied error for a hidden broken source as for a hidden healthy one: the facade never surfaces the hidden source's own error and cannot be used as an oracle for the state of sources the user is not allowed to see. Once the source-side grant is present, the source's own error propagates as usual. The listing-style readers (`SHOW TABLES` / `system.tables`, `system.columns`, `system.data_skipping_indices`, and the other per-database enumerations) follow the same rule when they walk the facade: a source database that fails while being listed contributes no rows unless the caller is granted `SHOW TABLES` on that source database, in which case the source's own error propagates, the same as when listing the source directly.
+
+Every diagnostic raised through a facade names only the facade, exactly as it was written in the query, and never the source database a name resolved to. A caller who holds the facade-side grant but not the source-side one is denied on the facade name, so the denial does not disclose which source database owns the name, and the runtime rejection of a facade that became nested through a late reconfiguration (a source database dropped and re-created as another read-only `Overlay`) names only the facade as well. The source names remain available through `SHOW CREATE DATABASE` and `system.databases.engine_full` to a caller holding `SHOW DATABASES` on every source.
 
 Listing through the facade otherwise preserves each source database's own listing behaviour. The table-name filter of a `system.tables` query is forwarded to every source database, so a source that can push it down to an external catalog (a `DataLake` database) still does, and a source whose listing tolerates a table whose metadata cannot be fetched still lists the rest of its tables rather than failing the whole facade. A names-only listing (`SHOW TABLES`, `SELECT name FROM system.tables`) likewise stays a names-only listing and does not resolve the storage of every source table. A table name exposed by several sources is listed once, resolved to the first source that has it, as with any other lookup through the facade.
 
