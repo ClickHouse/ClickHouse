@@ -117,3 +117,27 @@ SELECT 'Lossy cast: both matching rows are returned';
 SELECT count() FROM t_bf_null_in_lossy WHERE x IN (SELECT toUInt8(1)) SETTINGS transform_null_in = 1;
 
 DROP TABLE t_bf_null_in_lossy;
+
+-- Tuple lhs: the NULL-free and type checks above are per-column, and the recursive `tuple(...)`
+-- branch matches each element against its own index without the set, so those checks cannot be
+-- applied there. Reusing the single-column check would prune granules holding a row that a
+-- NULL-carrying tuple set matches. `(a, b)` holds 2 in both granules, so only `b` discriminates.
+DROP TABLE IF EXISTS t_bf_null_in_tup;
+CREATE TABLE t_bf_null_in_tup
+(
+    a Nullable(Int32),
+    b Nullable(Int32),
+    INDEX idx_a a TYPE bloom_filter GRANULARITY 1,
+    INDEX idx_b b TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
+INSERT INTO t_bf_null_in_tup VALUES (2, 50), (9, 51), (2, NULL), (9, 52);
+
+SELECT 'Tuple: IN does not prune with transform_null_in=1';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_null_in_tup WHERE (a, b) IN ((2, NULL)) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
+SELECT 'Tuple: NULL-carrying set returns the same rows with and without the skip index';
+SELECT
+    (SELECT count() FROM t_bf_null_in_tup WHERE (a, b) IN ((2, NULL)) SETTINGS transform_null_in = 1, use_skip_indexes = 0) =
+    (SELECT count() FROM t_bf_null_in_tup WHERE (a, b) IN ((2, NULL)) SETTINGS transform_null_in = 1);
+
+DROP TABLE t_bf_null_in_tup;

@@ -32,3 +32,7 @@ Lossy cast: results are identical with and without the skip index
 1
 Lossy cast: both matching rows are returned
 2
+Tuple: IN does not prune with transform_null_in=1
+0
+Tuple: NULL-carrying set returns the same rows with and without the skip index
+1
