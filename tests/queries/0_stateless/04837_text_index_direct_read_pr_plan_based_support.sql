@@ -49,4 +49,26 @@ SELECT
     countIf(explain LIKE '%ReadFromMergeTree%') > 0 AS has_local_read
 FROM (EXPLAIN pretty=0, description=0 SELECT count() FROM t_text_pr_plan WHERE hasToken(s, 'word42'));
 
+-- The join shape from #112723: one join side carries a direct text-index read, and the result is
+-- sensitive to that filter ('world bbb' matches the join key but not the token filter), so losing
+-- the shipped index read tasks would silently change the result.
+SELECT '-- a join side with a direct text-index read (filter-sensitive result)';
+
+DROP TABLE IF EXISTS t_pr_join_l;
+DROP TABLE IF EXISTS t_pr_join_r;
+
+CREATE TABLE t_pr_join_r (s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha'))
+    ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_pr_join_r VALUES ('hello aaa'), ('world bbb'), ('hello ccc');
+
+CREATE TABLE t_pr_join_l (s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_pr_join_l VALUES ('hello aaa'), ('world bbb'), ('hello ccc'), ('unmatched');
+
+SELECT count() FROM t_pr_join_l AS l JOIN t_pr_join_r AS r ON l.s = r.s WHERE hasToken(r.s, 'hello');
+SELECT count() FROM t_pr_join_l AS l JOIN t_pr_join_r AS r ON l.s = r.s WHERE hasToken(r.s, 'hello')
+    SETTINGS enable_parallel_replicas = 0;
+
+DROP TABLE t_pr_join_l;
+DROP TABLE t_pr_join_r;
+
 DROP TABLE t_text_pr_plan;

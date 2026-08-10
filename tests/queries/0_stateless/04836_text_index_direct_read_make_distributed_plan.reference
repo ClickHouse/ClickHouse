@@ -17,6 +17,12 @@ distributes
 1111
 1111
 1111
+-- the fuzzer shape: mixed PREWHERE and a xor in WHERE
+42
+42
+-- text index read under a join
+1
+1
 -- a part without the materialized index uses the shipped default expression
 1
 1

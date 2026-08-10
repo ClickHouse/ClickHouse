@@ -58,6 +58,35 @@ SELECT count() FROM t_text_mdp WHERE s ILIKE '%WORD42%'
 SELECT count() FROM t_text_mdp WHERE s ILIKE '%WORD42%'
     SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 1, make_distributed_plan = 0;
 
+-- The AST-fuzzer shape from #108818: the text-search function appears both in a mixed PREWHERE
+-- conjunction and inside a xor in WHERE, so the rewrite reaches the step from two filter stages.
+SELECT '-- the fuzzer shape: mixed PREWHERE and a xor in WHERE';
+
+SELECT id FROM t_text_mdp
+PREWHERE (materialize(65537) >= id) AND hasToken(s, 'word42')
+WHERE xor(hasToken(s, 'word42'), (id >= 65537))
+ORDER BY id LIMIT 3;
+SELECT id FROM t_text_mdp
+PREWHERE (materialize(65537) >= id) AND hasToken(s, 'word42')
+WHERE xor(hasToken(s, 'word42'), (id >= 65537))
+ORDER BY id LIMIT 3 SETTINGS make_distributed_plan = 0;
+
+-- A text index read reached through a subquery under a join: the read ships in its own fragment
+-- of a multi-stage (shuffle join) plan.
+SELECT '-- text index read under a join';
+
+DROP TABLE IF EXISTS t_mdp_outer;
+CREATE TABLE t_mdp_outer (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_mdp_outer SELECT number FROM numbers(200000);
+
+SELECT count() FROM t_mdp_outer AS o
+JOIN (SELECT id FROM t_text_mdp PREWHERE hasToken(s, 'word42') WHERE id < 65537) AS t ON o.id = t.id;
+SELECT count() FROM t_mdp_outer AS o
+JOIN (SELECT id FROM t_text_mdp PREWHERE hasToken(s, 'word42') WHERE id < 65537) AS t ON o.id = t.id
+SETTINGS make_distributed_plan = 0;
+
+DROP TABLE t_mdp_outer;
+
 DROP TABLE t_text_mdp;
 
 SELECT '-- a part without the materialized index uses the shipped default expression';

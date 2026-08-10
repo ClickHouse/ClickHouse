@@ -10,3 +10,6 @@
 1
 -- the plan splits into a local and a remote parallel-replicas read
 1	1	1
+-- a join side with a direct text-index read (filter-sensitive result)
+2
+2
