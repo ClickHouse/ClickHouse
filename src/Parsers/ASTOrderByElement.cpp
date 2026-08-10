@@ -5,6 +5,8 @@
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 
+#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -27,9 +29,26 @@ namespace
 
 void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
+    /// `nulls_direction` already holds the effective direction, so
+    /// `nulls_direction_was_explicitly_specified` is only about formatting and is left unhashed.
+    static_assert(sizeof(*this) == 88, "If members were added to ASTOrderByElement, hash them here unless they are purely cosmetic.");
+
+    /// The children carry different roles (collation, `WITH FILL` bounds) recorded only in
+    /// `positions`. Without hashing the roles, `WITH FILL FROM 1 TO 2` and `WITH FILL FROM 1 STEP 2`
+    /// hash equally. Iterate over all enumerators so that a newly added one is hashed without
+    /// changing this code.
+    for (auto child : magic_enum::enum_values<Child>())
+    {
+        auto it = positions.find(child);
+        if (it != positions.end())
+        {
+            hash_state.update(child);
+            hash_state.update(it->second);
+        }
+    }
+
     hash_state.update(direction);
     hash_state.update(nulls_direction);
-    hash_state.update(nulls_direction_was_explicitly_specified);
     hash_state.update(with_fill);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }

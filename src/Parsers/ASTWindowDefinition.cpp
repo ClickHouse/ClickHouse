@@ -1,5 +1,6 @@
 #include <Parsers/ASTWindowDefinition.h>
 
+#include <Common/SipHash.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTJSONHelpers.h>
@@ -60,6 +61,22 @@ ASTPtr ASTWindowDefinition::clone() const
 String ASTWindowDefinition::getID(char) const
 {
     return "WindowDefinition";
+}
+
+void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The frame and the parent window name are not children, so the default implementation does
+    /// not see them. The offsets are children and are covered by the generic walk.
+    static_assert(sizeof(*this) == 112, "If members were added to ASTWindowDefinition, hash them here unless they are purely cosmetic.");
+    hash_state.update(parent_window_name.size());
+    hash_state.update(parent_window_name);
+    hash_state.update(frame_is_default);
+    hash_state.update(frame_type);
+    hash_state.update(frame_begin_type);
+    hash_state.update(frame_begin_preceding);
+    hash_state.update(frame_end_type);
+    hash_state.update(frame_end_preceding);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
@@ -171,6 +188,18 @@ ASTPtr ASTWindowListElement::clone() const
 String ASTWindowListElement::getID(char) const
 {
     return "WindowListElement";
+}
+
+void ASTWindowListElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The name is what an `OVER w` reference resolves against, and it is not a child, so without
+    /// this two differently named windows hash equally. Length-prefixed, otherwise the name runs
+    /// into whatever `getID` writes next.
+    static_assert(
+        sizeof(*this) == 64, "If members were added to ASTWindowListElement, hash them here unless they are purely cosmetic.");
+    hash_state.update(name.size());
+    hash_state.update(name);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTWindowListElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
