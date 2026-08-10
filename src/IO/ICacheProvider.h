@@ -130,12 +130,6 @@ public:
     /// Wait until `subrange`'s bytes are committed by the sibling downloader, then serve them
     /// from this writer's own held segments (cache file). Default: plain read (no wait).
     virtual ChainedBuffers waitAndReadSiblingLed(ByteRange subrange) { return read(subrange); }
-
-    /// Opaque token keeping the partial segment under `frontier`
-    /// non-evictable while the live source connection streams into it.
-    /// Default no-op (e.g. page cache).
-    using CacheSegmentPin = std::shared_ptr<void>;
-    virtual CacheSegmentPin pin(size_t /*frontier*/) const { return nullptr; }
 };
 
 using CacheReaderPtr = std::unique_ptr<CacheReader>;

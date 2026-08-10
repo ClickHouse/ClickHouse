@@ -90,7 +90,6 @@ public:
     ChainedBuffers read(ByteRange subrange) override;
     FillClaim claim(ByteRange window) override;
     ChainedBuffers waitAndReadSiblingLed(ByteRange subrange) override;
-    CacheWriter::CacheSegmentPin pin(size_t frontier) const override;
 
 private:
     bool tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset);

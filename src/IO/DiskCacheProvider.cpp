@@ -463,40 +463,6 @@ ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange subrange)
     return read(subrange);
 }
 
-CacheWriter::CacheSegmentPin DiskCacheWriter::pin(size_t frontier) const
-{
-    /// `frontier` is a file-level half-open lower bound. Find the containing segment in the held
-    /// holder and return a bare `FileSegmentPtr` as the pin (keeps it non-evictable; the holder
-    /// still owns it for appends).
-    if (!holder || frontier < object_file_offset)
-        return nullptr;
-    const size_t frontier_obj = frontier - object_file_offset;
-
-    for (const auto & segment : *holder)
-    {
-        const auto & seg_range = segment->range();
-        if (!seg_range.contains(frontier_obj))
-            continue;
-
-        /// A DOWNLOADING segment is pinnable: the pin decision can race the claim's role release,
-        /// so the same partial shows DOWNLOADING or PARTIALLY_DOWNLOADED by timing. The plain holder
-        /// reference protects it across the next plan rebuild with no gap.
-        const auto state = segment->state();
-        const bool partial = state == FileSegmentState::DOWNLOADING
-                          || state == FileSegmentState::PARTIALLY_DOWNLOADED
-                          || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
-        if (!partial)
-            return nullptr;
-        if (segment->getCurrentWriteOffset() <= seg_range.left)
-            return nullptr;
-        if (segment->isDetached())
-            return nullptr;
-
-        return std::static_pointer_cast<void>(segment);
-    }
-    return nullptr;
-}
-
 bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset)
 {
     /// `FileSegment::write` leaves the segment in
