@@ -47,9 +47,6 @@ private:
     std::vector<QueryTreePassPtr> passes;
 };
 
-/// `add_random_order_injection` controls whether InjectRandomOrderIfNoOrderByPass is added
-/// (the pass itself is a no-op unless the setting `inject_random_order_for_select_without_order_by` is enabled).
-/// It must be disabled for queries processed only up to an intermediate stage, see the comment at the call site.
-void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false, bool add_random_order_injection = true);
+void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze = false);
 
 }
