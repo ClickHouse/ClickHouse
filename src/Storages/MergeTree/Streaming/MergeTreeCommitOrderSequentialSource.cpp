@@ -432,7 +432,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::prepare()
     if (has_running_sub_pipeline)
         return handleRunningPipeline();
 
-    if (!pending_snapshot.has_value())
+    if (!pending_snapshot.has_value() && !reading_up_to_block_numbers.empty())
         handlePipelineEnd();
 
     if (!stream_settings.subscribe_for_updates)
