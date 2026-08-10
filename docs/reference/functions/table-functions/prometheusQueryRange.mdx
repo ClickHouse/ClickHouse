@@ -26,7 +26,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 - `end_time` - The end time of the evaluation range.
 - `step` - The step used to iterate the evaluation time from `start_time` to `end_time` (inclusively).
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The function can returns different columns depending on the result type of the query passed to parameter `promql_query`:
 
@@ -47,7 +47,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `changes`, `resets` |
+| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
 | Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |

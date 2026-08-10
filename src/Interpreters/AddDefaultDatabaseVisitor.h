@@ -21,6 +21,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
+#include <Poco/String.h>
 #include <set>
 
 namespace DB
@@ -102,6 +103,20 @@ public:
         visit(refresh, unused);
     }
 
+    /// Substitute the database only into table functions that use the current database implicitly,
+    /// e.g. `merge('tables_regexp')`, without qualifying table identifiers.
+    /// It is used for `ALTER ... ON CLUSTER`: the identifiers are qualified when the query
+    /// is interpreted on each host, but the table functions have to be canonicalized before
+    /// `executeDDLQueryOnCluster` replaces `currentDatabase()` with the database of the session.
+    void substituteDatabaseInTableFunctions(IAST & ast) const
+    {
+        if (const auto * table_expression = ast.as<ASTTableExpression>(); table_expression && table_expression->table_function)
+            visitTableFunction(*table_expression->table_function);
+
+        for (auto & child : ast.children)
+            substituteDatabaseInTableFunctions(*child);
+    }
+
 private:
 
     ContextPtr context;
@@ -171,6 +186,76 @@ private:
     {
         if (table_expression.database_and_table_name)
             tryVisit<ASTTableIdentifier>(table_expression.database_and_table_name);
+        else if (table_expression.table_function)
+            visitTableFunction(*table_expression.table_function);
+    }
+
+    /// Some table functions use the current database when it is not specified explicitly, e.g. `merge('regexp')`.
+    /// The query can be interpreted later in a context where the current database is not set
+    /// (for example, a mutation is interpreted in a background thread), so the database has to be
+    /// substituted here, in the same way as it is done for table names.
+    void visitTableFunction(IAST & table_function) const
+    {
+        if (database_name.empty())
+            return;
+
+        auto * function = table_function.as<ASTFunction>();
+        if (!function || !function->arguments)
+            return;
+
+        auto & arguments = function->arguments->children;
+
+        if (function->name == "merge")
+        {
+            /// merge('tables_regexp') -> merge('database_name', 'tables_regexp')
+            if (arguments.size() == 1)
+            {
+                arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(database_name));
+            }
+            /// merge(currentDatabase(), 'tables_regexp') -> merge('database_name', 'tables_regexp'),
+            /// because `currentDatabase` would be evaluated too late, in a context where the current database can be different.
+            /// The database argument can be an arbitrary constant expression, e.g. `merge(concat(currentDatabase(), ''), 'tables_regexp')`,
+            /// so `currentDatabase()` is substituted everywhere in the first argument, not only when it is the whole argument.
+            else if (arguments.size() == 2)
+            {
+                substituteCurrentDatabase(arguments[0], *function->arguments);
+            }
+        }
+
+        /// A table function can be an argument of another table function, e.g. `remote('127.0.0.1', merge('tables_regexp'))`.
+        for (auto & argument : arguments)
+            visitTableFunction(*argument);
+    }
+
+    /// Whether the function is `currentDatabase` or one of its aliases (`DATABASE`, `SCHEMA`, `current_database`),
+    /// which are registered in `FunctionFactory` as case-insensitive.
+    static bool isCurrentDatabaseFunction(const ASTFunction & function)
+    {
+        if (function.arguments && !function.arguments->children.empty())
+            return false;
+
+        if (function.name == "currentDatabase")
+            return true;
+
+        const String lowered_name = Poco::toLower(function.name);
+        return lowered_name == "database" || lowered_name == "schema" || lowered_name == "current_database";
+    }
+
+    /// Replace `currentDatabase()` with a literal everywhere in the subtree.
+    void substituteCurrentDatabase(ASTPtr & ast, IAST & parent) const
+    {
+        if (const auto * function = ast->as<ASTFunction>(); function && isCurrentDatabaseFunction(*function))
+        {
+            /// The `updatePointerToChild` function replaces the old address with the new one without access, so it is safe to invalidate it in place.
+            /// However, just for safety, let's store the old node for a little longer.
+            ASTPtr old_ast = ast;
+            ast = make_intrusive<ASTLiteral>(database_name);
+            parent.updatePointerToChild(old_ast.get(), ast);
+            return;
+        }
+
+        for (auto & child : ast->children)
+            substituteCurrentDatabase(child, *ast);
     }
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
