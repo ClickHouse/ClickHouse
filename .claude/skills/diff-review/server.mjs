@@ -4,20 +4,21 @@
 // @pierre/diffs bundle (see vendor/README.md) — nothing is loaded from a CDN.
 //
 // Usage:
-//   node server.mjs [--repo <path>] [--base <ref>] [--committed] [--port 3000] [--out <file>] [--no-open]
+//   node server.mjs [--repo <path>] [--base <ref>] [--committed] [--port 3000] [--out <file>] [--no-open] [--force]
 //
 // By default the working tree (staged + unstaged + untracked) is diffed against
 // --base. With --committed, <base>..HEAD is diffed instead and the working tree
 // is ignored — use it to review already-committed branch work.
 //
 // Exits 0 after the user submits their review (comments written to --out),
-// exits 3 when there is nothing to review, exits 1 on errors (e.g. port busy).
+// exits 3 when there is nothing to review, exits 4 when this machine has no
+// browser that could reach the server, exits 1 on errors (e.g. port busy).
 
 import { createServer } from 'node:http';
 import { spawnSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
-import { readFileSync, writeFileSync, lstatSync, readlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, lstatSync, readlinkSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -35,7 +36,70 @@ const REPO = resolve(argVal('--repo', process.cwd()));
 const OUT = resolve(argVal('--out', join(tmpdir(), `diff-review-${Date.now()}.json`)));
 const NO_OPEN = args.includes('--no-open');
 const COMMITTED = args.includes('--committed');
+const FORCE = args.includes('--force') || process.env.DIFF_REVIEW_FORCE === '1';
 const MAX_FILE_BYTES = 2_000_000;
+
+// ── Refuse to serve where nobody can look ────────────────────────────────────
+// The server binds to loopback, so the review UI is only reachable from a
+// browser running on this very host. On an isolated VM — a cloud instance we
+// reach over SSH, a headless container — there is no such browser. Starting a
+// server there helps nobody: it binds a port and leaves a background task
+// waiting for a review that can never be submitted. Decide this before doing
+// any work at all, so we neither shell out to git nor read the diff.
+function detectNoReachableBrowser() {
+  const reasons = [];
+
+  // A remote shell: the user's browser runs on the machine at the other end of
+  // the connection, and that machine cannot reach our loopback socket.
+  if (process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY)
+    reasons.push('this is an SSH session (SSH_CONNECTION/SSH_CLIENT/SSH_TTY is set)');
+
+  // A cloud instance. cloud-init state is the cheapest reliable marker, and the
+  // DMI vendor strings cover images that clean it up. Both are plain file
+  // reads. Deliberately not IMDS: querying 169.254.169.254 costs a network
+  // round trip (two, under IMDSv2) and hangs where the link-local route is
+  // firewalled off, to report what the DMI strings already say for free.
+  const cloudInitMarker = ['/var/lib/cloud/instance', '/run/cloud-init/instance-data.json'].find(
+    (p) => existsSync(p)
+  );
+  if (cloudInitMarker) {
+    reasons.push(`cloud-init state is present (${cloudInitMarker})`);
+  } else {
+    const CLOUD_VENDORS =
+      /amazon ec2|google|microsoft corporation|digitalocean|hetzner|openstack|alibaba cloud|oraclecloud|scaleway|vultr/i;
+    for (const field of ['sys_vendor', 'chassis_asset_tag', 'board_vendor']) {
+      let value;
+      try {
+        value = readFileSync(`/sys/class/dmi/id/${field}`, 'utf8').trim();
+      } catch {
+        continue;
+      }
+      if (CLOUD_VENDORS.test(value)) {
+        reasons.push(`DMI ${field} reads "${value}", so this is a cloud instance`);
+        break;
+      }
+    }
+  }
+
+  // No graphical session: nothing here can open a browser even locally. macOS
+  // and Windows always have a window server, so this only applies to Linux.
+  if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY)
+    reasons.push('there is no graphical session (DISPLAY and WAYLAND_DISPLAY are both unset)');
+
+  return reasons;
+}
+
+const noBrowserReasons = FORCE ? [] : detectNoReachableBrowser();
+if (noBrowserReasons.length > 0) {
+  process.stderr.write(
+    'diff-review: not starting a server, because no browser on this machine could reach it:\n' +
+      noBrowserReasons.map((r) => `  - ${r}\n`).join('') +
+      'diff-review: show the diff in the terminal instead, with git diff or git show.\n' +
+      'diff-review: --force overrides this, and is only for a user who forwarded the port themselves.\n'
+  );
+  process.exit(4);
+}
+
 // Per-session secret: embedded into the served page and required on /submit, so
 // that a submission can only come from the UI this server handed out — not from
 // a random cross-origin tab or a blind POST to localhost.

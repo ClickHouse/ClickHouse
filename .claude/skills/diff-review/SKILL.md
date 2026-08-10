@@ -1,6 +1,6 @@
 ---
 name: diff-review
-description: In-browser review of pending changes before committing or opening a PR. Starts a local server on localhost:3000 that renders the working-tree diff with @pierre/diffs CodeView, opens the user's browser, and waits for their line comments — which must then be read back and addressed. Use ALWAYS before git commit or PR creation, and whenever the user asks to see or review the changes.
+description: In-browser review of pending changes before committing or opening a PR. Starts a local server on localhost:3000 that renders the working-tree diff with @pierre/diffs CodeView, opens the user's browser, and waits for their line comments — which must then be read back and addressed. Only works where the user has a browser on this same machine, so it refuses to start over SSH, on a cloud VM, or in a headless session. Use when the user asks for a browser review of the changes.
 ---
 
 # diff-review — let the user review changes in the browser
@@ -8,6 +8,15 @@ description: In-browser review of pending changes before committing or opening a
 The user wants to read and review code changes in a browser UI before anything is
 committed or pushed. This skill serves the diff on localhost, collects the user's
 line comments, and hands them back to you as JSON. You must address every comment.
+
+## When not to use it
+
+The server binds to loopback, so the UI is only reachable from a browser running
+on the very machine the server runs on. Over SSH, on a cloud VM, or in any
+headless session there is no such browser, and `server.mjs` exits 4 without doing
+anything (see **Exit code 4** below). Don't reach for this skill in those
+environments: show the diff in the terminal with `git diff` / `git show`, or just
+open the pull request and let review happen there.
 
 ## How to run
 
@@ -65,8 +74,15 @@ line comments, and hands them back to you as JSON. You must address every commen
 ## Troubleshooting
 
 - **Exit code 3** — nothing to review against the chosen `--base`.
+- **Exit code 4** — no browser on this machine could reach the server, so nothing
+  was started. The message lists which signals fired: an SSH session
+  (`SSH_CONNECTION`/`SSH_CLIENT`/`SSH_TTY`), cloud-init state or a cloud vendor in
+  the DMI strings, or a Linux session with neither `DISPLAY` nor
+  `WAYLAND_DISPLAY`. This is the expected outcome on an isolated VM — fall back to
+  a terminal diff and carry on; do not retry.
+  `--force` (or `DIFF_REVIEW_FORCE=1`) skips the check, but it exists for a user
+  who has forwarded the port themselves. Never pass it on your own initiative.
 - **Port 3000 busy** — a stale server is probably running:
   `pkill -f "diff-review/server.mjs"`, or pass `--port <other>` and give the user
   the new URL.
-- **Browser didn't open** (SSH / headless) — give the user the URL to open manually.
 - **User wants to abort** — stop the background task with TaskStop; don't wait forever.
