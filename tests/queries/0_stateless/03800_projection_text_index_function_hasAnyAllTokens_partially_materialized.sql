@@ -1,4 +1,6 @@
 SET allow_experimental_projection_text_index = 1;
+-- The reference uses the pre-26.7 EXPLAIN layout; explain_query_plan_default now defaults to 'pretty'.
+SET explain_query_plan_default = 'legacy';
 SET enable_full_text_index = 1;
 SET parallel_replicas_local_plan = 1; -- this setting may skip index analysis when false
 SET use_skip_indexes_on_data_read = 0;

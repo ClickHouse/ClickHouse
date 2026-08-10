@@ -1,4 +1,6 @@
 SET allow_experimental_projection_text_index = 1;
+-- The reference uses the pre-26.7 EXPLAIN layout; explain_query_plan_default now defaults to 'pretty'.
+SET explain_query_plan_default = 'legacy';
 -- Tags: no-ordinary-database, no-asan
 -- no-asan: runs too long
 

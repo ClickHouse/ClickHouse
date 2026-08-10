@@ -1,4 +1,6 @@
 SET allow_experimental_projection_text_index = 1;
+-- The reference uses the pre-26.7 EXPLAIN layout; explain_query_plan_default now defaults to 'pretty'.
+SET explain_query_plan_default = 'legacy';
 SELECT '-------- Text index filter --------';
 SELECT '';
 

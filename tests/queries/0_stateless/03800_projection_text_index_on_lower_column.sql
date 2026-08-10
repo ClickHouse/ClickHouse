@@ -1,4 +1,6 @@
 SET allow_experimental_projection_text_index = 1;
+-- The reference uses the pre-26.7 EXPLAIN layout; explain_query_plan_default now defaults to 'pretty'.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET max_parallel_replicas = 1;
