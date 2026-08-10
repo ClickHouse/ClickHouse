@@ -258,6 +258,14 @@ private:
     /// so that the teardown deletes the coordination state that actually exists. Only used on the DROP path.
     void adoptPersistedCoordinationIdentityForTeardown();
 
+    /// Remove the <keeper_path>/replicas children that store this replica's own owner identity under a name
+    /// other than its current coordination name. Such a node is a leftover of an earlier expansion of
+    /// `materialized_postgresql_replica_name` published before the first nested table existed (so the
+    /// nested-table metadata cannot catch the change), and it would keep /replicas non-empty forever, making
+    /// every future last-replica teardown of the setup decide it is not the last one. Run both before this
+    /// replica registers itself and before the last-replica fence on the drop path.
+    void purgeOwnStaleReplicaRegistrations();
+
     /// Publish this replica's naming-affecting settings at <keeper_path>/naming (first replica) or check
     /// them against the already published ones (joining replica), throwing BAD_ARGUMENTS on a mismatch.
     /// All coordinated replicas derive the ClickHouse names of the shared nested tables from the shared
@@ -328,6 +336,12 @@ private:
     /// and camping on /leader would keep every healthy peer on standby - most importantly for the
     /// single-table engine, whose one failed snapshot load has to abort the whole startup.
     void releaseLeadershipAfterFailedStartup();
+
+    /// Remove a <keeper_path>/leader node that this replica created itself and then stopped tracking, which
+    /// can only be a leftover of a leadership release whose removal could not be confirmed. Returns true when
+    /// the path is free afterwards, so the election can be retried at once. A node held by a live peer, or by
+    /// an older Keeper session of this server, is never touched.
+    bool removeLeakedOwnLeaderNode(const zkutil::ZooKeeperPtr & zookeeper, const String & leader_path);
 
     ConsumerPtr getConsumer();
 

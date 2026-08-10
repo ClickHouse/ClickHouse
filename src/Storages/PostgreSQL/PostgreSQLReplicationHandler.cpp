@@ -1692,6 +1692,13 @@ void PostgreSQLReplicationHandler::coordinationFunc()
             zookeeper->createAncestors(leader_path);
             leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
 
+            /// The node may be a leftover of this replica's own, unconfirmed leadership release (see
+            /// `releaseLeadershipAfterFailedStartup`). Nobody tracks it any more, and it lives under this
+            /// server's still-live Keeper session, so it would block every replica of the setup - including
+            /// this one - until that session expires. Remove it and enter the election again right away.
+            if (!leader_node && removeLeakedOwnLeaderNode(zookeeper, leader_path))
+                leader_node = zkutil::EphemeralNodeHolder::tryCreate(leader_path, *zookeeper, coordination_replica_name);
+
             if (leader_node)
             {
                 /// Keep the session that the ephemeral node references alive for as long as the node.
@@ -1732,24 +1739,64 @@ void PostgreSQLReplicationHandler::releaseLeadershipAfterFailedStartup()
 
     try
     {
-        /// Remove the node through the leadership session and only forget it when the removal is
-        /// confirmed. If the removal fails the node may still exist, and dropping the reference to it
-        /// would leave a leader node nobody tracks, blocking every peer until the whole Keeper session
-        /// expires - keep the leadership state instead, so the regular retained-leadership retry and
-        /// session-expiry handling stay responsible for it.
+        /// Remove the node through the leadership session, so the removal is fenced on the very session the
+        /// node lives under.
         coordination_zookeeper->remove(coordination_keeper_path + "/leader");
         leader_node->setAlreadyRemoved();
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Failed to release the replication leadership after a failed startup attempt, keeping it");
-        return;
+        /// A failed removal is NOT proof that this replica still holds /leader: Keeper may well have applied
+        /// it and only the response was lost (or the session may be gone entirely), in which case a peer can
+        /// win a fresh election immediately. Keeping the leadership state would let this replica re-enter
+        /// `startSynchronization` and mutate the shared replication slot and snapshot state while another
+        /// replica is the active worker, breaking the single-active-worker contract that the whole
+        /// coordination rests on. So the leadership claim is dropped in either case, and the ambiguity is
+        /// resolved through Keeper on the next election instead: if the node really did survive, this
+        /// replica's own leftover is recognized and removed by `removeLeakedOwnLeaderNode` (matched on the
+        /// stored replica name and on the owning Keeper session), and the destructor of `leader_node` below
+        /// makes one more best-effort removal attempt anyway.
+        tryLogCurrentException(log,
+            "Could not confirm the removal of the replication leader node after a failed startup attempt, "
+            "dropping the leadership claim anyway");
     }
 
     is_active_worker.store(false);
     leader_node.reset();
     coordination_zookeeper.reset();
     LOG_WARNING(log, "Released replication leadership after a failed startup attempt");
+}
+
+
+bool PostgreSQLReplicationHandler::removeLeakedOwnLeaderNode(const zkutil::ZooKeeperPtr & zookeeper, const String & leader_path)
+{
+    /// Removes a /leader node that this replica itself created and then lost track of, which can only happen
+    /// through an unconfirmed release in `releaseLeadershipAfterFailedStartup`. Returns true when the path is
+    /// free afterwards (removed, or already gone), so the caller can retry the election immediately.
+    ///
+    /// Two conditions must hold, and together they are exact: the node's data is this replica's coordination
+    /// name (it is written there when the node is created, and the name is enforced to be distinct per
+    /// replica), and the node is owned by the Keeper session this server is using right now - an ephemeral
+    /// node of any older session is either already gone or about to be removed by Keeper itself, and must not
+    /// be touched, because until then its creator legitimately holds the leadership. A node held by a live
+    /// peer therefore never matches.
+    Coordination::Stat stat;
+    String leader_name;
+    if (!zookeeper->tryGet(leader_path, leader_name, &stat))
+        return true;
+
+    if (leader_name != coordination_replica_name || stat.ephemeralOwner != zookeeper->getClientID())
+        return false;
+
+    LOG_WARNING(log,
+        "The replication leader node {} was created by this replica under the current Keeper session but is no "
+        "longer tracked (an earlier leadership release could not be confirmed). Removing it before re-entering "
+        "the election.", leader_path);
+
+    /// Version-checked, so a node that changed in between (it can only have been removed and recreated by a
+    /// peer) is left alone.
+    const auto code = zookeeper->tryRemove(leader_path, stat.version);
+    return code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE;
 }
 
 
@@ -1802,6 +1849,13 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
                  "materialized_postgresql_pause_before_register_replica is disabled");
         FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_register_replica);
     });
+
+    /// A registration this replica published under an earlier expansion of its coordination name (a
+    /// configuration-only macro change made in the window between the registration and the creation of the
+    /// first nested table, where the check above has no nested-table metadata to catch it with) would keep
+    /// <keeper_path>/replicas non-empty forever and block every future last-replica teardown of this setup.
+    /// Clean it up, identified by the owner identity stored in it.
+    purgeOwnStaleReplicaRegistrations();
 
     registerReplicaInKeeper();
     try
@@ -1996,10 +2050,77 @@ void PostgreSQLReplicationHandler::adoptPersistedCoordinationIdentityForTeardown
     /// No nested table to learn the identity from. If the settings could not be expanded at all (a macro they
     /// go through was removed from the configuration), there is nothing to tear down under, so refuse instead
     /// of touching an arbitrary Keeper path.
+    ///
+    /// Note that "no nested table" does not mean "nothing was ever registered": the registration under
+    /// <keeper_path>/replicas (as well as /naming and /table_set) is published BEFORE the first nested table
+    /// exists. A replica whose coordination name changed while it was in that window therefore has a stale
+    /// registration to clean up, and `purgeOwnStaleReplicaRegistrations` (called by the teardown right after
+    /// this) finds it by its stored owner identity rather than by name.
     if (!coordination_identity_error.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Cannot resolve the coordination identity of this MaterializedPostgreSQL replica, and it owns no "
             "nested table to recover it from: {}", coordination_identity_error);
+}
+
+
+void PostgreSQLReplicationHandler::purgeOwnStaleReplicaRegistrations()
+{
+    /// A registration node under <keeper_path>/replicas whose data is this replica's own owner identity, but
+    /// whose name is not the coordination name in effect now, is a leftover of an earlier expansion of
+    /// `materialized_postgresql_replica_name` (a configuration-only change of a macro it goes through). Remove
+    /// it, because a stale child keeps <keeper_path>/replicas non-empty forever: the last-replica fence in
+    /// `unregisterReplicaAndCheckLast` wins only by removing the empty parent, so no later drop of any replica
+    /// of this setup could ever become the last one, and the shared replication slot, publication and
+    /// snapshot_completed marker would leak indefinitely.
+    ///
+    /// The identity stored in the node (`coordinationReplicaOwnerId`: this server's UUID plus the UUID of this
+    /// database / table) is expanded from nothing configurable, so it is stable across the macro change that
+    /// created the stale node - and it can never match a node that belongs to a peer, or to another database on
+    /// this server, so no live registration is ever removed here.
+    ///
+    /// This runs on both the startup path (before this replica registers itself) and the drop path (before the
+    /// last-replica fence), and it is what recovers the window in which the registration already exists while
+    /// no nested table does yet - there the nested-table metadata that `assertCoordinationIdentityMatchesNestedTables`
+    /// and `adoptPersistedCoordinationIdentityForTeardown` rely on does not exist yet.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::purgeOwnStaleReplicaRegistrations");
+
+    const String replicas_path = coordination_keeper_path + "/replicas";
+
+    Strings registered_names;
+    const auto list_code = getContext()->getZooKeeper()->tryGetChildren(replicas_path, registered_names);
+    if (list_code == Coordination::Error::ZNONODE)
+        return;
+    if (list_code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(list_code, replicas_path);
+
+    for (const auto & registered_name : registered_names)
+    {
+        if (registered_name == coordination_replica_name)
+            continue;
+
+        const String registered_path = replicas_path + "/" + registered_name;
+
+        /// Re-read through a fresh handle each time: the removal below must be fenced on the data that was
+        /// read, and Keeper errors here are surfaced (the drop path is fail-close, the startup path retries).
+        String registered_owner;
+        Coordination::Stat stat;
+        if (!getContext()->getZooKeeper()->tryGet(registered_path, registered_owner, &stat))
+            continue;
+        if (registered_owner != coordination_replica_owner)
+            continue;
+
+        LOG_WARNING(log,
+            "Removing the stale registration node {} of this MaterializedPostgreSQL replica: it was registered "
+            "under the coordination name '{}', which the current server configuration expands to '{}'. A "
+            "registration left behind under the old name would keep {} non-empty and prevent any later drop "
+            "from ever becoming the last-replica drop, leaking the shared replication slot and publication.",
+            registered_path, registered_name, coordination_replica_name, replicas_path);
+
+        /// Version-checked, so a node that was rewritten in between is left alone.
+        const auto code = getContext()->getZooKeeper()->tryRemove(registered_path, stat.version);
+        if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException::fromPath(code, registered_path);
+    }
 }
 
 
@@ -2320,6 +2441,12 @@ void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
         /// must not make the drop orphan the original coordination state). Everything below, including the
         /// post-data teardown in `shutdownFinal`, then works on the adopted identity.
         adoptPersistedCoordinationIdentityForTeardown();
+
+        /// Registrations this replica published under an earlier expansion of its coordination name must go as
+        /// well, and before the fence below: they are children of <keeper_path>/replicas, which the fence wins
+        /// only by removing once it is empty, so a leftover would make this drop (and every later one) decide
+        /// it is not the last replica and leave the shared slot, publication and snapshot marker behind.
+        purgeOwnStaleReplicaRegistrations();
 
         /// Make the fail-close last-replica decision first: unregisterReplicaAndCheckLast throws if Keeper is
         /// unreachable, which aborts the drop before any nested table is removed (and, importantly, before the

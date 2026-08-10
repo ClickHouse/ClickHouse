@@ -3157,3 +3157,65 @@ def test_failed_database_snapshot_releases_leadership(started_cluster):
         instance.query(
             "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_load_from_snapshot"
         )
+
+
+def test_stale_registration_of_a_renamed_replica_is_purged(started_cluster):
+    # <keeper_path>/replicas/<name> (as well as /naming and /table_set) is published BEFORE the first nested
+    # table exists, so a configuration-only change of a macro that
+    # `materialized_postgresql_replica_name` expands through, made in that window, leaves behind a
+    # registration node that no nested table's metadata points at. A leftover child keeps /replicas non-empty
+    # forever, and the last-replica fence - which wins only by removing the empty parent - could then never
+    # fire again: the shared replication slot and publication would leak on every future drop. Such a node is
+    # recognized by the owner identity stored in it (which no macro feeds into) and removed, both on the
+    # startup path and on the drop path.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    wait_for_marker(instance)
+
+    # The registration node stores "<server UUID>|<database UUID>" - both parts are stable across a change of
+    # the macros the coordination settings expand through, which is exactly what makes the stale node
+    # attributable to this replica.
+    owner = "{}|{}".format(
+        instance.query("SELECT serverUUID()").strip(),
+        instance.query(
+            "SELECT uuid FROM system.databases WHERE name = 'test_database'"
+        ).strip(),
+    )
+    zk = started_cluster.get_kazoo_client("zoo1")
+    stale_path = KEEPER_PATH_RESOLVED + "/replicas/coord_instance1_renamed"
+    zk.create(stale_path, owner.encode())
+
+    # The startup path removes it: restart the replica so the background startup task rebuilds the handler and
+    # re-runs the registration.
+    instance.restart_clickhouse()
+    for _ in range(60):
+        if not replica_registered(instance, "coord_instance1_renamed"):
+            break
+        time.sleep(1)
+    assert not replica_registered(instance, "coord_instance1_renamed")
+    assert replica_registered(instance, "coord_instance1")
+
+    # This replica's own registration and its replication are untouched.
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 50)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+    # The drop path removes it too, before it makes the last-replica decision - so the only replica of the
+    # setup still recognizes itself as the last one and drops the shared slot and publication. Without the
+    # purge the leftover child makes the fence fail, the drop decides it is not the last replica, and both
+    # leak in PostgreSQL forever.
+    zk.create(stale_path, owner.encode())
+    pg_manager.drop_materialized_db()
+    assert not replication_slot_exists()
+    assert not publication_exists()
