@@ -81,6 +81,26 @@ struct ThreadStack
     }
     ~ThreadStack()
     {
+        /// The deadly signal handlers request SA_ONSTACK, so a signal delivered after this point would
+        /// run on freed memory. The thread keeps executing thread_local destructors after this one.
+        stack_t disable{};
+        disable.ss_flags = SS_DISABLE;
+        /// Darwin rejects a zero size even when disabling.
+        disable.ss_size = getSize();
+        if (sigaltstack(&disable, nullptr) != 0)
+        {
+            const auto saved_errno = errno;
+            /// Leak rather than free a stack signals may still be delivered onto.
+            try
+            {
+                LOG_FATAL(getLogger("ThreadStatus"), "Cannot disable the alternative signal stack, leaking it, {}", errnoToString(saved_errno));
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: a destructor must not throw, and logging is best-effort
+            {
+            }
+            return;
+        }
+
         if constexpr (guardPagesEnabled())
             memoryGuardRemove(data, getPageSize());
 
@@ -152,34 +172,15 @@ ThreadStatus::ThreadStatus(UInt64 thread_id_)
         /// Don't repeat tries even if not installed successfully.
         has_alt_stack = true;
 
-        /// We have to call 'sigaltstack' before first 'sigaction'. (It does not work other way, for unknown reason).
         stack_t altstack_description{};
         altstack_description.ss_sp = alt_stack.getData();
         altstack_description.ss_flags = 0;
         altstack_description.ss_size = ThreadStack::getSize();
 
+        /// `SA_ONSTACK` is requested once for all deadly signals in `setupCommonDeadlySignalHandlers`;
+        /// the kernel selects this stack at delivery time, so it may be installed afterwards.
         if (0 != sigaltstack(&altstack_description, nullptr))
-        {
             LOG_WARNING(log, "Cannot set alternative signal stack for thread, {}", errnoToString());
-        }
-        else
-        {
-            /// Obtain existing sigaction and modify it by adding a flag.
-            struct sigaction action{};
-            if (0 != sigaction(SIGSEGV, nullptr, &action))
-            {
-                LOG_WARNING(log, "Cannot obtain previous signal action to set alternative signal stack for thread, {}", errnoToString());
-            }
-            else if (!(action.sa_flags & SA_ONSTACK))
-            {
-                action.sa_flags |= SA_ONSTACK;
-
-                if (0 != sigaction(SIGSEGV, &action, nullptr))
-                {
-                    LOG_WARNING(log, "Cannot set action with alternative signal stack for thread, {}", errnoToString());
-                }
-            }
-        }
     }
 #endif
 }

@@ -1397,9 +1397,15 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds, "How much time we spend to update replica set", ValueType::Number) \
     \
     M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number) \
-    M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file", ValueType::Number) \
-    M(KeeperLogsPrefetchedEntries, "Number of log entries in Keeper being prefetched from the changelog file", ValueType::Number) \
+    M(KeeperLogsReadAheadFillReopens, "Number of times the Keeper read-ahead fill reopened or seeked a changelog file", ValueType::Number) \
+    M(KeeperLogsReadAheadFillDecodedEntries, "Number of log entries decoded by the Keeper read-ahead fill task", ValueType::Number) \
+    M(KeeperLogsReadAheadCursorsInstalled, "Number of new fill cursors queued onto a Keeper changelog read-ahead reader (peer or commit) that the fill task was not already covering", ValueType::Number) \
+    M(KeeperLogsReadAheadPlanEpochMismatches, "Number of times a Keeper changelog read plan was discarded because a concurrent write_at truncation invalidated it before it could be served", ValueType::Number) \
+    M(KeeperLogsReadAheadScheduleRejected, "Number of times a Keeper changelog read-ahead reader could not be created because the read-ahead thread pool queue was full; the caller falls back to a direct read", ValueType::Number) \
+    M(KeeperLogsReadAheadReadersCreated, "Number of Keeper changelog read-ahead readers (and their fill tasks) created; staying flat across file boundaries indicates a reader is being reused rather than torn down and recreated", ValueType::Number) \
+    M(KeeperLogsReadAheadTimeoutFallbacks, "Number of times a Keeper changelog read-ahead serve request timed out waiting for the fill task and fell back to a direct read of the remaining tail", ValueType::Number) \
+    M(KeeperLogsEntryReadFromCommitReadAhead, "Number of log entries served to the commit thread from the commit read-ahead reader's decoded window (fast-path pop or first-of-window drain pop)", ValueType::Number) \
     M(KeeperChangelogWrittenBytes, "Number of bytes written to the changelog in Keeper", ValueType::Bytes) \
     M(KeeperChangelogFileSyncMicroseconds, "Time spent in fsync for Keeper changelog (uncompressed logs only)", ValueType::Microseconds) \
     M(KeeperSnapshotWrittenBytes, "Number of bytes written to snapshot files in Keeper", ValueType::Bytes) \
