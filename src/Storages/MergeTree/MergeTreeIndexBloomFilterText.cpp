@@ -537,7 +537,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             for (const auto & value : values)
             {
                 auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-                    value, array_type->getNestedType(), target_type, nullptr, serialize_quoted);
+                    value, array_type->getNestedType(), target_type, std::nullopt, serialize_quoted);
                 if (!serialized_value)
                     return false;
 
