@@ -988,11 +988,14 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
     try
     {
         /// `readImpl` reads the target table under `getSQLSecurityOverriddenContext`, so sample it under the
-        /// same context: for `SQL SECURITY DEFINER` / `NONE` the rows the view returns are the ones the
-        /// effective reader sees. Hashing under the caller context instead would miss an `ALTER ROW POLICY`
-        /// on the definer, which changes what `SELECT ... FROM mv` returns while the target table's data -
-        /// and therefore a caller-context hash - stays the same. See `StorageView::getModificationHash` for
-        /// the full reasoning, including why this is not a leak of the definer's data.
+        /// same context: for `SQL SECURITY DEFINER` / `NONE` it is the effective reader's grants that the
+        /// read is allowed by, so those are the grants the check below has to use. Reading a materialized
+        /// view pushes the read straight into the target storage and applies no `SELECT` row policy of the
+        /// target at all - neither the definer's nor the caller's - so unlike `StorageView` no row-policy
+        /// change can move the result here; failing closed on the effective reader's policy (which
+        /// `computeTableModificationHashForConsistency` does) is merely conservative. See
+        /// `StorageView::getModificationHash` for the rest of the reasoning, including why exposing the
+        /// resulting hash is not a leak of the definer's data.
         auto effective_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
 
         /// `computeTableModificationHashForConsistency` checks the effective reader's `SELECT` access on the
