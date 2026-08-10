@@ -1890,13 +1890,31 @@ def agent_scratch_root() -> str:
     random name and creates it exclusively, so a leftover process of an
     earlier agent cannot have squatted the path. The root is then the job
     user's, mode 0711 -- execute without read or write for everyone else --
-    so the agent can resolve the known names inside it but cannot list it or
-    create siblings, and a fixed name inside the root (the clone that
-    `investigation_clone` removes and recreates per attempt) can only ever
-    be recreated by the job user."""
+    so the agent can resolve the known names inside it, but cannot list it,
+    plant names in it, or discover the per-attempt directories `investigate`
+    makes inside it."""
     root = tempfile.mkdtemp(prefix="praktika-agent-", dir=AGENT_SCRATCH_PARENT)
     os.chmod(root, 0o711)
     return root
+
+
+def kill_agent_processes() -> None:
+    """Kill every process of `AGENT_USER`, so that none is left to watch the
+    next agent run.
+
+    The scratch paths are unpredictable and their ancestors unlistable, but
+    against a survivor of an earlier attempt that is no boundary at all: it
+    runs as the same uid as the next attempt's agent, and that agent's own
+    `/proc` -- its environment, its working directory -- would hand it every
+    path the moment the agent starts. What holds is absence: nothing of the
+    agent's user runs before a workspace is handed over, and nothing after
+    it is taken back. `pkill` exits 1 when there was nothing to kill, which
+    is the expected case, not a failure."""
+    Shell.check(
+        f"sudo -n pkill -KILL -U {AGENT_USER}; [ $? -le 1 ]",
+        verbose=True,
+        strict=True,
+    )
 
 
 def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
@@ -1939,7 +1957,11 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
       to whom the job user's files -- and `/proc` environments -- are another
       user's and unreadable. `confine_agent_user` establishes all of that
       strictly, probes the metadata service as that user, and refuses to run
-      the agent unless the probe is refused.
+      the agent unless the probe is refused. And no process of that user
+      outlives an attempt (`kill_agent_processes`, before the workspace is
+      handed over and again before it is taken back): a survivor would share
+      the next agent's uid, and the next agent's own `/proc` would hand it
+      the workspace paths that unpredictable names keep from everyone else.
     - The agent's environment is built from nothing (`env -i`): no
       `GH_TOKEN`/`GITHUB_TOKEN`, no `AWS_*` keys, nothing inherited at all --
       only `HOME`, `PATH`, `CODEX_HOME` and a `GH_CONFIG_DIR` pointing at an
@@ -1977,12 +1999,14 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
     openai_key = Secret.Config(
         name=OPENAI_KEY_SECRET, type=Secret.Type.AWS_SSM_PARAMETER
     ).get_value()
-    # In `AGENT_SCRATCH_PARENT`, not `TEMP_DIR`: the agent's user must be able
-    # to reach these, and `TEMP_DIR` is behind the job user's closed home.
-    # Directly in the parent, with no fixed component: `TemporaryDirectory` is
-    # exclusive creation at a random name, safe in a world-writable directory.
-    with tempfile.TemporaryDirectory(dir=AGENT_SCRATCH_PARENT) as codex_home, (
-        tempfile.TemporaryDirectory(dir=AGENT_SCRATCH_PARENT)
+    # Next to the workdir, in the scratch directory of this one attempt (see
+    # `investigate`) -- never `TEMP_DIR`, which is behind the job user's
+    # closed home. The agent's user can reach them there, and nothing else
+    # can find them: the ancestors are execute-only, and the attempt
+    # directory's random name dies with the attempt.
+    scratch = os.path.dirname(workdir)
+    with tempfile.TemporaryDirectory(dir=scratch) as codex_home, (
+        tempfile.TemporaryDirectory(dir=scratch)
     ) as gh_config_dir:
         subprocess.run(
             [codex, "login", "--with-api-key"],
@@ -1992,6 +2016,7 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
             env={**os.environ, "CODEX_HOME": codex_home},
         )
         try:
+            kill_agent_processes()
             chown(f"{AGENT_USER}:", workdir, codex_home, gh_config_dir)
             # The runner's directory layout must actually let the other uid
             # in. Everything the agent touches lives under
@@ -2020,6 +2045,7 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
                 timeout=AGENT_TIMEOUT_SEC,
             )
         finally:
+            kill_agent_processes()
             chown(f"{os.getuid()}:{os.getgid()}", workdir, codex_home, gh_config_dir)
     if not os.path.exists(verdict_file):
         raise ValueError(f"the agent did not write {verdict_file}")
@@ -2255,9 +2281,6 @@ def investigate(failure: Failure, index: int, repo: str) -> Investigation:
     """Ask the agent about one failure and return the recorded investigation."""
     investigation = Investigation(failure=failure)
     root = agent_scratch_root()
-    clone = os.path.join(root, f"investigation_{index}")
-    verdict_file = os.path.join(clone, "verdict.json")
-    prompt = investigation_prompt(failure, verdict_file)
     raw = ""
     error = ""
     try:
@@ -2267,6 +2290,15 @@ def investigate(failure: Failure, index: int, repo: str) -> Investigation:
             # process makes no GitHub call until the guards in `act` do, which
             # mint their own.
             reset_worktree()
+            # A scratch directory per attempt, not per investigation: the
+            # second attempt must not reappear at a path the first attempt's
+            # agent was already handed, and `mkdtemp` inside the unlistable
+            # root keeps the name unknowable from outside as well.
+            attempt_dir = tempfile.mkdtemp(prefix="attempt-", dir=root)
+            os.chmod(attempt_dir, 0o711)
+            clone = os.path.join(attempt_dir, f"investigation_{index}")
+            verdict_file = os.path.join(clone, "verdict.json")
+            prompt = investigation_prompt(failure, verdict_file)
             try:
                 # A fresh clone per attempt, not per failure: whatever the
                 # previous attempt's agent left in it is exactly what must not
@@ -2285,7 +2317,7 @@ def investigate(failure: Failure, index: int, repo: str) -> Investigation:
                 )
                 traceback.print_exc()
             finally:
-                Shell.check(f"rm -rf {shlex.quote(clone)}", verbose=False)
+                Shell.check(f"rm -rf {shlex.quote(attempt_dir)}", verbose=False)
                 reset_worktree()
     finally:
         Shell.check(f"rm -rf {shlex.quote(root)}", verbose=False)
