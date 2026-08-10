@@ -13,6 +13,7 @@
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTLiteral.h>
@@ -124,6 +125,11 @@ Chunk ValuesBlockInputFormat::read()
     size_t rows_in_block = 0;
     for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
     {
+        /// A loop of its own, so it needs its own checkpoint; see `CANCELLATION_CHECK_PERIOD_ROWS`
+        /// and the equivalent one in `IRowInputFormat::read`.
+        if (rows_in_block != 0 && rows_in_block % CANCELLATION_CHECK_PERIOD_ROWS == 0)
+            CurrentThread::checkIfNotCancelled();
+
         try
         {
             reading_row = true;
