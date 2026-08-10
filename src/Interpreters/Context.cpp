@@ -6488,7 +6488,8 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
 
         /// Validate discovery before creating the object or committing Clusters so a bad reload
         /// cannot leave clusters_config advanced while discovery stays on the previous view.
-        if (discovery_enabled && !remote_servers_unchanged)
+        /// Also validate when allow is turned off: an existing ClusterDiscovery is still updated.
+        if (!remote_servers_unchanged && (discovery_enabled || shared->cluster_discovery))
             ClusterDiscovery::validateConfig(*config, getGlobalContext(), config_name);
 
         bool discovery_just_created = false;

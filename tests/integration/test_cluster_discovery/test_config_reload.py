@@ -81,6 +81,30 @@ CONFIG_PASSWORD_AND_SECRET = """
 </clickhouse>
 """
 
+CONFIG_PASSWORD_AND_SECRET_ALLOW_OFF = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>0</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_reload_cluster>
+            <discovery>
+                <path>/clickhouse/discovery/test_reload_cluster</path>
+                <user>user1</user>
+                <password>password123</password>
+                <secret>cluster_secret_value</secret>
+            </discovery>
+        </test_reload_cluster>
+        <test_partial_apply_marker_allow_off>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_partial_apply_marker_allow_off>
+    </remote_servers>
+</clickhouse>
+"""
+
 CONFIG_NO_DISCOVERY = """
 <clickhouse>
     <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
@@ -278,6 +302,31 @@ def test_reload_invalid_discovery_does_not_partially_apply(start_cluster):
             )
         )
         assert count == 0, "Static cluster from rejected config was partially applied"
+
+    reload_config_on_all(CONFIG_WITH_PWD)
+
+
+def test_reload_invalid_discovery_allow_off_does_not_partially_apply(start_cluster):
+    """Existing discovery must still validate when allow is turned off on reload."""
+    reload_config_on_all(CONFIG_WITH_PWD)
+    wait_cluster_query(nodes["node0"], "test_reload_cluster", should_succeed=True)
+
+    for node in nodes.values():
+        node.replace_config(CONFIG_PATH, CONFIG_PASSWORD_AND_SECRET_ALLOW_OFF)
+        error = node.query_and_get_error("SYSTEM RELOAD CONFIG", password="passwordAbc")
+        assert "password" in error and "secret" in error, error
+
+    wait_cluster_query(nodes["node0"], "test_reload_cluster", should_succeed=True)
+
+    for node in nodes.values():
+        count = int(
+            node.query(
+                "SELECT count() FROM system.clusters "
+                "WHERE cluster = 'test_partial_apply_marker_allow_off'",
+                password="passwordAbc",
+            )
+        )
+        assert count == 0, "Static cluster from rejected allow=0 config was partially applied"
 
     reload_config_on_all(CONFIG_WITH_PWD)
 
