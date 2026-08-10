@@ -124,3 +124,15 @@ CREATE TABLE t_04266_argmaxmany_dynamic (s AggregateFunction(argMaxMany(2), Dyna
 INSERT INTO t_04266_argmaxmany_dynamic SELECT argMaxManyState(2)(number::Dynamic, number) FROM numbers(5) GROUP BY number % 2;
 SELECT argMaxManyMerge(2)(s) FROM t_04266_argmaxmany_dynamic;
 DROP TABLE t_04266_argmaxmany_dynamic;
+
+-- Error: JSON (Object) anywhere inside the arg type is rejected too. arg values are stored in the
+-- state as plain Fields, and `ColumnObject::operator[]` collapses a dynamic path holding NULL into
+-- "path absent", so a document round-tripped through a Field can silently lose paths and could
+-- never be returned unchanged.
+SET enable_json_type = 1;
+SELECT argMaxMany(2)(('{"a":' || toString(number) || '}')::JSON, number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)(('{"a":' || toString(number) || '}')::JSON, number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMaxMany(2)(tuple(('{"a":' || toString(number) || '}')::JSON, number), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)(tuple(('{"a":' || toString(number) || '}')::JSON, number), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMaxMany(2)([('{"a":' || toString(number) || '}')::JSON], number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)([('{"a":' || toString(number) || '}')::JSON], number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

@@ -172,25 +172,32 @@ public:
         check_val_type(*data_type_val);
         data_type_val->forEachChild(check_val_type);
 
-        /// Reject `Variant` anywhere inside the `arg` type. `arg` values are stored in the state
-        /// as plain `Field`s, and `SerializationVariant` does not implement `Field`-based binary
-        /// serialization, so serializing the state (e.g. `argMaxManyState` or distributed merges)
-        /// would throw `NOT_IMPLEMENTED`. Moreover, a `Field` cannot record which variant
-        /// alternative was active, so emitting the result could reconstruct a different
-        /// alternative. `Dynamic` is fine here: its serialization encodes the value type together
-        /// with the value, and `ColumnDynamic` accepts `Field` insertion.
-        auto check_arg_no_variant = [&](const IDataType & type)
+        /// Reject `Variant` and `Object` anywhere inside the `arg` type. `arg` values are stored in
+        /// the state as plain `Field`s, which is lossy for both:
+        /// - `SerializationVariant` does not implement `Field`-based binary serialization, so
+        ///   serializing the state (e.g. `argMaxManyState` or distributed merges) would throw
+        ///   `NOT_IMPLEMENTED`. Moreover, a `Field` cannot record which variant alternative was
+        ///   active, so emitting the result could reconstruct a different alternative.
+        /// - `ColumnObject::operator[]` collapses a dynamic path holding `NULL` into "path absent"
+        ///   (`ColumnObject.cpp`), so a `JSON` document round-tripped through a `Field` can lose
+        ///   paths, and the original document could never be returned.
+        /// This is the same set of types for which `canUseFieldForValueData` (`SingleValueData.cpp`)
+        /// makes `argMin`/`argMax` switch to their column-backed representation. `Dynamic` is fine
+        /// here: its serialization encodes the value type together with the value, and
+        /// `ColumnDynamic` accepts `Field` insertion.
+        auto check_arg_type = [&](const IDataType & type)
         {
-            if (isVariant(type))
+            if (isVariant(type) || isObject(type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of first argument of aggregate function {} because Variant values cannot be stored in the "
+                    "Illegal type {} of first argument of aggregate function {} because {} values cannot be losslessly stored in the "
                     "aggregation state. Consider using typed subcolumns or cast column to a specific data type",
                     data_type_arg->getName(),
-                    getName());
+                    getName(),
+                    isObject(type) ? "Object" : "Variant");
         };
-        check_arg_no_variant(*data_type_arg);
-        data_type_arg->forEachChild(check_arg_no_variant);
+        check_arg_type(*data_type_arg);
+        data_type_arg->forEachChild(check_arg_type);
     }
 
     String getName() const override
@@ -383,7 +390,7 @@ Rows with `NULL` in either `arg` or `val` are skipped (consistent with `argMax`/
         {"N", "The maximum number of elements to return.", {"UInt64"}}
     };
     FunctionDocumentation::Arguments arguments_argMaxMany = {
-        {"arg", "Argument values to collect. Any type except `Variant` (also when nested inside another type).", {"Any"}},
+        {"arg", "Argument values to collect. Any type except `Variant` and `JSON` (also when nested inside another type).", {"Any"}},
         {"val", "Values used to determine the top N rows. Any comparable type except `Dynamic`, `Variant` and `JSON` (also when nested inside another type).", {"(U)Int*", "Float*", "String", "Date", "DateTime", "Tuple"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_argMaxMany = {
@@ -438,7 +445,7 @@ Rows with `NULL` in either `arg` or `val` are skipped (consistent with `argMax`/
         {"N", "The maximum number of elements to return.", {"UInt64"}}
     };
     FunctionDocumentation::Arguments arguments_argMinMany = {
-        {"arg", "Argument values to collect. Any type except `Variant` (also when nested inside another type).", {"Any"}},
+        {"arg", "Argument values to collect. Any type except `Variant` and `JSON` (also when nested inside another type).", {"Any"}},
         {"val", "Values used to determine the bottom N rows. Any comparable type except `Dynamic`, `Variant` and `JSON` (also when nested inside another type).", {"(U)Int*", "Float*", "String", "Date", "DateTime", "Tuple"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_argMinMany = {
