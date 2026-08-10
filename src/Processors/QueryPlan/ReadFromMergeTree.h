@@ -419,7 +419,7 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
+    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns);
 
     /// Text-index direct-read state shipped with a serialized plan: everything the receiving node of
     /// a distributed query needs to rebuild `index_read_tasks` against its own copy of the table.
@@ -437,7 +437,6 @@ public:
         };
 
         String index_name;
-        bool is_final = false;
         TextSearchMode global_search_mode{};
         std::vector<Column> columns;
     };
@@ -533,8 +532,8 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
-    void serializeIndexReadTasksForTextIndex(Serialization & ctx) const;
-    static SerializedTextIndexReadTasks deserializeIndexReadTasksForTextIndex(Deserialization & ctx);
+    void serializeTextIndexReadTasks(Serialization & ctx) const;
+    static SerializedTextIndexReadTasks deserializeTextIndexReadTasks(Deserialization & ctx);
     /// Rebuilds `index_read_tasks` from the shipped state against this node's own metadata.
     /// The `__text_index_*` virtual columns must already be present in the storage snapshot.
     void restoreIndexReadTasksForTextIndex(const SerializedTextIndexReadTasks & tasks);
