@@ -27,6 +27,14 @@ namespace
 ReadFromMergeTree * findReadingStep(QueryPlan::Node & node)
 {
     auto * step = node.step.get();
+
+    /// A step that decides which rows a `SQL SECURITY` view exposes must not be looked through:
+    /// retuning the reading below it for an outer `GROUP BY` / `LIMIT BY` / `DISTINCT` makes the read
+    /// scheduling - and with it progress, timing and resource usage - depend on the rows the view
+    /// hides. Fail closed. See IQueryPlanStep::isSecurityBarrier.
+    if (step->isSecurityBarrier())
+        return nullptr;
+
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
         return reading;
 
@@ -47,17 +55,23 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
         dag = expression.clone();
 }
 
-void buildKeyDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag)
+/// Returns false if the chain crosses a security barrier, in which case the collected DAG must not
+/// be used. See IQueryPlanStep::isSecurityBarrier.
+bool buildKeyDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag)
 {
+    if (node.step->isSecurityBarrier())
+        return false;
+
     if (node.children.size() != 1)
-        return;
+        return true;
 
     auto * step = node.step.get();
     if (!typeid_cast<const ExpressionStep *>(step) && !typeid_cast<const FilterStep *>(step)
         && !typeid_cast<const ArrayJoinStep *>(step))
-        return;
+        return true;
 
-    buildKeyDAG(*node.children.front(), dag);
+    if (!buildKeyDAG(*node.children.front(), dag))
+        return false;
 
     if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
         appendExpression(dag, expression->getExpression());
@@ -71,6 +85,8 @@ void buildKeyDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag)
             dag->removeFromOutputs(NameSet(cols.begin(), cols.end()));
         }
     }
+
+    return true;
 }
 
 }
@@ -140,10 +156,18 @@ void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
     if (!expression_step)
         return;
 
+    /// Do not look below a step that decides which rows a `SQL SECURITY` view exposes: the outer
+    /// `GROUP BY` would retune the reading inside the view. See IQueryPlanStep::isSecurityBarrier.
+    if (expression_step->isSecurityBarrier())
+        return;
+
     auto * maybe_reading_step = expression_node->children.front()->step.get();
 
-    if (const auto * /*filter*/ _ = typeid_cast<const FilterStep *>(maybe_reading_step))
+    if (const auto * filter = typeid_cast<const FilterStep *>(maybe_reading_step))
     {
+        if (filter->isSecurityBarrier())
+            return;
+
         const auto * filter_node = expression_node->children.front();
         if (filter_node->children.size() != 1 || !filter_node->children.front()->step)
             return;
@@ -152,6 +176,9 @@ void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
 
     auto * reading = typeid_cast<ReadFromMergeTree *>(maybe_reading_step);
     if (!reading)
+        return;
+
+    if (reading->isSecurityBarrier())
         return;
 
     if (!reading->willOutputEachPartitionThroughSeparatePort()
@@ -177,7 +204,8 @@ void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, con
         return;
 
     std::optional<ActionsDAG> dag;
-    buildKeyDAG(*node.children.front(), dag);
+    if (!buildKeyDAG(*node.children.front(), dag))
+        return;
     if (!dag)
         return;
 
@@ -211,7 +239,8 @@ void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, co
         return;
 
     std::optional<ActionsDAG> dag;
-    buildKeyDAG(*node.children.front(), dag);
+    if (!buildKeyDAG(*node.children.front(), dag))
+        return;
     if (!dag)
         return;
 

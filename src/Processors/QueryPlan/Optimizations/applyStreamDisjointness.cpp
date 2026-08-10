@@ -41,6 +41,13 @@ static StreamDisjointnessProperty applyStreamDisjointness(
 {
     auto * step = node->step.get();
 
+    /// A step that decides which rows a `SQL SECURITY` view exposes ends the property: propagating
+    /// partition disjointness across it would let an outer `DISTINCT` / `LIMIT BY` / `GROUP BY` skip
+    /// the stream merging - and thus retune the pipeline below the view - according to how the view's
+    /// own reading is partitioned. Fail closed. See IQueryPlanStep::isSecurityBarrier.
+    if (step->isSecurityBarrier())
+        return {};
+
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         if (reading->willOutputEachPartitionThroughSeparatePort())
