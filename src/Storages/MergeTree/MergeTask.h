@@ -99,7 +99,6 @@ public:
         Names deduplicate_by_columns_,
         bool cleanup_,
         MergeTreeData::MergingParams merging_params_,
-        bool need_prefix,
         ProjectionDescriptionRawPtr projection_,
         IMergeTreeDataPart * parent_part_,
         MergedPartOffsetsPtr merged_part_offsets_,
@@ -135,7 +134,6 @@ public:
             global_ctx->merges_blocker = std::move(merges_blocker_);
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
             global_ctx->txn = std::move(txn);
-            global_ctx->need_prefix = need_prefix;
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
             global_ctx->temp_projection_block_number = std::move(temp_projection_block_number);
@@ -231,6 +229,10 @@ private:
         bool cleanup{false};
         bool vertical_lightweight_delete{false};
         bool vertical_ttl_delete{false};
+        /// When true, all source parts are fully expired (MergeType::TTLDrop).
+        /// The data pipeline is skipped entirely — no readers are opened,
+        /// no buffers allocated, and the result is an empty part.
+        bool ttl_drop_short_circuit{false};
         CompressionCodecPtr compression_codec{nullptr};
         /// T when `compression_codec` came from an explicit (non-`Default`) `RECOMPRESS` TTL. Adaptive codec selection must not override it.
         bool is_explicit_recompression{false};
@@ -287,7 +289,6 @@ private:
         PlainMarksByName cached_index_marks;
 
         MergeTreeTransactionPtr txn;
-        bool need_prefix{};
         String suffix;
         MergeTreeData::MergingParams merging_params{};
 
