@@ -1618,7 +1618,10 @@ class JobConfigs:
                 "./ci/jobs/docs_examples_job.py",
                 "./ci/jobs/scripts/server_cleanup.py",
                 "./tests/docs_examples/",
-                "./tests/config/top_level_domains/",
+                # The server of this job installs `programs/server/config.d` and
+                # `programs/server/users.d` dereferenced, and most of their entries are symlinks
+                # into `tests/config`, so the whole of it is an input of the job.
+                "./tests/config/",
                 "./programs/server/config.xml",
                 "./programs/server/config.d/",
                 "./programs/server/users.xml",

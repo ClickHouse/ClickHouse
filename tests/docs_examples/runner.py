@@ -40,6 +40,10 @@ starts passing, so that the list shrinks as the documentation is fixed. Regenera
 marked `unstable`, for the handful of examples whose output is random enough to sometimes match the
 documented one; any outcome of those is accepted.
 
+`--filter` narrows the entities that are executed, and the baseline is still honoured for them: an
+entry is reported as stale only when the server has no such example at all, not when the run simply
+did not select it, so a filtered run is red exactly when one of the examples it selected is.
+
 Usage:
 
     python3 tests/docs_examples/runner.py --port 8123
@@ -449,17 +453,20 @@ def classify(outcome, known):
     return "known" if known_status == outcome.status else "unexpected"
 
 
-def stale_entries(outcomes, known):
-    """The baseline entries whose examples no longer exist. They fail the run as well."""
-    by_id = {o.example.id for o in outcomes}
-    return sorted(i for i in known if i not in by_id)
+def stale_entries(example_ids, known):
+    """The baseline entries whose examples no longer exist. They fail the run as well.
+
+    The scope is every example the server has, not only the ones this run executed, so that a
+    `--filter`ed run does not call the whole rest of the baseline stale.
+    """
+    return sorted(i for i in known if i not in example_ids)
 
 
-def report(outcomes, known, verbose):
+def report(outcomes, known, example_ids, verbose):
     """Compare the outcomes with the baseline and print what changed. Returns True if all is well."""
     unexpected = [o for o in outcomes if classify(o, known) == "unexpected"]
     fixed = sorted(o.example.id for o in outcomes if classify(o, known) == "fixed")
-    stale = stale_entries(outcomes, known)
+    stale = stale_entries(example_ids, known)
 
     total = len(outcomes)
     skipped = sum(1 for o in outcomes if o.status == SKIPPED)
@@ -562,6 +569,9 @@ def main():
         ]
 
     known = load_known_failures(args.known_failures)
+    # Every example the server has, whether this run executed it or not: the baseline is written
+    # against the documentation, so what makes an entry stale is the example being gone.
+    example_ids = {example.id for example in examples}
 
     if args.report:
         with open(args.report, "w", encoding="utf-8") as f:
@@ -582,7 +592,7 @@ def main():
                         }
                         for o in sorted(outcomes, key=lambda o: o.example.id)
                     ],
-                    "stale": stale_entries(outcomes, known),
+                    "stale": stale_entries(example_ids, known),
                 },
                 f,
                 indent=1,
@@ -596,7 +606,7 @@ def main():
         save_known_failures(args.known_failures, outcomes, known)
         return 0
 
-    return 0 if report(outcomes, known, args.verbose) else 1
+    return 0 if report(outcomes, known, example_ids, args.verbose) else 1
 
 
 if __name__ == "__main__":
