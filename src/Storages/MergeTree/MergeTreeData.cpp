@@ -3335,7 +3335,29 @@ catch (...)
         throw;
 }
 
-MergeTreeData::~MergeTreeData() = default;
+MergeTreeData::~MergeTreeData()
+{
+    /// The background tasks capture `this` and use members (`outdated_unloaded_data_parts`,
+    /// `unexpected_data_parts`, `refresh_parts_mutex`, `stats_mutex`, `cached_estimator`) that
+    /// are declared after their task holders, so they are destroyed before the holders' own
+    /// destructors deactivate the tasks. `shutdown` deactivates the tasks too, but a task
+    /// activated after the shutdown (a table startup or an ALTER of
+    /// `refresh_statistics_interval` racing with a drop) can still be running here, so join it
+    /// before any member is destroyed.
+    try
+    {
+        /// Sets the cancellation flags before deactivating, so a running load exits early.
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
+        if (refresh_parts_task)
+            refresh_parts_task->deactivate();
+        if (refresh_stats_task)
+            refresh_stats_task->deactivate();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to deactivate a background task");
+    }
+}
 
 void MergeTreeData::loadUnexpectedDataParts()
 try
