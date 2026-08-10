@@ -772,7 +772,6 @@ namespace
         bool input_function_is_used = false;
 
         BlockIO io;
-        QueryMetadataCachePtr insert_returning_query_metadata_cache;
         Progress progress;
         InternalTextLogsQueuePtr logs_queue;
 
@@ -1071,7 +1070,7 @@ namespace
                 executor.start();
                 executor.finish();
                 replacePipelineWithInsertReturningAfterPush(
-                    io, *insert_query, query_context, QueryProcessingStage::Complete, insert_returning_query_metadata_cache);
+                    io, *insert_query, query_context, QueryProcessingStage::Complete, io.query_metadata_cache);
             }
 
             return;
@@ -1101,7 +1100,7 @@ namespace
 
         if (insert_query)
             replacePipelineWithInsertReturningAfterPush(
-                io, *insert_query, query_context, QueryProcessingStage::Complete, insert_returning_query_metadata_cache);
+                io, *insert_query, query_context, QueryProcessingStage::Complete, io.query_metadata_cache);
     }
 
     void Call::initializePipeline(const Block & header)

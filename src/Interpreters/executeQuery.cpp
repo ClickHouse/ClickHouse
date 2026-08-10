@@ -1623,7 +1623,6 @@ static BlockIO executeQueryImpl(
 
     /// Avoid early destruction of process_list_entry if it was not saved to `res` yet (in case of exception)
     ProcessList::EntryPtr process_list_entry;
-    QueryMetadataCachePtr query_metadata_cache;
     BlockIO res;
     String query_database;
     String query_table;
@@ -2043,8 +2042,8 @@ static BlockIO executeQueryImpl(
 
                 if (settings[Setting::enable_shared_storage_snapshot_in_query])
                 {
-                    query_metadata_cache = std::make_shared<QueryMetadataCache>();
-                    context->setQueryMetadataCache(query_metadata_cache);
+                    res.query_metadata_cache = std::make_shared<QueryMetadataCache>();
+                    context->setQueryMetadataCache(res.query_metadata_cache);
                 }
 
                 if (out_ast)
@@ -2331,7 +2330,7 @@ static BlockIO executeQueryImpl(
             auto wrap_returning = [&]()
             {
                 res.pipeline = buildInsertReturningPipeline(
-                    std::move(res.pipeline), insert_query->returning_select, context, query_metadata_cache, insert_query->source_select_settings_restore_ast);
+                    std::move(res.pipeline), insert_query->returning_select, context, res.query_metadata_cache, insert_query->source_select_settings_restore_ast);
                 if (res.finish_callback_state)
                     res.finish_callback_state->insert_returning_result_as_select = true;
                 if (insert_table)

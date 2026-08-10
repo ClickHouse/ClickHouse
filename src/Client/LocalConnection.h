@@ -2,7 +2,6 @@
 
 #include <Client/Connection.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Session.h>
@@ -46,7 +45,6 @@ struct LocalQueryState
     UInt64 json_ast_max_elements = 0;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
-    QueryMetadataCachePtr insert_returning_query_metadata_cache;
     /// Current stream to pull blocks from.
     std::unique_ptr<PullingAsyncPipelineExecutor> executor;
     std::unique_ptr<PushingPipelineExecutor> pushing_executor;

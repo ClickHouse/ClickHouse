@@ -487,7 +487,7 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
             try
             {
                 if (replacePipelineWithInsertReturningAfterPush(
-                        state->io, *insert_query, query_context, state->stage, state->insert_returning_query_metadata_cache))
+                        state->io, *insert_query, query_context, state->stage, state->io.query_metadata_cache))
                 {
                     state->block = state->io.pipeline.getHeader();
                     state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);

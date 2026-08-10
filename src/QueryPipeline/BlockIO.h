@@ -13,6 +13,8 @@ namespace DB
 {
 
 class ProcessListEntry;
+class QueryMetadataCache;
+using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 
 struct QueryPipelineFinalizedInfo
 {
@@ -46,6 +48,9 @@ struct BlockIO
     VectorWithMemoryTracking<std::shared_ptr<ProcessListEntry>> process_list_entries;
 
     QueryPipeline pipeline;
+    /// Strong owner for query-scoped metadata cache (e.g. shared storage snapshots).
+    /// Needed for delayed `INSERT ... RETURNING` pipelines where query context stores only a weak pointer.
+    QueryMetadataCachePtr query_metadata_cache;
 
     std::shared_ptr<BlockIOFinishCallbackState> finish_callback_state;
 
