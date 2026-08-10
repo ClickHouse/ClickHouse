@@ -10,12 +10,11 @@ hideNext: true
 ---
 
 import { ReferenceExplorer } from '/snippets/components/ReferenceExplorer/ReferenceExplorer.jsx'
-import { referenceIndex } from '/snippets/components/ReferenceExplorer/reference-data.jsx'
 
 <div className="relative overflow-hidden">
   <div className="absolute top-0 left-0 right-0 opacity-80 pointer-events-none">
     <img src="/images/background-light.svg" className="block dark:hidden w-full h-auto" alt="" aria-hidden="true" />
     <img src="/images/background-dark.svg" className="hidden dark:block w-full h-auto" alt="" aria-hidden="true" />
   </div>
-  <ReferenceExplorer index={referenceIndex} />
+  <ReferenceExplorer />
 </div>

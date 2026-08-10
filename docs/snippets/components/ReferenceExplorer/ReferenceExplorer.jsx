@@ -1,4 +1,4 @@
-export const ReferenceExplorer = ({ index }) => {
+export const ReferenceExplorer = () => {
   const readHashState = () => {
     if (typeof window === 'undefined') return { query: '', categories: ['All'] };
     const params = new URLSearchParams(window.location.hash.slice(1));
@@ -25,13 +25,25 @@ export const ReferenceExplorer = ({ index }) => {
   const [categoriesOpen, setCategoriesOpen] = useState(true);
   const [showFilters, setShowFilters] = useState(readShowFilters);
   const [isDesktop, setIsDesktop] = useState(true);
+  const [data, setData] = useState({ categories: [], entries: [] });
+  const [loadState, setLoadState] = useState('loading');
   const itemsPerPage = 10;
 
-  const data = index || { categories: [], entries: [] };
   const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs')
     ? '/docs'
     : '';
   const withBase = path => path && path.startsWith('/') ? assetBase + path : path;
+
+  const navigateTo = href => window.location.assign(withBase(href));
+
+  // Force a full page navigation so the target opens at the correct scroll
+  // position. Modifier and middle clicks keep their native new-tab behavior.
+  const handleResultClick = (event, href) => {
+    if (event.defaultPrevented) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    navigateTo(href);
+  };
 
   const entries = useMemo(() => data.entries.map(entry => {
     const title = entry[0];
@@ -116,12 +128,35 @@ export const ReferenceExplorer = ({ index }) => {
       setActiveIndex(value => Math.max(0, value - 1));
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      window.location.assign(withBase(visibleEntries[Math.max(0, activeIndex)].href));
+      navigateTo(visibleEntries[Math.max(0, activeIndex)].href);
     } else if (event.key === 'Escape') {
       setSearchTerm('');
       resetPosition();
     }
   };
+
+  useEffect(() => {
+    let active = true;
+    fetch(withBase('/assets/reference-index.json'), { cache: 'force-cache' })
+      .then(response => {
+        if (!response.ok) throw new Error(`Reference index request failed: ${response.status}`);
+        return response.json();
+      })
+      .then(index => {
+        if (!Array.isArray(index?.categories) || !Array.isArray(index?.entries)) {
+          throw new Error('Reference index has an invalid shape');
+        }
+        if (!active) return;
+        setData(index);
+        setLoadState('ready');
+      })
+      .catch(error => {
+        if (!active) return;
+        console.error(error);
+        setLoadState('error');
+      });
+    return () => { active = false; };
+  }, [assetBase]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
@@ -335,17 +370,33 @@ export const ReferenceExplorer = ({ index }) => {
         </div>
 
         <section aria-label="Reference results" className="flex-1 min-w-0">
-          <p className="mt-0 mb-6 text-sm text-gray-500 dark:text-gray-400">
-            {filteredEntries.length} {filteredEntries.length === 1 ? 'result' : 'results'}
+          <p aria-live="polite" className="mt-0 mb-6 text-sm text-gray-500 dark:text-gray-400">
+            {loadState === 'loading'
+              ? 'Loading reference index…'
+              : `${filteredEntries.length} ${filteredEntries.length === 1 ? 'result' : 'results'}`}
           </p>
 
-          {visibleEntries.length > 0 ? (
+          {loadState === 'loading' ? (
+            <div aria-hidden="true" className="flex flex-col gap-2">
+              {[0, 1, 2, 3].map(item => (
+                <div key={item} className="rounded-lg border border-gray-200 dark:border-white/10 px-4 py-3">
+                  <span className="block h-4 w-1/3 rounded bg-gray-100 dark:bg-white/[0.06] animate-pulse" />
+                  <span className="block h-4 w-2/3 rounded bg-gray-100 dark:bg-white/[0.06] animate-pulse mt-2" />
+                </div>
+              ))}
+            </div>
+          ) : loadState === 'error' ? (
+            <div role="alert" className="rounded-lg border border-red-200 dark:border-red-900/60 px-4 py-4 text-sm text-red-700 dark:text-red-300">
+              The Reference index could not be loaded. Refresh the page to try again.
+            </div>
+          ) : visibleEntries.length > 0 ? (
             <div id="reference-result-list" className="flex flex-col gap-2">
               {visibleEntries.map((entry, index) => (
                 <a
                   id={`reference-result-${index}`}
                   key={entry.href}
                   href={withBase(entry.href)}
+                  onClick={event => handleResultClick(event, entry.href)}
                   onMouseEnter={() => setActiveIndex(index)}
                   className={`group block rounded-lg border px-4 py-3 no-underline transition-all bg-white dark:bg-[#1B1B18] ${
                     index === activeIndex
