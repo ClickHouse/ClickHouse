@@ -43,7 +43,7 @@ ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 -q "
     FROM numbers(10)
     GROUP BY k WITH TOTALS
     HAVING infinite_loop_04813(toUInt32(count())) = 1
-" | grep -o "TotalsHaving" | head -1
+" | grep -qF "TotalsHaving" || { echo "FAIL: no TotalsHaving in the pipeline"; exit 1; }
 
 # Enable failpoint before starting the query
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT wasm_guest_pause"
