@@ -424,7 +424,7 @@ Each spawned pipeline worker holds one reservation for the duration of its job. 
 
 The reservation is charged to the server-wide tracker only. Query-level and user-level memory accounting (`max_memory_usage`, `memory_usage` in `system.processes`, and memory-based heuristics such as the conversion of aggregation hash tables to two-level or spilling to disk) is not affected.
 
-Note: the reservation is currently only applied to pipeline-executor threads, not to all `ThreadPool` users (e.g. background merges and fetches), so it covers the query-execution memory but not every job that runs in a `ThreadPool`.
+Note: the reservation is applied to every thread that drives a pipeline executor, not to all `ThreadPool` users. It therefore covers query pipelines as well as the pipelines of background merges and mutations (which are executed through `PullingPipelineExecutor`), but not jobs that do not run a pipeline at all, such as part fetches or other generic `ThreadPool` jobs.
 
 The value should be equal to or slightly greater than `max_untracked_memory`. Setting it to `0` disables the speculative accounting. A value larger than the total server memory is clamped to it, because a per-thread reservation can never sensibly exceed the total RAM.
 )", 0) \
