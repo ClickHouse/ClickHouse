@@ -13,13 +13,12 @@ SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_prewhere_tautology;
 
--- Wide parts so per-column sizes feed into the cost score. `cheap` is a constant byte (tiny column),
--- `expensive` holds large incompressible values (big column). `cheap < 255` matches all rows (a
--- tautology), `expensive = 'absent'` matches none (highly selective) -- so without the sentinel the
--- cheap tautology's finite score would place it before the expensive selective predicate.
+-- Wide parts so per-column sizes feed the cost score. tdigest on `cheap` lets the optimizer see
+-- `cheap < 255` as a tautology (matches all rows); `expensive = 'absent'` has no statistic, so its
+-- default equality selectivity makes it the selective but expensive (large incompressible values) predicate.
 CREATE TABLE t_prewhere_tautology (
     cheap UInt8 STATISTICS(tdigest),
-    expensive String STATISTICS(countmin)
+    expensive String
 ) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = '';
 
