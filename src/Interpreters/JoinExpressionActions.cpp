@@ -45,6 +45,19 @@ std::string_view toString(JoinConditionOperator op)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value for JoinConditionOperator: {}", static_cast<Int32>(op));
 }
 
+JoinConditionOperator reverseInequalityOperator(JoinConditionOperator op)
+{
+    switch (op)
+    {
+        case JoinConditionOperator::Less: return JoinConditionOperator::Greater;
+        case JoinConditionOperator::Greater: return JoinConditionOperator::Less;
+        case JoinConditionOperator::LessOrEquals: return JoinConditionOperator::GreaterOrEquals;
+        case JoinConditionOperator::GreaterOrEquals: return JoinConditionOperator::LessOrEquals;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reverse operator {}", toString(op));
+    }
+}
+
 
 String toString(const BitSet & bitset)
 {
