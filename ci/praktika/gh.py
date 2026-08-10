@@ -789,18 +789,63 @@ class GH:
     def _submit_team_review_requests(cls, team_slugs, pr, repo):
         assert team_slugs
 
+        payload = {"reviewers": [], "team_reviewers": team_slugs}
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as temp_file:
+            json.dump(payload, temp_file)
+            temp_file_path = temp_file.name
+
+        try:
+            cmd = (
+                "gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+                f"--input {shlex.quote(temp_file_path)}"
+            )
+            if not cls.do_command_with_retries(cmd):
+                raise RuntimeError(
+                    f"Failed to request team reviews for pull request [{pr}]"
+                )
+        finally:
+            os.unlink(temp_file_path)
+
+    @classmethod
+    def _get_review_team(cls, team_slug, repo):
         owner, separator, _ = repo.partition("/")
         assert separator and owner, f"Invalid repository name [{repo}]"
 
-        reviewer_args = " ".join(
-            f"--add-reviewer {shlex.quote(f'{owner}/{team_slug}')}"
-            for team_slug in team_slugs
+        endpoint = shlex.quote(f"/orgs/{owner}/teams/{team_slug}")
+        cmd = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" {endpoint} '
+            "--jq '{slug: .slug, node_id: .node_id, privacy: .privacy}'"
         )
-        cmd = f"gh pr edit {pr} --repo {shlex.quote(repo)} {reviewer_args}"
-        if not cls.do_command_with_retries(cmd):
+        output = cls.get_output_with_retries(cmd, verbose=True)
+        if not output:
             raise RuntimeError(
-                f"Failed to request team reviews for pull request [{pr}]"
+                f"GitHub identity cannot resolve review team [{owner}/{team_slug}]"
             )
+
+        try:
+            team = json.loads(output)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"Failed to parse review team [{owner}/{team_slug}]: {e}"
+            ) from e
+        if (
+            not isinstance(team, dict)
+            or team.get("slug") != team_slug
+            or not team.get("node_id")
+        ):
+            raise RuntimeError(
+                f"Unexpected review team response for [{owner}/{team_slug}]"
+            )
+
+        print(
+            f"Resolved review team [{owner}/{team_slug}] as node "
+            f"[{team['node_id']}], privacy [{team.get('privacy', '')}]"
+        )
+        return team
 
     @classmethod
     def _get_requested_team_reviews(cls, pr, repo):
@@ -845,6 +890,8 @@ class GH:
             requested - cls._get_requested_team_reviews(pr, repo)
         )
         if teams_to_request:
+            for team_slug in teams_to_request:
+                cls._get_review_team(team_slug, repo)
             cls._submit_team_review_requests(teams_to_request, pr, repo)
             missing_teams = set(teams_to_request) - cls._get_requested_team_reviews(
                 pr, repo

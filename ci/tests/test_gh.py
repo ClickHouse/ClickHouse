@@ -5,7 +5,9 @@ Adding a new Result.Status value requires updating GH._STATUS_TO_GH.
 These tests verify that every status is mapped and the mapping is correct.
 """
 
+import json
 import os
+import shlex
 import sys
 from types import SimpleNamespace
 
@@ -342,8 +344,18 @@ def test_request_team_reviews_adds_only_missing_teams(monkeypatch):
     )
 
     def fake_get(command, verbose=False):
-        assert "pulls/42/requested_reviewers" in command
-        return next(responses)
+        if "pulls/42/requested_reviewers" in command:
+            return next(responses)
+        for team_slug in ("docs", "integrations-ecosystem"):
+            if f"teams/{team_slug}" in command:
+                return json.dumps(
+                    {
+                        "slug": team_slug,
+                        "node_id": f"node-{team_slug}",
+                        "privacy": "closed",
+                    }
+                )
+        pytest.fail(f"unexpected command: {command}")
 
     def fake_submit(team_slugs, pr, repo):
         requests.append((team_slugs, pr, repo))
@@ -361,11 +373,16 @@ def test_request_team_reviews_adds_only_missing_teams(monkeypatch):
     ]
 
 
-def test_submit_team_review_requests_uses_pr_reviewer_cli(monkeypatch):
+def test_submit_team_review_requests_uses_rest_api(monkeypatch):
     commands = []
+    payloads = []
 
     def fake_submit(command, verbose=False):
         commands.append(command)
+        args = shlex.split(command)
+        payload_path = args[args.index("--input") + 1]
+        with open(payload_path, encoding="utf-8") as payload_file:
+            payloads.append(json.load(payload_file))
         return True
 
     monkeypatch.setattr(GH, "do_command_with_retries", staticmethod(fake_submit))
@@ -376,16 +393,45 @@ def test_submit_team_review_requests_uses_pr_reviewer_cli(monkeypatch):
         repo="ClickHouse/ClickHouse",
     )
 
-    assert commands == [
-        "gh pr edit 42 --repo ClickHouse/ClickHouse "
-        "--add-reviewer ClickHouse/clickpipes --add-reviewer ClickHouse/docs"
+    assert len(commands) == 1
+    assert "repos/ClickHouse/ClickHouse/pulls/42/requested_reviewers" in commands[0]
+    assert payloads == [
+        {"reviewers": [], "team_reviewers": ["clickpipes", "docs"]}
     ]
+
+
+def test_get_review_team_resolves_team_node(monkeypatch):
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        staticmethod(
+            lambda command, verbose=False: json.dumps(
+                {"slug": "clickpipes", "node_id": "team-node", "privacy": "closed"}
+            )
+        ),
+    )
+
+    assert GH._get_review_team("clickpipes", "ClickHouse/ClickHouse") == {
+        "slug": "clickpipes",
+        "node_id": "team-node",
+        "privacy": "closed",
+    }
+
+
+def test_get_review_team_fails_when_identity_cannot_resolve_team(monkeypatch):
+    monkeypatch.setattr(
+        GH, "get_output_with_retries", staticmethod(lambda *_args, **_kwargs: "")
+    )
+
+    with pytest.raises(RuntimeError, match="cannot resolve review team"):
+        GH._get_review_team("clickpipes", "ClickHouse/ClickHouse")
 
 
 def test_request_team_reviews_fails_when_submission_is_not_applied(monkeypatch):
     monkeypatch.setattr(
         GH, "get_output_with_retries", staticmethod(lambda *_args, **_kwargs: "[]")
     )
+    monkeypatch.setattr(GH, "_get_review_team", staticmethod(lambda *_args: {}))
     monkeypatch.setattr(
         GH, "_submit_team_review_requests", staticmethod(lambda *_args: None)
     )
