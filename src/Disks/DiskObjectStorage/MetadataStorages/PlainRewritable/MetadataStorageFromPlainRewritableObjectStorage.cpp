@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <thread>
 #include <optional>
 #include <vector>
 #include <IO/ReadHelpers.h>
@@ -164,9 +165,42 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     if (metadata->size_bytes == 0)
                         LOG_TRACE(log, "The object with the key '{}' has size 0, skipping the read", object_path);
                     else
+                    else
                     {
-                        auto read_buf = object_storage->readObject(object, settings);
-                        readStringUntilEOF(local_path, *read_buf);
+                        /// Retry transient NO_SUCH_KEY (transient 404) on the prefix.path read.
+                        /// A momentary object-store blip (eventual-consistency 404, proxy hiccup,
+                        /// throttling surfaced as 404) must not silently hide committed rows.
+                        /// https://github.com/ClickHouse/ClickHouse/issues/114023
+                        static constexpr int max_attempts = 3;
+                        for (int attempt = 0;; ++attempt)
+                        {
+                            try
+                            {
+                                auto read_buf = object_storage->readObject(object, settings);
+                                readStringUntilEOF(local_path, *read_buf);
+                                break;
+                            }
+#if USE_AWS_S3
+                            catch (const S3Exception & e)
+                            {
+                                if (e.getS3ErrorCode() != Aws::S3::S3Errors::NO_SUCH_KEY)
+                                    throw;
+                                if (attempt + 1 >= max_attempts)
+                                    return;  /// Directory was genuinely removed.
+                                std::this_thread::sleep_for(std::chrono::milliseconds(100 << attempt));
+                            }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+                            catch (const Azure::Storage::StorageException & e)
+                            {
+                                if (e.StatusCode != Azure::Core::Http::HttpStatusCode::NotFound)
+                                    throw;
+                                if (attempt + 1 >= max_attempts)
+                                    return;
+                                std::this_thread::sleep_for(std::chrono::milliseconds(100 << attempt));
+                            }
+#endif
+                        }
                     }
 
                     if (do_not_load_unchanged_directories)
