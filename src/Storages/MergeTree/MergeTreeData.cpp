@@ -11311,14 +11311,15 @@ try
 
         if (profile_counters)
         {
+            element.profile_counters = *profile_counters;
+
             /// MemoryCredits is charged to the merge/mutation Process counters, not the task-local scope.
-            /// Preserve local events and copy only MemoryCredits into the part-log snapshot.
+            /// Preserve the local events and copy only MemoryCredits into the part-log snapshot. The
+            /// snapshot the caller passed in is left alone: it may be shared with other part-log events.
             if (merge_entry)
-                profile_counters->set(
+                element.profile_counters->set(
                     ProfileEvents::MemoryCredits,
                     (*merge_entry)->thread_group->performance_counters[ProfileEvents::MemoryCredits]);
-
-            element.profile_counters = *profile_counters;
         }
 
         element.mutation_ids = mutation_ids;
