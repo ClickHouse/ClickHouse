@@ -591,8 +591,9 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
 {
     auto prefixes_prefetch_callback_getter = [&](const NameAndTypePair & name_and_type)
     {
-        /// Resolved on the serial thread: the callback runs on the parallel prefix tasks, which must
-        /// not look `caches` up while the serial loop can still insert entries for other columns.
+        /// Resolved here, on the serial thread: the callback below runs on sibling prefix tasks, and
+        /// a non-const lookup in `caches` can insert, so several of them looking the same key up at
+        /// once would modify the map while the others read it.
         auto * column_cache = &caches[name_and_type.getNameInStorage()];
         return [&, column_cache](const ISerialization::SubstreamPath & substream_path)
         {

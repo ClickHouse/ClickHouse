@@ -35,6 +35,9 @@ write_config() {
         echo "    <max_server_memory_usage>8G</max_server_memory_usage>"
         echo "    <memory_worker_use_cgroup>0</memory_worker_use_cgroup>"
         echo "    <memory_worker_dynamic_hard_limit>false</memory_worker_dynamic_hard_limit>"
+        # An always-empty mark cache: the object still exists, so the asynchronous loading paths
+        # that dereference it work, but every lookup misses and every arm below loads marks cold.
+        echo "    <mark_cache_size>0</mark_cache_size>"
         printf '    %s\n' "$@"
         echo "    <query_log>"
         echo "        <database>system</database>"
@@ -70,7 +73,7 @@ ${CLICKHOUSE_LOCAL} --config-file "$TD/config.xml" -q "
 $FIXTURE
 
 SELECT if(part_type = 'Wide', 'part is Wide', 'UNEXPECTED part type: ' || part_type)
-FROM system.parts WHERE table = 't' AND active;
+FROM system.parts WHERE database = currentDatabase() AND table = 't' AND active;
 
 SELECT if(toTypeName(j.p0) = 'LowCardinality(String)', 'typed path is LowCardinality',
           'UNEXPECTED type: ' || toTypeName(j.p0))
@@ -80,18 +83,15 @@ SYSTEM ENABLE FAILPOINT merge_tree_marks_load_sync_sleep;
 
 -- Three arms. 'async' additionally reaches the carriers that exist only while a marks load can
 -- still be in flight; 'prefetch' additionally executes the prefix prefetch callback.
-SYSTEM DROP MARK CACHE;
 SELECT count() FROM (SELECT j FROM t LIMIT 1)
 SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, log_comment = 'sync'
 FORMAT Null;
 
-SYSTEM DROP MARK CACHE;
 SELECT count() FROM (SELECT j FROM t LIMIT 1)
 SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, load_marks_asynchronously = 1,
          log_comment = 'async'
 FORMAT Null;
 
-SYSTEM DROP MARK CACHE;
 SELECT count() FROM (SELECT j FROM t LIMIT 1)
 SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, load_marks_asynchronously = 1,
          local_filesystem_read_prefetch = 1, enable_filesystem_read_prefetches_log = 1,
@@ -108,13 +108,15 @@ SELECT log_comment || ': ' || if(ProfileEvents['WaitMarksLoadMicroseconds'] > 10
           'marks-load wait is measurable',
           'UNEXPECTED: no marks-load wait, failpoint did not fire')
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment IN ('sync', 'async', 'prefetch') ORDER BY log_comment;
+WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+      AND log_comment IN ('sync', 'async', 'prefetch') ORDER BY log_comment;
 
 SELECT log_comment || ': ' || if(ProfileEvents['BackgroundLoadingMarksTasks'] > 0,
           'scheduled background marks loads',
           'UNEXPECTED: loaded every mark synchronously')
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment IN ('async', 'prefetch') ORDER BY log_comment;
+WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+      AND log_comment IN ('async', 'prefetch') ORDER BY log_comment;
 
 -- One prefetch per dynamic path proves the prefix prefetch callback ran. Without
 -- local_filesystem_read_prefetch the reader never enters it, so this is zero.
@@ -129,7 +131,8 @@ SELECT log_comment || ': ' || if(ProfileEvents['WaitMarksLoadMicroseconds'] / (q
           'REGRESSION: marks loading is serialized, ratio = '
               || toString(round(ProfileEvents['WaitMarksLoadMicroseconds'] / (query_duration_ms * 1000), 2)))
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment IN ('sync', 'async', 'prefetch') ORDER BY log_comment;
+WHERE type = 'QueryFinish' AND current_database = currentDatabase()
+      AND log_comment IN ('sync', 'async', 'prefetch') ORDER BY log_comment;
 "
 
 # A separate instance whose marks-pool queue is smaller than the number of loads, so scheduling a
@@ -143,7 +146,6 @@ ${CLICKHOUSE_LOCAL} --config-file "$TD/config2.xml" -q "
 $FIXTURE
 
 SYSTEM ENABLE FAILPOINT merge_tree_marks_load_sync_sleep;
-SYSTEM DROP MARK CACHE;
 SELECT count() FROM (SELECT j FROM t LIMIT 1)
 SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, load_marks_asynchronously = 1,
          log_comment = 'queue'
@@ -155,11 +157,13 @@ SYSTEM FLUSH LOGS query_log;
 SELECT if(ProfileEvents['BackgroundLoadingMarksTasks'] > 50,
           'queue arm scheduled more loads than the queue holds',
           'UNEXPECTED: only ' || toString(ProfileEvents['BackgroundLoadingMarksTasks']) || ' background loads')
-FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = 'queue';
+FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'queue';
 
 SELECT if(ProfileEvents['WaitMarksLoadMicroseconds'] / (query_duration_ms * 1000) > 1.15,
           'queue arm: marks loading overlaps across prefix tasks',
           'REGRESSION: marks loading is serialized under a full queue, ratio = '
               || toString(round(ProfileEvents['WaitMarksLoadMicroseconds'] / (query_duration_ms * 1000), 2)))
-FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = 'queue';
+FROM system.query_log
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'queue';
 "
