@@ -225,9 +225,9 @@ def test_failed_statuses_keeps_newest_per_context(monkeypatch):
 
 
 def test_status_reads_are_strict():
-    """The `/statuses` and run-id reads must fail early, not return ``""``."""
+    """The CI-state and run-id reads must fail early, not return ``""``."""
     text = _read(JOB)
-    for fn in ("_failed_statuses", "_latest_create_release_run_id"):
+    for fn in ("_wf_completed", "_failed_statuses", "_latest_create_release_run_id"):
         body = text.split(f"def {fn}(", 1)[1].split("\ndef ", 1)[0]
         assert "get_output_with_retries" in body, f"{fn} should read via GH"
         assert "strict=True" in body, f"{fn} must read with strict=True (fail-close)"

@@ -131,7 +131,8 @@ def _wf_completed(sha: str) -> bool:
     completed (the commit is not a release candidate) rather than as done."""
     out = GH.get_output_with_retries(
         f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/check-runs"
-        f" --jq '.check_runs[].status'"
+        f" --jq '.check_runs[].status'",
+        strict=True,
     )
     statuses = [s for s in out.splitlines() if s.strip()]
     if not statuses:
