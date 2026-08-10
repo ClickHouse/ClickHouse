@@ -149,7 +149,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     {
         LOG_ERROR(log, "Rebalance error: {}", err);
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceErrors);
-        IKafkaExceptionInfoSink::setExceptionInfo(err);
+        IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true);
     });
 }
 
@@ -163,7 +163,7 @@ ConsumerPtr && KafkaConsumer::moveConsumer()
         *consumer,
         DRAIN_TIMEOUT_MS,
         log,
-        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err); });
+        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
 
     return std::move(consumer);
 }
@@ -180,7 +180,7 @@ KafkaConsumer::~KafkaConsumer()
         *consumer,
         DRAIN_TIMEOUT_MS,
         log,
-        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err); });
+        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
 }
 
 
@@ -253,7 +253,7 @@ void KafkaConsumer::commit()
                 else
                 {
                     LOG_ERROR(log, "Exception during commit attempt: {}", e.what());
-                    setExceptionInfo(e.what(), /* with_stacktrace = */ false);
+                    setExceptionInfo(e.what(), /* with_stacktrace = */ true);
                 }
             }
             --max_retries;
@@ -326,7 +326,7 @@ void KafkaConsumer::subscribe()
             if (max_retries > 0 && e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
                 continue;
 
-            setExceptionInfo(e.what(), /* with_stacktrace = */ false);
+            setExceptionInfo(e.what(), /* with_stacktrace = */ true);
             throw;
         }
 
@@ -464,7 +464,7 @@ void KafkaConsumer::doPoll()
         auto num_errors = StorageKafkaUtils::eraseMessageErrors(
             new_messages,
             log,
-            [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err); });
+            [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
         num_messages_read += new_messages.size();
 
         resetIfStopped();
