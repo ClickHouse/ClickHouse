@@ -2130,14 +2130,23 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
     assert exists
 
     instance.query(f"DROP TABLE {db}.rabbitmq_drop")
-    time.sleep(30)
 
-    try:
-        exists = channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
-    except Exception:
-        exists = False
-
-    assert not exists
+    # A failed passive declare closes the pika channel, so reopen it on every attempt:
+    # otherwise the next attempt raises for the wrong reason and the check passes vacuously.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while True:
+        channel = connection.channel()
+        try:
+            channel.queue_declare(queue=f"{unique}_rabbit_queue_drop", passive=True)
+        except pika.exceptions.ChannelClosedByBroker as e:
+            assert e.reply_code == 404, f"unexpected channel close: {e}"
+            break
+        if time.monotonic() >= deadline:
+            pytest.fail(
+                f"Queue {unique}_rabbit_queue_drop still exists {DEFAULT_TIMEOUT_SEC} seconds "
+                f"after DROP TABLE."
+            )
+        time.sleep(0.5)
 
 
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):
