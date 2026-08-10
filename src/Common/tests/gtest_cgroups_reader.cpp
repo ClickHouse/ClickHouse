@@ -4,6 +4,8 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <string>
+#include <vector>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
@@ -171,8 +173,8 @@ TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageAndInactiveFileTest)
     auto reader = ICgroupsReader::createCgroupsReader(version, tmp_dir);
     auto result = reader->readMemoryUsageAndInactiveFile();
 
-    /// The usage reported here must match readMemoryUsage exactly: the latter delegates to this method,
-    /// so a single source of truth is guaranteed and the two values can never diverge.
+    /// The usage reported here must match readMemoryUsage exactly: both compute it with the same
+    /// `calculateUsage` helper, so a single source of truth is guaranteed and the two values can never diverge.
     ASSERT_EQ(result.usage, reader->readMemoryUsage());
 
     if (version == ICgroupsReader::CgroupsVersion::V1)
@@ -226,6 +228,50 @@ active_anon 5000000000
     ASSERT_EQ(reader->readMemoryUsage(), /* anon + sock */ 5000001000);
 
     fs::remove_all(tmp_dir);
+}
+
+/// A broken `inactive_file` / `total_inactive_file` line must not affect `readMemoryUsage`:
+/// that path is long-standing and is used by `MemoryWorker` and by the dynamic hard limit,
+/// so it only parses the keys the usage value is made of. Only the new
+/// `readMemoryUsageAndInactiveFile` (used by the `CGroupMemoryInactiveFile` metric) sees the failure.
+TEST(CgroupsBrokenInactiveFile, UsageIsUnaffected)
+{
+    struct Case
+    {
+        ICgroupsReader::CgroupsVersion version;
+        std::string dir;
+        std::string content;
+        uint64_t expected_usage;
+    };
+
+    /// The last line is truncated (the key is not followed by a value), as it would be for a short read.
+    const std::vector<Case> cases = {
+        {ICgroupsReader::CgroupsVersion::V1,
+         "./test_cgroups_v1_broken_inactive_file",
+         "rss 2232029184\ntotal_rss 2232029184\ntotal_inactive_file",
+         2232029184},
+        {ICgroupsReader::CgroupsVersion::V2,
+         "./test_cgroups_v2_broken_inactive_file",
+         "anon 5000000000\nsock 1000\nkernel 2000000000\nslab_reclaimable 1000000000\ninactive_file",
+         6000001000},
+    };
+
+    for (const auto & test_case : cases)
+    {
+        fs::create_directories(test_case.dir);
+        auto stat_file = WriteBufferFromFile(test_case.dir + "/memory.stat");
+        stat_file.write(test_case.content.data(), test_case.content.size());
+        stat_file.finalize();
+        stat_file.sync();
+
+        auto reader = ICgroupsReader::createCgroupsReader(test_case.version, test_case.dir);
+        ASSERT_EQ(reader->readMemoryUsage(), test_case.expected_usage);
+        ASSERT_ANY_THROW(reader->readMemoryUsageAndInactiveFile());
+        /// The usage path keeps working even after the other one has failed.
+        ASSERT_EQ(reader->readMemoryUsage(), test_case.expected_usage);
+
+        fs::remove_all(test_case.dir);
+    }
 }
 
 /// Decision matrix for the cgroup-aware dynamic hard-limit headroom computation
