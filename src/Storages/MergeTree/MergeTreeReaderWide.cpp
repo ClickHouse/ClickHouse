@@ -400,10 +400,7 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     /// only after deserializing of binary bulk prefix.
     MergeTreeReaderStream & stream = *getOrAddStream(substream_path, *stream_name);
 
-    /// Everything below loads marks, so it runs with `streams_mutex` released. Each parallel prefix
-    /// task owns a disjoint set of dynamic paths, and the stream name embeds the path, so no two
-    /// tasks touch the same stream here. The subsequent read from the returned buffer already
-    /// relied on that same exclusivity.
+    /// Runs unlocked: parallel prefix tasks own disjoint paths, and the stream name embeds the path.
     stream.adjustRightMark(last_mark_to_read);
 
     if (seek_to_start)

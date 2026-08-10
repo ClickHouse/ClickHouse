@@ -50,9 +50,8 @@ public:
 private:
     FileStreams streams;
 
-    /// Guards `streams` and `prefetched_streams` against the parallel prefix-deserialization tasks.
-    /// Never held across marks loading or stream initialization: a blocking wait under it convoys
-    /// every task (issue #114136).
+    /// Guards `streams` and `prefetched_streams`. Must not be held across marks loading or stream
+    /// initialization: those block, and every prefix task needs this mutex.
     std::mutex streams_mutex;
 
     void prefetchForAllColumns(
