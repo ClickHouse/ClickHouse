@@ -232,7 +232,6 @@ namespace Setting
     extern const SettingsBool force_aggregate_partitions_independently;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_distinct_partitions_independently;
-    extern const SettingsBool force_index_by_date;
     extern const SettingsBool force_primary_key;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsUInt64 max_number_of_partitions_for_independent_aggregation;
@@ -2789,21 +2788,6 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         return std::make_shared<AnalysisResult>(std::move(result));
     }
 
-    /// The `force_*` settings require index analysis to run, even when `PREWHERE` is constant false.
-    if (query_info_.prewhere_info
-        && settings[Setting::enable_early_constant_folding]
-        && !settings[Setting::force_primary_key]
-        && !settings[Setting::force_index_by_date]
-        && !settings[Setting::force_data_skipping_indices].changed
-        && query_info_.prewhere_info->prewhere_actions.isSuitableForConstantFolding())
-    {
-        auto header = query_info_.prewhere_info->prewhere_actions.updateHeader(
-            StorageSnapshot(data, metadata_snapshot).getSampleBlockForColumns(all_column_names));
-        const auto & filter_column = header.getByName(query_info_.prewhere_info->prewhere_column_name).column;
-        if (filter_column && ConstantFilterDescription(*filter_column).always_false)
-            return std::make_shared<AnalysisResult>(std::move(result));
-    }
-
     // Build and check if primary key is used when necessary
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     const Names & primary_key_column_names = primary_key.column_names;
@@ -2889,6 +2873,19 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     if (result.sampling.read_nothing)
         return std::make_shared<AnalysisResult>(std::move(result));
+
+    /// A forced data-skipping index still needs the granule analysis below to verify that it was used.
+    if (query_info_.prewhere_info
+        && settings[Setting::enable_early_constant_folding]
+        && !settings[Setting::force_data_skipping_indices].changed
+        && query_info_.prewhere_info->prewhere_actions.isSuitableForConstantFolding())
+    {
+        auto header = query_info_.prewhere_info->prewhere_actions.updateHeader(
+            StorageSnapshot(data, metadata_snapshot).getSampleBlockForColumns(result.column_names_to_read));
+        const auto & filter_column = header.getByName(query_info_.prewhere_info->prewhere_column_name).column;
+        if (filter_column && ConstantFilterDescription(*filter_column).always_false)
+            return std::make_shared<AnalysisResult>(std::move(result));
+    }
 
     for (const auto & part : res_parts)
         total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
