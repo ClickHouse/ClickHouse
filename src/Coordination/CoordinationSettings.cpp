@@ -87,9 +87,9 @@ namespace ErrorCodes
     DECLARE(UInt64, write_throttling_max_delay_us, 1000000, "LSMT: the maximum delay added to a write by write throttling, in microseconds.", HOT_RELOAD) \
     DECLARE(Float, write_throttling_factor, 32.0f, "LSMT: write throttling delay is multiplied by this factor if soft limit is exceeded by 2x. Should be greater than 1. Delay = write_throttling_min_delay_us * pow(write_throttling_factor, value / soft_limit - 1).", HOT_RELOAD) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
-    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
-    DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Maximum total size of in-memory cache of log entries needed next for commit.", 0) \
-    DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Maximum number of entries in in-memory cache of log entries needed next for commit.", 0) \
+    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Deprecated, has no effect. The latest logs cache is bounded by latest_logs_cache_size_threshold alone.", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Deprecated. Used as the value of log_readahead_commit_window_bytes if that setting is not itself set.", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Deprecated, has no effect. Use log_readahead_commit_window_bytes instead.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, disk_move_retries_wait_ms, 1000, "How long to wait between retries after a failure which happened while a file was being moved between disks.", 0) \
     DECLARE(UInt64, disk_move_retries_during_init, 100, "The amount of retries after a failure which happened while a file was being moved between disks during initialization.", 0) \
     DECLARE(UInt64, log_slow_total_threshold_ms, 5000, "Requests for which the total latency is larger than this settings will be logged", 0) \
@@ -116,6 +116,14 @@ namespace ErrorCodes
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
     DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
+    DECLARE(Bool, log_readahead_enabled, true, "Enable per-peer decoded read-ahead for changelog catch-up reads.", 0) \
+    DECLARE(NonZeroUInt64, log_readahead_window_bytes, 64_MiB, "Maximum bytes of decoded entries buffered per peer reader. Should be at least as large as a typical append-entries batch.", 0) \
+    DECLARE(NonZeroUInt64, log_readahead_max_peer_readers, 8, "Maximum number of concurrent per-peer read-ahead readers.", 0) \
+    DECLARE(NonZeroUInt64, log_readahead_eviction_timeout_ms, 30000, "Idle timeout in milliseconds after which an inactive per-peer reader, or the commit reader, is evicted. Worst case is approximately twice this value due to the scan gate interval.", 0) \
+    DECLARE(UInt64, log_readahead_pool_threads, 0, "Number of threads in the dedicated read-ahead thread pool. 0 = derive from max_peer_readers.", 0) \
+    DECLARE(UInt64, log_readahead_serve_wait_timeout_ms, 200, "Maximum time in milliseconds to wait for the background fill before falling back to a direct read.", 0) \
+    DECLARE(NonZeroUInt64, log_readahead_chunk_size, 16, "Number of log entries decoded per chunk under file_mutex in the read-ahead fill task. Smaller values improve responsiveness to rewinds at the cost of more lock overhead.", 0) \
+    DECLARE(UInt64, log_readahead_commit_window_bytes, 500_MiB, "Maximum total size of decoded log entries buffered ahead of the commit thread. 0 disables commit read-ahead (commit reads entries from disk one by one).", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 
@@ -150,6 +158,12 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
     /// if max_requests_append_size was not changed
     if (!(*this)[CoordinationSetting::max_requests_append_size].changed)
         (*this)[CoordinationSetting::max_requests_append_size] = (*this)[CoordinationSetting::max_requests_batch_size];
+
+    /// commit_logs_cache_size_threshold is OBSOLETE; map it onto log_readahead_commit_window_bytes
+    /// if the new setting was not itself explicitly set.
+    if ((*this)[CoordinationSetting::commit_logs_cache_size_threshold].changed
+        && !(*this)[CoordinationSetting::log_readahead_commit_window_bytes].changed)
+        (*this)[CoordinationSetting::log_readahead_commit_window_bytes] = (*this)[CoordinationSetting::commit_logs_cache_size_threshold];
 }
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())
