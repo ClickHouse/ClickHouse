@@ -1,0 +1,7 @@
+-- only the dependency closure is recomputed
+1	5	100	6	60
+1	0	100	2	200
+-- a MATERIALIZED column made stale through another one cannot be silently kept
+0
+1	5	6	13
+1	5	6	13

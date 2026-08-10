@@ -1,0 +1,12 @@
+-- REPLACE keeps matching the renamed column
+toJSONString(tuple(COLUMNS(renamed, b) REPLACE (renamed + 1 AS renamed)))
+1	2	[2,2]
+10	20	[11,20]
+-- an APPLY lambda body follows the rename
+toJSONString(tuple(COLUMNS(\'^b$\') APPLY x -> (x + renamed)))
+1	2	[3]
+10	20	[30]
+-- a lambda argument shadowing the renamed column is left alone
+toJSONString(arrayMap(a -> (a * 2), arr))
+1	[2,3]	[4,6]
+10	[4,5]	[8,10]

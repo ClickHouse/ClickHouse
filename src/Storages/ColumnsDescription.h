@@ -344,6 +344,17 @@ void validateNoCyclicAliasesAfterExpansion(const String & alias_name, const ASTP
 void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns);
 void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns);
 
+/// `CLEAR COLUMN` resets the cleared columns to their type default, so the stored values of the
+/// `MATERIALIZED` columns computed from them no longer match their declared expression and have to
+/// be recomputed. `materialized_column_inputs` maps every `MATERIALIZED` column to the columns its
+/// matcher-expanded expression reads; the result is the transitive closure over `cleared_columns`:
+/// a `MATERIALIZED` column is stale if it reads a cleared column or an already stale one.
+/// `MATERIALIZED` columns outside the closure keep their stored values - rewriting them would
+/// break the metadata-only contract of `ALTER TABLE ... MODIFY COLUMN ... MATERIALIZED`, which
+/// deliberately leaves existing parts untouched.
+NameSet collectMaterializedColumnsStaleAfterClear(
+    const std::unordered_map<String, Names> & materialized_column_inputs, const NameSet & cleared_columns);
+
 /// Validate default expressions and corresponding types compatibility, i.e.
 /// default expression result can be cast to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or

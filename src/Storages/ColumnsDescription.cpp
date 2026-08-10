@@ -1805,6 +1805,35 @@ void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const Column
     expandColumnMatchersImpl(expression_list, columns);
 }
 
+NameSet collectMaterializedColumnsStaleAfterClear(
+    const std::unordered_map<String, Names> & materialized_column_inputs, const NameSet & cleared_columns)
+{
+    NameSet stale;
+
+    /// Fixed point, so the result does not depend on the declaration order of the columns.
+    bool grown = true;
+    while (grown)
+    {
+        grown = false;
+        for (const auto & [name, inputs] : materialized_column_inputs)
+        {
+            if (stale.contains(name))
+                continue;
+
+            bool reads_stale = std::ranges::any_of(
+                inputs, [&](const auto & input) { return cleared_columns.contains(input) || stale.contains(input); });
+
+            if (reads_stale)
+            {
+                stale.insert(name);
+                grown = true;
+            }
+        }
+    }
+
+    return stale;
+}
+
 void validateColumnsDefaults(
     ASTPtr default_expr_list, const ColumnsDescription & columns, ContextPtr context, const NameSet & insert_time_default_columns)
 {

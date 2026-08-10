@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -309,9 +310,17 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(
 
             const auto & columns = metadata_snapshot->getColumns();
             const auto & column_name = required_sort_description[i].column_name;
-            auto column_expr = cloneAndExpandColumnDefaultExpression(columns.get(column_name).default_desc, columns);
+            const auto & column = columns.get(column_name);
+            auto column_expr = cloneAndExpandColumnDefaultExpression(column.default_desc, columns);
             validateNoCyclicAliasesAfterExpansion(column_name, column_expr, columns);
             replaceAliasColumnsInQuery(column_expr, columns, array_join_result_to_source, context);
+
+            /// An ALIAS column is read as its expression converted to the declared type, so the
+            /// sort key we match must carry that conversion too. Without it, `ORDER BY b` for
+            /// `b UInt8 ALIAS a` over a wider `a` would be matched against the sorting key of `a`
+            /// and read in the source domain order, which differs from the order of `b`.
+            /// `addTypeConversionToAST` is a no-op when the expression already has the declared type.
+            column_expr = addTypeConversionToAST(std::move(column_expr), column.type->getName(), columns.getAll(), context);
 
             auto syntax_analyzer_result = TreeRewriter(context).analyze(column_expr, columns.getAll());
             auto expression_analyzer = ExpressionAnalyzer(column_expr, syntax_analyzer_result, context);

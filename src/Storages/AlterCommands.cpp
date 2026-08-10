@@ -2086,17 +2086,18 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
                 else
                 {
-                    /// CLEAR COLUMN triggers recalculation of the MATERIALIZED columns that
-                    /// read the cleared column, but the recalculation cannot read EPHEMERAL
-                    /// columns: their values exist only during INSERT and are not stored in
-                    /// parts. Reject such ALTERs up front instead of queueing a mutation
-                    /// that can never succeed.
+                    /// CLEAR COLUMN triggers recalculation of the MATERIALIZED columns that read
+                    /// the cleared column, directly or through another recalculated MATERIALIZED
+                    /// column, but the recalculation cannot read EPHEMERAL columns: their values
+                    /// exist only during INSERT and are not stored in parts. Reject such ALTERs up
+                    /// front instead of queueing a mutation that can never succeed.
                     NameSet ephemeral_names;
                     for (const auto & col : all_columns.getEphemeral())
                         ephemeral_names.insert(col.name);
 
                     if (!ephemeral_names.empty())
                     {
+                        std::unordered_map<String, Names> materialized_column_inputs;
                         for (const ColumnDescription & column : all_columns)
                         {
                             if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
@@ -2105,18 +2106,21 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                             ASTPtr query = column.default_desc.expression->clone();
                             expandColumnMatchersInExpression(query, all_columns);
                             auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
-                            const auto & required_columns = syntax_result->requiredSourceColumns();
-                            if (std::ranges::find(required_columns, command.column_name) == required_columns.end())
-                                continue;
+                            materialized_column_inputs.emplace(column.name, syntax_result->requiredSourceColumns());
+                        }
 
-                            for (const auto & required_column : required_columns)
+                        auto stale_columns
+                            = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs, {command.column_name});
+
+                        for (const auto & stale_column : stale_columns)
+                        {
+                            for (const auto & required_column : materialized_column_inputs.at(stale_column))
                             {
                                 if (ephemeral_names.contains(required_column))
                                     throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                        "Cannot clear column {}: the MATERIALIZED column {} depends on it and on the "
-                                        "EPHEMERAL column {}, whose values cannot be read from existing parts to "
-                                        "recalculate the MATERIALIZED column",
-                                        backQuote(command.column_name), backQuote(column.name), backQuote(required_column));
+                                        "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but it "
+                                        "depends on the EPHEMERAL column {}, whose values cannot be read from existing parts",
+                                        backQuote(command.column_name), backQuote(stale_column), backQuote(required_column));
                             }
                         }
                     }
