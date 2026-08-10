@@ -35,7 +35,17 @@ from typing import List, Optional
 # `changed` even though it equals the default, so the client sends it and it overrides
 # the profile. `clickhouse-test` pins the same setting for its own infrastructure
 # queries (see `clickhouse_execute_http`).
-NO_AST_FUZZER = "--ast_fuzzer_runs=0"
+#
+# The runners export `NO_AST_FUZZER` (see `tests/docker_scripts/stress_tests.lib`), so
+# inherit it when present: `install_packages` deliberately sets it to an empty string
+# for a client that predates the `ast_fuzzer_runs` setting and would reject the unknown
+# command-line option, and the upgrade check runs this script with exactly such a
+# previous-release client. `os.environ.get` with a default (not `or`) keeps that empty
+# opt-out intact.
+NO_AST_FUZZER = os.environ.get("NO_AST_FUZZER", "--ast_fuzzer_runs=0")
+# For `argv`-form invocations: an empty opt-out must not become an empty argument,
+# which the client would parse as a positional one.
+NO_AST_FUZZER_ARGS = [NO_AST_FUZZER] if NO_AST_FUZZER else []
 
 
 class ServerDied(Exception):
@@ -110,7 +120,7 @@ class RandomQueryKiller:
                         "clickhouse",
                         "client",
                         "--receive_timeout=5",
-                        NO_AST_FUZZER,
+                        *NO_AST_FUZZER_ARGS,
                         "--param_query_id",
                         query_id,
                         "-q",
@@ -191,7 +201,7 @@ class RandomQueryKiller:
                         "clickhouse",
                         "client",
                         "--receive_timeout=10",
-                        NO_AST_FUZZER,
+                        *NO_AST_FUZZER_ARGS,
                         "--param_database",
                         db,
                         "--param_table",
