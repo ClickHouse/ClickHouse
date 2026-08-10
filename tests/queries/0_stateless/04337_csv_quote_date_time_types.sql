@@ -303,6 +303,94 @@ SETTINGS
     format_custom_field_delimiter = '|',
     format_custom_row_after_delimiter = '\n';
 
+SET enable_nullable_tuple_type = 1;
+
+SELECT 'CustomSeparated keeps Nullable Tuple as one flattened element' FORMAT TSVRaw;
+SELECT
+    tuple(
+        CAST(tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 1::UInt8), 'Nullable(Tuple(DateTime(\'UTC\'), UInt8))'),
+        2::UInt8) AS t,
+    42 AS n
+FORMAT CustomSeparated
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '|',
+    format_custom_row_after_delimiter = '\n';
+
+SELECT 'Template keeps Nullable Tuple as one flattened element' FORMAT TSVRaw;
+SELECT
+    tuple(
+        CAST(tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 1::UInt8), 'Nullable(Tuple(DateTime(\'UTC\'), UInt8))'),
+        2::UInt8) AS t,
+    42 AS n
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_template_row_format = '${t:CSV}|${n:CSV}\n',
+    format_template_resultset_format = '${data}';
+
+SELECT 'CustomSeparated Nullable Tuple element round-trips' FORMAT TSVRaw;
+SELECT *
+FROM format(
+    CustomSeparated,
+    't Tuple(Nullable(Tuple(DateTime(\'UTC\'), UInt8)), UInt8), n UInt8',
+    (
+        SELECT formatRow(
+            'CustomSeparated',
+            tuple(
+                CAST(tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 1::UInt8), 'Nullable(Tuple(DateTime(\'UTC\'), UInt8))'),
+                2::UInt8),
+            42::UInt8)
+    ))
+FORMAT TSVRaw
+SETTINGS
+    input_format_custom_detect_header = 0,
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '|',
+    format_custom_row_after_delimiter = '\n';
+
+SELECT 'Template final Nullable Tuple remains flattened' FORMAT TSVRaw;
+SELECT
+    tuple(
+        2::UInt8,
+        CAST(tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 1::UInt8), 'Nullable(Tuple(DateTime(\'UTC\'), UInt8))')) AS t,
+    42 AS n
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_template_row_format = '${t:CSV}|${n:CSV}\n',
+    format_template_resultset_format = '${data}';
+
+SELECT 'CustomSeparated nested Nullable Tuple element round-trips' FORMAT TSVRaw;
+SELECT *
+FROM format(
+    CustomSeparated,
+    't Tuple(Tuple(Nullable(Tuple(DateTime(\'UTC\'), UInt8)), UInt8), UInt8), n UInt8',
+    (
+        SELECT formatRow(
+            'CustomSeparated',
+            tuple(
+                tuple(
+                    CAST(tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 1::UInt8), 'Nullable(Tuple(DateTime(\'UTC\'), UInt8))'),
+                    2::UInt8),
+                3::UInt8),
+            42::UInt8)
+    ))
+FORMAT TSVRaw
+SETTINGS
+    input_format_custom_detect_header = 0,
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '|',
+    format_custom_row_after_delimiter = '\n';
+
 SELECT 'Template DateTime64 tuple follows trimmed whole-second output' FORMAT TSVRaw;
 SELECT tuple(toDateTime64('2024-01-18 09:45:01', 3, 'UTC'), 42::UInt8) AS t
 FORMAT Template

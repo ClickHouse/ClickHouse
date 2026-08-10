@@ -685,6 +685,11 @@ bool SerializationNullable::tryDeserializeNullAsDefaultOrNestedWholeText(DB::ICo
     return deserializeWholeTextImpl<bool>(nested_column, istr, settings, nested_serialization, is_null);
 }
 
+static bool nullableTupleUsesSingleCSVField(const SerializationPtr & nested, bool separate_tuple_columns)
+{
+    return separate_tuple_columns && typeid_cast<const SerializationTuple *>(nested.get());
+}
+
 void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
@@ -699,7 +704,7 @@ void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_
     /// serialized into separate columns would occupy several fields, making the per-row width
     /// row-dependent and breaking CSVWithNames(AndTypes). Keep a Nullable(Tuple) as a single quoted
     /// CSV value so every row (NULL or not) is exactly one field (issue #107342).
-    if (settings.csv.serialize_tuple_into_separate_columns && typeid_cast<const SerializationTuple *>(nested.get()))
+    if (nullableTupleUsesSingleCSVField(nested, settings.csv.serialize_tuple_into_separate_columns))
     {
         FormatSettings tuple_as_single_field = settings;
         tuple_as_single_field.csv.serialize_tuple_into_separate_columns = false;
@@ -710,12 +715,23 @@ void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_
     nested->serializeTextCSV(col.getNestedColumn(), row_num, ostr, settings);
 }
 
+bool SerializationNullable::textCSVMayNeedQuotes(const FormatSettings & settings) const
+{
+    if (nullableTupleUsesSingleCSVField(nested, settings.csv.serialize_tuple_into_separate_columns))
+        return false;
+
+    return nested->textCSVMayNeedQuotes(settings);
+}
+
 bool SerializationNullable::textCSVNeedsQuotes(
     const IColumn & column, size_t row_num, const FormatSettings & settings) const
 {
     const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
-    return !nullable_column.isNullAt(row_num)
-        && nested->textCSVNeedsQuotes(nullable_column.getNestedColumn(), row_num, settings);
+    if (nullable_column.isNullAt(row_num)
+        || nullableTupleUsesSingleCSVField(nested, settings.csv.serialize_tuple_into_separate_columns))
+        return false;
+
+    return nested->textCSVNeedsQuotes(nullable_column.getNestedColumn(), row_num, settings);
 }
 
 void SerializationNullable::serializeNullCSV(DB::WriteBuffer & ostr, const DB::FormatSettings & settings)
@@ -836,7 +852,7 @@ ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const For
 static void adjustCSVSettingsForNullableTuple(
     const SerializationPtr & nested, const FormatSettings & settings, std::optional<FormatSettings> & storage)
 {
-    if (settings.csv.deserialize_separate_columns_into_tuple && typeid_cast<const SerializationTuple *>(nested.get()))
+    if (nullableTupleUsesSingleCSVField(nested, settings.csv.deserialize_separate_columns_into_tuple))
     {
         storage = settings;
         storage->csv.deserialize_separate_columns_into_tuple = false;
