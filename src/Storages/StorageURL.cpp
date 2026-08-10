@@ -700,15 +700,18 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
     size_t options = std::distance(option, end);
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
-    for (; option != end; ++option)
+
+    /// A cancellation which lands where no request is in flight for it to interrupt - between the
+    /// options, after an empty file has been skipped or a probe has failed, and after the last option
+    /// has failed - stops the choosing of the URI here instead. Returns true when the caller must
+    /// return no buffer; throws for a killed query and for a soft cancellation.
+    auto stop_if_cancelled = [&]() -> bool
     {
         /// Do not go on probing the failover options if the query has been killed meanwhile.
         CurrentThread::checkIfNotCancelled();
 
-        /// The check above is a no-op for the cancellations which do not kill the query, and such a
-        /// cancellation landing between the options - after an empty file has been skipped, or after
-        /// a failed probe - finds no request in flight to interrupt. So check the flag itself before
-        /// starting the next option, in both of its kinds:
+        /// The check above is a no-op for the cancellations which do not kill the query. So check the
+        /// flag itself, in both of its kinds:
         ///
         /// - After a soft cancellation - the `max_execution_time` timeout with the `break` overflow
         ///   mode, or a consumer which has enough data - the query must still succeed with what it
@@ -718,16 +721,24 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         /// - A hard teardown which does not kill the query - the pipeline has already failed
         ///   elsewhere, or the client has disconnected - must not be reported with a synthesized
         ///   error like that: generate would not discard it, and it could reach the user in place of
-        ///   the failure that really happened. Return no buffer instead: no one is left who needs
-        ///   the data, so the caller ends the stream without starting the next option, see
-        ///   initialize.
+        ///   the failure that really happened, and neither may we report the aggregate error of the
+        ///   options below, for the same reason. Return no buffer instead: no one is left who needs
+        ///   the data, so the caller ends the stream, see initialize.
         if (cancellation && cancellation->isCancelled())
         {
             if (cancellation->isCancelledSoftly())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The URL read has been cancelled while choosing the URI to read from");
 
-            return {};
+            return true;
         }
+
+        return false;
+    };
+
+    for (; option != end; ++option)
+    {
+        if (stop_if_cancelled())
+            return {};
 
         bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
@@ -787,9 +798,11 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         }
     }
 
-    /// A query killed after the last option has failed, with no request left for the cancellation to
-    /// interrupt, must be reported as cancelled rather than with the aggregate error below.
-    CurrentThread::checkIfNotCancelled();
+    /// A cancellation after the last option has failed, with no request left for it to interrupt, must
+    /// not be reported with the aggregate error below either - the same window as between the options,
+    /// with the same two outcomes.
+    if (stop_if_cancelled())
+        return {};
 
     /// If all options are unreachable except empty ones that we skipped,
     /// return last empty result. It will be skipped later.
