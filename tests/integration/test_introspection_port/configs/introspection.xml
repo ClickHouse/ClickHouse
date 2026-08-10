@@ -1,5 +1,9 @@
 <clickhouse>
-    <introspection>
-        <tcp_port>9010</tcp_port>
-    </introspection>
+    <protocols>
+        <introspection_native>
+            <type>tcp</type>
+            <introspection>true</introspection>
+            <port>9010</port>
+        </introspection_native>
+    </protocols>
 </clickhouse>

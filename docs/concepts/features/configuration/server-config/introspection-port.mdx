@@ -8,31 +8,48 @@ doc_type: 'reference'
 
 When `clickhouse-server` is stuck in startup or in shutdown, the regular ports do not accept connections and the server cannot be asked what it is doing.
 
-The introspection port is a native protocol TCP listener that starts before the server begins attaching tables and stops only after the tables' detach completes. During these windows an operator can connect to it with a stock `clickhouse-client` and run queries such as `SHOW PROCESSLIST`, `SELECT * FROM system.stack_trace`, or `SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5`.
+An introspection port is a native protocol TCP listener that starts before the server begins attaching tables and stops only after the tables' detach completes. During these windows an operator can connect to it with a stock `clickhouse-client` and run queries such as `SHOW PROCESSLIST`, `SELECT * FROM system.stack_trace`, or `SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5`.
 
 ## Configuration {#configuration}
 
-The port is disabled by default. To enable it, define the `introspection` section in the server configuration:
+An introspection port is a [composable protocol](/operations/settings/composable-protocols) endpoint marked with `<introspection>true</introspection>`. No introspection port is configured by default:
 
 ```xml
-<introspection>
-    <tcp_port>9010</tcp_port>
-    <tcp_port_secure>9011</tcp_port_secure>
-    <listen_host>127.0.0.1</listen_host>
-    <max_connections>4</max_connections>
-</introspection>
+<protocols>
+    <introspection_native>
+        <type>tcp</type>
+        <introspection>true</introspection>
+        <description>introspection native protocol (tcp)</description>
+        <host>127.0.0.1</host>
+        <port>9010</port>
+    </introspection_native>
+
+    <introspection_native_secure>
+        <type>tls</type>
+        <impl>introspection_native</impl>
+        <introspection>true</introspection>
+        <description>secure introspection native protocol (tcp_secure)</description>
+        <host>127.0.0.1</host>
+        <port>9011</port>
+    </introspection_native_secure>
+</protocols>
 ```
 
-| Key               | Description                                                                                                     |
-|-------------------|-----------------------------------------------------------------------------------------------------------------|
-| `tcp_port`        | Port for the native protocol, like the top-level `tcp_port`. Optional if `tcp_port_secure` is set.               |
-| `tcp_port_secure` | Port for the native protocol over TLS, using the server certificate from the `openSSL.server` section. Optional. |
-| `listen_host`     | Host(s) to bind. Defaults to the top-level `listen_host`.                                                         |
-| `max_connections` | Size of the dedicated connection pool. Default: 4.                                                                |
+Because it is a regular composable protocol endpoint, it supports everything an endpoint supports: `host`, `port`, `description`, a `networks` allow list, `default_database`, and wrapping into `tls` and `proxy1` layers.
+
+The `introspection` flag is a property of the endpoint - the entry that carries the `port` - and is not inherited through `impl` references, so a layer can be shared between an introspection endpoint and a regular one.
+
+The stack must end in a `tcp` layer, because the semantics below are implemented by the native protocol handler. Marking an endpoint whose stack contains an `http`, `mysql`, `postgres`, `prometheus` or `interserver` layer is rejected with `INVALID_CONFIG_PARAMETER` at startup, rather than producing a port that stops answering exactly when it is needed.
+
+| Key             | Description                                                                      |
+|-----------------|----------------------------------------------------------------------------------|
+| `introspection` | Marks a composable protocol endpoint as an introspection port. Default: `false`. |
 
 ## Behavior {#behavior}
 
-- Queries on this port bypass `max_concurrent_queries` and the workload scheduler, like `SHOW PROCESSLIST` does; their concurrency is bounded by `max_connections`.
-- Connections are served by a dedicated thread pool, so exhaustion of the regular connection pool does not affect this port.
+- Only diagnostic queries are accepted: `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS`, `KILL QUERY`, `SYSTEM`, `SET` and `USE`. Anything that creates, changes or removes state is rejected with `QUERY_IS_PROHIBITED`, because the port is open while the server state is either not fully constructed or being torn down.
+- Queries on these ports bypass `max_concurrent_queries` and the workload scheduler, like `SHOW PROCESSLIST` does.
+- Connections are served by a dedicated thread pool, so exhaustion of the regular connection pool does not affect these ports. The pool is sized by `max_connections`.
+- Connections are accepted even when the server refuses regular connections because of CPU overload.
 - Full normal authentication and authorization apply. Connecting to this port grants nothing extra.
-- The port is not subject to `SYSTEM START LISTEN` / `SYSTEM STOP LISTEN` (including `ALL`) and is not reconfigured on config reload.
+- These ports are not subject to `SYSTEM START LISTEN` / `SYSTEM STOP LISTEN` (including `ALL` and `CUSTOM`) and are not reconfigured on config reload.

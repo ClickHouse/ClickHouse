@@ -318,14 +318,12 @@ TCPHandler::TCPHandler(
     std::string server_display_name_,
     std::string host_name_,
     const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_,
-    bool is_from_introspection_port_)
+    const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(getLogger("TCPHandler"))
-    , is_from_introspection_port(is_from_introspection_port_)
     , read_event(read_event_)
     , write_event(write_event_)
     , server_display_name(std::move(server_display_name_))
@@ -346,6 +344,7 @@ TCPHandler::TCPHandler(
     , server(server_)
     , tcp_server(tcp_server_)
     , log(getLogger("TCPHandler"))
+    , is_from_introspection_port(stack_data.is_introspection)
     , forwarded_for(stack_data.forwarded_for)
     , certificate(stack_data.certificate)
     , read_event(read_event_)

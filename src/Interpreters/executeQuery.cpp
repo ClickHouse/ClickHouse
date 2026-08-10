@@ -238,6 +238,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 namespace FailPoints
@@ -1159,6 +1160,28 @@ private:
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
 
+/// The introspection port is open while the shared state is either not fully constructed or is being
+/// torn down, so anything that creates, changes or removes state is rejected there.
+static bool isAllowedOnIntrospectionPort(const IAST & ast)
+{
+    switch (ast.getQueryKind())
+    {
+        case IAST::QueryKind::Select:
+        case IAST::QueryKind::Show:
+        case IAST::QueryKind::Describe:
+        case IAST::QueryKind::Explain:
+        case IAST::QueryKind::Exists:
+        case IAST::QueryKind::KillQuery:
+        case IAST::QueryKind::System:
+        case IAST::QueryKind::Set:
+        case IAST::QueryKind::Use:
+            return true;
+        default:
+            return false;
+    }
+}
+
+
 static BlockIO executeQueryImpl(
     const char * begin,
     const char * end,
@@ -1571,6 +1594,12 @@ static BlockIO executeQueryImpl(
 
         if (out_ast)
         {
+            if (!internal && client_info.is_from_introspection_port && !isAllowedOnIntrospectionPort(*out_ast))
+                throw Exception(
+                    ErrorCodes::QUERY_IS_PROHIBITED,
+                    "Only diagnostic queries are allowed on the introspection port: "
+                    "SELECT, SHOW, DESCRIBE, EXPLAIN, EXISTS, KILL QUERY, SYSTEM, SET and USE");
+
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);

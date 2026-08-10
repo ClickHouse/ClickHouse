@@ -657,6 +657,21 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
     return getListenHosts(config);
 }
 
+bool isIntrospectionProtocol(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+{
+    return config.getBool("protocols." + protocol + ".introspection", false);
+}
+
+bool hasIntrospectionProtocols(const Poco::Util::AbstractConfiguration & config)
+{
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+    return std::any_of(protocols.begin(), protocols.end(), [&](const auto & protocol)
+    {
+        return isIntrospectionProtocol(config, protocol);
+    });
+}
+
 bool getListenTry(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
 {
     bool listen_try = server_settings[ServerSetting::listen_try];
@@ -3247,6 +3262,10 @@ try
         /// In either case, we need to return an error.
         if (is_cancelled || !global_context->isServerCompletelyStarted())
             throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
+        if (server_type.type == ServerType::Type::INTROSPECTION)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Introspection listeners are opened at server startup and stay open for the lifetime of the server");
         createServers(
             config(),
             server_settings,
@@ -3372,7 +3391,7 @@ try
 
     /// The introspection servers accept TCP connections while the server is otherwise unreachable:
     /// before attaching and after detaching of tables.
-    if (config().has("introspection.tcp_port") || config().has("introspection.tcp_port_secure"))
+    if (hasIntrospectionProtocols(config()))
     {
         global_context->setStopIntrospectionServersCallback([&]
         {
@@ -3414,19 +3433,23 @@ try
 
         introspection_server_pool = std::make_unique<Poco::ThreadPool>(
             /* minCapacity */ 1,
-            /* maxCapacity */ config().getUInt("introspection.max_connections", 4),
+            /* maxCapacity */ server_settings[ServerSetting::max_connections],
             /* idleTime */ 60,
             /* stackSize */ DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
             server_settings[ServerSetting::global_profiler_real_time_period_ns],
             server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
 
-        Strings introspection_listen_hosts = getMultipleValuesFromConfig(config(), "introspection", "listen_host");
-        if (introspection_listen_hosts.empty())
-            introspection_listen_hosts = listen_hosts;
-
         std::lock_guard lock(servers_lock);
-        createIntrospectionServers(
-            config(), server_settings, introspection_listen_hosts, listen_try, *introspection_server_pool, introspection_servers);
+        createServers(
+            config(),
+            server_settings,
+            listen_hosts,
+            listen_try,
+            *introspection_server_pool,
+            *async_metrics,
+            introspection_servers,
+            /* start_servers= */ true,
+            ServerType(ServerType::Type::INTROSPECTION));
     }
 
     try
@@ -3719,7 +3742,7 @@ try
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
-                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
+                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>300</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
 
@@ -3885,6 +3908,9 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     std::string prefix = conf_name + ".";
     std::unordered_set<std::string> pset {conf_name};
 
+    const bool is_introspection = isIntrospectionProtocol(config, protocol);
+    std::string innermost_type;
+
     auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
 
     while (true)
@@ -3900,6 +3926,13 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                 is_secure = true;
             }
 
+            if (is_introspection && type != "tcp" && type != "tls" && type != "proxy1")
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Introspection protocol '{}' contains a '{}' layer, but only 'tcp' optionally wrapped "
+                    "into 'tls' and 'proxy1' layers is supported", protocol, type);
+
+            innermost_type = type;
             stack->append(create_factory(type, conf_name));
         }
 
@@ -3912,6 +3945,11 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (!pset.insert(conf_name).second)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
     }
+
+    if (is_introspection && innermost_type != "tcp")
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Introspection protocol '{}' must end in a 'tcp' layer", protocol);
 
     return stack;
 }
@@ -3953,7 +3991,8 @@ void Server::createServers(
 
     for (const auto & protocol : protocols)
     {
-        if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
+        const bool is_introspection = isIntrospectionProtocol(config, protocol);
+        if (!server_type.shouldStart(is_introspection ? ServerType::Type::INTROSPECTION : ServerType::Type::CUSTOM, protocol))
             continue;
 
         std::string prefix = "protocols." + protocol + ".";
@@ -3995,7 +4034,7 @@ void Server::createServers(
                         server_pool,
                         socket,
                         makeServerParams(server_settings),
-                        connection_filter));
+                        is_introspection ? TCPServerConnectionFilter::Ptr() : connection_filter));
             });
         }
     }
@@ -4346,61 +4385,6 @@ void Server::createInterserverServers(
 #endif
             });
         }
-    }
-}
-
-void Server::createIntrospectionServers(
-    Poco::Util::AbstractConfiguration & config,
-    const ServerSettings & server_settings,
-    const Strings & introspection_listen_hosts,
-    bool listen_try,
-    Poco::ThreadPool & introspection_server_pool,
-    std::vector<ProtocolServerAdapter> & servers)
-{
-    const Settings & settings = global_context->getSettingsRef();
-
-    for (const auto & listen_host : introspection_listen_hosts)
-    {
-        const char * port_name = "introspection.tcp_port";
-        createServer(config, listen_host, port_name, listen_try, /* start_server= */ true, servers, [&](UInt16 port) -> ProtocolServerAdapter
-        {
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(server_settings, socket, listen_host, port);
-            socket.setReceiveTimeout(settings[Setting::receive_timeout]);
-            socket.setSendTimeout(settings[Setting::send_timeout]);
-            return ProtocolServerAdapter(
-                listen_host,
-                port_name,
-                "introspection native protocol (tcp): " + address.toString(),
-                std::make_unique<TCPServer>(
-                    new TCPHandlerFactory(*this, /* secure */ false, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes, /* is_from_introspection_port */ true),
-                    introspection_server_pool,
-                    socket,
-                    makeServerParams(server_settings)));
-        });
-
-        port_name = "introspection.tcp_port_secure";
-        createServer(config, listen_host, port_name, listen_try, /* start_server= */ true, servers, [&](UInt16 port) -> ProtocolServerAdapter
-        {
-#if USE_SSL
-            Poco::Net::SecureServerSocket socket;
-            auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-            socket.setReceiveTimeout(settings[Setting::receive_timeout]);
-            socket.setSendTimeout(settings[Setting::send_timeout]);
-            return ProtocolServerAdapter(
-                listen_host,
-                port_name,
-                "secure introspection native protocol (tcp_secure): " + address.toString(),
-                std::make_unique<TCPServer>(
-                    new TCPHandlerFactory(*this, /* secure */ true, /* proxy protocol */ false, ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes, /* is_from_introspection_port */ true),
-                    introspection_server_pool,
-                    socket,
-                    makeServerParams(server_settings)));
-#else
-            UNUSED(port);
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
-#endif
-        });
     }
 }
 

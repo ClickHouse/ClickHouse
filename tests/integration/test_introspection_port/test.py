@@ -44,13 +44,17 @@ def test_introspection_port(started_cluster):
         "SELECT 1", password="invalid"
     )
 
-    assert (
-        node.query(
-            "SELECT count() FROM system.asynchronous_metrics"
-            " WHERE metric = 'IntrospectionTCPThreads'"
-        )
-        == "1\n"
+    assert "QUERY_IS_PROHIBITED" in introspection_client().query_and_get_error(
+        "CREATE TABLE t (a UInt8) ENGINE = Memory"
     )
+    assert "QUERY_IS_PROHIBITED" in introspection_client().query_and_get_error(
+        "INSERT INTO system.one VALUES (1)"
+    )
+    assert introspection_client().query("EXISTS TABLE system.one") == "1\n"
+    introspection_client().query("SHOW PROCESSLIST")
+
+    node.query("SYSTEM STOP LISTEN CUSTOM 'introspection_native'")
+    assert introspection_client().query("SELECT 1") == "1\n"
 
     node.query("SYSTEM STOP LISTEN QUERIES ALL")
     assert "Connection refused" in node.query_and_get_error("SELECT 1")

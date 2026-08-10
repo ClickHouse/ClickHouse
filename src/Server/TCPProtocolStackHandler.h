@@ -32,6 +32,7 @@ public:
         TCPProtocolStackData stack_data;
         stack_data.socket = socket();
         stack_data.default_database = conf.getString(conf_name + ".default_database", "");
+        stack_data.is_introspection = conf.getBool(conf_name + ".introspection", false);
         for (auto & factory : stack)
         {
             std::unique_ptr<TCPServerConnection> connection(factory->createConnection(socket(), tcp_server, stack_data));

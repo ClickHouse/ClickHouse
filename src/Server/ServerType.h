@@ -23,6 +23,7 @@ public:
         POSTGRESQL,
         PROMETHEUS,
         CUSTOM,
+        INTROSPECTION,
         INTERSERVER_HTTP,
         INTERSERVER_HTTPS,
         QUERIES_ALL,

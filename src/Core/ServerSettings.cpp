@@ -99,7 +99,7 @@ namespace
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
-    DECLARE(UInt64, shutdown_wait_unfinished, 5, R"(Delay in seconds to wait for unfinished queries)", 0) \
+    DECLARE(UInt64, shutdown_wait_unfinished, 120, R"(Delay in seconds to wait for unfinished queries)", 0) \
     DECLARE(UInt64, max_thread_pool_size, 10000, R"(
 ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
