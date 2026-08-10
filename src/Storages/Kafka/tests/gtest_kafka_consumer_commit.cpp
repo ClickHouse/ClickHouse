@@ -3,14 +3,12 @@
 
 #if USE_RDKAFKA
 
-#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Common/Stopwatch.h>
 #include <cppkafka/configuration.h>
 #include <cppkafka/consumer.h>
 #include <cppkafka/exceptions.h>
 #include <chrono>
 
-using namespace DB;
 using namespace std::chrono_literals;
 
 namespace
@@ -22,64 +20,36 @@ cppkafka::Consumer makeConsumerAgainstUnreachableBroker()
     config.set("metadata.broker.list", "127.0.0.1:1");
     config.set("group.id", "gtest_kafka_consumer_commit");
     config.set("enable.auto.commit", "false");
-    config.set("enable.auto.offset.store", "false");
     config.set("socket.timeout.ms", "1000");
     return cppkafka::Consumer(config);
 }
 
-cppkafka::TopicPartitionList oneOffset()
-{
-    return {cppkafka::TopicPartition{"gtest_kafka_commit_topic", 0, 42}};
 }
 
-template <typename Commit>
-void expectTheDeadlineReturns(const Commit & commit)
-{
-    Stopwatch watch;
-    try
-    {
-        commit();
-        FAIL() << "the commit returned instead of reaching the deadline";
-    }
-    catch (const cppkafka::HandleException & e)
-    {
-        /// Any other code means something answered before the deadline, and an elapsed-time bound
-        /// alone would then hold without the deadline being what returned.
-        EXPECT_EQ(e.get_error().get_error(), RD_KAFKA_RESP_ERR__TIMED_OUT);
-    }
-    EXPECT_LT(watch.elapsedMilliseconds(), 15000);
-}
-
-}
-
-/// Pins the deadline. cppkafka's own `commit` waits on librdkafka's reply queue with no timeout, so
-/// against brokers that answer and then reject authentication no reply op ever arrives, the call
-/// never returns, and the streaming task holding the consumer stops its table until the server
-/// restarts. A refused connection is the stand-in a unit test can build: librdkafka defers the commit
-/// and gives up `session.timeout.ms` later, 45s by default, so without the deadline the elapsed-time
-/// bound is what fails. A `DB::Exception` escaping here fails the test too, which is what pins the
-/// event wiring.
+/// Pins the deadline the Kafka consumers commit under. `cppkafka::Consumer::commit()` waits on
+/// librdkafka's reply queue with no timeout, and against unreachable brokers no reply op arrives, so
+/// that call never returns and the streaming task holding the consumer stops its table until the
+/// server restarts. cppkafka's own test suite needs a live broker, so the timeout overload is covered
+/// here instead. Without the deadline these tests hang rather than fail.
 TEST(KafkaCommitWithTimeout, CurrentAssignmentRespectsTheDeadline)
 {
     auto consumer = makeConsumerAgainstUnreachableBroker();
-    /// A commit carrying no offset is answered `_NO_OFFSET` in 0ms, before the reply queue is ever
-    /// polled, so a consumer holding no stored offset cannot reach the deadline.
-    const cppkafka::TopicPartitionList stored = oneOffset();
-    consumer.assign(stored);
-    consumer.store_offsets(stored);
 
-    expectTheDeadlineReturns([&] { StorageKafkaUtils::commitWithTimeout(consumer, nullptr, 3000ms); });
+    Stopwatch watch;
+    EXPECT_THROW(consumer.commit(3000ms), cppkafka::HandleException);
+    EXPECT_LT(watch.elapsedMilliseconds(), 15000);
 }
 
 /// Same, for the explicit-offsets form the Keeper-backed consumer uses, which also exercises the
-/// `cppkafka::TopicPartitionList` conversion. Offsets passed in are committable on their own, so this
-/// one needs no stored offset.
+/// `cppkafka::TopicPartitionList` conversion.
 TEST(KafkaCommitWithTimeout, ExplicitOffsetsRespectTheDeadline)
 {
     auto consumer = makeConsumerAgainstUnreachableBroker();
-    const cppkafka::TopicPartitionList offsets = oneOffset();
+    const cppkafka::TopicPartitionList offsets{cppkafka::TopicPartition{"gtest_kafka_commit_topic", 0, 42}};
 
-    expectTheDeadlineReturns([&] { StorageKafkaUtils::commitWithTimeout(consumer, &offsets, 3000ms); });
+    Stopwatch watch;
+    EXPECT_THROW(consumer.commit(offsets, 3000ms), cppkafka::HandleException);
+    EXPECT_LT(watch.elapsedMilliseconds(), 15000);
 }
 
 #endif

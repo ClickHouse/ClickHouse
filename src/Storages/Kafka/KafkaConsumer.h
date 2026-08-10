@@ -25,11 +25,6 @@ namespace DB
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
-/// Commits the consumer's current assignment, giving up after `timeout` rather than waiting on
-/// librdkafka's reply queue forever the way cppkafka's `commit` does. Throws
-/// `cppkafka::HandleException` carrying `RD_KAFKA_RESP_ERR__TIMED_OUT` once the deadline passes.
-void commitCurrentAssignmentWithTimeout(cppkafka::Consumer & consumer, std::chrono::milliseconds timeout);
-
 class KafkaConsumer : public IKafkaExceptionInfoSink
 {
 public:
