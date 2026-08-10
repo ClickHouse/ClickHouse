@@ -27,6 +27,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+/// Identify a processor in a malformed-graph diagnostic. `getUniqID` distinguishes repeated
+/// processor classes only while `CurrentThread` is initialized; outside a query thread every
+/// processor falls back to the `_0` suffix. The address keeps the two endpoints of the broken
+/// edge distinguishable in every context, and lets the reader match them against a pipeline dump.
+String describeProcessor(const IProcessor * processor)
+{
+    return fmt::format("{} at {}", processor->getUniqID(), static_cast<const void *>(processor));
+}
+
+}
+
 ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_)
     : processors(std::move(processors_))
     , profile_processors(profile_processors_)
@@ -90,9 +104,9 @@ ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const I
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Processor {} was found as {} for processor {}, but not found in list of processors",
-            to->getName(),
+            describeProcessor(to),
             edge.backward ? "input" : "output",
-            from->getName());
+            describeProcessor(from));
 
     edge.to = it->second;
     auto & added_edge = edges.emplace_back(std::move(edge));
