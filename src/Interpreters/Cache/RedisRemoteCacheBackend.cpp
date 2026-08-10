@@ -31,6 +31,17 @@ namespace
 /// Redis SCAN MATCH uses glob patterns, not regex.
 constexpr std::string_view QUERY_CACHE_HASH_GLOB = "????????????????????????????????";
 
+/// The number of elements of a Redis array reply, treating a null array as empty.
+///
+/// Poco parses the empty array reply `*0` into a *null* `Array` rather than an empty one
+/// (`Type<Array>::read` never touches `_elements` for a zero length), and `Array::size` reads
+/// `Nullable::value` unconditionally, so calling it on such a reply throws `NullValueException`.
+/// `SCAN` returns an empty batch whenever a scanned slice matches nothing, which is routine.
+size_t arraySize(const Poco::Redis::Array & array)
+{
+    return array.isNull() ? 0 : array.size();
+}
+
 /// Escape Redis glob metacharacters (`*`, `?`, `[`, `]`, `\`) in a string
 /// so it can be safely used as a literal in SCAN MATCH patterns.
 std::string escapeRedisGlob(const String & s)
@@ -237,7 +248,7 @@ void RedisRemoteCacheBackend::scanKeys(
         Poco::Redis::Command cmd("SCAN");
         cmd << cursor << "MATCH" << pattern << "COUNT" << std::to_string(batch_size);
         auto reply = client.execute<Poco::Redis::Array>(cmd);
-        if (reply.isNull() || reply.size() < 2)
+        if (arraySize(reply) < 2)
             return;
 
         const auto & cursor_bs = reply.get<Poco::Redis::BulkString>(0);
@@ -246,9 +257,10 @@ void RedisRemoteCacheBackend::scanKeys(
         cursor = cursor_bs.value();
 
         const auto batch = reply.get<Poco::Redis::Array>(1);
+        const size_t keys_in_batch = arraySize(batch);
         keys.clear();
-        keys.reserve(batch.size());
-        for (size_t i = 0; i < batch.size(); ++i)
+        keys.reserve(keys_in_batch);
+        for (size_t i = 0; i < keys_in_batch; ++i)
         {
             const auto & key_bs = batch.get<Poco::Redis::BulkString>(i);
             if (!key_bs.isNull())
@@ -561,8 +573,9 @@ RedisRemoteCacheBackend::dump(size_t max_keys)
             for (const auto & key : data_keys)
                 cmd << key;
             auto values = client.execute<Poco::Redis::Array>(cmd);
+            const size_t values_size = arraySize(values);
 
-            for (size_t i = 0; i < data_keys.size() && i < values.size(); ++i)
+            for (size_t i = 0; i < data_keys.size() && i < values_size; ++i)
             {
                 try
                 {
@@ -705,7 +718,7 @@ try
         });
     });
 
-    if (reply.size() < 2)
+    if (arraySize(reply) < 2)
         return {0, {}};
 
     int status = static_cast<int>(reply.get<Poco::Int64>(0));
@@ -737,7 +750,7 @@ try
         return client.execute<Poco::Redis::Array>(cmd);
     });
 
-    if (reply.size() >= 2)
+    if (arraySize(reply) >= 2)
     {
         const auto & global_bs = reply.get<Poco::Redis::BulkString>(0);
         if (!global_bs.isNull())
