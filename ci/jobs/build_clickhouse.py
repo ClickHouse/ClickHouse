@@ -528,10 +528,11 @@ def main():
         # output appears, instead of paying a fixed `timeout` on every green run. The
         # 300-second polling loop is only the worst-case deadline for module startup.
         # Accepted exit statuses: 0 (clean self-exit; the output is still checked by the
-        # final grep), or 137 (128+SIGKILL, the self-inflicted kill) - and 137 only when
-        # the expected output was seen first. Anything else - a trap, an uncaught
-        # exception, an engine crash, even one that happens after the output was
-        # produced - fails the job.
+        # final grep), or 137 (128+SIGKILL) - and 137 only when this script is the one that
+        # delivered the `SIGKILL`, i.e. the expected output was seen and the `kill` succeeded.
+        # A `SIGKILL` from anyone else - the out-of-memory killer, the job timeout, the CI
+        # infrastructure - is not our kill and fails the job, as does anything else: a trap,
+        # an uncaught exception, an engine crash, even one after the output was produced.
         if res and build_type == BuildTypes.WASM64:
             smoke_dir = f"{temp_dir}/wasm_smoke"
             smoke_query = (
@@ -550,9 +551,10 @@ def main():
                         "found=0; for i in $(seq 1 300); do "
                         "grep -qx 1000-499500-999 smoke.out 2>/dev/null && { found=1; break; }; "
                         'kill -0 "$pid" 2>/dev/null || break; sleep 1; done; '
-                        'kill -9 "$pid" 2>/dev/null; wait "$pid"; status=$?; '
-                        'echo "output found: $found, exit status: $status"; cat smoke.err; '
-                        '[ "$status" -eq 0 ] || { [ "$found" -eq 1 ] && [ "$status" -eq 137 ]; }',
+                        'if kill -9 "$pid" 2>/dev/null && [ "$found" -eq 1 ]; then killed=1; else killed=0; fi; '
+                        'wait "$pid"; status=$?; '
+                        'echo "output found: $found, killed by us: $killed, exit status: $status"; cat smoke.err; '
+                        '[ "$status" -eq 0 ] || { [ "$killed" -eq 1 ] && [ "$status" -eq 137 ]; }',
                         f"grep -x 1000-499500-999 {smoke_dir}/smoke.out",
                     ],
                 )
