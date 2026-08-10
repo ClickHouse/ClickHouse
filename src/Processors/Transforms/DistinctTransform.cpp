@@ -37,6 +37,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// A `hashed_two_level` set is only worth its overhead once it holds at least this many keys,
+/// because only then can a chunk be deduplicated by `buildSetParallelFilter` over its buckets.
+static constexpr size_t PARALLEL_DISTINCT_THRESHOLD = 1000000;
+
 void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chunk)
 {
     if (state != State::Observing)
@@ -487,7 +491,13 @@ void DistinctTransform::transform(Chunk & chunk)
     {
         auto type = SetVariants::chooseMethod(column_ptrs, key_sizes);
 
-        if (!is_pre_distinct && !(limit_hint && limit_hint < 1000000) && type == SetVariants::Type::hashed)
+        /// A two-level table is usually slower than a single-level one on its own; it only pays off
+        /// because it can be probed in parallel bucket by bucket. Without a thread pool (e.g.
+        /// `max_threads = 1`) that never happens, so don't switch to it - the cost could never be
+        /// recovered. The same holds for a small `LIMIT`: reading stops long before the set grows
+        /// past `PARALLEL_DISTINCT_THRESHOLD`, which is what enables the parallel path.
+        if (!is_pre_distinct && pool && !(limit_hint && limit_hint < PARALLEL_DISTINCT_THRESHOLD)
+            && type == SetVariants::Type::hashed)
             data.init(SetVariants::Type::hashed_two_level);
         else
             data.init(type);
@@ -498,7 +508,6 @@ void DistinctTransform::transform(Chunk & chunk)
 
     auto check_only = (old_set_size > set_limit_for_enabling_bloom_filter * 2) && set_limit_for_enabling_bloom_filter > 0;
     auto * lc_mask_ptr = lc_mask ? &*lc_mask : nullptr;
-    constexpr size_t parallel_threshold = 1000000;
 
     IColumn::Filter filter(num_rows);
 
@@ -518,7 +527,7 @@ void DistinctTransform::transform(Chunk & chunk)
             \
             if constexpr (SetVariants::Type::NAME == SetVariants::Type::hashed_two_level) \
             { \
-                if (old_set_size > parallel_threshold && pool && num_rows > 10000) \
+                if (old_set_size > PARALLEL_DISTINCT_THRESHOLD && pool && num_rows > 10000) \
                     buildSetParallelFilter(*data.NAME, column_ptrs, filter, num_rows, data, *pool); \
                 else \
                     build(); \
@@ -549,11 +558,19 @@ void DistinctTransform::transform(Chunk & chunk)
     if (!rows_passed)
         return;
 
+    /// The bloom filter holds a part of the state that would otherwise live in the hash set, so it
+    /// has to be accounted for by the size limits too: its keys towards `max_rows_in_distinct` and
+    /// its allocation towards `max_bytes_in_distinct`. Otherwise a stream could keep the whole
+    /// filter (and every key it absorbed) without the limits ever firing.
+    size_t new_set_bytes = data.getTotalByteCount();
+    if (bloom_filter)
+        new_set_bytes += bloom_filter->getFilterSizeBytes();
+
     /// In case of overflow_mode = 'break' `check` returns false instead of throwing.
     /// Stop reading, but still emit the new rows from the current chunk (their keys are
     /// already in the set): 'break' means return a partial result as if the source data
     /// ran out, not discard it.
-    if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    if (!set_size_limits.check(new_set_size + total_passed_bf, new_set_bytes, "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         stopReading();
 
     if (rows_passed != num_rows)
