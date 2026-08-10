@@ -2522,7 +2522,9 @@ The number of bytes to buffer in the server memory before sending a HTTP respons
 )", 0) \
     \
     DECLARE(Bool, fsync_metadata, true, R"(
-Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
+Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) for `.sql` metadata files. Enabled by default.
+
+It covers the contents of a `.sql` file, and for `Atomic` databases also the directory entries that commit it, so that an acknowledged DDL survives a power loss.
 
 It makes sense to disable it if the server has millions of tiny tables that are constantly being created and destroyed.
 )", 0)    \
