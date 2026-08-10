@@ -8,6 +8,7 @@ from_client
 === Without gate, server-side HTTP query fails with SUPPORT_IS_DISABLED ===
 Code: 344
 SUPPORT_IS_DISABLED
+enable_json_ast_dialect
 === Error message mentions the setting to enable ===
 enable_json_ast_dialect
 from_client
@@ -30,6 +31,7 @@ OK
 === With gate, plain SQL other than SET is rejected under clickhouse_json (client) ===
 error_reported
 no_sql_fallback
+from_client
 === With gate, plain SQL other than SET is rejected under clickhouse_json (HTTP) ===
 error_reported
 no_sql_fallback

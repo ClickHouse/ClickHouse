@@ -28,7 +28,9 @@ echo "$OUT" | grep -oE "Code: [0-9]+|SUPPORT_IS_DISABLED" | head -2
 grep -qm1 "Received exception from server" <<< "$OUT" && echo "FROM_SERVER" || echo "from_client"
 
 echo "=== Without gate, server-side HTTP query fails with SUPPORT_IS_DISABLED ==="
-{ ${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&dialect=clickhouse_json" --data-binary 'SELECT 1' 2>&1 || true; } | grep -oE "Code: [0-9]+|SUPPORT_IS_DISABLED" | head -2
+OUT=$(${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&dialect=clickhouse_json" --data-binary 'SELECT 1' 2>&1 || true)
+echo "$OUT" | grep -oE "Code: [0-9]+|SUPPORT_IS_DISABLED" | head -2
+echo "$OUT" | grep -oE "enable_json_ast_dialect" | head -1
 
 # Error message mentions the setting to enable
 echo "=== Error message mentions the setting to enable ==="
@@ -79,6 +81,7 @@ echo "=== With gate, plain SQL other than SET is rejected under clickhouse_json 
 OUT=$($CLICKHOUSE_CLIENT --enable_json_ast_dialect=1 --dialect=clickhouse_json --query="SELECT 1" 2>&1 || true)
 echo "$OUT" | grep -qm1 "BAD_ARGUMENTS" && echo "error_reported" || echo "NO_ERROR"
 echo "$OUT" | grep -qxF "1" && echo "SQL_FALLBACK" || echo "no_sql_fallback"
+grep -qm1 "Received exception from server" <<< "$OUT" && echo "FROM_SERVER" || echo "from_client"
 
 echo "=== With gate, plain SQL other than SET is rejected under clickhouse_json (HTTP) ==="
 OUT=$(${CLICKHOUSE_CURL} -X POST "${CLICKHOUSE_URL}&enable_json_ast_dialect=1&dialect=clickhouse_json" --data-binary "SELECT 1" 2>&1 || true)
