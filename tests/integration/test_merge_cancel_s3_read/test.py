@@ -228,9 +228,10 @@ def test_stop_ttl_merges_does_not_cancel_regular_merge(cluster, broken_s3):
     # The oracle is "the merge is still alive", so every wait below must fail the moment it dies:
     # otherwise an abort looks like a merge that is merely slow to get going, and the mutant this
     # arm targets gets reported as a vacuous arm instead of as the bug it is.
-    # Keyed on our own OPTIMIZE still running: it drives the merge inline, so it survives exactly
-    # as long as the merge does. `system.merges` cannot tell "aborted" from "not started yet",
-    # and the server log is shared with the sibling arm, which cancels merges by design.
+    # Keyed on our own OPTIMIZE still running: it drives the merge inline, and being `FINAL` it waits
+    # for a competing merge on these parts rather than returning, so it survives as long as the merge
+    # does. `system.merges` cannot tell "aborted" from "not started yet", and the server log is
+    # shared with the sibling arm, which cancels merges by design.
     # `NOT LIKE '%system.processes%'` so this query does not match its own text.
     optimize_running_query = (
         "SELECT count() FROM system.processes "
@@ -266,8 +267,8 @@ def test_stop_ttl_merges_does_not_cancel_regular_merge(cluster, broken_s3):
     broken_s3.reset()
     optimize.get_answer_and_error()
 
-    # A background merge may have claimed the parts first, in which case OPTIMIZE was a noop and
-    # returned before that merge finished, so wait for the merge list to drain either way.
+    # A `FINAL` optimize waits for a competing merge on the same parts rather than returning, so
+    # its answer above does not by itself mean the merge list has drained.
     assert wait_for(
         node,
         "SELECT count() FROM system.merges "
