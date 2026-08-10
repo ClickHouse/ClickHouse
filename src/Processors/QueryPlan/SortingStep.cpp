@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
@@ -116,6 +117,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int LIMIT_EXCEEDED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static size_t getMaxBytesInQueryBeforeExternalSort(double max_bytes_ratio_before_external_sort)
@@ -707,17 +709,28 @@ void SortingStep::serialize(Serialization & ctx) const
     if (type != Type::Full)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of SortingStep is implemented only for Full sorting");
 
-    /// Do not serialize type here; Later we can use different names if needed.\
-
     /// Do not serialize limit for now; it is expected to be pushed down from plan optimization.
-
+    /// `use_buffering` and `apply_virtual_row_conversions` are not serialized: they are read-in-order hints
+    /// tied to reading directly off a sorted MergeTree scan, which is never this sort's input in a
+    /// distributed plan.
     serializeSortDescription(result_description, ctx.out);
 
-    /// Later
-    if (!partition_by_description.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned sorting is not implemented for SortingStep");
+    /// `scatter_partitions != 0` is excluded by `isSerializable`, so a non-empty `partition_by_description`
+    /// here always means an ordinary window-frame partitioned sort. Below the version that made both sides
+    /// of a partitioned sort's gather/send exchange order-preserving (see `GatherSendStep`), an older peer
+    /// doesn't know to read a trailing partition description at all, so write nothing more and fail closed
+    /// only when it would actually be lost; with an empty `partition_by_description` the bytes above are
+    /// unchanged.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING)
+    {
+        if (!partition_by_description.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan: serializing a partitioned SortingStep requires query plan serialization "
+                "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING);
+        return;
+    }
 
-    writeVarUInt(partition_by_description.size(), ctx.out);
+    serializeSortDescription(partition_by_description, ctx.out);
 }
 
 QueryPlanStepPtr SortingStep::clone() const
@@ -735,14 +748,21 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
 
-    UInt64 partition_desc_size = 0;
-    readVarUInt(partition_desc_size, ctx.in);
+    /// Mirrors `serialize`: below the version that added the trailing partition description, a peer that
+    /// old never wrote one - read nothing further, exactly as before this field existed.
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING)
+        return std::make_unique<SortingStep>(
+            ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
 
-    if (partition_desc_size)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
+    SortDescription partition_by_description;
+    deserializeSortDescription(partition_by_description, ctx.in);
+
+    if (partition_by_description.empty())
+        return std::make_unique<SortingStep>(
+            ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
 
     return std::make_unique<SortingStep>(
-        ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
+        ctx.input_headers.front(), std::move(result_description), std::move(partition_by_description), 0, sort_settings);
 }
 
 std::vector<size_t> SortingStep::getStepGroups() const

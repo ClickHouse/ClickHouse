@@ -61,6 +61,26 @@
 17	33
 18	35
 19	37
--- PARTITION BY window is not serializable for remote execution yet -> fail closed
+-- sum OVER (PARTITION BY a ORDER BY v)
+0	0	0
+0	5	5
+0	10	15
+0	15	30
+1	1	1
+1	6	7
+1	11	18
+1	16	34
+2	2	2
+2	7	9
+2	12	21
+2	17	38
+3	3	3
+3	8	11
+3	13	24
+3	18	42
+4	4	4
+4	9	13
+4	14	27
+4	19	46
 -- theilsU window variant under make_distributed_plan
 0	1

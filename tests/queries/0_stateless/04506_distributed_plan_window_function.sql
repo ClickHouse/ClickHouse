@@ -2,10 +2,12 @@
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
 -- Window functions can be executed under make_distributed_plan=1: WindowStep is serialized for remote
--- execution and produces the same result as the non-distributed plan. Only windows whose feeding sort
--- is serializable (no PARTITION BY) can be distributed for now; a PARTITION BY window is rejected (see
--- the fail-close assertion at the end) because its partitioned sort cannot preserve per-partition order
--- across the exchange yet.
+-- execution and produces the same result as the non-distributed plan. This includes windows with
+-- PARTITION BY: SortingStep can now serialize a non-empty partition_by_description, so the window's
+-- feeding sort can be shipped to a worker rather than being rejected with SUPPORT_IS_DISABLED. The
+-- window itself is not yet distributed across workers - it still runs gathered on one node, just like
+-- a window without PARTITION BY; this file only checks that it now produces the same result as the
+-- non-distributed plan instead of failing.
 
 DROP TABLE IF EXISTS t_window_dist;
 
@@ -24,8 +26,8 @@ SELECT v, row_number() OVER (ORDER BY v) AS rn FROM t_window_dist ORDER BY v;
 SELECT '-- rolling frame (ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)';
 SELECT v, sum(v) OVER (ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll FROM t_window_dist ORDER BY v;
 
-SELECT '-- PARTITION BY window is not serializable for remote execution yet -> fail closed';
-SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) FROM t_window_dist ORDER BY a, v; -- { serverError SUPPORT_IS_DISABLED }
+SELECT '-- sum OVER (PARTITION BY a ORDER BY v)';
+SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) FROM t_window_dist ORDER BY a, v;
 
 DROP TABLE t_window_dist;
 
