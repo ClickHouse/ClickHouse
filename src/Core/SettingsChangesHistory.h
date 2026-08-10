@@ -18,15 +18,15 @@ namespace SettingsChangesHistory
     {
         enum class CompatibilityMode
         {
-            PassThrough,
-            Stop,
+            RollbackToOld,
+            StartUsingNew,
         };
 
         String name;
         Field previous_value;
         Field new_value;
         String reason;
-        CompatibilityMode compatibility_mode = CompatibilityMode::PassThrough;
+        CompatibilityMode compatibility_mode = CompatibilityMode::RollbackToOld;
     };
 
     using SettingsChanges = VectorWithMemoryTracking<SettingChange>;
