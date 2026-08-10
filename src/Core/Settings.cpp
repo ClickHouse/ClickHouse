@@ -5002,6 +5002,16 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_map_element_to_subcolumn, false, R"(
+Enables or disables rewriting a Map element access `m['key']` (internally `arrayElement(m, 'key')`) with a constant key into reading the corresponding Map key subcolumn `m.key_<key>`. Takes effect only when [`optimize_functions_to_subcolumns`](#optimize_functions_to_subcolumns) is also enabled.
+
+Disabled by default: this rewrite relies on the bucketed Map serialization, which is being reworked into a separate type. For regular Map serialization the rewrite can be harmful (for example, it complicates subcolumn size estimation).
+
+Possible values:
+
+- 0 — Optimization disabled.
+- 1 — Optimization enabled.
+)", 0) \
     DECLARE(Bool, optimize_using_constraints, false, R"(
 Use [constraints](/reference/statements/create/table#constraints) for query optimization. The default is `false`.
 

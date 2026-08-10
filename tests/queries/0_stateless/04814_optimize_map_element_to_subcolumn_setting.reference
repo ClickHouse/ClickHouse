@@ -1,0 +1,19 @@
+-- Disabled by default: m[key1] is NOT rewritten to a subcolumn
+1
+1
+-- Enabled: m[key1] is rewritten to the m.key_key1 subcolumn
+1
+1
+-- The setting has no effect when optimize_functions_to_subcolumns is disabled
+1
+-- Other Map optimizations (mapKeys/mapValues/length) are unaffected by the setting
+1
+1
+1
+-- Results are identical whether the setting is enabled or disabled
+7	7	8
+8	8	9
+9	9	10
+7	7	8
+8	8	9
+9	9	10
