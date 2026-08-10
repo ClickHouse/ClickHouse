@@ -873,7 +873,9 @@ public:
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
     /// `allow_throw` enables the 'parts_to_throw_insert' rejection, `allow_delay` enables the
     /// 'parts_to_delay_insert' backpressure; with `allow_delay` = false the function only checks the
-    /// throw thresholds and returns without sleeping.
+    /// throw thresholds and returns without sleeping. This is for the rejection check that is shared
+    /// by all the parallel sinks of one insert, where a sleep would otherwise run once per sink
+    /// stream instead of once per query.
     void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay = true) const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.

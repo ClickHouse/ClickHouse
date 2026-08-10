@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <optional>
 #include <string>
 #include <base/types.h>

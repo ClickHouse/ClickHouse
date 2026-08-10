@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>

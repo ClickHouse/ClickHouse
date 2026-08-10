@@ -7090,7 +7090,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         return;
 
     /// no need for delay
-    if (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold)
+    if (!allow_delay || (!active_parts_over_threshold && !outdated_parts_over_threshold && !dead_blobs_over_threshold))
         return;
 
     UInt64 delay_milliseconds = 0;
