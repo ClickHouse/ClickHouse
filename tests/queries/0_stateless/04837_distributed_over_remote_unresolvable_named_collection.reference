@@ -1,0 +1,6 @@
+CREATE TABLE default.dist_nc_unknown_with_database\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_cluster_multiple_nodes_all_unavailable\', remote(nc_04837_does_not_exist, database = \'bind_db\', `table` = \'bind_src\'))
+CREATE TABLE default.dist_nc_unknown_with_db\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_cluster_multiple_nodes_all_unavailable\', remote(nc_04837_does_not_exist, db = \'bind_db\', `table` = \'bind_src\'))
+CREATE TABLE default.dist_nc_unknown_with_database\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_cluster_multiple_nodes_all_unavailable\', remote(nc_04837_does_not_exist, database = \'bind_db\', `table` = \'bind_src\'))
+CREATE TABLE default.dist_cluster_name\n(\n    `dummy` UInt8\n)\nENGINE = Distributed(\'test_cluster_multiple_nodes_all_unavailable\', remote(test_shard_localhost))
+CREATE TABLE default.dist_nc_local\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', remote(nc_04837_local, database = \'default\'))
+6

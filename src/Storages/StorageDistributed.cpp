@@ -2533,7 +2533,8 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
         /// resolved here and an empty stored database is frozen by injecting a literal override with the
         /// current database of the CREATE. A non-empty stored value is deliberately not materialized:
         /// following later edits of the collection is the point of the indirection, and a fixed non-empty
-        /// name does not depend on the session.
+        /// name does not depend on the session. A collection that this server does not have cannot be
+        /// resolved, so such a target is rejected instead of being persisted unbound.
         std::optional<size_t> first_arg_index;
         std::optional<size_t> database_arg_index;
         for (size_t i = 0, positional_index = 0; i < args.size(); ++i)
@@ -2554,9 +2555,20 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
         /// named-collection form of `remote` / `remoteSecure` (the cluster functions do not accept one,
         /// and for `remote` an identifier that names no collection is a configured cluster name whose
         /// target defaults to the fixed `system.one` placeholder). Resolve the collection and freeze an
-        /// empty stored database by appending a literal `database = ...` override. A missing collection
-        /// is left for the function's own `parseArguments` to report.
-        auto inject_database_override_if_stored_database_is_empty = [&]
+        /// empty stored database by appending a literal `database = ...` override.
+        /// A collection that is not defined on this server cannot be resolved here, so a database stored
+        /// in it can neither be read nor frozen: the shards that do have the collection would resolve an
+        /// empty stored database against the current database of whatever session reads the table, which
+        /// is exactly the session dependency this binding removes. Such a definition is therefore not
+        /// persisted at all - it is rejected, and naming the database explicitly with a `database = ...`
+        /// / `db = ...` override (bound above) makes the target well defined again.
+        /// `identifier_can_only_name_a_collection` tells the two spellings apart: with a `key = value`
+        /// override present no positional signature matches, so the identifier must be a collection
+        /// (`parseRemoteFunctionArguments` reports a missing one itself); in the single-argument form the
+        /// identifier is a configured cluster name when no collection has that name, and then the target
+        /// is the fixed `system.one` placeholder, which does not depend on the session - so a name that
+        /// resolves to a cluster here is accepted as is.
+        auto bind_database_stored_in_named_collection = [&](bool identifier_can_only_name_a_collection)
         {
             if (function_name != "remote" && function_name != "remoteSecure")
                 return;
@@ -2564,26 +2576,43 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
             if (!collection_identifier)
                 return;
             NamedCollectionFactory::instance().loadIfNot();
-            if (auto collection = NamedCollectionFactory::instance().tryGet(collection_identifier->name());
-                collection && collection->getAnyOrDefault<String>({"db", "database"}, "default").empty())
+            auto collection = NamedCollectionFactory::instance().tryGet(collection_identifier->name());
+            if (!collection)
             {
-                auto database_override = makeASTOperator(
-                    "equals",
-                    make_intrusive<ASTIdentifier>("database"),
-                    make_intrusive<ASTLiteral>(local_context->getCurrentDatabase()));
-                /// Not push_back: a SETTINGS clause is parsed as a trailing argument and must stay last.
-                args.insert(
-                    std::find_if(args.begin(), args.end(), [](const ASTPtr & arg) { return arg->as<ASTSetQuery>(); }),
-                    std::move(database_override));
+                if (!identifier_can_only_name_a_collection && local_context->tryGetCluster(collection_identifier->name()))
+                    return;
+
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "'{}' is not a named collection{} on this server, so the database of the '{}' target cannot be "
+                                "bound to the current database of this CREATE: a collection defined only on the shards may store "
+                                "an empty database, which is resolved against the current database of the session that reads the "
+                                "table. Define the collection on this server, or name the database explicitly with a "
+                                "'database = ...' argument.",
+                                collection_identifier->name(),
+                                identifier_can_only_name_a_collection ? "" : " and not a configured cluster",
+                                function_name);
             }
+
+            if (!collection->getAnyOrDefault<String>({"db", "database"}, "default").empty())
+                return;
+
+            auto database_override = makeASTOperator(
+                "equals",
+                make_intrusive<ASTIdentifier>("database"),
+                make_intrusive<ASTLiteral>(local_context->getCurrentDatabase()));
+            /// Not push_back: a SETTINGS clause is parsed as a trailing argument and must stay last.
+            args.insert(
+                std::find_if(args.begin(), args.end(), [](const ASTPtr & arg) { return arg->as<ASTSetQuery>(); }),
+                std::move(database_override));
         };
 
         if (!database_arg_index)
         {
             /// remote(nc): the single-argument named-collection form, with the whole target stored in the
             /// collection. There is no override to bind, but an empty database stored in the collection is
-            /// session-dependent all the same.
-            inject_database_override_if_stored_database_is_empty();
+            /// session-dependent all the same. The same spelling also names a configured cluster, so the
+            /// identifier is not necessarily a collection here.
+            bind_database_stored_in_named_collection(/* identifier_can_only_name_a_collection= */ false);
             return;
         }
 
@@ -2633,7 +2662,7 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
             /// value is read the way `parseRemoteFunctionArguments` reads it, and only an empty stored
             /// value - the session-dependent case - is frozen.
             if (!has_database_override)
-                inject_database_override_if_stored_database_is_empty();
+                bind_database_stored_in_named_collection(/* identifier_can_only_name_a_collection= */ true);
             return;
         }
 
@@ -3020,7 +3049,7 @@ CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
 
 The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
 
-The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` is replaced with its value, and an omitted database of a table function that would otherwise resolve it at query time (`dictionary`, the single-argument `merge`, `loop`, `timeSeriesSamples`/`timeSeriesData`/`timeSeriesTags`/`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery`, `prometheusQueryRange`, and an empty database argument of `remote`/`remoteSecure`/`cluster`/`clusterAllReplicas`, positional or a named-collection `database`/`db` override, e.g. `remote('127.0.0.1', '', 'table')` or `remote(collection, database = '', table = 'table')`, and likewise an empty database stored inside the named collection itself, which is frozen by injecting a literal `database` override) is filled in with the current database. The qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
+The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` is replaced with its value, and an omitted database of a table function that would otherwise resolve it at query time (`dictionary`, the single-argument `merge`, `loop`, `timeSeriesSamples`/`timeSeriesData`/`timeSeriesTags`/`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery`, `prometheusQueryRange`, and an empty database argument of `remote`/`remoteSecure`/`cluster`/`clusterAllReplicas`, positional or a named-collection `database`/`db` override, e.g. `remote('127.0.0.1', '', 'table')` or `remote(collection, database = '', table = 'table')`, and likewise an empty database stored inside the named collection itself, which is frozen by injecting a literal `database` override) is filled in with the current database. A named collection that is not defined on this server cannot be resolved at `CREATE` time, so its stored database can neither be read nor frozen, and such a target is rejected unless the database is named explicitly with a `database`/`db` argument. The qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
 
 :::note Read-only
 A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key` and the `INSERT`-related settings and behaviour described below therefore do not apply to it, and the `policy_name` parameter is not accepted for this form (it would only be used to store temporary files for background `INSERT`s).
