@@ -2,6 +2,7 @@
 #include <optional>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
+#include <Core/Joins.h>
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -52,25 +53,34 @@ constexpr bool debug_logging_enabled = false;
 /// Plan-wide collector of the MergeTree reads to distribute (defined below; used by buildPlanFragment).
 static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node);
 
-/// Coordinated-side child index for an eligible JOIN (the side split across replicas): 0 for INNER (ALL)
-/// and LEFT, 1 for RIGHT; nullopt otherwise (FULL/CROSS/COMMA/PASTE, INNER non-ALL). The other side is
-/// read in full by every replica.
-static std::optional<size_t> coordinatedJoinSideIndex(const QueryPlan::Node * node)
+/// Side of a JOIN; `Left`/`Right` double as the join node's child indices.
+enum class JoinSide : size_t
+{
+    Left = 0,
+    Right = 1,
+    None = 2,
+};
+
+/// Coordinated side of an eligible JOIN (the side split across replicas): left for INNER (ALL) and LEFT,
+/// right for RIGHT; `None` otherwise (FULL/CROSS/COMMA/PASTE, INNER non-ALL). The other side is read in
+/// full by every replica.
+static JoinSide coordinatedJoinSide(const QueryPlan::Node * node)
 {
     /// The pass runs before logical joins are converted to physical (see optimizeTreeSecondPass), so an
     /// eligible join is always a JoinStepLogical here.
     const auto * join = typeid_cast<const JoinStepLogical *>(node->step.get());
     if (!join)
-        return {};
+        return JoinSide::None;
 
     const JoinKind kind = join->getJoinOperator().kind;
     const JoinStrictness strictness = join->getJoinOperator().strictness;
 
     if ((kind == JoinKind::Inner && strictness == JoinStrictness::All) || kind == JoinKind::Left)
-        return 0;
+        return JoinSide::Left;
     if (kind == JoinKind::Right)
-        return 1;
-    return {};
+        return JoinSide::Right;
+
+    return JoinSide::None;
 }
 
 /// Can this MergeTree read be part of a shipped fragment?
@@ -236,27 +246,29 @@ public:
     /// broadcast). `node` becomes the split and keeps lifting through the code below.
     void liftSplitAboveJoin(QueryPlan::Node * node)
     {
-        const auto coordinated_index = coordinatedJoinSideIndex(node);
-        if (!coordinated_index)
+        const auto coordinated_side = coordinatedJoinSide(node);
+        if (coordinated_side == JoinSide::None)
             return;
 
-        auto * coordinated_child = node->children[*coordinated_index];
+        auto * coordinated_child = node->children[static_cast<size_t>(coordinated_side)];
         if (!typeid_cast<const ParallelReplicasSplitStep *>(coordinated_child->step.get()))
             return;
 
-        /// Do not lift a split into a fragment that would contain a non-serializable step, or a MergeTree
-        /// read which must not be executed on every replica (the broadcast side is never checked by
-        /// collectReadsToDistribute, which only follows the coordinated side). This is the only place where
-        /// a join is rejected: not lifting keeps the coordinated read's split below the join, so that read
-        /// is still distributed and only the join itself stays local.
-        /// These walk the whole subtree, so they run last: a join with nothing to lift never pays for them.
-        if (!subtreeIsShippable(node) || subtreeHasUnshippableRead(node))
+        /// Do not lift a split into a fragment with a non-serializable step. Not lifting keeps the split
+        /// below the join, so the coordinated read is still distributed - only the join stays local.
+        if (!subtreeIsShippable(node))
+            return;
+
+        /// Only the broadcast side needs this: everything under a split marker was already validated when
+        /// the marker was planted, or by a nested lift.
+        const auto broadcast_side = coordinated_side == JoinSide::Left ? JoinSide::Right : JoinSide::Left;
+        if (subtreeHasUnshippableRead(node->children[static_cast<size_t>(broadcast_side)]))
             return;
 
         auto & join_node = nodes.emplace_back();
         join_node.step = std::move(node->step);
         join_node.children = node->children;
-        join_node.children[*coordinated_index] = coordinated_child->children.front();
+        join_node.children[static_cast<size_t>(coordinated_side)] = coordinated_child->children.front();
 
         node->step = std::make_unique<ParallelReplicasSplitStep>(join_node.step->getOutputHeader());
         node->children = {&join_node};
@@ -457,16 +469,16 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
     if (typeid_cast<const JoinStepLogical *>(node->step.get()))
     {
         /// Distribute only the join kinds where splitting one side across replicas and concatenating the
-        /// per-replica results yields the correct join (see coordinatedJoinSideIndex): INNER (ALL) and
+        /// per-replica results yields the correct join (see coordinatedJoinSide): INNER (ALL) and
         /// LEFT coordinate the left side, RIGHT coordinates the right side. FULL/CROSS/COMMA/PASTE are kept local.
         /// Whether the join itself can ship is decided later, by liftSplitAboveJoin: this runs before any
         /// split marker exists, and rejecting the join here would leave the coordinated read unmarked, so
         /// nothing at all would be distributed.
-        const auto coordinated_index = coordinatedJoinSideIndex(node);
-        if (!coordinated_index)
+        const auto coordinated_side = coordinatedJoinSide(node);
+        if (coordinated_side == JoinSide::None)
             return {};
 
-        return collectReadsToDistribute(node->children.at(*coordinated_index));
+        return collectReadsToDistribute(node->children.at(static_cast<size_t>(coordinated_side)));
     }
 
     /// Non-join single-input step (Expression/Filter/Sorting/...): follow the only input.
@@ -476,9 +488,6 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
 /// FINAL is incompatible with parallel-replica reading (the FINAL merge path requires the read not to be
 /// in parallel-reading mode). Classic parallel replicas disables PR for the whole query when FINAL is
 /// present; do the same here, so a plan with any FINAL MergeTree read is executed locally.
-/// TODO: distribute the non-FINAL reads and keep only the FINAL ones local.
-/// Union with a mix of local and distributed branches currently is not supported,
-/// it can produce wrong results
 static bool planHasFinalMergeTreeRead(const QueryPlan::Node * node)
 {
     if (!node)
@@ -500,6 +509,9 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     if (!root)
         return;
 
+    /// TODO: distribute the non-FINAL reads and keep only the FINAL ones local.
+    /// Union with a mix of local and distributed branches currently is not supported,
+    /// it can produce wrong results
     if (planHasFinalMergeTreeRead(root))
         return;
 
