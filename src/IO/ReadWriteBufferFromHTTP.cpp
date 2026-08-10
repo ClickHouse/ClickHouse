@@ -382,6 +382,21 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                           error_message,
                           attempt, read_settings.http_settings.max_tries);
 
+            /// The same exit as on the retry path below, for the attempt after which there is nothing
+            /// left to retry: a query killed or timed out while the last attempt was in flight is
+            /// reported as a cancellation instead of the network error we happen to have at hand.
+            /// Without it the callers which treat a failed request as an answer - the fallback of
+            /// getFileInfo for the servers without HEAD support, tryGetFileSize,
+            /// tryGetLastModificationTime, the probing of the next failover option in
+            /// StorageURLSource::getFirstAvailableURIAndReadBuffer - would go on working for a query
+            /// that is already gone.
+            /// The cancellation flag, on the other hand, deliberately does not change this exit: the
+            /// error of the attempt that really failed is the only reason we have, it is what the
+            /// caller would get with no cancellation at all, and a reader which must still succeed
+            /// discards it anyway, see StorageURLSource::generate. Replacing it with a synthesized
+            /// cancellation error could mask the failure that tore the pipeline down.
+            CurrentThread::checkIfNotCancelled();
+
             std::rethrow_exception(exception);
         }
         else
