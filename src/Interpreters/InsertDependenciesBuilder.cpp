@@ -825,8 +825,10 @@ bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StorageP
 
     /// ... and fail closed where the ultimate target is not cheaply known here: `Distributed` and
     /// `Buffer` forward the write through a separate (remote or background) `INSERT` that may end up
-    /// in a deduplicating `MergeTree`.
-    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+    /// in a deduplicating `MergeTree`, and a `TimeSeries` opens nested `INSERT`s into its inner
+    /// `Tags` / `Samples` / `Metrics` tables (which are themselves usually `MergeTree`).
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
 
     /// Other engines (`Memory`, `Null`, `Log`, object storages, ...) never consult the deduplication
@@ -845,8 +847,16 @@ bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const St
     /// `INSERT`. That nested `INSERT` stamps the deduplication info from scratch, so its source block
     /// numbering restarts per sink branch even when this query stamps the numbers globally in the
     /// single-stream head of the pipeline, before the fan-out.
+    ///
+    /// `TimeSeries` does the same: `TimeSeriesSink::TargetPipeline::push` forwards a plain `Block` into
+    /// the nested `INSERT`s of the inner `Tags` / `Samples` / `Metrics` tables, so the outer chunk's
+    /// `ChunkInfos` (and with them the `DeduplicationInfo` stamped before the fan-out) are dropped and
+    /// every nested `INSERT` restamps the source block numbers from scratch, per branch. Unlike for
+    /// `Alias`, the chunk that reaches the inner sinks has not visited any view, so
+    /// `AddDeduplicationInfoTransform` does restamp it.
     if (dynamic_cast<const StorageDistributed *>(storage.get())
-        || dynamic_cast<const StorageBuffer *>(storage.get()))
+        || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
 
     /// `Alias` also executes a full nested `INSERT` query per sink (`AliasSink`), but that nested
@@ -900,8 +910,11 @@ bool InsertDependenciesBuilder::forwardedInsertReachesDependentView(const Storag
         return forwardedInsertReachesDependentView(proxy->getNested(), depth + 1);
 
     /// ... and fail closed where the ultimate target is not cheaply known here: `Distributed` and `Buffer`
-    /// forward the write through a separate (remote or background) `INSERT` that may reach a dependent view.
-    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+    /// forward the write through a separate (remote or background) `INSERT` that may reach a dependent view,
+    /// and a `TimeSeries` opens nested `INSERT`s into its inner tables, which may have dependent views of
+    /// their own.
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
 
     /// A concrete local target: it is a hazard if it has any dependent materialized view. Whether that view
@@ -927,8 +940,11 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentView(const StorageP
     }
 
     /// `Distributed` and `Buffer` forward the write through a separate (remote or background) `INSERT`
-    /// whose destination is not cheaply known here: fail closed.
-    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+    /// whose destination is not cheaply known here, and a `TimeSeries` expands the dependent-view graph
+    /// of its inner tables only inside the nested `INSERT`s `TimeSeriesSink` opens at execution time:
+    /// fail closed.
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageTimeSeries *>(storage.get()))
         return true;
 
     /// `MaterializedView` and proxies pass the write through within this pipeline, and
@@ -1045,6 +1061,14 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
     /// behind them needs to be reported here.
     if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
         return false;
+
+    /// A `TimeSeries`, in contrast, runs the nested `INSERT`s of its inner tables in a copy of *this*
+    /// query's context (`TimeSeriesSink::createTargetPipeline`), so it is not caught by
+    /// `storageForwardsInsertToSeparateContext` - yet the graph behind those inner tables is expanded
+    /// only inside those nested `INSERT`s and may contain a `Buffer` that flushes in its own context.
+    /// Fail closed: this query's deduplication settings cannot make such a fan-out safe.
+    if (dynamic_cast<const StorageTimeSeries *>(storage.get()))
+        return true;
 
     /// `MaterializedView` and proxies pass the write through within this pipeline, and
     /// `collectAllDependencies` follows their targets: look through them (failing closed when the
