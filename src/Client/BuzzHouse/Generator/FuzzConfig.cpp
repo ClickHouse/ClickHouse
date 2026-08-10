@@ -23,7 +23,20 @@ const DB::Strings compressionMethods
     = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
 
 const DB::Strings codecs
-    = {"LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "ALP", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
+    = {"LZ4",
+       "LZ4HC",
+       "ZSTD",
+       "ZXC",
+       "Delta",
+       "DoubleDelta",
+       "Gorilla",
+       "T64",
+       "FPC",
+       "GCD",
+       "ALP",
+       "AES_128_GCM_SIV",
+       "AES_256_GCM_SIV",
+       "NONE"};
 
 String escapeSQLString(const String & s, const char escape_char)
 {
@@ -354,6 +367,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"paimonlocal", allow_paimonLocal},
            {"merge", allow_merge},
            {"distributed", allow_distributed},
+           {"remote", allow_remote},
            {"dictionary", allow_dictionary},
            {"generaterandom", allow_generaterandom},
            {"azureblobstorage", allow_AzureBlobStorage},
