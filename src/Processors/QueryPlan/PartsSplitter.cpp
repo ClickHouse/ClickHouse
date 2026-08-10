@@ -1219,10 +1219,13 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 }
 
 /// Applies a FilterSortedStreamByRange built from a per-layer border predicate AST. No-op when the AST
-/// is null (the open first/last interval). `pipe`'s streams must be sorted by the primary key.
+/// is null (the open first/last interval) or when the pipe is empty. `pipe`'s streams must be sorted by
+/// the primary key.
 static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const String & description, const KeyDescription & primary_key, ContextPtr context)
 {
-    if (!filter_function)
+    /// An empty pipe has no header at all, and there is nothing to filter in it anyway: the consumers
+    /// drop empty pipes (`Pipe::unitePipes` starts with `removeEmptyPipes`).
+    if (!filter_function || pipe.empty())
         return;
 
     auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
