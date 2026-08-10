@@ -20,6 +20,16 @@ SELECT 'String: GLOBAL IN null-free set prunes with transform_null_in=1';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_null_in WHERE x GLOBAL IN ('5', '500') SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
 SELECT count() FROM t_bf_null_in WHERE x GLOBAL IN ('5', '500') SETTINGS transform_null_in = 1;
 
+-- A subquery set takes its element types from the subquery header, a literal set from the tuple,
+-- so the type check sees a differently-built set on this path.
+SELECT 'String: IN subquery of the same type prunes with transform_null_in=1';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_null_in WHERE x IN (SELECT toString(arrayJoin(['5', '500']))) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
+SELECT count() FROM t_bf_null_in WHERE x IN (SELECT toString(arrayJoin(['5', '500']))) SETTINGS transform_null_in = 1;
+
+SELECT 'String: GLOBAL IN subquery of the same type prunes with transform_null_in=1';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_null_in WHERE x GLOBAL IN (SELECT toString(arrayJoin(['5', '500']))) SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
+SELECT count() FROM t_bf_null_in WHERE x GLOBAL IN (SELECT toString(arrayJoin(['5', '500']))) SETTINGS transform_null_in = 1;
+
 SELECT 'String: `=` prunes with transform_null_in=1 (was already working)';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_null_in WHERE x = '5' SETTINGS transform_null_in = 1) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain, 'Granules: (\d+)/')) < toUInt64OrZero(extract(explain, 'Granules: \d+/(\d+)'));
 SELECT count() FROM t_bf_null_in WHERE x = '5' SETTINGS transform_null_in = 1;
