@@ -35,6 +35,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsBool always_fetch_mutated_part;
     extern const MergeTreeSettingsBool detach_not_byte_identical_parts;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
     extern const MergeTreeSettingsUInt64 prefer_fetch_merged_part_size_threshold;
@@ -94,6 +95,26 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     ReservationSharedPtr hardlink_only_reservation = std::move(selected_entry->hardlink_only_reservation);
     const bool hardlink_only = hardlink_only_reservation != nullptr;
     future_mutated_part->hardlink_only = hardlink_only;
+
+    if ((*storage_settings_ptr)[MergeTreeSetting::always_fetch_mutated_part])
+    {
+        LOG_INFO(log, "Will fetch part {} because setting 'always_fetch_mutated_part' is true", entry.new_part_name);
+        /// No replica may have produced the mutated part yet, so a missing part is not an error
+        /// here: `executeFetch` must quietly return and let the entry be retried later instead of
+        /// throwing `NO_REPLICA_HAS_PART`. Otherwise the exception would be recorded as
+        /// `latest_fail_reason` in `system.mutations`, and a synchronous wait
+        /// (`mutations_sync` = 1/2) issued on this replica could fail for a long-running mutation
+        /// that another replica is still executing.
+        /// Because no exception is thrown, the queue's exponential backoff is not armed, so request
+        /// a postponed retry explicitly - otherwise the same entry would be re-scheduled immediately
+        /// in a loop while another replica is still mutating the part.
+        return PrepareResult{
+            .prepared_successfully = false,
+            .need_to_check_missing_part_in_fetch = false,
+            .part_log_writer = part_log_writer,
+            .postpone_next_attempt = true,
+        };
+    }
 
     MergeTreeData::DataPartPtr source_part = storage.getActiveContainingPart(source_part_name);
     if (!source_part)
