@@ -21,32 +21,30 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Info>
 
 <div id="enable-binlog-retention-rds">
-  ## Включите хранение бинарного лога
+  ## Включение срока хранения бинарного лога
 </div>
 
-Бинарный лог — это набор файлов журнала, содержащих сведения об изменениях данных на экземпляре сервера MySQL. Файлы бинарного лога необходимы для репликации. Необходимо выполнить оба шага ниже:
+Бинарный лог — это набор файлов журналов, содержащих информацию об изменениях данных, внесённых в экземпляр сервера MySQL. Файлы бинарного лога необходимы для репликации. Необходимо выполнить оба следующих шага:
 
-<div id="enable-binlog-logging-rds">
-  ### 1. Включите бинарное логирование с помощью автоматического резервного копирования
-</div>
+<Steps>
+  <Step title="Включите binary logging через автоматическое резервное копирование" id="enable-binlog-logging-rds">
+    Функция автоматического резервного копирования определяет, включено ли binary logging для MySQL. Это можно настроить в консоли AWS:
 
-Функция автоматического резервного копирования определяет, включено ли бинарное логирование в MySQL. Это можно настроить в консоли AWS:
+    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в RDS" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в RDS" size="lg" border />
+    Рекомендуется установить срок хранения резервных копий на достаточно длительный период в зависимости от сценария репликации.
+  </Step>
 
-Рекомендуется установить срок хранения резервных копий достаточно большим — в зависимости от сценария репликации.
+  <Step title="Срок хранения binlog в часах" id="binlog-retention-hours-rds">
+    В Amazon RDS for MariaDB срок хранения binlog задаётся иначе: это время, в течение которого сохраняется файл binlog, содержащий изменения. Если какие-либо изменения не будут прочитаны до удаления файла binlog, репликация не сможет продолжиться. Значение по умолчанию для срока хранения binlog в часах — NULL, то есть бинарные логи не сохраняются.
 
-<div id="binlog-retention-hours-rds">
-  ### 2. Срок хранения binlog в часах
-</div>
+    Чтобы указать, сколько часов нужно хранить бинарные логи в экземпляре DB, используйте функцию mysql.rds&#95;set&#95;configuration, задав период хранения binlog, достаточный для выполнения репликации. `24 hours` — рекомендуемый минимум.
 
-В Amazon RDS for MariaDB срок хранения binlog задаётся иначе: это время, в течение которого сохраняется файл binlog, содержащий изменения. Если какие-либо изменения не будут прочитаны до удаления файла binlog, репликация не сможет продолжиться. Значение по умолчанию для срока хранения binlog в часах — NULL, то есть бинарные логи не сохраняются.
-
-Чтобы указать, сколько часов нужно хранить бинарные логи в экземпляре DB, используйте функцию mysql.rds&#95;set&#95;configuration, задав период хранения binlog, достаточный для выполнения репликации. `24 hours` — рекомендуемый минимум.
-
-```text
-mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
-```
+    ```text
+    mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+    ```
+  </Step>
+</Steps>
 
 <div id="binlog-parameter-group-rds">
   ## Настройте параметры binlog в группе параметров
@@ -128,7 +126,7 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменение inbound rules для указанной выше группы безопасности" size="lg" border />
 
 <div id="private-access-via-aws-privatelink">
-  ### Частный доступ через AWS PrivateLink
+  ### Доступ через частную сеть с помощью AWS PrivateLink
 </div>
 
-Чтобы подключиться к вашему экземпляру RDS по частной сети, можно использовать AWS PrivateLink. Чтобы настроить подключение, следуйте нашему [руководству по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes).
+Чтобы подключиться к вашему экземпляру RDS через частную сеть, можно использовать AWS PrivateLink. Чтобы настроить подключение, воспользуйтесь нашим [руководством по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes).

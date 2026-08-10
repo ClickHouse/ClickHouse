@@ -158,7 +158,7 @@ public:
 
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
     /// Send all scalars.
-    void sendScalarsData(Scalars & data);
+    void sendScalarsData(Scalars & data) override;
 
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);
@@ -188,6 +188,7 @@ public:
     }
 
     UInt64 getParallelReplicasProtocolVersion() const { return server_parallel_replicas_protocol_version; }
+    UInt64 getQueryPlanSerializationVersion() const { return server_query_plan_serialization_version; }
 
 private:
     String host;

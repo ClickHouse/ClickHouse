@@ -190,14 +190,12 @@ Para cargar datos desde Postgres, puede usar:
 * `clickhouse-server` está en ejecución
 * Tienes acceso a una terminal con `wget`, `zcat` y `curl`
 
-En este ejemplo verás cómo insertar un archivo CSV en ClickHouse desde la línea de comandos con `clickhouse-client` en modo batch. Para obtener más información y ver más ejemplos de inserción de datos desde la línea de comandos con `clickhouse-client` en modo batch, consulta [&quot;Batch mode&quot;](/es/concepts/features/interfaces/client#batch-mode).
+En este ejemplo verás cómo insertar un archivo CSV en ClickHouse desde la línea de comandos con `clickhouse-client` en modo lote. Para obtener más información y ver más ejemplos de inserción de datos desde la línea de comandos con `clickhouse-client` en modo lote, consulta [&quot;Batch mode&quot;](/es/concepts/features/interfaces/client#batch-mode).
 
 Usaremos el [Hacker News dataset](/es/get-started/sample-datasets/hacker-news) en este ejemplo, que contiene 28 millones de filas de datos de Hacker News.
 
 <Steps>
-  <Step>
-    ### Descargar el CSV
-
+  <Step title="Descargar el CSV" id="download-csv">
     Ejecuta el siguiente comando para descargar una versión en CSV del dataset desde nuestro bucket público de S3:
 
     ```bash
@@ -207,10 +205,8 @@ Usaremos el [Hacker News dataset](/es/get-started/sample-datasets/hacker-news) e
     Con 4.6 GB y 28 millones de filas, este archivo comprimido debería tardar entre 5 y 10 minutos en descargarse.
   </Step>
 
-  <Step>
-    ### Crear la tabla
-
-    Con `clickhouse-server` en ejecución, puedes crear una tabla vacía con el siguiente esquema directamente desde la línea de comandos usando `clickhouse-client` en modo batch:
+  <Step title="Crear la tabla" id="create-table">
+    Con `clickhouse-server` en ejecución, puedes crear una tabla vacía con el siguiente esquema directamente desde la línea de comandos usando `clickhouse-client` en modo lote:
 
     ```bash
     clickhouse-client <<'_EOF'
@@ -239,9 +235,7 @@ Usaremos el [Hacker News dataset](/es/get-started/sample-datasets/hacker-news) e
     Si no hay errores, la tabla se ha creado correctamente. En el comando anterior se usan comillas simples alrededor del delimitador heredoc (`_EOF`) para evitar cualquier interpolación. Sin comillas simples, sería necesario escapar las comillas invertidas que rodean los nombres de las columnas.
   </Step>
 
-  <Step>
-    ### Insertar los datos desde la línea de comandos
-
+  <Step title="Insertar los datos desde la línea de comandos" id="insert-data-via-cmd">
     A continuación, ejecuta el siguiente comando para insertar en tu tabla los datos del archivo que descargaste antes:
 
     ```bash
@@ -268,9 +262,7 @@ Usaremos el [Hacker News dataset](/es/get-started/sample-datasets/hacker-news) e
     ```
   </Step>
 
-  <Step>
-    ### Insertar datos mediante la línea de comandos con curl
-
+  <Step title="Insertar datos mediante la línea de comandos con curl" id="insert-using-curl">
     En los pasos anteriores, primero descargaste el archivo CSV en tu máquina local usando `wget`. También es posible insertar directamente los datos desde la URL remota con un solo comando.
 
     Ejecuta el siguiente comando para truncar los datos de la tabla `hackernews` y poder insertarlos de nuevo sin el paso intermedio de descargarlos en tu máquina local:

@@ -7,6 +7,7 @@ from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
     get_response_to_remote_read,
+    get_response_to_remote_write,
     receive_protobuf_from_remote_read,
     send_protobuf_to_remote_write,
 )
@@ -161,3 +162,48 @@ def test_remote_read_big_data():
     assert len(read_response.results) == 1
     assert len(read_response.results[0].timeseries) == 1
     assert len(read_response.results[0].timeseries[0].samples) == 75000
+
+
+def test_remote_write_zstd():
+    start_time = 1724116000
+    count = 100
+    time_series = []
+    for i in range(0, count):
+        time_series.append(({"__name__": "zstd_data"}, {start_time + i: float(i)}))
+    protobuf = convert_time_series_to_protobuf(time_series)
+
+    send_protobuf_to_remote_write(
+        node.ip_address, 9093, "/write", protobuf, content_encoding="zstd"
+    )
+
+    read_request = convert_read_request_to_protobuf(
+        "^zstd_data$", start_time, start_time + count
+    )
+    read_response = receive_protobuf_from_remote_read(
+        node.ip_address, 9093, "read_auth_ok", read_request
+    )
+    assert len(read_response.results) == 1
+    assert len(read_response.results[0].timeseries) == 1
+    assert len(read_response.results[0].timeseries[0].samples) == count
+
+
+def test_remote_write_unsupported_content_encoding():
+    time_series = [({"__name__": "gzip_data"}, {1724117000: 1.0})]
+    protobuf = convert_time_series_to_protobuf(time_series)
+
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", protobuf, content_encoding="gzip"
+    )
+    assert response.status_code == requests.codes.unsupported_media_type
+    assert "Content-Encoding" in response.text
+
+
+def test_remote_write_unsupported_content_type():
+    time_series = [({"__name__": "text_data"}, {1724117000: 1.0})]
+    protobuf = convert_time_series_to_protobuf(time_series)
+
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", protobuf, content_type="text/plain"
+    )
+    assert response.status_code == requests.codes.unsupported_media_type
+    assert "Content-Type" in response.text

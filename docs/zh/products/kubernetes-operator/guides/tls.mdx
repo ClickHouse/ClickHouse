@@ -45,176 +45,168 @@ Operator 本身不会生成证书——它使用的是你提供的 Kubernetes
   未设置 `enabled: true` 的情况下拒绝 `required: true`。
 </Note>
 
-<div id="step-1-ca">
-  ## 步骤 1 — 使用 cert-manager 引导 CA
-</div>
+<Steps>
+  <Step title="使用 cert-manager 引导 CA" id="step-1-ca">
+    最容易复现的设置方式是使用自签名 CA，再由它签发服务器
+    证书。这样你就能获得一个稳定的 `ca.crt`，供客户端信任。
 
-最便于复现的配置方式是先创建一个自签名 CA，再由它为服务器
-证书签名。这样，你就能获得一个稳定的、客户端可验证的 `ca.crt`。
-
-```yaml
-# A self-signed issuer used only to mint the CA certificate
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: selfsigned-bootstrap
-  namespace: <namespace>
-spec:
-  selfSigned: {}
----
-# The CA certificate itself
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: clickhouse-ca
-  namespace: <namespace>
-spec:
-  isCA: true
-  commonName: clickhouse-ca
-  secretName: clickhouse-ca
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    name: selfsigned-bootstrap
+    ```yaml
+    # A self-signed issuer used only to mint the CA certificate
+    apiVersion: cert-manager.io/v1
     kind: Issuer
----
-# A CA issuer that signs leaf certificates from the CA above
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: clickhouse-ca-issuer
-  namespace: <namespace>
-spec:
-  ca:
-    secretName: clickhouse-ca
-```
-
-在生产环境中，请将自签名的引导配置替换为实际的签发方 (企业
-CA、Vault、ACME 等) 。只有第 2 步需要变更——集群连接配置
-完全相同。
-
-<div id="step-2-cert">
-  ## 步骤 2 — 签发服务器证书
-</div>
-
-从 CA 签发方申请一个叶子证书。`dnsNames` 必须覆盖
-客户端访问这些 pod (容器组) 时使用的地址。Operator 会创建一个名为
-`<cluster-name>-clickhouse-headless` 的单个 **无头** Service，并且每个副本 pod (容器组) 都可通过
-`<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local` 进行访问。
-对该无头 Service 域名使用通配符即可覆盖所有副本：
-
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: clickhouse-server
-  namespace: <namespace>
-spec:
-  secretName: clickhouse-cert        # <-- the Secret the operator will read
-  duration: 8760h                    # 1 year
-  renewBefore: 720h                  # rotate 30 days early
-  issuerRef:
-    name: clickhouse-ca-issuer
+    metadata:
+      name: selfsigned-bootstrap
+      namespace: <namespace>
+    spec:
+      selfSigned: {}
+    ---
+    # The CA certificate itself
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-ca
+      namespace: <namespace>
+    spec:
+      isCA: true
+      commonName: clickhouse-ca
+      secretName: clickhouse-ca
+      privateKey:
+        algorithm: ECDSA
+        size: 256
+      issuerRef:
+        name: selfsigned-bootstrap
+        kind: Issuer
+    ---
+    # A CA issuer that signs leaf certificates from the CA above
+    apiVersion: cert-manager.io/v1
     kind: Issuer
-  dnsNames:
-    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
-    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
-    - "localhost"
-```
+    metadata:
+      name: clickhouse-ca-issuer
+      namespace: <namespace>
+    spec:
+      ca:
+        secretName: clickhouse-ca
+    ```
 
-<Note>
-  Operator **不会**创建集群级 (负载均衡) 的 Service。如果你
-  想要一个可供连接的稳定单一端点，请自行创建一个选择该集群的 Pod (容器组) 的 `ClusterIP` Service，
-  并将其 DNS name 添加到上面的 `dnsNames` 中。
-</Note>
+    在生产环境中，请将自签名引导签发方替换为你实际使用的签发方 (企业 CA、Vault、ACME 等) 。只有步骤 2 会发生变化——集群连接方式
+    完全相同。
+  </Step>
 
-cert-manager 会创建名为 `clickhouse-cert` 的 Secret，其中包含 `tls.crt`、`tls.key` 和
-`ca.crt`，并会在证书到期前刷新它。请确认它已存在：
+  <Step title="签发服务器证书" id="step-2-cert">
+    从 CA 签发方申请一个叶子证书。`dnsNames` 必须覆盖
+    客户端访问这些 pod (容器组) 时使用的地址。Operator 会创建一个名为
+    `<cluster-name>-clickhouse-headless` 的单个 **无头** Service，并且每个副本 pod (容器组) 都可通过
+    `<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local` 进行访问。
+    对该无头 Service 域名使用通配符即可覆盖所有副本：
 
-```bash
-kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
-# ["ca.crt","tls.crt","tls.key"]
-```
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-server
+      namespace: <namespace>
+    spec:
+      secretName: clickhouse-cert        # <-- the Secret the operator will read
+      duration: 8760h                    # 1 year
+      renewBefore: 720h                  # rotate 30 days early
+      issuerRef:
+        name: clickhouse-ca-issuer
+        kind: Issuer
+      dnsNames:
+        - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
+        - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
+        - "localhost"
+    ```
 
-<div id="step-3-enable">
-  ## 步骤 3 — 为集群启用 TLS
-</div>
+    <Note>
+      Operator **不会**创建集群级 (负载均衡) 的 Service。如果你
+      想要一个可供连接的稳定单一端点，请自行创建一个选择该集群的 Pod (容器组) 的 `ClusterIP` Service，
+      并将其 DNS name 添加到上面的 `dnsNames` 中。
+    </Note>
 
-让集群引用该 Secret：
+    cert-manager 会创建名为 `clickhouse-cert` 的 Secret，其中包含 `tls.crt`、`tls.key` 和
+    `ca.crt`，并会在证书到期前刷新它。请确认它已存在：
 
-```yaml
-apiVersion: clickhouse.com/v1alpha1
-kind: ClickHouseCluster
-metadata:
-  name: <cluster-name>
-  namespace: <namespace>
-spec:
-  settings:
-    tls:
-      enabled: true
-      required: true            # disable the insecure ports entirely
-      serverCertSecret:
-        name: clickhouse-cert
-```
+    ```bash
+    kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
+    # ["ca.crt","tls.crt","tls.key"]
+    ```
+  </Step>
 
-<div id="what-the-operator-does">
-  ### Operator 的作用
-</div>
+  <Step title="为集群启用 TLS" id="step-3-enable">
+    将集群指向该 Secret：
 
-当 `tls.enabled: true` 时，operator 会：
+    ```yaml
+    apiVersion: clickhouse.com/v1alpha1
+    kind: ClickHouseCluster
+    metadata:
+      name: <cluster-name>
+      namespace: <namespace>
+    spec:
+      settings:
+        tls:
+          enabled: true
+          required: true            # disable the insecure ports entirely
+          serverCertSecret:
+            name: clickhouse-cert
+    ```
 
-* **在每个 pod (容器组) 和无头 Service 上开放安全端口**：`9440`
-  (原生 TLS) 和 `8443` (HTTPS) 。这些端口会在现有端口之外一并添加。
-* **将 Secret 挂载到** `/etc/clickhouse-server/tls/`，并生成带有
-  `verificationMode: relaxed`、
-  `disableProtocols: sslv2,sslv3` 和 `preferServerCiphers: true` 的 ClickHouse `openSSL` 配置块。这些都是
-  默认值——如需覆盖，请参见[自定义 TLS 设置](#custom-tls-settings)。
+    ### Operator 的作用
 
-如果你同时设置 `required: true`，operator 还会：
+    当设置 `tls.enabled: true` 时，Operator 会：
 
-* **移除不安全端口** `9000` (原生) 和 `8123` (HTTP) ——仅保留 TLS
-  版本，因此明文客户端将无法再连接。
-* **将 pod (容器组) 的存活探针切换** 到安全的原生端口 `9440`，这样即使没有明文监听器，
-  健康检查也能继续工作。
+    * **在每个 pod (容器组) 和无头 Service 上开放安全端口**：`9440`
+      (原生 TLS) 和 `8443` (HTTPS) 。这些端口会与现有端口一并添加。
+    * **将 Secret 挂载** 到 `/etc/clickhouse-server/tls/`，并生成
+      ClickHouse 的 `openSSL` 配置块，其中包含 `verificationMode: relaxed`、
+      `disableProtocols: sslv2,sslv3` 和 `preferServerCiphers: true`。这些都是
+      默认值——如需覆盖，请参见[自定义 TLS 设置](#custom-tls-settings)。
 
-<Note>
-  TLS 端口 `8443` 和 `9440` 会被 webhook **无条件**预留，
-  即使 TLS 已关闭也是如此，因此之后切换 `tls.enabled` 时，永远不会与
-  `spec.additionalPorts` 条目发生冲突。参见
-  [Configuration → `additionalPorts`](/zh/products/kubernetes-operator/guides/configuration#additional-ports)。
-</Note>
+    当你同时设置 `required: true` 时，Operator 还会：
 
-<div id="step-4-connect">
-  ## 第 4 步——通过 TLS 连接
-</div>
+    * **移除不安全端口** `9000` (原生) 和 `8123` (HTTP) ——这样就只保留 TLS
+      版本，因此明文客户端将无法再连接。
+    * **将 pod (容器组) 的 liveness probe 切换到安全的原生端口 `9440`**，这样即使
+      没有明文 listener，健康检查仍可正常工作。
 
-设置 `required: true` 后，客户端必须使用安全端口，并信任 CA。请通过无头 Service 访问特定的副本 pod (容器组)  (如果你创建了自己的 `集群IP`
-Service，也可以使用它) 。
+    <Note>
+      TLS 端口 `8443` 和 `9440` 会被 webhook **无条件**
+      保留，即使 TLS 关闭时也是如此，因此之后切换 `tls.enabled` 时绝不会与
+      `spec.additionalPorts` 条目发生冲突。请参见
+      [Configuration → `additionalPorts`](/zh/products/kubernetes-operator/guides/configuration#additional-ports)。
+    </Note>
+  </Step>
 
-**原生协议** (`clickhouse-client`，端口 `9440`) ：
+  <Step title="通过 TLS 连接" id="step-4-connect">
+    设置 `required: true` 后，客户端必须使用安全端口并信任该 CA。通过
+    无头 Service 访问特定的副本 pod (容器组) (如果你创建了自己的 `ClusterIP`
+    Service，也可以通过它访问) 。
 
-```bash
-clickhouse-client --secure \
-  --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
-  --port 9440 \
-  --ca-certificate /path/to/ca.crt \
-  --query "SELECT 1"
-```
+    **原生协议** (`clickhouse-client`，端口 `9440`) ：
 
-**HTTPS** (端口 `8443`) ：
+    ```bash
+    clickhouse-client --secure \
+      --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
+      --port 9440 \
+      --ca-certificate /path/to/ca.crt \
+      --query "SELECT 1"
+    ```
 
-```bash
-curl --cacert /path/to/ca.crt \
-  "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
-```
+    **HTTPS** (端口 `8443`) ：
 
-直接从 Secret 中获取 `ca.crt`，用于本地测试：
+    ```bash
+    curl --cacert /path/to/ca.crt \
+      "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
+    ```
 
-```bash
-kubectl -n <namespace> get secret clickhouse-cert \
-  -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
-```
+    直接从 Secret 中获取 `ca.crt`，用于本地测试：
+
+    ```bash
+    kubectl -n <namespace> get secret clickhouse-cert \
+      -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+    ```
+  </Step>
+</Steps>
 
 <div id="keeper-tls">
   ## 加密 Keeper 流量

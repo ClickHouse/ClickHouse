@@ -5,6 +5,7 @@
 #include <Backups/BackupImpl.h>
 #include <Core/Settings.h>
 #include <Disks/IDisk.h>
+#include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -31,6 +32,14 @@ extern const SettingsUInt64 archive_adaptive_buffer_max_size_bytes;
 namespace
 {
     namespace fs = std::filesystem;
+
+    struct ResolvedLocalBackupLocation
+    {
+        DiskPtr disk;
+        fs::path path;
+        String disk_name;
+        String archive_name;
+    };
 
     /// Checks that a disk name specified as parameters of Disk() is valid.
     void checkDiskName(const String & disk_name, const Poco::Util::AbstractConfiguration & config)
@@ -102,6 +111,68 @@ namespace
                                 quoteString(path.c_str()));
         }
     }
+
+    ResolvedLocalBackupLocation resolveLocalBackupLocation(const BackupInfo & backup_info, ContextPtr context)
+    {
+        const String & engine_name = backup_info.backup_engine_name;
+        if (!backup_info.id_arg.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup engine '{}' requires its first argument to be a string", engine_name);
+
+        ResolvedLocalBackupLocation location;
+        const auto & args = backup_info.args;
+        if (engine_name == "File")
+        {
+            if (args.size() != 1)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'File' requires 1 argument (path)");
+
+            location.path = args[0].safeGet<String>();
+            checkPath(location.path, context->getConfigRef(), context->getPath());
+        }
+        else if (engine_name == "Disk")
+        {
+            if (args.size() != 2)
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Backup engine 'Disk' requires 2 arguments (disk_name, path)");
+
+            location.disk_name = args[0].safeGet<String>();
+            checkDiskName(location.disk_name, context->getConfigRef());
+            location.path = args[1].safeGet<String>();
+            location.disk = context->getDisk(location.disk_name);
+            checkPath(location.disk_name, location.disk, location.path);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected backup engine '{}'", engine_name);
+
+        if (hasRegisteredArchiveFileExtension(location.path))
+        {
+            location.archive_name = location.path.filename();
+            location.path = location.path.parent_path();
+        }
+        return location;
+    }
+
+    String normalizeIdentityPath(const fs::path & path)
+    {
+        if (path == ".")
+            return {};
+
+        String str = path.string();
+        while (str.size() > 1 && str.back() == '/')
+            str.pop_back();
+        return str;
+    }
+
+    Strings getLocalDestinationIdentity(const BackupInfo & backup_info, ContextPtr context)
+    {
+        auto location = resolveLocalBackupLocation(backup_info, context);
+        Strings components;
+        if (backup_info.backup_engine_name == "Disk")
+            components.emplace_back("disk=" + location.disk_name);
+        components.emplace_back("path=" + normalizeIdentityPath(location.path));
+        components.emplace_back("archive=" + location.archive_name);
+        return components;
+    }
 }
 
 
@@ -112,56 +183,29 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
     {
         const String & engine_name = params.backup_info.backup_engine_name;
-
-        if (!params.backup_info.id_arg.empty())
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Backup engine '{}' requires its first argument to be a string",
-                engine_name);
-        }
-
-        const auto & args = params.backup_info.args;
-
-        DiskPtr disk;
-        fs::path path;
-        if (engine_name == "File")
-        {
-            if (args.size() != 1)
-            {
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'File' requires 1 argument (path)");
-            }
-
-            path = args[0].safeGet<String>();
-            const auto & config = params.context->getConfigRef();
-            const auto & data_dir = params.context->getPath();
-            checkPath(path, config, data_dir);
-        }
-        else if (engine_name == "Disk")
-        {
-            if (args.size() != 2)
-            {
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'Disk' requires 2 arguments (disk_name, path)");
-            }
-
-            String disk_name = args[0].safeGet<String>();
-            const auto & config = params.context->getConfigRef();
-            checkDiskName(disk_name, config);
-            path = args[1].safeGet<String>();
-            disk = params.context->getDisk(disk_name);
-            checkPath(disk_name, disk, path);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected backup engine '{}'", engine_name);
+        auto location = resolveLocalBackupLocation(params.backup_info, params.context);
 
         BackupImpl::ArchiveParams archive_params;
-        if (hasRegisteredArchiveFileExtension(path))
+        if (!location.archive_name.empty())
         {
+            /// A `Disk` destination can be backed by object storage (e.g. an `s3`-typed disk). In that case a zip
+            /// archive is just as problematic as a direct `S3(...)`/`AzureBlobStorage(...)` destination, because zip
+            /// requires seeking to read its central directory and every seek turns into a separate HTTP request.
+            /// Reject it here too, so the seek-heavy path is not reachable through `BackupReaderDisk`/`BackupWriterDisk`.
+            if (location.disk && hasSupportedZipExtension(location.archive_name))
+            {
+                const auto object_storage_type = location.disk->getDataSourceDescription().object_storage_type;
+                if ((object_storage_type == ObjectStorageType::S3) || (object_storage_type == ObjectStorageType::Azure))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Zip archive format is not supported for backups on disk '{}' because it is backed by object storage, "
+                        "which does not support seeking efficiently (zip requires seeking). "
+                        "Use tar.gz or other tar-based formats instead", location.disk->getName());
+            }
+
             if (params.is_internal_backup)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 
-            archive_params.archive_name = path.filename();
-            path = path.parent_path();
+            archive_params.archive_name = location.archive_name;
             archive_params.compression_method = params.compression_method;
             archive_params.compression_level = params.compression_level;
             archive_params.password = params.password;
@@ -177,22 +221,22 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         {
             std::shared_ptr<IBackupReader> reader;
             if (engine_name == "File")
-                reader = std::make_shared<BackupReaderFile>(path, params.read_settings, params.write_settings);
+                reader = std::make_shared<BackupReaderFile>(location.path, params.read_settings, params.write_settings);
             else
-                reader = std::make_shared<BackupReaderDisk>(disk, path, params.read_settings, params.write_settings);
+                reader = std::make_shared<BackupReaderDisk>(location.disk, location.path, params.read_settings, params.write_settings);
             return std::make_unique<BackupImpl>(params, archive_params, reader);
         }
 
         std::shared_ptr<IBackupWriter> writer;
         if (engine_name == "File")
-            writer = std::make_shared<BackupWriterFile>(path, params.read_settings, params.write_settings);
+            writer = std::make_shared<BackupWriterFile>(location.path, params.read_settings, params.write_settings);
         else
-            writer = std::make_shared<BackupWriterDisk>(disk, path, params.read_settings, params.write_settings);
+            writer = std::make_shared<BackupWriterDisk>(location.disk, location.path, params.read_settings, params.write_settings);
         return std::make_unique<BackupImpl>(params, archive_params, writer);
     };
 
-    factory.registerBackupEngine("File", creator_fn);
-    factory.registerBackupEngine("Disk", creator_fn);
+    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity);
+    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity);
 }
 
 }

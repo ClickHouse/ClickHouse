@@ -14,40 +14,36 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 > للانطلاق في ثلاث خطوات سهلة.
 
 <Steps>
-  <Step>
-    ## أنشئ خدمة ClickHouse
-
+  <Step title="أنشئ خدمة ClickHouse" id="1-create-a-clickhouse-service">
     لإنشاء خدمة ClickHouse مجانية في [ClickHouse Cloud](https://console.clickhouse.cloud)، ما عليك سوى التسجيل باتباع الخطوات التالية:
 
-    * أنشئ حسابًا من [صفحة التسجيل](https://console.clickhouse.cloud/signUp)
-    * يمكنك التسجيل باستخدام بريدك الإلكتروني أو عبر Google SSO أو Microsoft SSO أو AWS Marketplace أو Google Cloud أو Microsoft Azure
-    * إذا سجلت باستخدام البريد الإلكتروني وكلمة المرور، فتذكّر تأكيد عنوان بريدك الإلكتروني خلال 24 ساعة عبر الرابط الذي سيصلك في بريدك الإلكتروني
+    * أنشئ حسابًا على [صفحة التسجيل](https://console.clickhouse.cloud/signUp)
+    * يمكنك اختيار التسجيل باستخدام بريدك الإلكتروني أو عبر Google SSO أو Microsoft SSO أو AWS Marketplace أو Google Cloud أو Microsoft Azure
+    * إذا سجّلت باستخدام بريد إلكتروني وكلمة مرور، فتذكّر تأكيد عنوان بريدك الإلكتروني خلال الـ24 ساعة التالية عبر الرابط الذي يصلك في بريدك الإلكتروني
     * سجّل الدخول باستخدام اسم المستخدم وكلمة المرور اللذين أنشأتهما للتو
 
     <Image img="/images/_snippets/signup_page.webp" size="md" alt="اختر الخطة" border />
 
     <br />
 
-    بعد تسجيل الدخول، يبدأ ClickHouse Cloud معالج الإعداد الذي يوجّهك خلال إنشاء خدمة ClickHouse جديدة. حدّد المنطقة التي تريد نشر الخدمة فيها، وامنح خدمتك الجديدة اسمًا:
+    بمجرد تسجيل الدخول، يبدأ ClickHouse Cloud معالج الإعداد الذي يرشدك خلال إنشاء خدمة ClickHouse جديدة. حدّد المنطقة التي تريد نشر الخدمة فيها، وامنح خدمتك الجديدة اسمًا:
 
     <Image img="/images/_snippets/createservice1.webp" size="md" alt="خدمة ClickHouse جديدة" border />
 
     <br />
 
-    بشكل افتراضي، توضع المؤسسات الجديدة ضمن فئة Scale، ويُنشأ لها 3 نسخ متماثلة، لكل منها 4 وحدات VCPU و16 GiB من RAM. ويكون [التحجيم التلقائي الرأسي](/ar/products/cloud/features/autoscaling/vertical) مفعّلًا افتراضيًا في فئة Scale. يمكنك تغيير فئة مؤسستك لاحقًا من صفحة &#39;Plans&#39;.
+    بشكل افتراضي، تُوضَع المؤسسات الجديدة على فئة Scale، ويتم إنشاء 3 نُسخ متماثلة، لكل منها 4 وحدات vCPU و16 GiB من RAM. سيكون [التحجيم التلقائي الرأسي](/ar/products/cloud/features/autoscaling/vertical) مفعّلًا افتراضيًا في فئة Scale. يمكنك تغيير فئة مؤسستك لاحقًا من صفحة &#39;Plans&#39;.
 
-    خصّص موارد الخدمة عند الحاجة بتحديد حد أدنى وحد أقصى لحجم النسخ المتماثلة التي يمكن التحجيم بينهما. وعندما تصبح جاهزًا، حدّد `Create service`.
+    خصّص موارد الخدمة عند الحاجة من خلال تحديد الحد الأدنى والحد الأقصى للحجم الذي يمكن أن تتوسع النُسخ المتماثلة ضمنه. وعندما تصبح جاهزًا، حدّد `Create service`.
 
-    <Image img="/images/_snippets/scaling_limits.webp" size="md" alt="حدود التحجيم" border />
+    <Image img="/images/_snippets/scaling_limits.webp" size="md" alt="حدود التوسّع" border />
 
     <br />
 
-    تهانينا! أصبحت خدمة ClickHouse Cloud الخاصة بك جاهزة وتعمل الآن، واكتملت عملية الإعداد. تابع القراءة لمعرفة كيفية البدء في إدخال بياناتك والاستعلام عنها.
+    تهانينا! أصبحت خدمة ClickHouse Cloud الخاصة بك قيد التشغيل واكتمل الإعداد. تابع القراءة لمعرفة كيفية البدء في إدخال بياناتك والاستعلام عنها.
   </Step>
 
-  <Step>
-    ## الاتصال بـ ClickHouse
-
+  <Step title="الاتصال بـ ClickHouse" id="2-connect-to-clickhouse">
     هناك طريقتان للاتصال بـ ClickHouse:
 
     * الاتصال باستخدام SQL Console عبر الويب
@@ -57,39 +53,37 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     ### الاتصال باستخدام SQL Console
 
-    للبدء بسرعة، يوفّر ClickHouse واجهة SQL Console عبر الويب، وستتم إعادة توجيهك إليها بعد إكمال عملية الإعداد.
+    للبدء سريعًا، يوفّر ClickHouse واجهة SQL Console عبر الويب، وسيُعاد توجيهك إليها بعد إكمال خطوات الإعداد الأولي.
 
     <Image img="/images/_snippets/createservice8.webp" size="md" alt="SQL Console" border />
 
-    أنشئ علامة تبويب للاستعلام، ثم أدخل استعلامًا بسيطًا للتحقق من أن الاتصال يعمل:
+    أنشئ علامة تبويب query وأدخل query بسيطًا للتحقق من أن الاتصال يعمل:
 
     ```sql
     SHOW databases
     ```
 
-    يجب أن تظهر لك 4 قواعد بيانات في القائمة، بالإضافة إلى أي قواعد بيانات أخرى ربما أضفتها.
+    يجب أن ترى 4 قواعد بيانات في القائمة، بالإضافة إلى أي قواعد بيانات أخرى ربما أضفتها.
 
-    <Image img="/images/_snippets/show_databases.webp" size="md" alt="SQL Console" border />
+    <Image img="/images/_snippets/show_databases.webp" size="md" alt="وحدة تحكم SQL" border />
 
     <br />
 
-    هذا كل شيء — أنت الآن جاهز لبدء استخدام خدمة ClickHouse الجديدة!
+    هذا كل ما في الأمر — أنت الآن جاهز لبدء استخدام خدمة ClickHouse الجديدة!
 
     ### الاتصال بتطبيقك
 
-    اضغط على زر Connect من قائمة التنقل. ستُفتح نافذة منبثقة تعرض بيانات اعتماد خدمتك وتزوّدك بمجموعة من الإرشادات حول كيفية الاتصال عبر الواجهة أو عملاء اللغات.
+    اضغط على زر Connect من قائمة التنقل. ستُفتح نافذة منبثقة تعرض بيانات الاعتماد الخاصة بخدمتك، وتوفر لك مجموعة من الإرشادات حول كيفية الاتصال عبر الواجهة أو مكتبات العملاء للغات البرمجة.
 
-    <Image img="/images/_snippets/service_connect.webp" size="md" alt="Service Connect" border />
+    <Image img="/images/_snippets/service_connect.webp" size="md" alt="الاتصال بالخدمة" border />
 
     <br />
 
-    إذا لم تتمكن من العثور على عميل اللغة الذي تستخدمه، فقد ترغب في مراجعة قائمة [Integrations](/ar/integrations/home) لدينا.
+    إذا لم تتمكن من العثور على مكتبة العملاء للغات البرمجة الخاصة بك، فقد ترغب في الاطلاع على قائمة [Integrations](/ar/integrations/home).
   </Step>
 
-  <Step>
-    ## إضافة البيانات
-
-    ClickHouse أفضل مع البيانات! هناك طرق متعددة لإضافة البيانات، ومعظمها متاح في صفحة مصادر البيانات التي يمكن الوصول إليها من قائمة التنقل.
+  <Step title="إضافة البيانات" id="3-add-data">
+    ClickHouse أفضل مع البيانات! ثمة طرق متعددة لإضافة البيانات، ومعظمها متاح في صفحة مصادر البيانات التي يمكن الوصول إليها من قائمة التنقل.
 
     <Image img="/images/_snippets/data_sources.webp" size="md" alt="مصادر البيانات" border />
 
@@ -97,7 +91,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     يمكنك رفع البيانات باستخدام الطرق التالية:
 
-    * قم بإعداد ClickPipe لبدء إدخال البيانات من مصادر مثل S3 وPostgres وKafka وGCS
+    * أعِدّ ClickPipe لبدء إدخال البيانات من مصادر بيانات مثل S3 وPostgres وKafka وGCS
     * استخدم SQL Console
     * استخدم عميل ClickHouse
     * ارفع ملفًا - تشمل التنسيقات المقبولة JSON وCSV وTSV
@@ -105,7 +99,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     ### ClickPipes
 
-    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes) منصة تكامل مُدارة تجعل استيعاب البيانات من مجموعة متنوعة من المصادر أمراً بسيطاً لا يتجاوز بضع نقرات. صُمِّمت لتلبية أشد أعباء العمل تطلباً، وتضمن بنيتها المتينة وقابلة للتوسع أداءً ثابتاً وموثوقية عالية. ويمكن استخدام ClickPipes لتلبية احتياجات البث على المدى الطويل أو لتنفيذ مهام تحميل البيانات لمرة واحدة.
+    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes) هي منصة تكامل مُدارة تجعل استيعاب البيانات من مجموعة متنوعة من المصادر بسيطاً كالنقر على بضعة أزرار. صُمِّمت لتلبية أشد أحمال العمل تطلباً، وتضمن معمارية ClickPipes المتينة والقابلة للتوسع أداءً ثابتاً وموثوقية عالية. ويمكن استخدام ClickPipes لتلبية احتياجات البث على المدى الطويل أو لمهام تحميل البيانات لمرة واحدة.
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="اختر مصدر البيانات" border />
 
@@ -135,51 +129,51 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     في المثال أعلاه، `my_first_table` جدول من نوع [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) يحتوي على أربعة أعمدة:
 
-    * `user_id`: عدد صحيح غير موقَّع من 32 بت ([UInt32](/ar/reference/data-types/int-uint))
-    * `message`: نوع بيانات [String](/ar/reference/data-types/string)، ويحل محل أنواع مثل `VARCHAR` و`BLOB` و`CLOB` وغيرها في أنظمة قواعد البيانات الأخرى
-    * `timestamp`: قيمة [DateTime](/ar/reference/data-types/datetime)، تمثل نقطة زمنية محددة
-    * `metric`: عدد بفاصلة عائمة من 32 بت ([Float32](/ar/reference/data-types/float))
+    * `user_id`: عدد صحيح غير موقّع بطول 32 بت ([UInt32](/ar/reference/data-types/int-uint))
+    * `message`: نوع البيانات [String](/ar/reference/data-types/string)، ويحلّ محل أنواع مثل `VARCHAR` و`BLOB` و`CLOB` وغيرها في أنظمة قواعد البيانات الأخرى
+    * `timestamp`: قيمة [DateTime](/ar/reference/data-types/datetime) تمثّل نقطة زمنية محددة
+    * `metric`: عدد عشري عائم بطول 32 بت ([Float32](/ar/reference/data-types/float))
 
     <Info>
       **محركات الجداول**
 
       تحدد محركات الجداول ما يلي:
 
-      * كيفية ومكان تخزين البيانات
-      * الاستعلامات التي تدعمها
+      * كيفية تخزين البيانات وأين تُخَّزن
+      * الاستعلامات التي يدعمها
       * ما إذا كانت البيانات مكررة أم لا
 
       <br />
 
-      هناك العديد من محركات الجداول للاختيار من بينها، ولكن إذا كنت تنشئ جدولًا بسيطًا على خادم ClickHouse أحادي العقدة، فغالبًا ما سيكون [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) هو خيارك المناسب.
+      هناك العديد من محركات الجداول للاختيار من بينها، ولكن بالنسبة إلى جدول بسيط على خادم ClickHouse أحادي العقدة، فمن المرجح أن يكون [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) هو الخيار الأنسب.
     </Info>
 
     #### مقدمة موجزة عن المفاتيح الأولية
 
-    قبل المتابعة، من المهم أن تفهم كيفية عمل المفاتيح الأساسية في ClickHouse (قد تبدو آلية تنفيذ المفاتيح الأساسية غير متوقعة!):
+    قبل المتابعة، من المهم أن تفهم كيفية عمل المفاتيح الأساسية في ClickHouse (قد تبدو آلية تنفيذ المفاتيح الأساسية مفاجئة!):
 
     * المفاتيح الأساسية في ClickHouse ***ليست فريدة*** لكل صف في الجدول
 
-    يحدد المفتاح الأساسي لجدول ClickHouse كيفية ترتيب البيانات عند كتابتها على القرص. كل 8,192 صفاً أو 10 ميغابايت من
-    البيانات (يُشار إليها بـ **دقة الفهرس**) تُنشئ إدخالاً في ملف فهرس المفتاح الأساسي. يُفرز هذا المفهوم
-    **فهرساً متفرقاً** يسهل احتواؤه في الذاكرة، وتمثل الحبيبات شريطاً يضم أصغر قدر من بيانات الأعمدة التي تُعالَج خلال استعلامات `SELECT`.
+    يحدد المفتاح الأساسي لجدول ClickHouse كيفية ترتيب البيانات عند كتابتها على القرص. كل 8,192 صفًا أو 10 ميغابايت من
+    البيانات (يُشار إليها بـ **حبيبية الفهرس**) تُنشئ إدخالًا في ملف فهرس المفتاح الأساسي. يُولّد هذا المفهوم المتعلق بالحبيبية
+    **فهرسًا متفرقًا** يمكن تخزينه بسهولة في الذاكرة، وتمثل الحُبيبات شريطًا يضم أصغر قدر من بيانات الأعمدة التي تُعالَج أثناء استعلامات `SELECT`.
 
-    يمكن تعريف المفتاح الأساسي باستخدام المعلمة `PRIMARY KEY`. إذا عرّفت جدولاً دون تحديد `PRIMARY KEY`،
-    فإن المفتاح يصبح المجموعة المرتبة المحددة في جملة `ORDER BY`. وإذا حددت كلاً من `PRIMARY KEY` و`ORDER BY`، فيجب أن يكون المفتاح الأساسي مجموعة فرعية من ترتيب الفرز.
+    يمكن تعريف المفتاح الأساسي باستخدام المعامل `PRIMARY KEY`. إذا عرّفت جدولاً دون تحديد `PRIMARY KEY`،
+    فإن المفتاح يصبح الصف المحدد في عبارة `ORDER BY`. وإذا حددت كلاً من `PRIMARY KEY` و`ORDER BY`، فيجب أن يكون المفتاح الأساسي مجموعة فرعية من ترتيب الفرز.
 
-    المفتاح الأساسي هو أيضاً مفتاح الترتيب، وهو Tuple من `(user_id, timestamp)`. لذا، ستكون البيانات المخزنة في كل ملف عمود مرتبةً وفق `user_id` أولاً، ثم `timestamp`.
+    المفتاح الأساسي هو أيضاً مفتاح الفرز، وهو Tuple من `(user_id, timestamp)`. لذا، ستكون البيانات المخزنة في كل ملف عمود مرتبةً وفق `user_id` أولاً، ثم `timestamp`.
 
-    للتعمق في المفاهيم الأساسية لـ ClickHouse، راجع [&quot;المفاهيم الأساسية&quot;](/ar/concepts/core-concepts/index).
+    للتعمق في مفاهيم ClickHouse الأساسية، راجع [&quot;المفاهيم الأساسية&quot;](/ar/concepts/core-concepts/index).
 
     #### إدراج البيانات في جدولك
 
-    يمكنك استخدام الأمر المألوف [`INSERT INTO TABLE`](/ar/reference/statements/insert-into) مع ClickHouse، غير أنه من المهم أن تدرك أن كل عملية إدراج في جدول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) تؤدي إلى إنشاء **جزء** جديد في التخزين.
+    يمكنك استخدام الأمر المألوف [`INSERT INTO TABLE`](/ar/reference/statements/insert-into) مع ClickHouse، غير أنه من المهم أن تدرك أن كل عملية إدراج في جدول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) تؤدي إلى إنشاء **جزء** في التخزين.
 
     <Tip>
       **أفضل ممارسات ClickHouse**
 
       أدرِج عددًا كبيرًا من الصفوف في كل دفعة — عشرات الآلاف أو حتى ملايين
-      الصفوف دفعة واحدة. لا تقلق — يمكن لـ ClickHouse التعامل بسهولة مع هذا الحجم من البيانات — كما أن ذلك [سيوفّر لك المال](/ar/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous) لأنه يرسل عددًا أقل من طلبات الكتابة إلى خدمتك.
+      الصفوف دفعةً واحدة. لا تقلق — يمكن لـ ClickHouse التعامل بسهولة مع هذا الكم — بل إنه [سيوفر لك المال](/ar/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous) من خلال إرسال عدد أقل من طلبات الكتابة إلى خدمتك.
     </Tip>
 
     <br />
@@ -195,7 +189,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
 
     <Note>
-      لاحظ أن العمود `timestamp` يُعبَّأ باستخدام مجموعة متنوعة من وظائف [**Date**](/ar/reference/data-types/date) و[**DateTime**](/ar/reference/data-types/datetime). ويضم ClickHouse مئات الوظائف المفيدة التي يمكنك [استعراضها في قسم **Functions**](/ar/reference/functions/index).
+      لاحظ أن العمود `timestamp` يُعبَّأ باستخدام دوال [**Date**](/ar/reference/data-types/date) و[**DateTime**](/ar/reference/data-types/datetime) المختلفة. يوفّر ClickHouse مئات الدوال المفيدة التي يمكنك [استعراضها في قسم **الدوال**](/ar/reference/functions/index).
     </Note>
 
     لنتحقق من نجاح العملية:
@@ -206,15 +200,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     ### إضافة البيانات باستخدام ClickHouse Client
 
-    يمكنك أيضاً الاتصال بخدمة ClickHouse Cloud الخاصة بك باستخدام أداة سطر الأوامر [**clickhouse client**](/ar/concepts/features/interfaces/cli). انقر على `Connect` في القائمة اليسرى للوصول إلى هذه التفاصيل. من مربع الحوار، اختر `Native` من القائمة المنسدلة:
+    يمكنك أيضًا الاتصال بخدمة ClickHouse Cloud الخاصة بك باستخدام أداة سطر الأوامر [**clickhouse client**](/ar/concepts/features/interfaces/cli). انقر على `Connect` في القائمة اليسرى للاطلاع على هذه التفاصيل. من مربع الحوار، اختر `Native` من القائمة المنسدلة:
 
-    <Image img="/images/_snippets/client_details.webp" size="md" alt="تفاصيل الاتصال بـ ClickHouse client" border />
+    <Image img="/images/_snippets/client_details.webp" size="md" alt="تفاصيل الاتصال بـ clickhouse client" border />
 
     <br />
 
     1. ثبّت [ClickHouse](/ar/concepts/features/interfaces/cli).
 
-    2. نفّذ الأمر، مع استبدال اسم المضيف واسم المستخدم وكلمة المرور الخاصة بك:
+    2. نفّذ الأمر، مع استبدال اسم المضيف واسم المستخدم وكلمة المرور بالقيم الخاصة بك:
 
     ```bash
     ./clickhouse client --host HOSTNAME.REGION.CSP.clickhouse.cloud \
@@ -229,7 +223,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     :)
     ```
 
-    3. جرّب ذلك بتنفيذ الاستعلام التالي:
+    3. جرّب ذلك بتشغيل الاستعلام التالي:
 
     <br />
 
@@ -252,7 +246,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     4 rows in set. Elapsed: 0.008 sec.
     ```
 
-    4. أضِف عبارة [`FORMAT`](/ar/reference/statements/select/format) لتحديد أحد [تنسيقات الإخراج المتعددة التي يدعمها ClickHouse](/ar/reference/formats/index):
+    4. أضِف عبارة [`FORMAT`](/ar/reference/statements/select/format) لتحديد أحد [تنسيقات الإخراج العديدة التي يدعمها ClickHouse](/ar/reference/formats/index):
 
     <br />
 
@@ -263,7 +257,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     FORMAT TabSeparated
     ```
 
-    في الاستعلام أعلاه، يُعاد الإخراج بتنسيق مفصول بمسافات جدولة (tab):
+    في الاستعلام أعلاه، يُعاد الإخراج بتنسيق مفصول بعلامات الجدولة:
 
     ```response
     Query id: 3604df1c-acfd-4117-9c56-f86c69721121
@@ -286,11 +280,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     ### رفع ملف
 
-    من المهام الشائعة عند البدء باستخدام قاعدة بيانات هي إدراج بيانات موجودة لديك في ملفات. لدينا بعض
-    بيانات نموذجية متاحة عبر الإنترنت يمكنك إدراجها، وهي تمثل بيانات clickstream - وتتضمن معرّف المستخدم، وعنوان URL الذي جرت زيارته،
+    من المهام الشائعة عند البدء باستخدام قاعدة البيانات إدراج بيانات موجودة لديك في ملفات. لدينا بعض
+    بيانات نموذجية متاحة على الإنترنت يمكنك إدراجها، وهي تمثل بيانات تدفق النقرات - تتضمن معرّف المستخدم، وURL الذي جرت زيارته،
     والطابع الزمني للحدث.
 
-    لنفترض أن لدينا النص التالي في ملف CSV باسم `data.csv`:
+    لنفترض أن لدينا النص التالي في ملف CSV يُسمى `data.csv`:
 
     ```bash title="data.csv"
     102,This is data in a file,2022-02-22 10:43:28,123.45
@@ -298,7 +292,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
     ```
 
-    1. يقوم الأمر التالي بإدراج البيانات في `my_first_table`:
+    1. يُدرِج الأمر التالي البيانات في `my_first_table`:
 
     <br />
 
@@ -310,7 +304,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
     ```
 
-    2. لاحظ ظهور الصفوف الجديدة الآن في الجدول عند الاستعلام من SQL Console:
+    2. لاحظ أن الصفوف الجديدة تظهر الآن في الجدول عند الاستعلام من SQL Console:
 
     <br />
 
@@ -331,9 +325,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## ما التالي؟
 </div>
 
-* يوضّح لك [الدليل التعليمي](/ar/get-started/quickstarts/tutorial) كيفية إدراج مليوني صف في جدول وكتابة بعض الاستعلامات التحليلية
+* يوضّح لك [الدليل العملي](/get-started/quickstarts/tutorial) كيفية إدراج مليوني صف في جدول وكتابة بعض الاستعلامات التحليلية
 * لدينا قائمة من [مجموعات البيانات التجريبية](/ar/get-started/sample-datasets/index) مع إرشادات حول كيفية إدراجها
-* اطّلع على الفيديو الخاص بنا ومدته 12 دقيقة حول [بدء الاستخدام مع ClickHouse](https://clickhouse.com/company/events/getting-started-with-clickhouse/)
-* إذا كانت بياناتك تأتي من مصدر خارجي، فاطّلع على [مجموعة أدلة التكامل](/ar/integrations/home) الخاصة بنا للاتصال بقوائم انتظار الرسائل وقواعد البيانات وخطوط المعالجة وغير ذلك
-* إذا كنت تستخدم أداة تصوّر UI/BI، فاطّلع على [أدلة المستخدم لتوصيل واجهة المستخدم بـ ClickHouse](/ar/integrations/connectors/data-visualization/index)
-* يتضمن دليل المستخدم حول [المفاتيح الأساسية](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) كل ما تحتاج إلى معرفته عن المفاتيح الأساسية وكيفية تعريفها
+* اطّلع على الفيديو الخاص بنا ومدته 12 دقيقة حول [البدء باستخدام ClickHouse](https://clickhouse.com/company/events/getting-started-with-clickhouse/)
+* إذا كانت بياناتك تأتي من مصدر خارجي، فاطّلع على [مجموعة أدلة التكامل](/ar/integrations/home) الخاصة بنا للاتصال بطوابير الرسائل وقواعد البيانات وخطوط المعالجة وغير ذلك
+* إذا كنت تستخدم أداة تصور UI/BI، فاطّلع على [أدلة المستخدم لتوصيل واجهة مستخدم بـ ClickHouse](/ar/integrations/connectors/data-visualization/index)
+* يقدّم دليل المستخدم حول [المفاتيح الأساسية](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) كل ما تحتاج إلى معرفته عن المفاتيح الأساسية وكيفية تعريفها

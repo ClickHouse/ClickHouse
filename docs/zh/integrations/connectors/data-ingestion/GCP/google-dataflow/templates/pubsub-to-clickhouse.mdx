@@ -154,7 +154,7 @@ ORDER BY failed_at;
   ## 运行模板
 </div>
 
-可在 Google Cloud Console 中使用 Pub/Sub to ClickHouse 模板。
+可在 Google Cloud Console 中使用 Pub/Sub 到 ClickHouse 模板。
 
 <Note>
   请务必阅读本文档，尤其是上述各节，以充分了解该模板的配置要求和前置条件。
@@ -198,7 +198,7 @@ ORDER BY failed_at;
 | ----------------------- | ------------ | ------------------------------ |
 | `messages-received`     | Counter      | 解析步骤接收到的 Pub/Sub 消息总数。         |
 | `rows-parsed-ok`        | Counter      | 成功转换为一行并路由到主输出的消息数。            |
-| `rows-parse-failed`     | Counter      | 解析或 schema 映射失败，并被路由到死信队列的消息数。 |
+| `rows-parse-failed`     | Counter      | 解析或 schema 映射失败，并被路由到死信的消息数。 |
 | `message-payload-bytes` | Distribution | 传入 Pub/Sub 消息载荷大小的分布，单位为字节。    |
 
 <div id="troubleshooting">

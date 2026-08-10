@@ -47,7 +47,7 @@ struct Authentication
         const String & getRealm() const;
 
         Require * clone() const override { return new Require(*this); }
-        void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+        void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 
     private:
         const String realm;

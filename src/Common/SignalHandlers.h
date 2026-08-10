@@ -72,6 +72,10 @@ bool isCrashed();
 
 void blockSignals(const std::vector<int> & signals);
 
+/// Reset the deadly signal handlers to SIG_DFL (like HandledSignals::reset(false)), idempotently.
+/// Safe to call from the sanitizer death callback: it does not construct HandledSignals.
+void resetHandledSignals();
+
 
 /** The thread that read info about signal or std::terminate from pipe.
   * On HUP, close log files (for new files to be opened later).
@@ -132,7 +136,16 @@ struct HandledSignals
     void setupCommonDeadlySignalHandlers();
     void setupCommonTerminateRequestSignalHandlers();
 
-    void addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal);
+    /// `additional_masked_signals` are blocked while `handler` runs (added to `sa_mask`) but the
+    /// handler is not registered for them.
+    /// `use_alt_stack` requests `SA_ONSTACK`: required for any handler that must still run after the
+    /// faulting thread's stack is exhausted.
+    void addSignalHandler(
+        const std::vector<int> & signals,
+        signal_function handler,
+        bool register_signal,
+        const std::vector<int> & additional_masked_signals = {},
+        bool use_alt_stack = false);
 
     void reset(bool close_pipe = true);
 
