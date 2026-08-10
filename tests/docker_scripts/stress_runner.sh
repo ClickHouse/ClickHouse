@@ -305,9 +305,42 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 fi
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-python3 /repo/ci/jobs/scripts/stress/stress.py --test-cmd="/usr/bin/clickhouse-test${test_cmd_opts}" --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
-    && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
-    || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
+# Redirect, not a pipe: the script leaves clients holding its stdout, and a pipe reader waits
+# for those too. `tail --pid` mirrors the capture to the console and ends with the script.
+# The capture path stays outside /test_output, which is uploaded wholesale.
+: > /tmp/stress_script.log
+set +e
+python3 /repo/ci/jobs/scripts/stress/stress.py --test-cmd="/usr/bin/clickhouse-test${test_cmd_opts}" --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" > /tmp/stress_script.log 2>&1 &
+stress_script_pid=$!
+# Count what the mirror actually copied, not the file size after it exits: a descendant
+# can append between `tail`'s last read and a stat, and the flush below would then start
+# past those bytes and never print them. Only `tail` writes to this pipe, so unlike a
+# pipe around the script itself it cannot be held open by an inherited descriptor.
+exec 3>&1
+mirrored_bytes=$(tail -n +1 -f --pid="$stress_script_pid" /tmp/stress_script.log \
+    | tee /dev/fd/3 | wc -c)
+exec 3>&-
+mirrored_bytes=${mirrored_bytes//[^0-9]/}
+wait "$stress_script_pid"
+stress_script_exit_code=$?
+# The mirror ends with the script, but descendants inherit its stdout and can still
+# append. Only a failure row embeds those bytes, so only it pays the settle wait; the
+# flush is what puts them on the console either way.
+if [ "$stress_script_exit_code" -ne 0 ]
+then
+    drain_capture /tmp/stress_script.log
+else
+    drain_capture /tmp/stress_script.log "$FAILURE_DRAIN_GRACE_OK"
+fi
+flush_capture /tmp/stress_script.log "$mirrored_bytes"
+set -e
+if [ "$stress_script_exit_code" -eq 0 ]
+then
+    echo -e "Test script exit code$OK" >> /test_output/test_results.tsv
+else
+    # printf, not echo -e: the encoded payload must reach the file verbatim.
+    printf "Test script failed$FAIL%s\n" "$(script_failure_info "$stress_script_exit_code" /tmp/stress_script.log)" >> /test_output/test_results.tsv
+fi
 
 stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log

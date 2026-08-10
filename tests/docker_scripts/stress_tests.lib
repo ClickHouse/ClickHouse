@@ -7,6 +7,13 @@ FAIL="\tFAIL\t\\N\t"
 
 FAILURE_CONTEXT_LINES=100
 FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
+FAILURE_TAIL_LINES=30
+FAILURE_TAIL_MAX_BYTES=3000
+FAILURE_DRAIN_GRACE=15
+FAILURE_DRAIN_GRACE_OK=5
+FAILURE_DRAIN_TIMEOUT=30
+FAILURE_DRAIN_INTERVAL=1
+FAILURE_DRAIN_STABLE_SAMPLES=3
 
 function escaped()
 {
@@ -14,6 +21,96 @@ function escaped()
     # Also limit lines width just in case (too long lines are not really useful usually)
     clickhouse local -S 's String' --input-format=LineAsString -q "select substr(s, 1, $FAILURE_CONTEXT_MAX_LINE_WIDTH)
       from table format CustomSeparated settings format_custom_row_after_delimiter='\\\\\\\\n'"
+}
+
+function escaped_tail()
+{
+    # Escape stdin as one value with the `Escaped` rule `read_test_results` decodes, at ONE
+    # escape level -- so callers must append with `printf '%s'`; `echo -e` would collapse it.
+    # `right` keeps the end of the input, where the exception line is.
+    clickhouse local -S 's String' --input-format=RawBLOB -q "select right(s, $FAILURE_TAIL_MAX_BYTES)
+      from table format CustomSeparated settings format_custom_escaping_rule='Escaped'"
+}
+
+function drain_capture()
+{
+    # Returns when $1 has been size-stable for $FAILURE_DRAIN_STABLE_SAMPLES samples, never
+    # before $2 (default $FAILURE_DRAIN_GRACE) and never after $FAILURE_DRAIN_TIMEOUT
+    # seconds: a holder that has not written yet is indistinguishable from none, so
+    # stability alone is unsafe.
+    local captured="$1"
+    local grace="${2:-$FAILURE_DRAIN_GRACE}"
+    local started="$SECONDS"
+    local previous=-1 current stable=0
+    while [ $(( SECONDS - started )) -lt "$FAILURE_DRAIN_TIMEOUT" ]
+    do
+        current=$(stat -c %s "$captured" 2>/dev/null || echo 0)
+        if [ "$current" = "$previous" ]
+        then
+            stable=$(( stable + 1 ))
+        else
+            stable=0
+        fi
+        previous="$current"
+        if [ "$stable" -ge "$FAILURE_DRAIN_STABLE_SAMPLES" ] \
+            && [ $(( SECONDS - started )) -ge "$grace" ]
+        then
+            return 0
+        fi
+        sleep "$FAILURE_DRAIN_INTERVAL"
+    done
+    return 0
+}
+
+function flush_capture()
+{
+    # Print the bytes of $1 past offset $2, which the console mirror did not reach.
+    local captured="$1"
+    local mirrored="$2"
+    local size
+    size=$(stat -c %s "$captured" 2>/dev/null || echo 0)
+    if [ "$size" -gt "$mirrored" ]
+    then
+        tail -c "+$(( mirrored + 1 ))" "$captured"
+    fi
+}
+
+function script_failure_info()
+{
+    # `info` cell of a `Test script failed` row: the exit code plus the tail of the wrapped
+    # script's captured output, so the reason reaches the parsed result and not just the job
+    # console. Falls back to the exit code alone, naming the encoder if that is what failed.
+    local exit_code="$1"
+    local captured="$2"
+    local info=" script exit code: $exit_code"
+
+    if [ ! -s "$captured" ]
+    then
+        printf '%s' "$info"
+        return 0
+    fi
+
+    local total
+    # Logical lines, the unit `tail -n` drops. `wc -l` counts newline bytes, so a
+    # capture whose last line is unterminated (a killed script) counted one short
+    # and presented a truncated tail as the whole output.
+    total=$(awk 'END{print NR}' < "$captured")
+    if [ "$total" -gt "$FAILURE_TAIL_LINES" ]
+    then
+        info="$info (last $FAILURE_TAIL_LINES of $total lines)"
+    fi
+
+    local encoded
+    # A partial encode carries raw newlines, so only a clean exit is usable; `if`, not `||`,
+    # so errexit cannot abort before the row is appended. The capture is not empty here, so
+    # without naming the encoder this row would read as no capture at all.
+    if ! encoded=$(tail -n "$FAILURE_TAIL_LINES" "$captured" | escaped_tail) || [ -z "$encoded" ]
+    then
+        printf '%s (could not encode the captured output)' "$info"
+        return 0
+    fi
+    # `\n` here is the two characters the reader decodes back into a line break.
+    printf '%s\\n%s' "$info" "$encoded"
 }
 
 function head_escaped()
