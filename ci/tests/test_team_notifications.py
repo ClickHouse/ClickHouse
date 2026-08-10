@@ -52,11 +52,18 @@ from ci.jobs.scripts.workflow_hooks import team_notifications
         ),
         (
             ["docs/integrations/clickpipes/home.mdx", "src/Core/Block.cpp"],
-            ["clickpipes"],
+            [],
         ),
         (
             ["docs/reference/functions/array-functions.mdx", "src/Core/Block.cpp"],
-            ["docs"],
+            [],
+        ),
+        (
+            [
+                "ci/jobs/scripts/workflow_hooks/team_notifications.py",
+                "docs/integrations/clickpipes/home.mdx",
+            ],
+            ["clickpipes"],
         ),
         (["src/Core/TypeId.h"], []),
         ([], []),

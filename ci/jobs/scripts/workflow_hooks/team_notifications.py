@@ -6,6 +6,7 @@ from ci.praktika.info import Info
 INTEGRATIONS_ECOSYSTEM_FILES = ("src/Core/TypeId.h",)
 
 DOCS_PREFIX = "docs/"
+SOURCE_PREFIX = "src/"
 CLICKPIPES_DOCS_PREFIX = "docs/integrations/clickpipes/"
 INTEGRATIONS_DOCS_PREFIXES = (
     "docs/integrations/language-clients/",
@@ -24,6 +25,9 @@ def normalize_path(file):
 
 def get_docs_teams_to_request(changed_files):
     files = [normalize_path(file) for file in changed_files]
+    if any(file.startswith(SOURCE_PREFIX) for file in files):
+        return []
+
     files = [file for file in files if file.startswith(DOCS_PREFIX)]
     teams = []
 
