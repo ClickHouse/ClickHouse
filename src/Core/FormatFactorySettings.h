@@ -1494,6 +1494,10 @@ Write Date values as plain 16-bit numbers (read back as UInt16), instead of conv
 Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
 )", 0) \
     \
+    DECLARE(Bool, output_format_arrow_enum_as_byte_array, false, R"(
+Write enum values as a string (their names) instead of the underlying integer data type in Arrow output format.
+)", 0) \
+    \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
 )", 0) \

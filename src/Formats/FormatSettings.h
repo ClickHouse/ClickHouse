@@ -196,6 +196,7 @@ struct FormatSettings
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
         bool output_unsupported_types_as_binary = true;
+        bool output_enum_as_byte_array = false;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts

@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/IDataType.h>
 #include <IO/NetUtils.h>
 #include <Core/UUID.h>
@@ -167,9 +168,23 @@ void RecordBatchEncoder::encodeValues(
         case TypeIndex::UInt32: appendFixedWidth<ColumnUInt32>(*this, column, num_rows); return;
         case TypeIndex::UInt64: appendFixedWidth<ColumnUInt64>(*this, column, num_rows); return;
         case TypeIndex::Int8: appendFixedWidth<ColumnInt8>(*this, column, num_rows); return;
-        case TypeIndex::Enum8: appendFixedWidth<ColumnInt8>(*this, column, num_rows); return;
+        case TypeIndex::Enum8:
+            if (settings.arrow.output_enum_as_byte_array)
+            {
+                encodeEnumAsString(column, type, num_rows, null_map_column);
+                return;
+            }
+            appendFixedWidth<ColumnInt8>(*this, column, num_rows);
+            return;
         case TypeIndex::Int16: appendFixedWidth<ColumnInt16>(*this, column, num_rows); return;
-        case TypeIndex::Enum16: appendFixedWidth<ColumnInt16>(*this, column, num_rows); return;
+        case TypeIndex::Enum16:
+            if (settings.arrow.output_enum_as_byte_array)
+            {
+                encodeEnumAsString(column, type, num_rows, null_map_column);
+                return;
+            }
+            appendFixedWidth<ColumnInt16>(*this, column, num_rows);
+            return;
         case TypeIndex::Int32: appendFixedWidth<ColumnInt32>(*this, column, num_rows); return;
         case TypeIndex::Int64: appendFixedWidth<ColumnInt64>(*this, column, num_rows); return;
         case TypeIndex::Float32: appendFixedWidth<ColumnFloat32>(*this, column, num_rows); return;
@@ -466,6 +481,42 @@ void RecordBatchEncoder::encodeValues(
                 "output_format_arrow_unsupported_types_as_binary = 1 to write it as binary",
                 type->getName());
     }
+}
+
+void RecordBatchEncoder::encodeEnumAsString(const IColumn & column, const DataTypePtr & type, size_t num_rows, const IColumn * null_map_column)
+{
+    const NullMap * null_map
+        = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
+    PODArray<Int32> arrow_offsets(num_rows + 1);
+    arrow_offsets[0] = 0;
+    PODArray<char> out_data;
+    Int64 cur = 0;
+    const WhichDataType which(type);
+    auto append_enum_names = [&](const auto & enum_column, const auto & enum_type)
+    {
+        const auto & data = enum_column.getData();
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            if (!(null_map && (*null_map)[i]))
+            {
+                const std::string_view s = enum_type.getNameForValue(data[i]);
+                cur += static_cast<Int64>(s.size());
+                if (cur > static_cast<Int64>(std::numeric_limits<Int32>::max()))
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC string offset exceeds 32 bits");
+                const size_t old = out_data.size();
+                out_data.resize(out_data.size() + s.size());
+                if (!s.empty())
+                    memcpy(out_data.data() + old, s.data(), s.size());
+            }
+            arrow_offsets[i + 1] = static_cast<Int32>(cur);
+        }
+    };
+    if (which.isEnum8())
+        append_enum_names(assert_cast<const ColumnVector<Int8> &>(column), assert_cast<const DataTypeEnum8 &>(*type));
+    else
+        append_enum_names(assert_cast<const ColumnVector<Int16> &>(column), assert_cast<const DataTypeEnum16 &>(*type));
+    appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
+    appendBuffer(out_data.data(), out_data.size());
 }
 
 void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t num_rows, const IColumn * null_map_column)

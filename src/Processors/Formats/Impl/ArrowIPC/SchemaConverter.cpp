@@ -558,8 +558,26 @@ buildField(
             case TypeIndex::UInt16: make_int(16, false); break;
             case TypeIndex::UInt32: make_int(32, false); break;
             case TypeIndex::UInt64: make_int(64, false); break;
-            case TypeIndex::Int8: case TypeIndex::Enum8: make_int(8, true); break;
-            case TypeIndex::Int16: case TypeIndex::Enum16: make_int(16, true); break;
+            case TypeIndex::Int8: make_int(8, true); break;
+            case TypeIndex::Enum8:
+                if (settings.arrow.output_enum_as_byte_array)
+                {
+                    type_type = flatbuf::Type_Utf8;
+                    type_offset = flatbuf::CreateUtf8(b).Union();
+                }
+                else
+                    make_int(8, true);
+                break;
+            case TypeIndex::Int16: make_int(16, true); break;
+            case TypeIndex::Enum16:
+                if (settings.arrow.output_enum_as_byte_array)
+                {
+                    type_type = flatbuf::Type_Utf8;
+                    type_offset = flatbuf::CreateUtf8(b).Union();
+                }
+                else
+                    make_int(16, true);
+                break;
             case TypeIndex::Int32: make_int(32, true); break;
             case TypeIndex::Int64: make_int(64, true); break;
             case TypeIndex::DateTime: make_int(32, false); break;

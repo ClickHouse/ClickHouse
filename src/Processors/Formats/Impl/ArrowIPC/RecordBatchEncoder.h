@@ -55,6 +55,9 @@ private:
     /// `output_format_arrow_unsupported_types_as_binary` fallback. Read back as `String`. `null_map_column`
     /// (when set) marks rows to emit as zero-length, so a NULL row's nested bytes are not written.
     void encodeAsBinary(const IColumn & column, size_t num_rows, const IColumn * null_map_column = nullptr);
+    /// Encodes an Enum8/Enum16 column as an Arrow `Binary`/`Utf8` column (its names) instead of the
+    /// underlying integer type, when `output_format_arrow_enum_as_byte_array` is enabled.
+    void encodeEnumAsString(const IColumn & column, const DataTypePtr & type, size_t num_rows, const IColumn * null_map_column);
 
     void appendEmptyBuffer();
     /// Emits the validity buffer: a packed LSB-first bitmap (1 = valid) for nullable columns, or an
