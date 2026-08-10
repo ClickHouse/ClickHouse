@@ -8,6 +8,9 @@
 -- results must match.
 
 SET enable_analyzer = 1;
+-- The m['key'] -> m.key_<key> rewrite is disabled by default; enable it so the
+-- optimize_functions_to_subcolumns = 1 branches actually exercise the rewrite.
+SET optimize_map_element_to_subcolumn = 1;
 
 DROP TABLE IF EXISTS t_map_having;
 
