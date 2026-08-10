@@ -50,17 +50,23 @@ protected:
 private:
     void init(const Block & sample_block);
 
+    void finalize(const std::shared_ptr<T> & tx_to_cancel, pqxx::stream_from * stream_to_close) noexcept;
+
     const UInt64 max_block_size;
     bool auto_commit = true;
     ExternalResultDescription description;
 
     std::atomic<bool> started{false};
-    std::atomic<bool> is_completed{false};
+    /// Asks the read to stop. A signal only: it never takes the teardown from whoever owes it.
+    std::atomic<bool> stop_requested{false};
+    /// Claimed once by whoever tears the connection down: prepare() on an uncancelled finish, else
+    /// the destructor. onCancel()'s interrupt does not claim it - it cannot close the stream.
+    std::atomic<bool> finalized{false};
 
-    /// Guards `tx` between the execution thread that creates it (`onStart`) and a concurrent
-    /// `onCancel`. Only the pointer handoff is protected: the network calls stay outside the
-    /// lock, so a cancel does not have to wait for a frozen `pqxx::stream_from` constructor.
+    /// tx and stream are written only by the pipeline thread; this is for onCancel() to read tx.
     std::mutex tx_mutex;
+    /// Serializes the cancel_query() in finalize() between onCancel() and the destructor.
+    std::mutex cancel_mutex;
 
     postgres::ConnectionHolderPtr connection_holder;
 
