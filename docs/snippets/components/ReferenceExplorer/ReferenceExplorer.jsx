@@ -37,18 +37,22 @@ export const ReferenceExplorer = ({ index }) => {
     const title = entry[0];
     const href = entry[1];
     const category = data.categories[entry[2]]?.name || 'Reference';
-    const summary = entry[3] || '';
-    const aliases = entry[4] || [];
+    const aliases = entry[3] || [];
+    const parent = entry[4] || '';
     return {
       title,
       href,
       category,
-      summary,
+      parent: parent !== category && parent !== title ? parent : '',
       isAnchor: href.includes('#'),
       searchNames: [title, ...aliases].map(value => value.toLowerCase()),
-      searchSummary: summary.toLowerCase(),
     };
   }), [data.entries, data.categories]);
+
+  const filterCategories = useMemo(
+    () => [...data.categories].sort((a, b) => a.name.localeCompare(b.name)),
+    [data.categories],
+  );
 
   const filteredEntries = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -59,7 +63,6 @@ export const ReferenceExplorer = ({ index }) => {
         if (entry.searchNames.some(value => value === query)) return { ...entry, rank: 0 };
         if (entry.searchNames.some(value => value.startsWith(query))) return { ...entry, rank: 1 };
         if (entry.searchNames.some(value => value.includes(query))) return { ...entry, rank: 2 };
-        if (entry.searchSummary.includes(query)) return { ...entry, rank: 3 };
         return null;
       })
       .filter(Boolean)
@@ -185,6 +188,24 @@ export const ReferenceExplorer = ({ index }) => {
         </p>
       </header>
 
+      <section aria-labelledby="reference-sections" className="mb-10">
+        <h2 id="reference-sections" className="m-0 mb-3 text-sm font-semibold text-gray-900 dark:text-zinc-50">
+          Browse by section
+        </h2>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {data.categories.map(category => (
+            <a
+              key={category.name}
+              href={withBase(category.href)}
+              className="group flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-900 no-underline transition-colors hover:border-black dark:border-white/10 dark:bg-[#1B1B18] dark:text-zinc-50 dark:hover:border-[#FAFF69]"
+            >
+              <span>{category.name}</span>
+              <span aria-hidden="true" className="text-gray-400 transition-transform group-hover:translate-x-0.5 dark:text-gray-500">→</span>
+            </a>
+          ))}
+        </div>
+      </section>
+
       <div className="mb-10">
         <label htmlFor="reference-search" className="block text-sm font-semibold text-gray-900 dark:text-zinc-50 mb-3">
           Search Reference
@@ -289,7 +310,7 @@ export const ReferenceExplorer = ({ index }) => {
 
                 {categoriesOpen && (
                   <div className="mt-1">
-                    {[{ name: 'All', count: entries.length }, ...data.categories].map(category => {
+                    {[{ name: 'All', count: entries.length }, ...filterCategories].map(category => {
                       const checked = selectedCategories.includes(category.name);
                       return (
                         <label
@@ -354,11 +375,15 @@ export const ReferenceExplorer = ({ index }) => {
                   }`}
                 >
                   <span className="block text-sm font-semibold text-gray-900 dark:text-zinc-50">{entry.title}</span>
-                  {entry.summary && (
-                    <span className="block text-sm text-gray-600 dark:text-gray-400 mt-0.5 line-clamp-2">
-                      {entry.summary}
-                    </span>
-                  )}
+                  <span className="mt-1 flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                    <span>{entry.category}</span>
+                    {entry.parent && (
+                      <>
+                        <span aria-hidden="true">›</span>
+                        <span className="truncate">{entry.parent}</span>
+                      </>
+                    )}
+                  </span>
                 </a>
               ))}
             </div>
