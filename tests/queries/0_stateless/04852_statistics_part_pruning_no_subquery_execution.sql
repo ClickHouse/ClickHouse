@@ -93,12 +93,15 @@ INSERT INTO t_stats_prune_in_remote VALUES ('a', 100);
 INSERT INTO t_stats_prune_in_remote VALUES ('a', 200);
 
 -- `prefer_localhost_replica = 0` is required: a locally executed subquery keeps a clonable plan.
+-- Routing the outer query through parallel replicas reshapes it so the subquery is no longer the
+-- consumed set source, so the parallel-replica settings are pinned off rather than randomized.
 SELECT count() FROM t_stats_prune_in_remote
 WHERE globalNullIn(c, (
     SELECT c FROM cluster('test_cluster_one_shard_two_replicas', currentDatabase(), 't_stats_prune_in_remote')
     WHERE throwIf(a = 'a', 'subquery failed on purpose')))
 SETTINGS use_skip_indexes = 0, use_statistics = 0, use_statistics_for_part_pruning = 1,
-         prefer_localhost_replica = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+         prefer_localhost_replica = 0, enable_parallel_replicas = 0,
+         automatic_parallel_replicas_mode = 0; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 -- Same query with pruning off, so the error above is attributable to statistics part pruning rather
 -- than to the `globalNullIn` spelling or the remote read.
