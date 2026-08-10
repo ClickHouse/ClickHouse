@@ -92,6 +92,9 @@ public:
 
     bool isCancelled() const { return cancelled; }
 
+    /// The first recorded failure; null if the query was cancelled without one (or not at all).
+    std::exception_ptr getFailure() const;
+
     /// Rethrow the first recorded failure, if there is one.
     void rethrowIfFailed() const;
 
@@ -146,9 +149,11 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     ContextPtr context,
     DistributedQueryCancellationPtr cancellation);
 
-/// Wake every in-memory exchange waiter of the query. Idempotent and lock-free with respect to the
-/// executor lifecycle, so cancellation paths can call it without waiting for the executor mutex.
-void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id);
+/// Wake every in-memory exchange waiter of the query; the waiters rethrow `failure` (or a
+/// generic cancellation error when it is null) instead of treating the stream as complete.
+/// Idempotent and lock-free with respect to the executor lifecycle, so cancellation paths can call
+/// it without waiting for the executor mutex.
+void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id, std::exception_ptr failure);
 
 /// Contains info about hosts assigned to exchange buckets
 struct ExchangeStreamSources

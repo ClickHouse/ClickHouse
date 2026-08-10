@@ -1,4 +1,6 @@
--- Tags: no-old-analyzer
+-- Tags: no-old-analyzer, no-parallel-replicas
+-- no-parallel-replicas: the storage-join path this test is about is not taken at all, so the plan
+-- routes through `IEJoin` and both `ON` sections below join without the errors asserted here.
 
 -- A `Join` engine table on the right side keeps the storage-join path even when `ie_join`
 -- is listed first in `join_algorithm`.
@@ -7,8 +9,6 @@ DROP TABLE IF EXISTS ie_sj_left;
 DROP TABLE IF EXISTS ie_sj_inner;
 DROP TABLE IF EXISTS ie_sj_left_eng;
 SET join_algorithm = 'ie_join,hash';
--- Parallel replicas plan these joins without the storage-join path, so the expected errors below do not fire
-SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS ie_sj_left;
 DROP TABLE IF EXISTS ie_sj_inner;
