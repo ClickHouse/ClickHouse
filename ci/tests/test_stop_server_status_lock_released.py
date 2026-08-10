@@ -92,6 +92,20 @@ def _alive(pid):
     return True
 
 
+def _proc_state(pid):
+    """The process state letter from `/proc/<pid>/stat`, or "gone" once reaped.
+
+    A zombie keeps its `stat` entry (only `cmdline` empties), which is what makes
+    this the oracle for "was the wrapper waited for". The state is read after the
+    last `") "` because `comm` may itself contain spaces and parentheses.
+    """
+    try:
+        with open(f"/proc/{pid}/stat") as file:
+            return file.read().split(") ", 1)[1].split()[0]
+    except OSError:
+        return "gone"
+
+
 class _SignalSpy:
     """Every signal delivered, so the escalation ladder itself can be asserted
     and not just its end state.
@@ -103,14 +117,16 @@ class _SignalSpy:
     """
 
     def __init__(self, real_kill):
-        self._real_kill = real_kill
+        # Public: an arm that has to signal something itself during the call under
+        # test must not have that recorded as production's doing.
+        self.real_kill = real_kill
         self.calls = []
 
     def __call__(self, pid, sig):
         # Signal 0 is a liveness probe, not a delivery.
         if sig:
             self.calls.append((pid, sig))
-        return self._real_kill(pid, sig)
+        return self.real_kill(pid, sig)
 
     def reset(self):
         self.calls.clear()
@@ -259,6 +275,17 @@ def test_wedged_server_is_killed_and_lock_released(fixture):
     assert fixture.warnings.warnings == []
 
 
+def test_wrapper_is_reaped(fixture):
+    """The sh -c wrapper is waited for, so stop_server leaves no zombie behind."""
+    server = fixture.start("run_r0")
+    run_path, _, pid, popen, _ = server
+    fixture.signals.reset()
+    _proc_for([server, None, None]).stop_server()
+    assert _lock_is_free(run_path), "clickhouse local would still fail with Code 76"
+    assert popen.returncode is not None, "the wrapper was never waited for"
+    assert _proc_state(popen.pid) != "Z", "the wrapper was left as a zombie"
+
+
 def test_trap_honoured_needs_no_sigkill(fixture):
     """A server that dies on SIGTRAP releases the lock without escalation."""
     server = fixture.start("run_r0", trap_dies=True)
@@ -320,6 +347,40 @@ def test_pid_not_named_by_status_file_is_not_signalled(fixture):
     finally:
         other.kill()
         other.wait()
+
+
+def test_lock_released_between_probe_and_identity_read_is_not_reported_lost(
+    fixture, monkeypatch
+):
+    """A holder that exits inside the probe/identity window is not reported as lost.
+
+    The window is made deterministic rather than raced: the holder is retired from
+    inside the `head -1` call, so the lock is provably busy at the probe and the
+    file provably gone at the identity read.
+    """
+    server = fixture.start("run_r0")
+    run_path, _, pid, _, _ = server
+    status = os.path.join(run_path, "status")
+    real_get_output = clickhouse_proc_module.Shell.get_output
+
+    def get_output(command, *args, **kwargs):
+        if "head -1" in command:
+            # Retire the holder the way a server completing its shutdown does:
+            # StatusFile's destructor closes and unlinks the file it locked.
+            fixture.signals.real_kill(pid, signal.SIGKILL)
+            deadline = time.monotonic() + 30
+            while _alive(pid) and time.monotonic() < deadline:
+                time.sleep(0.1)
+            if os.path.exists(status):
+                os.unlink(status)
+        return real_get_output(command, *args, **kwargs)
+
+    monkeypatch.setattr(clickhouse_proc_module.Shell, "get_output", get_output)
+    fixture.signals.reset()
+    _proc_for([server, None, None]).stop_server()
+    assert _lock_is_free(run_path)
+    assert fixture.warnings.warnings == [], "a free lock must not be reported lost"
+    assert fixture.signals.calls == [], "the disowns branch signals nothing"
 
 
 def test_stale_status_file_of_dead_holder_is_free(fixture):

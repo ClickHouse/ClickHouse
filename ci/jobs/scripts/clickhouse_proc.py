@@ -819,6 +819,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 pid, signal.SIGKILL, run_path, cls.STOP_LOCK_WAIT_TIMEOUT_KILL
             ):
                 return
+        if cls._status_lock_free(run_path):
+            return
         print(f"WARNING: {run_path}/status is still locked")
         Info().add_workflow_warning(
             f"Failed to release the status file lock in {run_path},"
@@ -868,6 +870,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 ):
                     continue
                 self._force_release_status_lock(pid, run_path)
+                # The wrapper exits with the server it forked, so waiting for it
+                # here is what keeps this object from accumulating zombies.
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
 
         return self
 
