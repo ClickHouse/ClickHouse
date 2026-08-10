@@ -694,7 +694,8 @@ private:
     /// Remove ZooKeeper part nodes covered by a completed drop range that have no part in the working
     /// set. Only when the range cannot be satisfied by a live covering part instead, and only after
     /// its parts have been removed from ZooKeeper. Does ZooKeeper I/O, so not under a parts lock.
-    void removeStrandedPartsInRangeFromZooKeeper(const MergeTreePartInfo & drop_range);
+    /// Returns the remaining children of <replica_path>/parts, so callers need not list them again.
+    Strings removeStrandedPartsInRangeFromZooKeeper(const MergeTreePartInfo & drop_range);
 
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.
