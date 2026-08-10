@@ -315,6 +315,31 @@ def test_database_engine_show_create_table_preserves_tls_arguments(started_clust
 
     node.query("DROP DATABASE pg_db_show_create")
 
+    # The database engine folds every positional argument with
+    # `evaluateConstantExpressionOrIdentifierAsLiteral`, so the schema may be
+    # stored as an arbitrary constant expression rather than a string literal.
+    # The synthesized table-engine definition must keep it (as its folded value)
+    # in that form too.
+    node.query("DROP DATABASE IF EXISTS pg_db_show_create_expr")
+    node.query(
+        f"CREATE DATABASE pg_db_show_create_expr ENGINE = PostgreSQL('{PG_HOST}:5432', 'postgres', 'postgres', '{pg_pass}', concat('show_create', '_schema'), 1, "
+        f"sslmode='verify-full', sslrootcert_pem='{quote_pem(ca_pem)}')"
+    )
+    assert (
+        node.query("SELECT count() FROM pg_db_show_create_expr.schema_table").strip()
+        == "10"
+    )
+
+    show_create = node.query(
+        "SHOW CREATE TABLE pg_db_show_create_expr.schema_table"
+    ).replace("\\'", "'")
+    assert "'schema_table'" in show_create
+    assert "'show_create_schema', sslmode = 'verify-full'" in show_create
+    assert "sslrootcert_pem = '[HIDDEN]'" in show_create
+    assert "BEGIN CERTIFICATE" not in show_create
+
+    node.query("DROP DATABASE pg_db_show_create_expr")
+
 
 def test_postgresql_dictionary_over_ssl(started_cluster):
     # The dictionary source used to accept `sslmode` and then silently ignore it;

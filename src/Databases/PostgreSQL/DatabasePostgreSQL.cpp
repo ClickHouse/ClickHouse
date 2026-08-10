@@ -508,17 +508,21 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
             --num_positional_arguments;
         }
 
-        /// Keep the string-valued fifth positional argument (the remote `schema`): once the table
-        /// name is inserted below it lands in the table engine's own `schema` position, and dropping
-        /// it would silently repoint the emitted definition at the default PostgreSQL schema. Remove
-        /// the remaining positional arguments (`use_table_cache`, including the deprecated form where
-        /// it is the numeric fifth argument), which the table engine does not take.
+        /// Keep the fifth positional argument (the remote `schema`): once the table name is inserted
+        /// below it lands in the table engine's own `schema` position, and dropping it would silently
+        /// repoint the emitted definition at the default PostgreSQL schema. Remove the remaining
+        /// positional arguments (`use_table_cache`, including the deprecated form where it is the
+        /// numeric fifth argument), which the table engine does not take.
+        /// Whether the fifth argument is a schema is decided by the already-parsed configuration and
+        /// not by the shape of the stored AST: the database engine folds every positional argument
+        /// with `evaluateConstantExpressionOrIdentifierAsLiteral`, so the schema may be stored as an
+        /// arbitrary constant expression rather than a string literal. The folded value is emitted
+        /// instead of the original node for the same reason.
         size_t num_positional_to_keep = 4;
-        if (num_positional_arguments > 4)
+        if (num_positional_arguments > 4 && !configuration.schema.empty())
         {
-            const auto * fifth_argument = arguments[4]->as<ASTLiteral>();
-            if (fifth_argument && fifth_argument->value.getType() == Field::Types::Which::String)
-                num_positional_to_keep = 5;
+            arguments[4] = make_intrusive<ASTLiteral>(configuration.schema);
+            num_positional_to_keep = 5;
         }
         if (num_positional_arguments > num_positional_to_keep)
             arguments.erase(arguments.begin() + num_positional_to_keep, arguments.begin() + num_positional_arguments);
