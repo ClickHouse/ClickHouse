@@ -3208,7 +3208,10 @@ TEST_F(WallabyTest, KeepsDecimalModeBeyondAFixedExceptionCount)
     for (size_t i = 0; i < values.size(); ++i)
     {
         if (i % 8 == 0)
-            values[i] = 100.0 + static_cast<Float64>(10 * (i / 8) + 1) / 1e7;
+        {
+            const size_t band = i / 8;
+            values[i] = 100.0 + static_cast<Float64>(10 * band + 1) / 1e7;
+        }
         else
             values[i] = 100.0 + static_cast<Float64>(i) / 1000;
     }
@@ -3264,6 +3267,19 @@ TEST_F(WallabyTest, ShrinksTrailingZeroIntegersWithNegativeScale)
     EXPECT_LT(wallabyCompressedSize(values), 1500u);
 }
 
+TEST_F(WallabyTest, ReachesNegativeScaleBeyondTheIntegerDomain)
+{
+    /// Integers scaled past the Int64 domain: 10^19-magnitude multiples of 10^15 overflow the
+    /// quantization at every scale >= 0, so only the division of a negative scale can represent
+    /// them. The scan must not stop at the domain failure of scale 0: alpha = -15 packs the
+    /// 17-bit cofactors (~2.2 KiB) where the XOR mode needs ~6 KiB.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i * 97 % 90000 + 10000) * 1e15;
+
+    EXPECT_LT(wallabyCompressedSize(values), 3000u);
+}
+
 TEST_F(WallabyTest, CapsLaneWidthByExilingOutliers)
 {
     /// A two-decimal ramp with a single enormous outlier. Packing the whole vector at the
@@ -3303,6 +3319,119 @@ TEST_F(WallabyTest, AbsorbsHighPrecisionMinorityMissedBySampling)
     }
 
     EXPECT_LT(wallabyCompressedSize(values), 4200u);
+}
+
+/// The 32 positions the encoder samples to collect candidate decimal scales. They are
+/// deterministic, so a block can place its whole non-decimal minority exactly on them; the
+/// encoder must still measure the decimal candidates on the full vector.
+std::array<bool, 1024> wallabySampledPositions()
+{
+    std::array<bool, 1024> is_sampled_position{};
+    for (UInt32 i = 0; i < 32; ++i)
+        is_sampled_position[static_cast<UInt32>((static_cast<UInt64>(i) * 2654435761u) % 1024)] = true;
+    return is_sampled_position;
+}
+
+TEST_F(WallabyTest, KeepsDecimalModeWhenEveryFailureSitsOnASampledPosition)
+{
+    /// A 0, 1, 2, ... ramp with a NaN on every sampled position and nowhere else: not a single
+    /// sample quantizes. An encoder revision that rejected the decimal modes on sampled failures
+    /// alone fell through to the XOR mode (~2 KiB) even though alpha = 0 needs only 32 exceptions
+    /// next to 3-bit delta lanes (~700 bytes). Sampling only guides the candidate set now.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = is_sampled_position[i] ? std::numeric_limits<Float64>::quiet_NaN() : static_cast<Float64>(i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 1200u);
+}
+
+TEST_F(WallabyTest, AbsorbsHighPrecisionMinorityOnAllSampledPositions)
+{
+    /// The mirror image of the previous case: the high-precision minority is not missed by the
+    /// sample, it *is* the sample. Every sampled value needs alpha = 13, the bulk needs alpha = 1,
+    /// and alpha = 1 with 32 exceptions is the cheapest encoding of the vector (~1.6 KiB against
+    /// ~6.3 KiB for alpha = 13 and ~3.8 KiB for XOR). An encoder revision that extrapolated the
+    /// sampled failure count to the whole vector estimated 960 exceptions for alpha = 1 and
+    /// pruned it before measuring; the estimate counts only the sampled failures themselves now,
+    /// which is a genuine lower bound.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024);
+    size_t placed = 0;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (is_sampled_position[i])
+        {
+            ++placed;
+            values[i] = 100.0 + static_cast<Float64>(10 * placed + 1) / 1e13;
+        }
+        else
+            values[i] = 100.0 + static_cast<Float64>((i * 97) % 992) / 10;
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 2600u);
+}
+
+TEST_F(WallabyTest, FindsTheWinningScaleBehindTheFirstExceptions)
+{
+    /// Candidate discovery from exception values must not depend on which exceptions come first.
+    /// The sample sees only the 3-decimal bulk; the first eight exceptions of the alpha = 3
+    /// evaluation are ~1e-13 outliers that point at alpha = 13, and 256 further exceptions are
+    /// 7-decimal values around 100 that point at the actual winner alpha = 7 (~3.2 KiB of 24-bit
+    /// lanes with 8 exceptions, against ~3.9 KiB for alpha = 3 and ~6.7 KiB for XOR). An encoder
+    /// revision that probed only the first eight exception positions never measured alpha = 7;
+    /// the probes are spread over the whole exception list now.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = 100.0 + static_cast<Float64>((i * 13) % 1000) / 1000;
+
+    size_t outliers = 0;
+    size_t high_precision = 0;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (is_sampled_position[i])
+            continue;
+        if (outliers < 8)
+        {
+            ++outliers;
+            values[i] = static_cast<Float64>(outliers) / 1e13;
+        }
+        else if (high_precision < 256)
+        {
+            ++high_precision;
+            values[i] = 100.0 + static_cast<Float64>((high_precision * 7919) % 9999999 + 1) / 1e7;
+        }
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 3600u);
+}
+
+TEST_F(WallabyTest, PrefersAWiderScaleThatCollapsesTheLanes)
+{
+    /// A wider scale can be dramatically cheaper than a narrower one, so nothing in the chooser
+    /// may assume that widening costs bits: 500 distinct 7-decimal values in a span of 5e-5 around
+    /// a constant 100.0 pack into 9-bit lanes with no exceptions at all (~1.2 KiB), while alpha = 0
+    /// has to except every one of them (~5 KiB) and the XOR mode pays ~30 bits per value of the
+    /// minority. The minority sits off the sampled positions, so alpha = 7 is discovered from the
+    /// exception probes rather than from the sample. This is a guard rather than a regression:
+    /// the previous encoder also picked alpha = 7 here (its unsound widening estimate never got
+    /// the chance to prune it, because the tight `size_to_beat` from the XOR mode makes the
+    /// alpha = 0 reference abandon its scan first), but the property is what the pruning bound is
+    /// now required to preserve by construction.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024, 100.0);
+    size_t placed = 0;
+    for (size_t i = 0; i < values.size() && placed < 500; ++i)
+    {
+        if (!is_sampled_position[i])
+        {
+            ++placed;
+            values[i] = 100.0 + static_cast<Float64>(placed) / 1e7;
+        }
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 1400u);
 }
 
 }
