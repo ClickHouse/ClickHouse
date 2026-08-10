@@ -23,4 +23,16 @@ using UnorderedSetWithMemoryTracking = std::unordered_set<K, Hash, KeyEqual, All
 
 template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
 using UnorderedMultiSetWithMemoryTracking = std::unordered_multiset<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
+
+namespace wmt
+{
+
+template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
+using unordered_set = std::unordered_set<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
+
+template <typename K, typename Hash = std::hash<K>, typename KeyEqual = std::equal_to<K>>
+using unordered_multiset = std::unordered_multiset<K, Hash, KeyEqual, AllocatorWithMemoryTracking<K>>;
+
+}
+
 }

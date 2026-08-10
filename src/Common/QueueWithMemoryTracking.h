@@ -21,4 +21,12 @@ namespace DB
 template <typename T>
 using QueueWithMemoryTracking = std::queue<T, DequeWithMemoryTracking<T>>;
 
+namespace wmt
+{
+
+template <typename T>
+using queue = std::queue<T, deque<T>>;
+
+}
+
 }

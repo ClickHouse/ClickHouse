@@ -21,4 +21,12 @@ namespace DB
 template <typename T>
 using ListWithMemoryTracking = std::list<T, AllocatorWithMemoryTracking<T>>;
 
+namespace wmt
+{
+
+template <typename T>
+using list = std::list<T, AllocatorWithMemoryTracking<T>>;
+
+}
+
 }

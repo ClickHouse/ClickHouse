@@ -10,3 +10,10 @@ class StringWithMemoryTracking : public std::basic_string<char, std::char_traits
 {
     using std::basic_string<char, std::char_traits<char>, AllocatorWithMemoryTracking<char>>::basic_string;
 };
+
+namespace DB::wmt
+{
+
+using string = StringWithMemoryTracking;
+
+}

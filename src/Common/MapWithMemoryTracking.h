@@ -24,4 +24,15 @@ using MapWithMemoryTracking = std::map<K, V, Compare, AllocatorWithMemoryTrackin
 template <typename K, typename V, typename Compare = std::less<K>>
 using MultiMapWithMemoryTracking = std::multimap<K, V, Compare, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
+namespace wmt
+{
+
+template <typename K, typename V, typename Compare = std::less<K>>
+using map = std::map<K, V, Compare, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+
+template <typename K, typename V, typename Compare = std::less<K>>
+using multimap = std::multimap<K, V, Compare, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+
+}
+
 }

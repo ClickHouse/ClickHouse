@@ -24,4 +24,15 @@ using SetWithMemoryTracking = std::set<K, Compare, AllocatorWithMemoryTracking<K
 template <typename K, typename Compare = std::less<K>>
 using MultiSetWithMemoryTracking = std::multiset<K, Compare, AllocatorWithMemoryTracking<K>>;
 
+namespace wmt
+{
+
+template <typename K, typename Compare = std::less<K>>
+using set = std::set<K, Compare, AllocatorWithMemoryTracking<K>>;
+
+template <typename K, typename Compare = std::less<K>>
+using multiset = std::multiset<K, Compare, AllocatorWithMemoryTracking<K>>;
+
+}
+
 }

@@ -21,4 +21,12 @@ namespace DB
 template <typename T>
 using VectorWithMemoryTracking = std::vector<T, AllocatorWithMemoryTracking<T>>;
 
+namespace wmt
+{
+
+template <typename T>
+using vector = std::vector<T, AllocatorWithMemoryTracking<T>>;
+
+}
+
 }
