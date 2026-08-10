@@ -149,6 +149,7 @@ static struct InitFiu
     ONCE(framing_pump_logs_throw) \
     ONCE(framing_exception_packet_throw) \
     ONCE(framing_throw_after_final_progress) \
+    ONCE(write_buffer_valid_utf8_finalize_throw) \
     ONCE(http_output_finalize_throw) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
