@@ -21,10 +21,14 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -74,12 +78,75 @@ namespace ErrorCodes
     extern const int CANNOT_MERGE_DIFFERENT_AGGREGATED_DATA_VARIANTS;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 }
 
 namespace
 {
+struct HasSubqueryMatcher
+{
+    struct Data
+    {
+        bool has_subquery = false;
+    };
+
+    static bool needChildVisit(const DB::ASTPtr &, const DB::ASTPtr &) { return true; }
+
+    static void visit(const DB::ASTPtr & node, Data & data)
+    {
+        if (node->as<DB::ASTSubquery>())
+            data.has_subquery = true;
+    }
+};
+
+using HasSubqueryVisitor = DB::ConstInDepthNodeVisitor<HasSubqueryMatcher, true>;
+
+bool astContainsSubquery(const DB::ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    HasSubqueryMatcher::Data data;
+    HasSubqueryVisitor(data).visit(ast);
+    return data.has_subquery;
+}
+
+bool hasJoinOrMutableTableInputs(const DB::ASTSelectQuery & select)
+{
+    if (select.hasJoin())
+        return true;
+
+    const auto tables_ast = select.tables();
+    if (!tables_ast)
+        return false;
+
+    const auto * tables = tables_ast->as<DB::ASTTablesInSelectQuery>();
+    if (!tables)
+        return true;
+
+    for (const auto & child : tables->children)
+    {
+        const auto * element = child->as<DB::ASTTablesInSelectQueryElement>();
+        if (!element)
+            return true;
+
+        if (!element->table_expression)
+            continue;
+
+        const auto * table_expression = element->table_expression->as<DB::ASTTableExpression>();
+        if (!table_expression)
+            return true;
+
+        /// Table functions and subqueries may read mutable data not represented in the part identity cache key.
+        if (table_expression->table_function || table_expression->subquery)
+            return true;
+    }
+
+    return false;
+}
+
 bool worthConvertToTwoLevel(
     size_t group_by_two_level_threshold, size_t result_size, size_t group_by_two_level_threshold_bytes, auto result_size_bytes)
 {
@@ -343,7 +410,8 @@ Aggregator::Params::Params(
     bool enable_producing_buckets_out_of_order_in_aggregation_,
     bool serialize_string_with_zero_byte_,
     bool enable_parallel_single_level_merge_,
-    bool enable_packed_string_keys_)
+    bool enable_packed_string_keys_,
+    UInt64 query_semantic_hash_for_partial_cache_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -370,6 +438,7 @@ Aggregator::Params::Params(
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
     , enable_packed_string_keys(enable_packed_string_keys_)
+    , query_semantic_hash_for_partial_cache(query_semantic_hash_for_partial_cache_)
 {
 }
 
@@ -4344,5 +4413,84 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result) cons
 #undef M
     else if (result.type != AggregatedDataVariants::Type::without_key)
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+}
+
+UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
+{
+    if (!select_query)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Query ptr cannot be null");
+
+    const auto & select = select_query->as<DB::ASTSelectQuery &>();
+
+    // It may happen in some corner cases like `select 1 as num group by num`.
+    if (!select.tables())
+        return 0;
+
+    SipHash hash;
+    hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
+    /// `WITH` aliases participate in the pre-aggregation expressions by name only: without the analyzer the
+    /// aggregate argument names are `greater(v, threshold)` regardless of what `threshold` is bound to, so
+    /// `WITH 15 AS threshold` and `WITH 5 AS threshold` would otherwise share one cache entry.
+    /// Alias names are part of the hash here because they are what the expressions refer to.
+    if (const auto with = select.with())
+        hash.update(with->getTreeHash(/*ignore_aliases=*/false));
+    try
+    {
+        if (const auto [array_join_expression_list, is_array_join_left] = select.arrayJoinExpressionList(); array_join_expression_list)
+        {
+            hash.update(array_join_expression_list->getTreeHash(/*ignore_aliases=*/true));
+            hash.update(static_cast<UInt8>(is_array_join_left));
+        }
+    }
+    catch (const DB::Exception & e)
+    {
+        /// `arrayJoinExpressionList` uses the legacy single-`ARRAY JOIN` AST accessor, which throws
+        /// `NOT_IMPLEMENTED` for queries with more than one `ARRAY JOIN` (valid under the analyzer).
+        /// Conservative for cache eligibility: disable the cache fail-close rather than fail the query.
+        if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED)
+            return 0;
+        throw;
+    }
+    if (const auto prewhere = select.prewhere())
+        hash.update(prewhere->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto where = select.where())
+        hash.update(where->getTreeHash(/*ignore_aliases=*/true));
+    if (const auto group_by = select.groupBy())
+        hash.update(group_by->getTreeHash(/*ignore_aliases=*/true));
+    return hash.get64();
+}
+
+UInt64 partialAggregateCacheSemanticKey(
+    const DB::ASTPtr & select_query,
+    const String & current_database,
+    bool apply_deleted_mask,
+    bool has_row_level_filter,
+    bool has_additional_table_filters)
+{
+    if (has_row_level_filter || has_additional_table_filters)
+        return 0;
+
+    const auto & select = select_query->as<DB::ASTSelectQuery &>();
+
+    /// JOINs/table functions/subqueries can introduce mutable inputs whose identity is not fully represented in the per-part key.
+    if (hasJoinOrMutableTableInputs(select))
+        return 0;
+
+    /// Subqueries may depend on mutable external sources whose freshness is not represented in the per-part key:
+    /// predicate subqueries (`WHERE ... IN (SELECT ...)`) as well as scalar subqueries feeding the pre-aggregation
+    /// expressions (`SELECT sum(v * (SELECT m FROM dim)) FROM t GROUP BY k` reuses stale states after `dim` changes,
+    /// because the key only covers `t`'s part identity and the query text). Any subquery disables the key fail-close.
+    if (astContainsSubquery(select_query))
+        return 0;
+
+    const UInt64 base = calculateCacheKey(select_query);
+    if (base == 0)
+        return 0;
+
+    SipHash hash;
+    hash.update(base);
+    hash.update(current_database);
+    hash.update(static_cast<UInt8>(apply_deleted_mask));
+    return hash.get64();
 }
 }

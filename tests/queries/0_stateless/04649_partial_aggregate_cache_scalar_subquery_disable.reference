@@ -1,0 +1,23 @@
+--- Aggregate argument, divisor 2
+1	5
+2	10
+--- Only the dimension table changes, divisor 10
+1	1
+2	2
+1	1
+2	2
+--- Filter inside the aggregate function, threshold 15 then 5
+1	0
+2	1
+1	1
+2	1
+--- Grouping key, 15 then 5
+1	15	10
+2	15	20
+1	5	10
+2	5	20
+--- The same without the analyzer
+1	0
+2	1
+1	1
+2	1

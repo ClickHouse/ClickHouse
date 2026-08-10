@@ -37,6 +37,7 @@
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/DatabaseReplicatedSettings.h>
@@ -77,6 +78,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/Cache/PartialAggregateCache.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -610,6 +612,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable EncryptionHeaderCachePtr encryption_header_cache TSA_GUARDED_BY(mutex);   /// Cache of raw encryption-header bytes by file path
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
+    mutable PartialAggregateCachePtr partial_aggregate_cache TSA_GUARDED_BY(mutex);   /// Cache of partial aggregation results per MergeTree part.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
@@ -5124,6 +5127,51 @@ void Context::clearQueryConditionCache() const
         shared->query_condition_cache->clear();
 }
 
+void Context::setPartialAggregateCache(size_t max_size_in_bytes, size_t max_entries)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->partial_aggregate_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Partial aggregate cache has been already created.");
+
+    shared->partial_aggregate_cache = std::make_shared<PartialAggregateCache>(max_size_in_bytes, max_entries);
+}
+
+PartialAggregateCachePtr Context::getPartialAggregateCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->partial_aggregate_cache;
+}
+
+void Context::updatePartialAggregateCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->partial_aggregate_cache)
+        return; /// Cache was not created, nothing to update
+
+    size_t max_size_in_bytes = config.getUInt64("partial_aggregate_cache.max_size_in_bytes", DEFAULT_PARTIAL_AGGREGATE_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("partial_aggregate_cache.max_entries", DEFAULT_PARTIAL_AGGREGATE_CACHE_MAX_ENTRIES);
+    if (max_size_in_bytes > max_cache_size)
+    {
+        max_size_in_bytes = max_cache_size;
+        LOG_DEBUG(
+            shared->log,
+            "Lowered partial aggregate cache size to {} because the system has limited RAM",
+            formatReadableSizeWithBinarySuffix(max_size_in_bytes));
+    }
+    shared->partial_aggregate_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->partial_aggregate_cache->setMaxEntries(max_entries);
+}
+
+void Context::clearPartialAggregateCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->partial_aggregate_cache)
+        shared->partial_aggregate_cache->clear();
+}
+
 void Context::setEncryptionHeaderCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
@@ -5163,7 +5211,6 @@ void Context::clearEncryptionHeaderCache() const
     if (shared->encryption_header_cache)
         shared->encryption_header_cache->clear();
 }
-
 
 void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
 {
@@ -5260,6 +5307,9 @@ void Context::clearCaches() const
     /// reused could see stale bitmaps from the prior table.
     if (shared->delete_bitmap_cache)
         shared->delete_bitmap_cache->clear();
+
+    if (shared->partial_aggregate_cache)
+        shared->partial_aggregate_cache->clear();
 
     /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
 }

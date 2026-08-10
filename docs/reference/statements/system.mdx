@@ -282,6 +282,28 @@ SYSTEM CLEAR QUERY CACHE TAG '<tag>'
 Clears the [query cache](/concepts/features/performance/caches/query-cache).
 If a tag is specified, only query cache entries with the specified tag are deleted.
 
+## SYSTEM CLEAR|DROP AGGREGATE CACHE {#drop-aggregate-cache}
+
+:::note
+The partial aggregate cache is experimental. Enable it with `use_partial_aggregate_cache`.
+:::
+
+```sql
+SYSTEM CLEAR AGGREGATE CACHE [ON CLUSTER cluster_name]
+```
+
+Clears the partial aggregate cache.
+
+The following forms are accepted as aliases (they also clear the cache; `DROP` does not disable the feature):
+
+```sql
+SYSTEM DROP AGGREGATE CACHE [ON CLUSTER cluster_name]
+SYSTEM DROP PARTIAL AGGREGATE CACHE [ON CLUSTER cluster_name]
+SYSTEM CLEAR PARTIAL AGGREGATE CACHE [ON CLUSTER cluster_name]
+```
+
+Requires the `SYSTEM DROP AGGREGATE CACHE` privilege (see [GRANT](/sql-reference/statements/grant#privileges)). Additional names are accepted in `GRANT` for compatibility; the SQL forms above match the parser.
+
 ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
 Clears cache for schemas loaded from [`format_schema_path`](/reference/settings/server-settings/settings/format#format_schema_path).

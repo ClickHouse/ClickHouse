@@ -5963,6 +5963,34 @@ Possible values:
 
 - Any string
 )", 0) \
+    DECLARE(Bool, use_partial_aggregate_cache, false, R"(
+Experimental. Cache partial aggregates per MergeTree part so repeated `GROUP BY` can skip unchanged parts; new or changed parts are aggregated and merged with cached states.
+
+Example:
+
+```sql
+SET use_partial_aggregate_cache = 1;
+SELECT toStartOfHour(ts) AS hour, sum(value) FROM metrics GROUP BY hour;
+```
+
+The cache is not used when the per-part states cannot be attributed to the parts of a single table alone, in particular for
+queries with `JOIN`, table functions, subqueries (including scalar subqueries in the aggregated expressions), row policies,
+`additional_table_filters`, or non-deterministic functions. Planning-stage reuse is additionally disabled for queries with
+`ARRAY JOIN` before the aggregation.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", EXPERIMENTAL) \
+    DECLARE(Bool, partial_aggregate_cache_allow_parallel_aggregation_streams, false, R"(
+Experimental. Only with `use_partial_aggregate_cache`. If `0` (default), inputs merge to one stream before aggregation so execution-time cache use stays well-defined per part. If `1`, multiple streams may remain; execution-time cache is then off when the aggregation step still has more than one input stream, while planning-stage cache hits can still apply.
+
+Possible values:
+
+- 0 - Single stream before aggregation when the partial aggregate cache is on
+- 1 - Allow multiple streams; execution-time cache disabled if multiple streams reach aggregation
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \

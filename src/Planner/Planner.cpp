@@ -50,10 +50,10 @@
 
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/StorageID.h>
-#include <Interpreters/Cache/QueryResultCache.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -113,6 +113,7 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
@@ -629,10 +630,21 @@ ALWAYS_INLINE void addFilterStep(
 Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
+    const SelectQueryInfo & select_query_info,
     bool aggregate_descriptions_remove_arguments = false)
 {
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
+
+    const bool has_row_level_filter = static_cast<bool>(select_query_info.row_level_filter);
+    const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
+    const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
+    const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
+        select_query_info.query,
+        query_context->getCurrentDatabase(),
+        apply_deleted_mask_value,
+        has_row_level_filter,
+        has_additional_table_filters);
 
     /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
     /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).
@@ -653,6 +665,11 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
+    /// Prefer query context: stateful functions (e.g. `timeSeriesIdToGroup`) need it in `FunctionFactory::tryGet`.
+    const bool has_nondeterministic_functions
+        = astContainsNonDeterministicFunctions(select_query_info.query, query_context);
+    const UInt64 partial_cache_semantic_key = has_nondeterministic_functions ? 0 : partial_aggregate_semantic_key;
+
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -680,7 +697,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
         settings[Setting::serialize_string_in_memory_with_zero_byte],
         settings[Setting::enable_parallel_single_level_merge],
-        settings[Setting::enable_packed_string_keys_in_aggregation]);
+        settings[Setting::enable_packed_string_keys_in_aggregation],
+        partial_cache_semantic_key);
 
     return aggregator_params;
 }
@@ -699,10 +717,11 @@ SortDescription getSortDescriptionFromNames(const Names & names)
 void addAggregationStep(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info)
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result);
+    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info);
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
@@ -874,6 +893,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryInfo & select_query_info,
     const QueryNode & query_node)
 {
     if (!query_node.isGroupByWithCube() && !query_node.isGroupByWithRollup())
@@ -885,6 +905,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
     auto aggregator_params = getAggregatorParams(planner_context,
         aggregation_analysis_result,
         query_analysis_result,
+        select_query_info,
         true /*aggregate_descriptions_remove_arguments*/);
 
     if (query_node.isGroupByWithRollup())
@@ -2425,7 +2446,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context);
+            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
         }
 
         /** If we have aggregation, we can't execute any later-stage
@@ -2527,7 +2548,7 @@ void Planner::buildPlanForQueryNode()
                 having_executed = true;
             }
 
-            addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
+            addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
                 addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);

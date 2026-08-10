@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Interpreters/Cache/PartialAggregateInfo.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -136,8 +137,14 @@ private:
 };
 #endif
 
-MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_)
-    : ISource(std::make_shared<const Block>(processor_->getHeader())), processor(std::move(processor_)), log_name(log_name_)
+MergeTreeSource::MergeTreeSource(
+    MergeTreeSelectProcessorPtr processor_,
+    const std::string & log_name_,
+    PartialAggregateInfoPtr partial_aggregate_identity_from_plan_)
+    : ISource(std::make_shared<const Block>(processor_->getHeader()))
+    , processor(std::move(processor_))
+    , log_name(log_name_)
+    , partial_aggregate_identity_from_plan(std::move(partial_aggregate_identity_from_plan_))
 {
 #if defined(OS_LINUX)
     if (processor->getSettings().use_asynchronous_read_from_pool)
@@ -187,6 +194,19 @@ Chunk MergeTreeSource::processReadResult(ChunkAndProgress chunk)
 
     if (finished)
         processor->onFinish();
+
+    if (processor->getSettings().use_partial_aggregate_cache && chunk.chunk.getNumRows() > 0)
+    {
+        if (partial_aggregate_identity_from_plan)
+        {
+            auto info = std::make_shared<PartialAggregateInfo>(*partial_aggregate_identity_from_plan);
+            /// Same flag as `buildPartialAggregateInfoFromCurrentTask` for pooled reads: use processor settings as source of truth.
+            info->skip_execution_time_cache_lookup |= processor->getSettings().skip_partial_aggregate_execution_cache_lookup;
+            chunk.chunk.getChunkInfos().add(std::move(info));
+        }
+        else if (auto info = processor->buildPartialAggregateInfoFromCurrentTask())
+            chunk.chunk.getChunkInfos().add(std::move(info));
+    }
 
     /// We can return a chunk with no rows even if are not finished.
     /// This allows to report progress when all the rows are filtered out inside MergeTreeSelectProcessor by PREWHERE logic.
