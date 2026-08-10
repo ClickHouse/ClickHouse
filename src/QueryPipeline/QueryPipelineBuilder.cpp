@@ -602,7 +602,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     bool use_parallel_non_joined = join->supportParallelNonJoinedBlocksProcessing();
 
     /// When delayed blocks exist, JoiningTransform still needs non-joined rows emission for the main bucket (GraceHashJoin spilled case).
-    /// When only parallel non-joined (no delayed blocks),  non-joined emission inside JoiningTransform
+    /// When only parallel non-joined (no delayed blocks), non-joined emission inside JoiningTransform
     /// is entirely disabled (the parallel NonJoinedBlocksTransform handles it).
     const bool emit_non_joined = !use_parallel_non_joined || delayed_root != nullptr;
     /// finish_counter is needed for non-joined rows emission and for publishing probe runtime statistics.
