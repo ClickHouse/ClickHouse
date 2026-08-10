@@ -807,29 +807,36 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                     auto & src = decoded[nested_it->second];
                     ColumnWithTypeAndName nested_column(src.column, src.type, nested_table_name);
 
-                    /// Arrow's default nullable schema yields `Array(Nullable(Tuple(...)))`. `Nested::flatten`
-                    /// cannot split a Nullable tuple, and casting it onto the non-nullable Nested tuple would
-                    /// fail on struct-level nulls. Unwrap the nullable tuple, propagating the struct null map
-                    /// down to each element (matching the library reader), so it becomes `Array(Tuple(...))`.
-                    if (const auto * arr_type = typeid_cast<const DataTypeArray *>(nested_column.type.get());
-                        arr_type && typeid_cast<const DataTypeTuple *>(removeNullable(arr_type->getNestedType()).get()))
+                    /// A top-level struct goes to the extractor as-is, which unwraps and flattens it
+                    /// internally. Skip the reshape only for that shape: on a scalar-subcolumn set
+                    /// `Nested::collect` yields the leaf type, so casting a whole struct to it throws
+                    /// `toInt32(Tuple)`. Every other root (Array, Map, ...) still needs the reshape.
+                    if (!typeid_cast<const DataTypeTuple *>(removeNullable(nested_column.type).get()))
                     {
-                        const auto & arr_col = assert_cast<const ColumnArray &>(*nested_column.column);
-                        auto unwrapped = Nested::unwrapNullableTuple(
-                            {arr_col.getDataPtr(), arr_type->getNestedType(), nested_table_name});
-                        nested_column.column = ColumnArray::create(unwrapped.column, arr_col.getOffsetsPtr());
-                        nested_column.type = std::make_shared<DataTypeArray>(unwrapped.type);
+                        /// `Nested::flatten` cannot split a `Nullable(Tuple)`, and casting one onto the
+                        /// non-nullable Nested tuple fails on struct-level nulls — so unwrap first,
+                        /// then reshape to the collected Nested type.
+                        if (const auto * arr_type = typeid_cast<const DataTypeArray *>(nested_column.type.get());
+                            arr_type && typeid_cast<const DataTypeTuple *>(removeNullable(arr_type->getNestedType()).get()))
+                        {
+                            const auto & arr_col = assert_cast<const ColumnArray &>(*nested_column.column);
+                            auto unwrapped = Nested::unwrapNullableTuple(
+                                {arr_col.getDataPtr(), arr_type->getNestedType(), nested_table_name});
+                            nested_column.column = ColumnArray::create(unwrapped.column, arr_col.getOffsetsPtr());
+                            nested_column.type = std::make_shared<DataTypeArray>(unwrapped.type);
+                        }
+
+                        const auto collected = Nested::collect(nested_columns);
+                        if (!collected.empty())
+                        {
+                            const DataTypePtr & nested_table_type = collected.front().type;
+                            if (case_insensitive)
+                                nested_column.type = alignStructFieldNamesCaseInsensitive(nested_column.type, nested_table_type);
+                            nested_column.column = castColumn(nested_column, nested_table_type);
+                            nested_column.type = nested_table_type;
+                        }
                     }
 
-                    const auto collected = Nested::collect(nested_columns);
-                    if (!collected.empty())
-                    {
-                        const DataTypePtr & nested_table_type = collected.front().type;
-                        if (case_insensitive)
-                            nested_column.type = alignStructFieldNamesCaseInsensitive(nested_column.type, nested_table_type);
-                        nested_column.column = castColumn(nested_column, nested_table_type);
-                        nested_column.type = nested_table_type;
-                    }
                     auto block = std::make_shared<Block>(Block({std::move(nested_column)}));
                     auto helper = std::make_shared<NestedColumnExtractHelper>(*block, case_insensitive);
                     extractor_it = nested_extractors.emplace(search_nested, std::make_pair(block, helper)).first;
