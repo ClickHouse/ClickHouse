@@ -227,7 +227,7 @@ std::string getUnmatchedParenthesesErrorMessage(
 }
 
 
-static ASTInsertQuery * getInsertAST(const ASTPtr & ast)
+ASTInsertQuery * getInsertAST(const ASTPtr & ast)
 {
     /// Either it is INSERT or EXPLAIN INSERT.
     if (auto * explain = ast->as<ASTExplainQuery>())

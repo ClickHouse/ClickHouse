@@ -6,7 +6,6 @@
 #    include <polyglot.h>
 #endif
 
-#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserSetQuery.h>
@@ -20,24 +19,6 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace
-{
-
-/// Return the `INSERT` that owns the inline-data section of a parsed statement, if any.
-/// The client locates the inline-data boundary the same way in `ClientBase::analyzeMultiQueryText`:
-/// it also unwraps a single `EXPLAIN` layer, so that `EXPLAIN INSERT ... VALUES (...)` is handled
-/// like a plain `INSERT`. We must therefore recognize the explained `INSERT` here too.
-ASTInsertQuery * findInlineDataInsert(IAST * node)
-{
-    if (auto * insert = node->as<ASTInsertQuery>())
-        return insert;
-    if (auto * explain = node->as<ASTExplainQuery>(); explain && explain->getExplainedQuery())
-        return explain->getExplainedQuery()->as<ASTInsertQuery>();
-    return nullptr;
-}
-
 }
 
 String transpilePolyglotToClickHouse(
@@ -175,8 +156,9 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// so clear them: the client sends the original query verbatim and lets the server
     /// re-transpile and read the data from its own owned buffer. This must also cover an
     /// `EXPLAIN INSERT ... VALUES`, whose nested `INSERT` the client dereferences the same way
-    /// (`ClientBase::analyzeMultiQueryText`) — otherwise its `data`/`end` would dangle.
-    if (auto * insert = findInlineDataInsert(node.get()); insert && insert->data)
+    /// (`ClientBase::analyzeMultiQueryText`) — otherwise its `data`/`end` would dangle. `getInsertAST`
+    /// is the single place that unwraps such carriers; the server side uses it too.
+    if (auto * insert = getInsertAST(node); insert && insert->data)
     {
         insert->data = nullptr;
         insert->end = nullptr;

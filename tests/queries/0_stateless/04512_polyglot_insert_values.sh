@@ -217,5 +217,28 @@ done
 echo "--- exception-before-start log omits a letters-only FORMAT payload (expect: 1) ---"
 echo "$fmt_leak_check"
 
+# `EXPLAIN INSERT ... VALUES` is an inline-data carrier too: the data belongs to the nested INSERT.
+# All the places that locate the data boundary use `getInsertAST`, so the logged query text is cut
+# at the data for this form as well. 987654323 only appears in the data section.
+explain_leak_id="${CLICKHOUSE_DATABASE}_04512_explain_leak"
+$CLICKHOUSE_CLIENT --query_id "$explain_leak_id" -q "EXPLAIN INSERT INTO t VALUES (987654323)" 2>&1 | grep -om1 "INCORRECT_QUERY"
+explain_leak_check=""
+for _ in {1..100}
+do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    explain_leak_check=$($CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%987654323%' AND query ILIKE 'EXPLAIN INSERT INTO%' FROM system.query_log WHERE query_id = '$explain_leak_id' AND type = 'ExceptionBeforeStart' AND current_database = currentDatabase()")
+    [ -n "$explain_leak_check" ] && break
+    sleep 0.3
+done
+echo "--- the log of an EXPLAIN INSERT omits its inline data (expect: 1) ---"
+echo "$explain_leak_check"
+
+# The same form in a foreign dialect is not transpilable: the bundled dialects reject `EXPLAIN` in
+# front of an `INSERT`, and the `clickhouse` source dialect rewrites `EXPLAIN` into `DESCRIBE`, which
+# ClickHouse does not accept in front of an `INSERT`. It must fail cleanly, without inserting.
+$CLICKHOUSE_CLIENT $POLY -q "EXPLAIN INSERT INTO t VALUES (987654324)" 2>&1 | grep -om1 "SYNTAX_ERROR"
+echo "--- no insert from a polyglot EXPLAIN INSERT (expect: 112 7) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"

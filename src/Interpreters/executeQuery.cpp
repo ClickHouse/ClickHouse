@@ -1602,7 +1602,9 @@ static BlockIO executeQueryImpl(
         {
             /// Cut the inline INSERT data out of the query text used for logging/processlist,
             /// so that inserted row values are never written to `system.query_log` and friends.
-            if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+            /// `getInsertAST` also unwraps an `EXPLAIN INSERT ... VALUES`, which carries inline data
+            /// in its nested `INSERT` — the parsers locate the data boundary the same way.
+            if (const auto * insert_query = getInsertAST(out_ast); insert_query && insert_query->data)
             {
                 if (hasTranspiledInlineData(*insert_query, context))
                 {
@@ -1743,31 +1745,34 @@ static BlockIO executeQueryImpl(
                 out_ast->format(buf, enforce_strict_identifier_format_settings);
             }
 
-            if (auto * insert_query = out_ast->as<ASTInsertQuery>())
+            /// A foreign-dialect INSERT carries all of its data inline: the transpiler rewrites the
+            /// whole statement at once, so the inline data belongs to the transpiled buffer and is
+            /// parsed with ClickHouse (not foreign) syntax. External data appended after the query —
+            /// the HTTP request body for `POST /?query=INSERT ... &dialect=polyglot` — never goes
+            /// through the transpiler and does not count towards `max_query_size`, so accepting it
+            /// would mix two different parsing rules in a single INSERT. Reject it instead of
+            /// silently reading it, mirroring the client-side rule for stdin and INFILE
+            /// (see `send_query_verbatim` in ClientBase). The check uses `getInsertAST` so that an
+            /// `EXPLAIN INSERT ... VALUES`, which carries its inline data in the nested `INSERT`, is
+            /// guarded as well.
+            if (const auto * inline_data_insert = getInsertAST(out_ast); inline_data_insert && inline_data_insert->data
+                && !inline_data_insert->select && istr && hasTranspiledInlineData(*inline_data_insert, context))
             {
-                /// A foreign-dialect INSERT carries all of its data inline: the transpiler rewrites the
-                /// whole statement at once, so the inline data belongs to the transpiled buffer and is
-                /// parsed with ClickHouse (not foreign) syntax. External data appended after the query —
-                /// the HTTP request body for `POST /?query=INSERT ... &dialect=polyglot` — never goes
-                /// through the transpiler and does not count towards `max_query_size`, so accepting it
-                /// would mix two different parsing rules in a single INSERT. Reject it instead of
-                /// silently reading it, mirroring the client-side rule for stdin and INFILE
-                /// (see `send_query_verbatim` in ClientBase).
-                if (insert_query->data && !insert_query->select && istr && hasTranspiledInlineData(*insert_query, context))
-                {
-                    /// The body cannot be inspected before the deferred HTTP 100 Continue response is
-                    /// sent (that happens later, after the quota checks), so in that case reject
-                    /// unconditionally: the client announced that it is about to send a body.
-                    if (http_continue_callback || !istr->eof())
-                        throw Exception(
-                            ErrorCodes::NOT_IMPLEMENTED,
-                            "Processing an INSERT query in a foreign SQL dialect together with external data "
-                            "(the HTTP request body) is not supported: the query is transpiled as a whole and "
-                            "must carry all its data inline");
-                }
-
-                insert_query->tail = std::move(istr);
+                /// The body cannot be inspected before the deferred HTTP 100 Continue response is
+                /// sent (that happens later, after the quota checks), so in that case reject
+                /// unconditionally: the client announced that it is about to send a body.
+                if (http_continue_callback || !istr->eof())
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Processing an INSERT query in a foreign SQL dialect together with external data "
+                        "(the HTTP request body) is not supported: the query is transpiled as a whole and "
+                        "must carry all its data inline");
             }
+
+            /// The external data is attached to a top-level INSERT only: that is the only form whose
+            /// data section is streamed from the request body (an explained INSERT is never executed).
+            if (auto * insert_query = out_ast->as<ASTInsertQuery>())
+                insert_query->tail = std::move(istr);
 
             if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
             {

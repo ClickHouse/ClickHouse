@@ -48,3 +48,9 @@ SYNTAX_ERROR
 SYNTAX_ERROR
 --- exception-before-start log omits a letters-only FORMAT payload (expect: 1) ---
 1
+INCORRECT_QUERY
+--- the log of an EXPLAIN INSERT omits its inline data (expect: 1) ---
+1
+SYNTAX_ERROR
+--- no insert from a polyglot EXPLAIN INSERT (expect: 112 7) ---
+112	7

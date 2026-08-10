@@ -3102,16 +3102,10 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     // - If the INSERT statement FORMAT is VALUES, we use the VALUES format parser to skip the inserted data until we reach the trailing single semicolon.
     // - Other formats (e.g. FORMAT CSV) are arbitrarily more complex and tricky to parse. For example, we may be unable to distinguish if the semicolon
     //   is part of the data or ends the statement. In this case, we simply assume that the end of the INSERT statement is determined by \n\n (two newlines).
-    auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-    // We also consider the INSERT query in EXPLAIN queries (same as normal INSERT queries)
-    if (!insert_ast)
-    {
-        auto * explain_ast = parsed_query->as<ASTExplainQuery>();
-        if (explain_ast && explain_ast->getExplainedQuery())
-        {
-            insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
-        }
-    }
+    // `getInsertAST` also considers the INSERT query in EXPLAIN queries (same as normal INSERT queries).
+    // It is the single place that unwraps inline-data carriers: the polyglot parser and the server-side
+    // logging and external-data checks in `executeQuery` use it too.
+    auto * insert_ast = getInsertAST(parsed_query);
     if (insert_ast && insert_ast->data)
     {
         if (insert_ast->format == "Values")

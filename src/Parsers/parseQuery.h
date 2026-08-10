@@ -8,6 +8,7 @@ namespace DB
 {
 
 class IParser;
+class ASTInsertQuery;
 
 /// Parse query or set 'out_error_message'.
 ASTPtr tryParseQuery(
@@ -73,6 +74,13 @@ std::pair<const char *, bool> splitMultipartQuery(
     size_t max_parser_backtracks,
     bool allow_settings_after_format_in_insert,
     bool implicit_select);
+
+/** Return the `INSERT` that owns the inline (raw) data section of a parsed statement, if any.
+  * This is either the statement itself or the `INSERT` explained by an `EXPLAIN INSERT ...`.
+  * All the places that locate the inline-data boundary must use this function, so that every
+  * inline-data carrier is treated the same way.
+  */
+ASTInsertQuery * getInsertAST(const ASTPtr & ast);
 
 /** If the query contains raw data part, such as INSERT ... FORMAT ..., return a pointer to it.
   * The SQL parser stops at the raw data part, which is parsed by a separate parser.
