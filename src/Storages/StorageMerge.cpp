@@ -1047,7 +1047,18 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// nested interpreters (e.g. for a `View` child) derive their own settings from this
             /// context. `make_distributed_plan` is cleared under the same condition as in
             /// `getChildPlanOptimizationSettings`.
-            modified_context->setSetting("enable_parallel_replicas", Field(0));
+            ///
+            /// A replica reading for an initiator is the exception: this `Merge` read is itself a
+            /// part of coordinated reading with parallel replicas, and every child must read only
+            /// the mark ranges the coordinator hands out to it, which is exactly what the setting
+            /// enables in the child reading step. Clearing it would make every replica read every
+            /// child in full and duplicate its rows in the result. (The initiator's own local plan
+            /// does not depend on the setting: its child reading steps are replaced with local
+            /// parallel replicas reading steps after they are created, see `createPlanForTable`.)
+            const bool coordinated_parallel_replicas_read = context->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables]
+                && (parallel_replicas_local_plan_info || context->canUseParallelReplicasOnFollower());
+            if (!coordinated_parallel_replicas_read)
+                modified_context->setSetting("enable_parallel_replicas", Field(0));
             if (queryHasSubquerySets(query_info))
                 modified_context->setSetting("make_distributed_plan", Field(0));
 
