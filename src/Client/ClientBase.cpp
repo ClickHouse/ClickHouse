@@ -3811,6 +3811,7 @@ void ClientBase::initAIAgent()
         {
             ai_inferred_from_env = ai_result.inferred_from_env;
             ai_provider_name = ai_result.provider;
+            ai_unused_environment_key = ai_result.unused_environment_key;
             transport = std::make_unique<AIClientTransport>(std::move(ai_result.client.value()), ai_config);
         }
     }
@@ -3849,10 +3850,17 @@ bool ClientBase::processAIChat(const String & text)
 
     if (!ai_agent)
     {
-        error_stream << "The AI agent is not available: no AI provider is configured.\n"
-                        "Set the OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, configure the `ai` section\n"
-                        "of the client configuration, or configure default credentials for the `aiGenerate` function\n"
-                        "on the server (the `ai_function_text_default_credentials` setting)." << std::endl << std::endl;
+        if (isEmbeeddedClient())
+            error_stream << "The AI agent is not available: no AI provider is configured.\n"
+                            "The embedded client does not use client-side AI providers (they would read the API keys\n"
+                            "from the environment of the server process); configure default credentials for the\n"
+                            "`aiGenerate` function on the server (the `ai_function_text_default_credentials` setting)."
+                         << std::endl << std::endl;
+        else
+            error_stream << "The AI agent is not available: no AI provider is configured.\n"
+                            "Set the OPENAI_API_KEY or ANTHROPIC_API_KEY environment variable, configure the `ai` section\n"
+                            "of the client configuration, or configure default credentials for the `aiGenerate` function\n"
+                            "on the server (the `ai_function_text_default_credentials` setting)." << std::endl << std::endl;
         return true;
     }
 
@@ -4246,10 +4254,17 @@ bool ClientBase::checkAIProviderAcknowledgment()
             progress_indication.clearProgressOutput(*tty_buf, lock);
         }
 
+        String unused_key_note;
+        if (!ai_unused_environment_key.empty())
+            unused_key_note = fmt::format(
+                "\n({} is also set but is not used; to use it, set `ai.provider` in the client configuration.)",
+                ai_unused_environment_key);
+
         const auto question = fmt::format(
-            "The AI agent will use the {} API key from an environment variable.\n"
+            "The AI agent will use the {} API key from an environment variable.{}\n"
             "Do you want to continue? [y/N] ",
-            ai_provider_name);
+            ai_provider_name,
+            unused_key_note);
 
         if (!ask(question, *std_in, *std_out))
         {

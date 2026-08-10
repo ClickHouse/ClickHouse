@@ -551,6 +551,9 @@ protected:
     bool ai_inferred_from_env = false;
     /// The AI provider name (e.g., "openai", "anthropic")
     std::string ai_provider_name;
+    /// The environment variable of another provider whose API key is also set but not used
+    /// (e.g. "ANTHROPIC_API_KEY" when both it and OPENAI_API_KEY are present)
+    std::string ai_unused_environment_key;
     /// Set while the AI agent runs a query through the normal query path, so the
     /// query context buffer can attribute the entry to the agent
     bool ai_running_query = false;
