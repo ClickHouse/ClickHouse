@@ -45,12 +45,12 @@ struct Grown
 };
 
 /// Appending `length` empty values only grows the offsets, so pre-sizing them to the final size costs one
-/// reallocation. A push_back loop instead walks the doubling chain, and Allocator::realloc charges the new
+/// reallocation. A `push_back` loop instead walks the doubling chain, and `Allocator::realloc` charges the new
 /// block before releasing the old one, so its last step holds both at once. Peak is what separates the two:
 /// the final capacity is identical.
 ///
 /// `create` must return the column by value, because the whole measurement happens on a dedicated thread:
-/// current_thread starts as nullptr there whatever other gtests in unit_tests_dbms left behind, and this
+/// `current_thread` starts as nullptr there whatever other gtests in `unit_tests_dbms` left behind, and this
 /// file leaves none behind either. The column is destroyed on that same thread, so the frees are charged
 /// where the allocations were -- a free on another thread subtracts from that thread's tracker instead.
 /// Only the numbers come back out.
@@ -68,7 +68,7 @@ Grown grow(size_t length, Create && create)
         MemoryTracker * prev_parent = thread_tracker.getParent();
         Int64 prev_untracked_limit = CurrentThread::get().untracked_memory_limit;
 
-        /// Whatever the ThreadStatus constructor itself deferred must not be charged to `scope_tracker`.
+        /// Whatever the `ThreadStatus` constructor itself deferred must not be charged to `scope_tracker`.
         CurrentThread::flushUntrackedMemory();
         SCOPE_EXIT_SAFE({
             CurrentThread::flushUntrackedMemory();
@@ -77,7 +77,7 @@ Grown grow(size_t length, Create && create)
         });
 
         /// Without this the offsets' reallocations are batched below the 4 MiB default and never reach the tracker.
-        /// The tracker's counters are deliberately not reset: resetCounters would also drop its limits, and the
+        /// The tracker's counters are deliberately not reset: `resetCounters` would also drop its limits, and the
         /// peak is read from `scope_tracker` anyway.
         CurrentThread::get().untracked_memory_limit = 1;
         thread_tracker.setParent(&scope_tracker);
@@ -165,7 +165,7 @@ TEST(ColumnArray, InsertManyDefaultsKeepsOffsetsAfterNonEmptyArrays)
 
 TEST(ColumnArray, InsertManyDefaultsGrowsOffsetsGeometrically)
 {
-    /// Pre-sizing must stay geometric: reserve_exact(size() + length) would leave capacity == size after
+    /// Pre-sizing must stay geometric: `reserve_exact(size() + length)` would leave capacity == size after
     /// every call, so appending one default per row would reallocate on each of them.
     auto column = ColumnArray::create(ColumnUInt64::create());
     for (size_t i = 0; i < rows_appended_one_by_one; ++i)

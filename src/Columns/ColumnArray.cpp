@@ -437,10 +437,10 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::insertManyDefaults(size_t length)
 {
-    /// Not IColumn::insertManyDefaults: its reserve(size() + length) would also size the nested column, which a
+    /// Not `IColumn::insertManyDefaults`: its `reserve(size() + length)` would also size the nested column, which a
     /// default array never fills. Only the offsets grow, so only they are pre-sized.
     auto & offsets_data = getOffsets();
-    const auto last_offset = offsets_data.back(); /// By value: resize_fill may reallocate.
+    const auto last_offset = offsets_data.back(); /// By value: `resize_fill` may reallocate.
     offsets_data.resize_fill(offsets_data.size() + length, last_offset);
 }
 
