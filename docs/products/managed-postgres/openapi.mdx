@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
 title: 'ClickHouse Managed Postgres OpenAPI'
 description: 'Control your ClickHouse Managed Postgres services with our OpenAPI'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'command line', 'query insights', 'slow queries']
+keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'command line', 'query insights', 'slow queries', 'server logs', 'logs']
 doc_type: 'guide'
 ---
 
@@ -423,6 +423,56 @@ time, parallel workers, JIT, and WAL — the same counters the
 The example trims both objects for brevity; the API returns the complete
 counter set documented under [per-execution counters].
 
+## Server logs {#server-logs}
+
+The PostgreSQL server logs behind the logs viewer in the cloud console are also
+available programmatically. The [logs API] returns individual log entries for a
+service over a time window. As with query insights, the window is required, so
+pass `from_date` and `to_date` as RFC 3339 timestamps. The range must not exceed
+30 days, and `to_date` must be after `from_date`:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+Entries come back newest first; flip the direction with `sort_order` (`asc` or
+`desc`). Filter to a single severity with `severity` (for example `ERROR`,
+`WARNING`, or `LOG`), match a case-sensitive substring of the log body with
+`body_contains`, and page through the results with `limit` and `offset`.
+
+Each entry carries its `timestamp`, `severity`, and raw `body`. The body is
+always a string: structured log lines are returned JSON-encoded, plain lines
+verbatim:
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+The endpoint pages with `limit` and `offset` rather than returning a total
+count; advance `offset` until a page returns fewer than `limit` entries.
+
 [ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
 [API keys]: /products/cloud/features/admin-features/api/openapi "Managing API Keys"
@@ -459,3 +509,5 @@ counter set documented under [per-execution counters].
   "List Postgres slow query patterns"
 [slow pattern API]: /products/cloud/api-reference/postgres/slow-query-pattern-get
   "Get a Postgres slow query pattern with recent executions"
+[logs API]: /products/cloud/api-reference/postgres/postgres-logs-get-list
+  "List Postgres server logs"
