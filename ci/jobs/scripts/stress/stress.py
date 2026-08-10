@@ -14,6 +14,9 @@ from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen, call, check_output
 from typing import List, Optional
 
+# Failpoint that delays every background mutation by a bounded random amount.
+MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
+
 
 class ServerDied(Exception):
     pass
@@ -407,6 +410,30 @@ def install_thread_pool_fault_injection() -> None:
     logging.info("Thread-pool fault injection active: probability=%s", value)
 
 
+def enable_mutation_delay_failpoint() -> None:
+    """Enable `mutate_task_random_sleep_in_prepare`, so tests that `ALTER` without waiting
+    routinely read parts the mutation has not rewritten yet. Reads over such parts resolve
+    columns with the part's own (older) type, a state that mutations normally close too
+    quickly to test (see #113925).
+    Fail-close on persistent failure or if the failpoint is still off afterwards."""
+    call_with_retry(
+        make_query_command(f"SYSTEM ENABLE FAILPOINT {MUTATION_DELAY_FAILPOINT}")
+    )
+
+    # Fail-close: `call_with_retry` is silent when all its retries fail, so verify that the
+    # failpoint really became active instead of silently losing the coverage.
+    verify_query = make_query_command(
+        f"SELECT enabled FROM system.fail_points WHERE name = '{MUTATION_DELAY_FAILPOINT}'"
+    )
+    enabled = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    if enabled != "1":
+        raise RuntimeError(
+            f"Failpoint {MUTATION_DELAY_FAILPOINT} is not enabled after "
+            f"SYSTEM ENABLE FAILPOINT: system.fail_points.enabled is {enabled!r}"
+        )
+    logging.info("Mutation-delay failpoint active: %s", MUTATION_DELAY_FAILPOINT)
+
+
 def run_func_test(
     cmd: str,
     output_prefix: Path,
@@ -488,16 +515,9 @@ def run_func_test(
     if not upgrade_check:
         install_thread_pool_fault_injection()
 
-        # Delay every background mutation by a bounded random amount, so tests that
-        # ALTER without waiting routinely read parts the mutation has not rewritten
-        # yet. Reads over such parts resolve columns with the part's own (older) type,
-        # a state that mutations normally close too quickly to test (see #113925).
+        # Delay every background mutation by a bounded random amount.
         # Not in upgrade check: the old binary may not know the failpoint.
-        call_with_retry(
-            make_query_command(
-                "SYSTEM ENABLE FAILPOINT mutate_task_random_sleep_in_prepare"
-            )
-        )
+        enable_mutation_delay_failpoint()
 
     # Start the query killer after smoke check completes, before actual stress test
     if query_killer is not None:
@@ -614,7 +634,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     # Stop delaying mutations, so the ones still pending drain at full speed. Disabling a
     # registered failpoint that was never enabled (e.g. in upgrade check) is a no-op.
     call_with_retry(
-        make_query_command("SYSTEM DISABLE FAILPOINT mutate_task_random_sleep_in_prepare")
+        make_query_command(f"SYSTEM DISABLE FAILPOINT {MUTATION_DELAY_FAILPOINT}")
     )
     # Some tests execute SYSTEM STOP MERGES or similar queries.
     # It may cause some ALTERs to hang.
