@@ -279,9 +279,11 @@ public:
     /// TODO: Rename methods that just copy a buffer to/from file from serialize*/deserialize* to
     ///       read/write or something, to avoid confusion with methods that actually serialize/deserialize.
 
-    /// Restore storage from latest available snapshot
-    /// Restores from a snapshot that is already present on the local disk, so orphaned-nodes
-    /// removal (`remove_orphaned_nodes_on_startup` startup recovery) is allowed.
+    /// Restore storage from latest available snapshot.
+    /// Orphaned-nodes removal (`remove_orphaned_nodes_on_startup` startup recovery) is deliberately
+    /// NOT allowed here: `KeeperStateMachine::init` is the only caller that may remove orphans,
+    /// because `KeeperServer::startup` then verifies that no local log entry above the snapshot
+    /// references the removed paths. Pruning from here would skip that verification.
     SnapshotDeserializationResult restoreFromLatestSnapshot(KeeperStorage & storage);
 
     /// Compress snapshot and serialize it to buffer
