@@ -70,6 +70,24 @@ def recv_exactly(conn, size):
     return data
 
 
+def read_frame(conn):
+    """Read one whole AMQP frame: 7-byte header, payload, and the frame-end octet.
+
+    recv is not frame-aware - on TCP/TLS it may return any positive prefix - so both the header
+    and the payload have to be read with recv_exactly, otherwise the next read starts in the
+    middle of this frame and the stream desyncs. Returns (frame_type, channel, payload) without
+    the end octet, or None if the peer went away.
+    """
+    header = recv_exactly(conn, 7)
+    if header is None:
+        return None
+    frame_type, channel, size = struct.unpack(">BHI", header)
+    body = recv_exactly(conn, size + 1)  # payload plus the frame-end octet
+    if body is None:
+        return None
+    return frame_type, channel, body[:size]
+
+
 def handle(conn, frame_max):
     try:
         conn.settimeout(30)
@@ -80,23 +98,20 @@ def handle(conn, frame_max):
 
         conn.sendall(connection_start())
 
-        # Connection.StartOk
-        if not conn.recv(65536):
+        # Connection.StartOk - consume the whole frame so the next read stays frame-aligned.
+        if read_frame(conn) is None:
             return
 
         conn.sendall(connection_tune(frame_max))
 
-        # Connection.TuneOk (possibly pipelined with Connection.Open, so read exactly one
-        # frame). Log the frame_max the client settled on: the test asserts it to prove the
-        # client clamps hostile proposals to [4096, 128 MiB] instead of echoing them back.
-        header = recv_exactly(conn, 7)
-        if header is None:
+        # Connection.TuneOk (possibly pipelined with Connection.Open, so read exactly one frame).
+        # Log the frame_max the client settled on: the test asserts it to prove the client clamps
+        # hostile proposals to [4096, 128 MiB] instead of echoing them back.
+        tune_ok = read_frame(conn)
+        if tune_ok is None:
             return
-        frame_type, _channel, size = struct.unpack(">BHI", header)
-        payload = recv_exactly(conn, size + 1)  # payload plus the frame-end octet
-        if payload is None:
-            return
-        if frame_type == FRAME_METHOD and size >= 10:
+        frame_type, _channel, payload = tune_ok
+        if frame_type == FRAME_METHOD and len(payload) >= 10:
             klass, method, _channel_max, client_frame_max = struct.unpack(
                 ">HHHI", payload[:10]
             )
