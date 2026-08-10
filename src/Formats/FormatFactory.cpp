@@ -435,11 +435,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
     }
 
-    /// The Schema Registry timeout and retry settings used to be range-checked here, and rejected
-    /// out of range. This function runs for every query, so such a value failed even the `SET`
-    /// putting it back, bricking the session. They are now bounded instead: below zero by their
-    /// `NonZeroUInt64` type, and above by the clamp applied where they are read, further up.
-
     if (context->getClientInfo().interface == ClientInfo::Interface::HTTP
         && context->getSettingsRef()[Setting::http_write_exception_in_output_format].value)
     {
