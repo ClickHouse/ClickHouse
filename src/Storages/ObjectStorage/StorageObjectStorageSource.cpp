@@ -1067,11 +1067,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                             stripped_prewhere_info = format_filter_info->prewhere_info;
                     }
                     const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
-                    return std::make_shared<FormatFilterInfo>(
+                    auto result = std::make_shared<FormatFilterInfo>(
                         format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
                         mapper,
                         keep_in_reader ? format_filter_info->row_level_filter : nullptr,
                         keep_in_reader ? format_filter_info->prewhere_info : nullptr);
+                    /// `mapper` is scoped to the schema this specific file was written under, so it
+                    /// maps field_id -> the column name *that file* used. Keep the current/query-side
+                    /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
+                    /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
+                    /// pruning) back to a field_id.
+                    result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    return result;
                 }
             }
 
