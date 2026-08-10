@@ -1348,3 +1348,55 @@ def test_unreadable_write_is_skipped(started_cluster):
         "query LIKE '%numbers(32)%query_cache_squash_partial_results%'",
     )
     assert misses == "1", f"Expected a miss on the second run, got: {misses}"
+
+
+# ---------------------------------------------------------------------------
+# B14. `max_entry_chunks` is applied by `SYSTEM RELOAD CONFIG`
+# ---------------------------------------------------------------------------
+
+
+def test_max_entry_chunks_is_reloadable(started_cluster):
+    """`max_entry_chunks` must follow a config reload like the other per-entry limits.
+
+    Until it does, a raised budget only takes effect after a restart, so writes keep being
+    skipped even though the configuration allows them."""
+    r = get_redis_client()
+    flush_redis(r)
+
+    config_path = "/etc/clickhouse-server/config.d/query_result_cache_redis_small_chunks.xml"
+    original = node3.exec_in_container(["cat", config_path])
+
+    # node3 runs with `max_entry_chunks = 4`; 32 rows at one row per block give 32 chunks.
+    query = (
+        "SELECT number FROM numbers(32)"
+        " SETTINGS use_query_cache = true,"
+        " query_cache_share_between_users = 1,"
+        " query_cache_squash_partial_results = 0,"
+        " max_block_size = 1"
+    )
+
+    def data_keys():
+        return [
+            k for k in r.keys(f"{QUERY_CACHE_KEY_PREFIX}v*") if not k.endswith(b":lock")
+        ]
+
+    assert node3.query(query).strip().split("\n")[-1] == "31"
+    assert data_keys() == [], "The entry must be skipped while the chunk budget is 4"
+
+    try:
+        node3.replace_config(
+            config_path,
+            original.replace(
+                "<max_entry_chunks>4</max_entry_chunks>",
+                "<max_entry_chunks>1024</max_entry_chunks>",
+            ),
+        )
+        node3.query("SYSTEM RELOAD CONFIG")
+
+        assert node3.query(query).strip().split("\n")[-1] == "31"
+        assert data_keys() != [], (
+            "The entry must be stored once the reloaded config allows 1024 chunks"
+        )
+    finally:
+        node3.replace_config(config_path, original)
+        node3.query("SYSTEM RELOAD CONFIG")

@@ -10,6 +10,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Core/Settings.h>
@@ -19,8 +21,31 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
 namespace
 {
+
+/// Run `callable` and return the error code it threw, or 0 if it did not throw.
+/// The guards under test must reject a value *before* it is decoded, so it is not enough that
+/// decoding eventually fails - a plain `ATTEMPT_TO_READ_AFTER_EOF` would mean the reservation
+/// already happened.
+template <typename F>
+int errorCodeOf(F && callable)
+{
+    try
+    {
+        callable();
+    }
+    catch (const DB::Exception & e)
+    {
+        return e.code();
+    }
+    return 0;
+}
 
 /// Build a Key via the DeserializeTag-free constructor that still requires an AST.
 /// We parse a simple SELECT to get a valid ASTPtr.
@@ -652,4 +677,60 @@ TEST(QueryResultCacheSerialization, EntryRejectsBlockExceedingRowBudget)
         rbuf_ok, *header, /*max_chunks=*/8192, /*max_entry_size_in_bytes=*/0, /*max_entry_size_in_rows=*/16);
     ASSERT_EQ(restored.chunks.size(), 1u);
     assertChunksEqual(entry.chunks[0], restored.chunks[0]);
+}
+
+/// The schema block of a key is always written empty, so a non-zero row count can only come from a
+/// forged value. It must be rejected before `NativeReader` reserves capacity for the declared count.
+TEST(QueryResultCacheSerialization, KeyRejectsSchemaBlockDeclaringRows)
+{
+    auto header = makeTwoColumnHeader();
+    auto key = makeKey("SELECT 20", header, std::nullopt, {}, false, false, "");
+
+    WriteBufferFromOwnString wbuf;
+    key.serializeTo(wbuf);
+
+    /// Layout: format version (1 byte) + `ast_hash` (16 bytes), then the schema block, which starts
+    /// with the column count and the row count as varints.
+    String forged = wbuf.str();
+    constexpr size_t schema_rows_offset = 1 + 8 + 8 + 1;
+    ASSERT_GT(forged.size(), schema_rows_offset);
+    ASSERT_EQ(forged[schema_rows_offset], '\0') << "The schema block is expected to declare zero rows";
+    forged[schema_rows_offset] = '\x7f';
+
+    ReadBufferFromString rbuf(forged);
+    EXPECT_EQ(
+        errorCodeOf([&] { QueryResultCache::Key::deserializeFrom(rbuf); }),
+        ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+
+    /// The untouched value still decodes.
+    ReadBufferFromString rbuf_ok(wbuf.str());
+    auto restored = QueryResultCache::Key::deserializeFrom(rbuf_ok);
+    EXPECT_EQ(restored.header->columns(), header->columns());
+}
+
+/// The pre-read bound must use the entry's schema: with a fixed-width column a row costs far more
+/// than the one bit per row that a schema-agnostic bound would assume.
+TEST(QueryResultCacheSerialization, EntryRejectsRowCountImpossibleForTheSchema)
+{
+    auto header = makeTwoColumnHeader();
+
+    /// A hand-built value: format version, one chunk, then a block header declaring two columns and
+    /// 64 rows, followed by 64 bytes of payload. A row of `UInt64` + `String` cannot be encoded in
+    /// one byte, so the block is impossible even though it would pass a one-bit-per-row bound.
+    String forged;
+    {
+        WriteBufferFromString wbuf(forged);
+        writeIntBinary(static_cast<UInt8>(1), wbuf);  /// format version
+        writeIntBinary(static_cast<UInt32>(1), wbuf); /// chunks count
+        writeVarUInt(2, wbuf);                        /// columns
+        writeVarUInt(64, wbuf);                       /// rows
+        for (size_t i = 0; i < 64; ++i)
+            writeIntBinary(static_cast<UInt8>(0), wbuf);
+        wbuf.finalize();
+    }
+
+    ReadBufferFromString rbuf(forged);
+    EXPECT_EQ(
+        errorCodeOf([&] { QueryResultCache::Entry::deserializeFrom(rbuf, *header); }),
+        ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 }
