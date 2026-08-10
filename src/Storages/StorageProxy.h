@@ -165,6 +165,18 @@ public:
     bool supportsDelete() const override { return getNested()->supportsDelete(); }
     bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
 
+    /// `UPDATE` and `DELETE FROM` ask the catalog pointer before running, so both the check and the
+    /// execution have to reach the nested storage.
+    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override
+    {
+        return getNested()->supportsLightweightUpdate();
+    }
+
+    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override
+    {
+        return getNested()->updateLightweight(commands, context);
+    }
+
     /// Gates `ALTER TABLE ... MODIFY TTL`.
     bool supportsTTL() const override { return getNested()->supportsTTL(); }
     /// Gates `SELECT ... FROM t STREAM`.

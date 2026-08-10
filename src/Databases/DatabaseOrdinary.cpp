@@ -457,6 +457,12 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
     if (!query.storage || !query.storage->engine || !query.storage->engine->name.ends_with("MergeTree"))
         return false;
 
+    /// The deprecated engine-argument syntax `MergeTree(date, [sample], key, granularity)` carries the
+    /// keys in the engine arguments instead of `ORDER BY`/`PRIMARY KEY`, so the proxy could not report
+    /// them before the table is loaded. Load such a table eagerly rather than describe it wrongly.
+    if (!query.storage->order_by && !query.storage->primary_key)
+        return false;
+
     return true;
 }
 
@@ -527,9 +533,16 @@ static StorageInMemoryMetadata buildLazyTableMetadata(
         metadata.sampling_key = KeyDescription::getKeyFromAST(
             storage_def->sample_by->ptr(), metadata.columns, metadata.virtuals, local_context);
 
+    if (storage_def->unique_key)
+        metadata.unique_key = KeyDescription::getKeyFromAST(
+            storage_def->unique_key->ptr(), metadata.columns, metadata.virtuals, local_context);
+
     if (storage_def->ttl_table)
         metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
             storage_def->ttl_table->ptr(), metadata.columns, local_context, metadata.primary_key, /*is_attach*/ true);
+
+    if (query.comment)
+        metadata.setComment(query.comment->as<ASTLiteral &>().value.safeGet<String>());
 
     if (query.columns_list)
     {

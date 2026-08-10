@@ -1624,7 +1624,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
         {
-            if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
+            if (dynamic_cast<const StorageReplicatedMergeTree *>(resolveStorageProxy(it->table()).get()))
             {
                 if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_RESTART_REPLICA, elem.first, it->name()))
                 {
@@ -1728,7 +1728,8 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
-                if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
+                if (auto * storage_replicated
+                    = dynamic_cast<StorageReplicatedMergeTree *>(resolveStorageProxyLoading(iterator->table()).get()))
                 {
                     /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
                     /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
@@ -1773,7 +1774,9 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
 
 bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, const StoragePtr & storage)
 {
-    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get());
+    /// Dropping a replica from Keeper is what the command asks for, so loading the table is warranted.
+    auto resolved = resolveStorageProxyLoading(storage);
+    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(resolved.get());
     if (!storage_replicated)
         return false;
 
@@ -2281,7 +2284,7 @@ void InterpreterSystemQuery::restartDisk(const String & disk_name)
         /// skip_not_loaded: act only on already-loaded tables, do not block on async loading.
         for (auto it = elem.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
         {
-            auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get());
+            auto * merge_tree = dynamic_cast<MergeTreeData *>(resolveStorageProxy(it->table()).get());
             if (!merge_tree)
                 continue;
 
@@ -2317,7 +2320,9 @@ namespace
 
 MergeTreeData & getMergeTreeWithManualSelector(const StoragePtr & table, const StorageID & table_id, const char * action)
 {
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get());
+    /// Naming a table explicitly makes loading it the expected cost of the command.
+    auto resolved = resolveStorageProxyLoading(table);
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(resolved.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Command {} is supported only for MergeTree-family tables, but got: {}",
@@ -2400,7 +2405,8 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     if (!table_id.empty())
     {
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
-        StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+        /// Naming a table explicitly makes loading it the expected cost of the command.
+        StoragePtr table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
         if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         {
@@ -2422,7 +2428,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
-                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(resolveStorageProxy(it->table()).get()))
                 {
                     load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
                 }

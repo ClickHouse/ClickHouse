@@ -248,6 +248,87 @@ def test_mutations(env):
     assert instance.query(f"SELECT v FROM {DB}.t WHERE id = 2").strip() == "x"
 
 
+def test_lightweight_update(env):
+    """`supportsLightweightUpdate` is consulted on the catalog pointer before `updateLightweight`."""
+    env.create_table(
+        DB,
+        "t",
+        "id UInt64, v String",
+        extra="SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1",
+    )
+    instance.query(f"INSERT INTO {DB}.t SELECT number, toString(number) FROM numbers(10)")
+    env.reload(DB)
+
+    assert env.is_deferred(DB, "t")
+    instance.query(f"UPDATE {DB}.t SET v = 'updated' WHERE id = 3")
+    assert instance.query(f"SELECT v FROM {DB}.t WHERE id = 3").strip() == "updated"
+
+
+def test_deprecated_engine_syntax_is_eager(env):
+    """The deprecated engine-argument syntax keeps its keys in the engine arguments, which the proxy
+    cannot report, so such a table must not be deferred."""
+    if env.table_engine != "MergeTree":
+        pytest.skip("the deprecated syntax test is specific to plain MergeTree")
+
+    instance.query(
+        f"CREATE TABLE {DB}.legacy (d Date, id UInt64, v String) ENGINE = MergeTree(d, id, 8192)",
+        settings={"allow_deprecated_syntax_for_merge_tree": 1},
+    )
+    env.reload(DB)
+
+    assert not env.is_deferred(DB, "legacy")
+    assert (
+        instance.query(
+            f"SELECT sorting_key, partition_key FROM system.tables "
+            f"WHERE database = '{DB}' AND name = 'legacy'"
+        ).strip()
+        == "id\ttoYYYYMM(d)"
+    )
+
+
+def test_comment_visible_before_first_access(env):
+    """`system.tables.comment` is read from the metadata, so the proxy has to carry it."""
+    env.create_table(DB, "t", "id UInt64", extra="COMMENT 'a lazy table'")
+    env.reload(DB)
+
+    assert env.is_deferred(DB, "t")
+    assert (
+        instance.query(
+            f"SELECT comment FROM system.tables WHERE database = '{DB}' AND name = 't'"
+        ).strip()
+        == "a lazy table"
+    )
+
+
+def test_system_schedule_merge(env):
+    """SYSTEM SCHEDULE MERGE reaches the storage through a MergeTreeData cast."""
+    env.create_table(
+        DB, "t", "id UInt64", extra="SETTINGS merge_selector_algorithm = 'Manual'"
+    )
+    instance.query(f"INSERT INTO {DB}.t SELECT number FROM numbers(10)")
+    instance.query(f"INSERT INTO {DB}.t SELECT number + 10 FROM numbers(10)")
+    parts = instance.query(
+        f"SELECT name FROM system.parts WHERE database = '{DB}' AND table = 't' AND active ORDER BY name"
+    ).split()
+    assert len(parts) == 2, parts
+    env.reload(DB)
+
+    assert env.is_deferred(DB, "t")
+    part_list = ", ".join(f"'{part}'" for part in parts)
+    instance.query(f"SYSTEM SCHEDULE MERGE {DB}.t PARTS {part_list}")
+
+
+def test_system_load_primary_key(env):
+    """SYSTEM LOAD/UNLOAD PRIMARY KEY reaches the storage through a MergeTreeData cast."""
+    env.create_table(DB, "t", "id UInt64")
+    instance.query(f"INSERT INTO {DB}.t SELECT number FROM numbers(10)")
+    env.reload(DB)
+
+    assert env.is_deferred(DB, "t")
+    instance.query(f"SYSTEM UNLOAD PRIMARY KEY {DB}.t")
+    instance.query(f"SYSTEM LOAD PRIMARY KEY {DB}.t")
+
+
 def test_alter_modify_ttl(env):
     """`supportsTTL` gates ALTER MODIFY TTL and defaults to false on the proxy."""
     env.create_table(DB, "t", "d Date, id UInt64")
