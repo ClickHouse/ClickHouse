@@ -1,9 +1,13 @@
 #include <memory>
 #include <optional>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Core/Settings.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -24,9 +28,11 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Common/logger_useful.h>
 
 #include <unordered_set>
@@ -116,6 +122,61 @@ static bool subtreeIsShippable(const QueryPlan::Node * node)
         getLogger("ApplyParallelReplicas"),
         "Keeping the plan fragment local: step '{}' is not serializable for remote execution",
         offending->step->getName());
+    return false;
+}
+
+/// True if the DAG references an `IN`/`NOT IN` subquery set whose query plan is gone. Such a
+/// `FutureSetFromSubquery` cannot be shipped: `serializeSets` serializes the subquery plan (an `IN` set is
+/// never serialized as data), so a null plan would throw `Cannot serialize FutureSetFromSubquery with no
+/// query plan`. The common case keeps its plan (`FutureSetFromSubquery::buildOrderedSetInplace` builds
+/// non-destructively under plan-based parallel replicas); a null plan only remains for a subquery whose
+/// source is non-clonable and took the destructive in-place build (dictionary / system-table subquery,
+/// nested `IN`, or a `GLOBAL IN` external table).
+static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (!node.column || !WhichDataType(node.result_type).isSet())
+            continue;
+        const auto * column_set = typeid_cast<const ColumnSet *>(node.column->getDataColumnPtr().get());
+        if (!column_set)
+            continue;
+        const auto future_set = column_set->getData();
+        if (const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get());
+            from_subquery && from_subquery->getQueryPlan() == nullptr)
+            return true;
+    }
+    return false;
+}
+
+/// True if any step in the fragment references such an unshippable subquery set (in a WHERE/HAVING filter,
+/// an expression, or a MergeTree PREWHERE). Used to keep that fragment local instead of shipping it.
+static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+
+    const auto * step = node->step.get();
+    if (const auto * filter = typeid_cast<const FilterStep *>(step))
+    {
+        if (dagReferencesUnshippableSubquerySet(filter->getExpression()))
+            return true;
+    }
+    else if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+    {
+        if (dagReferencesUnshippableSubquerySet(expression->getExpression()))
+            return true;
+    }
+    else if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(step))
+    {
+        if (const auto prewhere_info = source_with_filter->getPrewhereInfo())
+            if (dagReferencesUnshippableSubquerySet(prewhere_info->prewhere_actions))
+                return true;
+    }
+
+    for (const auto * child : node->children)
+        if (fragmentHasUnshippableSubquerySet(child))
+            return true;
     return false;
 }
 
@@ -315,6 +376,13 @@ public:
         // build plan fragment
         auto [plan_fragment, context] = buildPlanFragment(current_node);
 
+        /// The fragment is serialized and shipped to the replicas. If it references an `IN (subquery)` set
+        /// whose plan is gone (a non-clonable subquery source, or a `GLOBAL IN` external table), it cannot be
+        /// serialized (an `IN` set is only ever shipped as its subquery plan). Keep such a fragment local:
+        /// leaving the split marker unconverted makes it a pass-through, so the read runs single-node.
+        if (fragmentHasUnshippableSubquerySet(plan_fragment->getRootNode()))
+            return;
+
         auto parallel_replicas_plan = ClusterProxy::createParallelReplicasPlan(std::move(plan_fragment), context);
         if (!parallel_replicas_plan)
             return;
@@ -423,24 +491,6 @@ static bool planHasFinalMergeTreeRead(const QueryPlan::Node * node)
     return false;
 }
 
-/// A `FutureSetFromSubquery` (e.g. `WHERE x IN (SELECT ...)`) cannot yet be shipped: `addStepsToBuildSets`
-/// moves the subquery's plan out before the captured fragment is serialized, so serialization throws a
-/// `LOGICAL_ERROR` (#111876). Until fixed, detect the still-intact `DelayedCreatingSetsStep` and run the
-/// query locally, like the FINAL case above.
-/// TODO(#111876): serialize the subquery set at fragment-capture time so `IN (subquery)` can be distributed.
-static bool planHasSubquerySet(const QueryPlan::Node * node)
-{
-    if (!node)
-        return false;
-    if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get());
-        delayed && !delayed->getSets().empty())
-        return true;
-    for (const auto * child : node->children)
-        if (planHasSubquerySet(child))
-            return true;
-    return false;
-}
-
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
 /// Raising the markers up the plan (through expressions, aggregation and unions) and rewriting them
 /// into a distributed read is done by the phases below. The planner now builds only a plain local plan.
@@ -451,9 +501,6 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
         return;
 
     if (planHasFinalMergeTreeRead(root))
-        return;
-
-    if (planHasSubquerySet(root))
         return;
 
     std::unordered_set<const QueryPlan::Node *> eligible;

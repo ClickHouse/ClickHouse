@@ -7,6 +7,7 @@
 #include <Common/FailPoint.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
@@ -370,6 +371,13 @@ QueryPlanPtr createRemotePlanFragmentForParallelReplicas(
     const std::vector<ConnectionPoolPtr> & connection_pools,
     std::optional<size_t> exclude_pool_index)
 {
+    /// Serialize the fragment now, while a referenced `FutureSetFromSubquery` (e.g. `WHERE x IN (SELECT ...)`)
+    /// still holds its query plan. This runs during `applyParallelReplicas`, before `addStepsToBuildSets`
+    /// moves that plan out (`QueryPlan::optimize`), so the shipped fragment captures the subquery plan; at
+    /// execution `Connection::sendQueryPlan` reuses these cached bytes. Mirrors the eager `ensureSerialized`
+    /// on the query-tree-based path in `ClusterProxy::executeQueryWithParallelReplicas`.
+    plan_fragment->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
     auto read_from_remote = std::make_unique<ReadFromParallelReplicasStep>(
         std::move(plan_fragment), cluster, coordinator, context, connection_pools, exclude_pool_index, cluster->getShardsInfo().at(0).pool);
 

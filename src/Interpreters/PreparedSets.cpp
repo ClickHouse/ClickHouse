@@ -71,6 +71,7 @@ namespace Setting
     extern const SettingsBool transform_null_in;
     extern const SettingsBool use_index_for_in_with_subqueries;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace ErrorCodes
@@ -609,7 +610,17 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// been destroyed, so the resources held by `source` outlive every processor.
     if (speculative_set)
         set_and_key->set = speculative_set;
-    source.reset();
+
+    /// Exception: under plan-based parallel replicas the shipped plan fragment references this set and is
+    /// serialized to the replicas (`serializeSets` writes `getQueryPlan()`), which re-build it themselves.
+    /// The non-destructive build above kept `source` intact, so keep it here too instead of discarding it,
+    /// otherwise serialization would fail with `Cannot serialize FutureSetFromSubquery with no query plan`.
+    /// Only the non-destructive path can preserve it (on the destructive fallback `source` is already gone).
+    const bool keep_source_for_serialization = speculative_set
+        && context->canUseParallelReplicasOnInitiator()
+        && context->getSettingsRef()[Setting::parallel_replicas_plan_based];
+    if (!keep_source_for_serialization)
+        source.reset();
 
     return set_and_key->set;
 }
