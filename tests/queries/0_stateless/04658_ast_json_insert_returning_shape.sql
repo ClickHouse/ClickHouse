@@ -27,7 +27,7 @@ SELECT formatQueryFromJSON(replace(
 
 SELECT position(
     parseQueryToJSON($$INSERT INTO t (SELECT number FROM numbers(1) UNION ALL SELECT number FROM numbers(1)) SETTINGS max_threads = 1 RETURNING (SELECT count())$$),
-    '"source_select_settings_ast":{"type":"SetQuery"') > 0;
+    '"source_select_pre_returning_settings_ast":{"type":"SetQuery"') > 0;
 
 SELECT position(
     formatQueryFromJSON(parseQueryToJSON($$INSERT INTO t (SELECT number FROM numbers(1) UNION ALL SELECT number FROM numbers(1)) SETTINGS max_threads = 1 RETURNING (SELECT count())$$)),

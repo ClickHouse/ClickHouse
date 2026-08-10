@@ -523,17 +523,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (returning_select)
         {
-            /// `source_select_pre_returning_settings_ast` is a parser-local fallback carrier for source
-            /// settings that can remain unconsumed before RETURNING in some set-op shapes. Persist it by
-            /// folding into the serialized `source_select_settings_ast` carrier so SQL/JSON round-trips
-            /// preserve source-phase semantics.
-            if (source_select_pre_returning_settings_ast)
-            {
-                ASTPtr serialized_source_settings_ast = source_select_pre_returning_settings_ast->clone();
-                merge_settings_ast_with_override(serialized_source_settings_ast, source_select_settings_ast);
-                source_select_settings_ast = serialized_source_settings_ast;
-            }
-
             if (source_select_pre_returning_settings_ast)
                 source_select_settings_runtime_ast = source_select_pre_returning_settings_ast->clone();
             merge_settings_ast_with_override(source_select_settings_runtime_ast, source_select_settings_ast);
@@ -635,6 +624,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->select = select;
     query->returning_select = returning_select;
     query->settings_ast = settings_ast;
+    query->source_select_pre_returning_settings_ast = source_select_pre_returning_settings_ast;
     query->source_select_settings_ast = source_select_settings_ast;
     query->source_select_settings_runtime_ast = source_select_settings_runtime_ast;
     query->source_select_settings_global_ast = source_select_settings_global_ast;
@@ -645,6 +635,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
+    if (source_select_pre_returning_settings_ast)
+        query->children.push_back(source_select_pre_returning_settings_ast);
     if (returning_select)
         query->children.push_back(returning_select);
     if (settings_ast)

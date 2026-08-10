@@ -159,11 +159,16 @@ void rebuildInsertReturningSourceSettings(ASTInsertQuery & query)
     if (!query.returning_select || !query.select)
         return;
 
-    query.source_select_settings_runtime_ast = query.source_select_settings_ast ? query.source_select_settings_ast->clone() : ASTPtr{};
+    query.source_select_settings_runtime_ast = query.source_select_pre_returning_settings_ast
+        ? query.source_select_pre_returning_settings_ast->clone()
+        : ASTPtr{};
+    mergeSettingsAstWithOverride(query.source_select_settings_runtime_ast, query.source_select_settings_ast);
     InsertQuerySettingsPushDownVisitor::Data visitor_data{query.source_select_settings_runtime_ast};
     InsertQuerySettingsPushDownVisitor(visitor_data).visit(query.select);
 
-    ASTPtr source_top_level_settings_ast;
+    ASTPtr source_top_level_settings_ast = query.source_select_pre_returning_settings_ast
+        ? query.source_select_pre_returning_settings_ast->clone()
+        : ASTPtr{};
     collectTopLevelSourceSettings(query.select, source_top_level_settings_ast);
     mergeSettingsAstWithOverride(source_top_level_settings_ast, query.source_select_settings_ast);
     query.source_select_settings_global_ast = source_top_level_settings_ast;
@@ -229,6 +234,7 @@ void ASTInsertQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("partition_by", partition_by);
     w.writeChild("settings_ast", settings_ast);
     w.writeChild("select", select);
+    w.writeChild("source_select_pre_returning_settings_ast", source_select_pre_returning_settings_ast);
     w.writeChild("returning_select", returning_select);
     w.writeChild("source_select_settings_ast", source_select_settings_ast);
     w.writeChild("infile", infile);
@@ -310,6 +316,13 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
         children.push_back(select);
     }
 
+    child = r.readChildOfType<ASTSetQuery>("source_select_pre_returning_settings_ast");
+    if (child)
+    {
+        source_select_pre_returning_settings_ast = child;
+        children.push_back(source_select_pre_returning_settings_ast);
+    }
+
     child = r.readChildOfType<ASTSelectWithUnionQuery>("returning_select");
     if (child)
     {
@@ -363,6 +376,12 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     if (source_select_settings_ast && !select)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'source_select_settings_ast' is only valid for INSERT ... SELECT ... RETURNING during AST JSON deserialization");
+    if (source_select_pre_returning_settings_ast && !returning_select)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'source_select_pre_returning_settings_ast' is only valid together with 'returning_select' during AST JSON deserialization");
+    if (source_select_pre_returning_settings_ast && !select)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'source_select_pre_returning_settings_ast' is only valid for INSERT ... SELECT ... RETURNING during AST JSON deserialization");
 
     /// `source_select_settings_runtime_ast` / `source_select_settings_global_ast` are parser-derived
     /// execution carriers and are intentionally not serialized. Rebuild them so `clickhouse_json`
@@ -484,6 +503,12 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
         if (returning_select)
         {
+            if (source_select_pre_returning_settings_ast)
+            {
+                ostr << settings.nl_or_ws << "SETTINGS" << " ";
+                source_select_pre_returning_settings_ast->format(ostr, settings, state, frame);
+            }
+
             ostr << settings.nl_or_ws << "RETURNING" << " (";
             returning_select->format(ostr, settings, state, frame);
             ostr << ")";

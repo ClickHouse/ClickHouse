@@ -27,6 +27,9 @@ public:
     ASTPtr table_function;
     ASTPtr partition_by;
     ASTPtr settings_ast;
+    /// Source-side SETTINGS parsed after the source SELECT but before RETURNING in
+    /// INSERT ... SELECT ... SETTINGS ... RETURNING (...).
+    ASTPtr source_select_pre_returning_settings_ast;
     /// Query-level SETTINGS parsed after RETURNING in INSERT ... SELECT ... RETURNING ... SETTINGS ...
     /// They apply to the source SELECT / INSERT phase, but must not leak into RETURNING result limits.
     ASTPtr source_select_settings_ast;
@@ -98,6 +101,11 @@ public:
 
         if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
+        if (source_select_pre_returning_settings_ast)
+        {
+            res->source_select_pre_returning_settings_ast = source_select_pre_returning_settings_ast->clone();
+            res->children.push_back(res->source_select_pre_returning_settings_ast);
+        }
         if (returning_select) { res->returning_select = returning_select->clone(); res->children.push_back(res->returning_select); }
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
         if (source_select_settings_ast) { res->source_select_settings_ast = source_select_settings_ast->clone(); res->children.push_back(res->source_select_settings_ast); }
