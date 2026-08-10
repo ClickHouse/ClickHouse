@@ -4,11 +4,13 @@
 #include <iterator>
 #include <utility>
 
+#include <absl/container/inlined_vector.h>
+
 #include <base/sort.h>
 
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -26,7 +28,9 @@ template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeseriesSamples
 {
 public:
-    /// The bucket map (`HashMap`) relocates cells with `memcpy` and abandons the source, which is safe here: the vector holds only pointers to its heap buffer, no pointers into itself.
+    /// The bucket map (`HashMap`) relocates cells with `memcpy` and abandons the source,
+    /// which is safe here: the buffer's inline single-sample storage is addressed relative to `this` (and the samples are trivially copyable),
+    /// an allocated buffer is reached only through a pointer to the heap - no pointers into itself either way.
     static constexpr bool is_position_independent = true;
 
     void add(TimestampType timestamp, ValueType value)
@@ -157,8 +161,11 @@ public:
     }
 
 private:
-    /// `VectorWithMemoryTracking` counts the samples' memory in the `MemoryTracker`, like the rest of the aggregate state.
-    using Buffer = VectorWithMemoryTracking<std::pair<TimestampType, ValueType>>;
+    /// Some buckets hold a single sample - the inline capacity of 1 keeps it in the state itself with no heap allocation.
+    using Buffer = absl::InlinedVector<
+        std::pair<TimestampType, ValueType>,
+        /* N = */ 1,
+        AllocatorWithMemoryTracking<std::pair<TimestampType, ValueType>>>;
 
     static void writeSamples(const Buffer & samples, WriteBuffer & buf)
     {
