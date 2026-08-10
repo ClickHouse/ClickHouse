@@ -1,6 +1,9 @@
 String: IN null-free set prunes with transform_null_in=1
 1
 2
+String: GLOBAL IN null-free set prunes with transform_null_in=1
+1
+2
 String: `=` prunes with transform_null_in=1 (was already working)
 1
 1
