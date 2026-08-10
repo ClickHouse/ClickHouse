@@ -2,6 +2,7 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -48,6 +49,7 @@ bool replacePipelineWithInsertReturningAfterPush(
     BlockIO & io,
     const ASTInsertQuery & insert_query,
     ContextPtr context,
-    QueryProcessingStage::Enum stage);
+    QueryProcessingStage::Enum stage,
+    QueryMetadataCachePtr & out_metadata_cache);
 
 }

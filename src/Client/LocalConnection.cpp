@@ -486,7 +486,8 @@ void LocalConnection::sendData(const Block & block, const String &, bool)
             /// query is logged as `ExceptionWhileProcessing` and not finalized as success by a later `onFinish`.
             try
             {
-                if (replacePipelineWithInsertReturningAfterPush(state->io, *insert_query, query_context, state->stage))
+                if (replacePipelineWithInsertReturningAfterPush(
+                        state->io, *insert_query, query_context, state->stage, state->insert_returning_query_metadata_cache))
                 {
                     state->block = state->io.pipeline.getHeader();
                     state->executor = std::make_unique<PullingAsyncPipelineExecutor>(state->io.pipeline);

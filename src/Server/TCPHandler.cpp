@@ -922,8 +922,9 @@ void TCPHandler::runImpl()
 
                 if (const auto * insert_query = typeid_cast<const ASTInsertQuery *>(query_state->parsed_query.get()))
                 {
+                    QueryMetadataCachePtr insert_returning_query_metadata_cache;
                     if (replacePipelineWithInsertReturningAfterPush(
-                            query_state->io, *insert_query, query_state->query_context, query_state->stage))
+                            query_state->io, *insert_query, query_state->query_context, query_state->stage, insert_returning_query_metadata_cache))
                     {
                         /// We have finished receiving INSERT data and switched into the delayed RETURNING SELECT phase.
                         /// Clear insert-data mode so interactive cancellation polls for `Cancel` packets while RETURNING runs.

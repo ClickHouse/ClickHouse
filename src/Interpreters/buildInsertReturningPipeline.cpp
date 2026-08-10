@@ -311,7 +311,8 @@ bool replacePipelineWithInsertReturningAfterPush(
     BlockIO & io,
     const ASTInsertQuery & insert_query,
     ContextPtr context,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    QueryMetadataCachePtr & out_metadata_cache)
 {
     if (!insert_query.returning_select)
         return false;
@@ -327,7 +328,7 @@ bool replacePipelineWithInsertReturningAfterPush(
     }
 
     io.pipeline.reset();
-    io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context, io.query_metadata_cache, insert_query.source_select_settings_restore_ast);
+    io.pipeline = buildReturningSelectPipeline(insert_query.returning_select, context, out_metadata_cache, insert_query.source_select_settings_restore_ast);
     setupPullingQueryPipeline(io.pipeline, context, stage, insert_query.returning_select, insert_query.source_select_settings_restore_ast);
     if (io.finish_callback_state)
         io.finish_callback_state->insert_returning_result_as_select = true;
