@@ -3720,8 +3720,18 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
             /// running the prefix even though the final `print` is still incomplete.
             if (const auto * set_query = ast->as<ASTSetQuery>())
             {
-                /// Skip `profile` like the real SET handling does: applying a
-                /// settings profile needs access control the probe cannot use.
+                /// Skip `profile` exactly like the real `SET` handling does
+                /// (see `processParsedSingleQuery` above): the client never
+                /// applies a settings profile to `client_context`, because a
+                /// profile is defined by the server's access control and its
+                /// contents are unknown to the client. Consequently the
+                /// executor's own reparse of the following statements is not
+                /// shaped by the profile either, so honoring it here would make
+                /// the probe disagree with the executor: a buffer like
+                /// `SET profile = '<sets dialect to kusto>'; let x = 1; print`
+                /// would be kept open forever as an unfinished Kusto statement,
+                /// while submitting it reports a SQL syntax error on `let`.
+                /// Mirroring the executor keeps the buffer submittable.
                 SettingsChanges changes;
                 for (const auto & change : set_query->changes)
                     if (change.name != "profile")

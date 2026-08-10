@@ -1,0 +1,72 @@
+#!/usr/bin/expect -f
+
+# Regression test: the single-line continuation probe
+# `ClientBase::queryNeedsContinuation` must treat `SET profile = ...` exactly as
+# the multi-statement executor does, i.e. it must NOT let the profile shape the
+# parser it probes the following statements with.
+#
+# The client never applies a settings profile to its own context (see the
+# `change.name != "profile"` filter in `ClientBase::processParsedSingleQuery`),
+# because a profile is defined by the server's access control and its contents
+# are unknown to the client. So the parser the executor reparses the following
+# statements with is not shaped by the profile either. If the probe honored the
+# profile, a buffer like the one below would be probed as Kusto, its trailing
+# `print` would look unfinished, Enter would keep folding newlines into the
+# buffer, and the query could never be submitted -- even though submitting it
+# reports a plain SQL syntax error on `let`.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --allow_experimental_kusto_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# A settings profile that carries a parser-shaping setting.
+send -- "CREATE SETTINGS PROFILE kusto_continuation_profile SETTINGS dialect = 'kusto', allow_experimental_kusto_dialect = 1;\r"
+expect ":) "
+
+# Wait before the next line: two `send`s back to back arrive in a single read
+# and `replxx` inserts them as one pasted block, which folds the buffer no
+# matter what the probe decides, making the assertion below vacuous.
+sleep 1
+
+# The buffer must be submitted on Enter. `SET profile` is applied by the server
+# only, so the probe -- like the executor -- stays on the default dialect, under
+# which `let x = 1` is a syntax error that does not sit at the end of the input,
+# i.e. not an unfinished statement. With the bug, nothing is submitted and the
+# test times out here.
+send -- "SET profile = 'kusto_continuation_profile'; let x = 1; print\r"
+expect "Syntax error: failed at position 7"
+expect ":) "
+
+sleep 1
+
+# The profile really is parser-shaping and really was applied: the session is
+# now on the Kusto dialect, so this plain SQL statement -- which the client
+# parses without complaint -- is rejected when it is parsed for execution. This
+# keeps the assertion above from passing for the wrong reason (a profile that
+# carries nothing the parser cares about).
+send -- "SELECT 1;\r"
+expect "KQL Statement"
+expect ":) "
+
+send -- "\4"
+expect eof
