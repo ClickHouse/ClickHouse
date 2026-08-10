@@ -48,6 +48,13 @@ public:
     {
         if (const T * function_state = typeid_cast<const T *>(nested_function.get()))
         {
+            const auto & current_arguments = function_state->getArgumentTypes();
+            const bool already_transformed = current_arguments.size() == arguments.size()
+                && std::equal(current_arguments.begin(), current_arguments.end(), arguments.begin(),
+                    [](const auto & lhs, const auto & rhs) { return lhs->equals(*rhs); });
+            if (already_transformed)
+                return nested_function;
+
             auto transformed_nested_function = transformAggregateFunction(function_state->getNestedFunction(), properties, arguments, params);
 
             return std::make_shared<T>(

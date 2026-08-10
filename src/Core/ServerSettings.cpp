@@ -420,10 +420,14 @@ To disable the cgroup observer, set this value to `0`.
     DECLARE(UInt64, async_insert_threads, 16, R"(Maximum number of threads to actually parse and insert data in background. Zero means asynchronous mode is disabled)", 0) \
     DECLARE(Bool, async_insert_queue_flush_on_shutdown, true, R"(If true queue of asynchronous inserts is flushed on graceful shutdown)", 0) \
     DECLARE(Bool, ignore_empty_sql_security_in_create_view_query, true, R"(
-If true, ClickHouse doesn't write defaults for empty SQL security statement in `CREATE VIEW` queries.
+If true, a `CREATE VIEW` or `CREATE MATERIALIZED VIEW` query that specifies neither `DEFINER` nor `SQL SECURITY` is stored as written, and the view gets an empty SQL security type. Specifying `DEFINER` alone counts as `SQL SECURITY DEFINER`, so such a query is unaffected by this setting. A normal view with an empty SQL security type runs with the permissions of the invoker. For a materialized view with an explicitly specified target table, the access checks on the target table are skipped: inserting into the source table does not require the `INSERT` privilege on the target table, and reading from the view does not require the `SELECT` privilege on it.
+
+If false, the defaults from the [`default_normal_view_sql_security`](/operations/settings/settings#default_normal_view_sql_security), [`default_materialized_view_sql_security`](/operations/settings/settings#default_materialized_view_sql_security), and [`default_view_definer`](/operations/settings/settings#default_view_definer) settings are written into the view definition at creation time. With the default values of those settings, a materialized view created with neither clause records the creating user as its definer and runs with that user's permissions.
+
+Refreshable materialized views always receive the defaults, regardless of this setting.
 
 :::note
-This setting is only necessary for the migration period and will become obsolete in 24.4
+Changing this setting affects only views created afterwards; the stored definitions of existing views stay unchanged.
 :::
 )", 0)  \
     DECLARE(UInt64, max_build_vector_similarity_index_thread_pool_size, 16, R"(
@@ -1793,7 +1797,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(Bool, logger_use_syslog, false, R"(Also forward log output to syslog.)", 0, "logger.use_syslog") \
     DECLARE(String, logger_syslog_level, "trace", R"(Log level for logging to syslog.)", 0, "logger.syslog_level") \
     DECLARE(Bool, logger_async, true, R"(When `<true>` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG.)", 0, "logger.async") \
-    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped. Rounded up to the next power of two (e.g. `100000` becomes `131072`).)", 0, "logger.async_queye_max_size") \
+    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped.)", 0, "logger.async_queye_max_size") \
     DECLARE(String, logger_startup_level, "", R"(Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `<level>` setting.)", 0, "logger.startup_level") \
     DECLARE(String, logger_shutdown_level, "", R"(Shutdown level is used to set the root logger level at server Shutdown.)", 0, "logger.shutdown_level") \
     DECLARE(String, openssl_server_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.server.privateKeyFile") \
