@@ -873,6 +873,12 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
                 "if executed locally (producing wrong results)");
         /// Joins were kept logical for distributed planning; running locally needs them physical.
         QueryPlanOptimizations::convertLogicalJoinsForLocalExecution(*root, nodes, optimization_settings);
+        /// `optimize` deferred set/CTE expansion for distributed planning; without it the plan
+        /// still carries `DelayedCreatingSets` placeholders, which cannot build a pipeline.
+        if (optimization_settings.build_sets)
+            QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
+        if (optimization_settings.materialize_ctes)
+            QueryPlanOptimizations::resolveMaterializingCTEs(optimization_settings, *this, *root, nodes);
         return;
     }
 
