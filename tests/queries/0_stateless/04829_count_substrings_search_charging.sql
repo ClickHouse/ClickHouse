@@ -32,6 +32,10 @@ SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat('\x80', 64) || repe
 SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat('\x80', 100) || 'Ж' || repeat('\x80', 100) || 'Ж'), 'Ж'), countSubstrings(materialize(repeat('\x80', 100) || 'Ж' || repeat('\x80', 100) || 'Ж'), 'Ж');
 SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat(repeat('\x80', 40) || 'Ж', 10)), 'Ж'), countSubstrings(materialize(repeat(repeat('\x80', 40) || 'Ж', 10)), 'Ж');
 
--- Enough occurrences that the charge crosses its reporting threshold many times within one search: 2 MB of
--- haystack against a 64 KiB batch reports at least 30 times inside this one call.
+-- Many occurrences, so the charge is reported once per match rather than once per batch: every search here
+-- returns after about 402 bytes, well under the 64 KiB batch, and must still contribute its work.
 SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat(repeat('Ж', 200) || 'Щ', 5000)), repeat('Ж', 16) || 'Щ') SETTINGS max_threads = 1;
+
+-- The other side of that split: no match, so one search spans the whole 2 MB haystack and the batch
+-- threshold is crossed about 30 times inside that single call.
+SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat('Ж', 1000000)), repeat('Ж', 16) || 'Щ') SETTINGS max_threads = 1;
