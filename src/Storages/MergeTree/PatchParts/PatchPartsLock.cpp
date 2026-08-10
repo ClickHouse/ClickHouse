@@ -15,7 +15,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Interpreters/ProcessList.h>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -43,13 +46,25 @@ namespace ErrorCodes
 namespace
 {
 
-using LockClock = std::chrono::steady_clock;
+constexpr Int64 max_wait_chunk_ms = 3000;
+constexpr Int64 bad_version_backoff_ms = 50;
 
-/// Milliseconds left until the deadline, or zero if it has passed.
-Int64 getRemainingMs(LockClock::time_point deadline)
+/// Milliseconds left of the timeout, or zero if it is exhausted. Elapsed time is subtracted in the
+/// millisecond domain, so a huge timeout cannot overflow the way a chrono deadline would.
+Int64 getRemainingMs(const Stopwatch & watch, Int64 timeout_ms)
 {
-    auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - LockClock::now()).count();
-    return std::max<Int64>(remaining, 0);
+    return std::max<Int64>(timeout_ms - static_cast<Int64>(watch.elapsedMilliseconds()), 0);
+}
+
+/// Waits for at most one chunk; the caller's loop re-evaluates state and waits again if needed.
+/// Throws if the query was cancelled or exceeded max_execution_time - Poco::Event observes neither,
+/// so an unchunked wait would ignore KILL QUERY for the whole timeout.
+void waitInterruptibly(const ContextPtr & context, Poco::Event & event, Int64 remaining_ms)
+{
+    if (auto query_status = context->getProcessListElementSafe())
+        query_status->checkTimeLimit();
+
+    event.tryWait(static_cast<long>(std::min(max_wait_chunk_ms, remaining_ms)));
 }
 
 zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
@@ -61,7 +76,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
 
     auto lock_path = fs::path(zookeeper_path) / "lightweight_updates" / "lock";
     auto lock_acquire_timeout = context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
-    auto deadline = LockClock::now() + std::chrono::milliseconds(lock_acquire_timeout);
+    Stopwatch acquire_watch;
 
     /// The first attempt is unconditional, so an uncontended update still succeeds at zero timeout.
     for (size_t num_try = 0;; ++num_try)
@@ -79,7 +94,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
         if (code != Coordination::Error::ZNODEEXISTS)
             throw zkutil::KeeperException::fromPath(code, lock_path);
 
-        auto remaining_ms = getRemainingMs(deadline);
+        auto remaining_ms = getRemainingMs(acquire_watch, lock_acquire_timeout);
         if (remaining_ms == 0)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                 "Failed to get lock in {} ms with {} tries for lightweight update in sync mode",
@@ -88,7 +103,7 @@ zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
         /// The watch is one-shot, so a fresh event is required for every wait.
         auto lock_event = std::make_shared<Poco::Event>();
         if (zookeeper->exists(lock_path, nullptr, lock_event))
-            lock_event->tryWait(remaining_ms);
+            waitInterruptibly(context, *lock_event, remaining_ms);
     }
 }
 
@@ -106,7 +121,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
     auto affected_columns_str = affected_columns.toString();
 
     Coordination::Stat parent_stat;
-    auto deadline = LockClock::now() + std::chrono::milliseconds(lock_acquire_timeout);
+    Stopwatch acquire_watch;
 
     auto throw_timeout = [&](size_t num_tries)
     {
@@ -155,7 +170,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         {
             LOG_TRACE(getLogger("getLockForAutoMode"), "Columns required for lightweight update are being updated by another query, will try one more time");
 
-            auto remaining_ms = getRemainingMs(deadline);
+            auto remaining_ms = getRemainingMs(acquire_watch, lock_acquire_timeout);
             if (remaining_ms == 0)
                 throw_timeout(num_try + 1);
 
@@ -167,7 +182,7 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
 
             /// The node may be gone already, in which case the event would never be set.
             if (zookeeper->tryGet(conflicting_path, conflicting_data, nullptr, conflict_event))
-                conflict_event->tryWait(remaining_ms);
+                waitInterruptibly(context, *conflict_event, remaining_ms);
 
             continue;
         }
@@ -183,10 +198,16 @@ zkutil::EphemeralNodeHolderPtr getLockForAutoMode(
         {
             LOG_TRACE(getLogger("getLockForAutoMode"), "Lightweight update has been committed by another replica, will try one more time");
 
-            if (getRemainingMs(deadline) == 0)
+            auto remaining_ms = getRemainingMs(acquire_watch, lock_acquire_timeout);
+            if (remaining_ms == 0)
                 throw_timeout(num_try + 1);
 
-            /// Another update committed, so there is no conflict of this query to wait for.
+            /// Another update committed, so there is no node this query could watch. Back off a
+            /// fixed amount instead, otherwise the retry spins on Keeper for the whole timeout.
+            if (auto query_status = context->getProcessListElementSafe())
+                query_status->checkTimeLimit();
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(std::min(bad_version_backoff_ms, remaining_ms)));
             continue;
         }
 
