@@ -289,6 +289,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// Filled before use; zeroing per vector is a measurable cost on the compression path.
     alignas(64) std::array<SignedType, WALLABY_VECTOR_VALUES> quantized; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     std::array<UInt16, WALLABY_VECTOR_VALUES> exception_positions; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+    std::array<bool, WALLABY_VECTOR_VALUES> is_quantization_exception; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     UInt32 exception_count = 0;
 
     /// No candidate may spend more on exceptions alone than the size of the best encoding of
@@ -307,6 +308,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     {
         const UInt32 budget = exception_budget();
         exception_count = 0;
+        std::fill(is_quantization_exception.begin(), is_quantization_exception.begin() + count, false);
         SignedType previous_good = 0;
         Int32 first_good = -1;
         for (UInt32 i = 0; i < count; ++i)
@@ -324,6 +326,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 if (exception_count == budget)
                     return false;
                 exception_positions[exception_count] = static_cast<UInt16>(i);
+                is_quantization_exception[i] = true;
                 ++exception_count;
                 /// Any placeholder works since the value is patched at decompression;
                 /// the previous one keeps both FOR and DELTA packings narrow.
@@ -347,9 +350,63 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         UInt32 payload_size = 0;
     };
 
-    /// Chooses between Frame-of-Reference and zigzag delta packing for the quantized vector
-    /// by the resulting bit width and computes the payload size of the cheaper of the two.
-    const auto measure_packing = [&]() -> std::optional<Packing>
+    /** Walks the vector maintaining the delta chain under a packed-width cap: a position whose
+      * zigzag delta does not fit (or that is a quantization exception) is exiled — its lane
+      * holds a zero delta, the chain stays where it was, and the true value is patched from an
+      * exception; the next in-lane position's delta then re-synchronizes the chain. Returns the
+      * number of exceptions, and optionally fills the zigzag lanes for the packing phase. The
+      * measuring and packing phases must agree exactly, so both use this one walk.
+      */
+    const auto walk_delta = [&](UInt8 cap_bits, T * delta_lanes, UInt16 * exiled_positions) -> UInt32
+    {
+        SignedType chain = quantized[0];
+        UInt32 exceptions = 0;
+        if (is_quantization_exception[0])
+        {
+            if (exiled_positions)
+                exiled_positions[exceptions] = 0;
+            ++exceptions;
+        }
+        if (delta_lanes)
+            delta_lanes[0] = 0;
+        for (UInt32 i = 1; i < count; ++i)
+        {
+            SignedType needed = 0;
+            bool fits = !is_quantization_exception[i] && !__builtin_sub_overflow(quantized[i], chain, &needed);
+            T zigzag = 0;
+            if (fits)
+            {
+                zigzag = (static_cast<T>(needed) << 1) ^ static_cast<T>(needed >> (Traits::width_bits - 1));
+                fits = cap_bits >= Traits::width_bits || zigzag < (T{1} << cap_bits);
+            }
+            if (fits)
+            {
+                chain = quantized[i];
+                if (delta_lanes)
+                    delta_lanes[i] = zigzag;
+            }
+            else
+            {
+                if (exiled_positions)
+                    exiled_positions[exceptions] = static_cast<UInt16>(i);
+                ++exceptions;
+                if (delta_lanes)
+                    delta_lanes[i] = 0;
+            }
+        }
+        return exceptions;
+    };
+
+    /** Chooses between Frame-of-Reference and zigzag delta packing for the quantized vector and
+      * computes the payload size of the cheaper of the two. Both packings may cap their width
+      * below the maximum and exile the values that do not fit to exceptions when that makes the
+      * total smaller (the patching idea of PFOR): a histogram of per-value widths gives the
+      * optimal cap in closed form for FOR, and proposes a candidate cap for DELTA that an exact
+      * chain walk then verifies (exiling a delta moves part of it to the next position, which
+      * the histogram cannot see). The Frame-of-Reference base stays at the vector minimum, so
+      * only large values are exiled — a single small outlier still widens the lanes.
+      */
+    const auto measure_packing = [&](bool allow_capping) -> std::optional<Packing>
     {
         SignedType min_q = quantized[0];
         SignedType max_q = quantized[0];
@@ -359,29 +416,115 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             max_q = std::max(max_q, quantized[i]);
         }
         const T for_range = static_cast<T>(max_q) - static_cast<T>(min_q);
-        const UInt8 bits_for = for_range == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(for_range));
+        const UInt8 bits_for_full = for_range == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(for_range));
 
+        /// Width histograms of the Frame-of-Reference offsets and of the zigzag deltas, over
+        /// the values that would actually occupy lanes (quantization exceptions never do).
+        /// The histograms are only needed for the capping analysis, which runs once per vector
+        /// on the winning scale — candidates compare by their uncapped sizes, so the candidate
+        /// loop stays at one cheap pass per candidate.
+        UInt32 for_width_histogram[Traits::width_bits + 1] = {};
+        UInt32 delta_width_histogram[Traits::width_bits + 1] = {};
         T max_zigzag = 0;
         bool delta_valid = true;
-        for (UInt32 i = 1; i < count && delta_valid; ++i)
+        if (allow_capping)
         {
-            SignedType delta;
-            if (__builtin_sub_overflow(quantized[i], quantized[i - 1], &delta))
-                delta_valid = false;
-            else
-                max_zigzag = std::max(max_zigzag, static_cast<T>((static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1))));
+            for (UInt32 i = 0; i < count; ++i)
+            {
+                if (is_quantization_exception[i])
+                    continue;
+                const T offset = static_cast<T>(quantized[i]) - static_cast<T>(min_q);
+                ++for_width_histogram[offset == 0 ? 0 : Traits::width_bits - std::countl_zero(offset)];
+                if (i > 0 && delta_valid)
+                {
+                    SignedType delta;
+                    if (__builtin_sub_overflow(quantized[i], quantized[i - 1], &delta))
+                        delta_valid = false;
+                    else
+                    {
+                        const T zigzag = (static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1));
+                        max_zigzag = std::max(max_zigzag, zigzag);
+                        ++delta_width_histogram[zigzag == 0 ? 0 : Traits::width_bits - std::countl_zero(zigzag)];
+                    }
+                }
+            }
         }
-        const UInt8 bits_delta = !delta_valid ? Traits::width_bits
+        else
+        {
+            for (UInt32 i = 1; i < count && delta_valid; ++i)
+            {
+                SignedType delta;
+                if (__builtin_sub_overflow(quantized[i], quantized[i - 1], &delta))
+                    delta_valid = false;
+                else
+                    max_zigzag = std::max(max_zigzag, (static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1)));
+            }
+        }
+        const UInt8 bits_delta_full = !delta_valid ? Traits::width_bits
             : (max_zigzag == 0 ? 0 : static_cast<UInt8>(Traits::width_bits - std::countl_zero(max_zigzag)));
 
-        const bool use_delta = delta_valid && bits_delta < bits_for;
-        const UInt8 bits = use_delta ? bits_delta : bits_for;
-        if (bits >= Traits::width_bits)
-            return std::nullopt;
+        const auto lanes_bytes = [](UInt8 w) { return Compression::FFOR::calculateBitpackedBytes(w); };
 
-        const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
-        const UInt32 payload_size = header_size + packed_bytes + exception_count * exceptionCost<T>();
-        return Packing{bits, bits_for, use_delta, use_delta ? quantized[0] : min_q, payload_size};
+        /// FOR: the histogram is exact — every value above the cap is one exception,
+        /// independently of the others — so scan all cap widths in closed form.
+        std::optional<Packing> best_packing;
+        if (bits_for_full < Traits::width_bits)
+        {
+            UInt32 outliers = 0;
+            UInt8 best_w = bits_for_full;
+            UInt32 best_cost = header_size + lanes_bytes(bits_for_full) + exception_count * exceptionCost<T>();
+            if (allow_capping)
+            {
+                for (Int32 w = bits_for_full - 1; w >= 0; --w)
+                {
+                    outliers += for_width_histogram[w + 1];
+                    const UInt32 cost = header_size + lanes_bytes(static_cast<UInt8>(w))
+                        + (exception_count + outliers) * exceptionCost<T>();
+                    if (cost < best_cost)
+                    {
+                        best_cost = cost;
+                        best_w = static_cast<UInt8>(w);
+                    }
+                }
+            }
+            best_packing = Packing{best_w, bits_for_full, false, min_q, best_cost};
+        }
+
+        /// DELTA: the histogram only estimates (exiled deltas partially reappear at the next
+        /// position), so it proposes the most promising cap and an exact walk verifies it.
+        if (delta_valid && bits_delta_full < Traits::width_bits)
+        {
+            const UInt32 uncapped_cost = header_size + lanes_bytes(bits_delta_full) + exception_count * exceptionCost<T>();
+            if (!best_packing || uncapped_cost < best_packing->payload_size)
+                best_packing = Packing{bits_delta_full, bits_for_full, true, quantized[0], uncapped_cost};
+
+            if (allow_capping)
+            {
+                UInt32 outliers = 0;
+                UInt8 estimated_w = bits_delta_full;
+                UInt32 estimated_cost = uncapped_cost;
+                for (Int32 w = bits_delta_full - 1; w >= 0; --w)
+                {
+                    outliers += delta_width_histogram[w + 1];
+                    const UInt32 cost = header_size + lanes_bytes(static_cast<UInt8>(w))
+                        + (exception_count + outliers) * exceptionCost<T>();
+                    if (cost < estimated_cost)
+                    {
+                        estimated_cost = cost;
+                        estimated_w = static_cast<UInt8>(w);
+                    }
+                }
+                if (estimated_w < bits_delta_full && estimated_cost + 64 < best_packing->payload_size)
+                {
+                    const UInt32 walk_exceptions = walk_delta(estimated_w, nullptr, nullptr);
+                    const UInt32 cost = header_size + lanes_bytes(estimated_w) + walk_exceptions * exceptionCost<T>();
+                    if (cost < best_packing->payload_size)
+                        best_packing = Packing{estimated_w, bits_for_full, true, quantized[0], cost};
+                }
+            }
+        }
+
+        return best_packing;
     };
 
     /** Candidate scales and their evaluation. A single sampled high-precision value must not
@@ -539,7 +682,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             }
         }
 
-        const auto packing = measure_packing();
+        const auto packing = measure_packing(false);
         if (packing && candidate == reference_alpha)
         {
             reference_packed_bits = packing->bits;
@@ -588,20 +731,28 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     if (scratch_alpha != alpha && !quantize_all(alpha))
         return std::nullopt;
 
+    /// The capping analysis (PFOR-style patching of lane-width outliers into exceptions) runs
+    /// once per vector, on the winning scale only, and is skipped when even a large capping
+    /// gain could not bring the decimal encoding under the best other encoding of this vector
+    /// (capping recovers more than a quarter of the payload only in contrived cases).
+    if (best->payload_size * 4 < best_total_size * 5)
+        if (const auto capped = measure_packing(true); capped && capped->payload_size < best->payload_size)
+            best = *capped;
+
     const UInt8 bits = best->bits;
     const bool use_delta = best->use_delta;
 
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> lanes; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
     alignas(64) std::array<T, WALLABY_VECTOR_VALUES> packed; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
 
+    /// Replays the exile decisions of the measuring phase: quantization exceptions and values
+    /// whose lane does not fit the (possibly capped) width both become patched exceptions, so
+    /// their lane content is arbitrary and chosen to fit. write_exceptions collects the final
+    /// exception positions in ascending order.
+    UInt32 write_exception_count = 0;
     if (use_delta)
     {
-        lanes[0] = 0;
-        for (UInt32 i = 1; i < count; ++i)
-        {
-            const SignedType delta = quantized[i] - quantized[i - 1];
-            lanes[i] = (static_cast<T>(delta) << 1) ^ static_cast<T>(delta >> (Traits::width_bits - 1));
-        }
+        write_exception_count = walk_delta(bits, lanes.data(), exception_positions.data());
         for (UInt32 i = count; i < WALLABY_VECTOR_VALUES; ++i)
             lanes[i] = 0;
         Compression::FFOR::bitPack(lanes.data(), packed.data(), bits, T{0});
@@ -609,7 +760,17 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     else
     {
         for (UInt32 i = 0; i < count; ++i)
-            lanes[i] = static_cast<T>(quantized[i]);
+        {
+            const T offset = static_cast<T>(quantized[i]) - static_cast<T>(best->base);
+            const bool exiled = is_quantization_exception[i] || (bits < Traits::width_bits && offset >= (T{1} << bits));
+            if (exiled)
+            {
+                exception_positions[write_exception_count++] = static_cast<UInt16>(i);
+                lanes[i] = static_cast<T>(best->base);
+            }
+            else
+                lanes[i] = static_cast<T>(quantized[i]);
+        }
         for (UInt32 i = count; i < WALLABY_VECTOR_VALUES; ++i)
             lanes[i] = static_cast<T>(best->base);
         Compression::FFOR::bitPack(lanes.data(), packed.data(), bits, static_cast<T>(best->base));
@@ -617,6 +778,8 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
 
     const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
     const UInt32 payload_size = best->payload_size;
+    if (payload_size != header_size + packed_bytes + write_exception_count * exceptionCost<T>())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wallaby packing size mismatch between measurement and packing");
     if (payload_size > scratch_size)
         return std::nullopt;
 
@@ -625,11 +788,11 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     *out++ = static_cast<char>(bits);
     unalignedStoreLittleEndian<SignedType>(out, best->base);
     out += sizeof(SignedType);
-    unalignedStoreLittleEndian<UInt16>(out, static_cast<UInt16>(exception_count));
+    unalignedStoreLittleEndian<UInt16>(out, static_cast<UInt16>(write_exception_count));
     out += sizeof(UInt16);
     memcpy(out, packed.data(), packed_bytes);
     out += packed_bytes;
-    for (UInt32 i = 0; i < exception_count; ++i)
+    for (UInt32 i = 0; i < write_exception_count; ++i)
     {
         unalignedStoreLittleEndian<UInt16>(out, exception_positions[i]);
         out += sizeof(UInt16);

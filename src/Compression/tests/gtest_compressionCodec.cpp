@@ -3212,6 +3212,19 @@ TEST_F(WallabyTest, KeepsDecimalModeBeyondAFixedExceptionCount)
     EXPECT_LT(wallabyCompressedSize(values), 3500u);
 }
 
+TEST_F(WallabyTest, CapsLaneWidthByExilingOutliers)
+{
+    /// A two-decimal ramp with a single enormous outlier. Packing the whole vector at the
+    /// outlier's width takes ~34-bit lanes (~4.4 KiB); exiling the outlier to a patched
+    /// exception packs 10-bit lanes (~1.3 KiB) plus one 10-byte exception.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(i) / 100;
+    values[512] = 1e7;
+
+    EXPECT_LT(wallabyCompressedSize(values), 1500u);
+}
+
 TEST_F(WallabyTest, AbsorbsHighPrecisionMinorityMissedBySampling)
 {
     /// A 1-decimal bulk with a 7-decimal minority of 384 values placed only at positions
