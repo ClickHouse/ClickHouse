@@ -183,6 +183,15 @@ ConstantJoin::OutputPlan ConstantJoin::makeOutputPlan(JoinKind kind, JoinStrictn
     return plan;
 }
 
+void ConstantJoin::updatePeakAllocatedSizeIfNeeded()
+{
+    if (!table_join->collectAnalyzeStats())
+        return;
+
+    size_t selected_right_row_size = selected_right_row ? selected_right_row->allocatedBytes() : 0;
+    peak_allocated_size = std::max(peak_allocated_size, allocated_size + selected_right_row_size);
+}
+
 bool ConstantJoin::addBlockToJoin(const Block & source_block, bool check_limits)
 {
     return addBlockToJoin(source_block, source_block.rows(), check_limits);
@@ -223,6 +232,9 @@ bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, b
             selected_block = selected_block.shrinkToFit();
 
         selected_right_row.emplace(materializeSelectedRowColumns(selected_block.getColumns()), ScatteredBlock::Selector(1));
+
+        updatePeakAllocatedSizeIfNeeded();
+
         return true;
     }
 
@@ -240,6 +252,8 @@ bool ConstantJoin::addBlockToJoin(const Block & source_block, size_t num_rows, b
             materializeSelectedRowColumns(
                 block_to_save.cloneWithCutColumns(plan.select_last_right_row ? rows - 1 : 0, 1).getColumns()),
             ScatteredBlock::Selector(1));
+
+        updatePeakAllocatedSizeIfNeeded();
     }
 
     /// A spilled block does not count against the in-memory size limits, so it also skips the check below.
@@ -294,7 +308,9 @@ void ConstantJoin::storeRightBlock(Block block_to_save, size_t rows)
     doDebugAsserts();
     right_blocks.emplace_back(block_to_save.getColumns(), ScatteredBlock::Selector(rows));
     allocated_size += right_blocks.back().allocatedBytes();
-    peak_allocated_size = std::max(peak_allocated_size, allocated_size);
+
+    updatePeakAllocatedSizeIfNeeded();
+
     in_memory_rows += rows;
     doDebugAsserts();
 
@@ -408,7 +424,7 @@ void ConstantJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join)
         else
             allocated_size += new_size - old_size;
 
-        peak_allocated_size = std::max(peak_allocated_size, allocated_size);
+        updatePeakAllocatedSizeIfNeeded();
 
         doDebugAsserts();
     }

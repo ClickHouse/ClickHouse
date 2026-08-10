@@ -115,6 +115,9 @@ private:
 
     static OutputPlan makeOutputPlan(JoinKind kind, JoinStrictness strictness, bool constant_predicate_value, bool any_take_last_row);
 
+    /// Method is used to snapshot data for EXPLAIN ANALYZE
+    void updatePeakAllocatedSizeIfNeeded();
+
     std::shared_ptr<TableJoin> table_join;
 
     /// Header of the right columns appended to every output row and the sample that stored right blocks normalize to.
