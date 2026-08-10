@@ -159,7 +159,9 @@ public:
     /// jobs will not free up, so a queued job would stay in the queue forever while its creator
     /// already believes that its thread is running - any code that then waits for that thread to make
     /// progress deadlocks. Throws `CANNOT_SCHEDULE_TASK` instead of enqueueing when all `max_threads`
-    /// slots are already taken by such jobs.
+    /// slots are already taken by such jobs, and also when the pool is at `max_threads` and all its
+    /// workers are busy with ordinary jobs, because one of those jobs may be the one waiting for this
+    /// thread.
     void scheduleThreadOrThrow(Job job, Priority priority = {}, bool propagate_opentelemetry_tracing_context = true);
 
     /// Wait for all currently active jobs to be done.

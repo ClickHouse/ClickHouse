@@ -560,6 +560,23 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(
             adding_new_thread = true;
         }
 
+        /// The `remaining_thread_job_capacity` check above only rejects the case when all the worker
+        /// slots are held by other long-lived jobs. The workers can also be all busy with ordinary
+        /// jobs, and one of them may be waiting for the thread we are about to create. Queueing the
+        /// job would break the contract of `scheduleThreadOrThrow` in the same way: the caller gets a
+        /// thread whose function has not started. So if we neither started a fresh worker nor have an
+        /// idle one to hand the job to right away, refuse to schedule it.
+        if (job_occupies_thread && !adding_new_thread && threads.size() <= scheduled_jobs)
+        {
+            new_thread.reset();
+            if constexpr (std::is_same_v<Thread, GlobalThreadType>)
+                return on_error(fmt::format(
+                    "all {} threads of the global thread pool are busy and no new thread can be started, "
+                    "consider increasing the `max_thread_pool_size` setting", max_threads));
+            else
+                return on_error(fmt::format("all {} threads of the pool are busy and no new thread can be started", max_threads));
+        }
+
         if (adding_new_thread)
         {
             try
