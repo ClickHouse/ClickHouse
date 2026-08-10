@@ -20,34 +20,6 @@ namespace DB
 /// open is an `OpenedFileCache` hit. Internally synchronized.
 using ReaderAnchorCache = CacheBase<String, ReadBufferFromFileBase>;
 
-/// One held cache-segment reader, reused across windows by the sequential read
-/// path. A caller either takes the held reader (exclusive until check-in) or
-/// opens its own fresh one - the reader is never used by two threads at once,
-/// which is what makes this safe under the concurrent `readBigAt` fan-out
-/// (the slot just degrades to fresh readers there).
-struct StreamingReaderSlot
-{
-    /// Take the held reader ONLY when it is free, for `p`, AND already sitting
-    /// at `offset` - the next read must be exactly contiguous, because a reused
-    /// reader must never be `seek`-ed: it was last driven in external-buffer
-    /// (`set`) mode, whose stale working-buffer coordinates make `seek`'s
-    /// in-buffer shortcut mis-position.
-    std::shared_ptr<ReadBufferFromFileBase> tryCheckout(const String & p, size_t offset);
-
-    /// Return `r` as the held reader for `p`, positioned at `next_pos`, free.
-    void checkin(const String & p, std::shared_ptr<ReadBufferFromFileBase> r, size_t next_pos);
-
-    /// Drop the held reader (e.g. a read threw): never reuse a faulted reader.
-    void abandon();
-
-    std::mutex mutex;
-    String path;
-    std::shared_ptr<ReadBufferFromFileBase> reader;
-    /// File offset the held reader is positioned at.
-    size_t next_position = 0;
-    bool checked_out = false;
-};
-
 /// Shared deferred-LRU-bump context of one probe: every hit reader records the
 /// sub-ranges it served, and the LAST owner's destruction runs the bump over
 /// the pinned holder - the probe cursor while the walk runs, then the final
@@ -78,7 +50,6 @@ public:
         size_t object_file_offset_,
         ThrottlerPtr local_throttler_,
         ReaderAnchorCache * anchors_,
-        StreamingReaderSlot * stream_slot_,
         std::shared_ptr<DiskCacheTouchBook> touch_book_);
 
     ByteRange range() const override { return hit_range; }
@@ -90,7 +61,6 @@ private:
     size_t object_file_offset;
     ThrottlerPtr local_throttler;
     ReaderAnchorCache * anchors = nullptr;
-    StreamingReaderSlot * stream_slot = nullptr;
     /// Shared deferred-LRU-bump book; see `DiskCacheTouchBook`.
     std::shared_ptr<DiskCacheTouchBook> touch_book;
     LoggerPtr log = getLogger("DiskCacheReader");
@@ -143,7 +113,7 @@ private:
 /// `ICacheProvider` wrapping FileCache. Safe for concurrent use (the
 /// `readBigAt` fan-out shares one provider): lookups only read immutable
 /// members and the internally-locked `FileCache`; the shared mutable state
-/// (`ReaderAnchorCache`, `StreamingReaderSlot`) is internally synchronized.
+/// (`ReaderAnchorCache`) is internally synchronized.
 ///
 /// Cache key = `custom_cache_key` else `FileCacheKey::fromPath`; origin = `custom_origin` else the
 /// per-object `Data`/`System` classification.
@@ -183,8 +153,6 @@ private:
     /// Keep-alive anchors for recently-used cache-segment readers; see
     /// `ReaderAnchorCache`.
     ReaderAnchorCache reader_anchors;
-    /// See `StreamingReaderSlot`.
-    StreamingReaderSlot streaming_slot;
     LoggerPtr log = getLogger("DiskCacheProvider");
 };
 

@@ -8,7 +8,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/scope_guard_safe.h>
 #include <algorithm>
 #include <cstring>
 #include <vector>
@@ -24,40 +23,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-std::shared_ptr<ReadBufferFromFileBase> StreamingReaderSlot::tryCheckout(const String & p, size_t offset)
-{
-    std::lock_guard lock(mutex);
-    if (checked_out || !reader || path != p || next_position != offset)
-        return nullptr;
-    checked_out = true;
-    return reader;
-}
-
-void StreamingReaderSlot::checkin(const String & p, std::shared_ptr<ReadBufferFromFileBase> r, size_t next_pos)
-{
-    std::lock_guard lock(mutex);
-    path = p;
-    reader = std::move(r);
-    next_position = next_pos;
-    checked_out = false;
-}
-
-void StreamingReaderSlot::abandon()
-{
-    std::lock_guard lock(mutex);
-    reader = nullptr;
-    checked_out = false;
-}
-
 namespace
 {
 
 /// Shared zero-copy pread of `[overlap_start, overlap_start + overlap_size)`
 /// (object-local) out of `segment`, appending a single file-level `ChainedBufferNode`
-/// (logical offset `overlap_start + object_file_offset`) to `result`. Optionally
-/// reuses / refreshes a `StreamingReaderSlot` and anchors the reader. Shared by
-/// the read buffer and the write buffer's served-prefix read. The holder pins
-/// the segment, so a short read is a hard I/O error — throw, never drop a hit.
+/// (logical offset `overlap_start + object_file_offset`) to `result`. Opens a fresh
+/// pread reader each call - the descriptor is shared via `OpenedFileCache`, kept warm by
+/// the anchor cache, so the open is typically syscall-free. Shared by the read buffer and
+/// the write buffer's served-prefix read. The holder pins the segment, so a short read is
+/// a hard I/O error — throw, never drop a hit.
 void preadSegmentNode(
     ChainedBuffers & result,
     FileSegment & segment,
@@ -65,71 +40,52 @@ void preadSegmentNode(
     size_t overlap_size,
     size_t object_file_offset,
     const ThrottlerPtr & local_throttler,
-    ReaderAnchorCache * anchors,
-    StreamingReaderSlot * stream_slot)
+    ReaderAnchorCache * anchors)
 {
     String path = segment.getPath();
     const size_t offset_in_file = overlap_start - segment.range().left;
 
     auto buf = std::make_shared<OwnedChainedBuffer>(overlap_size);
 
-    /// Reuse the held streaming reader for this segment if it is free, else open
-    /// a fresh one (pread shares the descriptor via `OpenedFileCache`, kept warm
-    /// by the anchor cache). A reused reader is already at `offset_in_file` by
-    /// construction (tryCheckout's contiguity check) and must NOT be re-`seek`ed.
+    ReadSettings cache_file_read_settings;
+    cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    cache_file_read_settings.local_fs_settings.buffer_size = 0;
+    cache_file_read_settings.local_throttler = local_throttler;
+    const auto open_cache_file = [&](const String & file_path)
+    {
+        return createReadBufferFromFileBase(
+            file_path, cache_file_read_settings,
+            /*read_hint=*/std::nullopt,
+            /*file_size=*/std::nullopt,
+            segment.getFlagsForLocalRead());
+    };
     std::shared_ptr<ReadBufferFromFileBase> reader;
-    bool from_slot = false;
-    if (stream_slot)
+    try
     {
-        reader = stream_slot->tryCheckout(path, offset_in_file);
-        from_slot = reader != nullptr;
+        reader = open_cache_file(path);
     }
-    if (!reader)
+    catch (const Exception & e)
     {
-        ReadSettings cache_file_read_settings;
-        cache_file_read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-        cache_file_read_settings.local_fs_settings.buffer_size = 0;
-        cache_file_read_settings.local_throttler = local_throttler;
-        const auto open_cache_file = [&](const String & file_path)
+        /// A fully downloaded segment's file is renamed from `<offset>` to
+        /// `<offset>_<size>` on completion, and `getPath` is lock-free, so the name
+        /// computed above can go stale between it and the open. The rename surfaces
+        /// only as `FILE_DOESNT_EXIST`; recompute the path under the segment lock -
+        /// the rename runs under the same lock, so this observes the final name -
+        /// and retry once. An unchanged path means the missing file is not explained
+        /// by a rename: propagate.
+        if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+            throw;
+        String current_path;
         {
-            return createReadBufferFromFileBase(
-                file_path, cache_file_read_settings,
-                /*read_hint=*/std::nullopt,
-                /*file_size=*/std::nullopt,
-                segment.getFlagsForLocalRead());
-        };
-        try
-        {
-            reader = open_cache_file(path);
+            auto segment_lock = segment.lock();
+            current_path = segment.getPath();
         }
-        catch (const Exception & e)
-        {
-            /// A fully downloaded segment's file is renamed from `<offset>` to
-            /// `<offset>_<size>` on completion, and `getPath` is lock-free, so the name
-            /// computed above can go stale between it and the open. The rename surfaces
-            /// only as `FILE_DOESNT_EXIST`; recompute the path under the segment lock -
-            /// the rename runs under the same lock, so this observes the final name -
-            /// and retry once. An unchanged path means the missing file is not explained
-            /// by a rename: propagate.
-            if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                throw;
-            String current_path;
-            {
-                auto segment_lock = segment.lock();
-                current_path = segment.getPath();
-            }
-            if (current_path == path)
-                throw;
-            path = current_path;
-            reader = open_cache_file(path);
-        }
-        reader->seek(static_cast<off_t>(offset_in_file), SEEK_SET);
+        if (current_path == path)
+            throw;
+        path = current_path;
+        reader = open_cache_file(path);
     }
-
-    /// Abandon a checked-out slot reader on ANY throw before check-in (read error or a throw from
-    /// `result.append`); otherwise the slot stays `checked_out` forever, killing reuse. Disarmed at
-    /// `checkin`; a no-op for fresh (non-slot) readers.
-    SCOPE_EXIT_SAFE({ if (from_slot && stream_slot) stream_slot->abandon(); });
+    reader->seek(static_cast<off_t>(offset_in_file), SEEK_SET);
 
     size_t copied = 0;
     while (copied < overlap_size)
@@ -151,16 +107,8 @@ void preadSegmentNode(
     result.append(ChainedBufferNode{
         std::move(buf), 0, overlap_size, overlap_start + object_file_offset});
 
-    /// A slot-reused reader is already kept warm by the slot; re-anchoring it every window is a
-    /// redundant locked insert. Anchor only fresh readers — the anchor cache earns its keep across
-    /// different paths / the `readBigAt` fan-out.
-    const bool reused_from_slot = from_slot;
-    if (stream_slot)
-    {
-        stream_slot->checkin(path, reader, offset_in_file + overlap_size);
-        from_slot = false;  /// disarm: the reader is handed back, no longer checked out
-    }
-    if (anchors && !reused_from_slot)
+    /// Anchor the reader so its `OpenedFile` stays warm for the next read of this path.
+    if (anchors)
         anchors->set(path, reader);
 }
 
@@ -183,8 +131,7 @@ void readOverlappingSegments(
     ByteRange sub_in_object,
     size_t object_file_offset,
     const ThrottlerPtr & local_throttler,
-    ReaderAnchorCache * anchors,
-    StreamingReaderSlot * stream_slot)
+    ReaderAnchorCache * anchors)
 {
     for (const auto & segment : holder)
     {
@@ -209,7 +156,7 @@ void readOverlappingSegments(
 
         preadSegmentNode(
             result, *segment, overlap_start, overlap_end - overlap_start,
-            object_file_offset, local_throttler, anchors, stream_slot);
+            object_file_offset, local_throttler, anchors);
     }
 }
 
@@ -221,14 +168,12 @@ DiskCacheReader::DiskCacheReader(
     size_t object_file_offset_,
     ThrottlerPtr local_throttler_,
     ReaderAnchorCache * anchors_,
-    StreamingReaderSlot * stream_slot_,
     std::shared_ptr<DiskCacheTouchBook> touch_book_)
     : holder(std::move(holder_))
     , hit_range(range_in_file)
     , object_file_offset(object_file_offset_)
     , local_throttler(std::move(local_throttler_))
     , anchors(anchors_)
-    , stream_slot(stream_slot_)
     , touch_book(std::move(touch_book_))
 {
 }
@@ -261,7 +206,7 @@ ChainedBuffers DiskCacheReader::read(ByteRange subrange)
     ByteRange sub_in_object{subrange.offset - object_file_offset, subrange.size};
 
     readOverlappingSegments(result, *holder, sub_in_object, object_file_offset,
-        local_throttler, anchors, stream_slot);
+        local_throttler, anchors);
     return result;
 }
 
@@ -397,9 +342,9 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
     ByteRange sub_in_object{subrange.offset - object_file_offset, subrange.size};
 
     /// Serve an already-committed prefix from this buffer's own held holder,
-    /// downloader-independent (a fresh pread reader, no `StreamingReaderSlot`).
+    /// downloader-independent (a fresh pread reader, unthrottled, unanchored).
     readOverlappingSegments(result, *holder, sub_in_object, object_file_offset,
-        /*local_throttler=*/nullptr, /*anchors=*/nullptr, /*stream_slot=*/nullptr);
+        /*local_throttler=*/nullptr, /*anchors=*/nullptr);
     return result;
 }
 
@@ -717,7 +662,7 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
                 hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
                 hit.reader = std::make_unique<DiskCacheReader>(
                     holder, hit.range, object_file_offset,
-                    local_throttler, &reader_anchors, &streaming_slot, book);
+                    local_throttler, &reader_anchors, book);
                 out.push_back(std::move(hit));
             }
             if (committed_end < seg_end)
@@ -759,7 +704,7 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
             hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
             hit.reader = std::make_unique<DiskCacheReader>(
                 shared_holder, hit.range, object_file_offset,
-                local_throttler, &reader_anchors, &streaming_slot, book);
+                local_throttler, &reader_anchors, book);
             out.push_back(std::move(hit));
         }
         if (committed_end < seg_end)
