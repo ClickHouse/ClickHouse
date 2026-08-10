@@ -40,6 +40,11 @@ public:
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     NamesAndTypesList readRowAndGetNamesAndDataTypesForForm(ReadBuffer & in, const FormatSettings & settings);
+
+    /// `FormRowInputFormat::readField` percent-decodes the value and hands it to `deserializeWholeText`,
+    /// so a `Bool` column is read by `SerializationBool`, which accepts only the configured
+    /// representations and the fixed literal forms — exactly as in the other flat-text formats.
+    bool readsNumericValueIntoBoolColumn() const override { return false; }
 };
 
 }

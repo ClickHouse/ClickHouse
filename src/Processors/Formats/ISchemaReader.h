@@ -139,7 +139,7 @@ public:
     /// `Arrow` / `ORC`, `Native` under `input_format_native_allow_types_conversion`) — accept e.g. `2`
     /// there, as does `Values` through its expression-interpretation fallback
     /// (`input_format_values_interpret_expressions`). The flat-text row formats (`TSV`, `CSV`, `TSKV`,
-    /// `CustomSeparated`, `Template`, `Regexp`) instead hand the raw field to the `Bool` deserializers
+    /// `CustomSeparated`, `Template`, `Regexp`, `Form`) instead hand the raw field to the `Bool` deserializers
     /// (`SerializationBool`), which accept only the configured `bool_true_representation` /
     /// `bool_false_representation` and the fixed literal forms (`1` / `0`, `true` / `false`, ...) — so
     /// they return false. The typed-token JSON formats are equally strict
