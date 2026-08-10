@@ -80,6 +80,14 @@ static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (read.getContext()->getRefreshSet().tryGetTaskForInnerTable(mergetree_data.getStorageID()))
         return false;
 
+    /// A read with a pinned block-number boundary (select_sequential_consistency clamps the read to the
+    /// parts the initiator saw confirmed by the insert quorum) must stay local: ReadFromMergeTree::serialize
+    /// does not ship the pin and deserialize rebuilds the read with max_block_numbers_to_read = nullptr, so a
+    /// follower replica would silently read newer parts than the initiator's snapshot allows. Mirrors the
+    /// hasPinnedBlockNumbers rejection in make_distributed_plan (see makeDistributed.cpp).
+    if (read.hasPinnedBlockNumbers())
+        return false;
+
     /// A non-replicated table can hold different data on each replica, so reading it remotely is opt-in.
     return mergetree_data.supportsReplication()
         || read.getContext()->getSettingsRef()[Setting::parallel_replicas_for_non_replicated_merge_tree];
