@@ -39,3 +39,19 @@ SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat(repeat('Ж', 200) |
 -- The other side of that split: no match, so one search spans the whole 2 MB haystack and the batch
 -- threshold is crossed about 30 times inside that single call.
 SELECT countSubstringsCaseInsensitiveUTF8(materialize(repeat('Ж', 1000000)), repeat('Ж', 16) || 'Щ') SETTINGS max_threads = 1;
+
+-- The ASCII case-insensitive searcher charges from the short-haystack scalar scan, and on AVX2 and NEON
+-- also from the vector candidate loop and the scalar tail after it. The needles below straddle the
+-- first-symbol cache, whose width is the vector width, so on either SIMD target one of them extends the
+-- tail past a filled cache; a scalar target has no cache and runs them all through its own loop. The
+-- case-sensitive count alongside is an oracle that does not use this searcher.
+SELECT countSubstringsCaseInsensitive(materialize('abcdefgh'), 'CDE'), countSubstrings(materialize('abcdefgh'), 'cde');
+SELECT countSubstringsCaseInsensitive(materialize(repeat('abcdefgh', 100)), repeat('ABCDEFGH', 4)), countSubstrings(materialize(repeat('abcdefgh', 100)), repeat('abcdefgh', 4));
+SELECT countSubstringsCaseInsensitive(materialize(repeat('abcdefgh', 100)), repeat('ABCDEFGH', 4) || 'A'), countSubstrings(materialize(repeat('abcdefgh', 100)), repeat('abcdefgh', 4) || 'a');
+-- Every position is a candidate that fails on the last needle byte: the charge that keeps a scan with no
+-- match interruptible.
+SELECT countSubstringsCaseInsensitive(materialize(repeat('abcdefgh', 2000)), repeat('ABCDEFGH', 4) || 'Q'), countSubstrings(materialize(repeat('abcdefgh', 2000)), repeat('abcdefgh', 4) || 'Q');
+-- No candidate anywhere, so the vector loop skips whole windows and charges per window.
+SELECT countSubstringsCaseInsensitive(materialize(repeat('abcdefgh', 2000)), 'ZZ'), countSubstrings(materialize(repeat('abcdefgh', 2000)), 'zz');
+-- Overlapping matches, where the count comes from repeatedly resumed scans rather than one pass.
+SELECT countSubstringsCaseInsensitive(materialize(repeat('aA', 500)), 'aa'), countSubstringsCaseInsensitive(materialize(repeat('aA', 500)), materialize('AA'));

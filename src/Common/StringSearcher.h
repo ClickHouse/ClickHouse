@@ -323,9 +323,25 @@ public:
         return false;
     }
 
-    /// The charger is not reported to: this searcher's scan is a separate residual from the UTF-8 one below.
+    /// An uncharged call is dispatched to a separate instantiation, so the accounting is removed at compile
+    /// time rather than checked in the loop.
     const UInt8 * search(
-        const UInt8 * haystack, const UInt8 * const haystack_end, const SearchWorkCharger & = no_search_work_charge) const
+        const UInt8 * haystack, const UInt8 * const haystack_end, const SearchWorkCharger & charger = no_search_work_charge) const
+    {
+        if (charger)
+            return searchImpl(haystack, haystack_end, SearchWorkBatch(charger));
+        return searchImpl(haystack, haystack_end, NoSearchWorkBatch{});
+    }
+
+    const UInt8 * search(
+        const UInt8 * haystack, size_t haystack_size, const SearchWorkCharger & charger = no_search_work_charge) const
+    {
+        return search(haystack, haystack + haystack_size, charger);
+    }
+
+private:
+    template <typename Batch>
+    const UInt8 * searchImpl(const UInt8 * haystack, const UInt8 * const haystack_end, Batch batch) const
     {
         if (needle == needle_end)
             return haystack;
@@ -348,11 +364,16 @@ public:
                         ++haystack_pos;
                         ++needle_pos;
                     }
+                    /// A candidate can traverse the whole needle and fail at its last byte, so charge the
+                    /// needle rather than the one byte the cursor then advances by.
+                    batch.add(needle_size);
                     if (needle_pos == needle_end)
-                        return pos;
+                        return batch.finish(pos);
                 }
+                else
+                    batch.add(1);
             }
-            return haystack_end;
+            return batch.finish(haystack_end);
         }
 
         while (haystack < haystack_end)
@@ -370,6 +391,7 @@ public:
                 if (mask == 0)
                 {
                     haystack += N;
+                    batch.add(N);
                     continue;
                 }
 
@@ -398,21 +420,24 @@ public:
                                 ++needle_pos;
                             }
 
+                            batch.add(needle_size);
                             if (needle_pos == needle_end)
-                                return haystack;
+                                return batch.finish(haystack);
                         }
                     }
                     else if ((mask_offset & cachemask) == cachemask)
-                        return haystack;
+                        return batch.finish(haystack);
 
                     ++haystack;
+                    /// `offset` is zero whenever the first candidate sits at index 0.
+                    batch.add(offset + 1);
                     continue;
                 }
             }
 #endif
 
             if (haystack == haystack_end)
-                return haystack_end;
+                return batch.finish(haystack_end);
 
             if (*haystack == l || *haystack == u)
             {
@@ -425,20 +450,17 @@ public:
                     ++needle_pos;
                 }
 
+                batch.add(needle_size);
                 if (needle_pos == needle_end)
-                    return haystack;
+                    return batch.finish(haystack);
             }
+            else
+                batch.add(1);
 
             ++haystack;
         }
 
-        return haystack_end;
-    }
-
-    const UInt8 * search(
-        const UInt8 * haystack, size_t haystack_size, const SearchWorkCharger & charger = no_search_work_charge) const
-    {
-        return search(haystack, haystack + haystack_size, charger);
+        return batch.finish(haystack_end);
     }
 };
 
@@ -507,8 +529,8 @@ public:
     bool compareTrivial(const UInt8 * haystack_pos, const UInt8 * haystack_end, const uint8_t * needle_pos) const;
     bool compare(const UInt8 * haystack, const UInt8 * haystack_end, const UInt8 * pos) const;
 
-    /// The only scan here that reports its work: see `SearchWorkCharger`. An uncharged call is dispatched to
-    /// a separate instantiation of the loop, which measurably pays ~4% CPU for the accounting otherwise.
+    /// Reports its work: see `SearchWorkCharger`. An uncharged call is dispatched to a separate
+    /// instantiation of the loop, which measurably pays ~4% CPU for the accounting otherwise.
     const UInt8 * search(
         const UInt8 * haystack, const UInt8 * haystack_end, const SearchWorkCharger & charger = no_search_work_charge) const;
 
