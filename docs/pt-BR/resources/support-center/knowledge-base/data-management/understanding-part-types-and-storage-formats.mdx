@@ -1,0 +1,184 @@
+---
+title: Compreendendo os tipos de partes e os formatos de armazenamento
+description: 'Aprenda sobre os diferentes tipos de partes (Wide vs Compact) e formatos de armazenamento (Full vs Packed) no ClickHouse e como eles afetam o desempenho.'
+date: 2026-02-03
+tags: ['Conceitos centrais de dados']
+keywords: ['partes compactas', 'partes wide', 'armazenamento full', 'armazenamento packed', 'tipos de partes', 'formatos de armazenamento']
+---
+
+O ClickHouse usa dois conceitos independentes para organizar os dados dentro das partes:
+
+* **Tipos de partes** (Wide vs Compact): Como os dados das colunas são armazenados dentro de uma parte
+* **Formatos de armazenamento** (Full vs Packed): Como os arquivos da parte são armazenados em disco
+
+<div id="part-types-wide-vs-compact">
+  ## Tipos de partes: Wide vs Compact
+</div>
+
+Os tipos de partes determinam como os dados das colunas são organizados em uma parte de dados.
+
+| Tipo        | Descrição                                                                                                                               | Ideal para                                                          |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **Wide**    | Cada coluna é armazenada em arquivos separados, cada um com seu próprio [arquivo de marcas](/pt-BR/concepts/core-concepts/glossary#mark-file) | Consultas que selecionam um subconjunto de colunas                  |
+| **Compact** | Todas as colunas são armazenadas em um único arquivo, com um único [arquivo de marcas](/pt-BR/concepts/core-concepts/glossary#mark-file)      | Desempenho de ingestão e consultas que precisam de todas as colunas |
+
+<div id="when-each-type-is-used">
+  ### Quando cada tipo é usado
+</div>
+
+O tipo de parte é controlado pelas seguintes configurações da tabela:
+
+* [`min_bytes_for_wide_part`](/pt-BR/reference/settings/merge-tree-settings#min_bytes_for_wide_part): Quantidade mínima de bytes para que uma parte use o formato Wide
+* [`min_rows_for_wide_part`](/pt-BR/reference/settings/merge-tree-settings#min_rows_for_wide_part): Quantidade mínima de linhas para que uma parte use o formato Wide
+
+Se o número de bytes ou de linhas em uma parte de dados for menor que o valor da configuração correspondente, a parte será armazenada no formato `Compact`; caso contrário, usará o formato `Wide`.
+
+<div id="performance-considerations">
+  ### Considerações de desempenho
+</div>
+
+**Partes compactas:**
+
+* Melhor desempenho de ingestão
+* Ideais quando as consultas precisam de todas as colunas
+* Mais eficientes para partes pequenas
+
+**Partes wide:**
+
+* Mais eficientes para consultas que selecionam apenas um subconjunto de colunas
+* Melhores para conjuntos de dados grandes com acesso seletivo a colunas
+
+As mesclagens de compact para wide são mais lentas do que as mesclagens de wide para wide porque o ClickHouse usa algoritmos de [mesclagem vertical](/pt-BR/concepts/core-concepts/merges#memory-optimized-merges) para conversões de compact para wide, enquanto usa algoritmos horizontais para mesclagens de compact para compact. Se você quiser forçar o uso de partes wide independentemente do tamanho, pode definir `min_bytes_for_wide_part=0`.
+
+Isso pode ser útil nos seguintes cenários:
+
+1. Quando você tem tabelas com muitas colunas (por exemplo, mais de 600 colunas) e está fazendo inserções grandes, definir isso como 0 pode ajudar no desempenho
+2. Para otimizar o uso de memória de tabelas de sistema como `system.metric_log` e `system.text_log`, que estão consumindo memória em excesso durante as mesclagens
+3. Ao lidar com tabelas que têm alto volume de inserções e você quer otimizar o armazenamento e o comportamento de mesclagem
+4. Quando você quer um comportamento consistente no formato das partes e não quer a sobrecarga de transições de formato com base em limiares de tamanho
+
+Vale observar que, embora definir isso como 0 possa melhorar certas características de desempenho, isso pode gerar mais requisições GET para o armazenamento S3 devido ao formato de partes wide.
+
+<div id="limitations">
+  ### Limitações
+</div>
+
+As estatísticas de tamanho das colunas não são calculadas para partes compact, o que pode afetar o monitoramento e a otimização. Ao consultar `system.parts_columns`, as partes compact mostram `0` para `column_data_compressed_bytes` e `column_data_uncompressed_bytes`. Para mais informações, consulte [&quot;Ver contagens e tamanhos de partes wide ou compact&quot;](/pt-BR/resources/support-center/knowledge-base/troubleshooting/count-parts-by-type).
+
+<div id="storage-formats-full-vs-packed">
+  ## Formatos de armazenamento: Full vs Packed
+</div>
+
+Os formatos de armazenamento determinam como os arquivos de uma parte são armazenados fisicamente em disco.
+
+| Formato    | Descrição                                                           | Disponibilidade     |
+| ---------- | ------------------------------------------------------------------- | ------------------- |
+| **Full**   | Cada arquivo é armazenado individualmente no diretório da parte     | Open source e Cloud |
+| **Packed** | Todos os arquivos são agrupados em um único arquivo de arquivamento | Open source e Cloud |
+
+<div id="full-storage">
+  ### Armazenamento Full
+</div>
+
+No armazenamento Full, cada parte é composta por vários arquivos separados, armazenados individualmente em disco. Este é o formato de armazenamento padrão.
+
+<div id="packed-storage">
+  ### Armazenamento Packed
+</div>
+
+No armazenamento Packed, todos os arquivos das partes são agrupados em um único arquivo. Isso reduz significativamente o número de operações de arquivo, o que é crucial para armazenamentos remotos, como o S3, em que cada requisição tem latência e custo associados.
+
+**Benefícios do armazenamento Packed:**
+
+* Menos chamadas à API de S3/armazenamento de objetos
+* Menor pressão de metadados no serviço de coordenação
+* Menores custos de armazenamento (o armazenamento Full pode ser significativamente mais caro)
+* Melhor desempenho para partes pequenas em armazenamento remoto
+
+<div id="when-packed-storage-is-used">
+  ### Quando o armazenamento Packed é usado
+</div>
+
+Uma parte usa o armazenamento Packed se **qualquer** uma destas condições for true:
+
+* Bytes não comprimidos &lt; [`min_bytes_for_full_part_storage`](/pt-BR/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
+* Número de linhas &lt; [`min_rows_for_full_part_storage`](/pt-BR/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
+* Nível de merge &lt; [`min_level_for_full_part_storage`](/pt-BR/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+
+O armazenamento Packed é opt-in: todas as três configurações têm valor padrão `0`, portanto as partes usam o armazenamento Full, a menos que você aumente uma delas.
+
+<Info>
+  **Compatibilidade com downgrade**
+
+  Depois que uma parte é gravada no armazenamento Packed, as versões do ClickHouse que não oferecem suporte ao armazenamento Packed não conseguem mais lê-la. Portanto, habilitar o armazenamento Packed impede o downgrade para esse tipo de versão, então habilite-o apenas quando tiver certeza de que não precisará reverter.
+</Info>
+
+A configuração `min_level_for_full_part_storage` pode ser usada para otimizar tanto o desempenho quanto os custos no armazenamento de objetos, especialmente para tabelas que recebem inserções contínuas.
+Essa configuração está disponível a partir da versão 25.10 do ClickHouse e funciona em conjunto com `min_level_for_wide_part` para oferecer controle abrangente sobre as estratégias de armazenamento de partes.
+
+Alterá-la em relação ao valor padrão (0) pode ser considerado nos seguintes casos de uso:
+
+* Quando as tabelas recebem ingestão regular de dados, as partes iniciais são mescladas rapidamente, o que torna desperdício armazená-las inicialmente no formato de parte Full
+* Definir esse parâmetro evita requisições PUT ao S3 custosas durante as inserções. Por exemplo, uma análise mostrou que inserções que criavam partes Full tinham uma média de 31,3 requisições PUT por inserção, enquanto aquelas que criavam apenas partes packed tinham média de apenas 2,22 requisições PUT por inserção
+* As operações de insert ficam mais rápidas, especialmente em tabelas com muitas colunas, já que o armazenamento packed grava todos os dados em um único arquivo em vez de criar arquivos separados para cada coluna.
+
+Configuração recomendada:
+
+Defina `min_level_for_full_part_storage = 2` para implantações com armazenamento de objetos.
+Isso garante que:
+
+* Partes de nível 0 (inserções iniciais) usem armazenamento packed
+* Partes de nível 1 continuem usando armazenamento packed
+* Apenas partes no nível 2 ou superior usem o formato de armazenamento Full
+
+<Tip>
+  Evite essa configuração para tabelas que recebem gravações muito grandes, porém pouco frequentes, nas quais não ocorrem merges suficientes, pois gravações iniciais grandes podem se beneficiar imediatamente do armazenamento de parte Full.
+</Tip>
+
+<div id="combining-part-types-and-storage-formats">
+  ## Combinando tipos de partes e formatos de armazenamento
+</div>
+
+Esses dois conceitos são independentes, e você pode usar qualquer combinação:
+
+| Combinação       | Caso de uso                                    |
+| ---------------- | ---------------------------------------------- |
+| Wide + Full      | Partes grandes em armazenamento local (padrão) |
+| Wide + Packed    | Partes grandes em armazenamento de objetos     |
+| Compact + Full   | Partes pequenas em armazenamento local         |
+| Compact + Packed | Partes pequenas em armazenamento de objetos    |
+
+<div id="querying-part-information">
+  ## Consultando informações sobre partes
+</div>
+
+Você pode inspecionar o tipo e o tipo de armazenamento das partes existentes usando a tabela [`system.parts`](/pt-BR/reference/system-tables/parts):
+
+```sql
+SELECT
+    part_type,
+    part_storage_type,
+    max(level),
+    count(),
+    formatReadableSize(max(data_uncompressed_bytes)),
+    formatReadableSize(min(data_uncompressed_bytes))
+FROM system.parts
+WHERE (database != 'system') AND active
+GROUP BY
+    1,
+    2
+ORDER BY
+    1 ASC,
+    2 ASC
+```
+
+Você verá algo assim:
+
+```response
+   ┌─part_type─┬─part_storage_type─┬─max(level)─┬─count()─┬─formatReadab⋯sed_bytes))─┬─formatReadab⋯sed_bytes))─┐
+1. │ Compact   │ Full              │      12688 │    2456 │ 1023.87 MiB              │ 23.78 MiB                │
+2. │ Compact   │ Packed            │      97383 │   13748 │ 127.77 MiB               │ 1.00 B                   │
+3. │ Wide      │ Full              │       7642 │    2000 │ 1.38 TiB                 │ 30.18 MiB                │
+4. │ Wide      │ Packed            │         10 │     187 │ 110.01 MiB               │ 1.30 KiB                 │
+   └───────────┴───────────────────┴────────────┴─────────┴──────────────────────────┴──────────────────────────┘
+```

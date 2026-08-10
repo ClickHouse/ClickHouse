@@ -6,6 +6,8 @@ TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_P
 
 SYNC = "CH Inc sync"
 
+GH_AUTH_TRUSTED_LAMBDA_NAME = "mint-token-trusted-lambda-terraform"
+
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
 S3_BUCKET_HTTP_ENDPOINT = "clickhouse-builds.s3.amazonaws.com"
@@ -48,12 +50,6 @@ azure_secret = Secret.Config(
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
-chcache_secret = Secret.Config(
-    name="chcache_password",
-    type=Secret.Type.AWS_SSM_PARAMETER,
-    region="us-east-1",
-)
-
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
@@ -75,7 +71,6 @@ SECRETS = [
         region="us-east-1",
     ),
     azure_secret,
-    chcache_secret,
     Secret.Config(
         name="/github-app/clickhouse-gh.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -93,18 +88,30 @@ SECRETS = [
     ),
 ]
 
+# In-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com (amd64) /
+# ports.ubuntu.com (arm64) are frequently unreachable over IPv4 from the runners
+# and have no IPv6 route; the in-region mirror is reachable and fast. Passed as
+# build args to the Ubuntu-based images, whose Dockerfiles keep canonical
+# defaults so local builds are unchanged.
+APT_MIRROR_BUILD_ARGS = {
+    "apt_archive": "http://us-east-1.ec2.archive.ubuntu.com",
+    "apt_ports_archive": "http://us-east-1.ec2.ports.ubuntu.com",
+}
+
 DOCKERS = [
     Docker.Config(
         name="clickhouse/style-test",
         path="./ci/docker/style-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/fasttest",
         path="./ci/docker/fasttest",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/binary-builder",
@@ -129,6 +136,7 @@ DOCKERS = [
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/stress-test",
@@ -227,6 +235,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/wasm-builder",
+        path="./ci/docker/integration/wasm_builder",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/arrowflight-server-test",
         path="./ci/docker/integration/arrowflight",
         platforms=Docker.Platforms.arm_amd,
@@ -255,6 +269,7 @@ DOCKERS = [
         path="./ci/docker/integration/postgresql_java_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/python-bottle",
@@ -279,6 +294,7 @@ DOCKERS = [
         path="./ci/docker/install/deb",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/install-rpm-test",
@@ -291,12 +307,14 @@ DOCKERS = [
         path="./ci/docker/sqlancer-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/mysql_dotnet_client",
         path="./ci/docker/integration/mysql_dotnet_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
 ]
 
@@ -337,6 +355,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     S390X = "s390x"
     LOONGARCH64 = "loongarch64"
     ARM_FUZZERS = "arm_fuzzers"
+    AMD_CFI = "amd_cfi"
 
 
 class JobNames:
@@ -354,7 +373,6 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
-    DOCS = "Docs check"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
@@ -367,6 +385,7 @@ class JobNames:
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
+    BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
@@ -393,6 +412,12 @@ class JobNames:
     BUGFIX_VALIDATE_FT_ARM = "Bugfix validation (functional tests, aarch64)"
     BUGFIX_VALIDATE_IT_AMD = "Bugfix validation (integration tests, amd64)"
     BUGFIX_VALIDATE_IT_ARM = "Bugfix validation (integration tests, aarch64)"
+    # Unit-test (gtest) bugfix validation. Unlike the functional/integration
+    # validators above, this is a single AMD-only job: it builds a merge-base
+    # "before" `unit_tests_dbms` (AMD ASan+UBSan) in-job and reports
+    # `OK`/`XFAIL`/`FAIL` directly, so it is not part of the per-arch
+    # aggregation in `new_tests_check.py`.
+    BUGFIX_VALIDATE_UT = "Bugfix validation (unit tests)"
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
@@ -471,9 +496,12 @@ class ArtifactNames:
 
     ARM_FUZZERS = "ARM_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
+    CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
+    CH_AMD_CFI = "CH_AMD_CFI"
+    DEB_AMD_CFI = "DEB_AMD_CFI"
 
     CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
     CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
@@ -483,11 +511,14 @@ class ArtifactNames:
 
 LLVM_FT_NUM_BATCHES = 3
 LLVM_IT_NUM_BATCHES = 8
-# The old-analyzer + s3 + DatabaseReplicated + WasmEdge parallel variant runs the
+# The old-analyzer + s3 + DBReplicated + WasmEdge parallel variant runs the
 # whole stateless suite un-batched and is the slowest job in CI (main run alone
 # ~1h40m-2h10m under coverage instrumentation). It is split into batches so each
 # shard finishes well inside the runner lease and is not torn down mid-job.
 LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES = 3
+# The sequential counterpart is lighter than the parallel variant but still slow
+# enough to benefit from being split, so it gets its own (smaller) batch count.
+LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES = 2
 LLVM_FT_ARTIFACTS_LIST = [
     # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
@@ -496,15 +527,21 @@ LLVM_FT_ARTIFACTS_LIST = [
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DatabaseReplicated + WasmEdge, parallel execution
+    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DBReplicated + WasmEdge, parallel execution
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel_{batch}"
     for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
+    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DBReplicated + WasmEdge, sequential execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential_{batch}"
+    for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES,)
+    for batch in range(1, total_batches + 1)
+]
+
+LLVM_FT_ARTIFACTS_LIST += [
     # default.profdata files for jobs from Functional tests with Old Analyzer + S3 + AsyncInsert + parallel/sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + "_ft_old_s3_db_repl_wasm_sequential",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential",
     ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel",
@@ -570,6 +607,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_RISCV64,
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
+            ArtifactNames.CH_AMD_CFI,
         ]
     )
     llvm_profdata_file = Artifact.Config(
@@ -608,6 +646,7 @@ class ArtifactConfigs:
             ArtifactNames.DEB_ARM_ASAN_UBSAN,
             ArtifactNames.DEB_ARM_TSAN,
             ArtifactNames.DEB_ARM_MSAN,
+            ArtifactNames.DEB_AMD_CFI,
         ]
     )
     clickhouse_rpms = Artifact.Config(
@@ -656,6 +695,11 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
+    )
+    clickhouse_examples = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_EXAMPLES,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/src/Examples/clickhouse-examples",
     )
     toolchain_pgo_bolt_amd = Artifact.Config(
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,

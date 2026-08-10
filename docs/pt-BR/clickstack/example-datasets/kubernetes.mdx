@@ -41,13 +41,11 @@ Você pode seguir este guia usando qualquer uma das seguintes opções de implan
 Para simular o tráfego da aplicação, você também pode implantar o fork da ClickStack da [**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo). Isso gera dados de telemetria, incluindo logs, métricas e traces. Se você já tiver workloads em execução no seu cluster, pode pular esta etapa e monitorar os pods, nós e contêineres existentes.
 
 <Steps>
-  <Step>
-    ### Instale o cert-manager (opcional)
-
+  <Step title="Instale o cert-manager (opcional)" id="install-cert-manager">
     Se a sua configuração exigir certificados TLS, instale o [cert-manager](https://cert-manager.io/) usando o Helm:
 
     ```shell
-    # Adicionar repositório do cert-manager 
+    # Add Cert manager repo 
 
     helm repo add jetstack https://charts.jetstack.io 
 
@@ -55,9 +53,7 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     ```
   </Step>
 
-  <Step>
-    ### Implante o OpenTelemetry Demo (Opcional)
-
+  <Step title="Implante o OpenTelemetry Demo (Opcional)" id="deploy-otel-demo">
     Este **passo é opcional e foi pensado para quem não tem pods existentes para monitorar**. Embora usuários com serviços já implantados em seu ambiente Kubernetes possam pular esta etapa, esta demonstração inclui microsserviços instrumentados que geram dados de traces e session replay, permitindo explorar todos os recursos do ClickStack.
 
     O conteúdo a seguir implanta o fork do ClickStack da pilha da aplicação OpenTelemetry Demo em um cluster Kubernetes, adaptado para testes de observabilidade e demonstração de instrumentação. Ele inclui microsserviços de back-end, geradores de carga, pipelines de telemetria, infraestrutura de suporte (por exemplo, Kafka e Redis) e integrações de SDK com o ClickStack.
@@ -69,9 +65,9 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     * [Encaminhamento de tags de recurso](/pt-BR/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) para correlacionar logs, métricas e traces por meio da variável de ambiente `OTEL_RESOURCE_ATTRIBUTES`.
 
     ```shell
-    ## baixar o arquivo de manifesto Kubernetes da demo
+    ## download demo Kubernetes manifest file
     curl -O https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
-    # alternativa com wget
+    # wget alternative
     # wget https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
     kubectl apply --namespace otel-demo -f opentelemetry-demo.yaml
     ```
@@ -107,9 +103,7 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     <DemoArchitecture />
   </Step>
 
-  <Step>
-    ### Adicione o repositório do Chart do Helm do ClickStack
-
+  <Step title="Adicione o repositório do Chart do Helm do ClickStack" id="add-helm-clickstack">
     Para implantar o ClickStack, usamos o [Chart do Helm oficial](/pt-BR/clickstack/deployment/helm).
 
     Para isso, é necessário adicionar o repositório Helm do HyperDX:
@@ -120,9 +114,7 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     ```
   </Step>
 
-  <Step>
-    ### Implante o ClickStack
-
+  <Step title="Implante o ClickStack" id="deploy-clickstack">
     Com o chart do Helm instalado, você pode implantar o ClickStack no seu cluster. Você pode executar todos os componentes, incluindo ClickHouse e HyperDX, no seu ambiente Kubernetes, ou implantar apenas o collector e usar o Managed ClickStack para o ClickHouse e a interface do HyperDX.
 
     <br />
@@ -188,9 +180,7 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     ```
   </Step>
 
-  <Step>
-    ### Acesse a UI do HyperDX
-
+  <Step title="Acesse a interface do HyperDX" id="access-the-hyperdx-ui">
     <Note>
       Mesmo ao usar Managed ClickStack, a instância local do HyperDX implantada no cluster do Kubernetes ainda é necessária. Ela fornece uma chave de ingestão gerenciada pelo servidor OpAMP incluído no HyperDX, o que protege a ingestão por meio do OTel collector implantado — um recurso que ainda não está disponível no Managed ClickStack.
     </Note>
@@ -213,9 +203,7 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="UI do HyperDX" size="lg" />
   </Step>
 
-  <Step>
-    ### Obter API key de ingestão
-
+  <Step title="Obter API key de ingestão" id="retrieve-ingestion-api-key">
     A ingestão no OTel collector implantado pelo ClickStack collector é protegida por uma API key de ingestão.
 
     Acesse [`Team Settings`](http://localhost:8080/team) e copie a `Ingestion API Key` na seção `API Keys`. Essa API key garante que a ingestão de dados pelo OpenTelemetry collector seja segura.
@@ -223,18 +211,16 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     <Image img="/images/use-cases/observability/copy_api_key.webp" alt="Copiar API key" size="lg" />
   </Step>
 
-  <Step>
-    ### Criar Secret do Kubernetes com API key
-
+  <Step title="Criar Secret do Kubernetes com API key" id="create-api-key-kubernetes-secret">
     Crie um novo Secret do Kubernetes com a API key de ingestão e um ConfigMap contendo a localização do OTel collector implantado com o Chart do Helm do ClickStack. Os componentes das próximas etapas usarão isso para permitir a ingestão no collector implantado com o Chart do Helm do ClickStack:
 
     ```shell
-    # cria um Secret com a API key de ingestão
+    # create secret with the ingestion API key
     kubectl create secret generic hyperdx-secret \
     --from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
     -n otel-demo
 
-    # cria um ConfigMap apontando para o ClickStack OTel collector implantado acima
+    # create a ConfigMap pointing to the ClickStack OTel collector deployed above
     kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
     ```
 
@@ -249,22 +235,18 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="Dados do Kubernetes no HyperDX" size="lg" />
   </Step>
 
-  <Step>
-    ### Adicione o repositório Helm do OpenTelemetry
-
+  <Step title="Adicione o repositório Helm do OpenTelemetry" id="add-otel-helm-repo">
     Para coletar métricas do Kubernetes, vamos implantar um OTel collector padrão, configurando-o para enviar dados com segurança ao nosso ClickStack collector usando a API key de ingestão acima.
 
     Isso exige a instalação do repositório Helm do OpenTelemetry:
 
     ```shell
-    # Adicionar repositório OTel Helm
+    # Add Otel Helm repo
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 
     ```
   </Step>
 
-  <Step>
-    ### Implantar componentes do collector no Kubernetes
-
+  <Step title="Implantar componentes do collector no Kubernetes" id="deploy-kubernetes-collector-components">
     Para coletar logs e métricas tanto do próprio cluster quanto de cada nó, será necessário implantar dois OpenTelemetry Collectors separados, cada um com seu próprio manifesto. Os dois manifestos fornecidos — `k8s_deployment.yaml` e `k8s_daemonset.yaml` — trabalham em conjunto para coletar dados de telemetria completos do seu cluster Kubernetes.
 
     * `k8s_deployment.yaml` implanta uma **única instância do OpenTelemetry Collector** responsável por coletar **eventos e metadados de todo o cluster**. Ele coleta eventos do Kubernetes, métricas do cluster e enriquece os dados de telemetria com labels e anotações dos pods. Esse coletor é executado como uma implantação independente com uma única réplica para evitar dados duplicados.
@@ -276,9 +258,9 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     Primeiro, instale o collector como uma Implantação:
 
     ```shell
-    # baixar o arquivo de manifesto
+    # download manifest file
     curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
-    # instalar o chart do Helm
+    # install the helm chart
     helm install --namespace otel-demo k8s-otel-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
     ```
 
@@ -291,26 +273,26 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
         repository: otel/opentelemetry-collector-contrib
         tag: 0.123.0
        
-      # Queremos apenas um desses coletores - mais do que isso geraria dados duplicados
+      # We only want one of these collectors - any more and we'd produce duplicate data
       replicaCount: 1
        
       presets:
         kubernetesAttributes:
           enabled: true
-          # Quando habilitado, o processador extrairá todos os labels de um pod associado e os adicionará como atributos de recurso.
-          # O nome exato do label será a chave.
+          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+          # The label's exact name will be the key.
           extractAllPodLabels: true
-          # Quando habilitado, o processador extrairá todas as annotations de um pod associado e as adicionará como atributos de recurso.
-          # O nome exato da annotation será a chave.
+          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+          # The annotation's exact name will be the key.
           extractAllPodAnnotations: true
-        # Configura o coletor para coletar eventos do Kubernetes.
-        # Adiciona o k8sobject receiver ao pipeline de logs e coleta eventos do Kubernetes por padrão.
-        # Mais informações: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        # Configures the collector to collect Kubernetes events.
+        # Adds the k8sobject receiver to the logs pipeline and collects Kubernetes events by default.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
         kubernetesEvents:
           enabled: true
-        # Configura o Kubernetes Cluster Receiver para coletar métricas no nível do cluster.
-        # Adiciona o k8s_cluster receiver ao pipeline de métricas e inclui as regras necessárias ao ClusterRole.
-        # Mais informações: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        # Configures the Kubernetes Cluster Receiver to collect cluster-level metrics.
+        # Adds the k8s_cluster receiver to the metrics pipeline and adds the necessary rules to ClusteRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
         clusterMetrics:
           enabled: true
 
@@ -348,9 +330,9 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     Em seguida, implante o collector como um Conjunto de Daemon para métricas e logs em nível de nó e pod:
 
     ```shell
-    # baixar o arquivo de manifesto
+    # download manifest file
     curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
-    # instalar o chart do Helm
+    # install the helm chart
     helm install --namespace otel-demo k8s-otel-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
     ```
 
@@ -363,7 +345,7 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
         repository: otel/opentelemetry-collector-contrib
         tag: 0.123.0
          
-      # Necessário para usar as métricas de utilização de cpu/memória do kubeletstats
+      # Required to use the kubeletstats cpu/memory utilization metrics
       clusterRole:
         create: true
         rules:
@@ -379,20 +361,20 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
           enabled: true
         hostMetrics:
           enabled: true
-        # Configura o Processador do Kubernetes para adicionar metadados do Kubernetes.
-        # Adiciona o processador k8sattributes a todos os pipelines e adiciona as regras necessárias à Função de cluster.
-        # Mais informações: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        # Configures the Kubernetes Processor to add Kubernetes metadata.
+        # Adds the k8sattributes processor to all the pipelines and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
         kubernetesAttributes:
           enabled: true
-          # Quando habilitado, o processador extrairá todos os rótulos de um pod associado e os adicionará como atributos de recurso.
-          # O nome exato do rótulo será a chave.
+          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+          # The label's exact name will be the key.
           extractAllPodLabels: true
-          # Quando habilitado, o processador extrairá todas as anotações de um pod associado e as adicionará como atributos de recurso.
-          # O nome exato da anotação será a chave.
+          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+          # The annotation's exact name will be the key.
           extractAllPodAnnotations: true
-        # Configura o coletor para coletar métricas de nó, pod e contêiner do servidor de API no agente de nó do Kubernetes.
-        # Adiciona o receiver kubeletstats ao pipeline de métricas e adiciona as regras necessárias à Função de cluster.
-        # Mais informações: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        # Configures the collector to collect node, pod, and container metrics from the API server on a kubelet..
+        # Adds the kubeletstats receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
         kubeletMetrics:
           enabled: true
 
@@ -411,7 +393,7 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
 
       config:
         receivers:
-          # Configura métricas adicionais do agente de nó do Kubernetes
+          # Configures additional kubelet metrics
           kubeletstats:
             collection_interval: 20s
             auth_type: 'serviceAccount'
@@ -460,9 +442,7 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
     </Accordion>
   </Step>
 
-  <Step>
-    ### Explore os dados do Kubernetes no HyperDX
-
+  <Step title="Explore os dados do Kubernetes no HyperDX" id="explore-kubernetes-data-hyperdx">
     Navegue até a interface do HyperDX — usando a instância implantada no Kubernetes ou via Managed ClickStack.
 
     <p />

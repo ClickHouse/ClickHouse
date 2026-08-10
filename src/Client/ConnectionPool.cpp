@@ -144,15 +144,20 @@ ConnectionPoolFactory & ConnectionPoolFactory::instance()
     return ret;
 }
 
-IConnectionPool::Entry ConnectionPool::get(const DB::ConnectionTimeouts& timeouts, const DB::Settings& settings,
-        bool force_connected)
+IConnectionPool::Entry ConnectionPool::get(const DB::ConnectionTimeouts& timeouts, const DB::Settings& settings)
 {
-    Entry entry = Base::get(settings[Setting::connection_pool_max_wait_ms].totalMilliseconds());
-
-    if (force_connected)
-        entry->forceConnected(timeouts);
-
+    Entry entry = getUnchecked(timeouts, settings);
+    entry->forceConnected(timeouts);
     return entry;
+}
+
+IConnectionPool::Entry ConnectionPool::getUnchecked(const DB::ConnectionTimeouts&, const DB::Settings& settings)
+{
+    /// `connection_pool_max_wait_ms` documents 0 as an infinite timeout and is unsigned, so a
+    /// negative value cannot be written. `PoolBase::get` spells "infinite" as a negative timeout,
+    /// hence the translation: without it 0 selects a zero-length wait and the retry loop spins.
+    const Int64 wait_ms = settings[Setting::connection_pool_max_wait_ms].totalMilliseconds();
+    return Base::get(wait_ms > 0 ? wait_ms : -1);
 }
 
 }

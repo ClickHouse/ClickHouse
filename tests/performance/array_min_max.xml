@@ -1,0 +1,12 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT sum(arrayMin(a)) FROM (SELECT arrayMap(i -> toFloat64((number + i) % 97), range(1, 41)) AS a FROM numbers(5000000)) FORMAT Null</query>
+    <query>SELECT sum(arrayMax(a)) FROM (SELECT arrayMap(i -> toFloat64((number + i) % 97), range(1, 41)) AS a FROM numbers(5000000)) FORMAT Null</query>
+    <query>SELECT sum(arrayMin(a)) FROM (SELECT arrayMap(i -> toInt64((number * 3 + i) % 9973), range(1, 41)) AS a FROM numbers(5000000)) FORMAT Null</query>
+    <query>SELECT sum(arrayMax(a)) FROM (SELECT arrayMap(i -> toInt64((number * 3 + i) % 9973), range(1, 41)) AS a FROM numbers(5000000)) FORMAT Null</query>
+    <query>SELECT sum(arrayMin(a)) FROM (SELECT arrayMap(i -> toFloat64((number + i) % 97), range(1, 513)) AS a FROM numbers(400000)) FORMAT Null</query>
+    <query>SELECT sum(arrayMax(a)) FROM (SELECT arrayMap(i -> toInt64((number * 3 + i) % 9973), range(1, 513)) AS a FROM numbers(400000)) FORMAT Null</query>
+</test>

@@ -257,6 +257,14 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             if (fuzz_step > 0)
             {
                 fuzzer.fuzzMain(ast_to_process);
+
+                /// The fuzzer can substitute fragments that contain {name:type} query parameters
+                /// (e.g. from the column_like pool) and generates values for them. Register the
+                /// values for client-side parameter substitution, like the server-side fuzzer
+                /// does (see executeASTFuzzerQueries); otherwise every such query fails with
+                /// "Substitution ... is not set" before even reaching the server.
+                for (const auto & [name, value] : fuzzer.getLastQueryParameters())
+                    query_parameters.insert_or_assign(name, value);
             }
 
             query_to_execute = ast_to_process->formatForErrorMessage();
@@ -380,6 +388,9 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         {
             if (!ast_to_process)
                 fmt::print(stderr, "Error while forming new query: {}\n", getCurrentExceptionMessage(true));
+            else
+                fmt::print(
+                    stderr, "Client-side exception on processing query '{}': {}\n", query_to_execute, getCurrentExceptionMessage(false));
 
             // Some functions (e.g. protocol parsers) don't throw, but
             // set last_exception instead, so we'll also do it here for
@@ -389,6 +400,15 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
             client_exception
                 = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
+
+            // The exception may mean that the connection to the server was lost (e.g. the server
+            // died and the connection attempt throws). processASTFuzzerStep performs this check
+            // for errors received without throwing, but thrown exceptions bypass it. Without the
+            // check every subsequent step fails instantly the same way, so the fuzzer silently
+            // burns through the rest of the corpus in seconds and exits with code 0 as if all
+            // the queries were fuzzed.
+            if (!tryToReconnect(1, 10))
+                return false;
         }
 
 #if USE_BUZZHOUSE
@@ -474,9 +494,15 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         }
         catch (...)
         {
+            fmt::print(stderr, "Client-side exception on processing query '{}': {}\n", query_to_execute, getCurrentExceptionMessage(false));
+
             client_exception
                 = std::make_unique<Exception>(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
+
+            // See the comment on the same check in the main fuzzing loop above.
+            if (!tryToReconnect(1, 10))
+                return false;
         }
 
         if (have_error)
@@ -776,7 +802,8 @@ bool Client::buzzHouse()
                     BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::REATTACH;
                     rg.pickWeighted(
                         {{20, [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
-                         {5, [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }}});
+                         {5 * static_cast<uint32_t>(fuzz_config->enable_backups),
+                          [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }}});
 
                     full_query.resize(0);
                     dumpContent();
@@ -1158,12 +1185,15 @@ bool Client::buzzHouse()
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
                          const auto & engine = tbl.isAnyIcebergEngine()
                              ? "iceberg"
-                             : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : (tbl.isAnyPaimonEngine() ? "paimon" : "kafka"));
-                         const auto & ndname = tbl.isKafkaEngine() ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
+                             : (tbl.isAnyDeltaLakeEngine()
+                                    ? "deltalake"
+                                    : (tbl.isAnyPaimonEngine() ? "paimon" : (tbl.isFileEngine() ? "file" : "kafka")));
+                         const auto & ndname
+                             = (tbl.isKafkaEngine() || tbl.isFileEngine()) ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
                          const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
 
-                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine());
+                         chassert(tbl.isAnyLakeEngine() || tbl.isKafkaEngine() || tbl.isFileEngine());
                          fuzz_config->outf << external_cmd << (async ? "async " : "") << "with seed " << nseed << " to " << engine
                                            << " table " << markerHexEncode(ndname) << " " << markerHexEncode(ntname) << std::endl;
                          runExternalCommand(external_integrations, nseed, async, engine, ndname, ntname);

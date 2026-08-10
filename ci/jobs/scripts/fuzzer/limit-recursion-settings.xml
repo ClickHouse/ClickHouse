@@ -51,6 +51,23 @@
                 <max_threads>
                     <max>128</max>
                 </max_threads>
+
+                <!--
+                    Test-only fault-injection delays. TCPHandler runs them via
+                    std::this_thread::sleep_for, which does not observe query cancellation, so a
+                    fuzzed multi-minute value keeps the connection thread blocked past the 90s
+                    hung-check window on a cancelled query. Cap them: legit stateless uses are
+                    <= 100ms, and clamping a fuzzed value to 1s cannot trip the hung check.
+                -->
+                <sleep_in_send_data_ms>
+                    <max>1000</max>
+                </sleep_in_send_data_ms>
+                <sleep_in_send_tables_status_ms>
+                    <max>1000</max>
+                </sleep_in_send_tables_status_ms>
+                <sleep_after_receiving_query_ms>
+                    <max>1000</max>
+                </sleep_after_receiving_query_ms>
             </constraints>
 
             <!-- Server-side backstop: keeps max_parser_backtracks `changed` so a server-side

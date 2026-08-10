@@ -28,9 +28,7 @@ doc_type: 'guide'
 </div>
 
 <Steps>
-  <Step>
-    ### テーブルを作成
-
+  <Step title="テーブルを作成" id="create-table">
     投稿、その埋め込み、関連する属性を保存するための `hackernews` テーブルを作成します。
 
     ```sql
@@ -61,9 +59,7 @@ doc_type: 'guide'
     後段フィルタリング/前段フィルタリングを組み合わせたベクトル類似度検索を理解するための述語に使用できます
   </Step>
 
-  <Step>
-    ### データの読み込み
-
+  <Step title="データの読み込み" id="load-table">
     `Parquet`ファイルからデータセットを読み込むには、次のSQLステートメントを実行します。
 
     ```sql
@@ -73,9 +69,7 @@ doc_type: 'guide'
     テーブルに2,874万行を挿入するには、数分かかります。
   </Step>
 
-  <Step>
-    ### ベクトル類似度索引を構築する
-
+  <Step title="ベクトル類似度索引を構築する" id="build-vector-similarity-index">
     次のSQLを実行して、`hackernews`テーブルの`vector`カラムにベクトル類似度索引を定義し、構築します。
 
     ```sql
@@ -92,9 +86,7 @@ doc_type: 'guide'
     2,874 万件のデータセット全体では、利用可能な CPU コア数とストレージ帯域幅によっては、索引の構築と保存に数分から 1 時間程度かかることもあります。
   </Step>
 
-  <Step>
-    ### ANN検索を実行する
-
+  <Step title="ANN検索を実行する" id="perform-ann-search">
     ベクトル類似度索引が構築されると、ベクトル検索クエリでは自動的にこの索引が使用されます。
 
     ```sql title="Query"
@@ -108,14 +100,12 @@ doc_type: 'guide'
     ベクトル索引を初めてメモリに読み込む際には、数秒から数分かかることがあります。
   </Step>
 
-  <Step>
-    ### 検索クエリの埋め込みを生成する
-
+  <Step title="検索クエリの埋め込みを生成する" id="generating-embeddings-for-search-query">
     [Sentence Transformers](https://www.sbert.net/) は、文や段落のセマンティックな意味を捉えるための、ローカルで手軽に使える埋め込みモデルを提供します。
 
     このHackerNewsデータセットには、[all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)モデルによって生成されたベクトル埋め込みが含まれています。
 
-    以下に、`sentence_transformers` Pythonパッケージを使用して埋め込みベクトルをプログラム的に生成する方法を示すPythonスクリプトの例を示します。検索用の埋め込みベクトルは、`SELECT` クエリ内の [`cosineDistance()`](/ja/reference/functions/regular-functions/distance-functions#cosineDistance) 関数に引数として渡されます。
+    以下に、`sentence_transformers` Pythonパッケージを使用して埋め込みベクトルをプログラム的に生成する方法を示すPythonスクリプトの例を示します。検索用の埋め込みベクトルは、`SELECT&#96; クエリ内の [`cosineDistance()&#96;](/reference/functions/regular-functions/distance-functions#cosineDistance) 関数に引数として渡されます。
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -130,12 +120,12 @@ doc_type: 'guide'
     chclient = clickhouse_connect.get_client() # ClickHouse credentials here
 
     while True:
-        # ユーザーから検索クエリを受け取る
+        # Take the search query from user
         print("Enter a search query :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # モデルを実行して検索ベクトルを取得する
+        # Run the model and obtain search vector
         print("Generating the embedding for ", input_query);
         embeddings = model.encode(texts)
 
@@ -146,22 +136,23 @@ doc_type: 'guide'
         for row in result.result_rows:
             print(row[0], row[2][:100])
             print("---------")
+
     ```
 
     上記の Python スクリプトの実行例と類似検索の結果を以下に示します
     (上位20件の投稿はそれぞれ先頭100文字のみを表示しています) ：
 
     ```text
-    初期化中...
+    Initializing...
 
-    検索クエリを入力してください：
+    Enter a search query :
     Are OLAP cubes useful
 
-    「Are OLAP cubes useful」の埋め込みを生成中
+    Generating the embedding for  "Are OLAP cubes useful"
 
-    ClickHouseにクエリ中...
+    Querying ClickHouse...
 
-    結果：
+    Results :
 
     27742647 smartmic:
     slt2021: OLAP Cube is not dead, as long as you use some form of:<p>1. GROUP BY multiple fi
@@ -287,15 +278,15 @@ doc_type: 'guide'
 
     model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
-    chclient = clickhouse_connect.get_client(compress=False) # ここに ClickHouse の認証情報を設定
+    chclient = clickhouse_connect.get_client(compress=False) # ClickHouse credentials here
 
     while True:
-        # ユーザーから検索クエリを取得する
+        # Take the search query from user
         print("Enter a search topic :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # モデルを実行して、検索ベクトルまたは参照ベクトルを取得する
+        # Run the model and obtain search or reference vector
         print("Generating the embedding for ----> ", input_query);
         embeddings = model.encode(texts)
 
@@ -303,7 +294,7 @@ doc_type: 'guide'
         params = {'v1':list(embeddings[0]), 'v2':100}
         result = chclient.query("SELECT id,title,text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
 
-        # 検索結果をすべて連結する
+        # Just join all the search results
         doc_results = ""
         for row in result.result_rows:
             doc_results = doc_results + "\n" + row[2]

@@ -311,6 +311,12 @@ private:
     /// the format metadata cache (e.g. Parquet footer cache) is invalidated even
     /// for in-place rewrites within the same wall-clock second.
     std::optional<String> current_file_cache_version;
+    /// Whether `current_file_cache_version` can be trusted as a rewrite-proof version
+    /// token: filesystem timestamps are coarser than the wall clock, so the token only
+    /// proves a rewrite once the last modification is comfortably in the past (see the
+    /// settle check in `generate`). The query condition cache skips data based on the
+    /// token, so it must fail close and stay bypassed while this is false.
+    bool current_file_version_settled = false;
     struct stat current_archive_stat{};
     std::optional<String> filename_override;
     Block sample_block;

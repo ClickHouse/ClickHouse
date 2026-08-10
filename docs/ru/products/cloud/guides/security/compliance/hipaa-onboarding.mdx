@@ -7,8 +7,8 @@ doc_type: 'guide'
 keywords: ['hipaa', 'соответствие требованиям', 'здравоохранение', 'безопасность', 'защита данных']
 ---
 
-import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
@@ -25,9 +25,7 @@ ClickHouse предлагает сервисы, соответствующие �
 </div>
 
 <Steps>
-  <Step>
-    ### Подключение сервисов Enterprise
-
+  <Step title="Подключение сервисов Enterprise" id="sign-up-for-enterprise">
     1. Выберите название своей организации в левом нижнем углу консоли.
     2. Нажмите **Billing**.
     3. Проверьте свой **Plan** в левом верхнем углу.
@@ -35,9 +33,7 @@ ClickHouse предлагает сервисы, соответствующие �
     5. Выберите **Switch to Enterprise**.
   </Step>
 
-  <Step>
-    ### Включение HIPAA для вашей организации
-
+  <Step title="Включение HIPAA для вашей организации" id="enable-hipaa">
     1. Выберите название своей организации в левом нижнем углу консоли.
     2. Нажмите **Organization details**.
     3. Включите переключатель **Enable HIPAA**.
@@ -65,9 +61,7 @@ ClickHouse предлагает сервисы, соответствующие �
     <br />
   </Step>
 
-  <Step>
-    ### Развертывание сервисов в регионах, соответствующих требованиям HIPAA
-
+  <Step title="Развертывание сервисов в регионах, соответствующих требованиям HIPAA" id="deploy-hipaa-services">
     1. Выберите **New service** в левом верхнем углу главного экрана в консоли
     2. Измените **Region type** на **HIPAA compliant**
 

@@ -1,12 +1,27 @@
 #include <Columns/ColumnObject.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationObject.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
+#include <DataTypes/Serializations/SerializationObjectSharedData.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/VarInt.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 
+#include <limits>
+
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+}
 
 TEST(ObjectSerialization, FieldBinarySerialization)
 {
@@ -170,4 +185,214 @@ TEST(ObjectSerialization, FlattenAndBucketSharedDataPaths)
         {"b", {21, std::nullopt, std::nullopt}},
         {"c", {22, std::nullopt, std::nullopt}},
     });
+}
+
+/// The shared-data-paths statistics count in the ObjectStructure prefix is only read when
+/// `object_and_dynamic_read_statistics` is enabled -- the MergeTree part read path, which the
+/// `Native` input format (covered by 04350_json_native_too_many_paths) never reaches, since it
+/// always leaves statistics disabled. A corrupted count there must be rejected with a clean
+/// `INCORRECT_DATA` error instead of escaping as an uncaught `std::bad_alloc` /
+/// `std::length_error` / `std::bad_array_new_length` from the hash-table `reserve`.
+TEST(ObjectSerialization, TooManySharedDataPathsStatistics)
+{
+    auto type = DataTypeFactory::instance().get("JSON");
+    auto serialization = type->getDefaultSerialization();
+
+    /// Hand-crafted V1 (version = 0) ObjectStructure prefix:
+    ///   [UInt64 LE version = 0]
+    ///   [VarUInt max_dynamic_paths = 0]                            (V1 only)
+    ///   [VarUInt number of dynamic paths = 0]
+    ///   [VarUInt shared-data-paths statistics count = SIZE_MAX]    <- corrupted
+    WriteBufferFromOwnString structure;
+    writeBinaryLittleEndian(static_cast<UInt64>(0), structure); /// SerializationVersion::V1
+    writeVarUInt(static_cast<UInt64>(0), structure);            /// max_dynamic_paths
+    writeVarUInt(static_cast<UInt64>(0), structure);            /// number of dynamic paths
+    writeVarUInt(std::numeric_limits<size_t>::max(), structure);/// shared-data-paths count
+    std::string structure_bytes = structure.str();
+    ReadBufferFromString structure_stream(structure_bytes);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.object_and_dynamic_read_statistics = true;
+    settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
+    {
+        if (!path.empty() && path.back().type == ISerialization::Substream::ObjectStructure)
+            return &structure_stream;
+        return nullptr;
+    };
+
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    try
+    {
+        serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+        FAIL() << "Expected INCORRECT_DATA for a corrupted shared-data-paths statistics count";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << e.message();
+        ASSERT_NE(e.message().find("too many paths"), std::string::npos) << e.message();
+    }
+}
+
+/// A large-but-representable dynamic-paths count (far below `max_size()`, so it passes the
+/// container-capacity guard) must not drive a huge up-front allocation: the reader reserves only a
+/// capped hint and appends paths one by one, so a corrupted count that the stream cannot back trips
+/// a normal read error at end of stream (a `DB::Exception`), not a `std::bad_alloc` / OOM. This is
+/// the below-`max_size()` companion to `04350_json_native_too_many_paths`, which covers the
+/// `SIZE_MAX` corner (rejected up front as `INCORRECT_DATA` "too many paths").
+TEST(ObjectSerialization, LargeButRepresentablePathCountFailsCleanly)
+{
+    auto type = DataTypeFactory::instance().get("JSON");
+    auto serialization = type->getDefaultSerialization();
+
+    /// Hand-crafted V1 (version = 0) ObjectStructure prefix:
+    ///   [UInt64 LE version = 0]
+    ///   [VarUInt max_dynamic_paths = 0]                (V1 only)
+    ///   [VarUInt number of dynamic paths = 100000000]  <- large but representable, no path bytes follow
+    WriteBufferFromOwnString structure;
+    writeBinaryLittleEndian(static_cast<UInt64>(0), structure); /// SerializationVersion::V1
+    writeVarUInt(static_cast<UInt64>(0), structure);            /// max_dynamic_paths
+    writeVarUInt(static_cast<UInt64>(100000000), structure);    /// number of dynamic paths
+    std::string structure_bytes = structure.str();
+    ReadBufferFromString structure_stream(structure_bytes);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
+    {
+        if (!path.empty() && path.back().type == ISerialization::Substream::ObjectStructure)
+            return &structure_stream;
+        return nullptr;
+    };
+
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    try
+    {
+        serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+        FAIL() << "Expected a read error for a corrupted dynamic-paths count the stream cannot back";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF) << e.message();
+    }
+}
+
+/// `shared_data_buckets` in a V3 `Object` prefix is a raw count later used to size per-bucket state
+/// vectors and `Columns`. A value outside the legitimate on-wire range `[1, MAX_OBJECT_SHARED_DATA_BUCKETS]`
+/// must be rejected up front with a clean `INCORRECT_DATA` error instead of propagating a huge
+/// allocation into the bucketed shared-data readers. Legitimate counts come from a small MergeTree
+/// setting, so not just the `SIZE_MAX` corner but also a large-but-representable count (e.g. `100000`,
+/// far below the container's `max_size()`) and `0` are all corruption.
+static void expectInvalidNumberOfBucketsRejected(size_t num_buckets)
+{
+    auto type = DataTypeFactory::instance().get("JSON");
+    auto serialization = type->getDefaultSerialization();
+
+    /// Hand-crafted V3 (version = 4) ObjectStructure prefix:
+    ///   [UInt64 LE version = 4]
+    ///   [VarUInt number of dynamic paths = 0]
+    ///   [VarUInt shared data serialization version = 1]   (MAP_WITH_BUCKETS, so a bucket count follows)
+    ///   [VarUInt shared_data_buckets = num_buckets]        <- corrupted
+    WriteBufferFromOwnString structure;
+    writeBinaryLittleEndian(static_cast<UInt64>(4), structure); /// SerializationVersion::V3
+    writeVarUInt(static_cast<UInt64>(0), structure);            /// number of dynamic paths
+    writeVarUInt(static_cast<UInt64>(1), structure);            /// shared data serialization version = MAP_WITH_BUCKETS
+    writeVarUInt(num_buckets, structure);                       /// shared_data_buckets
+    std::string structure_bytes = structure.str();
+    ReadBufferFromString structure_stream(structure_bytes);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
+    {
+        if (!path.empty() && path.back().type == ISerialization::Substream::ObjectStructure)
+            return &structure_stream;
+        return nullptr;
+    };
+
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    try
+    {
+        serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+        FAIL() << "Expected INCORRECT_DATA for an invalid shared_data_buckets count " << num_buckets;
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::INCORRECT_DATA) << e.message();
+        ASSERT_NE(e.message().find("invalid number of shared data buckets"), std::string::npos) << e.message();
+    }
+}
+
+TEST(ObjectSerialization, InvalidNumberOfSharedDataBuckets)
+{
+    /// The `SIZE_MAX` corner (above the container's `max_size()`).
+    expectInvalidNumberOfBucketsRejected(std::numeric_limits<size_t>::max());
+    /// A large-but-representable count: far below `max_size()`, but far above the writer-side cap of
+    /// MAX_OBJECT_SHARED_DATA_BUCKETS, so it must not reach the per-bucket sizing.
+    expectInvalidNumberOfBucketsRejected(100000);
+    /// Just past the maximum.
+    expectInvalidNumberOfBucketsRejected(MAX_OBJECT_SHARED_DATA_BUCKETS + 1);
+    /// Zero buckets is impossible on the wire (the writer always writes at least one).
+    expectInvalidNumberOfBucketsRejected(0);
+}
+
+/// The per-granule `num_paths` count in the `ADVANCED` (V3) shared-data structure stream is another
+/// raw count read from a possibly-untrusted on-disk part and used to size `all_paths` before any path
+/// bytes are read (`SerializationObjectSharedData::deserializeStructureGranulePrefix`). Unlike the
+/// outer-prefix counts (covered above and by `04350_json_native_too_many_paths`), this one is reached
+/// only when reading a MergeTree part, not through the `Native` input format, so it needs its own
+/// coverage. A `SIZE_MAX`-family count must be rejected up front as `INCORRECT_DATA` "too many paths";
+/// a large-but-representable count the stream cannot back must fail as a normal read error at end of
+/// stream (a `DB::Exception`), not a `std::bad_alloc` / OOM.
+static void expectGranulePathCountRejected(size_t num_paths, int expected_error_code)
+{
+    /// A single-bucket ADVANCED shared-data serialization, driven directly through its public bulk
+    /// read API in Compact-part mode (the whole-column path that sets `need_all_paths = true`).
+    auto dynamic_type = DataTypeFactory::instance().get("Dynamic");
+    auto serialization = SerializationObjectSharedData::create(
+        SerializationObjectSharedData::SerializationVersion(SerializationObjectSharedData::SerializationVersion::ADVANCED),
+        dynamic_type,
+        dynamic_type->getDefaultSerialization(),
+        /*buckets=*/1);
+
+    /// Hand-crafted ObjectSharedDataStructurePrefix stream for the single granule:
+    ///   [VarUInt num_rows = 1]
+    ///   [VarUInt num_paths = num_paths]   <- corrupted; no path bytes follow
+    WriteBufferFromOwnString structure_prefix;
+    writeVarUInt(static_cast<UInt64>(1), structure_prefix); /// num_rows
+    writeVarUInt(num_paths, structure_prefix);              /// num_paths
+    std::string structure_prefix_bytes = structure_prefix.str();
+    ReadBufferFromString structure_prefix_stream(structure_prefix_bytes);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.data_part_type = MergeTreeDataPartType::Compact;
+    settings.use_specialized_prefixes_and_suffixes_substreams = true;
+    settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
+    {
+        if (!path.empty() && path.back().type == ISerialization::Substream::ObjectSharedDataStructurePrefix)
+            return &structure_prefix_stream;
+        return nullptr;
+    };
+
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
+
+    ColumnPtr column = DataTypeObject::getTypeOfSharedData()->createColumn();
+    try
+    {
+        serialization->deserializeBinaryBulkWithMultipleStreams(column, /*rows_offset=*/0, /*limit=*/1, settings, state, nullptr);
+        FAIL() << "Expected an exception for a corrupted granule num_paths count " << num_paths;
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), expected_error_code) << e.message();
+        if (expected_error_code == ErrorCodes::INCORRECT_DATA)
+            ASSERT_NE(e.message().find("too many paths"), std::string::npos) << e.message();
+    }
+}
+
+TEST(ObjectSerialization, InvalidGranulePathCount)
+{
+    /// The `SIZE_MAX` corner (above the container's `max_size()`) is rejected up front.
+    expectGranulePathCountRejected(std::numeric_limits<size_t>::max(), ErrorCodes::INCORRECT_DATA);
+    /// A large-but-representable count the stream cannot back trips a normal read error at end of
+    /// stream, not a huge allocation.
+    expectGranulePathCountRejected(100000000, ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
