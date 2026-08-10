@@ -43,10 +43,13 @@ namespace DB
  * Every vector starts with a u8 mode:
  *
  *   mode 0 CONST:         float_width bytes; all count values equal it bitwise.
- *   mode 1 DECIMAL_FOR:   u8 alpha, u8 bits, Int64/Int32 base (LE), u16 exception_count,
+ *   mode 1 DECIMAL_FOR:   u8 biased scale (alpha + 32; negative alpha divides by a power of
+ *                         ten, shrinking integers that end in decimal zeros), u8 bits,
+ *                         Int64/Int32 base (LE), u16 exception_count,
  *                         bits * 1024 / 8 bytes of FFOR-packed (q[i] - base) lanes,
  *                         exception_count * { u16 position, float_width raw value }.
- *   mode 2 DECIMAL_DELTA: u8 alpha, u8 bits, Int64/Int32 first_q (LE), u16 exception_count,
+ *   mode 2 DECIMAL_DELTA: u8 biased scale (as in DECIMAL_FOR), u8 bits, Int64/Int32 first_q
+ *                         (LE), u16 exception_count,
  *                         bits * 1024 / 8 bytes of FFOR-packed zigzag(q[i] - q[i-1]) lanes
  *                         (lane 0 is zero), exceptions as above.
  *   mode 3 XOR:           u32 payload byte length (LE), then a bitstream described below.
@@ -54,7 +57,8 @@ namespace DB
  *
  * After the last vector, uncompressed_size % float_width trailing bytes are stored verbatim.
  *
- * DECIMAL modes reconstruct v[i] = Float(Float64(q[i]) / 10^alpha) with q[i] being
+ * DECIMAL modes reconstruct v[i] = Float(Float64(q[i]) / 10^alpha) (a multiplication by
+ * 10^-alpha when alpha is negative) with q[i] being
  * base + unpacked[i] for FOR, or the running sum of un-zigzagged deltas starting at first_q
  * for DELTA. The encoder verifies the round trip of every value bitwise and stores values that
  * do not survive it as exceptions, patched after reconstruction, so the compression is lossless
@@ -141,6 +145,10 @@ constexpr UInt8 WALLABY_LEAD_CLASSES = 1 << WALLABY_LEAD_CLASS_BITS;
 template <typename T>
 constexpr UInt32 exceptionCost() { return sizeof(UInt16) + sizeof(T); }
 
+/// The decimal scale is signed (negative scales divide the values by a power of ten, shrinking
+/// integers that end in decimal zeros); the format stores it biased into an unsigned byte.
+constexpr Int32 WALLABY_ALPHA_BIAS = 32;
+
 enum class VectorMode : UInt8
 {
     Const = 0,
@@ -167,7 +175,8 @@ struct WallabyTraits<UInt64>
     using SignedType = Int64;
     static constexpr UInt8 width_bits = 64;
     static constexpr UInt8 trail_bits = 6;
-    static constexpr UInt8 max_alpha = 18;
+    static constexpr Int32 max_alpha = 18;
+    static constexpr Int32 min_alpha = -18;
     static constexpr std::array<UInt8, WALLABY_LEAD_CLASSES> lead_classes{0, 8, 12, 16, 20, 24, 32, 44};
 };
 
@@ -178,7 +187,8 @@ struct WallabyTraits<UInt32>
     using SignedType = Int32;
     static constexpr UInt8 width_bits = 32;
     static constexpr UInt8 trail_bits = 5;
-    static constexpr UInt8 max_alpha = 10;
+    static constexpr Int32 max_alpha = 10;
+    static constexpr Int32 min_alpha = -10;
     static constexpr std::array<UInt8, WALLABY_LEAD_CLASSES> lead_classes{0, 4, 8, 10, 12, 14, 18, 24};
 };
 
@@ -197,7 +207,7 @@ UInt8 leadClassIndex(UInt8 lead)
   * bitwise. Returns false when the value cannot be represented this way losslessly.
   */
 template <typename T>
-bool quantizeValue(typename WallabyTraits<T>::FloatType value, UInt8 alpha, typename WallabyTraits<T>::SignedType & quantized)
+bool quantizeValue(typename WallabyTraits<T>::FloatType value, Int32 alpha, typename WallabyTraits<T>::SignedType & quantized)
 {
     using Traits = WallabyTraits<T>;
     using SignedType = typename Traits::SignedType;
@@ -206,7 +216,9 @@ bool quantizeValue(typename WallabyTraits<T>::FloatType value, UInt8 alpha, type
     if (!std::isfinite(value))
         return false;
 
-    const Float64 scaled = static_cast<Float64>(value) * WALLABY_POW10[alpha];
+    const bool negative_scale = alpha < 0;
+    const Float64 power = WALLABY_POW10[negative_scale ? -alpha : alpha];
+    const Float64 scaled = negative_scale ? static_cast<Float64>(value) / power : static_cast<Float64>(value) * power;
     /// Stay inside the exact llround domain.
     if (!(std::fabs(scaled) < 9.2e18))
         return false;
@@ -218,7 +230,8 @@ bool quantizeValue(typename WallabyTraits<T>::FloatType value, UInt8 alpha, type
             return false;
     }
 
-    const FloatType reconstructed = static_cast<FloatType>(static_cast<Float64>(q) / WALLABY_POW10[alpha]);
+    const FloatType reconstructed = static_cast<FloatType>(
+        negative_scale ? static_cast<Float64>(q) * power : static_cast<Float64>(q) / power);
     if (std::bit_cast<T>(reconstructed) != std::bit_cast<T>(value))
         return false;
 
@@ -226,12 +239,24 @@ bool quantizeValue(typename WallabyTraits<T>::FloatType value, UInt8 alpha, type
     return true;
 }
 
-/// Returns the smallest number of decimal places that quantizes the value losslessly, if any.
+/// Returns the smallest decimal scale that quantizes the value losslessly, if any. Scales are
+/// signed: an integer value ending in decimal zeros quantizes at negative scales too, where it
+/// is divided by a power of ten, so the search extends downward from zero while that holds.
 template <typename T>
-std::optional<UInt8> findAlpha(typename WallabyTraits<T>::FloatType value)
+std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value)
 {
     typename WallabyTraits<T>::SignedType quantized;
-    for (UInt8 alpha = 0; alpha <= WallabyTraits<T>::max_alpha; ++alpha)
+    /// Positive zero is exactly representable at every scale; skip the downward probing.
+    if (std::bit_cast<T>(value) == 0)
+        return WallabyTraits<T>::min_alpha;
+    if (quantizeValue<T>(value, 0, quantized))
+    {
+        Int32 alpha = 0;
+        while (alpha > WallabyTraits<T>::min_alpha && quantizeValue<T>(value, alpha - 1, quantized))
+            --alpha;
+        return alpha;
+    }
+    for (Int32 alpha = 1; alpha <= WallabyTraits<T>::max_alpha; ++alpha)
         if (quantizeValue<T>(value, alpha, quantized))
             return alpha;
     return std::nullopt;
@@ -242,7 +267,7 @@ struct DecimalEncodingResult
 {
     VectorMode mode;
     UInt32 payload_size;
-    UInt8 alpha;
+    Int32 alpha;
 };
 
 /** Tries to encode a vector with one of the decimal modes into scratch.
@@ -253,7 +278,7 @@ struct DecimalEncodingResult
 template <typename T>
 std::optional<DecimalEncodingResult<T>> encodeDecimal(
     const typename WallabyTraits<T>::FloatType * values, UInt32 count, char * scratch, UInt32 scratch_size, UInt32 size_to_beat,
-    std::optional<UInt8> hint_alpha)
+    std::optional<Int32> hint_alpha)
 {
     using Traits = WallabyTraits<T>;
     using SignedType = typename Traits::SignedType;
@@ -266,7 +291,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// and knock out the decimal modes while the full vector is within the exception budget.
     /// Sampled failures are tolerated up to a bounded fraction; the exact rejection of a
     /// candidate alpha is decided by the measured full-vector payload below.
-    std::array<UInt8, 32> sampled_alphas{};
+    std::array<Int32, 32> sampled_alphas{};
     UInt32 sampled_alpha_count = 0;
     {
         const UInt32 samples = std::min<UInt32>(count, 32);
@@ -304,7 +329,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         return best_total_size <= header_size ? 0 : (best_total_size - header_size) / exceptionCost<T>();
     };
 
-    const auto quantize_all = [&](UInt8 candidate_alpha) -> bool
+    const auto quantize_all = [&](Int32 candidate_alpha) -> bool
     {
         const UInt32 budget = exception_budget();
         exception_count = 0;
@@ -549,28 +574,31 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
       * sampled high-precision outlier no longer costs a wasted pass at its needlessly wide
       * scale before the majority scale wins.
       */
-    UInt8 alpha = 0;
+    Int32 alpha = 0;
     /// The alpha whose quantization the scratch arrays currently hold; a failed quantize_all
     /// leaves them clobbered halfway, so it resets this tracker.
-    std::optional<UInt8> scratch_alpha;
+    std::optional<Int32> scratch_alpha;
     std::optional<Packing> best;
 
-    bool considered[Traits::max_alpha + 1] = {};
-    bool evaluated[Traits::max_alpha + 1] = {};
-    UInt32 sampled_frequency[Traits::max_alpha + 1] = {};
+    /// The scale domain is signed; the tracking arrays are indexed by alpha - min_alpha.
+    constexpr UInt32 alpha_span = Traits::max_alpha - Traits::min_alpha + 1;
+    const auto alpha_index = [](Int32 a) { return static_cast<UInt32>(a - Traits::min_alpha); };
+    bool considered[alpha_span] = {};
+    bool evaluated[alpha_span] = {};
+    UInt32 sampled_frequency[alpha_span] = {};
     for (UInt32 i = 0; i < sampled_alpha_count; ++i)
     {
-        considered[sampled_alphas[i]] = true;
-        ++sampled_frequency[sampled_alphas[i]];
+        considered[alpha_index(sampled_alphas[i])] = true;
+        ++sampled_frequency[alpha_index(sampled_alphas[i])];
     }
-    UInt8 mode_alpha = 0;
-    for (UInt8 a = 1; a <= Traits::max_alpha; ++a)
-        if (sampled_frequency[a] > sampled_frequency[mode_alpha])
+    Int32 mode_alpha = Traits::min_alpha;
+    for (Int32 a = Traits::min_alpha + 1; a <= Traits::max_alpha; ++a)
+        if (sampled_frequency[alpha_index(a)] > sampled_frequency[alpha_index(mode_alpha)])
             mode_alpha = a;
 
     /// The first successfully evaluated alpha (normally the most frequent sampled one) and its
     /// measured packed widths; the pruning estimates scale the widths from there.
-    UInt8 reference_alpha = 0;
+    Int32 reference_alpha = 0;
     bool reference_filled = false;
     std::optional<UInt8> reference_packed_bits;
     std::optional<UInt8> reference_for_bits;
@@ -590,7 +618,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
       * holds for the delta packing, whose exception placeholders differ between scales), with
       * two extra bits of slack for values entering the lanes.
       */
-    const auto estimate_allows = [&](UInt8 candidate) -> bool
+    const auto estimate_allows = [&](Int32 candidate) -> bool
     {
         if (!reference_filled || candidate == reference_alpha)
             return true;
@@ -627,9 +655,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
 
     bool candidates_pending = false;
 
-    const auto evaluate_candidate = [&](UInt8 candidate)
+    const auto evaluate_candidate = [&](Int32 candidate)
     {
-        evaluated[candidate] = true;
+        evaluated[alpha_index(candidate)] = true;
 
         if (!estimate_allows(candidate))
             return;
@@ -651,19 +679,20 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             /// never saw them. (This can miss structure for Float32 at scales beyond the
             /// type's decimal precision, where the quantized integers carry junk low
             /// digits; the sampled alphas and the exception probes below still stand.)
+            const UInt32 max_trailing_zeros = static_cast<UInt32>(candidate - Traits::min_alpha);
             for (UInt32 i = 0; i < count; ++i)
             {
                 SignedType q = quantized[i];
                 UInt32 trailing_zeros = 0;
                 if (q == 0)
-                    trailing_zeros = candidate;
+                    trailing_zeros = max_trailing_zeros;
                 else
-                    while (q % 10 == 0 && trailing_zeros < candidate)
+                    while (q % 10 == 0 && trailing_zeros < max_trailing_zeros)
                     {
                         q /= 10;
                         ++trailing_zeros;
                     }
-                considered[candidate - trailing_zeros] = true;
+                considered[alpha_index(candidate - static_cast<Int32>(trailing_zeros))] = true;
             }
         }
 
@@ -674,9 +703,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         {
             if (auto exception_alpha = findAlpha<T>(values[exception_positions[e]]))
             {
-                if (!considered[*exception_alpha])
+                if (!considered[alpha_index(*exception_alpha)])
                 {
-                    considered[*exception_alpha] = true;
+                    considered[alpha_index(*exception_alpha)] = true;
                     candidates_pending = true;
                 }
             }
@@ -701,12 +730,12 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// reference and lets the estimates prune most other candidates without a full pass. The
     /// most frequent sampled alpha is the fallback guess (and the second candidate on vectors
     /// where the data changed); a stale hint costs at most one extra full-vector pass.
-    if (hint_alpha && *hint_alpha <= Traits::max_alpha)
+    if (hint_alpha && *hint_alpha >= Traits::min_alpha && *hint_alpha <= Traits::max_alpha)
     {
-        considered[*hint_alpha] = true;
+        considered[alpha_index(*hint_alpha)] = true;
         evaluate_candidate(*hint_alpha);
     }
-    if (!evaluated[mode_alpha])
+    if (!evaluated[alpha_index(mode_alpha)])
         evaluate_candidate(mode_alpha);
 
     /// Fixed-point loop: evaluating a candidate can add new candidates (from exception probing),
@@ -716,10 +745,9 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     while (candidates_pending)
     {
         candidates_pending = false;
-        for (Int32 candidate_signed = Traits::max_alpha; candidate_signed >= 0; --candidate_signed)
+        for (Int32 candidate = Traits::max_alpha; candidate >= Traits::min_alpha; --candidate)
         {
-            const UInt8 candidate = static_cast<UInt8>(candidate_signed);
-            if (!considered[candidate] || evaluated[candidate])
+            if (!considered[alpha_index(candidate)] || evaluated[alpha_index(candidate)])
                 continue;
             evaluate_candidate(candidate);
         }
@@ -784,7 +812,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         return std::nullopt;
 
     char * out = scratch;
-    *out++ = static_cast<char>(alpha);
+    *out++ = static_cast<char>(alpha + WALLABY_ALPHA_BIAS);
     *out++ = static_cast<char>(bits);
     unalignedStoreLittleEndian<SignedType>(out, best->base);
     out += sizeof(SignedType);
@@ -1168,7 +1196,7 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
     /// scale is evaluated first by the chooser. Both are guesses verified by measurement, so a
     /// stale hint after a data change costs speed on one vector, never correctness or size.
     std::optional<VectorMode> previous_winner;
-    std::optional<UInt8> previous_alpha;
+    std::optional<Int32> previous_alpha;
 
     while (processed < values_count)
     {
@@ -1310,14 +1338,14 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
             case VectorMode::DecimalDelta:
             {
                 require(2 * sizeof(UInt8) + sizeof(SignedType) + sizeof(UInt16));
-                const UInt8 alpha = static_cast<UInt8>(*src++);
+                const Int32 alpha = static_cast<Int32>(static_cast<UInt8>(*src++)) - WALLABY_ALPHA_BIAS;
                 const UInt8 bits = static_cast<UInt8>(*src++);
                 const SignedType base = unalignedLoadLittleEndian<SignedType>(src);
                 src += sizeof(SignedType);
                 const UInt16 exception_count = unalignedLoadLittleEndian<UInt16>(src);
                 src += sizeof(UInt16);
 
-                if (alpha > Traits::max_alpha || bits >= Traits::width_bits || exception_count > count)
+                if (alpha < Traits::min_alpha || alpha > Traits::max_alpha || bits >= Traits::width_bits || exception_count > count)
                     throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt decimal header");
 
                 const UInt32 packed_bytes = Compression::FFOR::calculateBitpackedBytes(bits);
@@ -1325,15 +1353,18 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 memcpy(lanes.data(), src, packed_bytes);
                 src += packed_bytes;
 
-                const Float64 scale = WALLABY_POW10[alpha];
+                const bool negative_scale = alpha < 0;
+                const Float64 scale = WALLABY_POW10[negative_scale ? -alpha : alpha];
+                const auto reconstruct = [scale, negative_scale](SignedType q) ALWAYS_INLINE
+                {
+                    return std::bit_cast<T>(static_cast<typename Traits::FloatType>(
+                        negative_scale ? static_cast<Float64>(q) * scale : static_cast<Float64>(q) / scale));
+                };
                 if (mode == VectorMode::DecimalFor)
                 {
                     Compression::FFOR::bitUnpack(lanes.data(), unpacked.data(), bits, static_cast<T>(base));
                     for (UInt32 i = 0; i < count; ++i)
-                    {
-                        const auto q = static_cast<SignedType>(unpacked[i]);
-                        emit(i, std::bit_cast<T>(static_cast<typename Traits::FloatType>(static_cast<Float64>(q) / scale)));
-                    }
+                        emit(i, reconstruct(static_cast<SignedType>(unpacked[i])));
                 }
                 else
                 {
@@ -1346,8 +1377,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                             const T zigzag = unpacked[i];
                             accumulator += (zigzag >> 1) ^ (T{0} - (zigzag & T{1}));
                         }
-                        const auto q = static_cast<SignedType>(accumulator);
-                        emit(i, std::bit_cast<T>(static_cast<typename Traits::FloatType>(static_cast<Float64>(q) / scale)));
+                        emit(i, reconstruct(static_cast<SignedType>(accumulator)));
                     }
                 }
 

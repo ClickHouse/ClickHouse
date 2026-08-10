@@ -2930,7 +2930,7 @@ TEST_F(WallabyTest, DecodesDecimalForVectorWithException)
     /// is empty; the value at position 1 is patched from the exception list.
     const std::vector<UInt8> vectors = {
         0x01,                                           // mode = DECIMAL_FOR
-        0x01,                                           // alpha = 1 decimal place
+        0x21,                                           // biased scale 33: alpha = 1 decimal place
         0x00,                                           // bits = 0, no packed data
         0x19, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 25 -> 2.5
         0x01, 0x00,                                     // exception_count = 1
@@ -2946,7 +2946,7 @@ TEST_F(WallabyTest, DecodesDecimalDeltaVector)
     /// DECIMAL_DELTA with bits = 0: all zigzag deltas are zero, so every value equals first_q.
     const std::vector<UInt8> vectors = {
         0x02,                                           // mode = DECIMAL_DELTA
-        0x02,                                           // alpha = 2 decimal places
+        0x22,                                           // biased scale 34: alpha = 2 decimal places
         0x00,                                           // bits = 0, no packed data
         0x7B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 123 -> 1.23
         0x00, 0x00                                      // exception_count = 0
@@ -3029,7 +3029,7 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptDecimalHeader)
 {
     const std::vector<UInt8> vectors = {
         0x01,                                           // mode = DECIMAL_FOR
-        0x13,                                           // alpha = 19, above the Float64 maximum of 18
+        0x33,                                           // biased scale 51: alpha = 19, above the Float64 maximum of 18
         0x00,                                           // bits = 0
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 0
         0x00, 0x00                                      // exception_count = 0
@@ -3041,7 +3041,7 @@ TEST_F(WallabyTest, DecompressMalformedInputCorruptExceptionPosition)
 {
     const std::vector<UInt8> vectors = {
         0x01,                                           // mode = DECIMAL_FOR
-        0x01,                                           // alpha = 1
+        0x21,                                           // biased scale 33: alpha = 1
         0x00,                                           // bits = 0
         0x19, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 25
         0x01, 0x00,                                     // exception_count = 1
@@ -3210,6 +3210,34 @@ TEST_F(WallabyTest, KeepsDecimalModeBeyondAFixedExceptionCount)
     }
 
     EXPECT_LT(wallabyCompressedSize(values), 3500u);
+}
+
+TEST_F(WallabyTest, DecodesNegativeScaleVector)
+{
+    /// A negative scale multiplies the quantized values by a power of ten at reconstruction:
+    /// alpha = -2 with first_q = 12 reconstructs 1200.
+    const std::vector<UInt8> vectors = {
+        0x02,                                           // mode = DECIMAL_DELTA
+        0x1E,                                           // biased scale 30: alpha = -2
+        0x00,                                           // bits = 0, no packed data
+        0x0C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 12 -> 1200
+        0x00, 0x00                                      // exception_count = 0
+    };
+    const auto decoded = decompressAs<Float64>(constructCodecPayload<Float64>(vectors, 2), 2);
+    EXPECT_EQ(decoded, (std::vector<Float64>{1200.0, 1200.0}));
+}
+
+TEST_F(WallabyTest, ShrinksTrailingZeroIntegersWithNegativeScale)
+{
+    /// Integers that all end in two decimal zeros (e.g. money in cents stored as scaled floats,
+    /// or millisecond timestamps holding whole seconds) pack two orders of magnitude narrower
+    /// at alpha = -2 than at alpha = 0: a ramp of multiples of 100 up to 10^7 takes 17-bit
+    /// lanes instead of 24-bit ones.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>((i + 100000) * 100);
+
+    EXPECT_LT(wallabyCompressedSize(values), 1500u);
 }
 
 TEST_F(WallabyTest, CapsLaneWidthByExilingOutliers)
