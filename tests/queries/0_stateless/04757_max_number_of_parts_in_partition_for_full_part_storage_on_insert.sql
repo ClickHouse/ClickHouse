@@ -35,6 +35,7 @@ ENGINE = ReplacingMergeTree
 PARTITION BY p
 ORDER BY id
 SETTINGS
+    deduplicate_merge_projection_mode = 'rebuild',
     min_bytes_for_full_part_storage = 0,
     min_rows_for_full_part_storage = 0,
     min_level_for_full_part_storage = 0,
