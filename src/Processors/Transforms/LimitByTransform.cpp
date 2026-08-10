@@ -232,15 +232,20 @@ void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, si
     group_counts[group_idx] = group_rows_seen_before_run + run_row_count;
 }
 
+/// LimitBy stores a group index in the cell's mapped slot, so it cannot use a set method. `chooseMethod`
+/// never returns one here; this overload exists only because the dispatch macro is generated over every
+/// `AggregatedDataVariants::Type`, including the set ones that `GROUP BY` without aggregates uses.
 template <typename Method>
+requires SetAggregationMethod<Method>
+void LimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, UInt64)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "LimitByTransform does not support void-mapped aggregation methods");
+}
+
+template <typename Method>
+requires MapAggregationMethod<Method>
 void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count)
 {
-    /// LimitBy stores a group index in the cell's mapped slot, so it cannot use void-mapped (set-mode)
-    /// methods. `chooseMethod` never returns those here; this branch only exists because the dispatch macro
-    /// is generated over every `AggregatedDataVariants::Type`, including the void ones used by GROUP BY.
-    if constexpr (!Method::State::has_mapped)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "LimitByTransform does not support void-mapped aggregation methods");
-
     typename Method::State state(grouping_key_columns, data.key_sizes, hash_method_context);
 
     UInt64 current_run_start_row = 0;

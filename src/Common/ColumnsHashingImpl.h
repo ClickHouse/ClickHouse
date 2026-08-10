@@ -123,8 +123,6 @@ public:
     }
 };
 
-/// A set method (`GROUP BY` without aggregate functions) stores keys only. The state-maintaining code of
-/// `Aggregator` is still instantiated for one - it just never runs - so it has to compile.
 template <>
 class EmplaceResultImpl<void>
 {
@@ -133,21 +131,6 @@ class EmplaceResultImpl<void>
 public:
     explicit EmplaceResultImpl(bool inserted_) : inserted(inserted_) {}
     bool isInserted() const { return inserted; }
-
-    /// Reached: `executeImplBatch` marks a cell occupied by setting a dummy pointer, for set methods too.
-    /// There is no slot to store it in.
-    template <typename T>
-    void setMapped(const T &) const
-    {
-    }
-
-    /// Not reached: every caller is behind `params.aggregates_size == 0`, `is_simple_count`, or an explicit
-    /// set branch. `UNREACHABLE` rather than a throw, so that the compiler drops this and the paths leading
-    /// to it instead of emitting them; in debug builds it is an `abort`, which still catches a mistake.
-    [[noreturn]] static char *& getMapped()
-    {
-        UNREACHABLE();
-    }
 };
 
 /// FindResult optionally may contain pointer to value and offset in hashtable buffer.
@@ -201,12 +184,6 @@ class FindResultImpl<void, need_offset> : public FindResultImplBase, public Find
 {
 public:
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
-
-    /// See `EmplaceResultImpl<void>::getMapped` - not reached, present only so generic code compiles.
-    [[noreturn]] static char *& getMapped()
-    {
-        UNREACHABLE();
-    }
 };
 
 template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization, bool need_offset = false, bool nullable = false>

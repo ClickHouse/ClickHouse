@@ -15,6 +15,22 @@ template <typename TData>
 using AggregationMethodMapped
     = std::conditional_t<std::is_same_v<typename TData::mapped_type, VoidMapped>, void, typename TData::mapped_type>;
 
+/// A set method holds keys only - no `AggregateDataPtr` per cell - so it has no aggregate state to build,
+/// merge or convert. The halves of `Aggregator` that maintain per-key state are constrained on
+/// `MapAggregationMethod`/`MapAggregationState` and get a `SetAggregation*` overload instead, so that the
+/// state-maintaining code is never instantiated for a set method. That is deliberate rather than incidental:
+/// it will not compile for one (there is no mapped value to take), and it must not silently no-op either.
+template <typename Method>
+concept SetAggregationMethod = std::is_void_v<typename Method::Mapped>;
+template <typename Method>
+concept MapAggregationMethod = !SetAggregationMethod<Method>;
+
+/// The same distinction seen through a `ColumnsHashing` `HashMethod` state, which spells it `has_mapped`.
+template <typename State>
+concept SetAggregationState = !State::has_mapped;
+template <typename State>
+concept MapAggregationState = State::has_mapped;
+
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,

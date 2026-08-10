@@ -481,6 +481,7 @@ private:
 
     /// Specialization for a particular value no_more_keys.
     template <bool prefetch, typename Method, typename State>
+    requires MapAggregationState<State>
     void executeImplBatch(
         Method & method,
         State & state,
@@ -492,6 +493,27 @@ private:
         bool all_keys_are_const,
         bool use_compiled_functions,
         AggregateDataPtr overflow_row) const;
+
+    /// A set method has no aggregate states: the batch only registers the keys.
+    template <bool prefetch, typename Method, typename State>
+    requires SetAggregationState<State>
+    void executeImplBatch(
+        Method & method,
+        State & state,
+        Arena * aggregates_pool,
+        size_t row_begin,
+        size_t row_end,
+        AggregateFunctionInstruction * aggregate_instructions,
+        bool no_more_keys,
+        bool all_keys_are_const,
+        bool use_compiled_functions,
+        AggregateDataPtr overflow_row) const;
+
+    /// Registers keys without building aggregate states; shared by the set methods and by the
+    /// no-aggregates fast path of the map methods.
+    template <bool prefetch, typename Method, typename State>
+    void executeImplBatchKeysOnly(
+        Method & method, State & state, Arena * aggregates_pool, size_t row_begin, size_t row_end, bool all_keys_are_const) const;
 
     void executeAggregateInstructions(
         Arena * aggregates_pool,
@@ -535,6 +557,33 @@ private:
 
     /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
+    requires MapAggregationMethod<Method>
+    void mergeDataImpl(
+        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
+        const;
+
+    /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
+    template <typename Method, typename Table>
+    requires MapAggregationMethod<Method>
+    void mergeDataNoMoreKeysImpl(
+        Table & table_dst,
+        AggregatedDataWithoutKey & overflows,
+        Table & table_src,
+        Arena * arena) const;
+
+    /// A set method has no aggregate states, so there is nothing to merge or overflow.
+    template <typename Method, typename Table>
+    requires SetAggregationMethod<Method>
+    void mergeDataNoMoreKeysImpl(
+        Table & table_dst,
+        AggregatedDataWithoutKey & overflows,
+        Table & table_src,
+        Arena * arena) const;
+
+    /// A set method has no aggregate states: the merge is a plain key union.
+    template <typename Method, typename Table>
+    requires SetAggregationMethod<Method>
     void mergeDataImpl(
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
         std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
@@ -550,6 +599,15 @@ private:
 
     /// Same, but ignores the rest of the keys.
     template <typename Method, typename Table>
+    requires MapAggregationMethod<Method>
+    void mergeDataOnlyExistingKeysImpl(
+        Table & table_dst,
+        Table & table_src,
+        Arena * arena) const;
+
+    /// A set method has no aggregate states, so there is nothing to merge.
+    template <typename Method, typename Table>
+    requires SetAggregationMethod<Method>
     void mergeDataOnlyExistingKeysImpl(
         Table & table_dst,
         Table & table_src,
@@ -587,6 +645,13 @@ private:
     void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
 
     template <typename Method, typename Table>
+    requires MapAggregationMethod<Method>
+    Chunks
+    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+
+    /// A set method skips the inline-count and compiled-function paths; it only emits keys.
+    template <typename Method, typename Table>
+    requires SetAggregationMethod<Method>
     Chunks
     convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
 
@@ -656,6 +721,22 @@ private:
         std::atomic<bool> & is_cancelled) const;
 
     template <typename State, typename Table>
+    requires MapAggregationState<State>
+    void mergeStreamsImplCase(
+        Arena * aggregates_pool,
+        State & state,
+        Table & data,
+        bool no_more_keys,
+        AggregateDataPtr overflow_row,
+        size_t row_begin,
+        size_t row_end,
+        const AggregateColumnsConstData & aggregate_columns_data,
+        std::atomic<bool> & is_cancelled,
+        Arena * arena_for_keys) const;
+
+    /// A set method has no aggregate states: merging a block back only re-registers its keys.
+    template <typename State, typename Table>
+    requires SetAggregationState<State>
     void mergeStreamsImplCase(
         Arena * aggregates_pool,
         State & state,

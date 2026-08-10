@@ -69,33 +69,21 @@ public:
                 this->insert(rhs.buf[i]);
     }
 
-    /// Call func(const Key &, char *& mapped) for each set element, like HashMapTable::forEachValue. A set
-    /// cell has no mapped value, so `func` gets a throwaway one - it is only there so that the Aggregator's
-    /// key-emitting code stays one generic body over map and set tables.
+    /// Call func(const Key &) for each set element. `HashMapTable::forEachValue` passes the mapped value
+    /// too; a set has none, so a caller that works over both takes it as a parameter pack.
     template <typename Func>
     void forEachValue(Func && func)
     {
         for (auto & cell : *this)
-        {
-            /// `func` may write to the mapped value it is handed; a set has none, so hand it a throwaway.
-            char * no_mapped_value = nullptr;
-            func(cell.getKey(), no_mapped_value);
-        }
+            func(cell.getKey());
     }
 
+    /// A set has no mapped values, so this visits nothing and `func` is never called. "Iterate the mapped
+    /// values" over a table that has none is an empty loop whatever the caller is doing, which is why this
+    /// one is safe to answer generically - the other mapped-value operations are not, and the methods that
+    /// need them are specialized on `SetAggregationMethod` instead.
     template <typename Func>
     void forEachMapped(Func &&)
-    {
-    }
-
-    template <typename Func, bool prefetch = false>
-    void ALWAYS_INLINE mergeToViaEmplace(Self & that, Func &&)
-    {
-        mergeToViaEmplace<prefetch>(that);
-    }
-
-    template <typename Func>
-    void ALWAYS_INLINE mergeToViaFind(Self &, Func &&)
     {
     }
 

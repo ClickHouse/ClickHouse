@@ -1074,7 +1074,81 @@ void NO_INLINE Aggregator::executeImpl(
     }
 }
 
+/// Register each key's presence, without building any aggregate state. This is the whole of the work for a
+/// set method, and it is also the fast path a map method takes when it happens to have no aggregates - there
+/// the cell's mapped value is set to a non-null dummy, so the existing "is this cell occupied" checks still
+/// see it as set.
 template <bool prefetch, typename Method, typename State>
+void NO_INLINE Aggregator::executeImplBatchKeysOnly(
+    Method & method, State & state, Arena * aggregates_pool, size_t row_begin, size_t row_end, bool all_keys_are_const) const
+{
+    using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
+
+    /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+
+    /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
+    [[maybe_unused]] AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
+
+    auto emplace = [&](size_t row)
+    {
+        if constexpr (State::has_mapped)
+            state.emplaceKey(method.data, row, *aggregates_pool).setMapped(place);
+        else
+            state.emplaceKey(method.data, row, *aggregates_pool);
+    };
+
+    if (all_keys_are_const)
+    {
+        emplace(0);
+        return;
+    }
+
+    /// For all rows.
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+        {
+            if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
+                prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+            if (i + prefetch_look_ahead < row_end)
+            {
+                auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                method.data.prefetch(std::move(key_holder));
+            }
+        }
+
+        emplace(i);
+    }
+}
+
+/// A set method has no aggregate states at all, so the batch never gets past registering the keys.
+template <bool prefetch, typename Method, typename State>
+requires SetAggregationState<State>
+void NO_INLINE Aggregator::executeImplBatch(
+    Method & method,
+    State & state,
+    Arena * aggregates_pool,
+    size_t row_begin,
+    size_t row_end,
+    AggregateFunctionInstruction *,
+    bool no_more_keys,
+    bool all_keys_are_const,
+    bool,
+    AggregateDataPtr) const
+{
+    chassert(params.aggregates_size == 0);
+
+    if (no_more_keys)
+        return;
+
+    executeImplBatchKeysOnly<prefetch>(method, state, aggregates_pool, row_begin, row_end, all_keys_are_const);
+}
+
+template <bool prefetch, typename Method, typename State>
+requires MapAggregationState<State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     State & state,
@@ -1099,32 +1173,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         if (no_more_keys)
             return;
 
-        /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
-        AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
-        if (all_keys_are_const)
-        {
-            state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
-        }
-        else
-        {
-            /// For all rows.
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
-                {
-                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
-                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-
-                    if (i + prefetch_look_ahead < row_end)
-                    {
-                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                        method.data.prefetch(std::move(key_holder));
-                    }
-                }
-
-                state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
-            }
-        }
+        executeImplBatchKeysOnly<prefetch>(method, state, aggregates_pool, row_begin, row_end, all_keys_are_const);
         return;
     }
 
@@ -2374,7 +2423,35 @@ void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVar
 }
 
 
+/// A set method has no aggregate states: it never takes the inline-count path of the map version below,
+/// and has no compiled aggregate functions either, so converting its table to chunks only emits the keys.
 template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+Chunks
+Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const
+{
+    if (data.empty())
+    {
+        auto && out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, aggregates_pools, final, rows);
+        Chunks result;
+        result.emplace_back(finalizeChunk(params, std::move(out_cols), final));
+        return result;
+    }
+
+    Chunks res;
+    if (final)
+        res = convertToBlockImplFinal<Method>(method, data, arena, aggregates_pools, /*use_compiled_functions=*/false, return_single_block);
+    else
+        res = convertToBlockImplNotFinal(method, data, aggregates_pools, rows, return_single_block);
+
+    /// In order to release memory early.
+    data.clearAndShrink();
+
+    return res;
+}
+
+template <typename Method, typename Table>
+requires MapAggregationMethod<Method>
 Chunks
 Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block) const
 {
@@ -2718,7 +2795,7 @@ Chunks Aggregator::convertToBlockImplFinal(
     init_out_cols();
 
     data.forEachValue(
-        [&](const auto & key, auto & mapped)
+        [&](const auto & key, auto &... mapped_pack)
         {
             if (unlikely(!out_cols.has_value()))
                 init_out_cols();
@@ -2727,10 +2804,16 @@ Chunks Aggregator::convertToBlockImplFinal(
             IColumn::SerializationSettings serialization_settings{
                 .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
             method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
-            places.emplace_back(mapped);
-
-            /// Mark the cell as destroyed so it will not be destroyed in destructor.
-            mapped = nullptr;
+            /// A set cell carries no aggregate state; still push one entry per key, because `places.size()`
+            /// is what drives block flushing below.
+            if constexpr (sizeof...(mapped_pack) == 0)
+                places.emplace_back(nullptr);
+            else
+            {
+                places.emplace_back(mapped_pack...);
+                /// Mark the cell as destroyed so it will not be destroyed in destructor.
+                ((mapped_pack = nullptr), ...);
+            }
 
             if (!return_single_block && places.size() >= max_block_size)
             {
@@ -2795,7 +2878,7 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
     // should be invoked at least once, because null data might be the only content of the `data`
     init_out_cols();
     data.forEachValue(
-        [&](const auto & key, auto & mapped)
+        [&](const auto & key, auto &... mapped_pack)
         {
             if (!out_cols.has_value())
                 init_out_cols();
@@ -2805,11 +2888,17 @@ Aggregator::convertToBlockImplNotFinal(Method & method, Table & data, Arenas & a
                 .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
             method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
 
-            /// reserved, so push_back does not throw exceptions
-            for (size_t i = 0; i < params.aggregates_size; ++i)
-                out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
-
-            mapped = nullptr;
+            /// A set cell carries no aggregate state, so there is nothing to push into aggregate columns.
+            if constexpr (sizeof...(mapped_pack) > 0)
+            {
+                ([&](auto & mapped)
+                {
+                    /// reserved, so push_back does not throw exceptions
+                    for (size_t i = 0; i < params.aggregates_size; ++i)
+                        out_cols->aggregate_columns_data[i]->push_back(mapped + offsets_of_aggregate_states[i]);
+                    mapped = nullptr;
+                }(mapped_pack), ...);
+            }
 
             ++rows_in_current_block;
             if (!return_single_block && rows_in_current_block >= max_block_size)
@@ -3138,6 +3227,25 @@ static void NO_INLINE mergeDataNullKeySimpleCount(Table & table_dst, Table & tab
 }
 
 template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+void NO_INLINE Aggregator::mergeDataImpl(
+    Table & table_dst, Table & table_src, Arena * arena, bool, bool prefetch, std::atomic<bool> &, const ParallelMergeWorker *)
+    const
+{
+    /// A set method has no aggregate states, so merging two tables is a plain key union. The null group is
+    /// merged separately: `mergeDataNullKey` moves its presence over, its state-merging loops being empty.
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+
+    if (prefetch)
+        table_src.template mergeToViaEmplace<true>(table_dst);
+    else
+        table_src.template mergeToViaEmplace<false>(table_dst);
+    table_src.clearAndShrink();
+}
+
+template <typename Method, typename Table>
+requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
     bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker) const
@@ -3234,6 +3342,15 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
 
 template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(Table &, AggregatedDataWithoutKey &, Table &, Arena *) const
+{
+    /// A set method has no aggregate states. The keys already in dst stay, the keys only in src are dropped,
+    /// and the overflow row they would have fed carries no aggregate data - so there is nothing to do.
+}
+
+template <typename Method, typename Table>
+requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
     Table & table_dst,
     AggregatedDataWithoutKey & overflows,
@@ -3279,6 +3396,14 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 }
 
 template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(Table &, Table &, Arena *) const
+{
+    /// A set method has no aggregate states, so merging into the keys that already exist is a no-op.
+}
+
+template <typename Method, typename Table>
+requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     Table & table_dst,
     Table & table_src,
@@ -3582,7 +3707,35 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
     return non_empty_data;
 }
 
+/// A set method has no aggregate states, so merging a partial block back into the table is only a matter
+/// of re-registering each key's presence - none of the state building of the map version applies.
 template <typename State, typename Table>
+requires SetAggregationState<State>
+void NO_INLINE Aggregator::mergeStreamsImplCase(
+    Arena * aggregates_pool,
+    State & state,
+    Table & data,
+    bool no_more_keys,
+    AggregateDataPtr,
+    size_t row_begin,
+    size_t row_end,
+    const AggregateColumnsConstData &,
+    std::atomic<bool> &,
+    Arena * arena_for_keys) const
+{
+    /// With `no_more_keys` the keys that are not already there are dropped, so there is nothing to insert.
+    if (no_more_keys)
+        return;
+
+    if (!arena_for_keys)
+        arena_for_keys = aggregates_pool;
+
+    for (size_t i = row_begin; i < row_end; ++i)
+        state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
+}
+
+template <typename State, typename Table>
+requires MapAggregationState<State>
 void NO_INLINE Aggregator::mergeStreamsImplCase(
     Arena * aggregates_pool,
     State & state,
@@ -3597,22 +3750,6 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 {
     chassert(!is_simple_count);
 
-    /// A set method (`GROUP BY` without aggregate functions) has no aggregate states, so merging a partial
-    /// block back into the table is only a matter of re-registering each key's presence - none of the state
-    /// building below applies. It still compiles for a set method (see `EmplaceResultImpl<void>`), so this
-    /// needs no `else`; it would just allocate and merge nothing, once per row.
-    if constexpr (!State::has_mapped)
-    {
-        if (!arena_for_keys)
-            arena_for_keys = aggregates_pool;
-
-        /// With `no_more_keys` the keys that are not already there are dropped, so nothing is inserted.
-        if (!no_more_keys)
-            for (size_t i = row_begin; i < row_end; ++i)
-                state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
-
-        return;
-    }
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[row_end]);
 
     if (!arena_for_keys)
@@ -3719,35 +3856,41 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 
     auto merge_count_variant = [&]<typename State>(State & state)
     {
-        chassert(aggregate_columns_data.size() == 1);
-        if (!arena_for_keys)
-            arena_for_keys = aggregates_pool;
-        const auto & other_aggregated_counts = *aggregate_columns_data[0];
-        if (no_more_keys)
+        /// The inline-count merge reads each cell's count out of the mapped slot, so it exists only for map
+        /// methods; a set method has no aggregates and therefore never sets `is_simple_count`. A lambda
+        /// cannot be overloaded, so this one is guarded rather than specialized like its neighbours.
+        if constexpr (MapAggregationState<State>)
         {
-            for (size_t row = row_begin; row < row_end; row++)
+            chassert(aggregate_columns_data.size() == 1);
+            if (!arena_for_keys)
+                arena_for_keys = aggregates_pool;
+            const auto & other_aggregated_counts = *aggregate_columns_data[0];
+            if (no_more_keys)
             {
-                auto find_result = state.findKey(data, row, *arena_for_keys);
+                for (size_t row = row_begin; row < row_end; row++)
+                {
+                    auto find_result = state.findKey(data, row, *arena_for_keys);
 
-                if (find_result.isFound())
-                    getInlineCountState(find_result.getMapped()) += getCountState(other_aggregated_counts[row]);
-                else if (overflow_row)
-                    getCountState(overflow_row) += getCountState(other_aggregated_counts[row]);
+                    if (find_result.isFound())
+                        getInlineCountState(find_result.getMapped()) += getCountState(other_aggregated_counts[row]);
+                    else if (overflow_row)
+                        getCountState(overflow_row) += getCountState(other_aggregated_counts[row]);
+                }
             }
-        }
-        else
-        {
-            for (size_t row = row_begin; row < row_end; row++)
+            else
             {
-                /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.
-                /// The same thing does not fail when cross-compiling from a x86_64 host.
-                /// Furthermore, arena_for_keys is set to be a pointer to the last member of aggregates_pools,
-                /// which is always initialized to have at least 1 arena.
-                auto emplace_result = state.emplaceKey(data, row, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
-                if (emplace_result.isInserted())
-                    getInlineCountState(emplace_result.getMapped()) = getCountState(other_aggregated_counts[row]);
-                else
-                    getInlineCountState(emplace_result.getMapped()) += getCountState(other_aggregated_counts[row]);
+                for (size_t row = row_begin; row < row_end; row++)
+                {
+                    /// clang-tidy complains wrongly about this one when running the analysis from an ARM host.
+                    /// The same thing does not fail when cross-compiling from a x86_64 host.
+                    /// Furthermore, arena_for_keys is set to be a pointer to the last member of aggregates_pools,
+                    /// which is always initialized to have at least 1 arena.
+                    auto emplace_result = state.emplaceKey(data, row, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
+                    if (emplace_result.isInserted())
+                        getInlineCountState(emplace_result.getMapped()) = getCountState(other_aggregated_counts[row]);
+                    else
+                        getInlineCountState(emplace_result.getMapped()) += getCountState(other_aggregated_counts[row]);
+                }
             }
         }
     };
