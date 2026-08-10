@@ -66,8 +66,9 @@ TEST(ParquetFileBucketInfoSerialization, OldVersionOmitsRowGroupCount)
 }
 
 /// The version gate keeps a mixed-version cluster task stream aligned. The bucket payload written at
-/// the older version is exactly the new-version payload without the trailing row-group-count varint,
-/// so a peer reading at the older version stops right after the ids: the following field on the wire
+/// the older version is exactly the new-version payload without the trailing row-group-count and
+/// footer-digest varints, so a peer reading at the older version stops right after the ids: the
+/// following field on the wire
 /// (e.g. `iceberg_info`, modelled here by a sentinel varint) is read at the correct offset instead
 /// of being misparsed as the extra count.
 TEST(ParquetFileBucketInfoSerialization, VersionGateKeepsStreamAligned)
@@ -78,7 +79,8 @@ TEST(ParquetFileBucketInfoSerialization, VersionGateKeepsStreamAligned)
     const String old_str = serializeBucket(row_group_ids, file_num_row_groups, OLD_VERSION);
     const String new_str = serializeBucket(row_group_ids, file_num_row_groups, NEW_VERSION);
 
-    /// The old payload is a strict prefix of the new payload (only the count varint is appended).
+    /// The old payload is a strict prefix of the new payload (only the count and digest varints are
+    /// appended).
     EXPECT_LT(old_str.size(), new_str.size());
     EXPECT_EQ(old_str, new_str.substr(0, old_str.size()));
 
@@ -119,6 +121,13 @@ TEST(ParquetFileBucketInfoSerialization, MinProtocolVersionRequiresRowGroupCount
     EXPECT_EQ(
         without_count.getMinProtocolVersion(),
         static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO));
+
+    /// The footer digest is the stronger of the two guards, so it alone also requires the newer
+    /// protocol - an older worker would drop it and read a bucket unguarded against an overwrite that
+    /// keeps the row-group count.
+    ParquetFileBucketInfo with_digest_only({0, 1}, /*file_num_row_groups=*/0);
+    with_digest_only.footer_digest = 0xdeadbeef;
+    EXPECT_EQ(with_digest_only.getMinProtocolVersion(), static_cast<UInt64>(NEW_VERSION));
 }
 
 /// A trivial one-bucket split covering every row group of the file may be stripped from a task for
@@ -139,11 +148,12 @@ TEST(ParquetFileBucketInfoSerialization, CoversWholeFile)
     EXPECT_FALSE(ParquetFileBucketInfo({0, 0, 2}, /*file_num_row_groups=*/3).coversWholeFile());
 }
 
-/// `footer_digest` is a local-process guard for the `StorageFile` single-file split and must never
-/// travel over the cluster protocol: it is neither written (the payload stays byte-identical with
-/// or without it, so the stream stays aligned) nor read (a received bucket carries 0 = "unknown",
-/// disabling the check), and it does not raise the minimum protocol version.
-TEST(ParquetFileBucketInfoSerialization, FooterDigestIsLocalOnly)
+/// `footer_digest` is the exact generation token of the file the assignment describes, so it must
+/// reach the worker that reads a bucket - otherwise a distributed bucketed read could only check the
+/// row-group count and would miss an overwrite that keeps it. At the new protocol version it
+/// round-trips; an older peer neither receives nor reads it (and never gets such a bucket at all,
+/// because `getMinProtocolVersion` fails the task closed instead).
+TEST(ParquetFileBucketInfoSerialization, NewVersionRoundTripsFooterDigest)
 {
     const std::vector<size_t> row_group_ids = {0, 2, 5};
     ParquetFileBucketInfo info(row_group_ids, /*file_num_row_groups=*/7);
@@ -154,15 +164,29 @@ TEST(ParquetFileBucketInfoSerialization, FooterDigestIsLocalOnly)
         WriteBufferFromString out(str);
         info.serialize(out, NEW_VERSION);
     }
-    EXPECT_EQ(str, serializeBucket(row_group_ids, /*file_num_row_groups=*/7, NEW_VERSION));
 
     ParquetFileBucketInfo restored;
     ReadBufferFromMemory in(str);
     restored.deserialize(in, NEW_VERSION);
     ASSERT_TRUE(in.eof());
-    EXPECT_EQ(restored.footer_digest, 0u);
+    EXPECT_EQ(restored.row_group_ids, row_group_ids);
+    EXPECT_EQ(restored.file_num_row_groups, 7u);
+    EXPECT_EQ(restored.footer_digest, 0xdeadbeefu);
 
     EXPECT_EQ(info.getMinProtocolVersion(), static_cast<UInt64>(NEW_VERSION));
+
+    /// At the older version the digest is not on the wire, so it stays 0 ("unknown") and the read-path
+    /// footer check is disabled rather than comparing against garbage.
+    String old_str;
+    {
+        WriteBufferFromString out(old_str);
+        info.serialize(out, OLD_VERSION);
+    }
+    ParquetFileBucketInfo restored_old;
+    ReadBufferFromMemory in_old(old_str);
+    restored_old.deserialize(in_old, OLD_VERSION);
+    ASSERT_TRUE(in_old.eof());
+    EXPECT_EQ(restored_old.footer_digest, 0u);
 }
 
 /// Narrowing a bucket to the row groups that survived the query condition cache must keep the

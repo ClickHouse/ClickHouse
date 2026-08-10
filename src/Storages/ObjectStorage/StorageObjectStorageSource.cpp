@@ -1157,10 +1157,25 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         logIcebergFileStats(object_info, log);
 
+        /// A bucketed read (one reader per subset of the object's row groups) is only correct if every
+        /// reader of the object sees the same generation of it as the one the bucket assignment was
+        /// computed from. The footer the assignment carries a digest of is compared against the footer
+        /// read here, so that footer must come from the bytes this reader actually opened: a cached
+        /// footer would describe the generation the cache key names, which is the assignment's own
+        /// generation, and the comparison could not detect that the `GET` returned a different one.
+        /// The read is pinned to the listed etag - so the opened bytes are that generation by
+        /// construction - only on S3 with `s3_validate_etag_on_read` (see `createReadBuffer`); on any
+        /// other backend, or with the setting off, the metadata cache is bypassed for bucketed reads so
+        /// the digest guard can fail close on a concurrent in-place overwrite.
+        const bool read_is_pinned_to_etag = context_->getSettingsRef()[Setting::s3_validate_etag_on_read]
+            && object_storage->getType() == ObjectStorageType::S3;
+        const bool can_use_metadata_cache = !object_info->file_bucket_info || read_is_pinned_to_etag;
+
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
+            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey()
+            && can_use_metadata_cache)
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())

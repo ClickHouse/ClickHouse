@@ -20,8 +20,8 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     /// Total number of row groups the file had when the bucket assignment was computed (from the
     /// footer read at planning time). Carried so the read path can verify the file still has the
     /// same number of row groups and fail close if it diverged - e.g. an object overwritten
-    /// between the split decision and the per-bucket read on the object-storage path, which -
-    /// unlike the local `StorageFile` path - has no file-version guard. A value of 0 means
+    /// between the split decision and the per-bucket read. The exact generation is checked by
+    /// `footer_digest` below; this count is the coarser of the two guards. A value of 0 means
     /// "unknown" (e.g. a bucket deserialized from a node that predates this field) and disables
     /// the check.
     size_t file_num_row_groups = 0;
@@ -29,19 +29,25 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     /// Digest of the footer (`FileMetaData`) the bucket assignment was computed from
     /// (see `computeParquetFooterDigest`). 0 means "unknown" and disables the check.
     ///
-    /// This field never travels over the cluster protocol (see `serialize`): it exists for the
-    /// local `StorageFile` path, whose `{mtime, inode, size}` version token cannot prove a rewrite
-    /// while the file has not settled — an in-place rewrite that keeps the inode and the byte size
-    /// and lands in the same filesystem timestamp tick produces an identical token, so a
+    /// This is the exact generation token of the file the assignment describes, and it is the only
+    /// one available on every backend: neither the local `{mtime, inode, size}` version token nor a
+    /// storage etag can be relied on. Locally, an in-place rewrite that keeps the inode and the byte
+    /// size and lands in the same filesystem timestamp tick produces an identical token, so a
     /// `ParquetMetadataCache` entry keyed on that token may describe a previous generation of the
-    /// file. A per-bucket source therefore parses the footer of the bytes it actually opened
-    /// (bypassing the metadata cache) and compares this digest, so an assignment computed from a
-    /// stale cached footer — or from a different same-token generation — fails close with
-    /// `FILE_CHANGED_WHILE_READING` instead of silently applying the previous generation's
-    /// row-group layout. Because the field stays local, it does not raise
-    /// `getMinProtocolVersion`; a bucket that traveled through the cluster protocol arrives with 0
-    /// (the object-storage cluster path keys its metadata cache on a storage-provided etag that a
-    /// rewrite changes, and keeps the row-group-count guard above).
+    /// file. On object storage, only S3 pins the read to the listed etag
+    /// (`s3_validate_etag_on_read`), so with that check off - or on a backend whose etag is not a
+    /// strong content identifier - two bucket readers of the same object can otherwise open two
+    /// different generations and return a mixed-generation result.
+    ///
+    /// Every per-bucket source therefore parses the footer of the bytes it actually opened (the
+    /// format metadata cache is bypassed unless the read is pinned to the generation the cache key
+    /// names) and compares this digest, so an assignment computed from a stale cached footer - or
+    /// from a different generation of the same path - fails close with `FILE_CHANGED_WHILE_READING`
+    /// instead of silently applying another generation's row-group layout. The field travels over
+    /// the cluster protocol from
+    /// `DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT` on, so a
+    /// distributed bucketed read is guarded the same way; an older worker cannot carry it, which
+    /// `getMinProtocolVersion` turns into a fail-closed task instead of a silently unguarded read.
     UInt64 footer_digest = 0;
 
     ParquetFileBucketInfo() = default;

@@ -125,8 +125,9 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         /// A worker whose protocol is too old to carry every field the bucket relies on for its fail-close
         /// guards must not run such a task: below `WITH_FILE_BUCKETS_INFO` it cannot carry the bucket at all,
         /// and (for Parquet) below `WITH_PARQUET_FILE_ROW_GROUP_COUNT` it would silently drop
-        /// `file_num_row_groups` and disable the `checkFileMatchesBucketAssignment` overwrite guard, so it
-        /// could under-read an object overwritten between the split decision and the read instead of throwing.
+        /// `file_num_row_groups` and `footer_digest`, disabling the `checkFileMatchesBucketAssignment`
+        /// overwrite guard, so it could read a different generation of an object overwritten between the
+        /// split decision and the read instead of throwing.
         const auto required_protocol_version = bucket_info_to_send->getMinProtocolVersion();
         if (protocol_version < required_protocol_version)
             throw Exception(

@@ -17,9 +17,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Common/SipHash.h>
-#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
-#include <parquet/file_reader.h>
 
 namespace DB
 {
@@ -46,8 +44,7 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
 /// Verify the file still has the same number of row groups as when the bucket (row-group)
 /// assignment was computed. The assignment is an invariant: the ids - and their count - were
 /// derived from a footer read at planning time. If the file diverged - e.g. an object overwritten
-/// between the footer read and the per-bucket read on the object-storage path, which (unlike the
-/// local `StorageFile` path) has no file-version guard - the assignment no longer maps to the file.
+/// between the footer read and the per-bucket read - the assignment no longer maps to the file.
 /// A shrunk file is caught by the per-row-group out-of-range checks, but a file that *grew* keeps
 /// every old id in range while leaving the new row groups assigned to no bucket, which would
 /// silently undercount. Comparing the total row-group count fails close in both directions.
@@ -62,12 +59,13 @@ static void checkFileMatchesBucketAssignment(const ParquetFileBucketInfo & bucke
             "with {} row groups. The file was likely modified concurrently while a parallel single-file read was in progress",
             file_metadata.row_groups.size(), bucket.file_num_row_groups);
 
-    /// A matching row-group count can still hide a rewrite: on the local `StorageFile` path an
-    /// in-place rewrite that keeps the inode, the byte size and the filesystem timestamp tick is
-    /// invisible to the file-version token, so the assignment (or a cached footer it was computed
-    /// from) may describe a previous generation of the file. Comparing the digest of the footer
-    /// actually read here against the one the assignment was computed from fails close in that
-    /// case (see `ParquetFileBucketInfo::footer_digest`).
+    /// A matching row-group count can still hide a rewrite. Locally, an in-place rewrite that keeps the
+    /// inode, the byte size and the filesystem timestamp tick is invisible to the file-version token,
+    /// so the assignment (or a cached footer it was computed from) may describe a previous generation of
+    /// the file; on object storage, a read that is not pinned to the listed etag can return a different
+    /// generation than the one the assignment was computed from. Comparing the digest of the footer
+    /// actually read here against the one the assignment was computed from fails close in both cases
+    /// (see `ParquetFileBucketInfo::footer_digest`).
     if (bucket.footer_digest != 0 && computeParquetFooterDigest(file_metadata) != bucket.footer_digest)
         throw Exception(
             ErrorCodes::FILE_CHANGED_WHILE_READING,
@@ -310,14 +308,15 @@ void ParquetFileBucketInfo::serialize(WriteBuffer & buffer, size_t protocol_vers
     writeVarUInt(row_group_ids.size(), buffer);
     for (auto chunk : row_group_ids)
         writeVarUInt(chunk, buffer);
-    /// `file_num_row_groups` was added later, so it is only present from this protocol version on.
-    /// Writing it unconditionally would misalign the stream when talking to an older peer that does
-    /// not expect it (and would leave the field unread, breaking the following payload).
+    /// `file_num_row_groups` and `footer_digest` were added later, so they are only present from this
+    /// protocol version on. Writing them unconditionally would misalign the stream when talking to an
+    /// older peer that does not expect them (and would leave the fields unread, breaking the
+    /// following payload).
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT)
+    {
         writeVarUInt(file_num_row_groups, buffer);
-    /// `footer_digest` is deliberately NOT serialized: it guards the local `StorageFile` path,
-    /// where the split decision and the per-bucket sources run in the same process (see the
-    /// comment on the field). Buckets that travel over the cluster protocol arrive with 0.
+        writeVarUInt(footer_digest, buffer);
+    }
 }
 
 void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer, size_t protocol_version)
@@ -332,12 +331,20 @@ void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer, size_t protocol_ver
         readVarUInt(bucket, buffer);
         row_group_ids[i] = bucket;
     }
-    /// An older peer does not send `file_num_row_groups`; leave it 0 ("unknown"), which disables the
-    /// row-group-count check on the read path. See the comment on the field.
+    /// An older peer does not send `file_num_row_groups` / `footer_digest`; leave them 0 ("unknown"),
+    /// which disables the corresponding checks on the read path. Such a peer never receives a bucket
+    /// that has either of them set, because `getMinProtocolVersion` makes the task fail closed
+    /// instead of being downgraded. See the comments on the fields.
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT)
+    {
         readVarUInt(file_num_row_groups, buffer);
+        readVarUInt(footer_digest, buffer);
+    }
     else
+    {
         file_num_row_groups = 0;
+        footer_digest = 0;
+    }
 }
 
 String ParquetFileBucketInfo::getIdentifier() const
@@ -392,12 +399,13 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
 
 UInt64 ParquetFileBucketInfo::getMinProtocolVersion() const
 {
-    /// Once the file's row-group count is known, the worker must be able to carry it so it can run the
-    /// `checkFileMatchesBucketAssignment` fail-close guard against a concurrent overwrite. A worker that
-    /// only understands `file_bucket_info` but not this field would deserialize it as 0 and silently
-    /// disable the guard, so the task must fail closed instead of being downgraded to such a worker.
-    /// When the count is unknown (0) there is no guard to lose, so the base version is enough.
-    return file_num_row_groups != 0
+    /// Once the file's row-group count or the footer digest is known, the worker must be able to carry
+    /// it so it can run the `checkFileMatchesBucketAssignment` fail-close guard against a concurrent
+    /// overwrite. A worker that only understands `file_bucket_info` but not these fields would
+    /// deserialize them as 0 and silently disable the guard, so the task must fail closed instead of
+    /// being downgraded to such a worker. When both are unknown (0) there is no guard to lose, so the
+    /// base version is enough.
+    return file_num_row_groups != 0 || footer_digest != 0
         ? DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_PARQUET_FILE_ROW_GROUP_COUNT
         : DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO;
 }
@@ -420,44 +428,6 @@ void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr>
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
-}
-
-std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
-{
-    std::atomic<int> is_stopped = false;
-    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
-    auto metadata = parquet::ReadMetaData(arrow_file);
-    std::vector<size_t> bucket_sizes;
-    for (int i = 0; i < metadata->num_row_groups(); ++i)
-        bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
-
-    std::vector<std::vector<size_t>> buckets;
-    size_t current_weight = 0;
-    for (size_t i = 0; i < bucket_sizes.size(); ++i)
-    {
-        if (current_weight + bucket_sizes[i] <= bucket_size)
-        {
-            if (buckets.empty())
-                buckets.emplace_back();
-            buckets.back().push_back(i);
-            current_weight += bucket_sizes[i];
-        }
-        else
-        {
-            current_weight = 0;
-            buckets.push_back({});
-            buckets.back().push_back(i);
-            current_weight += bucket_sizes[i];
-        }
-    }
-
-    const size_t file_num_row_groups = size_t(metadata->num_row_groups());
-    std::vector<FileBucketInfoPtr> result;
-    for (const auto & bucket : buckets)
-    {
-        result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket, file_num_row_groups));
-    }
-    return result;
 }
 
 namespace
@@ -837,6 +807,43 @@ UInt64 computeParquetFooterDigest(const parquet::format::FileMetaData & file_met
     const UInt64 digest = hash.get64();
     /// 0 is the "unknown" marker in `ParquetFileBucketInfo::footer_digest`; never return it.
     return digest == 0 ? 1 : digest;
+}
+
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
+{
+    /// The footer is parsed through the native reader (rather than Arrow) so the split can be stamped
+    /// with its digest: that is the generation token the per-bucket reads validate what they opened
+    /// against (see `ParquetFileBucketInfo::footer_digest`). `RowGroup::total_byte_size` is the same
+    /// field either way.
+    auto file_metadata = parseFileMetadataNative(buf, format_settings_);
+
+    std::vector<std::vector<size_t>> buckets;
+    size_t current_weight = 0;
+    for (size_t i = 0; i < file_metadata.row_groups.size(); ++i)
+    {
+        const size_t row_group_size = size_t(file_metadata.row_groups[i].total_byte_size);
+        if (current_weight + row_group_size <= bucket_size)
+        {
+            if (buckets.empty())
+                buckets.emplace_back();
+            buckets.back().push_back(i);
+            current_weight += row_group_size;
+        }
+        else
+        {
+            current_weight = 0;
+            buckets.push_back({});
+            buckets.back().push_back(i);
+            current_weight += row_group_size;
+        }
+    }
+
+    const size_t file_num_row_groups = file_metadata.row_groups.size();
+    std::vector<FileBucketInfoPtr> result;
+    for (const auto & bucket : buckets)
+        result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket, file_num_row_groups));
+    setFooterDigest(result, file_metadata);
+    return result;
 }
 
 std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_)
