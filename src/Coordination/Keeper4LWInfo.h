@@ -85,6 +85,7 @@ struct KeeperLogInfo
     uint64_t latest_logs_cache_entries{};
     uint64_t latest_logs_cache_size{};
 
+    /// Decoded entries buffered ahead of the commit thread by the commit read-ahead reader; 0 if no reader is active.
     uint64_t commit_logs_cache_entries{};
     uint64_t commit_logs_cache_size{};
 };

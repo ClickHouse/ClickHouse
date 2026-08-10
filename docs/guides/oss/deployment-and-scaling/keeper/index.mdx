@@ -82,7 +82,16 @@ Internal coordination settings are located in the `<keeper_server>.<coordination
 | `startup_timeout`                  | If the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms).                                                                                                              | `30000`                                                                                                      |
 | `async_replication`                | Enable async replication. All write and read guarantees are preserved while better performance is achieved. Settings is disabled by default to not break backwards compatibility                                         | `false`                                                                                                      |
 | `latest_logs_cache_size_threshold` | Maximum total size of in-memory cache of latest log entries                                                                                                                                                              | `1GiB`                                                                                                       |
-| `commit_logs_cache_size_threshold` | Maximum total size of in-memory cache of log entries needed next for commit                                                                                                                                              | `500MiB`                                                                                                     |
+| `commit_logs_cache_size_threshold` | Deprecated. Used for `log_readahead_commit_window_bytes` if that setting is not itself set.                                                                                                              | -                                                                                                            |
+| `commit_logs_cache_entry_count_threshold` | Deprecated, has no effect. Use `log_readahead_commit_window_bytes` instead.                                                                                                                       | -                                                                                                            |
+| `log_readahead_enabled`            | Enable per-peer decoded read-ahead for changelog catch-up reads (follower replication).                                                                                                                  | `false`                                                                                                      |
+| `log_readahead_window_bytes`       | Maximum bytes of decoded entries buffered per peer reader. Should be at least as large as a typical append-entries batch.                                                                                | `64MiB`                                                                                                      |
+| `log_readahead_max_peer_readers`   | Maximum number of concurrent per-peer read-ahead readers.                                                                                                                                                | `8`                                                                                                          |
+| `log_readahead_eviction_timeout_ms`| Idle timeout after which an inactive per-peer read-ahead reader, or the commit reader, is evicted (a subsequent miss recreates it).                                                                      | `30000`                                                                                                      |
+| `log_readahead_pool_threads`       | Number of threads in the dedicated read-ahead thread pool. `0` derives the value from `log_readahead_max_peer_readers`.                                                                                  | `0`                                                                                                          |
+| `log_readahead_serve_wait_timeout_ms` | Maximum time to wait for the background read-ahead fill before falling back to a direct read.                                                                                                         | `200`                                                                                                        |
+| `log_readahead_chunk_size`         | Number of log entries decoded per chunk in the read-ahead fill task.                                                                                                                                      | `16`                                                                                                         |
+| `log_readahead_commit_window_bytes`| Maximum total size of decoded log entries buffered ahead of the commit thread. `0` disables commit read-ahead (commit reads entries from disk one by one).                                              | `500MiB`                                                                                                     |
 | `disk_move_retries_wait_ms`        | How long to wait between retries after a failure which happened while a file was being moved between disks                                                                                                               | `1000`                                                                                                       |
 | `disk_move_retries_during_init`    | The amount of retries after a failure which happened while a file was being moved between disks during initialization                                                                                                    | `100`                                                                                                        |
 | `experimental_use_rocksdb`         | Use rocksdb as backend storage                                                                                                    | `0`                                                                                                        |
@@ -687,11 +696,21 @@ Also, all the snapshot files will be moved from `snapshot_local` and `snapshot_s
 
 To minimize the amount of data read from disk, Keeper caches log entries in memory.
 If requests are large, log entries will take too much memory so the amount of cached logs is capped.
-The limit is controlled with these two configs:
+The limit for the latest logs cache is controlled by:
 - `latest_logs_cache_size_threshold` - total size of latest logs stored in cache
-- `commit_logs_cache_size_threshold` - total size of subsequent logs that need to be committed next
 
-If the default values are too big, you can reduce the memory usage by reducing these two configs.
+If the default value is too big, you can reduce the memory usage by reducing this config.
+
+Log entries needed next for committing are served by a decoded read-ahead reader, sized by
+`log_readahead_commit_window_bytes` (`0` disables commit read-ahead). This setting replaces the
+deprecated `commit_logs_cache_size_threshold` and `commit_logs_cache_entry_count_threshold` settings,
+kept only for config compatibility (the former still maps onto `log_readahead_commit_window_bytes` if
+that's unset; the latter has no effect). The same read-ahead mechanism also serves follower
+replication catch-up reads when `log_readahead_enabled` is `true`; see
+`log_readahead_window_bytes`, `log_readahead_max_peer_readers`, `log_readahead_eviction_timeout_ms`,
+`log_readahead_pool_threads`, `log_readahead_serve_wait_timeout_ms`, and `log_readahead_chunk_size`
+in the [internal coordination settings](#internal-coordination-settings) for the peer-side tuning
+knobs.
 
 <Note>
 You can use `pfev` command to check amount of logs read from each cache and from a file.
