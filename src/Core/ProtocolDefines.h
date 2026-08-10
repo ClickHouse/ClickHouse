@@ -19,7 +19,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_LOGS = 54406;
 /// Compare by protocol revision rather than major/minor version: the aggregation method can change
 /// within a single release (same major.minor) and only the revision distinguishes a pre-change
 /// server from a post-change one.
-static constexpr auto DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD = 54488;
+/// 54489: the method for a single `String` key follows `enable_packed_string_keys_in_aggregation`.
+/// A peer below this revision always uses the packed method and does not know the setting, so it
+/// cannot follow a query that disables it.
+static constexpr auto DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD = 54489;
 static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA = 54410;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE = 54405;
@@ -70,7 +73,12 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 4 adds `WindowStep` to the set of serializable steps. An older worker does not register a
 /// "Window" step at all (`QueryPlanStepRegistry::createStep` would throw `UNKNOWN_IDENTIFIER` on it), so
 /// the serializer fails closed instead when talking to a peer below version 4.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
+/// Version 5 registers the `enable_packed_string_keys_in_aggregation` plan setting. A peer at this version
+/// receives it on every aggregation step whenever the legacy method is requested. An older peer rejects the
+/// unknown name (`QueryPlanSerializationSettings::readBinary` throws), so towards such a peer the name is
+/// written only when omitting it could corrupt two-level distributed merging - failing closed on an explicit
+/// error instead of silently mixing the two hash methods, whose two-level bucket numbering differs.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 5;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -79,6 +87,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_RE
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
+/// First query-plan serialization version that knows the `enable_packed_string_keys_in_aggregation`
+/// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
+/// `MergingAggregatedStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING = 5;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
@@ -191,5 +203,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES =
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54488;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54489;
 }
