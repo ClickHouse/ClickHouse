@@ -1093,7 +1093,7 @@ The `match[]` parameter restricts the result by a Prometheus series selector: a 
 
 The optional `limit` parameter caps the number of returned items, for example `/api/v1/labels?limit=10` (`0` means no limit, which is also the default). On the query endpoints (`/api/v1/query` and `/api/v1/query_range`), `limit` caps the number of returned series of a vector or matrix result; scalar and string results are not series and are never truncated. When a result is truncated, the response carries the standard Prometheus warning `results truncated due to limit`.
 
-The standard Prometheus parameters `timeout`, `lookback_delta`, and `stats` are not implemented yet; a request that specifies any of them is rejected with an explicit error rather than the parameter being silently ignored or misread as a ClickHouse setting.
+The standard Prometheus parameters `timeout` and `stats` are not implemented yet; a request that specifies either of them is rejected with an explicit error rather than the parameter being silently ignored or misread as a ClickHouse setting.
 
 Tags moved into separate columns via the `tags_to_columns` setting are included in the results of all three endpoints.
 

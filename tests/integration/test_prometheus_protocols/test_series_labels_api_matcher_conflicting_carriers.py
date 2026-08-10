@@ -1,4 +1,5 @@
-"""Tests that a label matcher on a tag configured via `tags_to_columns` rejects a row carrying
+"""Tests that a label matcher on a tag configured via `tags_to_columns`, and the metadata endpoints
+that materialize such a tag, reject a row carrying
 different non-empty values for that tag in the dedicated column and in the residual `tags` Map,
 instead of silently preferring the column. This mirrors the write path (`timeSeriesStoreTags`) and
 `/api/v1/series`, which reject such malformed rows with `bad_data`; without the rejection a selector
@@ -78,9 +79,25 @@ def test_query_matcher_on_conflicting_row_is_rejected():
     assert_bad_data(request_api("/api/v1/query", params={"query": '{host="column_host"}', "time": "1700000000"}))
 
 
+def test_labels_endpoint_on_conflicting_row_is_rejected():
+    """`/api/v1/labels` materializes the label names of both carriers, so a conflicting row must be
+    rejected there too instead of reporting the label and hiding the corruption that
+    `/api/v1/series` and `/api/v1/query` reject."""
+    assert_bad_data(request_api("/api/v1/labels", params={"match[]": "conflicting_metric"}))
+    assert_bad_data(request_api("/api/v1/labels"))
+
+
+def test_label_values_endpoint_on_conflicting_row_is_rejected():
+    """`/api/v1/label/host/values` materializes the value of the conflicting label, so it must fail
+    with `bad_data` as well instead of reporting the dedicated column's value."""
+    assert_bad_data(request_api("/api/v1/label/host/values", params={"match[]": "conflicting_metric"}))
+    assert_bad_data(request_api("/api/v1/label/host/values"))
+
+
 def test_matcher_on_another_label_is_unaffected():
-    """A selector that does not touch the conflicting label does not evaluate its carriers, so it
-    still works (the conflict is reported during emission by /api/v1/series instead)."""
+    """A request that neither matches on nor materializes the conflicting label does not evaluate its
+    carriers, so it still works (the conflict is reported by the endpoints that do read them:
+    /api/v1/series, /api/v1/labels and /api/v1/label/host/values)."""
     response = request_api("/api/v1/label/instance/values")
     assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
     data = response.json()

@@ -465,11 +465,19 @@ public:
 
     /// Parses the optional `limit` parameter of the Prometheus HTTP API endpoints (the maximum number
     /// of returned items - series for the query endpoints; 0 means no limit, which is also the default).
+    /// An absent parameter means "no limit", but a present-and-empty one (e.g. "limit=") is malformed:
+    /// treating it as absent would silently turn a broken request into an unbounded response, so reject
+    /// it - Prometheus answers such requests with a `bad_data` error as well.
     UInt64 getLimitParam() const
     {
-        String limit_str = params->get("limit", "");
-        if (limit_str.empty())
+        if (!params->has("limit"))
             return 0;
+
+        String limit_str = params->get("limit");
+        if (limit_str.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value of the 'limit' parameter: cannot parse an empty value as a non-negative integer");
 
         UInt64 limit = 0;
         if (!tryParse(limit, limit_str.data(), limit_str.size()))

@@ -210,6 +210,26 @@ Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 timestamp_sc
 
     return Decimal64{timestamp_ticks};
 }
+
+/// SQL expression that rejects a row of the `tags` table carrying different non-empty values for the same
+/// tag in its dedicated `tags_to_columns` column and in the residual `tags` Map. Such a row is invalid: it
+/// is rejected by `timeSeriesStoreTags` on the write path, by `timeSeriesTagNameToAST` when a matcher reads
+/// the tag, and by `/api/v1/series` during emission, so the remaining metadata endpoints must not report
+/// label names or label values derived from it either - otherwise they would hide the corruption while the
+/// other endpoints fail. Returns `throwIf(...)`, i.e. `0` on a valid row (fail closed on an invalid one).
+String makeTagCarrierConflictCheck(const String & tag_name, const String & column_name)
+{
+    /// A dedicated tag column may be Nullable (a series without the tag stores NULL there), so normalize
+    /// NULL to '' - as `timeSeriesTagNameToAST` does - before comparing the two carriers.
+    String column_expr = fmt::format("coalesce(toString({}), '')", backQuoteIfNeed(column_name));
+    String map_expr = fmt::format("{}[{}]", TimeSeriesColumnNames::Tags, quoteString(tag_name));
+    return fmt::format(
+        "throwIf(({0} != '') AND ({1} != '') AND ({0} != {1}), {2})",
+        column_expr,
+        map_expr,
+        quoteString(fmt::format(
+            "Found two tags with the same name {} but different values in a row of the 'tags' table", quoteString(tag_name))));
+}
 }
 
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
@@ -890,8 +910,12 @@ void PrometheusHTTPProtocolAPI::getLabels(
         {
             if (i != 0)
                 configured += ", ";
+            /// `throwIf` returns 0 when it does not throw, so the outer `if` always selects the label name;
+            /// it only forces the conflicting-carrier check to be evaluated as a part of this expression, on
+            /// every row this endpoint reads (see `makeTagCarrierConflictCheck`).
             configured += fmt::format(
-                "if(coalesce(toString({}), '') != '', {}, '')",
+                "if({}, '', if(coalesce(toString({}), '') != '', {}, ''))",
+                makeTagCarrierConflictCheck(tag_columns[i].first, tag_columns[i].second),
                 backQuoteIfNeed(tag_columns[i].second),
                 quoteString(tag_columns[i].first));
         }
@@ -1077,13 +1101,19 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
             /// empty/NULL (e.g. rows preloaded before the `tags_to_columns` layout was adopted).
             /// `/api/v1/series` emits such labels straight from the Map (`writeTags`) and `/api/v1/labels`
             /// reports them via `mapKeys`, so fall back to the Map here as well to keep the endpoints
-            /// consistent with each other.
+            /// consistent with each other. A row that carries different non-empty values in the two
+            /// carriers is malformed and is rejected instead of silently reporting the column's value:
+            /// `throwIf` returns 0 when it does not throw, so the outer `if` always selects the value and
+            /// only forces the check to be evaluated on every row read here (see
+            /// `makeTagCarrierConflictCheck`). Only the requested label is validated - the carriers of the
+            /// other configured tags are not materialized by this endpoint.
             String column_expr = fmt::format("coalesce(toString({}), '')", backQuoteIfNeed(column_name));
             String value_expr = fmt::format(
-                "if({0} != '', {0}, {1}[{2}])",
+                "if({3}, '', if({0} != '', {0}, {1}[{2}]))",
                 column_expr,
                 TimeSeriesColumnNames::Tags,
-                quoteString(label_name));
+                quoteString(label_name),
+                makeTagCarrierConflictCheck(label_name, column_name));
             query = fmt::format("SELECT DISTINCT {} AS label_value FROM {}", value_expr, tags_table_id.getFullTableName());
             conditions.push_back(fmt::format("{} != ''", value_expr));
         }
