@@ -1,6 +1,2 @@
--- the non-DETERMINISTIC UDF redraws per evaluation
-1
--- a non-DETERMINISTIC WebAssembly UDF is not promoted to a JOIN key
-1
--- a DETERMINISTIC WebAssembly UDF is still promoted
+0
 1

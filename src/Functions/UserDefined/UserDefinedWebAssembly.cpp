@@ -481,10 +481,9 @@ public:
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
 
-    /// Without `DETERMINISTIC` the value may differ per block within one query, so it must not be
-    /// hoisted, reordered or used as a key. The executable-UDF sibling reports the same thing.
+    /// Without `DETERMINISTIC` the value may differ between two evaluations of one query, so it must
+    /// not be hoisted or relocated. The executable-UDF sibling reports the same.
     bool isDeterministicInScopeOfQuery() const override { return user_defined_function->getIsDeterministic(); }
-
     bool isSpatialPredicate() const override
     {
         auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");

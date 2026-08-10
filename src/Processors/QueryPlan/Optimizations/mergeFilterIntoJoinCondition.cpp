@@ -125,31 +125,14 @@ ExpressionSide getExpressionSide(
     return ExpressionSide::UNKNOWN;
 }
 
-/// Bound per executing node, or when the function object is built, rather than per query. These names
-/// report no flag that would refuse them, so the list is the only refusal. `getName` is canonical, so
-/// aliases and letter case resolve to it first.
-bool isNodeLocalFunction(const String & function_name)
+/// These report `isDeterministic() == true` yet are not stable across the two evaluation sites:
+/// `byteSize` reads the physical representation, `showCertificate` is captured per node, and `joinGet`
+/// carries its metadata on the overload resolver rather than on the function the DAG stores, reporting
+/// whichever name `join_use_nulls` selects.
+bool reportsValueTheJoinCanChange(const String & function_name)
 {
-    return function_name == "queryID" || function_name == "FQDN" || function_name == "getServerPort"
-        || function_name == "transactionID" || function_name == "transactionLatestSnapshot"
-        || function_name == "transactionOldestSnapshot" || function_name == "randConstant"
-        || function_name == "getClientHTTPHeader" || function_name == "now" || function_name == "now64"
-        || function_name == "showCertificate" || function_name == "filesystemAvailable"
-        || function_name == "filesystemCapacity" || function_name == "filesystemUnreserved";
-}
-
-/// Reports on the physical representation of its argument, not its value, and the JOIN removes two
-/// representations from the right side. Reports no flag, so the list is the only refusal.
-bool isRepresentationDependentFunction(const String & function_name)
-{
-    return function_name == "isConstant" || function_name == "toColumnTypeName" || function_name == "byteSize";
-}
-
-/// Reads a table whose lookup state is pinned per block, not per query, and reports no flag. Both
-/// spellings are listed because `getName` returns the effective one, which depends on `join_use_nulls`.
-bool isUnstableLookupFunction(const String & function_name)
-{
-    return function_name == "joinGet" || function_name == "joinGetOrNull";
+    return function_name == "byteSize" || function_name == "joinGet" || function_name == "joinGetOrNull"
+        || function_name == "showCertificate";
 }
 
 /// The two wrappers that hold a lambda body share only this accessor, not a common base.
@@ -186,14 +169,11 @@ const ActionsDAG * getLambdaBody(const ActionsDAG::Node & node)
     return nullptr;
 }
 
-/// Whether a subgraph yields the same value wherever in the plan it is evaluated, so that it may be
-/// promoted to a JOIN key while the conjunct above the join is replaced by a constant.
+/// Whether a subgraph yields the same value at every point in the plan, which a JOIN key must, since
+/// the key and the conjunct it replaces are two separate evaluations.
 ///
-/// The predicate is `isDeterministicInScopeOfQuery`, not `isDeterministic`: `dictGet` and `today`
-/// report the latter as false yet hold one value per query. `arrayJoin` is matched on node TYPE
-/// because `addArrayJoin` leaves `function_base` unset. A lambda body is not a child and its wrapper
-/// reports none of the flags the body would, so it is enqueued separately. The walk memoizes because
-/// an `ActionsDAG` reuses one node for a repeated subexpression.
+/// `arrayJoin` is matched on node type because `addArrayJoin` leaves `function_base` unset. A lambda
+/// body is not a child of its wrapper, so it is enqueued separately.
 bool isSafeToUseAsJoinKey(const ActionsDAG::Node * node)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
@@ -210,11 +190,8 @@ bool isSafeToUseAsJoinKey(const ActionsDAG::Node * node)
             return false;
 
         if (current->type == ActionsDAG::ActionType::FUNCTION
-            && (!current->function_base->isDeterministicInScopeOfQuery() || current->function_base->isStateful()
-                || current->function_base->isServerConstant()
-                || isNodeLocalFunction(current->function_base->getName())
-                || isRepresentationDependentFunction(current->function_base->getName())
-                || isUnstableLookupFunction(current->function_base->getName())))
+            && (!current->function_base->isDeterministic() || current->function_base->isStateful()
+                || reportsValueTheJoinCanChange(current->function_base->getName())))
             return false;
 
         if (const auto * lambda_body = getLambdaBody(*current))
