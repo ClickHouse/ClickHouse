@@ -113,6 +113,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
     {
         ASTPtr codecs_descriptions = make_intrusive<ASTExpressionList>();
 
+        Codecs codecs;
         bool with_compression_codec = false;
         bool with_none_codec = false;
         std::optional<size_t> first_generic_compression_codec_pos;
@@ -217,6 +218,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());
             }
 
+            codecs.push_back(result_codec);
+
             with_compression_codec |= result_codec->isCompression();
             with_none_codec |= result_codec->isNone();
 
@@ -245,6 +248,21 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                     "Too many codecs in the codec chain: {}. The number of codecs is stored in one byte, "
                     "so at most {} are supported.",
                     codecs_descriptions->children.size(), static_cast<size_t>(std::numeric_limits<UInt8>::max()));
+
+            /// A codec never reserves less than its input, so a reserve below the input means the
+            /// UInt32 compounding wrapped. One byte is the weakest block there is: a chain that
+            /// wraps on it cannot compress a block of any size.
+            UInt32 reserve_size = 1;
+            for (size_t i = 0; i < codecs.size(); ++i)
+            {
+                const UInt32 next_reserve_size = codecs[i]->getCompressedReserveSize(reserve_size);
+                if (next_reserve_size < reserve_size)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Too many codecs in the codec chain: {}. The size they reserve for compressing a block "
+                        "overflows 4 GiB at codec {} ({}), so no block could be compressed. Use fewer codecs.",
+                        codecs.size(), i + 1, codecs[i]->getCodecDesc()->formatForErrorMessage());
+                reserve_size = next_reserve_size;
+            }
 
             if (codecs_descriptions->children.size() > 1 && with_none_codec)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
