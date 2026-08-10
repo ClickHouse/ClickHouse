@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel
+# Tags: long, no-replicated-database, no-parallel
+# long: the failpoint holds and the ~20 s cancellation fixture put this at about 56 s.
 # no-replicated-database - path in zookeeper differs with replicated database
 # no-parallel: the `*_lightweight_update_sleep_after_block_allocation` failpoint fires exactly
 #   once globally; a concurrent run of a sibling 03100_lwu_* test could steal the pause or
@@ -264,6 +265,39 @@ function run_cancel()
     if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
     # Interrupted within about one chunk, not held to the end of the ~20 s update.
     echo "cancel interrupted $cancelled promptly $(( duration_ms < 8000 ))"
+
+    # The lock is still held for most of that ~20 s update, so one more waiter with no
+    # max_execution_time parks here across several chunks. Chunking the wait must not re-register the
+    # watch per chunk: a timed out tryWait deregisters nothing, so that would leave a live callback
+    # per chunk on one node. The watch is set by exactly one call, on the conflicting update's node,
+    # so a query that waits through N chunks must still register once per outer iteration.
+    tag="lwu57-watch-$CLICKHOUSE_DATABASE"
+    $CLICKHOUSE_CLIENT --query "
+        SET enable_lightweight_update = 1;
+        UPDATE $table_name SET v = 77 WHERE s LIKE 'xx%'
+        SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 600, log_comment = '$tag';
+    "
+
+    # Guard against a vacuous pass: a waiter that spans fewer chunks than the bound below allows
+    # would satisfy it even while re-registering per chunk. Three chunks is what makes the bound
+    # discriminating, and PatchesAcquireLockMicroseconds is the window that encloses the wait.
+    $CLICKHOUSE_CLIENT --query "
+        SYSTEM FLUSH LOGS query_log, zookeeper_log;
+        WITH
+            (
+                SELECT (query_id, toInt64(ProfileEvents['PatchesAcquireLockMicroseconds']))
+                FROM system.query_log
+                WHERE current_database = currentDatabase() AND log_comment = '$tag' AND type = 'QueryFinish'
+                ORDER BY event_time_microseconds DESC LIMIT 1
+            ) AS waiter,
+            (
+                SELECT count() FROM system.zookeeper_log
+                WHERE type = 'Request' AND has_watch AND query_id = waiter.1
+                  AND path LIKE '%/lightweight_updates/in_progress/%'
+            ) AS watches
+        SELECT 'watch spanned ' || if(waiter.2 >= 3 * 3000 * 1000, 'true', 'false')
+            || ' registered_once ' || if(watches BETWEEN 1 AND 2, 'true', 'false');
+    "
 
     wait
     $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
