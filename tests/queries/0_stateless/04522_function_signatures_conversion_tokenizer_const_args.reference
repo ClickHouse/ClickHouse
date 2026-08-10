@@ -1,4 +1,4 @@
-(Any, const S NativeUInt) -> DateTime64(S) OR (Any, const S NativeUInt, const tz String) -> DateTime64(S, tz)
+(V : Any, const S NativeUInt) -> DateTime64(S, timezoneOf(V)) OR (Any, const S NativeUInt, const tz String) -> DateTime64(S, tz)
 (Any, const S NativeUInt) -> Time64(S)
 (MaybeNullable(StringOrFixedString)) -> DateTime64(3) OR (MaybeNullable(StringOrFixedString), const scale UInt8) -> dateTimeFromScale(scale) OR (MaybeNullable(StringOrFixedString), const scale UInt8, const tz String) -> dateTimeFromScale(scale, tz)
 (MaybeNullable(StringOrFixedString | NativeInteger)) -> Nullable(DateTime64(3)) OR (MaybeNullable(StringOrFixedString | NativeInteger), const scale UInt8) -> Nullable(dateTimeFromScale(scale)) OR (MaybeNullable(StringOrFixedString | NativeInteger), const scale UInt8, const tz String) -> Nullable(dateTimeFromScale(scale, tz))

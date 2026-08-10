@@ -1,0 +1,19 @@
+2
+5
+5
+1
+1
+1
+340282366920938463463374607431768211455	UInt128
+-1	Int256
+5	UInt128
+5	UInt256
+DateTime(\'Europe/Amsterdam\')
+DateTime(\'Europe/Amsterdam\')
+DateTime64(3, \'Europe/Amsterdam\')
+DateTime64(6, \'Europe/Amsterdam\')
+DateTime(\'UTC\')
+DateTime64(3, \'UTC\')
+Time64(3)
+\N	\N	\N	\N
+\N
