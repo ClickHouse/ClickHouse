@@ -1,0 +1,27 @@
+=== a PARALLEL WITH handler with a BACKUP child mixing GET with a mutating method is rejected ===
+BAD_ARGUMENTS
+=== a RESTORE child behind a read-only first statement is found too ===
+BAD_ARGUMENTS
+=== a session-mutating SET child is found too ===
+BAD_ARGUMENTS
+=== an unqualified INSERT child, which may target a session temporary table, is found too ===
+BAD_ARGUMENTS
+=== the same BACKUP composite with only mutating methods is accepted ===
+['POST']
+=== it is not served over GET or HEAD ===
+404
+404
+=== the same URL over POST does reach query execution ===
+routed
+=== a composite of read-only statements needs no mutating method ===
+['GET']
+=== ALTER HANDLER cannot swap a safe-method handler's query to a composite with a BACKUP ===
+BAD_ARGUMENTS
+=== an EXECUTE AS handler wrapping a BACKUP mixing GET with a mutating method is rejected ===
+BAD_ARGUMENTS
+=== an EXECUTE AS handler wrapping an INSERT requires a mutating method ===
+BAD_ARGUMENTS
+=== a bare EXECUTE AS handler, which makes the session run as another user, is rejected ===
+BAD_ARGUMENTS
+=== an EXECUTE AS handler wrapping a SELECT is accepted with the default methods ===
+['GET']

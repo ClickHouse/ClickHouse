@@ -7,11 +7,14 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/ASTWatchQuery.h>
+#include <Parsers/Access/ASTExecuteAsQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <algorithm>
 #include <string_view>
+#include <vector>
 
 #include <fmt/ranges.h>
 
@@ -36,6 +39,43 @@ SQLDefinedHandler::URLMatchType convertURLMatchType(ASTCreateHandlerQuery::URLMa
         case ASTCreateHandlerQuery::URLMatchType::Prefix: return SQLDefinedHandler::URLMatchType::Prefix;
         case ASTCreateHandlerQuery::URLMatchType::Regexp: return SQLDefinedHandler::URLMatchType::Regexp;
     }
+}
+
+/// The statements a request to this handler actually executes.
+///
+/// Most queries are a single statement, but two of them are composite wrappers whose own `QueryKind` says nothing
+/// about what runs:
+/// - `statement1 PARALLEL WITH statement2 ...` is an `ASTParallelWithQuery` holding the statements as children, and
+///   `InterpreterParallelWithQuery::executeSubquery` runs each of them under a copy of the handler's context;
+/// - `EXECUTE AS <user> <statement>` is an `ASTExecuteAsQuery`, and `InterpreterExecuteAsQuery::execute` runs the
+///   wrapped statement under an impersonated copy of the handler's context (which keeps the `readonly` setting,
+///   because the copy re-applies the original context's settings changes).
+/// Both wrappers must therefore be looked through, recursively, so that the method fences below follow the
+/// statements that really run instead of the wrapper kind. A bare `EXECUTE AS <user>` wraps nothing - it is the
+/// statement itself (and mutates the session, see `statementHasSideEffectsUnderReadonly`).
+void collectExecutedStatements(const IAST & query, std::vector<const IAST *> & result)
+{
+    if (const auto * parallel_with = query.as<ASTParallelWithQuery>())
+    {
+        for (const auto & child : parallel_with->children)
+            collectExecutedStatements(*child, result);
+        return;
+    }
+
+    if (const auto * execute_as = query.as<ASTExecuteAsQuery>(); execute_as && execute_as->subquery)
+    {
+        collectExecutedStatements(*execute_as->subquery, result);
+        return;
+    }
+
+    result.push_back(&query);
+}
+
+std::vector<const IAST *> getExecutedStatements(const IAST & query)
+{
+    std::vector<const IAST *> result;
+    collectExecutedStatements(query, result);
+    return result;
 }
 
 /// Whether executing a query of this kind can modify data or server state and therefore requires the handler to
@@ -92,6 +132,8 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
         case IAST::QueryKind::KillQuery:
         case IAST::QueryKind::ExternalDDL:
         case IAST::QueryKind::AsyncInsertFlush:
+        /// A `PARALLEL WITH` query is looked through by `collectExecutedStatements`, so the fences never classify
+        /// the wrapper itself; the entry stays here (and conservatively mutating) for exhaustiveness.
         case IAST::QueryKind::ParallelWithQuery:
         case IAST::QueryKind::Copy:
         case IAST::QueryKind::Snapshot:
@@ -106,16 +148,30 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
 /// -object create is runnable over `GET` and must not require a mutating method here. Its session-visible side
 /// effects are fenced off separately by `queryHasSideEffectsUnderReadonly`, which requires *every* method of
 /// such a handler to be a mutating one.
-bool queryRequiresMutatingMethod(const IAST & query)
+bool statementRequiresMutatingMethod(const IAST & statement)
 {
-    if (const auto * create = query.as<ASTCreateQuery>(); create && create->isTemporary())
+    if (const auto * create = statement.as<ASTCreateQuery>(); create && create->isTemporary())
         return false;
     /// `ASTWatchQuery` reports `QueryKind::Create`, but WATCH is a read-only streaming query:
     /// `InterpreterWatchQuery` checks only `SELECT` access, so it is runnable under `readonly = 2`
     /// (the mode a safe HTTP method such as `GET` sets) and must not require a mutating method.
-    if (query.as<ASTWatchQuery>())
+    if (statement.as<ASTWatchQuery>())
         return false;
-    return queryKindRequiresMutatingMethod(query.getQueryKind());
+    /// A bare `EXECUTE AS <user>` only impersonates a user for the rest of the session, which `readonly` does not
+    /// block (`InterpreterExecuteAsQuery` checks the `IMPERSONATE` privilege only), so it does not require a
+    /// mutating method. Its session-visible effect is fenced off by `statementHasSideEffectsUnderReadonly`.
+    if (statement.as<ASTExecuteAsQuery>())
+        return false;
+    return queryKindRequiresMutatingMethod(statement.getQueryKind());
+}
+
+/// Whether the handler's query requires a mutating HTTP method: it does if any of the statements it executes does
+/// (see `collectExecutedStatements` for the composite `PARALLEL WITH` / `EXECUTE AS` wrappers).
+bool queryRequiresMutatingMethod(const IAST & query)
+{
+    const auto statements = getExecutedStatements(query);
+    return std::any_of(statements.begin(), statements.end(),
+        [](const IAST * statement) { return statementRequiresMutatingMethod(*statement); });
 }
 
 /// Whether the query itself reads the HTTP request body as its data.
@@ -125,6 +181,10 @@ bool queryRequiresMutatingMethod(const IAST & query)
 /// `insert_query->tail.reset()` branch). The exception to that exception is the `input` table function: an
 /// `INSERT ... SELECT ... FROM input(...)` is fed from the request body, and `executeQuery` builds its source
 /// pipe from the tail before dropping it.
+///
+/// This deliberately does not look through the composite `PARALLEL WITH` / `EXECUTE AS` wrappers: both re-format
+/// their wrapped statements and execute them through a fresh `executeQuery` call with no request tail, so a
+/// wrapped `INSERT` never receives the request body.
 bool queryConsumesRequestBody(const IAST & query)
 {
     const auto * insert = query.as<ASTInsertQuery>();
@@ -240,34 +300,53 @@ bool queryMayMutateTemporaryTable(const IAST & query)
 /// query without such effects; it is not an `ASTCreateQuery`, so it does not enter the branch.
 /// It also covers queries that can mutate an *existing* session temporary table, which `readonly = 2`
 /// does not block either - see `queryMayMutateTemporaryTable`.
-bool queryHasSideEffectsUnderReadonly(const IAST & query)
+bool statementHasSideEffectsUnderReadonly(const IAST & statement)
 {
-    if (const auto * create = query.as<ASTCreateQuery>(); create && create->isTemporary())
+    if (const auto * create = statement.as<ASTCreateQuery>(); create && create->isTemporary())
         return true;
-    if (queryMayMutateTemporaryTable(query))
+    if (queryMayMutateTemporaryTable(statement))
         return true;
-    return queryKindHasSideEffectsUnderReadonly(query.getQueryKind());
+    /// A bare `EXECUTE AS <user>` (no wrapped statement) impersonates the user in the *session* context
+    /// (`InterpreterExecuteAsQuery::execute` calls `impersonateSessionContext` on `getSessionContext()`), so with
+    /// `session_id` in use every following request of that session runs as another user. `readonly` does not block
+    /// it, exactly like `SET` or `USE`.
+    if (const auto * execute_as = statement.as<ASTExecuteAsQuery>(); execute_as && !execute_as->subquery)
+        return true;
+    return queryKindHasSideEffectsUnderReadonly(statement.getQueryKind());
 }
 
-/// A short description of a side-effecting-under-readonly query kind for the error message.
-std::string_view describeSideEffectsUnderReadonly(const IAST & query)
+/// Whether the handler's query still produces side effects under `readonly = 2`: it does if any of the statements
+/// it executes does (see `collectExecutedStatements` for the composite `PARALLEL WITH` / `EXECUTE AS` wrappers -
+/// their children run under a copy of the handler's context, so a safe method would reach them all the same).
+bool queryHasSideEffectsUnderReadonly(const IAST & query)
 {
-    if (const auto * create = query.as<ASTCreateQuery>(); create && create->isTemporary())
+    const auto statements = getExecutedStatements(query);
+    return std::any_of(statements.begin(), statements.end(),
+        [](const IAST * statement) { return statementHasSideEffectsUnderReadonly(*statement); });
+}
+
+/// A short description of a side-effecting-under-readonly statement for the error message.
+std::string_view describeStatementSideEffectsUnderReadonly(const IAST & statement)
+{
+    if (const auto * create = statement.as<ASTCreateQuery>(); create && create->isTemporary())
         return "a CREATE TEMPORARY query, which creates an object living in the session";
 
-    if (queryMayMutateTemporaryTable(query))
+    if (queryMayMutateTemporaryTable(statement))
     {
-        if (query.as<ASTInsertQuery>())
+        if (statement.as<ASTInsertQuery>())
             return "an INSERT into a table not qualified with a database, which may be a temporary table living in the session "
                    "(qualify the table with a database if a temporary table is not intended)";
-        if (query.as<ASTAlterQuery>())
+        if (statement.as<ASTAlterQuery>())
             return "an ALTER of a table not qualified with a database, which may be a temporary table living in the session "
                    "(qualify the table with a database if a temporary table is not intended)";
         return "a DROP or TRUNCATE that may target a temporary table living in the session "
                "(qualify the table with a database if a temporary table is not intended)";
     }
 
-    switch (query.getQueryKind())
+    if (const auto * execute_as = statement.as<ASTExecuteAsQuery>(); execute_as && !execute_as->subquery)
+        return "an EXECUTE AS query without a statement, which makes the session run as another user";
+
+    switch (statement.getQueryKind())
     {
         case IAST::QueryKind::Backup: return "a BACKUP query, which writes a backup";
         case IAST::QueryKind::Restore: return "a RESTORE query, which writes data into tables";
@@ -279,6 +358,19 @@ std::string_view describeSideEffectsUnderReadonly(const IAST & query)
         case IAST::QueryKind::SetTransactionSnapshot: return "a SET TRANSACTION SNAPSHOT query, which changes transaction state";
         default: return "a query with side effects";
     }
+}
+
+/// A short description of the first side-effecting-under-readonly statement of the handler's query, for the error
+/// message. `queryHasSideEffectsUnderReadonly` is what decides whether the handler is rejected, so this is only
+/// called when at least one such statement exists.
+std::string_view describeSideEffectsUnderReadonly(const IAST & query)
+{
+    for (const auto * statement : getExecutedStatements(query))
+    {
+        if (statementHasSideEffectsUnderReadonly(*statement))
+            return describeStatementSideEffectsUnderReadonly(*statement);
+    }
+    return "a query with side effects";
 }
 
 /// The HTTP methods that are allowed to run modifying queries (see `setReadOnlyIfHTTPMethodIdempotent`).
