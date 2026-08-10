@@ -5,7 +5,12 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.database_disk import get_database_disk_name, replace_text_in_metadata
+from helpers.database_disk import (
+    get_database_disk_name,
+    read_metadata,
+    replace_text_in_metadata,
+    write_metadata,
+)
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node")
@@ -88,7 +93,7 @@ def test_matview_columns_after_modify_query(started_cluster):
         replace_text_in_metadata(node, mv_metadata_path, "`timestamp` DateTime,", "`timestamp` DateTime64(9),")
         replace_text_in_metadata(node, mv_metadata_path, "`c12` Nullable(String)", "`c12` String")
         # We need to reload the DB disk if it is a plain-rewritable disk to be able to see the changes
-        node.query(f"SYSTEM DROP DISK METADATA CACHE '{get_database_disk_name(node)}'")
+        node.query(f"SYSTEM CLEAR DISK METADATA CACHE {get_database_disk_name(node)}")
 
     node.query("ATTACH TABLE mv_modify_query")
 
@@ -170,35 +175,25 @@ def test_attach_projection_part_offset_setting_disabled(started_cluster):
     #     _block_number / _block_offset only when these settings are enabled. So they stay validated
     #     for every projection (even pre-existing, even on ATTACH) against the effective post-operation
     #     settings.
-    data_path = node.query("SELECT path FROM system.disks WHERE name = 'default'").strip()
-
     # Turns a CREATE-only gate off directly in the on-disk metadata (simulating a cross-version default
     # flip) and re-attaches, exercising the #102445 ATTACH path without an ALTER (which is rejected, see
     # the flip cases below).
     def attach_with_gate_disabled(table, setting):
-        rel_path = node.query(f"SELECT metadata_path FROM system.tables WHERE database = 'default' AND name = '{table}'").strip()
-        meta = data_path + rel_path
+        metadata_path = node.query(f"SELECT metadata_path FROM system.tables WHERE database = 'default' AND name = '{table}'").strip()
         node.query(f"DETACH TABLE {table}")
-        # sed exits 0 even when it rewrites nothing, so assert the enabled spelling exists before the edit
-        # and the disabled spelling exists after it. Otherwise a SHOW CREATE formatting drift away from
-        # "<setting> = 1" would leave the metadata untouched and re-attach it -- a false positive.
-        found = node.exec_in_container(
-            ["bash", "-c", f"grep -q '{setting} = 1' \"{meta}\" && echo 1 || echo 0"],
-            privileged=True,
-            user="root",
-        ).strip()
-        assert found == "1", f"'{setting} = 1' not found in {table} metadata before rewrite"
-        node.exec_in_container(
-            ["bash", "-c", f"sed -i 's/{setting} = 1/{setting} = 0/' \"{meta}\""],
-            privileged=True,
-            user="root",
-        )
-        found = node.exec_in_container(
-            ["bash", "-c", f"grep -q '{setting} = 0' \"{meta}\" && echo 1 || echo 0"],
-            privileged=True,
-            user="root",
-        ).strip()
-        assert found == "1", f"'{setting} = 0' not present in {table} metadata after rewrite"
+        # Go through `clickhouse disks` instead of editing the file directly: with a remote database
+        # disk the metadata `.sql` is not on the local filesystem at all.
+        metadata = read_metadata(node, metadata_path)
+        # A rewrite that matches nothing is silent, so assert the enabled spelling exists before the
+        # edit and the disabled spelling exists after it. Otherwise a SHOW CREATE formatting drift away
+        # from "<setting> = 1" would leave the metadata untouched and re-attach it -- a false positive.
+        assert f"{setting} = 1" in metadata, f"'{setting} = 1' not found in {table} metadata before rewrite"
+        write_metadata(node, metadata_path, metadata.replace(f"{setting} = 1", f"{setting} = 0"))
+        db_disk_name = get_database_disk_name(node)
+        if db_disk_name != "default":
+            # A plain-rewritable database disk caches metadata; reload it to see the change.
+            node.query(f"SYSTEM CLEAR DISK METADATA CACHE {db_disk_name}")
+        assert f"{setting} = 0" in read_metadata(node, metadata_path), f"'{setting} = 0' not present in {table} metadata after rewrite"
         node.query(f"ATTACH TABLE {table}")
 
     # (1) _part_offset projection: allow_part_offset_column_in_projections is CREATE-only, so a table
