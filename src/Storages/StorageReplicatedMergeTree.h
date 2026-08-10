@@ -691,9 +691,9 @@ private:
     /// This prevents a race between a concurrent INSERT and DROP_RANGE processing.
     void waitForPreActivePartsInRange(const MergeTreePartInfo & drop_range) const;
 
-    /// Remove ZooKeeper part nodes covered by a completed full drop range that have no part in the
-    /// working set. Only for a fake (full) drop range, and only after the parts of the range have
-    /// been removed from ZooKeeper. Must not be called under a data parts lock (does ZooKeeper I/O).
+    /// Remove ZooKeeper part nodes covered by a completed drop range that have no part in the working
+    /// set. Only when the range cannot be satisfied by a live covering part instead, and only after
+    /// its parts have been removed from ZooKeeper. Does ZooKeeper I/O, so not under a parts lock.
     void removeStrandedPartsInRangeFromZooKeeper(const MergeTreePartInfo & drop_range);
 
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
