@@ -719,8 +719,6 @@ void SortingStep::serialize(Serialization & ctx) const
     /// Do not serialize limit for now; it is expected to be pushed down from plan optimization.
     serializeSortDescription(result_description, ctx.out);
 
-    /// `scatter_partitions != 0` is excluded by `isSerializable`, so a non-empty `partition_by_description`
-    /// here always means an ordinary window-frame partitioned sort.
     serializeSortDescription(partition_by_description, ctx.out);
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already

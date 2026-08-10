@@ -3,11 +3,8 @@
 
 -- Window functions can be executed under make_distributed_plan=1: WindowStep is serialized for remote
 -- execution and produces the same result as the non-distributed plan. This includes windows with
--- PARTITION BY: SortingStep can now serialize a non-empty partition_by_description, so the window's
--- feeding sort can be shipped to a worker rather than being rejected with SUPPORT_IS_DISABLED. The
--- window itself is not yet distributed across workers - it still runs gathered on one node, just like
--- a window without PARTITION BY; this file only checks that it now produces the same result as the
--- non-distributed plan instead of failing.
+-- PARTITION BY, which may run per bucket below a sorted gather (see
+-- 04837_distributed_plan_window_partition_shuffle for the plan shape); this file only checks results.
 
 DROP TABLE IF EXISTS t_window_dist;
 
