@@ -113,3 +113,59 @@ def test_detach_partition_removes_stranded_zookeeper_part(start_cluster):
 
     for node in [node1, node2]:
         node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_empty_working_set_removes_stranded_zookeeper_part(start_cluster):
+    """A drop range whose working set is already empty must still sweep ZooKeeper.
+
+    The sibling tests keep a covering part, so the removal set is non-empty and the
+    empty-set branch of executeDropRange is never taken.
+    """
+    table = "rmt_empty_set"
+    build_stranded_node(table)
+
+    # The first drop empties the working set, but leaves behind an Outdated empty covering part
+    # that the removal set still picks up, so wait for the table to hold no part in any state
+    # before re-stranding the node. Only the cleanup period matters here: that part is created
+    # with remove_time = 0, so old_parts_lifetime never holds it back.
+    node1.query(
+        f"ALTER TABLE {table} MODIFY SETTING cleanup_delay_period = 1, "
+        "max_cleanup_delay_period = 2"
+    )
+    node1.query(f"TRUNCATE TABLE {table} SETTINGS alter_sync = 2")
+    assert_eq_with_retry(
+        node1,
+        f"SELECT count() FROM system.parts WHERE table = '{table}'",
+        "0\n",
+        retry_count=60,
+        sleep_time=1,
+    )
+
+    zk = cluster.get_kazoo_client("zoo1")
+    zk.create(f"{parts_path(table)}/{STRANDED_PART}", b"")
+
+    # Positive control: the node is back and no part of the range is in the working set, which
+    # is what makes the drop below take the empty-set branch rather than the sibling tests' one.
+    assert (
+        node1.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{parts_path(table)}' "
+            f"AND name = '{STRANDED_PART}'"
+        ).strip()
+        == "1"
+    )
+    assert (
+        node1.query(f"SELECT count() FROM system.parts WHERE table = '{table}'").strip()
+        == "0"
+    )
+
+    node1.query(f"TRUNCATE TABLE {table} SETTINGS alter_sync = 2")
+
+    assert_eq_with_retry(
+        node1,
+        f"SELECT count() FROM system.zookeeper WHERE path = '{parts_path(table)}' "
+        f"AND name = '{STRANDED_PART}'",
+        "0\n",
+    )
+
+    for node in [node1, node2]:
+        node.query(f"DROP TABLE {table} SYNC")
