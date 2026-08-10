@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
