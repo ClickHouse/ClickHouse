@@ -226,6 +226,83 @@ SETTINGS
     format_template_row_format = '${t:CSV}|${n:CSV}\n',
     format_template_resultset_format = '${data}';
 
+SELECT 'CustomSeparated preserves a leading nested tuple boundary' FORMAT TSVRaw;
+SELECT tuple(tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 1::UInt8), 2::UInt8) AS t, 42 AS n
+FORMAT CustomSeparated
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '|',
+    format_custom_row_after_delimiter = '\n';
+
+SELECT 'Template preserves a leading nested tuple boundary' FORMAT TSVRaw;
+SELECT tuple(tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 1::UInt8), 2::UInt8) AS t, 42 AS n
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_template_row_format = '${t:CSV}|${n:CSV}\n',
+    format_template_resultset_format = '${data}';
+
+SELECT 'CustomSeparated trailing nested tuple fallback uses the whole field' FORMAT TSVRaw;
+SELECT tuple(1::UInt8, tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 2::UInt8)) AS t, 42 AS n
+FORMAT CustomSeparated
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '|',
+    format_custom_row_after_delimiter = '\n';
+
+SELECT 'Template trailing nested tuple fallback uses the whole field' FORMAT TSVRaw;
+SELECT tuple(1::UInt8, tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 2::UInt8)) AS t, 42 AS n
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_template_row_format = '${t:CSV}|${n:CSV}\n',
+    format_template_resultset_format = '${data}';
+
+SELECT 'CustomSeparated keeps a safe trailing nested tuple flattened' FORMAT TSVRaw;
+SELECT tuple(1::UInt8, tuple(2::UInt8, toDateTime('2024-01-17 08:30:00', 'UTC'))) AS t, 42 AS n
+FORMAT CustomSeparated
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '|',
+    format_custom_row_after_delimiter = '\n';
+
+SELECT 'Template keeps a safe trailing nested tuple flattened' FORMAT TSVRaw;
+SELECT tuple(1::UInt8, tuple(2::UInt8, toDateTime('2024-01-17 08:30:00', 'UTC'))) AS t, 42 AS n
+FORMAT Template
+SETTINGS
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_template_row_format = '${t:CSV}|${n:CSV}\n',
+    format_template_resultset_format = '${data}';
+
+SELECT 'CustomSeparated trailing nested tuple fallback round-trips' FORMAT TSVRaw;
+SELECT *
+FROM format(
+    CustomSeparated,
+    't Tuple(UInt8, Tuple(DateTime(\'UTC\'), UInt8)), n UInt8',
+    (
+        SELECT formatRow(
+            'CustomSeparated',
+            tuple(1::UInt8, tuple(toDateTime('2024-01-17 08:30:00', 'UTC'), 2::UInt8)),
+            42::UInt8)
+    ))
+FORMAT TSVRaw
+SETTINGS
+    input_format_custom_detect_header = 0,
+    output_format_csv_quote_date_time_types = 0,
+    format_csv_delimiter = ':',
+    format_custom_escaping_rule = 'CSV',
+    format_custom_field_delimiter = '|',
+    format_custom_row_after_delimiter = '\n';
+
 SELECT 'Template DateTime64 tuple follows trimmed whole-second output' FORMAT TSVRaw;
 SELECT tuple(toDateTime64('2024-01-18 09:45:01', 3, 'UTC'), 42::UInt8) AS t
 FORMAT Template

@@ -864,9 +864,17 @@ bool SerializationTuple::tryDeserializeTextCSV(IColumn & column, ReadBuffer & is
 
 bool SerializationTuple::textCSVMayNeedQuotes(const FormatSettings & settings) const
 {
-    for (const auto & element : elems)
+    const size_t size = elems.size();
+    const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
+    if (!settings.csv.serialize_tuple_into_separate_columns
+        || (!settings.csv.quote_date_time_types
+            && tupleMayUseWholeCSVField(settings, elems, interior_settings)))
+        return true;
+
+    for (size_t i = 0; i < size; ++i)
     {
-        if (element->textCSVMayNeedQuotes(settings))
+        const auto & element_settings = interior_settings && i + 1 < size ? *interior_settings : settings;
+        if (elems[i]->textCSVMayNeedQuotes(element_settings))
             return true;
     }
     return false;
@@ -875,9 +883,17 @@ bool SerializationTuple::textCSVMayNeedQuotes(const FormatSettings & settings) c
 bool SerializationTuple::textCSVNeedsQuotes(
     const IColumn & column, size_t row_num, const FormatSettings & settings) const
 {
-    for (size_t i = 0; i < elems.size(); ++i)
+    const size_t size = elems.size();
+    const auto interior_settings = getInteriorTupleCSVSettings(settings, size);
+    if (!settings.csv.serialize_tuple_into_separate_columns
+        || (!settings.csv.quote_date_time_types
+            && tupleNeedsWholeCSVField(settings, elems, interior_settings, column, row_num)))
+        return true;
+
+    for (size_t i = 0; i < size; ++i)
     {
-        if (elems[i]->textCSVNeedsQuotes(extractElementColumn(column, i), row_num, settings))
+        const auto & element_settings = interior_settings && i + 1 < size ? *interior_settings : settings;
+        if (elems[i]->textCSVNeedsQuotes(extractElementColumn(column, i), row_num, element_settings))
             return true;
     }
     return false;

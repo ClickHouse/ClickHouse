@@ -50,6 +50,20 @@ CustomSeparated inverse delimiters round-trip a whole temporal tuple
 (1,'2024-01-17 08:30:00')	42
 Template last temporal tuple element uses outer delimiter
 1:2024-01-17 08:30:00|42
+CustomSeparated preserves a leading nested tuple boundary
+"(('2024-01-17 08:30:00',1),2)"|42
+Template preserves a leading nested tuple boundary
+"(('2024-01-17 08:30:00',1),2)"|42
+CustomSeparated trailing nested tuple fallback uses the whole field
+"(1,('2024-01-17 08:30:00',2))"|42
+Template trailing nested tuple fallback uses the whole field
+"(1,('2024-01-17 08:30:00',2))"|42
+CustomSeparated keeps a safe trailing nested tuple flattened
+1:2:2024-01-17 08:30:00|42
+Template keeps a safe trailing nested tuple flattened
+1:2:2024-01-17 08:30:00|42
+CustomSeparated trailing nested tuple fallback round-trips
+(1,('2024-01-17 08:30:00',2))	42
 Template DateTime64 tuple follows trimmed whole-second output
 2024-01-18 09:45:01.42
 Template DateTime64 tuple keeps fractional delimiter safe
