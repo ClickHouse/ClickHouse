@@ -725,7 +725,11 @@ TEST_F(ResolvePoolTest, NoSampleBeforeDeadlineIsNotAFailure)
     /// The deadline is alive on entry and expires during that first refresh, so the helper
     /// crosses it having sampled nothing. There is no observation to judge, so it must return
     /// rather than report the absence of samples as a defect.
-    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, now() + 500us);
+    check_no_failed_address(1, resolver, addresses, failed_addr, metrics, now() + 5ms);
+
+    /// The armed refresh must have been spent, otherwise the deadline expired before the first
+    /// `resolve()` and the crossing this test pins was never reached.
+    ASSERT_EQ(0u, slow_refreshes);
 }
 
 TEST_F(ResolvePoolTest, BanWindowAnchoredOnFailTimestamp)
