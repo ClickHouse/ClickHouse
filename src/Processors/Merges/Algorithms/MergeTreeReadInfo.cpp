@@ -73,6 +73,9 @@ Block setVirtualRow(Chunk & chunk, const Block & header, bool apply_virtual_row_
 
             ordered_columns.push_back(pk_col->column);
         }
+        /// Only the sort columns are compared and the row is skipped before emission, so reuse the header column.
+        else if (col.column)
+            ordered_columns.push_back(col.column->cloneResized(1));
         else
             ordered_columns.push_back(col.type->createColumnConstWithDefaultValue(1));
     }
