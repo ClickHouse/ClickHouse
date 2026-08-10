@@ -2822,6 +2822,7 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
 
     ClickHouseVersion version(compatibility_value);
     const auto & settings_changes_history = getMergeTreeSettingsChangesHistory();
+    std::unordered_set<std::string_view> blocked_settings;
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
@@ -2834,6 +2835,13 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
         {
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
+
+            if (change.compatibility_mode == SettingsChangesHistory::SettingChange::CompatibilityMode::Stop)
+                blocked_settings.insert(final_name);
+
+            if (blocked_settings.contains(final_name))
+                continue;
+
             auto setting_index = MergeTreeSettingsTraits::Accessor::instance().find(final_name);
             if (setting_index == static_cast<size_t>(-1))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting in history: {}", final_name);
