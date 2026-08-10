@@ -1583,6 +1583,20 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out_checksums));
     }
 
+    /// `default_compression_codec.txt` records the part's own default codec as a fact:
+    /// `loadDefaultCompressionCodec` trusts it verbatim on every later load. On this path the codec is
+    /// inherited from the source part, and when the source's own codec could only be recovered
+    /// approximately (see `IMergeTreeDataPart::default_codec_is_approximate`) it is a guess, not a fact -
+    /// most columns are hardlinked here, so their data keeps whatever, possibly different, codec they
+    /// were written with. Writing the guess out would launder it into authoritative metadata: the next
+    /// load would consider the rewritten part exact and let a wrong guess suppress a due `RECOMPRESS`
+    /// TTL again (see `buildRecompressTTLInfo`), one generation after the flag prevented exactly that.
+    /// Leave the file out instead - its absence is how "this part's default codec is not recorded" is
+    /// already spelled on disk, and it is tolerated wherever the file is read or transferred
+    /// (`getFileNamesWithoutChecksums`, `DataPartsExchange`) - so the recovery, and the approximate flag
+    /// with it, runs again on every load of every descendant.
+    const bool codec_is_approximate = source_part->default_codec_is_approximate && codec == source_part->default_codec;
+    if (!codec_is_approximate)
     {
         auto out_comp = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
@@ -1648,6 +1662,9 @@ static void finalizeMutatedPart(
         new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     new_data_part->default_codec = codec;
+    /// Keep the provenance with the value: nothing on disk claims this codec is exact anymore, and the
+    /// in-memory part must not claim it either until it is reloaded from disk.
+    new_data_part->default_codec_is_approximate = codec_is_approximate;
 
     /// This hardlink / mutate-some-columns path assembles the checksums and index granularity in the
     /// default arenas (the full-rewrite path re-homes them in `MergedBlockOutputStream::finalizePartAsync`).
@@ -2984,8 +3001,11 @@ private:
         const bool is_explicit_recompression = isExplicitRecompression(
             ctx->metadata_snapshot->getRecompressionTTLs(), ctx->source_part->ttl_infos.recompression_ttl, ctx->time_of_mutation);
         /// Record the chosen codec on the part so that its projections merged by the sub-merge in
-        /// `MergeTask` (see the projection branch there) inherit the same codec.
+        /// `MergeTask` (see the projection branch there) inherit the same codec. The source part's codec
+        /// may be only an approximate recovery; carry that over so consumers of the new part treat it as
+        /// unknown as well (`finalizeMutatedPart` does the same for the on-disk side).
         ctx->new_data_part->default_codec = ctx->compression_codec;
+        ctx->new_data_part->default_codec_is_approximate = ctx->source_part->default_codec_is_approximate;
 
         if (ctx->mutating_pipeline_builder.initialized())
         {

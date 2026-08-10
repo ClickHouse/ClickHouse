@@ -4,6 +4,7 @@ import string
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -1000,3 +1001,129 @@ def test_default_codec_recovery_fenced_after_codec_alter(start_cluster):
     )
 
     node1.query("DROP TABLE codec_alter_fence SYNC")
+
+
+def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
+    # A part whose default codec could only be recovered approximately must stay "unknown" across a
+    # column-only mutation. Such a mutation hardlinks most of the part and rewrites only the updated
+    # columns, inheriting the source part's - guessed - default codec, and then used to serialize that
+    # guess into the new part's `default_compression_codec.txt`. After the next load the descendant
+    # looked exact, so `buildRecompressTTLInfo` started trusting the guess again and a wrong guess
+    # could suppress a due `RECOMPRESS` TTL one generation later - the very bug that
+    # `default_codec_is_approximate` prevents for the original part. The codec file must therefore not
+    # be written at all when the codec is a guess: its absence is how "this part's default codec is not
+    # recorded" is spelled on disk, so the recovery, and the flag with it, runs again on every load.
+    #
+    # `node5` pins `ZSTD(3)` for parts of any size, and the recovery reconstructs the codec from the
+    # column frame's method byte, which does not store the level - so the guess is `ZSTD(1)`, exactly
+    # the codec of the `RECOMPRESS` TTL below. Trusting it would make the recompression look like a
+    # no-op and the part would never be recompressed.
+    node5.query(
+        """
+    CREATE TABLE codec_provenance_mutation (
+        key UInt64,
+        ts DateTime,
+        data String,
+        extra UInt64
+    )
+    ENGINE = MergeTree ORDER BY key
+    TTL ts + INTERVAL 1 SECOND RECOMPRESS CODEC(ZSTD(1))
+    SETTINGS min_bytes_for_wide_part = 0, merge_with_recompression_ttl_timeout = 0
+    """
+    )
+
+    # The recompression TTL is due for the row inserted below, so hold TTL merges back until the setup
+    # is complete. This blocker does not affect mutations.
+    node5.query("SYSTEM STOP TTL MERGES codec_provenance_mutation")
+
+    node5.query(
+        "INSERT INTO codec_provenance_mutation VALUES (1, now() - INTERVAL 1 DAY, 'Hello world', 1)"
+    )
+
+    part_name = node5.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='codec_provenance_mutation' AND active AND rows > 0"
+    ).strip()
+
+    # While `default_compression_codec.txt` is present, the exact write-time default is known.
+    assert (
+        node5.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='codec_provenance_mutation' AND active AND rows > 0"
+        ).strip()
+        == "ZSTD(3)"
+    )
+
+    data_path = node5.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='codec_provenance_mutation'"
+    ).strip()
+
+    node5.query(f"ALTER TABLE codec_provenance_mutation DETACH PART '{part_name}'")
+    node5.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+    node5.query(f"ALTER TABLE codec_provenance_mutation ATTACH PART '{part_name}'")
+
+    # `ATTACH PART` gives the part a new block number, so re-read its name.
+    part_name = node5.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='codec_provenance_mutation' AND active AND rows > 0"
+    ).strip()
+
+    # The level was lost by the recovery: a guess that happens to equal the `RECOMPRESS` TTL codec.
+    assert (
+        node5.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='codec_provenance_mutation' AND active AND rows > 0"
+        ).strip()
+        == "ZSTD(1)"
+    )
+
+    # A column-only mutation: only `extra` is rewritten, everything else is hardlinked.
+    node5.query(
+        "ALTER TABLE codec_provenance_mutation UPDATE extra = extra + 1 WHERE 1",
+        settings={"mutations_sync": 2},
+    )
+
+    mutated_part_name = node5.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='codec_provenance_mutation' AND active AND rows > 0"
+    ).strip()
+    assert mutated_part_name != part_name
+
+    # The guessed codec must not have been laundered into authoritative on-disk metadata.
+    assert (
+        node5.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"test -e {data_path}{mutated_part_name}/default_compression_codec.txt && echo present || echo absent",
+            ]
+        ).strip()
+        == "absent"
+    )
+
+    # Reload the table from disk - this is where a persisted guess would start looking exact - and
+    # thereby also restart TTL merges for the table.
+    node5.query("DETACH TABLE codec_provenance_mutation")
+    node5.query("ATTACH TABLE codec_provenance_mutation")
+
+    assert node5.query("SELECT extra FROM codec_provenance_mutation").strip() == "2"
+
+    # The rewritten part's codec is still unknown, so the selector must reconsider the part for the due
+    # `RECOMPRESS` TTL even though the guessed `ZSTD(1)` equals the TTL's codec. The recompression is a
+    # merge of this single part, so it bumps the part level; with the guess trusted it never happens.
+    assert_eq_with_retry(
+        node5,
+        "SELECT count() FROM system.parts WHERE database='default' AND table='codec_provenance_mutation' "
+        "AND active AND rows > 0 AND level > 0",
+        "1",
+    )
+
+    # Recompressed with the TTL's codec, now recorded exactly.
+    assert (
+        node5.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='codec_provenance_mutation' AND active AND rows > 0"
+        ).strip()
+        == "ZSTD(1)"
+    )
+
+    node5.query("DROP TABLE codec_provenance_mutation SYNC")
