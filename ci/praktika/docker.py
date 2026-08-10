@@ -45,7 +45,13 @@ class Docker:
         print(
             f"Docker inspect results for {config.name}:{tag}: exit code [{code}], out [{out}], err [{err}]"
         )
-        if "no such manifest" in err:
+        # A successful inspect is the only evidence that the image is already there.
+        # A missing tag in an existing repository reports "no such manifest", but the
+        # first ever build of a new image reports "denied: requested access to the
+        # resource is denied" instead, because the repository itself does not exist
+        # yet - and treating that as "image exists" leaves the manifest merge with
+        # nothing to merge.
+        if code != 0:
             tags_substr = f" -t {config.name}:{tag}"
 
             from_tag = ""
