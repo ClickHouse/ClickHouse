@@ -174,18 +174,18 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 
 設定の一部をファイルの内容で置き換えることもできます。これには次の 2 つの方法があります。
 
-* *値の置換*: 要素に `incl` 属性がある場合、その値は参照先ファイルの内容で置き換えられます。デフォルトでは、置換用ファイルのパスは `/etc/metrika.xml` です。これは、サーバー設定の [`include_from`](/ja/reference/settings/server-settings/settings#include_from) 要素で変更できます。このファイルでは、置換値を `/clickhouse/substitution_name` 要素に指定します。`incl` で指定した置換が存在しない場合は、その旨がログに記録されます。ClickHouse が不足している置換をログに記録しないようにするには、`optional="true"` 属性を指定します (たとえば、[macros](/ja/reference/settings/server-settings/settings#macros) の設定) 。
+* *値の置換*: 要素に `incl` 属性がある場合、その値は参照先ファイルの内容で置き換えられます。デフォルトでは、置換用ファイルのパスは `/etc/metrika.xml` です。これは、サーバー設定の [`include_from`](/ja/reference/settings/server-settings/settings/other#include_from) 要素で変更できます。このファイルでは、置換値を `/clickhouse/substitution_name` 要素に指定します。`incl` で指定した置換が存在しない場合は、その旨がログに記録されます。ClickHouse が不足している置換をログに記録しないようにするには、`optional="true"` 属性を指定します (たとえば、[macros](/ja/reference/settings/server-settings/settings/other#macros) の設定) 。
 * *要素の置換*: 置換で要素全体を置き換えたい場合は、要素名として `include` を使用します。要素名 `include` は、`from_zk = "/path/to/node"` 属性と組み合わせて使用できます。この場合、要素の値は `/path/to/node` にある ZooKeeper ノードの内容で置き換えられます。これは、XML サブツリー全体を ZooKeeper ノードとして保存した場合にも機能し、その内容全体がソース要素に挿入されます。
 
 その例を以下に示します。
 
 ```xml
 <clickhouse>
-    <!-- `/profiles-in-zookeeper` ZKパスで見つかったXMLサブツリーを`<profiles>`要素に追加します。 -->
+    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
     <users>
-        <!-- `/users-in-zookeeper` ZKパスで見つかったサブツリーで`include`要素を置き換えます。 -->
+        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
@@ -199,7 +199,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 </div>
 
 対称暗号化を使用して、設定要素 (たとえば平文のパスワードや秘密鍵) を暗号化できます。
-そのためには、まず [暗号化コーデック](/ja/reference/statements/create/table#encryption-codecs) を設定し、次に暗号化する要素に、暗号化コーデック名を値に持つ属性 `encrypted_by` を追加します。
+そのためには、まず [暗号化コーデック](/ja/reference/statements/create/table/codec#encryption-codecs) を設定し、次に暗号化する要素に、暗号化コーデック名を値に持つ属性 `encrypted_by` を追加します。
 
 `from_zk`、`from_env`、`incl` 属性や `include` 要素とは異なり、前処理済みファイルでは置換 (つまり、暗号化された値の復号) は行われません。
 復号は、サーバープロセスの実行時にのみ行われます。
@@ -290,7 +290,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 </clickhouse>
 ```
 
-値の暗号化には、 (例) プログラム `encrypt_decrypt` を使用できます：
+値を暗号化するには、 (例) プログラム `encrypt_decrypt` を使用できます:
 
 ```bash
 ./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
@@ -301,7 +301,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 ```
 
 暗号化された設定要素を使用していても、前処理済みの設定ファイルには暗号化された要素がそのまま表示されます。
-これが ClickHouse のデプロイメントで問題になる場合は、対処方法が 2 つあります。前処理済みファイルの権限を 600 に設定するか、attribute `hide_in_preprocessed` を使用してください。
+これが ClickHouse のデプロイメントで問題になる場合は、対処方法が 2 つあります。前処理済みファイルの権限を 600 に設定するか、属性 `hide_in_preprocessed` を使用してください。
 
 例:
 

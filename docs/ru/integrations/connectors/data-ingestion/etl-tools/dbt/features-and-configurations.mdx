@@ -49,7 +49,7 @@ your_profile_name:
       local_db_prefix: [<empty string>] # Database prefix of local tables on shards for distributed materializations. If empty, it uses the same database as the distributed table.
       allow_automatic_deduplication: [False] # Enable ClickHouse automatic deduplication for Replicated tables
       tcp_keepalive: [False] # Native client only, specify TCP keepalive configuration. Specify custom keepalive settings as [idle_time_sec, interval_sec, probes].
-      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection.
+      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection. Note: disabling connection reuse adds a new TCP/TLS handshake per model, which increases total `dbt run` wall time (typically ~200-500 ms per model). Combine with `threads > 1` for the best balance between distribution and throughput.
       custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
       database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
       threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
@@ -138,8 +138,8 @@ seeds:
 
 dbt использует модель согласованности чтения после вставки. Она несовместима с кластерами ClickHouse, в которых больше одной реплики, если нельзя гарантировать, что все операции будут направляться в одну и ту же реплику. В повседневной работе с dbt вы можете и не столкнуться с проблемами, но в зависимости от конфигурации кластера есть несколько способов обеспечить такую гарантию:
 
-* Если вы используете кластер ClickHouse Cloud, достаточно задать `select_sequential_consistency: 1` в свойстве `custom_settings` вашего профиля. Подробнее об этой настройке можно узнать [здесь](/ru/reference/settings/session-settings#select_sequential_consistency).
-* Если вы используете самоуправляемый кластер, убедитесь, что все запросы dbt отправляются в одну и ту же реплику ClickHouse. Если перед ним установлен балансировщик нагрузки, попробуйте использовать механизм `replica aware routing`/`sticky sessions`, чтобы всегда попадать в одну и ту же реплику. Добавлять настройку `select_sequential_consistency = 1` в кластерах вне ClickHouse Cloud [не рекомендуется](/ru/reference/settings/session-settings#select_sequential_consistency).
+* Если вы используете кластер ClickHouse Cloud, достаточно задать `select_sequential_consistency: 1` в свойстве `custom_settings` вашего профиля. Подробнее об этой настройке можно узнать [здесь](/ru/reference/settings/session-settings/other#select_sequential_consistency).
+* Если вы используете самоуправляемый кластер, убедитесь, что все запросы dbt отправляются в одну и ту же реплику ClickHouse. Если перед ним установлен балансировщик нагрузки, попробуйте использовать механизм `replica aware routing`/`sticky sessions`, чтобы всегда попадать в одну и ту же реплику. Добавлять настройку `select_sequential_consistency = 1` в кластерах вне ClickHouse Cloud [не рекомендуется](/ru/reference/settings/session-settings/other#select_sequential_consistency).
 
 <div id="additional-clickhouse-macros">
   ## Дополнительные макросы ClickHouse

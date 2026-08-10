@@ -66,40 +66,49 @@ ClickHouse Keeper 既可作为 ZooKeeper 的独立替代方案使用，也可作
 
 内部协调设置位于 `<keeper_server>.<coordination_settings>` 部分，包含以下参数：
 
-| 参数                                 | 说明                                                                                                   | 默认值              |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------- |
-| `operation_timeout_ms`             | 单个客户端操作的超时时间 (毫秒)                                                                                    | `10000`          |
-| `min_session_timeout_ms`           | 客户端会话的最小超时时间 (毫秒)                                                                                    | `10000`          |
-| `session_timeout_ms`               | 客户端会话的最大超时时间 (毫秒)                                                                                    | `100000`         |
-| `dead_session_check_period_ms`     | ClickHouse Keeper 检查失效会话并将其移除的频率 (毫秒)                                                                | `500`            |
-| `heart_beat_interval_ms`           | ClickHouse Keeper 的 leader 向跟随者发送心跳的频率 (毫秒)                                                          | `500`            |
-| `election_timeout_lower_bound_ms`  | 如果跟随者在此时间间隔内未收到 leader 的心跳，则可以发起 leader 选举。该值必须小于或等于 `election_timeout_upper_bound_ms`。理想情况下，两者不应相等。 | `1000`           |
-| `election_timeout_upper_bound_ms`  | 如果跟随者在此时间间隔内未收到 leader 的心跳，则必须发起 leader 选举。                                                          | `2000`           |
-| `rotate_log_storage_interval`      | 单个文件中存储的日志记录数。                                                                                       | `100000`         |
-| `reserved_log_items`               | 执行合并整理前保留的协调日志记录数。                                                                                   | `100000`         |
-| `snapshot_distance`                | ClickHouse Keeper 创建新快照的频率 (按日志记录数计算) 。                                                              | `100000`         |
-| `snapshots_to_keep`                | 保留的快照数量。                                                                                             | `3`              |
-| `stale_log_gap`                    | 当 leader 认为跟随者已过时，并向其发送快照而不是日志时使用的阈值。                                                                | `10000`          |
-| `fresh_log_gap`                    | 节点变为最新状态时的阈值。                                                                                        | `200`            |
-| `max_requests_batch_size`          | 请求发送到 RAFT 前，按请求数计算的批次最大大小。                                                                          | `100`            |
-| `force_sync`                       | 每次写入协调日志时都调用 `fsync`。                                                                                | `true`           |
-| `quorum_reads`                     | 通过整个 RAFT 共识流程执行读取请求，将其按写入方式处理，速度相近。                                                                 | `false`          |
-| `raft_logs_level`                  | 协调相关的文本日志级别 (trace、debug 等) 。                                                                        | `system default` |
-| `auto_forwarding`                  | 允许将写入请求从跟随者转发给 leader。                                                                               | `true`           |
-| `shutdown_timeout`                 | 等待内部连接完成并关闭的时间 (毫秒) 。                                                                                | `5000`           |
-| `startup_timeout`                  | 如果服务器未在指定超时时间内连接到其他 quorum 参与者，则会终止 (毫秒) 。                                                           | `30000`          |
-| `async_replication`                | 启用异步复制。在提升性能的同时保留所有读写保证。此设置默认禁用，以避免破坏向后兼容性。                                                          | `false`          |
-| `latest_logs_cache_size_threshold` | 最新日志条目的内存缓存最大总大小。                                                                                    | `1GiB`           |
-| `commit_logs_cache_size_threshold` | 提交下一步所需日志条目的内存缓存最大总大小。                                                                               | `500MiB`         |
-| `disk_move_retries_wait_ms`        | 文件在磁盘之间移动时发生失败后，两次重试之间的等待时间。                                                                         | `1000`           |
-| `disk_move_retries_during_init`    | 初始化期间，文件在磁盘之间移动时发生失败后的重试次数。                                                                          | `100`            |
-| `experimental_use_rocksdb`         | 使用 RocksDB 作为后端存储。                                                                                   | `0`              |
+| 参数                                        | 说明                                                                                                   | 默认值              |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------- |
+| `operation_timeout_ms`                    | 单个客户端操作的超时时间 (毫秒)                                                                                    | `10000`          |
+| `min_session_timeout_ms`                  | 客户端会话的最小超时时间 (毫秒)                                                                                    | `10000`          |
+| `session_timeout_ms`                      | 客户端会话的最大超时时间 (毫秒)                                                                                    | `100000`         |
+| `dead_session_check_period_ms`            | ClickHouse Keeper 检查失效会话并将其移除的频率 (毫秒)                                                                | `500`            |
+| `heart_beat_interval_ms`                  | ClickHouse Keeper 的 leader 向跟随者发送心跳的频率 (毫秒)                                                          | `500`            |
+| `election_timeout_lower_bound_ms`         | 如果跟随者在此时间间隔内未收到 leader 的心跳，则可以发起 leader 选举。该值必须小于或等于 `election_timeout_upper_bound_ms`。理想情况下，两者不应相等。 | `1000`           |
+| `election_timeout_upper_bound_ms`         | 如果跟随者在此时间间隔内未收到 leader 的心跳，则必须发起 leader 选举。                                                          | `2000`           |
+| `rotate_log_storage_interval`             | 单个文件中存储的日志记录数。                                                                                       | `100000`         |
+| `reserved_log_items`                      | 执行合并整理前保留的协调日志记录数。                                                                                   | `100000`         |
+| `snapshot_distance`                       | ClickHouse Keeper 创建新快照的频率 (按日志记录数计算) 。                                                              | `100000`         |
+| `snapshots_to_keep`                       | 保留的快照数量。                                                                                             | `3`              |
+| `stale_log_gap`                           | 当 leader 认为跟随者已过时，并向其发送快照而不是日志时使用的阈值。                                                                | `10000`          |
+| `fresh_log_gap`                           | 节点变为最新状态时的阈值。                                                                                        | `200`            |
+| `max_requests_batch_size`                 | 请求发送到 RAFT 前，按请求数计算的批次最大大小。                                                                          | `100`            |
+| `force_sync`                              | 每次写入协调日志时都调用 `fsync`。                                                                                | `true`           |
+| `quorum_reads`                            | 通过整个 RAFT 共识流程执行读取请求，将其按写入方式处理，速度相近。                                                                 | `false`          |
+| `raft_logs_level`                         | 协调相关的文本日志级别 (trace、debug 等) 。                                                                        | `system default` |
+| `auto_forwarding`                         | 允许将写入请求从跟随者转发给 leader。                                                                               | `true`           |
+| `shutdown_timeout`                        | 等待内部连接完成并关闭的时间 (毫秒) 。                                                                                | `5000`           |
+| `startup_timeout`                         | 如果服务器未在指定超时时间内连接到其他 quorum 参与者，则会终止 (毫秒) 。                                                           | `30000`          |
+| `async_replication`                       | 启用异步复制。在提升性能的同时保留所有读写保证。此设置默认禁用，以避免破坏向后兼容性。                                                          | `false`          |
+| `latest_logs_cache_size_threshold`        | 最新日志条目的内存缓存最大总大小。                                                                                    | `1GiB`           |
+| `commit_logs_cache_size_threshold`        | 已弃用。如果未设置 `log_readahead_commit_window_bytes`，则使用此设置。                                                | -                |
+| `commit_logs_cache_entry_count_threshold` | 已弃用，无任何作用。请改用 `log_readahead_commit_window_bytes`。                                                   | -                |
+| `log_readahead_enabled`                   | 为更新日志追赶读取 (跟随者复制) 启用按 peer 解码的预读。                                                                    | `false`          |
+| `log_readahead_window_bytes`              | 每个 peer reader 缓冲的已解码条目的最大字节数。应至少与典型的 append-entries 批次一样大。                                          | `64MiB`          |
+| `log_readahead_max_peer_readers`          | 并发的每 peer 预读 reader 的最大数量。                                                                           | `8`              |
+| `log_readahead_eviction_timeout_ms`       | 非活动的每 peer 预读 reader 或 commit reader 被逐出前的空闲超时时间 (后续未命中会重新创建它) 。                                     | `30000`          |
+| `log_readahead_pool_threads`              | 专用预读线程池中的线程数。`0` 会从 `log_readahead_max_peer_readers` 推导该值。                                           | `0`              |
+| `log_readahead_serve_wait_timeout_ms`     | 回退到直接读取前，等待后台预读填充的最长时间。                                                                              | `200`            |
+| `log_readahead_chunk_size`                | 预读填充任务中每个块解码的日志条目数。                                                                                  | `16`             |
+| `log_readahead_commit_window_bytes`       | 提交线程前预先缓冲的已解码日志条目的最大总大小。`0` 会禁用提交预读 (提交操作会逐个从磁盘读取条目) 。                                               | `500MiB`         |
+| `disk_move_retries_wait_ms`               | 文件在磁盘之间移动时发生失败后，两次重试之间的等待时间。                                                                         | `1000`           |
+| `disk_move_retries_during_init`           | 初始化期间，文件在磁盘之间移动时发生失败后的重试次数。                                                                          | `100`            |
+| `experimental_use_rocksdb`                | 使用 RocksDB 作为后端存储。                                                                                   | `0`              |
 
-Quorum 配置位于 `<keeper_server>.<raft_configuration>` 部分，包含各服务器的描述。
+quorum 的配置位于 `<keeper_server>.<raft_configuration>` 部分，其中包含服务器描述。
 
-整个 quorum 只有一个参数 `secure`，用于为 quorum 参与者之间的通信启用加密连接。如果节点之间的内部通信需要 SSL 连接，可将该参数设为 `true`；否则可不指定。
+整个 quorum 唯一的参数是 `secure`，用于启用 quorum 参与者之间通信的加密连接。如果节点之间的内部通信需要 SSL 连接，可将该参数设为 `true`；否则可不指定。
 
-每个 `<server>` 的主要参数有：
+每个 `<server>` 的主要参数为：
 
 * `id` — quorum 中的服务器标识符。
 * `hostname` — 该服务器所在主机的主机名。
@@ -721,17 +730,25 @@ Keeper 实例的一种可能存储配置如下所示：
 </div>
 
 为尽量减少从磁盘读取的数据量，Keeper 会在内存中缓存日志条目。
-如果请求较大，日志条目会占用过多内存，因此缓存日志的数量设有上限。
-该上限由以下两个配置控制：
+如果请求较大，日志条目会占用过多内存，因此会限制缓存的日志量。
+最新日志缓存的上限由以下参数控制：
 
-* `latest_logs_cache_size_threshold` - 缓存中保存的最新日志总大小
-* `commit_logs_cache_size_threshold` - 接下来需要提交的后续日志总大小
+* `latest_logs_cache_size_threshold` - 缓存中存储的最新日志总大小
 
-如果默认值过大，可以通过调低这两个配置来减少内存占用。
+如果默认值过大，可以通过调低此配置来减少内存使用量。
+
+后续提交所需的日志条目由已解码的预读读取器提供，其大小由
+`log_readahead_commit_window_bytes` 控制 (`0` 会禁用提交预读) 。此设置取代了
+已弃用的 `commit_logs_cache_size_threshold` 和 `commit_logs_cache_entry_count_threshold` 设置，
+后两者仅为保持配置兼容性而保留 (如果未设置前者，它仍会映射到 `log_readahead_commit_window_bytes`；
+后者则不起作用) 。当 `log_readahead_enabled` 为 `true` 时，同一预读机制还会为 follower
+副本追赶读取提供服务；有关 peer 端的调优参数，请参阅[内部协调设置](#internal-coordination-settings)中的
+`log_readahead_window_bytes`、`log_readahead_max_peer_readers`、`log_readahead_eviction_timeout_ms`、
+`log_readahead_pool_threads`、`log_readahead_serve_wait_timeout_ms` 和 `log_readahead_chunk_size`。
 
 <Note>
-  你可以使用 `pfev` 命令查看从各个缓存和文件中读取的日志量。
-  你也可以使用 Prometheus 端点提供的指标来跟踪这两个缓存的当前大小。
+  您可以使用 `pfev` 命令查看从各缓存和文件读取的日志量。
+  还可以通过 Prometheus 端点提供的指标跟踪两个缓存的当前大小。
 </Note>
 
 <div id="prometheus">

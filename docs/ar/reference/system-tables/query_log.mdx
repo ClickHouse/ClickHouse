@@ -17,11 +17,11 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 يخزن البيانات الوصفية والإحصاءات الخاصة بالاستعلامات المنفذة، مثل وقت البدء، والمدة، ورسائل الخطأ، واستخدام الموارد، وغيرها من تفاصيل التنفيذ. ولا يخزن نتائج الاستعلامات.
 
-يمكنك تغيير إعدادات تسجيل الاستعلامات في قسم [query&#95;log](/ar/reference/settings/server-settings/settings#query_log) ضمن إعدادات الخادوم.
+يمكنك تغيير إعدادات تسجيل الاستعلامات في قسم [query&#95;log](/ar/reference/settings/server-settings/settings/query#query_log) ضمن إعدادات الخادوم.
 
-يمكنك تعطيل تسجيل الاستعلامات عن طريق تعيين [log&#95;queries = 0](/ar/reference/settings/session-settings#log_queries). ولا نوصي بإيقاف التسجيل لأن المعلومات الموجودة في هذا الجدول مهمة لحل المشكلات.
+يمكنك تعطيل تسجيل الاستعلامات عن طريق تعيين [log&#95;queries = 0](/ar/reference/settings/session-settings/log-queries#log_queries). ولا نوصي بإيقاف التسجيل لأن المعلومات الموجودة في هذا الجدول مهمة لحل المشكلات.
 
-تُحدد فترة تفريغ البيانات في المعلَمة `flush_interval_milliseconds` ضمن قسم إعدادات الخادوم [query&#95;log](/ar/reference/settings/server-settings/settings#query_log). ولإجبار التفريغ، استخدم الاستعلام [SYSTEM FLUSH LOGS](/ar/reference/statements/system#flush-logs).
+تُحدد فترة تفريغ البيانات في المعلَمة `flush_interval_milliseconds` ضمن قسم إعدادات الخادوم [query&#95;log](/ar/reference/settings/server-settings/settings/query#query_log). ولإجبار التفريغ، استخدم الاستعلام [SYSTEM FLUSH LOGS](/ar/reference/statements/system#flush-logs).
 
 لا يحذف ClickHouse البيانات من الجدول تلقائيًا. راجع [المقدمة](/ar/reference/system-tables/overview#system-tables-introduction) لمزيد من التفاصيل.
 
@@ -36,9 +36,9 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 2. إذا حدث خطأ أثناء معالجة الاستعلام، يُنشأ حدثان بالنوعين `QueryStart` و`ExceptionWhileProcessing`.
 3. إذا حدث خطأ قبل بدء تنفيذ الاستعلام، يُنشأ حدث واحد بالنوع `ExceptionBeforeStart`.
 
-يمكنك استخدام الإعداد [log&#95;queries&#95;probability](/ar/reference/settings/session-settings#log_queries_probability) لتقليل عدد الاستعلامات المسجلة في جدول `query_log`.
+يمكنك استخدام الإعداد [log&#95;queries&#95;probability](/ar/reference/settings/session-settings/log-queries#log_queries_probability) لتقليل عدد الاستعلامات المسجلة في جدول `query_log`.
 
-يمكنك استخدام الإعداد [log&#95;formatted&#95;queries](/ar/reference/settings/session-settings#log_formatted_queries) لتسجيل الاستعلامات المنسقة في العمود `formatted_query`.
+يمكنك استخدام الإعداد [log&#95;formatted&#95;queries](/ar/reference/settings/session-settings/log#log_formatted_queries) لتسجيل الاستعلامات المنسقة في العمود `formatted_query`.
 
 <div id="columns">
   ## الأعمدة
@@ -94,7 +94,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `os_user` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم مستخدم نظام التشغيل الذي يشغّل clickhouse-client.
 * `client_hostname` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم مضيف جهاز العميل الذي يعمل عليه clickhouse-client أو عميل TCP آخر.
 * `client_name` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم clickhouse-client أو اسم عميل TCP آخر.
-* `client_agent` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — وكيل البرمجة بالذكاء الاصطناعي الذي استدعى العميل (على سبيل المثال، `claude-code` أو `cursor`)، ويُكتشف من متغيرات البيئة. تكون القيمة فارغة إذا لم يُكتشف أي وكيل.
+* `client_agent` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — وكيل البرمجة بالذكاء الاصطناعي الذي استدعى العميل (مثل `claude-code`، `cursor`)، ويُكتشف من متغيرات البيئة. تكون القيمة فارغة إذا لم يُكتشف أي وكيل.
 * `client_revision` ([UInt32](/ar/reference/data-types/int-uint)) — المراجعة الخاصة بـ clickhouse-client أو عميل TCP آخر.
 * `client_version_major` ([UInt32](/ar/reference/data-types/int-uint)) — الإصدار الرئيسي لـ clickhouse-client أو عميل TCP آخر.
 * `client_version_minor` ([UInt32](/ar/reference/data-types/int-uint)) — الإصدار الثانوي لـ clickhouse-client أو عميل TCP آخر.

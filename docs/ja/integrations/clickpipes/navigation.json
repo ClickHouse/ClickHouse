@@ -4,6 +4,7 @@
       "group": "オブジェクトストレージ向け ClickPipes",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
+        "ja/integrations/clickpipes/home",
         {
           "group": "Amazon S3",
           "icon": "/images/integrations/logos/amazon_s3_logo.svg",
@@ -14,7 +15,7 @@
           ]
         },
         {
-          "group": "Google Cloud Storage",
+          "group": "Google Cloud ストレージ",
           "icon": "/images/integrations/logos/gcs.svg",
           "pages": [
             "ja/integrations/clickpipes/object-storage/google-cloud-storage/overview",
@@ -30,13 +31,13 @@
             "ja/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
           ]
         }
-      ],
-      "root": "ja/integrations/clickpipes/home"
+      ]
     },
     {
       "group": "Postgres 向け ClickPipes",
       "icon": "/images/integrations/logos/postgresql.svg",
       "pages": [
+        "ja/integrations/clickpipes/postgres/index",
         "ja/integrations/clickpipes/postgres/deduplication",
         "ja/integrations/clickpipes/postgres/ordering-keys",
         "ja/integrations/clickpipes/postgres/toast",
@@ -47,7 +48,6 @@
         "ja/integrations/clickpipes/postgres/postgres-generated-columns",
         "ja/integrations/clickpipes/postgres/parallel-initial-load",
         "ja/integrations/clickpipes/postgres/lifecycle",
-        "ja/integrations/clickpipes/postgres/auth",
         {
           "group": "操作",
           "pages": [
@@ -76,20 +76,19 @@
             "ja/integrations/clickpipes/postgres/source/planetscale"
           ]
         }
-      ],
-      "root": "ja/integrations/clickpipes/postgres/index"
+      ]
     },
     {
       "group": "Kafka 向け ClickPipes",
       "icon": "/images/integrations/logos/kafka.svg",
       "pages": [
+        "ja/integrations/clickpipes/kafka/index",
         "ja/integrations/clickpipes/kafka/create-kafka-clickpipe",
         "ja/integrations/clickpipes/kafka/schema-registries",
         "ja/integrations/clickpipes/kafka/reference",
         "ja/integrations/clickpipes/kafka/best-practices",
         "ja/integrations/clickpipes/kafka/faq"
-      ],
-      "root": "ja/integrations/clickpipes/kafka/index"
+      ]
     },
     {
       "group": "Kinesis 向け ClickPipes",
@@ -97,8 +96,7 @@
       "pages": [
         "ja/integrations/clickpipes/kinesis/overview",
         "ja/integrations/clickpipes/kinesis/auth"
-      ],
-      "root": "ja/integrations/clickpipes/kinesis/index"
+      ]
     },
     {
       "group": "GCP Pub/Sub 向け ClickPipes",
@@ -106,13 +104,13 @@
       "pages": [
         "ja/integrations/clickpipes/pubsub/overview",
         "ja/integrations/clickpipes/pubsub/auth"
-      ],
-      "root": "ja/integrations/clickpipes/pubsub/index"
+      ]
     },
     {
       "group": "MySQL 向け ClickPipes",
       "icon": "/images/integrations/logos/mysql.svg",
       "pages": [
+        "ja/integrations/clickpipes/mysql/index",
         "ja/integrations/clickpipes/mysql/faq",
         "ja/integrations/clickpipes/mysql/datatypes",
         "ja/integrations/clickpipes/mysql/parallel-initial-load",
@@ -131,7 +129,7 @@
           ]
         },
         {
-          "group": "ソース",
+          "group": "ログソース",
           "pages": [
             "ja/integrations/clickpipes/mysql/source/rds",
             "ja/integrations/clickpipes/mysql/source/aurora",
@@ -142,13 +140,13 @@
             "ja/integrations/clickpipes/mysql/source/generic-maria"
           ]
         }
-      ],
-      "root": "ja/integrations/clickpipes/mysql/index"
+      ]
     },
     {
       "group": "MongoDB 向け ClickPipes",
       "icon": "/images/integrations/logos/mongodb.svg",
       "pages": [
+        "ja/integrations/clickpipes/mongodb/index",
         "ja/integrations/clickpipes/mongodb/datatypes",
         "ja/integrations/clickpipes/mongodb/quickstart",
         "ja/integrations/clickpipes/mongodb/lifecycle",
@@ -166,15 +164,14 @@
           ]
         },
         {
-          "group": "ソース",
+          "group": "ログソース",
           "pages": [
             "ja/integrations/clickpipes/mongodb/source/atlas",
             "ja/integrations/clickpipes/mongodb/source/generic",
             "ja/integrations/clickpipes/mongodb/source/documentdb"
           ]
         }
-      ],
-      "root": "ja/integrations/clickpipes/mongodb/index"
+      ]
     },
     {
       "group": "BigQuery 向け ClickPipes",
@@ -193,10 +190,20 @@
       ]
     },
     {
+      "group": "ネットワーク",
+      "icon": "network-wired",
+      "pages": [
+        "ja/integrations/clickpipes/networking/index",
+        "ja/integrations/clickpipes/networking/static-ips",
+        "ja/integrations/clickpipes/networking/aws-privatelink",
+        "ja/integrations/clickpipes/networking/gcp-psc",
+        "ja/integrations/clickpipes/networking/azure-privatelink"
+      ]
+    },
+    {
       "group": "その他",
       "icon": "ellipsis",
       "pages": [
-        "ja/integrations/clickpipes/aws-privatelink",
         "ja/integrations/clickpipes/dynamodb",
         "ja/integrations/clickpipes/monitoring"
       ]

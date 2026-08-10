@@ -18,9 +18,11 @@ doc_type: 'guide'
     curl https://clickhouse.com/ | sh
     ```
 
-    على Linux وmacOS، يثبّت هذا أيضًا [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
-    في `~/.local/bin` (مع وصلة رمزية `chctl`) بحيث يمكنك إدارة إصدارات ClickHouse
-    وخوادمه المحلية.
+    على Linux وmacOS، يثبّت هذا أيضًا [`clickhousectl`](/ar/install/clickhousectl)،
+    وهي واجهة سطر الأوامر لـ ClickHouse، في `~/.local/bin` (مع اسم مستعار `chctl`). يساعدك `clickhousectl`
+    على تثبيت وإدارة عدة إصدارات محلية من ClickHouse، وتشغيل الخوادم في
+    الخلفية، وإدارة ClickHouse Cloud. راجع [صفحة تثبيت clickhousectl](/ar/install/clickhousectl)
+    للاطلاع على سير العمل المستند إلى واجهة سطر الأوامر.
 
     ولتثبيت الملف التنفيذي `clickhouse` فقط من دون `clickhousectl`، اضبط
     `CLICKHOUSE_ONLY=1`:

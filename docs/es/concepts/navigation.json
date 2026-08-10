@@ -7,6 +7,7 @@
       "expanded": true,
       "group": "Fundamentos",
       "pages": [
+        "es/concepts/core-concepts/index",
         "es/concepts/core-concepts/glossary",
         "es/concepts/core-concepts/parts",
         "es/concepts/core-concepts/partitions",
@@ -14,28 +15,28 @@
         "es/concepts/core-concepts/primary-indexes",
         "es/concepts/core-concepts/query-parallelism",
         "es/concepts/core-concepts/academic-overview"
-      ],
-      "root": "es/concepts/core-concepts/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Conceptos de ClickHouse",
       "pages": [
+        "es/concepts/features/index",
         {
           "group": "Vistas materializadas",
           "pages": [
+            "es/concepts/features/materialized-views/index",
             "es/concepts/features/materialized-views/incremental-materialized-view",
             "es/concepts/features/materialized-views/refreshable-materialized-view",
             "es/concepts/features/materialized-views/cascading-materialized-views"
-          ],
-          "root": "es/concepts/features/materialized-views/index"
+          ]
         },
         {
           "group": "Diccionarios",
           "pages": [
+            "es/concepts/features/dictionaries/index",
             "es/concepts/features/dictionaries/best-practices"
-          ],
-          "root": "es/concepts/features/dictionaries/index"
+          ]
         },
         {
           "group": "Proyecciones",
@@ -47,6 +48,7 @@
         {
           "group": "Rendimiento",
           "pages": [
+            "es/concepts/features/performance/index",
             "es/concepts/features/performance/prewhere",
             "es/concepts/features/performance/allocation-profiling",
             "es/concepts/features/performance/allocation-profiling-old",
@@ -76,14 +78,13 @@
                 "es/concepts/features/performance/troubleshoot/sampling-query-profiler"
               ]
             }
-          ],
-          "root": "es/concepts/features/performance/index"
+          ]
         },
         {
           "group": "Operaciones",
           "pages": [
             {
-              "group": "Inserción",
+              "group": "Insertar",
               "pages": [
                 "es/concepts/features/operations/insert/inserting-data",
                 "es/concepts/features/operations/insert/asyncinserts",
@@ -94,31 +95,29 @@
               ]
             },
             {
-              "group": "Selección",
+              "group": "Seleccionar",
               "pages": [
                 "es/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "Actualización",
+              "group": "Actualizar",
               "pages": [
+                "es/concepts/features/operations/update/index",
                 "es/concepts/features/operations/update/overview",
-                "es/concepts/features/operations/update/on-fly-mutations",
                 "es/concepts/features/operations/update/replacing-merge-tree"
-              ],
-              "root": "es/concepts/features/operations/update/index"
+              ]
             },
             {
-              "group": "Eliminación",
+              "group": "Eliminar",
               "pages": [
+                "es/concepts/features/operations/delete/index",
                 "es/concepts/features/operations/delete/overview",
-                "es/concepts/features/operations/delete/delete-mutations",
                 "es/concepts/features/operations/delete/drop-partition",
                 "es/concepts/features/operations/delete/lightweight-delete",
                 "es/concepts/features/operations/delete/truncate",
                 "es/concepts/features/operations/delete/ttl"
-              ],
-              "root": "es/concepts/features/operations/delete/index"
+              ]
             }
           ]
         },
@@ -126,7 +125,7 @@
           "group": "Configuración",
           "pages": [
             {
-              "group": "Ajustes",
+              "group": "Configuración",
               "pages": [
                 "es/concepts/features/configuration/settings/overview",
                 "es/concepts/features/configuration/settings/settings-query-level",
@@ -158,19 +157,21 @@
         {
           "group": "Seguridad y autenticación",
           "pages": [
+            "es/concepts/features/security/index",
             "es/concepts/features/security/access-rights",
             "es/concepts/features/security/network-ports",
             {
               "group": "TLS",
               "pages": [
+                "es/concepts/features/security/tls/index",
                 "es/concepts/features/security/tls/configuring-tls",
                 "es/concepts/features/security/tls/configuring-tls-acme-client"
-              ],
-              "root": "es/concepts/features/security/tls/index"
+              ]
             },
             {
               "group": "Autenticadores externos",
               "pages": [
+                "es/concepts/features/security/external-authenticators/index",
                 {
                   "group": "SSL",
                   "pages": [
@@ -188,14 +189,12 @@
                 "es/concepts/features/security/external-authenticators/http",
                 "es/concepts/features/security/external-authenticators/kerberos",
                 "es/concepts/features/security/external-authenticators/jwt"
-              ],
-              "root": "es/concepts/features/security/external-authenticators/index"
+              ]
             }
-          ],
-          "root": "es/concepts/features/security/index"
+          ]
         },
         {
-          "group": "Copia de seguridad y restauración",
+          "group": "Copias de seguridad y restauración",
           "pages": [
             "es/concepts/features/backup-restore/overview",
             "es/concepts/features/backup-restore/local-disk",
@@ -208,11 +207,13 @@
         {
           "group": "Interfaces",
           "pages": [
+            "es/concepts/features/interfaces/native-clients-interfaces-index",
             "es/concepts/features/interfaces/cli",
             "es/concepts/features/interfaces/client",
             {
               "group": "Drivers e interfaces",
               "pages": [
+                "es/concepts/features/interfaces/overview",
                 "es/concepts/features/interfaces/http",
                 "es/concepts/features/interfaces/tcp",
                 "es/concepts/features/interfaces/jdbc",
@@ -223,8 +224,7 @@
                 "es/concepts/features/interfaces/ssh",
                 "es/concepts/features/interfaces/grpc",
                 "es/concepts/features/interfaces/arrowflight"
-              ],
-              "root": "es/concepts/features/interfaces/overview"
+              ]
             },
             "es/concepts/features/interfaces/cpp",
             "es/concepts/features/interfaces/schema-inference",
@@ -235,15 +235,16 @@
             "es/concepts/features/interfaces/web-terminal",
             {
               "group": "Clientes de terceros",
-              "pages": [],
-              "root": "es/concepts/features/interfaces/third-party/index"
+              "pages": [
+                "es/concepts/features/interfaces/third-party/index"
+              ]
             }
-          ],
-          "root": "es/concepts/features/interfaces/native-clients-interfaces-index"
+          ]
         },
         {
           "group": "Herramientas y utilidades",
           "pages": [
+            "es/concepts/features/tools-and-utilities/index",
             "es/concepts/features/tools-and-utilities/backupview",
             "es/concepts/features/tools-and-utilities/clickhouse-benchmark",
             "es/concepts/features/tools-and-utilities/clickhouse-compressor",
@@ -255,16 +256,15 @@
             "es/concepts/features/tools-and-utilities/clickhouse-obfuscator",
             "es/concepts/features/tools-and-utilities/odbc-bridge",
             "es/concepts/features/tools-and-utilities/static-files-disk-uploader"
-          ],
-          "root": "es/concepts/features/tools-and-utilities/index"
+          ]
         }
-      ],
-      "root": "es/concepts/features/index"
+      ]
     },
     {
       "expanded": true,
       "group": "Buenas prácticas",
       "pages": [
+        "es/concepts/best-practices/index",
         "es/concepts/best-practices/choosing-a-primary-key",
         "es/concepts/best-practices/select-data-type",
         "es/concepts/best-practices/use-materialized-views",
@@ -276,9 +276,7 @@
         "es/concepts/best-practices/avoid-optimize-final",
         "es/concepts/best-practices/avoidnullablecolumns",
         "es/concepts/best-practices/json-type"
-      ],
-      "root": "es/concepts/best-practices/index"
+      ]
     }
-  ],
-  "root": "es/concepts/index"
+  ]
 }

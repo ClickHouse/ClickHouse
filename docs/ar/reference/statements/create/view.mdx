@@ -49,7 +49,8 @@ SELECT a, b, c FROM (SELECT ...)
   ## العرض ذو المعلمات
 </div>
 
-تشبه العروض ذات المعلمات العروض العادية، لكنها يمكن أن تُنشأ بمعلمات لا تُفسَّر فورًا. ويمكن استخدام هذه العروض مع دوال الجداول، بحيث يُستخدَم اسم العرض اسمًا للدالة، وتُمرَّر قيم المعلمات كوسائط لها.
+تشبه العروض ذات المعلمات العروض العادية، لكنها يمكن أن تُنشأ بمعلمات لا تُفسَّر فورًا.
+ويمكن استخدام هذه العروض مع دوال الجداول، بحيث يُستخدَم اسم العرض اسمًا للدالة، وتُمرَّر قيم المعلمات كوسائط لها.
 
 ```sql
 CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
@@ -59,6 +60,14 @@ CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Co
 
 ```sql
 SELECT * FROM view(column1=value1, column2=value2 ...)
+```
+
+بما أن العرض ذو المعلمات يعتمد على قيم المعلمات، فلا يكون له مخطط عند عدم توفير المعلمات.
+وهذا يعني عدم وجود معلومات عن العروض ذات المعلمات في جدول `system.columns`.
+كما أن استعلامات `DESCRIBE` لن تعمل إلا عند توفير المعلمات.
+
+```sql
+DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
 <div id="materialized-view">
@@ -164,7 +173,7 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 <Note>
   نظرًا إلى أن `POPULATE` يعمل مثل `CREATE TABLE ... AS SELECT ...`، فله القيود التالية:
 
-  * غير مدعوم مع Replicated database
+  * غير مدعوم مع قاعدة بيانات Replicated
   * غير مدعوم في ClickHouse Cloud
 
   وبدلًا من ذلك، يمكن استخدام `INSERT ... SELECT` منفصل.
@@ -173,8 +182,6 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 يمكن أن يحتوي استعلام `SELECT` على `DISTINCT` و`GROUP BY` و`ORDER BY` و`LIMIT`. لاحظ أن التحويلات المقابلة تُنفَّذ بشكل مستقل على كل كتلة من البيانات المُدرجة. فعلى سبيل المثال، إذا كان `GROUP BY` مضبوطًا، تُجمَّع البيانات أثناء الإدراج، ولكن فقط ضمن حزمة واحدة من البيانات المُدرجة. ولن تُجمَّع البيانات لاحقًا. والاستثناء هو عند استخدام `ENGINE` ينفذ تجميع البيانات بشكل مستقل، مثل `SummingMergeTree`.
 
 إذا كان العرض المادي يستخدم البنية `TO [db.]name`، فيمكنك `DETACH` العرض، ثم تشغيل `ALTER` على الجدول الهدف، ثم `ATTACH` العرض الذي فُصل (`DETACH`) سابقًا.
-
-لاحظ أن العرض المادي يتأثر بإعداد [optimize&#95;on&#95;insert](/ar/reference/settings/session-settings#optimize_on_insert). إذ تُدمَج البيانات قبل إدراجها في العرض.
 
 تبدو العروض مثل الجداول العادية. فعلى سبيل المثال، تُدرَج في نتيجة استعلام `SHOW TABLES`.
 
@@ -197,16 +204,22 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 | `NONE`          | -                                                                   | -                                                                                                                 |
 
 <Note>
-  يُعد الخيار `SQL SECURITY NONE` خيارًا Deprecated. سيتمكن أي مستخدم لديه صلاحية إنشاء عروض باستخدام `SQL SECURITY NONE` من تنفيذ أي query عشوائي.
+  يُعد الخيار `SQL SECURITY NONE` خيارًا مُهمَل. سيتمكن أي مستخدم لديه صلاحية إنشاء عروض باستخدام `SQL SECURITY NONE` من تنفيذ أي query عشوائي.
   لذلك، يلزم وجود `GRANT ALLOW SQL SECURITY NONE TO <user>` لإنشاء عرض باستخدام هذا الخيار.
 </Note>
 
-إذا لم يتم تحديد `DEFINER`/`SQL SECURITY`، فستُستخدم القيم الافتراضية:
+إذا لم يتم تحديد `DEFINER`/`SQL SECURITY`، فتعتمد النتيجة على إعداد الخادم [`ignore_empty_sql_security_in_create_view_query`](/ar/reference/settings/server-settings/settings/other#ignore_empty_sql_security_in_create_view_query).
 
-* `SQL SECURITY`: `INVOKER` للعروض العادية و`DEFINER` للعروض المادية ([قابل للتهيئة عبر الإعدادات](/ar/reference/settings/session-settings#default_normal_view_sql_security))
-* `DEFINER`: `CURRENT_USER` ([قابل للتهيئة عبر الإعدادات](/ar/reference/settings/session-settings#default_view_definer))
+باستخدام قيمته الافتراضية `true`، يُخزَّن الاستعلام كما كُتب ويحصل العرض على نوع أمان SQL فارغ. وعندئذٍ يعمل العرض العادي بصلاحيات المستدعي، أما العرض المادي ذو الجدول الهدف المحدد صراحةً، فتُتخطى عمليات التحقق من الوصول إلى ذلك الجدول: إذ لا يتطلب الإدراج في جدول المصدر امتياز `INSERT` على الجدول الهدف، ولا تتطلب القراءة من العرض امتياز `SELECT` عليه.
 
-إذا جرى Attach لعرض بدون تحديد `DEFINER`/`SQL SECURITY`، فستكون القيمة الافتراضية هي `SQL SECURITY NONE` للعرض المادي و`SQL SECURITY INVOKER` للعرض العادي.
+باستخدام `false`، تُكتب القيم الافتراضية التالية في تعريف العرض عند إنشائه:
+
+* `SQL SECURITY`: `INVOKER` للعروض العادية (قابل للتهيئة عبر [`default_normal_view_sql_security`](/ar/reference/settings/session-settings/default#default_normal_view_sql_security)) و`DEFINER` للعروض المادية (قابل للتهيئة عبر [`default_materialized_view_sql_security`](/ar/reference/settings/session-settings/default#default_materialized_view_sql_security))
+* `DEFINER`: `CURRENT_USER` (قابل للتهيئة عبر [`default_view_definer`](/ar/reference/settings/session-settings/default#default_view_definer))
+
+تتلقى العروض المادية القابلة للتحديث هذه القيم الافتراضية دائمًا، بغض النظر عن الإعداد.
+
+يحتفظ العرض بنوع أمان SQL من تعريفه المخزن عند إرفاقه أو إعادة تحميله عند بدء تشغيل الخادم، لذا يحتفظ العرض المخزن دون `DEFINER`/`SQL SECURITY` بنوع أمان SQL الفارغ.
 
 لتغيير أمان SQL لعرض موجود، استخدم
 
@@ -320,7 +333,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 في الوضع غير `APPEND`، لا يُدعَم إلا التحديث المنسَّق. أما إذا أردت تحديثًا غير منسَّق، فاستخدم قاعدة بيانات `Atomic` واستعلام `CREATE ... ON CLUSTER` لإنشاء عروض مادية قابلة للتحديث على جميع النُسخ المتماثلة.
 
-يتم التنسيق عبر Keeper. ويُحدَّد مسار znode بواسطة إعداد الخادم [default&#95;replica&#95;path](/ar/reference/settings/server-settings/settings#default_replica_path).
+يتم التنسيق عبر Keeper. ويُحدَّد مسار znode بواسطة إعداد الخادم [default&#95;replica&#95;path](/ar/reference/settings/server-settings/settings/default-replica#default_replica_path).
 
 <div id="refresh-dependencies">
   ### تبعيات إعادة التحديث
@@ -498,13 +511,15 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
   ## Window View
 </div>
 
-<ExperimentalBadge />
+<DeprecatedBadge />
 
 <CloudNotSupportedBadge />
 
-<Info>
-  هذه ميزة تجريبية وقد تتغير في الإصدارات القادمة على نحوٍ غير متوافق مع الإصدارات السابقة. لتمكين استخدام Window View واستعلام `WATCH`، استخدم الإعداد [allow&#95;experimental&#95;window&#95;view](/ar/reference/settings/session-settings#allow_experimental_window_view). أدخل الأمر `set allow_experimental_window_view = 1`.
-</Info>
+<Warning>
+  **مهجورة**
+
+  Window View مهجورة وقد تُزال في إصدار مستقبلي. لا يزال استخدامها مشروطًا بالإعداد [allow&#95;experimental&#95;window&#95;view](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_window_view) (`SET allow_experimental_window_view = 1`) ولا يُوصى باستخدامها في التطبيقات الجديدة.
+</Warning>
 
 ```sql
 CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]

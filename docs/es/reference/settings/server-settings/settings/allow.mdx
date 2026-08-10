@@ -42,6 +42,8 @@ Esto equivale a aplicar una restricción readonly a todas las funcionalidades `E
 
 Prohíbe crear un usuario sin contraseña, a menos que se especifique explícitamente &#39;IDENTIFIED WITH no&#95;password&#39;.
 
+* **Predeterminado:** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -52,6 +54,8 @@ Prohíbe crear un usuario sin contraseña, a menos que se especifique explícita
 
 Indica si se permite o no el tipo de contraseña no segura `no_password`.
 
+* **Predeterminado:** `true`
+
 ```xml
 <allow_no_password>1</allow_no_password>
 ```
@@ -61,6 +65,8 @@ Indica si se permite o no el tipo de contraseña no segura `no_password`.
 </div>
 
 Indica si se permiten o no los tipos de contraseña en texto plano (inseguros).
+
+* **Predeterminado:** `true`
 
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>

@@ -130,7 +130,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
 
 export const IntegrationsBanner = () => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = '/ko/integrations/home';
+    const href = '/integrations/home';
     return (
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
@@ -260,25 +260,25 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-        .ch-goal-icon { color: #374151; }
-        .dark .ch-goal-icon { color: #FAFF69; }
-        /* Integrations 배너: 라이트/다크 모드 모두에서 강조 색상 테두리 */
-        html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
-        html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
-        .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
-        .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
-        /* 홈페이지에서 사이드바를 즉시 숨김(깜빡임 방지) */
-        #sidebar { display: none !important; }
-        /* 사이드바가 숨겨져 있으므로 내비게이션 바가 전체 너비를 사용하도록 설정 */
-        #navbar-transition-maple {
-          width: 100vw !important;
-          left: 0 !important;
-          margin-left: 0 !important;
-          /* 내비게이션 바 자체의 오른쪽 패딩(3rem)과 일치 */
-          padding-left: 3rem !important;
-          justify-content: flex-start !important;
-        }
-        `}
+          .ch-goal-icon { color: #374151; }
+          .dark .ch-goal-icon { color: #FAFF69; }
+          /* Integrations 배너: 라이트/다크 모드 모두에서 강조 색상 테두리 */
+          html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
+          html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
+          .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
+          .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
+          /* 홈페이지에서 사이드바를 즉시 숨김(깜빡임 방지) */
+          #sidebar { display: none !important; }
+          /* 사이드바가 숨겨져 있으므로 내비게이션 바가 전체 너비를 사용하도록 설정 */
+          #navbar-transition-maple {
+            width: 100vw !important;
+            left: 0 !important;
+            margin-left: 0 !important;
+            /* 내비게이션 바 자체의 오른쪽 패딩(3rem)과 일치 */
+            padding-left: 3rem !important;
+            justify-content: flex-start !important;
+          }
+          `}
 </style>
 
 <PageWrapper>
@@ -295,7 +295,7 @@ export const PageWrapper = ({ children }) => {
       </div>
 
       <h1 className="block text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
-        <HighlightedClickHouse />로 구축을 시작하세요
+        <HighlightedClickHouse />로 시작하세요
       </h1>
 
       <div className="mx-auto px-4 -mt-5 text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
@@ -325,13 +325,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouse란?", href: "/ko/get-started/about/intro" },
-        { label: "설치", href: "/ko/get-started/setup/cloud" },
-        { label: "빠른 시작", href: "/ko/get-started/quickstarts/home" },
-        { label: "ClickHouse 개념", href: "/ko/concepts/core-concepts/index" },
-        { label: "샘플 데이터셋", href: "/ko/get-started/sample-datasets/index" },
-        { label: "마이그레이션 가이드", href: "/ko/get-started/migrate/overview" },
-        { label: "모범 사례", href: "/ko/concepts/best-practices/index" },
+        { label: "ClickHouse란?", href: "/get-started/about/intro" },
+        { label: "설치", href: "/get-started/setup/cloud" },
+        { label: "빠른 시작", href: "/get-started/quickstarts/home" },
+        { label: "ClickHouse 개념", href: "/concepts/core-concepts/index" },
+        { label: "샘플 데이터셋", href: "/get-started/sample-datasets/index" },
+        { label: "마이그레이션 가이드", href: "/get-started/migrate/overview" },
+        { label: "모범 사례", href: "/concepts/best-practices/index" },
     ]}
         />
 
@@ -346,10 +346,10 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "데이터 모델링", href: "/ko/guides/clickhouse/data-modelling/schema-design" },
-        { label: "성능 최적화", href: "/ko/guides/clickhouse/performance-and-monitoring/query-optimization" },
-        { label: "ClickHouse Cloud", href: "/ko/products/cloud/guides" },
-        { label: "사용 사례", href: "/ko/guides/use-cases" }
+        { label: "데이터 모델링", href: "/guides/clickhouse/data-modelling/schema-design" },
+        { label: "성능 최적화", href: "/guides/clickhouse/performance-and-monitoring/query-optimization" },
+        { label: "ClickHouse Cloud", href: "/products/cloud/guides" },
+        { label: "사용 사례", href: "/guides/use-cases" }
     ]}
         />
 
@@ -364,13 +364,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "SQL 레퍼런스", href: "/ko/reference/statements" },
-        { label: "설정", href: "/ko/reference/settings/index" },
-        { label: "함수", href: "/ko/reference/functions/regular-functions/overview" },
-        { label: "엔진", href: "/ko/reference/engines/engines" },
-        { label: "시스템 테이블", href: "/ko/reference/system-tables" },
-        { label: "포맷", href: "/ko/reference/formats/index" },
-        { label: "데이터 타입", href: "/ko/reference/data-types/index" }
+        { label: "SQL 레퍼런스", href: "/reference/statements" },
+        { label: "설정", href: "/reference/settings/index" },
+        { label: "함수", href: "/reference/functions/regular-functions/overview" },
+        { label: "엔진", href: "/reference/engines/engines" },
+        { label: "시스템 테이블", href: "/reference/system-tables" },
+        { label: "포맷", href: "/reference/formats/index" },
+        { label: "데이터 타입", href: "/reference/data-types/index" }
     ]}
         />
 
@@ -385,12 +385,12 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouse Cloud", href: "/ko/products/cloud/getting-started/cloud-get-started" },
-        { label: "ClickStack", href: "/ko/clickstack" },
-        { label: "Managed Postgres", href: "/ko/products/managed-postgres/overview" },
+        { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
+        { label: "ClickStack", href: "/clickstack" },
+        { label: "ClickHouse Managed Postgres", href: "/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
-        { label: "chDB", href: "/ko/chdb" },
-        { label: "Kubernetes Operator", href: "/ko/products/kubernetes-operator/overview" },
+        { label: "chDB", href: "/chdb" },
+        { label: "Kubernetes Operator", href: "/products/kubernetes-operator/overview" },
     ]}
         />
       </div>
@@ -436,11 +436,11 @@ export const PageWrapper = ({ children }) => {
               <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">학습할 내용:</p>
           </>}
               links={[
-              { label: "1. 일반적인 데이터 소스에서 최소한의 작업으로 데이터를 수집하는 방법", href: "/ko/integrations" },
-              { label: "2. analytics와 확장성을 위해 데이터를 구성하는 모범 사례", href: "/ko/guides/clickhouse/data-modelling/schema-design" },
-              { label: "3. 대규모 데이터셋을 실시간으로 쿼리하는 방법", href: "/ko/get-started/use-cases/real-time-analytics" },
-              { label: "4. 그 위에 대시보드, 알림, 이벤트 기반 기능을 구축하는 방법", href: "/ko/get-started/use-cases/data-warehousing" },
-              { label: "5. 높은 성능을 유지하면서 비용을 낮추는 팁", href: "/ko/concepts/best-practices/index" },
+              { label: "1. 일반적인 데이터 소스에서 최소한의 작업으로 데이터를 수집하는 방법", href: "/integrations" },
+              { label: "2. analytics와 확장성을 위해 데이터를 구성하는 모범 사례", href: "/guides/clickhouse/data-modelling/schema-design" },
+              { label: "3. 대규모 데이터셋을 실시간으로 쿼리하는 방법", href: "/get-started/use-cases/real-time-analytics" },
+              { label: "4. 그 위에 대시보드, 알림, 이벤트 기반 기능을 구축하는 방법", href: "/get-started/use-cases/data-warehousing" },
+              { label: "5. 높은 성능을 유지하면서 비용을 낮추는 팁", href: "/concepts/best-practices/index" },
           ]}
             />
           </div>
@@ -448,7 +448,7 @@ export const PageWrapper = ({ children }) => {
           <div className="flex flex-col gap-4">
             <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="ClickHouse 기반의 올인원 관측성 스택으로, logs, 메트릭, traces, 세션 리플레이, 오류에 대해 매우 빠른 쿼리와 강력한 집계 기능을 제공합니다." href="/ko/clickstack/overview" extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="ClickHouse와 네이티브로 통합된 빠르고 확장 가능하며 엔터프라이즈급 Postgres 서비스입니다. 트랜잭션에는 Postgres를, analytics에는 ClickHouse를 손쉽게 함께 사용할 수 있습니다." href="/ko/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="ClickHouse와 네이티브로 통합된 빠르고 확장 가능하며 엔터프라이즈급 Postgres 서비스입니다. 트랜잭션에는 Postgres를, analytics에는 ClickHouse를 손쉽게 함께 사용할 수 있습니다." href="/ko/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 
@@ -479,26 +479,40 @@ export const PageWrapper = ({ children }) => {
               <p className="mb-2 text-[#9ca3af] text-[13px]">터미널에서 실행하세요:</p>
 
               <CodeBlock language="bash">
-                {`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}
+                {`claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user`}
               </CodeBlock>
             </Tab>
 
             <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
               <p className="mb-2 text-[#9ca3af] text-[13px]"><code>claude&#95;desktop&#95;config.json</code>에 추가하세요:</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
+            </Tab>
+
+            <Tab title="Codex" icon="/images/logo-codex.svg">
+              <p className="mb-2 text-[#9ca3af] text-[13px]">터미널에서 실행하세요:</p>
+
+              <CodeBlock language="bash">
+                {`codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp`}
+              </CodeBlock>
             </Tab>
 
             <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
               <p className="mb-2 text-[#9ca3af] text-[13px]"><code>.cursor/mcp.json</code>에 추가하세요:</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
             </Tab>
 
             <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
               <p className="mb-2 text-[#9ca3af] text-[13px]"><code>~/.codeium/windsurf/mcp&#95;config.json</code>에 추가하세요:</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
             </Tab>
           </Tabs>
         </div>

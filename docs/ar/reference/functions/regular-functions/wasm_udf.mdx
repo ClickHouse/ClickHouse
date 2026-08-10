@@ -232,16 +232,16 @@ RETURNS return_type
 
 * `function_name`: اسم الدالة في ClickHouse. قد يختلف عن اسم الدالة المُصدَّرة في الوحدة.
 * `FROM 'module_name' :: 'source_function_name'`: اسم وحدة WASM المُحمَّلة واسم الدالة في وحدة WASM المراد استخدامها (تكون القيمة الافتراضية `function&#95;name`)
-* `ARGUMENTS`: قائمة بأسماء الوسائط وأنواعها (الأسماء اختيارية وتُستخدم مع تنسيقات التسلسل التي تدعم الحقول المُسمّاة)
-* `ABI`: إصدار واجهة الثنائية للتطبيقات
+* `ARGUMENTS`: قائمة بأسماء الوسيطات وأنواعها (الأسماء اختيارية وتُستخدم مع تنسيقات التسلسل التي تدعم الحقول المُسمّاة)
+* `ABI`: إصدار واجهة التطبيق الثنائية
   * `ROW_DIRECT`: مواءمة مباشرة للأنواع، مع معالجة صفًا بصف
   * `BUFFERED_V1`: معالجة قائمة على الكتل مع التسلسل
   * `ASSEMBLYSCRIPT`: معالجة صفًا بصف للوحدات الناتجة عن مصرّف [AssemblyScript](https://www.assemblyscript.org). تُطابَق الأنواع الرقمية مع الأنواع البدائية في AssemblyScript؛ ويُطابَق `String` في ClickHouse مع `string` في AssemblyScript.
-* `DETERMINISTIC`: يصرّح بأن الدالة حتمية — أي إنها تعيد دائمًا الناتج نفسه للمدخلات نفسها. عند تحديد ذلك، قد يطوي ClickHouse الاستدعاءات الثابتة التي تكون فيها جميع الوسائط ثوابت: تُقيَّم الدالة مرة واحدة في مرحلة تحليل الاستعلام، ثم يُعاد استخدام النتيجة لكل صف.
+* `DETERMINISTIC`: يصرّح بأن الدالة حتمية — أي إنها تعيد دائمًا الناتج نفسه للمدخلات نفسها. عند تحديد ذلك، قد يطوي ClickHouse الاستدعاءات الثابتة التي تكون فيها جميع الوسيطات ثوابت: تُقيَّم الدالة مرة واحدة في مرحلة تحليل الاستعلام، ثم يُعاد استخدام النتيجة لكل صف.
 * `SHA256_HASH`: قيمة التجزئة المتوقعة للوحدة للتحقق منها (تُملأ تلقائيًا إذا أُهملت)، ويمكن استخدامها لضمان تحميل وحدة WASM الصحيحة عبر النسخ المتماثلة المختلفة.
 * `SETTINGS`: إعدادات خاصة بكل دالة
-  * `serialization_format` String — تنسيق التسلسل الذي يتطلبه ABI. القيم المدعومة: `MsgPack` و`JSONEachRow` و`CSV` و`TSV` و`TSVRaw` و`RowBinary` و`Buffers`. القيمة الافتراضية: `MsgPack`. يجب أن تُرجع التنسيقات المعتمدة على الكتل مثل `Buffers` عمودًا واحدًا يطابق نوعه توقيع الدالة المُصرَّح به.
-  * `webassembly_udf_enable_fuel` Bool — يفعّل حصة fuel محدودة للدالة. القيمة الافتراضية: `true`. عند ضبطه على `false`، يُتجاهل إعداد الاستعلام `webassembly_udf_max_fuel` لهذه الدالة. قد يؤدي تعطيل حدود fuel إلى تحسين الأداء عند استخدام المحرك `wasmtime`. ومع ذلك، بالنسبة إلى شيفرة الضيف غير الموثوق بها أو التي تحتوي على أخطاء، فقد يزيد ذلك من خطر استمرار التنفيذ بلا قيود.
+  * `serialization_format` String — التنسيق المستخدم لتسلسل كتل الوسيطات المُمرّرة إلى الوحدة وتحليل النتيجة المُعادة. يُستخدم فقط بواسطة `ABI BUFFERED_V1`. القيم المدعومة: `MsgPack` و`JSONEachRow` و`CSV` و`TSV` و`TSVRaw` و`RowBinary` و`Buffers`. القيمة الافتراضية: `MsgPack`. يجب أن تُرجع التنسيقات المعتمدة على الكتل مثل `Buffers` عمودًا واحدًا يطابق نوعه توقيع الدالة المُصرَّح به.
+  * `webassembly_udf_enable_fuel` Bool — يفعّل حصة وقود محدودة للدالة. القيمة الافتراضية: `true`. عند ضبطه على `false`، يُتجاهل إعداد الاستعلام `webassembly_udf_max_fuel` لهذه الدالة. قد يؤدي تعطيل حدود الوقود إلى تحسين الأداء عند استخدام المحرك `wasmtime`. ومع ذلك، بالنسبة إلى شيفرة الضيف غير الموثوق بها أو التي تحتوي على أخطاء، فقد يزيد ذلك من خطر استمرار التنفيذ بلا قيود.
 
 <div id="abis-versions">
   ## إصدارات ABI
@@ -283,15 +283,30 @@ CREATE FUNCTION my_func ARGUMENTS (Int32, UInt64, Float32) RETURNS Float64 ...
 </div>
 
 <Note>
-  واجهة ABI هذه تجريبية وقابلة للتغيير في الإصدارات المستقبلية.
+  واجهة ABI هذه تجريبية وقد تتغير في الإصدارات المستقبلية.
 </Note>
 
-تعالج الكتل بالكامل دفعةً واحدة باستخدام (إلغاء)التسلسل عبر ذاكرة WASM. وهي تدعم أي أنواع للوسائط وأنواع الإرجاع.
+يعالج كتلًا كاملة دفعةً واحدة باستخدام (إلغاء) التسلسل عبر ذاكرة WASM. ويدعم أي أنواع للوسيطات وأنواع الإرجاع.
 
-تُنسخ البيانات المُسلسلة إلى ذاكرة WASM وتُمرَّر إلى دالة UDF على شكل مؤشر إلى المخزن المؤقت (الذي يتكوّن من مؤشر إلى البيانات وحجم البيانات)، مع عدد الصفوف في المُدخلات. لذلك، فإن الدالة التي يعرّفها المستخدم في WASM تقبل دائمًا وسيطين من النوع `i32` وتُرجع قيمة واحدة من النوع `i32`.
-تعالج شيفرة الضيف البيانات وتُرجع مؤشرًا إلى مخزن النتيجة المؤقت الذي يحتوي على بيانات النتيجة المُسلسلة.
+يُتبادل البيانات عبر مخازن مؤقتة في ذاكرة WASM. المخزن المؤقت بنية بحجم 8 بايتات تحتوي على مؤشر إلى البيانات وحجمها (قيمتا `u32` بترتيب little-endian). تُمرَّر المخازن المؤقتة باستخدام مقابض، أي مؤشرات إلى هذه البنية لا إلى البيانات نفسها. يجب أن تصدّر شيفرة الضيف دالتين لإنشاء هذه المخازن المؤقتة وإتلافها.
 
-يجب أن توفّر شيفرة الضيف دالتين لإنشاء هذه المخازن المؤقتة وتدميرها.
+لكل كتلة إدخال، يقوم ClickHouse بما يلي:
+
+1. يُسلسل أعمدة الوسيطات باستخدام `serialization_format` الخاصة بالدالة (`MsgPack` افتراضيًا). تكتب التنسيقات المعتمدة على الصفوف القيم صفًا تلو الآخر، مع قيم الوسيطات بالترتيب المُعلن في `ARGUMENTS`؛ أما التنسيقات ذات الحقول المسماة فتستخدم أسماء الوسيطات، لذا يجب الإعلان عنها في `ARGUMENTS` عند استخدام هذه التنسيقات.
+2. يستدعي `clickhouse_create_buffer` الذي تصدّره الوحدة، ثم ينسخ البيانات المتسلسلة إلى الذاكرة التي يشير إليها المخزن المؤقت المُعاد.
+3. يستدعي الدالة المعرّفة من قبل المستخدم بوسيطتي `i32`: مقبض مخزن الإدخال المؤقت (`0` إذا لم تكن للدالة وسائط) وعدد الصفوف. تُرجع الدالة قيمة `i32` واحدة، وهي مقبض مخزن النتائج المؤقت الذي تخصصه شيفرة الضيف بنفسها؛ وتؤدي إعادة `0` إلى فشل الاستعلام مع ظهور خطأ.
+4. يقرأ مخزن النتائج المؤقت: يجب أن يحتوي على عمود واحد بالضبط، وبنفس عدد الصفوف تمامًا، ومُسلسَل بالتنسيق نفسه. بالنسبة إلى التنسيقات ذات الحقول المسماة، مثل `JSONEachRow`، يجب أن يكون اسم عمود النتائج `result`.
+5. يستدعي `clickhouse_destroy_buffer` لكلٍّ من مقابض مخزن الإدخال المؤقت (إن وُجد) ومخزن النتائج المؤقت. يجب ألا تحرر شيفرة الضيف مخزن النتائج المؤقت بنفسها، وألا تعيد مقبض الإدخال كنتيجة، وإلا فسيُتلَف مرتين.
+
+تُستدعى الدالة مرة واحدة لكل كتلة إدخال: يُقسَّم الاستعلام الكبير إلى عدة كتل بواسطة مسار تنفيذ الاستعلام (ويمكن أيضًا تقييد الحد الأقصى لعدد الصفوف لكل استدعاء باستخدام الإعداد `webassembly_udf_max_input_block_size`)، لذا فإن عدد الصفوف المُمرَّر في كل استدعاء هو حجم تلك الكتلة، وليس حجم الاستعلام بأكمله.
+
+<Note>
+  تحدد التنسيقات المختارة البايتات الدقيقة داخل المخازن المؤقتة، ويجب أن تفك شيفرة الضيف ترميزها وتعيد ترميزها بنفسها. وبشكل خاص، بالنسبة إلى قيم `String`:
+
+  * `MsgPack`: يكتب ClickHouse قيم `String` باستخدام عائلة الأنواع `bin` (`0xc4`/`0xc5`/`0xc6`) وليس عائلة `str`. تُقبل كلتا العائلتين عند تحليل النتيجة.
+  * `RowBinary`: تُسبق كل قيمة `String` بطولها بالبايتات على هيئة varint غير موقّع ([LEB128](https://en.wikipedia.org/wiki/LEB128))، وليس عددًا صحيحًا بعرض ثابت.
+  * `JSONEachRow`: يجب أن يكون كل صف نتائج كائنًا يتضمن المفتاح `result`، مثلًا `{"result":"value"}`.
+</Note>
 
 ```
 (module
@@ -314,21 +329,116 @@ CREATE FUNCTION my_func ARGUMENTS (Int32, UInt64, Float32) RETURNS Float64 ...
 )
 ```
 
-مثال لتعريفات C:
+مثال كامل بلغة C المستقلة ذاتيًا: تعكس `str_reverse` بايتات كل سلسلة إدخال باستخدام `serialization_format = 'RowBinary'`. يُعاد استخدام مثيلات الوحدة عبر الكتل، لذا يجب أن تحرر `clickhouse_destroy_buffer` الذاكرة فعليًا — وهنا يُعاد ضبط المُخصِّص بعد إتلاف جميع المخازن المؤقتة.
 
 ```c
+#include <stdint.h>
+
 typedef struct {
     uint8_t * data;
     uint32_t size;
 } ClickhouseBuffer;
 
-ClickhouseBuffer * clickhouse_create_buffer(uint32_t size) { /* ... */ }
+#define HEAP_SIZE (1 << 24)
+static _Alignas(16) uint8_t heap[HEAP_SIZE];
+static uint32_t heap_pos = 0;
+static uint32_t live_buffers = 0;
 
-void clickhouse_destroy_buffer(ClickhouseBuffer * data) { /* ... */ }
+__attribute__((export_name("clickhouse_create_buffer")))
+ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
+{
+    uint32_t total = (sizeof(ClickhouseBuffer) + size + 15u) & ~15u;
+    if (heap_pos + total > HEAP_SIZE)
+        return 0; /* a zero handle makes the host fail the query with an error */
+    ClickhouseBuffer * buf = (ClickhouseBuffer *) &heap[heap_pos];
+    buf->data = &heap[heap_pos + sizeof(ClickhouseBuffer)];
+    buf->size = size;
+    heap_pos += total;
+    ++live_buffers;
+    return buf;
+}
 
-/// Example user-defined functions
-ClickhouseBuffer * user_defined_function1(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
-ClickhouseBuffer * user_defined_function2(ClickhouseBuffer * span, uint32_t n) { /* ... */ }
+__attribute__((export_name("clickhouse_destroy_buffer")))
+void clickhouse_destroy_buffer(ClickhouseBuffer * buf)
+{
+    if (--live_buffers == 0)
+        heap_pos = 0;
+}
+
+/* RowBinary prefixes each String with its byte length as an unsigned varint (LEB128) */
+static uint64_t read_varint(const uint8_t ** pp)
+{
+    uint64_t value = 0;
+    for (int shift = 0;; shift += 7)
+    {
+        uint8_t b = *(*pp)++;
+        value |= (uint64_t)(b & 0x7f) << shift;
+        if (!(b & 0x80))
+            return value;
+    }
+}
+
+static void write_varint(uint8_t ** pp, uint64_t value)
+{
+    while (value >= 0x80)
+    {
+        *(*pp)++ = (uint8_t)(value | 0x80);
+        value >>= 7;
+    }
+    *(*pp)++ = (uint8_t)value;
+}
+
+/* Reverses the bytes of each input string */
+__attribute__((export_name("str_reverse")))
+ClickhouseBuffer * str_reverse(ClickhouseBuffer * input, uint32_t num_rows)
+{
+    ClickhouseBuffer * out = clickhouse_create_buffer(input->size);
+    if (!out)
+        return 0;
+    const uint8_t * in = input->data;
+    uint8_t * o = out->data;
+    for (uint32_t row = 0; row < num_rows; ++row)
+    {
+        uint64_t len = read_varint(&in);
+        write_varint(&o, len);
+        for (uint64_t i = 0; i < len; ++i)
+            o[i] = in[len - 1 - i];
+        in += len;
+        o += len;
+    }
+    out->size = (uint32_t)(o - out->data);
+    return out;
+}
+```
+
+أنشئ باستخدام clang و`wasm-ld` (المرفق مع LLVM/lld):
+
+```bash
+clang --target=wasm32 -ffreestanding -nostdlib -fno-builtin -c str_reverse.c
+wasm-ld --no-entry str_reverse.o -o str_reverse.wasm
+```
+
+يجب أن تكون الدالات ظاهرة ضمن صادرات الوحدة: إما بتمييزها باستخدام `__attribute__((export_name("...")))` كما هو موضح أعلاه، أو بالربط باستخدام `wasm-ld --export-all`. يمنع الخيار `-fno-builtin` ‏clang من تحويل حلقات البايت البسيطة إلى استدعاءات لـ `memcpy`/`memset`، وهما غير متاحين دون مكتبة قياسية.
+
+حمّل الوحدة وأنشئ الدالة:
+
+```bash
+cat str_reverse.wasm | clickhouse client -q "INSERT INTO system.webassembly_modules (name, code) SELECT 'str_reverse', code FROM input('code String') FORMAT RawBlob"
+```
+
+```sql
+CREATE FUNCTION str_reverse LANGUAGE WASM ABI BUFFERED_V1
+FROM 'str_reverse' :: 'str_reverse'
+ARGUMENTS (s String) RETURNS String
+SETTINGS serialization_format = 'RowBinary';
+
+SELECT str_reverse(toString(number + 100)) FROM numbers(3);
+```
+
+```text
+001
+101
+201
 ```
 
 <div id="abi-assemblyscript">

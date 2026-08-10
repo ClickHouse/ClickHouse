@@ -175,7 +175,7 @@ Ce qui donne la configuration suivante :
 
 Il est également possible de remplacer des parties de la configuration par le contenu de fichiers. Cela peut se faire de deux façons :
 
-* *Substitution de valeurs* : si un élément possède l’attribut `incl`, sa valeur sera remplacée par le contenu du fichier référencé. Par défaut, le chemin vers le fichier contenant les substitutions est `/etc/metrika.xml`. Cela peut être modifié dans l’élément [`include_from`](/fr/reference/settings/server-settings/settings#include_from) de la configuration du serveur. Les valeurs de substitution sont spécifiées dans les éléments `/clickhouse/substitution_name` de ce fichier. Si une substitution spécifiée dans `incl` n’existe pas, cela est consigné dans le journal. Pour empêcher ClickHouse de consigner les substitutions manquantes dans le journal, spécifiez l’attribut `optional="true"` (par exemple, pour les paramètres de [macros](/fr/reference/settings/server-settings/settings#macros)).
+* *Substitution de valeurs* : si un élément possède l’attribut `incl`, sa valeur sera remplacée par le contenu du fichier référencé. Par défaut, le chemin vers le fichier contenant les substitutions est `/etc/metrika.xml`. Cela peut être modifié dans l’élément [`include_from`](/fr/reference/settings/server-settings/settings/other#include_from) de la configuration du serveur. Les valeurs de substitution sont spécifiées dans les éléments `/clickhouse/substitution_name` de ce fichier. Si une substitution spécifiée dans `incl` n’existe pas, cela est consigné dans le journal. Pour empêcher ClickHouse de consigner les substitutions manquantes dans le journal, spécifiez l’attribut `optional="true"` (par exemple, pour les paramètres de [macros](/fr/reference/settings/server-settings/settings/other#macros)).
 * *Substitution d’éléments* : si vous souhaitez remplacer l’élément entier par une substitution, utilisez `include` comme nom d’élément. Le nom d’élément `include` peut être combiné avec l’attribut `from_zk = "/path/to/node"`. Dans ce cas, la valeur de l’élément est remplacée par le contenu du nœud ZooKeeper situé à `/path/to/node`. Cela fonctionne également si vous stockez un sous-arbre XML entier dans un nœud ZooKeeper : il sera alors entièrement inséré dans l’élément source.
 
 Un exemple est présenté ci-dessous :
@@ -200,7 +200,7 @@ Si vous souhaitez fusionner le contenu de substitution avec la configuration exi
 </div>
 
 Vous pouvez utiliser le chiffrement symétrique pour chiffrer un élément de configuration, par exemple un mot de passe en clair ou une clé privée.
-Pour ce faire, configurez d’abord le [codec de chiffrement](/fr/reference/statements/create/table#encryption-codecs), puis ajoutez à l’élément à chiffrer l’attribut `encrypted_by`, avec pour valeur le nom du codec de chiffrement.
+Pour ce faire, configurez d’abord le [codec de chiffrement](/fr/reference/statements/create/table/codec#encryption-codecs), puis ajoutez à l’élément à chiffrer l’attribut `encrypted_by`, avec pour valeur le nom du codec de chiffrement.
 
 Contrairement aux attributs `from_zk`, `from_env` et `incl`, ou à l’élément `include`, aucune substitution (c.-à-d. aucun déchiffrement de la valeur chiffrée) n’est effectuée dans le fichier prétraité.
 Le déchiffrement n’a lieu qu’à l’exécution, dans le processus serveur.

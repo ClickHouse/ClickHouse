@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/terraform
 sidebarTitle: 'Terraform'
-title: 'Managed Postgres Terraform リファレンス'
+title: 'ClickHouse Managed Postgres Terraform リファレンス'
 description: 'ClickHouse Terraform プロバイダーを使用して ClickHouse Managed Postgres サービスを管理するためのリファレンス。'
 keywords: ['managed postgres', 'terraform', 'Infrastructure as Code', 'IaC', 'プロバイダー', 'プログラマティック']
 doc_type: 'guide'
@@ -20,7 +20,7 @@ ClickHouse Managed Postgres サービスは、[ClickHouse Terraform プロバイ
 <Warning>
   **2026 年 7 月 31 日までにプロバイダー v3.21.0 にアップグレードしてください**
 
-  **2026 年 7 月 31 日** 時点で、Managed Postgres API はレスポンスで スーパーユーザー の password と接続文字列を返さなくなりました。認証情報が返されるのは、サービスの作成時または password のリセット時のみです。プロバイダー バージョン **v3.21.0 以降** は、この変更の前後で同様に動作します。古いプロバイダー バージョンは、API が認証情報をそのまま返すことに依存しています。2026 年 7 月 31 日時点で、それらは `connection_string` を設定しなくなっており、`password` を設定で宣言せずに作成されたサービスは成功する一方で、生成された password はどこにも記録されません。
+  **2026 年 7 月 31 日** 時点で、ClickHouse Managed Postgres API はレスポンスで スーパーユーザー の password と接続文字列を返さなくなりました。認証情報が返されるのは、サービスの作成時または password のリセット時のみです。プロバイダー バージョン **v3.21.0 以降** は、この変更の前後で同様に動作します。古いプロバイダー バージョンは、API が認証情報をそのまま返すことに依存しています。2026 年 7 月 31 日時点で、それらは `connection_string` を設定しなくなっており、`password` を設定で宣言せずに作成されたサービスは成功する一方で、生成された password はどこにも記録されません。
 
   2026 年 7 月 31 日までにアップグレードしてください。v3.21.0 で最初に `plan` または `apply` を実行した際に、Terraform state は自動的に移行されます。いずれかのサービスが server によって生成された password (設定に `password` がない) に依存している場合は、v3.21.0 では標準サービスに `password` または `password_wo` が必要になるため、先に `terraform state pull` でそれを復旧して宣言してください。
 </Warning>
@@ -167,7 +167,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All Managed Postgres services in the organization.
+# All ClickHouse Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -180,7 +180,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## 既存のサービスのインポート
 </div>
 
-既存の Managed Postgres サービスは、service ID を使って Terraform state にインポートできます。
+既存の ClickHouse Managed Postgres サービスは、service ID を使って Terraform state にインポートできます。
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

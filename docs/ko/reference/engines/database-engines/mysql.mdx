@@ -58,27 +58,51 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="data_types-support">
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+MySQL 암호화 연결의 자격 증명은 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)의 키(또는 키-값 인수)로 전달됩니다.
+
+| 매개변수           | 설명                                   |
+| -------------- | ------------------------------------ |
+| `ssl_ca_pem`   | MySQL 서버 인증서 검증에 사용되는 CA 인증서의 내용입니다. |
+| `ssl_cert_pem` | 인증서 기반 인증에 사용하는 클라이언트 인증서의 내용입니다.    |
+| `ssl_key_pem`  | `ssl_cert_pem`에 해당하는 프라이빗 키의 내용입니다.  |
+
+값은 해당 PEM 파일의 내용이며, 명명된 컬렉션이나 쿼리에 복사할 수 있습니다. 비밀번호와 마찬가지로 로그 및 `SHOW` 쿼리에서는 마스킹됩니다.
+
+동일한 자격 증명은 서버의 파일 경로를 `ssl_ca`, `ssl_cert`, `ssl_key`에 지정하는 방식으로도 제공할 수 있습니다. 단, **서버 구성 파일에 정의된 명명된 컬렉션에서만** 가능하며, 이러한 값은 쿼리에서 재정의할 수 없습니다. 서버는 자체 권한으로 해당 파일을 열기 때문에 SQL에서 경로를 허용하면 MySQL 소스를 정의할 수 있는 모든 사용자가 로컬 파일 시스템을 탐색하고, 직접 읽을 권한이 없는 인증서와 키를 사용해 인증할 수 있게 됩니다.
+
+<a id="data_types-support" />
+
+<div id="data-types-support">
   ## 데이터 타입 지원
 </div>
 
-| MySQL                            | ClickHouse                                       |
-| -------------------------------- | ------------------------------------------------ |
-| UNSIGNED TINYINT                 | [UInt8](/ko/reference/data-types/int-uint)          |
-| TINYINT                          | [Int8](/ko/reference/data-types/int-uint)           |
-| UNSIGNED SMALLINT                | [UInt16](/ko/reference/data-types/int-uint)         |
-| SMALLINT                         | [Int16](/ko/reference/data-types/int-uint)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/ko/reference/data-types/int-uint)         |
-| INT, MEDIUMINT                   | [Int32](/ko/reference/data-types/int-uint)          |
-| UNSIGNED BIGINT                  | [UInt64](/ko/reference/data-types/int-uint)         |
-| BIGINT                           | [Int64](/ko/reference/data-types/int-uint)          |
-| FLOAT                            | [Float32](/ko/reference/data-types/float)           |
-| DOUBLE                           | [Float64](/ko/reference/data-types/float)           |
-| DATE                             | [Date](/ko/reference/data-types/date)               |
-| DATETIME, TIMESTAMP              | [DateTime](/ko/reference/data-types/datetime)       |
-| BINARY                           | [FixedString](/ko/reference/data-types/fixedstring) |
+| MySQL                            | ClickHouse                                                   |
+| -------------------------------- | ------------------------------------------------------------ |
+| UNSIGNED TINYINT                 | [UInt8](/ko/reference/data-types/int-uint)                      |
+| TINYINT                          | [Int8](/ko/reference/data-types/int-uint)                       |
+| UNSIGNED SMALLINT                | [UInt16](/ko/reference/data-types/int-uint)                     |
+| SMALLINT                         | [Int16](/ko/reference/data-types/int-uint)                      |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/ko/reference/data-types/int-uint)                     |
+| INT, MEDIUMINT                   | [Int32](/ko/reference/data-types/int-uint)                      |
+| UNSIGNED BIGINT                  | [UInt64](/ko/reference/data-types/int-uint)                     |
+| BIGINT                           | [Int64](/ko/reference/data-types/int-uint)                      |
+| FLOAT                            | [Float32](/ko/reference/data-types/float)                       |
+| DOUBLE                           | [Float64](/ko/reference/data-types/float)                       |
+| DATE                             | [Date](/ko/reference/data-types/date)                           |
+| DATETIME, TIMESTAMP              | [DateTime](/ko/reference/data-types/datetime)                   |
+| BINARY                           | [FixedString](/ko/reference/data-types/fixedstring)             |
+| POINT                            | [Point](/ko/reference/data-types/geo#point)                     |
+| LINESTRING                       | [LineString](/ko/reference/data-types/geo#linestring)           |
+| POLYGON                          | [Polygon](/ko/reference/data-types/geo#polygon)                 |
+| MULTILINESTRING                  | [MultiLineString](/ko/reference/data-types/geo#multilinestring) |
+| MULTIPOLYGON                     | [MultiPolygon](/ko/reference/data-types/geo#multipolygon)       |
+| GEOMETRY                         | [Geometry](/ko/reference/data-types/geo#geometry)               |
 
-그 외의 모든 MySQL 데이터 타입은 [String](/ko/reference/data-types/string)으로 변환됩니다.
+공간 타입의 변환은(항상 변환되는 `POINT` 제외) 기본적으로 활성화된 [`mysql_datatypes_support_level`](/ko/reference/settings/session-settings/mysql#mysql_datatypes_support_level) 설정의 `geometry` 플래그로 제어됩니다. 일반 `GEOMETRY` 컬럼 타입은 구체적인 기하 타입을 포괄하는 [`Geometry`](/ko/reference/data-types/geo#geometry) 타입(구체적인 기하 타입에 대한 `Variant`)에 매핑됩니다. 이러한 컬럼에는 모든 하위 타입의 값을 저장할 수 있으므로, ClickHouse에 대응하는 타입이 없는 하위 타입(`GEOMETRYCOLLECTION`)의 값을 읽으면 읽기 시점에 예외가 발생합니다. 적절한 기하 타입을 사용하기 위해 이러한 비호환성은 허용됩니다. `GEOMETRYCOLLECTION` 타입으로 선언된 컬럼은 그 외의 모든 MySQL 데이터 타입과 마찬가지로 [String](/ko/reference/data-types/string)(원시 WKB)으로 변환됩니다.
 
 [Nullable](/ko/reference/data-types/nullable)을 지원합니다.
 

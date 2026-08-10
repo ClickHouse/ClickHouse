@@ -45,6 +45,8 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 
 프록시를 통해 연결된 클라이언트의 인증에 출발지 주소를 사용합니다.
 
+* **기본값:** `false`
+
 <Note>
   전달된 주소는 쉽게 위조될 수 있으므로 이 설정은 각별한 주의를 기울여 사용해야 합니다. 이러한 인증을 허용하는 서버에는 직접 접근해서는 안 되며, 반드시 신뢰할 수 있는 프록시를 통해서만 접근해야 합니다.
 </Note>
@@ -135,21 +137,27 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 [Bcrypt 알고리즘](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/)을 사용하는 `bcrypt_password` 인증 유형의 작업 계수입니다.
 작업 계수는 해시를 계산하고 비밀번호를 검증하는 데 필요한 연산량과 시간을 결정합니다.
 
+* **기본값:** `12`
+
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
 
 <Warning>
   인증 빈도가 높은 애플리케이션에서는
-  bcrypt는 work factor가 높을수록 계산 오버헤드가 커지므로
-  다른 authentication 메서드를 고려하십시오.
+  bcrypt는 작업 계수가 높을수록 계산 오버헤드가 커지므로
+  다른 인증 메서드를 고려하십시오.
 </Warning>
 
 <div id="table_engines_require_grant">
   ## table_engines_require_grant
 </div>
 
+<CloudNotSupportedBadge />
+
 `true`로 설정하면 특정 엔진으로 테이블을 생성할 때 grant가 필요합니다. 예: `GRANT TABLE ENGINE ON TinyLog to user`.
+
+* **기본값:** `false`
 
 <Note>
   기본적으로는 이전 버전과의 호환성을 위해 특정 테이블 엔진으로 테이블을 생성할 때 grant를 무시합니다. 하지만 이 설정을 `true`로 지정하면 이 동작을 변경할 수 있습니다.
@@ -198,7 +206,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 * `min_part_size` – 데이터 파트(data part)의 최소 크기입니다.
 * `min_part_size_ratio` – 데이터 파트 크기와 테이블 크기 간의 비율입니다.
 * `method` – 압축 방식입니다. 허용되는 값: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
-* `level` – 압축 수준입니다. [코덱](/ko/reference/statements/create/table#general-purpose-codecs)을 참조하십시오.
+* `level` – 압축 수준입니다. [코덱](/ko/reference/statements/create/table/codec#general-purpose-codecs)을 참조하십시오.
 
 <Note>
   여러 개의 `<case>` 섹션을 구성할 수 있습니다.
@@ -230,13 +238,13 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
   ## 암호화
 </div>
 
-[암호화 코덱](/ko/reference/statements/create/table#encryption-codecs)에서 사용할 키를 가져오는 명령을 설정합니다. 키(또는 여러 키)는 환경 변수에 지정하거나 설정 파일에서 설정해야 합니다.
+[암호화 코덱](/ko/reference/statements/create/table/codec#encryption-codecs)에서 사용할 키를 가져오는 명령을 설정합니다. 키(또는 여러 키)는 환경 변수에 지정하거나 설정 파일에서 설정해야 합니다.
 
 키는 16바이트 길이의 16진수 값 또는 문자열일 수 있습니다.
 
 **예시**
 
-설정에서 로드:
+설정에서 로드하기:
 
 ```xml
 <encryption_codecs>
@@ -387,6 +395,8 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 </div>
 
 기본 설정 프로필입니다. 설정 프로필은 `user_config` 설정에 지정된 파일에 있습니다.
+
+* **기본값:** `default`
 
 **예시**
 
@@ -576,6 +586,8 @@ Graphite 데이터 축소를 위한 설정입니다.
 ClickHouse HTTP(s) server에 접속하면 기본적으로 표시되는 페이지입니다.
 기본값은 &quot;Ok.&quot;입니다(끝에 줄 바꿈 문자(line feed)가 포함됨).
 
+* **기본값:** `"Ok.\n"`
+
 **예시**
 
 `http://localhost: http_port`에 접속하면 `https://tabix.io/`가 열립니다.
@@ -640,6 +652,8 @@ HSTS의 만료 기간(초)입니다.
 
 ClickHouse 서버 간 데이터 교환을 허용할 호스트를 제한합니다.
 Keeper를 사용하는 경우, 동일한 제한이 서로 다른 Keeper 인스턴스 간 통신에도 적용됩니다.
+
+* **기본값:** `listen_host`
 
 <Note>
   기본적으로 이 값은 [`listen_host`](#listen_host) 설정과 같습니다.
@@ -1151,7 +1165,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 복제된 데이터베이스가 생성하는 클러스터는 동일한 그룹에 속한 레플리카로 구성됩니다.
 DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 
-기본값은 비어 있습니다.
+* **기본값:** `""`
 
 **예시**
 
@@ -1392,10 +1406,11 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 * `events` – [system.events](/ko/reference/system-tables/events) 테이블의 메트릭을 노출합니다.
 * `asynchronous_metrics` – [system.asynchronous&#95;metrics](/ko/reference/system-tables/asynchronous_metrics) 테이블의 현재 메트릭 값을 노출합니다.
 * `errors` - 마지막 server 재시작 이후 오류 코드별 오류 수를 노출합니다. 이 정보는 [system.errors](/ko/reference/system-tables/errors)에서도 확인할 수 있습니다.
+* `labels` – 노출되는 모든 메트릭에 추가되는 상수 레이블입니다. 각 하위 요소는 하나의 레이블을 정의합니다. 요소 이름은 레이블 이름이어야 하며(`[a-zA-Z_][a-zA-Z0-9_]*`와 일치해야 함), 요소 값은 레이블 값입니다. 레이블 값은 `from_env` 속성과 같은 표준 구성 치환을 지원합니다. 레이블 이름이 `__`로 시작하는 경우(Prometheus에서 예약됨) 또는 이 엔드포인트가 활성화된 섹션 중 하나에 이미 사용하는 레이블과 충돌하는 경우 거부됩니다. 그렇지 않으면 샘플에 동일한 레이블 이름이 두 번 포함됩니다. 따라서 예약된 집합은 엔드포인트에서 현재 노출하는 항목을 따릅니다. `histograms`가 활성화된 경우 `le`, `info`가 활성화된 경우 `ClickHouse_Info` 레이블(`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`), `histograms`/`dimensional_metrics`가 활성화된 경우 노출된 히스토그램 또는 차원 메트릭 패밀리에서 사용하는 모든 레이블(예: `group`, `direction`, `operation_type`)이 해당합니다. 이는 엔드포인트가 실제로 노출하는 항목에 따라 달라지므로, 한 엔드포인트에서는 유효한 이름이 다른 엔드포인트에서는 거부될 수 있습니다. 예를 들어 Keeper `keeper_metrics_only` 엔드포인트는 `keeper_*` 패밀리만 노출하므로 서버 패밀리에서만 사용되는 레이블은 여기에서 허용됩니다.
 
 **예시**
 
-```xml highlight={5-12}
+```xml highlight={5-16}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1407,6 +1422,10 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
+        <labels>
+            <environment>production</environment>
+            <shard from_env="SHARD_NAME"></shard>
+        </labels>
     </prometheus>
 </clickhouse>
 ```
@@ -1421,11 +1440,13 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-[log&#95;queries=1](/ko/reference/settings/session-settings) 설정으로 수신된 쿼리를 로깅하는 설정입니다.
+[log&#95;queries=1](/ko/reference/settings/session-settings/log-queries#log_queries) 설정으로 수신된 쿼리를 로깅하는 설정입니다.
 
 쿼리는 별도 파일이 아니라 [system.query&#95;log](/ko/reference/system-tables/query_log) 테이블에 기록됩니다. `table` 매개변수에서 테이블 이름을 변경할 수 있습니다(아래 참조).
 
 <SystemLogParameters />
+
+기본적으로 활성화된 `enable_user_query_log` 매개변수는 [`system.user_query_log`](/ko/reference/system-tables/user_query_log)를 생성합니다. 이를 통해 각 사용자는 테이블 자체에 대한 액세스 권한 없이도 구성된 쿼리 로그 테이블에서 자신의 레코드를 볼 수 있습니다. 이는 쿼리 로그가 로컬에 저장된 경우에만 작동합니다. `engine`이 다른 서버에 위임하는 경우(예: `Distributed`)에는 `system.user_query_log`가 ClickHouse 프로토콜 서버 경계를 넘어 사용자별 액세스 검사를 적용할 수 없고 이러한 백엔드에서 읽기를 거부하므로 `enable_user_query_log`를 비활성화하십시오.
 
 테이블이 없으면 ClickHouse가 생성합니다. ClickHouse 서버 업데이트로 쿼리 로그의 구조가 변경되면, 이전 구조의 테이블 이름이 변경되고 새 테이블이 자동으로 생성됩니다.
 
@@ -1441,6 +1462,7 @@ curl 127.0.0.1:9363/metrics
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -1516,7 +1538,7 @@ curl 127.0.0.1:9363/metrics
   ## query_thread_log
 </div>
 
-[log&#95;query&#95;threads=1](/ko/reference/settings/session-settings#log_query_threads) 설정을 사용해 수신한 쿼리의 스레드를 로깅하는 설정입니다.
+[log&#95;query&#95;threads=1](/ko/reference/settings/session-settings/log-query#log_query_threads) 설정을 사용해 수신한 쿼리의 스레드를 로깅하는 설정입니다.
 
 쿼리는 별도의 파일이 아니라 [system.query&#95;thread&#95;log](/ko/reference/system-tables/query_thread_log) 테이블에 기록됩니다. `table` 매개변수에서 테이블 이름을 변경할 수 있습니다(아래 참조).
 
@@ -1543,7 +1565,7 @@ curl 127.0.0.1:9363/metrics
   ## query_views_log
 </div>
 
-[log&#95;query&#95;views=1](/ko/reference/settings/session-settings#log_query_views) 설정으로 수신된 쿼리에 따라 뷰(라이브, 구체화된 뷰 등)를 로깅하기 위한 설정입니다.
+[log&#95;query&#95;views=1](/ko/reference/settings/session-settings/log-query#log_query_views) 설정으로 수신된 쿼리에 따라 뷰(라이브, 구체화된 뷰 등)를 로깅하기 위한 설정입니다.
 
 쿼리는 별도 파일이 아니라 [system.query&#95;views&#95;log](/ko/reference/system-tables/query_views_log) 테이블에 기록됩니다. `table` 매개변수에서 테이블 이름을 변경할 수 있습니다(아래 참조).
 
@@ -1607,7 +1629,7 @@ curl 127.0.0.1:9363/metrics
 
 <SystemLogParameters />
 
-기본 서버 구성의 설정 파일 `config.xml`에는 다음 설정 섹션이 포함되어 있습니다.
+기본 서버 설정 파일 `config.xml`에는 다음 설정 섹션이 포함되어 있습니다.
 
 ```xml
 <trace_log>
@@ -1619,7 +1641,7 @@ curl 127.0.0.1:9363/metrics
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>false</symbolize>
+    <symbolize>true</symbolize>
 </trace_log>
 ```
 
@@ -1686,6 +1708,36 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
     <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
+```
+
+<div id="create_union_system_log_tables">
+  ## create_union_system_log_tables
+</div>
+
+시스템 로그 테이블과 함께 `all_...` 테이블(`system.query_log`에는 `system.all_query_log`, `system.text_log`에는 `system.all_text_log` 등)을 생성하도록 요청합니다. 이러한 테이블은 해당 로그 테이블과 그 교체된 버전(`query_log_0`, `query_log_1`, ...) 및/또는 클러스터 내 모든 레플리카의 동일한 테이블을 통합하며, `clusterAllReplicas(default, merge(system, '^query_log'))` 같은 구문을 기억하지 않아도 한 번에 모두 쿼리할 수 있습니다.
+
+이 섹션은 선택 사항입니다. 지정하는 경우 다음 설정 중 하나 이상을 지정해야 합니다.
+
+| 설정                     | 설명                                                                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `merge_rotated_tables` | `true`이면 `all_...` 테이블은 `merge` 테이블 함수를 사용하여 로그 테이블과 교체된 버전에서 데이터를 선택합니다.                                                                                          |
+| `cluster`              | 지정하면 `all_...` 테이블은 `clusterAllReplicas` 테이블 함수를 사용하여 이 클러스터의 모든 레플리카에서 데이터를 선택합니다(`SETTINGS skip_unavailable_shards = 1`이 적용되므로 사용할 수 없는 레플리카로 인해 쿼리가 실패하지 않습니다). |
+
+두 설정을 모두 지정하면 이 테이블은 클러스터의 모든 레플리카에 있는 교체된 테이블을 통합합니다.
+
+이 옵션은 모든 시스템 로그 테이블에 적용되며, 시스템 로그별로 서로 다른 구성을 지정할 수는 없습니다. 테이블은 각 로그가 처음 플러시될 때 시스템 로그 테이블과 동일한 데이터베이스에 생성되며, 로그 테이블의 구조가 변경되면(교체 시) 자동으로 다시 생성됩니다. 상태를 저장하지 않으므로 언제든지 안전하게 삭제할 수 있습니다. 생성은 `Atomic`, `Replicated`, `Shared` 데이터베이스 엔진에서만 지원됩니다.
+
+<Note>
+  `cluster` 설정을 사용하면 테이블 정의에서 클러스터를 참조하므로 테이블을 로드하려면 해당 클러스터가 존재해야 합니다. 구성에서 클러스터를 제거하는 경우 `all_...` 테이블도 삭제하십시오(다음 플러시 시 새 구성에 따라 다시 생성됩니다).
+</Note>
+
+**예시**
+
+```xml
+<create_union_system_log_tables>
+    <merge_rotated_tables>true</merge_rotated_tables>
+    <cluster>default</cluster>
+</create_union_system_log_tables>
 ```
 
 <div id="custom_cached_disks_base_directory">
@@ -1806,7 +1858,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 
 **관련 항목**
 
-* [skip&#95;unavailable&#95;shards](/ko/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/ko/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [클러스터 디스커버리](/ko/guides/oss/deployment-and-scaling/cluster-discovery)
 * [복제된 데이터베이스 엔진](/ko/reference/engines/database-engines/replicated)
 
@@ -1850,7 +1902,7 @@ UTC 시간대 또는 지리적 위치에 대한 IANA 식별자(예: Africa/Abidj
 
 **관련 항목**
 
-* [session&#95;timezone](/ko/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/ko/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -1870,7 +1922,7 @@ TCP 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트�
 
 클라이언트와 안전하게 통신할 때 사용하는 TCP 포트입니다. [OpenSSL](#openSSL) 설정과 함께 사용하십시오.
 
-**기본값**
+* **기본값:** `9440`
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
@@ -1974,7 +2026,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 | `select_from_information_schema_requires_grant` | `SELECT * FROM information_schema.<table>`에 권한이 필요한지, 그리고 모든 사용자가 이를 실행할 수 있는지 설정합니다. true로 설정하면 이 쿼리는 일반 테이블과 마찬가지로 `GRANT SELECT ON information_schema.<table>` 권한이 필요합니다.                                                                                                                                                                                 | `true`  |
 | `select_from_system_db_requires_grant`          | `SELECT * FROM system.<table>`에 권한이 필요한지, 그리고 모든 사용자가 이를 실행할 수 있는지 설정합니다. true로 설정하면 이 쿼리는 일반 테이블과 마찬가지로 `GRANT SELECT ON system.<table>` 권한이 필요합니다. 예외적으로 일부 system 테이블(`tables`, `columns`, `databases` 및 `one`, `contributors` 같은 일부 상수 테이블)은 계속 모든 사용자가 접근할 수 있습니다. 또한 `SHOW` 권한(예: `SHOW USERS`)이 부여된 경우 해당 system 테이블(즉, `system.users`)에도 접근할 수 있습니다. | `true`  |
 | `settings_constraints_replace_previous`         | 특정 설정에 대한 설정 프로필의 제약 조건이 해당 설정의 이전 제약 조건(다른 프로필에 정의됨)의 동작을 취소할지 설정합니다. 여기에는 새 제약 조건에서 설정하지 않은 필드도 포함됩니다. 또한 `changeable_in_readonly` 제약 조건 유형도 활성화합니다.                                                                                                                                                                                                       | `true`  |
-| `table_engines_require_grant`                   | 특정 테이블 엔진으로 테이블을 생성할 때 권한이 필요한지 설정합니다.                                                                                                                                                                                                                                                                                                                       | `false` |
+| `table_engines_require_grant`                   | 특정 테이블 엔진으로 테이블을 생성할 때 권한이 필요한지 설정합니다. ClickHouse Cloud에서는 지원되지 않습니다.                                                                                                                                                                                                                                                                                        | `false` |
 | `throw_on_unmatched_row_policies`               | 테이블에 행 정책(row policy)이 있지만 현재 사용자에게 적용되는 정책이 하나도 없을 때, 해당 테이블을 읽으면 예외를 발생시킬지 설정합니다.                                                                                                                                                                                                                                                                          | `false` |
 | `users_without_row_policies_can_read_rows`      | 허용형 행 정책이 없는 사용자도 `SELECT` 쿼리로 행을 읽을 수 있는지 설정합니다. 예를 들어 사용자 A와 B가 있고 A에 대해서만 행 정책이 정의된 경우, 이 설정이 true이면 사용자 B는 모든 행을 볼 수 있습니다. 이 설정이 false이면 사용자 B는 어떤 행도 볼 수 없습니다.                                                                                                                                                                                          | `true`  |
 
@@ -2128,7 +2180,7 @@ ClickHouse는 서버의 모든 테이블에 이 설정을 사용합니다. 이 �
 </div>
 
 클러스터에서 [분산 DDL 쿼리](/ko/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`)의 실행을 관리합니다.
-[ZooKeeper](/ko/reference/settings/server-settings/settings#zookeeper)가 활성화된 경우에만 동작합니다.
+[ZooKeeper](/ko/reference/settings/server-settings/settings/zookeeper#zookeeper)가 활성화된 경우에만 동작합니다.
 
 `<distributed_ddl>`에서 구성할 수 있는 설정은 다음과 같습니다:
 
@@ -2145,26 +2197,26 @@ ClickHouse는 서버의 모든 테이블에 이 설정을 사용합니다. 이 �
 
 ```xml
 <distributed_ddl>
-    <!-- DDL 쿼리 큐의 ZooKeeper 경로 -->
+    <!-- Path in ZooKeeper to queue with DDL queries -->
     <path>/clickhouse/task_queue/ddl</path>
 
-    <!-- 이 프로필의 설정이 DDL 쿼리 실행에 사용됩니다 -->
+    <!-- Settings from this profile will be used to execute DDL queries -->
     <profile>default</profile>
 
-    <!-- ON CLUSTER 쿼리의 최대 동시 실행 수를 제어합니다. -->
+    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
     <pool_size>1</pool_size>
 
     <!--
-         정리 설정 (활성 작업은 제거되지 않습니다)
+         Cleanup settings (active tasks will not be removed)
     -->
 
-    <!-- 작업 TTL을 제어합니다 (기본값: 1주) -->
+    <!-- Controls task TTL (default 1 week) -->
     <task_max_lifetime>604800</task_max_lifetime>
 
-    <!-- 정리 작업 수행 주기를 제어합니다 (단위: 초) -->
+    <!-- Controls how often cleanup should be performed (in seconds) -->
     <cleanup_delay_period>60</cleanup_delay_period>
 
-    <!-- 큐에 대기할 수 있는 최대 작업 수를 제어합니다 -->
+    <!-- Controls how many tasks could be in the queue -->
     <max_tasks_in_queue>1000</max_tasks_in_queue>
 </distributed_ddl>
 ```
@@ -2185,6 +2237,8 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 
 평문 비밀번호 타입(안전하지 않음)을 허용할지 여부를 설정합니다.
 
+* **기본값:** `true`
+
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
@@ -2194,6 +2248,8 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 </div>
 
 보안상 안전하지 않은 no&#95;password 비밀번호 유형의 허용 여부를 설정합니다.
+
+* **기본값:** `true`
 
 ```xml
 <allow_no_password>1</allow_no_password>
@@ -2205,6 +2261,8 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 
 &#39;IDENTIFIED WITH no&#95;password&#39;를 명시적으로 지정한 경우를 제외하고, 비밀번호 없이 사용자를 생성하는 것을 금지합니다.
 
+* **기본값:** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -2213,7 +2271,9 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
   ## default_session_timeout
 </div>
 
-기본 세션 timeout입니다. 단위는 초입니다.
+기본 세션 타임아웃입니다. 단위는 초입니다.
+
+* **기본값:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
@@ -2228,9 +2288,14 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 허용되는 값은 다음과 같습니다.
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **기본값:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -2246,7 +2311,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 * SQL 명령으로 생성된 사용자가 저장되는 폴더의 경로.
 * SQL 명령으로 생성된 사용자가 저장되고 복제되는 ZooKeeper 노드 경로.
 
-이 섹션을 지정하면 [users&#95;config](/ko/reference/settings/server-settings/settings#users_config) 및 [access&#95;control&#95;path](/ko/reference/settings/server-settings/settings#access_control_path)의 경로는 사용되지 않습니다.
+이 섹션을 지정하면 [users&#95;config](/ko/reference/settings/server-settings/settings/users#users_config) 및 [access&#95;control&#95;path](/ko/reference/settings/server-settings/settings/access-control#access_control_path)의 경로는 사용되지 않습니다.
 
 `user_directories` 섹션에는 항목을 원하는 만큼 포함할 수 있으며, 항목의 순서는 우선순위를 의미합니다(위에 있을수록 우선순위가 높습니다).
 
@@ -2461,6 +2526,8 @@ ClickHouse는 요청 프로토콜에 대해 가장 우선순위가 높은 리졸
 
 기본적으로 `HTTP` 프록시를 통해 `HTTPS` 요청을 보낼 때는 터널링(즉, `HTTP CONNECT`)을 사용합니다. 이 설정을 사용하면 이를 비활성화할 수 있습니다.
 
+* **기본값:** `false`
+
 **no&#95;proxy**
 
 기본적으로 모든 요청은 프록시를 거칩니다. 특정 호스트에 대해서는 이를 비활성화하려면 `no_proxy` 변수를 설정해야 합니다.
@@ -2490,6 +2557,8 @@ IP 주소, 도메인, 하위 도메인, 그리고 전체 우회를 위한 `'*'` 
 </div>
 
 모든 `CREATE WORKLOAD` 및 `CREATE RESOURCE` 쿼리의 저장 위치로 사용되는 디렉터리입니다. 기본적으로 server 작업 디렉터리 아래의 `/workload/` 폴더가 사용됩니다.
+
+* **기본값:** `<path>/workload/`
 
 **예시**
 

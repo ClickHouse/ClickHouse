@@ -1,0 +1,110 @@
+---
+title: 'Azure용 BYOC 프라이빗 네트워킹 설정'
+slug: /cloud/reference/byoc/onboarding/network-azure
+sidebarTitle: 'Azure 프라이빗 네트워킹 설정'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'azure', 'private link']
+description: 'Azure용 BYOC의 Private Link 설정'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+Azure용 ClickHouse BYOC는 Azure Private Link를 통한 프라이빗 연결을 지원합니다.
+
+<div id="common-prerequisites">
+  ## 사전 요구 사항
+</div>
+
+<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
+  ### ClickHouse BYOC용 private load balancer 활성화
+</div>
+
+ClickHouse Cloud 콘솔에서 BYOC infrastructure의 **Private load balancer**를 활성화합니다.
+
+<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC Private Load Balancer 활성화" border />
+
+<div id="setup-privatelink">
+  ## Private Link 설정
+</div>
+
+Azure Private Link는 ClickHouse BYOC 서비스에 안전한 프라이빗 연결을 제공합니다. 모든 트래픽은 Azure 네트워크 내에서 처리되므로 공용 인터넷을 거치지 않습니다.
+
+<Steps>
+  <Step title="ClickHouse 콘솔에서 Private Link를 활성화합니다" id="step-1-enable-private-link">
+    <Note>
+      사전 요구 사항으로 **프라이빗 로드 밸런서**를 활성화해야 합니다.
+    </Note>
+
+    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="BYOC PrivateLink 활성화" border />
+  </Step>
+
+  <Step title={<>엔드포인트 <code>Service name</code> 확인</>} id="step-2-obtain-endpoint-service-name">
+    1. ClickHouse Cloud 콘솔에서 Private Link를 통해 연결할 서비스의 설정 페이지로 이동합니다.
+    2. &quot;Set up private endpoint&quot;를 클릭합니다.
+    3. 열린 플라이아웃에서 `Service name`(Private Link 서비스 별칭)과 `DNS name` 값을 복사합니다. 다음 단계에서 이 값들을 사용합니다. (Private Link를 활성화한 후 값이 생성되기까지 다소 시간이 걸릴 수 있습니다.)
+       <Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="md" alt="Private Endpoints" border />
+  </Step>
+
+  <Step title="네트워크에 Private Endpoint를 만듭니다" id="step-3-create-endpoint">
+    1. **사용 중인 Azure Portal**(즉, 클라이언트 애플리케이션이 있는 Azure subscription)을 엽니다 → **Network Foundation** → **Private endpoints** → **Create**를 선택합니다.
+    2. **Basics** 탭에서 private endpoint의 subscription, 리소스 그룹, 이름, Region을 선택합니다. Region은 클라이언트 애플리케이션이 연결하는 VNet의 Region과 같아야 합니다.
+       <Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Private Endpoint 생성 기본 사항" border />
+    3. **Resource** 탭에서 **Connect to an Azure resource by resource ID or alias**를 선택하고 이전 단계에서 확인한 `Service name`을 입력합니다.
+       <Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Private Endpoint 리소스 선택" border />
+    4. **Virtual Network** 탭에서 private endpoint를 생성할 가상 네트워크와 서브넷을 선택합니다. 필요에 따라 애플리케이션 보안 그룹을 연결하여 private endpoint로 향하는 트래픽을 필터링할 수 있습니다.
+       <Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Private Endpoint 가상 네트워크 선택" border />
+    5. 나머지 탭을 계속 진행한 후 **Create**를 클릭합니다. 생성된 private endpoint의 **Connection status**는 다음 단계에서 해당 `Resource ID`를 ClickHouse 서비스 허용 목록에 추가할 때까지 **Pending** 상태로 유지됩니다.
+    6. private endpoint와 연결된 네트워크 인터페이스를 열고 **Private IPv4 address**를 복사합니다. DNS 설정 단계에서 사용합니다.
+       <Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="Private Endpoint IP 주소" border />
+  </Step>
+
+  <Step title={<>Private Endpoint <code>Resource ID</code>를 ClickHouse 서비스 허용 목록에 추가합니다</>} id="step-4-add-endpoint-id-to-services-allow-list">
+    프라이빗 엔드포인트 Resource ID를 확인하려면 Azure Portal에서 앞서 생성한 프라이빗 엔드포인트를 열고 **JSON View**를 클릭한 다음, 최상위 수준의 `id` 필드(보기 상단에 표시되는 **Resource ID**, 형식: `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`)를 복사하십시오. `properties` 객체 내에 중첩된 `id` 필드는 사용하지 마십시오.
+
+    <Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Private Endpoint Resource ID" border />
+
+    1. ClickHouse Cloud 콘솔에서 Private Link를 통해 연결하려는 ClickHouse 서비스의 설정 페이지로 이동하십시오.
+    2. &quot;Set up private endpoint&quot;를 클릭하십시오.
+    3. 열린 플라이아웃에서 위에서 확인한 `Resource ID`와 선택 사항인 설명을 `Endpoint ID` 필드에 입력하십시오.
+    4. &quot;Create endpoint&quot;를 클릭하십시오.
+
+    <Note>
+      기존 Private Link 연결의 액세스를 허용하려면 기존 엔드포인트 드롭다운 메뉴를 사용하십시오.
+      드롭다운에는 동일한 인프라 내 서비스에 대한 기존 Private Link 연결이 표시됩니다.
+    </Note>
+
+    <Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="md" alt="Private Endpoints Filter" border />
+
+    <Note>
+      Azure Portal에서 수동으로 승인할 필요가 없습니다. `Resource ID`가 허용 목록에 추가되면 엔드포인트 연결이 자동으로 승인되고 해당 `LinkID`가 ClickHouse 서비스의 Istio `AuthorizationPolicy`에 자동으로 추가됩니다. 구독의 프라이빗 엔드포인트 **Connection status**가 **Approved**로 변경됩니다.
+    </Note>
+  </Step>
+
+  <Step title="endpoint의 Private DNS name 설정" id="step-5-set-private-dns-name-for-endpoint">
+    <Note>
+      DNS를 구성하는 방법은 다양합니다. 사용 사례에 맞게 DNS를 설정하십시오.
+    </Note>
+
+    &quot;DNS name&quot;(서비스 ID 뒤의 모든 부분, 예: `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`)의 모든 하위 도메인(와일드카드)이 Private Endpoint IP 주소를 가리키도록 설정해야 합니다. 이렇게 하면 VNet 내의 서비스/구성 요소가 이를 올바르게 확인할 수 있습니다. Azure Private DNS를 사용하는 일반적인 설정 방법은 다음과 같습니다.
+
+    1. 서비스 ID를 제외한 &quot;DNS name&quot;을 이름으로 하는 [Private DNS 존을 생성합니다](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal). 예: `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`.
+    2. 존에서 와일드카드 레코드 세트를 생성합니다. **Name**에는 `*`를 지정하고, **IP Address**에는 앞서 복사한 Private Endpoint IP 주소를 입력합니다.
+    3. VNet 내의 클라이언트가 존을 확인할 수 있도록 [Private DNS 존을 가상 네트워크에 연결합니다](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal#link-the-virtual-network).
+
+    VNet 내부의 호스트에서 DNS 설정을 확인하십시오. &quot;DNS name&quot;이 Private Endpoint IP 주소로 확인되어야 합니다:
+
+    ```bash
+    nslookup h5ju65kv87.privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com
+    ```
+  </Step>
+
+  <Step title="Private Link를 통해 인스턴스에 액세스" id="step-6-connect-via-privatelink">
+    1. ClickHouse Cloud 콘솔에서 ClickHouse 서비스의 설정 페이지로 이동합니다.
+    2. &quot;Set up private endpoint&quot;를 클릭합니다.
+    3. 열리는 플라이아웃에서 `DNS name`을 복사합니다.
+       <Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="md" alt="Private Endpoint DNS 이름" border />
+       <Note>
+         Private Link를 통한 ClickHouse 서비스 액세스는 BYOC 인프라 내에서 ClickHouse가 관리하는 서비스 수준의 **Istio Authorization Policy**로 제어됩니다.
+       </Note>
+  </Step>
+</Steps>

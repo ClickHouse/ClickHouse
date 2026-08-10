@@ -1,0 +1,335 @@
+---
+sidebarTitle: 'توفير SCIM باستخدام Entra ID'
+slug: /cloud/security/scim-setup-entra
+title: 'توفير SCIM باستخدام Microsoft Entra ID'
+description: 'كيفية إعداد توفير SCIM بين Microsoft Entra ID وClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SCIM', 'توفير', 'Entra ID', 'Azure AD', 'Microsoft', 'SSO', 'SAML', 'موفر الهوية', 'IdP', 'إدارة المستخدمين']
+---
+
+import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+<EnterprisePlanFeatureBadge feature="SCIM" />
+
+يدعم ClickHouse Cloud معيار SCIM 2.0 ‏(System for Cross-domain Identity Management) لإدارة دورة حياة المستخدمين والمجموعات تلقائيًا. بعد الاتصال بموفّر الهوية لديك، يُنشأ تلقائيًا في مؤسستك كل مستخدم تعيّنه لتطبيق ClickHouse Cloud بالدور المناسب، وتُطبّق تحديثات الملف الشخصي تلقائيًا، كما أن إزالة مستخدم من IdP لديك تلغي وصوله — دون دعوات يدوية أو حسابات يتيمة.
+
+يشرح هذا الدليل إعداد توفير SCIM من البداية إلى النهاية باستخدام **Microsoft Entra ID** (المعروف سابقًا باسم Azure Active Directory). تتوافق نقطة نهاية SCIM في ClickHouse Cloud مع معيار SCIM 2.0 ‏(RFC 7644). يُصادق Entra ID مع نقطة النهاية باستخدام Bearer token طويل الأجل، تجمعه من مفتاح SCIM والسرّ اللذين يتم إنشاؤهما في ClickHouse Cloud Console.
+
+<Tip>
+  **هل تستخدم Okta بدلًا من ذلك؟**
+
+  إذا كان موفّر الهوية لديك هو Okta، فاتبع دليل [SCIM provisioning with Okta](/ar/products/cloud/guides/security/cloud-access-management/scim-setup). يكون الإعداد من جانب ClickHouse Cloud مطابقًا؛ ويختلف فقط إعداد IdP.
+</Tip>
+
+<div id="before-you-begin">
+  ## قبل البدء
+</div>
+
+ستحتاج إلى:
+
+* دور **Admin** في مؤسستك على ClickHouse Cloud.
+* أن يكون [SAML SSO](/ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup) مُعدًّا مسبقًا بين Entra ID وClickHouse Cloud. ينشئ SCIM حسابات المستخدمين، وتسجّل هذه الحسابات الدخول عبر SAML، لذا يجب أن يكون SSO يعمل أولًا.
+* الوصول إلى **Microsoft Entra admin center** مع دور **Application Administrator** (أو **Cloud Application Administrator**) على الأقل، وإذنٍ لتهيئة Provisioning على تطبيق المؤسسة.
+* قائمة بالأدوار التي تريد تعيينها عبر SCIM (مثل: Admins وDevelopers وRead-only). حدّدها مسبقًا، إذ ستنشئ مجموعات مطابقة في Entra ID.
+
+<div id="how-scim-works">
+  ## كيفية عمل SCIM مع ClickHouse Cloud
+</div>
+
+1. يعيّن مسؤول في Entra ID مستخدمًا، مباشرةً أو عبر مجموعة، لتطبيق ClickHouse Cloud Enterprise.
+2. تستدعي خدمة Provisioning في Entra ID نقطة نهاية SCIM في ClickHouse Cloud عبر HTTPS، باستخدام Bearer token تقوم بإنشائه للمصادقة.
+3. ينشئ ClickHouse Cloud المستخدم في مؤسستك ويعيّن الأدوار استنادًا إلى عضوية المستخدم في مجموعات Entra ID.
+4. يسجّل المستخدم الدخول إلى ClickHouse Cloud من خلال تدفق SAML SSO الحالي لديك.
+5. تُنقل تلقائيًا إلى ClickHouse Cloud تغييرات الملف الشخصي والمجموعات وإلغاء التنشيط في Entra ID.
+
+<div id="configure-clickhouse-cloud">
+  ## إعداد SCIM في مؤسسة ClickHouse Cloud
+</div>
+
+<Steps>
+  <Step title="Enable SCIM" id="enable-scim-provisioning">
+    سجّل الدخول إلى **ClickHouse Cloud Console** بصفتك مسؤولاً عن المؤسسة، ثم افتح **Organization settings → SAML and SCIM settings → SCIM Configuration**.
+
+    انقر على `Enable SCIM`. يُتاح SCIM بعد ربط SAML SSO — إذا كان الخيار معطّلاً، فأكمل إعداد SAML أولاً.
+
+    يُنشأ **عنوان URL لنقطة نهاية SCIM** بالشكل التالي:
+
+    ```plaintext
+    https://api.clickhouse.cloud/v1/organizations/<your-org-id>/scim
+    ```
+
+    انسخه — إذ ستلصقه لاحقاً في Entra ID باعتباره **Tenant URL**.
+  </Step>
+
+  <Step title="إنشاء رمز وصول SCIM" id="generate-scim-token">
+    انتقل إلى قسم `Generate new key` واختر تاريخ انتهاء الصلاحية.
+
+    <Tip>
+      **خطّط للتدوير**
+
+      نوصي بتحديد مدة صلاحية تبلغ 12 شهراً وإضافة تذكير في التقويم. يدعم ClickHouse Cloud رمزي SCIM نشطين كحد أقصى في الوقت نفسه، ما يتيح لك التدوير من دون فترة توقف: أنشئ الرمز الجديد، وبدّل Entra ID لاستخدامه، وتأكد من استمرار عمل التزويد، ثم ألغِ الرمز القديم.
+    </Tip>
+
+    انقر على `Generate new key`. يُعرض الرمز **مرة واحدة فقط**، ويتكون من مفتاح (يبدأ بـ `scim_`) وسر. انسخ كليهما فوراً وخزّنهما في مدير أسرار آمن — إذ لا يمكن استردادهما لاحقاً. إذا فقدتهما، فألغِ الرمز وأنشئ رمزاً جديداً.
+
+    ستجمع المفتاح والسر في رمز حامل واحد لـ Entra ID بالشكل التالي:
+
+    ```plaintext
+    <scim-key>:<scim-secret>
+    ```
+
+    بالتحديد: **مفتاح** الرمز (الذي يبدأ بـ `scim_`)، ثم نقطتان، ثم **سر** الرمز، من دون مسافات. يرسل Entra ID هذه القيمة في ترويسة `Authorization: Bearer` مع كل طلب.
+  </Step>
+
+  <Step title="تحديد تعيين الأدوار" id="define-role-mapping">
+    من لوحة SCIM Configuration، انقر على **Map roles in &quot;Users and roles&quot;** (أو انتقل مباشرةً عبر **Users and roles → Roles**).
+
+    ترتبط مجموعات SCIM بأدوار ClickHouse Cloud بالاسم، مع مراعاة القواعد التالية:
+
+    * **لا يمكنك تعيين مجموعة SCIM إلى دور نظام محدد مسبقاً.** تنطبق تعيينات SCIM على الأدوار المخصصة فقط. إذا احتجت إلى إتاحة قدرة على مستوى النظام عبر SCIM، فأنشئ دوراً مخصصاً يضم الأذونات التي تريدها.
+    * **تُربط الأسماء المتطابقة تلقائياً.** إذا كان للدور المخصص الاسم نفسه لمجموعة SCIM الواردة، يربطهما ClickHouse Cloud تلقائياً — ولا حاجة إلى تعيين يدوي.
+    * **لاستخدام اسم دور مختلف عن اسم المجموعة**، أنشئ الدور المخصص باسم الدور الذي تريده، ثم اضبط حقل **SCIM group** على اسم مجموعة SCIM التي ينبغي ربطه بها.
+    * **تنشئ المجموعات غير المعيّنة أدواراً جديدة.** إذا دفع Entra ID مجموعة لا تطابق اسم دور موجود ولا يُشار إليها في حقل `SCIM group` لأي دور، ينشئ ClickHouse Cloud دوراً مخصصاً جديداً باسم تلك المجموعة. يمكنك بعد ذلك منح هذا الدور الأذونات التي تريدها.
+  </Step>
+</Steps>
+
+<div id="configure-entra">
+  ## تهيئة توفير الحسابات في Microsoft Entra ID
+</div>
+
+<Steps>
+  <Step title="افتح تطبيق ClickHouse Cloud Enterprise" id="open-clickhouse-cloud-app">
+    افتح صفحة **Overview** لـ **Microsoft Entra ID**، ثم اختر **Enterprise applications** من قسم **Manage** في القائمة اليمنى. افتح التطبيق الذي أنشأته عند إعداد SAML SSO لـ ClickHouse Cloud.
+
+    إذا لم تكن قد أنشأت تطبيق المؤسسة بعد، فاتبع أولًا [دليل إعداد SAML SSO](/ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup#azure-enterprise-app) — إذ يُستخدم تطبيق المؤسسة نفسه، عند استخدام تسجيل الدخول الموحّد المستند إلى SAML، لكلٍّ من تسجيل الدخول الموحّد وتهيئة SCIM.
+  </Step>
+
+  <Step title="اضبط وضع التزويد وبيانات الاعتماد" id="connect-entra-scim">
+    في الشريط الجانبي الأيسر للتطبيق، اختر **Provisioning**، ثم انقر على `Get started` (أو `Provisioning` → `Edit provisioning`).
+
+    اضبط **Provisioning Mode** على `Automatic`. ضمن **Admin Credentials**، أدخل ما يلي:
+
+    * **Tenant URL** — عنوان URL لنقطة نهاية SCIM من ClickHouse Cloud Console (عنوان URL الذي ينتهي بـ `.../scim`).
+    * **Secret Token** — بيانات اعتماد SCIM الخاصة بك مفصولة بنقطتين رأسيتين، بالصيغة `<scim-key>:<scim-secret>`. يرسل Entra ID هذه البيانات ضمن الترويسة `Authorization: Bearer`.
+
+    انقر على `Test Connection`. يجري Entra ID طلب اختبار إلى نقطة نهاية SCIM؛ ومن المفترض أن يظهر إشعار بنجاح العملية. إذا فشل الاختبار، فانتقل إلى [Troubleshooting](#troubleshooting).
+
+    انقر على `Save`.
+  </Step>
+
+  <Step title="تهيئة تعيينات السمات" id="map-user-attributes">
+    بعد حفظ بيانات الاعتماد، وسّع قسم **Mappings**. يعرض Entra ID مجموعتين من التعيينات:
+
+    * **Provision Microsoft Entra ID Users**
+    * **Provision Microsoft Entra ID Groups**
+
+    افتح **Provision Microsoft Entra ID Users** وتأكد من توافق تعيينات السمات مع ما يتوقعه ClickHouse Cloud.
+
+    بشكل افتراضي، يعيّن Entra ID السمة `userName` من `userPrincipalName`. **المهم هو أن يكون مصدر `userName` السمة التي تحتوي على عنوان البريد الإلكتروني نفسه الذي يستخدمه المستخدمون لتسجيل الدخول عبر SAML SSO**، وليس اسم سمة محددًا. في بعض المستأجرين، يكون `userPrincipalName` هو عنوان البريد الإلكتروني هذا بالفعل، ولا يلزم إجراء أي تغيير؛ وفي مستأجرين آخرين، يكون البريد الإلكتروني في `mail`، لذا عدّل التعيين ليكون مصدر `userName` هو `mail`. لتغيير المصدر، انقر على صف `userName`، واضبط **Source attribute** على السمة الصحيحة، ثم احفظ.
+
+    اضبط **Matching precedence** بحيث تكون `userName` سمة المطابقة الأساسية. يمكنك إزالة التعيينات غير المدعومة؛ إذ يتجاهل ClickHouse Cloud أي شيء خارج مجموعة SCIM القياسية.
+
+    <Warning>
+      **طابق البريد الإلكتروني المستخدم في SAML SSO**
+
+      يجب أن تتطابق القيمة التي تنتقل إلى `userName` **تمامًا** مع عنوان البريد الإلكتروني الذي يسجّل به كل مستخدم الدخول عبر SAML SSO. ينشئ SCIM الحساب، ويصادق SAML عليه، لذا إذا لم يتطابق `userName` في SCIM مع عنوان البريد الإلكتروني في تأكيد SAML، ينشئ SAML مستخدمًا جديدًا منفصلًا عند تسجيل الدخول لا يديره SCIM، مما يترك حسابًا مكررًا وغير مُدار. عيّن `userName` من السمة (`userPrincipalName` أو `mail` أو غيرها) التي تحمل عنوان البريد الإلكتروني نفسه الذي ترسله إعدادات SAML.
+    </Warning>
+
+    تأتي الصفوف المتبقية أدناه معيّنة افتراضيًا؛ تحقق من وجود كل منها:
+
+    | سمة Microsoft Entra ID         | سمة ClickHouse Cloud ‏(SCIM)   | مطلوب                                 |
+    | ------------------------------ | ------------------------------ | ------------------------------------- |
+    | `mail`                         | `emails[type eq "work"].value` | **نعم** — يجب أن تتطابق مع `userName` |
+    | `givenName`                    | `name.givenName`               | موصى به                               |
+    | `surname`                      | `name.familyName`              | موصى به                               |
+    | `displayName`                  | `displayName`                  | موصى به — يظهر في ClickHouse Cloud UI |
+    | `Switch([IsSoftDeleted], ...)` | `active`                       | **نعم** — يتحكم في إلغاء التنشيط      |
+
+    افتح **Provision Microsoft Entra ID Groups** وتأكد من تعيين `displayName` إلى `displayName` و`members` إلى `members`، إذ إن اسم عرض المجموعة هو ما يرتبط بـ Role في ClickHouse Cloud.
+
+    <Warning>
+      **حالة أحرف البريد الإلكتروني مهمة**
+
+      تأكد من أن القيمة التي تنتقل إلى `userName` والقيمة التي تنتقل إلى عنوان البريد الإلكتروني الأساسي تستخدمان حالة الأحرف نفسها. يحوّل ClickHouse Cloud عناوين البريد الإلكتروني إلى أحرف صغيرة؛ وقد يؤدي عدم التطابق بين الحقلين إلى فشل التوفير.
+    </Warning>
+  </Step>
+
+  <Step title="حدِّد نطاق التزويد" id="configure-provisioning-behavior">
+    وسّع قسم **الإعدادات**:
+
+    * اضبط **النطاق** على `Sync only assigned users and groups`. يقتصر التزويد بذلك على المستخدمين والمجموعات التي تعيّنها صراحةً للتطبيق في الخطوة التالية.
+    * اترك **حالة التزويد** على `Off` في الوقت الحالي — ستفعّلها بعد تعيين مستخدمي الاختبار.
+
+    انقر على `Save`.
+  </Step>
+
+  <Step title="تعيين المجموعات والمستخدمين" id="push-groups-and-assign-users">
+    هنا تُسند الأدوار تلقائيًا.
+
+    **أنشئ مجموعات في Entra ID.** لكل تعيين أدوار أعددته سابقًا، أنشئ أو حدّد مجموعة في Entra ID تحمل **اسم العرض نفسه تمامًا**. على سبيل المثال، إذا كان التعيين لديك هو `ClickHouse-Admins → Admin`، فأنشئ مجموعة باسم `ClickHouse-Admins` في Entra ID.
+
+    **عيّن المجموعات للتطبيق.** في تطبيق المؤسسة، انتقل إلى **المستخدمون والمجموعات → إضافة مستخدم/مجموعة**، وحدّد مجموعة الأدوار ثم عيّنها. كرر ذلك لكل مجموعة أدوار. بما أن نطاق توفير التطبيق مضبوط على *المستخدمين والمجموعات المعيّنين*، فلن تُوفَّر إلا هذه المجموعات (وأعضاؤها).
+
+    <Note>
+      **يتطلب توفير المجموعات ترخيص Entra ID مناسبًا**
+
+      يتطلب توفير المجموعات (وليس أعضائها فقط) Microsoft Entra ID P1 أو إصدارًا أحدث. عند توفير المجموعات، تُنشأ المجموعة نفسها في ClickHouse Cloud وتُربط بالدور المطابق استنادًا إلى اسم العرض.
+    </Note>
+
+    **عيّن المستخدمين.** لديك خياران:
+
+    * **عبر المجموعات (موصى به).** أضف المستخدمين إلى مجموعات Entra ID التي عيّنتها للتطبيق. سيُوفَّرون في ClickHouse Cloud ويُسند إليهم الدور المطابق تلقائيًا.
+    * **مباشرةً.** عيّن مستخدمين فرديين للتطبيق ضمن **المستخدمون والمجموعات**. سيُوفَّرون باستخدام **الدور الافتراضي** ما لم يكونوا أيضًا أعضاءً في مجموعة معيّنة.
+
+    التعيين المستند إلى المجموعات أسهل للإدارة المستمرة — فعندما يتغير دور شخص ما، ما عليك سوى تحديث عضويته في المجموعة.
+  </Step>
+
+  <Step title="تفعيل إعداد التزويد" id="turn-on-provisioning">
+    ارجع إلى **Provisioning**، واضبط **Provisioning Status** على `On`، ثم انقر على `Save`.
+
+    ينفّذ Entra ID عملية التزويد دوريًا (كل 40 دقيقة تقريبًا). لتزويد مستخدم محدد فورًا — وهو ما يفيد في الاختبار — استخدم **Provisioning → Provision on demand**، وابحث عن المستخدم، ثم نفّذ عملية تزويد واحدة.
+  </Step>
+</Steps>
+
+<div id="test-the-integration">
+  ## اختبار التكامل
+</div>
+
+بعد تفعيل التزويد، استخدم **Provision on demand** لتزويد مستخدم اختبار واحد أو اثنين فورًا بدلًا من انتظار دورة التزويد التالية. ثم عُد إلى **Settings → Users and roles** في ClickHouse Cloud Console للتأكد من ظهور المستخدمين المتزامنين بالأدوار المتوقعة.
+
+نفّذ خطة الاختبار القصيرة هذه باستخدام مستخدم اختبار واحد أو اثنين **قبل** تعيين فريقك بأكمله. إذا لم تُطبَّق إحدى الخطوات، فاستخدم **Provision on demand** لفرض المزامنة، ثم راجع قسم [استكشاف الأخطاء وإصلاحها](#troubleshooting).
+
+| # | الإجراء في Entra ID                                                            | النتيجة المتوقعة في ClickHouse Cloud                          |
+| - | ------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| 1 | أضف مستخدم اختبار إلى مجموعة `ClickHouse-Admins` وشغّل **Provision on demand** | يظهر المستخدم في **Settings → Members** بالدور **Admin**      |
+| 2 | يسجّل مستخدم الاختبار الدخول إلى ClickHouse Cloud عبر SSO                      | يصل إلى لوحة المعلومات بصلاحيات المسؤول                       |
+| 3 | حدّث الاسم الأول للمستخدم في Entra ID وأعِد التزويد                            | يظهر الاسم المحدَّث في **Members**                            |
+| 4 | انقل المستخدم من `ClickHouse-Admins` إلى `ClickHouse-Read-only` وأعِد التزويد  | يتغير دوره إلى **Read-only**                                  |
+| 5 | أزل تعيين المستخدم من التطبيق (أو عطّل الحساب في Entra ID)                     | يُزال المستخدم من المؤسسة، وتفشل محاولات تسجيل الدخول اللاحقة |
+
+إذا فشلت أي خطوة، فأصلح السبب الأساسي قبل المتابعة، إذ تتفاقم الأعراض عادةً.
+
+<Tip>
+  **أين تبحث عن أخطاء SCIM في Entra ID**
+
+  تظهر أخطاء SCIM في شاشة **Provisioning → View provisioning logs** الخاصة بالتطبيق (وهي متاحة أيضًا ضمن **Identity → Monitoring &amp; health → Provisioning logs**). يعرض كل إدخال الطلب والهدف والخطأ الذي أعاده ClickHouse Cloud حرفيًا، لذا ابدأ من هناك.
+</Tip>
+
+<div id="best-practices">
+  ## أفضل الممارسات لبيئات الإنتاج
+</div>
+
+<div id="rotate-tokens">
+  ### بدّل الرموز المميزة بانتظام
+</div>
+
+اضبط تذكيرًا في التقويم لتدوير رمز SCIM المميز. الوتيرة الموصى بها: كل 12 شهرًا، أو فور مغادرة الشركة أي مسؤول كان يعرف الرمز المميز. يتيح ClickHouse Cloud وجود رمزين مميزين نشطين لكل organization تحديدًا لتتمكن من التدوير دون تعطيل التوفير — أنشئ الرمز المميز الجديد، وحدّث **Secret Token** في Entra ID، وتحقق باستخدام **Test Connection**، ثم ألغِ الرمز المميز القديم.
+
+<div id="use-groups">
+  ### استخدم المجموعات بدلاً من التعيينات المباشرة
+</div>
+
+يعمل التعيين المباشر للمستخدمين في التطبيق، لكنه سرعان ما يصعب تدقيقه. يتيح إسناد التعيينات عبر مجموعات Entra ID إجراء مراجعات الوصول وتغييرات الأدوار من مكان واحد.
+
+<div id="review-audit-log">
+  ### راجع سجل التدقيق
+</div>
+
+يُسجَّل كل إجراء في SCIM — مثل إنشاء مستخدم أو إلغاء تنشيطه أو تحديث ملفه التعريفي — في سجل تدقيق ClickHouse Cloud. راجع [تسجيل التدقيق](/ar/products/cloud/reference/security/audit-logging). تحقّق من السجل دوريًا، لا سيما بعد دفعات كبيرة من عمليات التوفير.
+
+<div id="default-role">
+  ### عيّن دورًا افتراضيًا مناسبًا
+</div>
+
+إذا جرى تعيين مستخدم Entra ID للتطبيق، لكنه لا ينتمي إلى أي مجموعة معيّنة، فسيُنشأ له **الدور الافتراضي**. اختر الدور الأكثر تقييدًا الذي يظلّ يتيح للمستخدم إنجاز *شيء ما*، لضمان فشل أخطاء التكوين بشكل آمن.
+
+<div id="avoid-manual-invites">
+  ### تجنّب استخدام SCIM والدعوات اليدوية في الوقت نفسه
+</div>
+
+بعد تفعيل SCIM، أدر العضوية عبر Entra ID، ولا ترسل دعوات يدوية إلى المستخدمين أنفسهم. فالجمع بين الطريقتين يسبب التباسًا حول المصدر المرجعي وقد يؤدي إلى إنشاء إدخالات مكررة.
+
+<div id="account-for-provisioning-cycle">
+  ### مراعاة دورة التزويد
+</div>
+
+تُزامن Entra ID البيانات دوريًا (كل 40 دقيقة تقريبًا)، لذا لا تُطبَّق التغييرات الاعتيادية فورًا. استخدم **Provision on demand** عندما تحتاج إلى تطبيق تغيير على الفور، وراقب **Provisioning logs** لرصد حالات الفشل المستمرة.
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<AccordionGroup>
+  <Accordion title="فشل &#x22;Test connection&#x22; في Entra ID" id="test-credentials-fails">
+    * تأكد من أن SCIM **مُمكّن** في ClickHouse Cloud Console.
+    * تأكد من أن **Tenant URL** في Entra ID يطابق تمامًا عنوان URL لنقطة نهاية SCIM المعروض في Cloud Console — يجب أن يكون معرّف المؤسسة صحيحًا.
+    * تأكد من أن **Secret Token** بالصيغة `<scim-key>:<scim-secret>` — المفتاح (الذي يبدأ بـ `scim_`)، ثم نقطتان، ثم السر. لا تُضمّن أي مسافات بيضاء في البداية أو النهاية، ولا بادئة `Bearer` (إذ يضيفها Entra ID تلقائيًا).
+    * إذا أجريت تدويرًا للرموز المميزة، فتأكد من استخدام المفتاح والسر **الجديدين**، وليس الزوج السابق.
+  </Accordion>
+
+  <Accordion title="يتم إنشاء المستخدمين لكن ليس لديهم أذونات" id="users-no-permissions">
+    * تحقق من إضافة صف ضمن **Map roles in &quot;Users and roles&quot;** للدور الذي تتوقعه.
+    * تحقق من أن اسم مجموعة Entra ID يطابق **تمامًا** اسم مجموعة SCIM في التعيين، بما في ذلك حالة الأحرف والواصلات.
+    * إذا كان تصميمك يتضمن عمدًا توفير بعض المستخدمين دون مجموعة، فتأكد من تعيين **Default role**.
+  </Accordion>
+
+  <Accordion title="لا يتم توفير المستخدمين أو المجموعات إطلاقًا" id="nothing-provisioning">
+    * تأكد من أن **Provisioning Status** مضبوط على `On`.
+    * تأكد من ضبط **Scope** على `Sync only assigned users and groups` وأن المستخدمين/المجموعات معيّنون بالفعل للتطبيق ضمن **Users and groups**.
+    * تذكّر أن دورة التوفير تعمل كل 40 دقيقة تقريبًا — استخدم **Provision on demand** لاختبار مستخدم واحد فورًا.
+    * يتطلب توفير المجموعات نفسها (وليس أعضائها فقط) Microsoft Entra ID P1 أو إصدارًا أحدث.
+  </Accordion>
+
+  <Accordion title="مستخدم مكرر في قائمة الأعضاء" id="duplicate-user">
+    ينتج هذا عادةً عن اختلاف حالة أحرف البريد الإلكتروني بين Entra ID ودعوة يدوية سابقة. أزل المستخدم المكرر من قائمة Members، ثم ألغِ تعيين المستخدم وأعِد تعيينه في Entra ID (أو أعد تشغيل **Provision on demand**) لإعادة توفيره من جديد.
+  </Accordion>
+
+  <Accordion title="فشل توفير المجموعة بسبب عدم تطابق الاسم" id="group-display-name">
+    لا يطابق اسم عرض المجموعة في Entra ID أي تعيين مُعدّ في ClickHouse Cloud. أعد تسمية مجموعة Entra ID أو أضف تعيينًا ضمن **Map roles in &quot;Users and roles&quot;** من لوحة SCIM Configuration (أو عبر **Users and roles → Roles**).
+  </Accordion>
+
+  <Accordion title="لا يزال المستخدمون الذين أُلغي تنشيطهم يظهرون كأعضاء" id="deactivated-users-remaining">
+    يُطبَّق إلغاء التنشيط في دورة التوفير التالية. لفرضه فورًا، استخدم **Provision on demand** لهذا المستخدم. إذا ظل المستخدم عضوًا بعد ذلك، فتحقق من **Provisioning → View provisioning logs** بحثًا عن خطأ في عملية التعطيل.
+  </Accordion>
+
+  <Accordion title="دوّرت رمز SCIM المميز والآن يفشل Entra ID" id="token-rotation-issue">
+    تحقق من تحديث **Secret Token** في تطبيق Enterprise الصحيح في Entra ID، بالصيغة `<scim-key>:<scim-secret>`. بعد التحديث، انقر فوق `Test Connection` للتأكد. وبعد عودة التوفير إلى الحالة السليمة، اسحب الرمز المميز القديم في ClickHouse Cloud Console.
+  </Accordion>
+
+  <Accordion title="فقدت رمز SCIM المميز" id="lost-token">
+    لا يمكن استعادة الرموز المميزة. ضمن **Organization settings → SAML and SCIM settings → SCIM Configuration** في ClickHouse Cloud Console، اسحب الرمز المميز المفقود وأنشئ رمزًا جديدًا، ثم حدّث **Secret Token** في Entra ID.
+  </Accordion>
+</AccordionGroup>
+
+<div id="faq">
+  ## الأسئلة الشائعة
+</div>
+
+<AccordionGroup>
+  <Accordion title="هل أحتاج إلى SAML SSO قبل أن أتمكن من استخدام SCIM؟">
+    نعم. ينشئ SCIM حسابات المستخدمين، لكن ClickHouse Cloud يصادق عليهم عبر SAML. أعدّ [SAML SSO](/ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup) أولاً.
+  </Accordion>
+
+  <Accordion title="هل يمكنني استخدام تطبيق المؤسسة نفسه لكلٍّ من SAML وSCIM؟">
+    نعم. مع SSO المستند إلى SAML، يتولى تطبيق مؤسسة واحد في Entra ID كلاً من تسجيل الدخول الأحادي وتهيئة SCIM.
+  </Accordion>
+
+  <Accordion title="لماذا يُنسَّق Secret Token بصيغة key:secret؟">
+    يصادق Entra ID بإرسال Secret Token في ترويسة `Authorization: Bearer`. تتوقع نقطة نهاية SCIM في ClickHouse Cloud أن تتكون قيمة bearer من مفتاح الرمز المميز وسرّه، مفصولين بنقطتين.
+  </Accordion>
+
+  <Accordion title="ما مدى سرعة ظهور التغييرات في Entra ID في ClickHouse Cloud؟">
+    ينفّذ Entra ID التهيئة في دورة متكررة تستغرق نحو 40 دقيقة. للحصول على تحديث فوري، استخدم **Provision on demand** للمستخدم المحدد.
+  </Accordion>
+
+  <Accordion title="أين يمكنني الحصول على المساعدة إذا واجهت مشكلة؟">
+    افتح تذكرة دعم من ClickHouse Cloud Console (**Help → Contact support**) وأدرج:
+
+    * معرّف مؤسستك،
+    * الاسم (ومعرّف الكائن) لتطبيق مؤسسة Entra ID، و
+    * لقطة شاشة للإدخال الذي أخفق من **Provisioning → View provisioning logs**.
+  </Accordion>
+</AccordionGroup>

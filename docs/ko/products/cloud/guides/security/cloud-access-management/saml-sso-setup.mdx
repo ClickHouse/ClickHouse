@@ -15,7 +15,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePl
 
 ClickHouse Cloud는 Security Assertion Markup Language(SAML)를 통한 싱글 사인온(SSO)을 지원합니다. 이를 통해 IdP(Identity Provider)로 인증하여 ClickHouse Cloud 조직에 안전하게 로그인할 수 있습니다.
 
-서비스 제공자 시작 SSO, 각기 별도의 연결을 사용하는 여러 조직, 그리고 Just-in-Time 프로비저닝을 지원합니다. 또한 Okta를 지원하는 [SCIM 프로비저닝](/ko/products/cloud/guides/security/cloud-access-management/scim-setup)을 비공개 프리뷰로 제공합니다. 아직 속성 매핑은 지원하지 않습니다.
+서비스 제공자 시작 SSO, 각기 별도의 연결을 사용하는 여러 조직, 그리고 Just-in-Time 프로비저닝을 지원합니다. 또한 [Okta](/ko/products/cloud/guides/security/cloud-access-management/scim-setup) 및 [Microsoft Entra ID](/ko/products/cloud/guides/security/cloud-access-management/scim-setup-entra)와 함께 SCIM provisioning을 비공개 프리뷰로 지원합니다. 아직 속성 매핑은 지원하지 않습니다.
 
 SAML 통합을 활성화한 고객은 새 사용자에게 할당할 기본 역할을 지정하고 세션 타임아웃 설정을 조정할 수도 있습니다.
 
@@ -364,5 +364,5 @@ SAML SSO가 구성되면 사용자는 서비스 제공자 시작(service-provide
 </div>
 
 * [Manage cloud users](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — 사용자 권한을 관리하고 SAML 연결을 통해서만 액세스를 허용합니다.
-* [SCIM provisioning](/ko/products/cloud/guides/security/cloud-access-management/scim-setup) — 사용자 및 그룹 프로비저닝을 자동화합니다(비공개 프리뷰).
+* SCIM provisioning — [Okta](/ko/products/cloud/guides/security/cloud-access-management/scim-setup) 또는 [Microsoft Entra ID](/ko/products/cloud/guides/security/cloud-access-management/scim-setup-entra)를 사용하여 사용자 및 그룹 프로비저닝을 자동화합니다(비공개 프리뷰).
 * [Console roles and permissions](/ko/products/cloud/reference/security/console-roles) — 기본 SAML 역할로 할당할 수 있는 역할입니다.

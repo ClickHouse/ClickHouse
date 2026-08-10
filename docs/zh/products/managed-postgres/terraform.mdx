@@ -1,9 +1,9 @@
 ---
 slug: /cloud/managed-postgres/terraform
 sidebarTitle: 'Terraform'
-title: 'Managed Postgres Terraform 参考文档'
+title: 'ClickHouse Managed Postgres Terraform 参考文档'
 description: '使用 ClickHouse Terraform 提供商 管理 ClickHouse Managed Postgres 服务的参考文档。'
-keywords: ['managed postgres', 'terraform', '基础设施即代码', 'iac', 'provider', '程序化']
+keywords: ['managed postgres', 'terraform', '基础设施即代码', 'iac', '提供商', '程序化']
 doc_type: 'guide'
 ---
 
@@ -20,7 +20,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 <Warning>
   **请在 2026 年 7 月 31 日之前升级到 提供商 v3.21.0**
 
-  自 **2026 年 7 月 31 日** 起，Managed Postgres API 不再在响应中返回 超级用户 密码和 connection string；只有在创建 service 或重置其密码时才会返回凭据。提供商版本 **v3.21.0 及更高版本** 在此变更前后的行为完全一致。较旧的 提供商 版本依赖 API 回显凭据：截至 2026 年 7 月 31 日，这些版本将不再填充 `connection_string`，而且在未声明 `password` 的情况下创建的 service 虽然会成功，但系统生成的密码不会被记录到任何地方。
+  自 **2026 年 7 月 31 日** 起，ClickHouse Managed Postgres API 不再在响应中返回 超级用户 密码和 connection string；只有在创建 service 或重置其密码时才会返回凭据。提供商版本 **v3.21.0 及更高版本** 在此变更前后的行为完全一致。较旧的 提供商 版本依赖 API 回显凭据：截至 2026 年 7 月 31 日，这些版本将不再填充 `connection_string`，而且在未声明 `password` 的情况下创建的 service 虽然会成功，但系统生成的密码不会被记录到任何地方。
 
   请在 2026 年 7 月 31 日之前完成升级。使用 v3.21.0 首次执行 plan 或 apply 时，您的 Terraform 状态 会自动迁移。如果您的任何 services 依赖 server 生成的密码 (即配置中没有 `password`) ，请先使用 `terraform state pull` 将其取回并显式声明，因为 v3.21.0 要求标准 service 必须提供 `password` 或 `password_wo`。
 </Warning>
@@ -167,7 +167,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All Managed Postgres services in the organization.
+# All ClickHouse Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -180,7 +180,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## 导入现有服务
 </div>
 
-现有的 Managed Postgres 服务可以通过服务 ID 导入到 Terraform 状态中：
+现有的 ClickHouse Managed Postgres 服务可以通过服务 ID 导入到 Terraform 状态中：
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

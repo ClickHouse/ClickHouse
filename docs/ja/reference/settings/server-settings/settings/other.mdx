@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SystemLogParameters from '/snippets/ja/_system-log-parameters.mdx';
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 これらの設定はClickHouseサーバーを構成するもので、ClickHouseのソースから自動生成されています。
 
@@ -23,13 +24,15 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   ## allowed_disks_for_table_engines
 </div>
 
-Iceberg で使用できるディスクの一覧
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Iceberg で使用できるディスクの一覧
 
 <div id="auth_use_forwarded_address">
   ## auth_use_forwarded_address
 </div>
 
 プロキシ経由で接続するクライアントの認証に、接続元アドレスを使用します。
+
+* **デフォルト:** `false`
 
 <Note>
   転送されたアドレスは容易に偽装できるため、この設定の使用には特に注意が必要です。この認証を受け付けるサーバーには直接アクセスせず、必ず信頼できるプロキシ経由でのみアクセスするようにしてください。
@@ -42,13 +45,15 @@ Iceberg で使用できるディスクの一覧
 [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/) を使用する `bcrypt_password` 認証方式のワークファクターです。
 ワークファクターは、ハッシュの計算とパスワードの検証に必要な計算量と時間を定義します。
 
+* **デフォルト:** `12`
+
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
 
 <Warning>
   高頻度で認証を行うアプリケーションでは、
-  work factor が高い bcrypt では
+  ワークファクター が高い bcrypt では
   計算負荷が大きくなるため、
   別の認証方式の利用を検討してください。
 </Warning>
@@ -138,7 +143,7 @@ cgroup オブザーバーを無効にするには、この値を `0` に設定�
 * `min_part_size` – data part の最小サイズ。
 * `min_part_size_ratio` – data part のサイズとテーブルサイズの比率。
 * `method` – 圧縮方式。有効な値: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`。
-* `level` – 圧縮レベル。[Codecs](/ja/reference/statements/create/table#general-purpose-codecs) を参照してください。
+* `level` – 圧縮レベル。[Codecs](/ja/reference/statements/create/table/codec#general-purpose-codecs) を参照してください。
 
 <Note>
   `<case>` セクションは複数設定できます。
@@ -237,6 +242,36 @@ ClickHouse が設定を再読み込みし、新たな変更があるかどうか
 </crash_log>
 ```
 
+<div id="create_union_system_log_tables">
+  ## create_union_system_log_tables
+</div>
+
+システムログテーブルと同じ場所に `all_...` テーブル (`system.query_log` に対する `system.all_query_log`、`system.text_log` に対する `system.all_text_log` など) を作成します。このテーブルは、対応するログテーブル、そのローテーション後のバージョン (`query_log_0`、`query_log_1`、...) 、および/またはクラスター内のすべてのレプリカにある同一テーブルをユニオンしたもので、`clusterAllReplicas(default, merge(system, '^query_log'))` のような構文を覚えなくても、まとめてクエリできます。
+
+このセクションは任意です。指定する場合は、以下の設定の少なくとも 1 つを指定する必要があります。
+
+| 設定                     | 説明                                                                                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `merge_rotated_tables` | `true` の場合、`all_...` テーブルは `merge` テーブル関数を使用して、ログテーブルとそのローテーション後のバージョンを対象にクエリします。                                                                              |
+| `cluster`              | 指定した場合、`all_...` テーブルは `clusterAllReplicas` テーブル関数を使用して、このクラスターのすべてのレプリカを対象にクエリします (`SETTINGS skip_unavailable_shards = 1` を指定するため、使用不可のレプリカがあってもクエリは失敗しません) 。 |
+
+両方の設定を指定した場合、このテーブルはクラスター内のすべてのレプリカにまたがるローテーション後のテーブルをユニオンしたものになります。
+
+このオプションはすべてのシステムログテーブルに適用され、システムログごとに異なる設定を指定することはできません。各テーブルは、各ログの初回フラッシュ時にシステムログテーブルと同じデータベースに作成され、ログテーブルの構造が変更されると (ローテーション時に) 自動的に再作成されます。状態を持たないため、いつでも安全に削除できます。作成がサポートされるのは、`Atomic`、`Replicated`、`Shared` データベースエンジンのみです。
+
+<Note>
+  `cluster` 設定を使用する場合、テーブル定義はクラスターを参照するため、テーブルを読み込むにはそのクラスターが存在している必要があります。設定からクラスターを削除する場合は、`all_...` テーブルも削除してください (次回のフラッシュ時に新しい設定に従って再作成されます) 。
+</Note>
+
+**例**
+
+```xml
+<create_union_system_log_tables>
+    <merge_rotated_tables>true</merge_rotated_tables>
+    <cluster>default</cluster>
+</create_union_system_log_tables>
+```
+
 <div id="database_atomic_delay_before_drop_table_sec">
   ## database_atomic_delay_before_drop_table_sec
 </div>
@@ -289,7 +324,7 @@ ClickHouse が設定を再読み込みし、新たな変更があるかどうか
 テーブル、データベース、テーブル関数、および Dictionaries に対する `SHOW` クエリと `SELECT` クエリでシークレットを表示するかどうかを有効または無効にします。
 
 シークレットを表示するには、ユーザーに加えて
-[`format_display_secrets_in_show_and_select` フォーマット設定](/ja/reference/settings/formats#format_display_secrets_in_show_and_select)
+[`format_display_secrets_in_show_and_select` フォーマット設定](/ja/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 が有効になっており、
 [`displaySecretsInShowAndSelect`](/ja/reference/statements/grant#displaysecretsinshowandselect) 権限
 も付与されている必要があります。
@@ -330,9 +365,9 @@ ClickHouse が設定を再読み込みし、新たな変更があるかどうか
   ## 暗号化
 </div>
 
-[暗号化コーデック](/ja/reference/statements/create/table#encryption-codecs)で使用するキーを取得するコマンドを設定します。キーは環境変数に記述するか、設定ファイルで設定する必要があります。
+[暗号化コーデック](/ja/reference/statements/create/table/codec#encryption-codecs)で使用する秘密鍵を取得するコマンドを設定します。秘密鍵は環境変数に記述するか、設定ファイルで設定する必要があります。
 
-キーには、16バイト長の16進数表現または文字列を指定できます。
+秘密鍵には、16バイト長の16進数表現または文字列を指定できます。
 
 **例**
 
@@ -370,9 +405,9 @@ config から読み込む場合:
 </encryption_codecs>
 ```
 
-ここで、`current_key_id` は暗号化に使用する現在のキーを設定し、指定したすべてのキーを復号に使用できます。
+ここで、`current_key_id` は暗号化に使用する現在の秘密鍵を設定し、指定したすべての秘密鍵を復号に使用できます。
 
-これらの各方法は、複数のキーに適用できます。
+これらの各方法は、複数の秘密鍵に適用できます。
 
 ```xml
 <encryption_codecs>
@@ -384,7 +419,7 @@ config から読み込む場合:
 </encryption_codecs>
 ```
 
-ここで `current_key_id` は、暗号化に使用中の現在の鍵を示します。
+ここで `current_key_id` は、暗号化に使用中の現在の秘密鍵を示します。
 
 また、ユーザーは長さが12バイトの nonce を追加できます (デフォルトでは、暗号化および復号の処理にはゼロバイトのみで構成された nonce が使用されます) :
 
@@ -407,7 +442,7 @@ config から読み込む場合:
 ```
 
 <Note>
-  前述の内容はすべて `aes_256_gcm_siv` にも適用できます (ただし、キーの長さは 32 バイトである必要があります) 。
+  前述の内容はすべて `aes_256_gcm_siv` にも適用できます (ただし、秘密鍵の長さは 32 バイトである必要があります) 。
 </Note>
 
 <div id="enforce_keeper_component_tracking">
@@ -459,6 +494,8 @@ config から読み込む場合:
   ## filesystem_caches_path
 </div>
 
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
+
 この設定では、cache のパスを指定します。
 
 **例**
@@ -491,7 +528,7 @@ Protobuf 型の proto ファイルが含まれるディレクトリを指定し�
   ## hdfs.libhdfs3_conf
 </div>
 
-libhdfs3 が設定ファイルの正しい場所を参照するようにします。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />libhdfs3 が設定ファイルの正しい場所を参照するようにします。
 
 <div id="hsts_max_age">
   ## hsts_max_age
@@ -849,7 +886,7 @@ JSONロギングを有効にするには、次のスニペットを使用しま�
   ## logger.errorlog
 </div>
 
-エラーログファイルのパス。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />エラーログファイルのパス。
 
 <div id="logger.formatting.type">
   ## logger.formatting.type
@@ -867,7 +904,7 @@ JSONロギングを有効にするには、次のスニペットを使用しま�
   ## logger.log
 </div>
 
-ログファイルのパス。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />ログファイルのパス。
 
 <div id="logger.rotation">
   ## logger.rotation
@@ -879,7 +916,7 @@ JSONロギングを有効にするには、次のスニペットを使用しま�
   ## logger.shutdown_level
 </div>
 
-サーバーのシャットダウン時にルートロガーのレベルを設定するために使用されます。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />サーバーのシャットダウン時にルートロガーのレベルを設定するために使用されます。
 
 <div id="logger.size">
   ## logger.size
@@ -891,7 +928,7 @@ JSONロギングを有効にするには、次のスニペットを使用しま�
   ## logger.startup_level
 </div>
 
-Startup levelは、サーバー起動時にルートロガーのレベルを設定するために使用されます。起動後、ログレベルは `<level>` の設定に戻ります。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Startup levelは、サーバー起動時にルートロガーのレベルを設定するために使用されます。起動後、ログレベルは `<level>` の設定に戻ります。
 
 <div id="logger.stream_compress">
   ## logger.stream_compress
@@ -1001,6 +1038,16 @@ Startup levelは、サーバー起動時にルートロガーのレベルを設�
 
 * [ワークロードスケジューリング](/ja/concepts/features/configuration/server-config/workload-scheduling)
 
+<div id="named_collections_storage.type">
+  ## named_collections_storage.type
+</div>
+
+<SettingsInfoBlock type="String" default_value="local" changeable_without_restart="No" />
+
+named collections のストレージタイプです。設定可能な値は `local`、`local_encrypted`、`keeper`、
+`keeper_encrypted`、`zookeeper`、`zookeeper_encrypted` です。
+`named_collections_storage.type` として設定します (XML では `<named_collections_storage><type>`) 。
+
 <div id="oom_score">
   ## oom_score
 </div>
@@ -1074,7 +1121,7 @@ SSL のサポートは `libpoco` ライブラリによって提供されてい�
   ## openSSL.client.caConfig
 </div>
 
-信頼された CA証明書 が格納されているファイルまたはディレクトリへのパスです。ファイルを指す場合は、PEMフォーマットである必要があり、複数の CA証明書 を含めることができます。ディレクトリを指す場合は、CA証明書ごとに 1 つの .pem ファイルが含まれている必要があります。ファイル名は、CA の subject name のハッシュ値に基づいて検索されます。詳細については、[SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/) の man ページを参照してください。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />信頼された CA証明書 が格納されているファイルまたはディレクトリへのパスです。ファイルを指す場合は、PEMフォーマットである必要があり、複数の CA証明書 を含めることができます。ディレクトリを指す場合は、CA証明書ごとに 1 つの .pem ファイルが含まれている必要があります。ファイル名は、CA の subject name のハッシュ値に基づいて検索されます。詳細については、[SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/) の man ページを参照してください。
 
 <div id="openssl.client.cachesessions">
   ## openSSL.client.cacheSessions
@@ -1086,7 +1133,7 @@ SSL のサポートは `libpoco` ライブラリによって提供されてい�
   ## openSSL.client.certificateFile
 </div>
 
-PEMフォーマットのクライアントまたはサーバー証明書ファイルへのパスです。`<privateKeyFile>` に証明書が含まれている場合は、省略できます。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />PEMフォーマットのクライアントまたはサーバー証明書ファイルへのパスです。`<privateKeyFile>` に証明書が含まれている場合は、省略できます。
 
 <div id="openssl.client.cipherlist">
   ## openSSL.client.cipherList
@@ -1098,7 +1145,7 @@ PEMフォーマットのクライアントまたはサーバー証明書ファ�
   ## openSSL.client.disableProtocols
 </div>
 
-使用できないプロトコル。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />使用できないプロトコル。
 
 <div id="openssl.client.extendedverification">
   ## openSSL.client.extendedVerification
@@ -1134,7 +1181,7 @@ PEMフォーマットのクライアントまたはサーバー証明書ファ�
   ## openSSL.client.privateKeyFile
 </div>
 
-PEM証明書の秘密鍵を含むファイルへのパスです。このファイルには、秘密鍵と証明書の両方を含めることもできます。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />PEM証明書の秘密鍵を含むファイルへのパスです。このファイルには、秘密鍵と証明書の両方を含めることもできます。
 
 <div id="openssl.client.privatekeypassphrasehandler.name">
   ## openSSL.client.privateKeyPassphraseHandler.name
@@ -1158,7 +1205,7 @@ PEM証明書の秘密鍵を含むファイルへのパスです。このファ�
   ## openSSL.server.caConfig
 </div>
 
-信頼された CA 証明書が格納されているファイルまたはディレクトリへのパスです。ファイルを指定する場合は、PEM フォーマットである必要があり、複数の CA 証明書を含めることができます。ディレクトリを指定する場合は、CA 証明書ごとに 1 つの .pem ファイルが含まれている必要があります。ファイル名は、CA の subject name のハッシュ値を基に検索されます。詳細については、[SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/) の man ページを参照してください。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />信頼された CA 証明書が格納されているファイルまたはディレクトリへのパスです。ファイルを指定する場合は、PEMフォーマットである必要があり、複数の CA 証明書を含めることができます。ディレクトリを指定する場合は、CA 証明書ごとに 1 つの .pem ファイルが含まれている必要があります。ファイル名は、CA の subject name のハッシュ値を基に検索されます。詳細については、[SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/) の man ページを参照してください。
 
 <div id="openssl.server.cachesessions">
   ## openSSL.server.cacheSessions
@@ -1170,7 +1217,7 @@ PEM証明書の秘密鍵を含むファイルへのパスです。このファ�
   ## openSSL.server.certificateFile
 </div>
 
-PEMフォーマットのクライアント/サーバー証明書ファイルへのパスです。`<privateKeyFile>` に証明書が含まれている場合は、省略できます。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />PEMフォーマットのクライアント/サーバー証明書ファイルへのパスです。`<privateKeyFile>` に証明書が含まれている場合は、省略できます。
 
 <div id="openssl.server.cipherlist">
   ## openSSL.server.cipherList
@@ -1182,7 +1229,7 @@ PEMフォーマットのクライアント/サーバー証明書ファイルへ�
   ## openSSL.server.disableProtocols
 </div>
 
-使用できないプロトコル。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />使用できないプロトコル。
 
 <div id="openssl.server.extendedverification">
   ## openSSL.server.extendedVerification
@@ -1218,7 +1265,7 @@ PEMフォーマットのクライアント/サーバー証明書ファイルへ�
   ## openSSL.server.privateKeyFile
 </div>
 
-PEM証明書の秘密鍵を含むファイルのパスです。このファイルには、秘密鍵と証明書の両方を含めることもできます。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />PEM証明書の秘密鍵を含むファイルのパスです。このファイルには、秘密鍵と証明書の両方を含めることもできます。
 
 <div id="openssl.server.privatekeypassphrasehandler.name">
   ## openSSL.server.privateKeyPassphraseHandler.name
@@ -1421,10 +1468,11 @@ true の場合、ClickHouse は起動前に設定されている `system.*_log` 
 * `events` – [system.events](/ja/reference/system-tables/events) テーブルのメトリクスを公開します。
 * `asynchronous_metrics` – [system.asynchronous&#95;metrics](/ja/reference/system-tables/asynchronous_metrics) テーブルの現在のメトリクス値を公開します。
 * `errors` - 前回の server 再起動以降に発生した、error codes ごとの error 数を公開します。この情報は [system.errors](/ja/reference/system-tables/errors) からも取得できます。
+* `labels` – 公開されるすべてのメトリクスに追加される定数ラベル。各子要素が 1 つのラベルを定義します。要素名がラベル名 (`[a-zA-Z_][a-zA-Z0-9_]*` に一致する必要があります) 、要素値がラベル値です。ラベル値では、`from_env` 属性などの標準的な config substitutions を使用できます。ラベル名が `__` で始まる場合 (Prometheus によって予約済み) 、または有効なセクションのいずれかでこの endpoint がすでに書き込んでいるラベルと競合する場合は拒否されます。そうでない場合、サンプルに同じラベル名が 2 回含まれることになります。したがって、予約されるラベル名は endpoint のアクティブなエクスポート対象に応じて決まります。`histograms` が有効な場合は `le`、`info` が有効な場合は `ClickHouse_Info` のラベル (`name`、`version`、`version_describe`、`version_major`、`version_minor`、`version_patch`) 、さらに `histograms`/`dimensional_metrics` が有効な場合は公開される histogram または dimensional metric family で使用される任意のラベル (例: `group`、`direction`、`operation_type`) です。endpoint が実際に公開する内容に依存するため、ある endpoint では有効な名前でも、別の endpoint では拒否されることがあります。たとえば、Keeper の `keeper_metrics_only` endpoint は `keeper_*` family のみを公開するため、server family でのみ使用されるラベルはそこで受け入れられます。
 
 **例**
 
-```xml highlight={5-12}
+```xml highlight={5-16}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1436,6 +1484,10 @@ true の場合、ClickHouse は起動前に設定されている `system.*_log` 
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
+        <labels>
+            <environment>production</environment>
+            <shard from_env="SHARD_NAME"></shard>
+        </labels>
     </prometheus>
 </clickhouse>
 ```
@@ -1617,7 +1669,7 @@ Replicated データベースのレプリカグループ名です。
 Replicated データベースによって作成されるクラスターは、同じグループ内のレプリカで構成されます。
 DDL クエリは、同じグループ内のレプリカのみを待機します。
 
-デフォルトでは空です。
+* **デフォルト:** `""`
 
 **例**
 
@@ -1702,7 +1754,11 @@ ClickHouse コア開発チームにクラッシュレポートを送信するた
   ## table_engines_require_grant
 </div>
 
+<CloudNotSupportedBadge />
+
 true に設定すると、特定のエンジンを使用するテーブルを作成する際に grant が必要になります (例: `GRANT TABLE ENGINE ON TinyLog to user`) 。
+
+* **既定値:** `false`
 
 <Note>
   既定では、後方互換性のため、特定の table engine を使用するテーブルの作成時には grant は無視されます。ただし、これを true に設定することでこの動作を変更できます。
@@ -1810,7 +1866,7 @@ UTC のタイムゾーンまたは地理的な場所を表す IANA 識別子 (�
 
 **関連項目**
 
-* [session&#95;timezone](/ja/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/ja/reference/settings/session-settings/other#session_timezone)
 
 <div id="trace_log">
   ## trace_log
@@ -1832,7 +1888,7 @@ UTC のタイムゾーンまたは地理的な場所を表す IANA 識別子 (�
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>false</symbolize>
+    <symbolize>true</symbolize>
 </trace_log>
 ```
 
@@ -1903,6 +1959,6 @@ Dictionary がクエリで初めて使用されたとき、まだロードされ
   ## webterminal_allowed_origins
 </div>
 
-`/webterminal` WebSocket セッションを開くことを許可する完全なオリジン (スキーム + ホスト + 任意のポート) のカンマ区切りリストです。空の場合、同一オリジンポリシーが厳密に適用されます (`Origin` はリクエストのスキーム、ホスト、ポートと一致している必要があります) 。ブラウザーは `https` を使用しているにもかかわらず `request.isSecure()` が `false` になる、TLS 終端を行うリバースプロキシ配下のデプロイ環境では、これを設定してください。例: `https://example.com,https://app.example.com:8443`。
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />`/webterminal` WebSocket セッションを開くことを許可する完全なオリジン (スキーム + ホスト + 任意のポート) のカンマ区切りリストです。空の場合、同一オリジンポリシーが厳密に適用されます (`Origin` はリクエストのスキーム、ホスト、ポートと一致している必要があります) 。ブラウザーは `https` を使用しているにもかかわらず `request.isSecure()` が `false` になる、TLS 終端を行うリバースプロキシ配下のデプロイ環境では、これを設定してください。例: `https://example.com,https://app.example.com:8443`。
 
 {/*AUTOGENERATED_END*/}

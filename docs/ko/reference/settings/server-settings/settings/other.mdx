@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SystemLogParameters from '/snippets/ko/_system-log-parameters.mdx';
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 이 설정은 ClickHouse 서버를 구성하며 ClickHouse 소스에서 자동으로 생성됩니다.
 
@@ -23,13 +24,15 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
   ## allowed_disks_for_table_engines
 </div>
 
-Iceberg에서 사용할 수 있도록 허용된 디스크 목록
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Iceberg에서 사용할 수 있도록 허용된 디스크 목록
 
 <div id="auth_use_forwarded_address">
   ## auth_use_forwarded_address
 </div>
 
 프록시를 통해 연결된 클라이언트의 인증에 원래 주소를 사용합니다.
+
+* **기본값:** `false`
 
 <Note>
   전달된 주소는 쉽게 위조될 수 있으므로 이 설정은 특히 주의해서 사용해야 합니다. 이러한 인증을 허용하는 서버에는 직접 접근하지 말고, 신뢰할 수 있는 프록시를 통해서만 접근해야 합니다.
@@ -42,13 +45,15 @@ Iceberg에서 사용할 수 있도록 허용된 디스크 목록
 [Bcrypt 알고리즘](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/)을 사용하는 `bcrypt_password` 인증 유형에 대한 작업 계수입니다.
 작업 계수는 해시를 계산하고 비밀번호를 검증하는 데 필요한 연산량과 시간을 결정합니다.
 
+* **기본값:** `12`
+
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
 
 <Warning>
   인증 요청이 빈번한 애플리케이션에서는
-  work factor가 높을수록 bcrypt의 계산 오버헤드가 커지므로
+  작업 계수가 높을수록 bcrypt의 계산 오버헤드가 커지므로
   대체 인증 메서드를 고려하십시오.
 </Warning>
 
@@ -137,7 +142,7 @@ cgroup observer를 비활성화하려면 이 값을 `0`으로 설정하십시오
 * `min_part_size` – 데이터 파트(data part)의 최소 크기입니다.
 * `min_part_size_ratio` – 데이터 파트 크기와 테이블 크기의 비율입니다.
 * `method` – 압축 방식입니다. 허용되는 값: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
-* `level` – 압축 수준입니다. [코덱](/ko/reference/statements/create/table#general-purpose-codecs)을 참조하십시오.
+* `level` – 압축 수준입니다. [코덱](/ko/reference/statements/create/table/codec#general-purpose-codecs)을 참조하십시오.
 
 <Note>
   여러 개의 `<case>` 섹션을 구성할 수 있습니다.
@@ -236,6 +241,36 @@ ClickHouse가 구성을 다시 로드하고 새로운 변경 사항이 있는지
 </crash_log>
 ```
 
+<div id="create_union_system_log_tables">
+  ## create_union_system_log_tables
+</div>
+
+시스템 로그 테이블과 함께 `all_...` 테이블을 생성하도록 요청합니다(`system.query_log`에는 `system.all_query_log`, `system.text_log`에는 `system.all_text_log` 등). 이러한 테이블은 해당 로그 테이블과 그 교체된 버전(`query_log_0`, `query_log_1`, ...), 그리고/또는 클러스터의 모든 레플리카에 있는 동일한 테이블을 결합한 것이며, `clusterAllReplicas(default, merge(system, '^query_log'))` 같은 구문을 기억하지 않아도 한 번에 모두 쿼리할 수 있습니다.
+
+이 섹션은 선택 사항입니다. 포함할 경우 다음 설정 중 하나 이상을 지정해야 합니다.
+
+| 설정                     | 설명                                                                                                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `merge_rotated_tables` | `true`이면 `all_...` 테이블은 `merge` 테이블 함수를 사용하여 로그 테이블과 그 교체된 버전에서 데이터를 선택합니다.                                                                                      |
+| `cluster`              | 지정하면 `all_...` 테이블은 `clusterAllReplicas` 테이블 함수를 사용하여 이 클러스터의 모든 레플리카에서 데이터를 선택합니다(`SETTINGS skip_unavailable_shards = 1`을 사용하므로 사용할 수 없는 레플리카가 쿼리를 실패시키지 않습니다). |
+
+두 설정을 모두 지정하면 이 테이블은 클러스터의 모든 레플리카에 있는 교체된 테이블을 결합한 것입니다.
+
+이 옵션은 모든 시스템 로그 테이블에 적용되며, 시스템 로그별로 서로 다른 구성을 지정할 수는 없습니다. 테이블은 각 로그가 처음 플러시될 때 시스템 로그 테이블과 동일한 데이터베이스에 생성되며, 로그 테이블의 구조가 변경되면(교체 시) 자동으로 다시 생성됩니다. 상태를 저장하지 않으므로 언제든지 안전하게 삭제할 수 있습니다. 생성은 `Atomic`, `Replicated`, `Shared` 데이터베이스 엔진에서만 지원됩니다.
+
+<Note>
+  `cluster` 설정을 사용하면 테이블 정의에서 클러스터를 참조하므로 테이블을 로드하려면 클러스터가 존재해야 합니다. 구성에서 클러스터를 제거하는 경우 `all_...` 테이블도 삭제하십시오(다음 플러시 시 새 구성에 따라 다시 생성됩니다).
+</Note>
+
+**예시**
+
+```xml
+<create_union_system_log_tables>
+    <merge_rotated_tables>true</merge_rotated_tables>
+    <cluster>default</cluster>
+</create_union_system_log_tables>
+```
+
 <div id="database_atomic_delay_before_drop_table_sec">
   ## database_atomic_delay_before_drop_table_sec
 </div>
@@ -288,7 +323,7 @@ ClickHouse가 구성을 다시 로드하고 새로운 변경 사항이 있는지
 테이블, 데이터베이스, 테이블 함수 및 딕셔너리에 대한 `SHOW` 및 `SELECT` 쿼리에서 시크릿 표시를 활성화하거나 비활성화합니다.
 
 시크릿을 보려면 사용자는
-[`format_display_secrets_in_show_and_select` 포맷 설정](/ko/reference/settings/formats#format_display_secrets_in_show_and_select)
+[`format_display_secrets_in_show_and_select` 포맷 설정](/ko/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 이 활성화되어 있어야 하며,
 [`displaySecretsInShowAndSelect`](/ko/reference/statements/grant#displaysecretsinshowandselect) 권한도 있어야 합니다.
 
@@ -328,7 +363,7 @@ ClickHouse가 구성을 다시 로드하고 새로운 변경 사항이 있는지
   ## 암호화
 </div>
 
-[암호화 코덱](/ko/reference/statements/create/table#encryption-codecs)에서 사용할 키를 가져오는 명령을 설정합니다. 키(또는 여러 개의 키)는 환경 변수에 저장하거나 설정 파일에 지정해야 합니다.
+[암호화 코덱](/ko/reference/statements/create/table/codec#encryption-codecs)에서 사용할 키를 가져오는 명령을 설정합니다. 키(또는 여러 개의 키)는 환경 변수에 저장하거나 설정 파일에 지정해야 합니다.
 
 키는 16바이트 길이의 16진수 값 또는 문자열일 수 있습니다.
 
@@ -457,6 +492,8 @@ ClickHouse가 구성을 다시 로드하고 새로운 변경 사항이 있는지
   ## filesystem_caches_path
 </div>
 
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
+
 이 설정은 캐시의 경로를 지정합니다.
 
 **예시**
@@ -489,7 +526,7 @@ Protobuf 타입의 proto 파일이 포함된 디렉터리를 지정합니다.
   ## hdfs.libhdfs3_conf
 </div>
 
-libhdfs3가 구성의 올바른 위치를 가리키도록 지정합니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />libhdfs3가 구성의 올바른 위치를 가리키도록 지정합니다.
 
 <div id="hsts_max_age">
   ## hsts_max_age
@@ -847,7 +884,7 @@ JSON 로깅을 사용하려면 다음 스니펫을 사용하세요:
   ## logger.errorlog
 </div>
 
-오류 로그 파일 경로입니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />오류 로그 파일 경로입니다.
 
 <div id="logger.formatting.type">
   ## logger.formatting.type
@@ -865,7 +902,7 @@ JSON 로깅을 사용하려면 다음 스니펫을 사용하세요:
   ## logger.log
 </div>
 
-로그 파일의 경로입니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />로그 파일의 경로입니다.
 
 <div id="logger.rotation">
   ## logger.rotation
@@ -877,7 +914,7 @@ JSON 로깅을 사용하려면 다음 스니펫을 사용하세요:
   ## logger.shutdown_level
 </div>
 
-종료 레벨은 서버 종료 시 root 로거 레벨을 설정하는 데 사용됩니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />종료 레벨은 서버 종료 시 루트 로거 레벨을 설정하는 데 사용됩니다.
 
 <div id="logger.size">
   ## logger.size
@@ -889,7 +926,7 @@ JSON 로깅을 사용하려면 다음 스니펫을 사용하세요:
   ## logger.startup_level
 </div>
 
-시작 레벨은 server 시작 시 root 로거의 로그 레벨을 설정하는 데 사용됩니다. 시작이 완료되면 로그 레벨은 `<level>` 설정으로 되돌아갑니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />시작 레벨은 server 시작 시 루트 로거의 로그 레벨을 설정하는 데 사용됩니다. 시작이 완료되면 로그 레벨은 `<level>` 설정으로 되돌아갑니다.
 
 <div id="logger.stream_compress">
   ## logger.stream_compress
@@ -999,6 +1036,16 @@ JSON 로깅을 사용하려면 다음 스니펫을 사용하세요:
 
 * [워크로드 스케줄링](/ko/concepts/features/configuration/server-config/workload-scheduling)
 
+<div id="named_collections_storage.type">
+  ## named_collections_storage.type
+</div>
+
+<SettingsInfoBlock type="String" default_value="local" changeable_without_restart="No" />
+
+이름이 지정된 컬렉션의 스토리지 유형입니다. 가능한 값은 `local`, `local_encrypted`, `keeper`,
+`keeper_encrypted`, `zookeeper`, `zookeeper_encrypted`입니다.
+`named_collections_storage.type`으로 설정합니다(XML에서는 `<named_collections_storage><type>`).
+
 <div id="oom_score">
   ## oom_score
 </div>
@@ -1072,7 +1119,7 @@ SSL 클라이언트/서버 구성.
   ## openSSL.client.caConfig
 </div>
 
-신뢰할 수 있는 CA 인증서가 들어 있는 파일 또는 디렉터리의 경로입니다. 파일을 가리키는 경우 PEM 포맷이어야 하며 여러 개의 CA 인증서를 포함할 수 있습니다. 디렉터리를 가리키는 경우 각 CA 인증서마다 .pem 파일이 하나씩 있어야 합니다. 파일 이름은 CA subject name 해시 값을 기준으로 조회됩니다. 자세한 내용은 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/)의 man 페이지에서 확인할 수 있습니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />신뢰할 수 있는 CA certificate가 들어 있는 파일 또는 directory의 경로입니다. 파일을 가리키는 경우 PEM 포맷이어야 하며 여러 개의 CA certificate를 포함할 수 있습니다. directory를 가리키는 경우 각 CA certificate마다 .pem 파일이 하나씩 있어야 합니다. 파일 이름은 CA subject name 해시 값을 기준으로 조회됩니다. 자세한 내용은 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/)의 man 페이지에서 확인할 수 있습니다.
 
 <div id="openssl.client.cachesessions">
   ## openSSL.client.cacheSessions
@@ -1084,7 +1131,7 @@ SSL 클라이언트/서버 구성.
   ## openSSL.client.certificateFile
 </div>
 
-PEM 포맷의 클라이언트/서버 인증서 파일 경로입니다. `<privateKeyFile>`에 인증서가 포함되어 있으면 생략할 수 있습니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />PEM 포맷의 클라이언트/서버 인증서 파일 경로입니다. `<privateKeyFile>`에 인증서가 포함되어 있으면 생략할 수 있습니다.
 
 <div id="openssl.client.cipherlist">
   ## openSSL.client.cipherList
@@ -1096,7 +1143,7 @@ PEM 포맷의 클라이언트/서버 인증서 파일 경로입니다. `<private
   ## openSSL.client.disableProtocols
 </div>
 
-사용할 수 없도록 설정된 프로토콜입니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />사용할 수 없도록 설정된 프로토콜입니다.
 
 <div id="openssl.client.extendedverification">
   ## openSSL.client.extendedVerification
@@ -1132,7 +1179,7 @@ PEM 포맷의 클라이언트/서버 인증서 파일 경로입니다. `<private
   ## openSSL.client.privateKeyFile
 </div>
 
-PEM 인증서의 개인 키가 들어 있는 파일 경로입니다. 이 파일에는 키와 인증서가 함께 포함될 수 있습니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />PEM 인증서의 개인 키가 들어 있는 파일 경로입니다. 이 파일에는 키와 인증서가 함께 포함될 수 있습니다.
 
 <div id="openssl.client.privatekeypassphrasehandler.name">
   ## openSSL.client.privateKeyPassphraseHandler.name
@@ -1156,7 +1203,7 @@ PEM 인증서의 개인 키가 들어 있는 파일 경로입니다. 이 파일�
   ## openSSL.server.caConfig
 </div>
 
-신뢰할 수 있는 CA 인증서가 들어 있는 파일 또는 디렉터리의 경로입니다. 파일을 가리키는 경우 PEM 포맷이어야 하며 여러 개의 CA 인증서를 포함할 수 있습니다. 디렉터리를 가리키는 경우 각 CA 인증서마다 .pem 파일이 하나씩 있어야 합니다. 파일 이름은 CA subject name의 hash value를 기준으로 조회됩니다. 자세한 내용은 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/)의 man 페이지에서 확인할 수 있습니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />신뢰할 수 있는 CA 인증서가 들어 있는 파일 또는 디렉터리의 경로입니다. 파일을 가리키는 경우 PEM 포맷이어야 하며 여러 개의 CA 인증서를 포함할 수 있습니다. 디렉터리를 가리키는 경우 각 CA 인증서마다 .pem 파일이 하나씩 있어야 합니다. 파일 이름은 CA subject name의 hash value를 기준으로 조회됩니다. 자세한 내용은 [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/)의 man 페이지에서 확인할 수 있습니다.
 
 <div id="openssl.server.cachesessions">
   ## openSSL.server.cacheSessions
@@ -1168,7 +1215,7 @@ PEM 인증서의 개인 키가 들어 있는 파일 경로입니다. 이 파일�
   ## openSSL.server.certificateFile
 </div>
 
-PEM 포맷의 클라이언트/서버 인증서 파일 경로입니다. `<privateKeyFile>`에 인증서가 포함되어 있으면 생략할 수 있습니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />PEM 포맷의 클라이언트/서버 인증서 파일 경로입니다. `<privateKeyFile>`에 인증서가 포함되어 있으면 생략할 수 있습니다.
 
 <div id="openssl.server.cipherlist">
   ## openSSL.server.cipherList
@@ -1180,7 +1227,7 @@ PEM 포맷의 클라이언트/서버 인증서 파일 경로입니다. `<private
   ## openSSL.server.disableProtocols
 </div>
 
-사용이 허용되지 않는 protocol입니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />사용이 허용되지 않는 프로토콜입니다.
 
 <div id="openssl.server.extendedverification">
   ## openSSL.server.extendedVerification
@@ -1216,7 +1263,7 @@ PEM 포맷의 클라이언트/서버 인증서 파일 경로입니다. `<private
   ## openSSL.server.privateKeyFile
 </div>
 
-PEM 인증서의 개인 키가 들어 있는 파일의 경로입니다. 이 파일에는 키와 인증서가 함께 포함될 수 있습니다.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />PEM 인증서의 개인 키가 들어 있는 파일의 경로입니다. 이 파일에는 키와 인증서가 함께 포함될 수 있습니다.
 
 <div id="openssl.server.privatekeypassphrasehandler.name">
   ## openSSL.server.privateKeyPassphraseHandler.name
@@ -1419,10 +1466,11 @@ prefixes 역직렬화용 스레드 풀에 예약할 수 있는 최대 작업 수
 * `events` – [system.events](/ko/reference/system-tables/events) 테이블의 메트릭을 노출합니다.
 * `asynchronous_metrics` – [system.asynchronous&#95;metrics](/ko/reference/system-tables/asynchronous_metrics) 테이블의 현재 메트릭 값을 노출합니다.
 * `errors` - 마지막 server 재시작 이후 error codes별 오류 수를 노출합니다. 이 정보는 [system.errors](/ko/reference/system-tables/errors)에서도 확인할 수 있습니다.
+* `labels` – 노출되는 모든 메트릭에 추가되는 상수 레이블입니다. 각 하위 요소는 하나의 레이블을 정의합니다. 요소 이름은 레이블 이름이며(`[a-zA-Z_][a-zA-Z0-9_]*`와 일치해야 함), 요소 값은 레이블 값입니다. 레이블 값은 `from_env` 속성 같은 표준 구성 치환을 지원합니다. 레이블 이름이 `__`로 시작하는 경우(Prometheus에서 예약됨) 또는 이 endpoint의 활성화된 섹션에서 이미 기록하는 레이블과 충돌하는 경우 거부됩니다. 그렇지 않으면 샘플에 동일한 레이블 이름이 두 번 포함되기 때문입니다. 따라서 예약되는 이름은 endpoint에서 활성화된 내보내기 범위에 따라 달라집니다. `histograms`가 활성화된 경우 `le`, `info`가 활성화된 경우 `ClickHouse_Info` 레이블(`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`), `histograms`/`dimensional_metrics`가 활성화된 경우 노출된 히스토그램 또는 차원 메트릭 패밀리에서 사용되는 모든 레이블(예: `group`, `direction`, `operation_type`)이 이에 해당합니다. endpoint가 실제로 노출하는 항목에 따라 달라지므로 한 endpoint에서는 유효한 이름이 다른 endpoint에서는 거부될 수 있습니다. 예를 들어 Keeper `keeper_metrics_only` endpoint는 `keeper_*` 패밀리만 노출하므로 server 패밀리에서만 사용되는 레이블은 여기에서 허용됩니다.
 
 **예시**
 
-```xml highlight={5-12}
+```xml highlight={5-16}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1434,6 +1482,10 @@ prefixes 역직렬화용 스레드 풀에 예약할 수 있는 최대 작업 수
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
+        <labels>
+            <environment>production</environment>
+            <shard from_env="SHARD_NAME"></shard>
+        </labels>
     </prometheus>
 </clickhouse>
 ```
@@ -1617,7 +1669,7 @@ Replicated 데이터베이스의 레플리카 그룹 이름입니다.
 복제된 데이터베이스에서 생성된 cluster는 동일한 그룹의 레플리카로 구성됩니다.
 DDL 쿼리는 동일한 그룹의 레플리카만 기다립니다.
 
-기본값은 비어 있습니다.
+* **기본값:** `""`
 
 **예시**
 
@@ -1702,7 +1754,11 @@ Host Key Configurations는 기본적으로 비활성화되어 있습니다.
   ## table_engines_require_grant
 </div>
 
+<CloudNotSupportedBadge />
+
 true로 설정하면 사용자가 특정 엔진으로 테이블을 생성하려면 권한(grant)이 필요합니다. 예: `GRANT TABLE ENGINE ON TinyLog to user`.
+
+* **기본값:** `false`
 
 <Note>
   기본적으로는 이전 버전과의 호환성을 위해 특정 테이블 엔진으로 테이블을 생성할 때 권한 검사를 무시합니다. 하지만 이 값을 true로 설정하여 이러한 동작을 변경할 수 있습니다.
@@ -1810,7 +1866,7 @@ DateTime 필드를 텍스트 포맷(화면이나 파일에 출력되는 형식)�
 
 **관련 항목**
 
-* [session&#95;timezone](/ko/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/ko/reference/settings/session-settings/other#session_timezone)
 
 <div id="trace_log">
   ## trace_log
@@ -1832,7 +1888,7 @@ DateTime 필드를 텍스트 포맷(화면이나 파일에 출력되는 형식)�
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>false</symbolize>
+    <symbolize>true</symbolize>
 </trace_log>
 ```
 
@@ -1903,6 +1959,6 @@ DateTime 필드를 텍스트 포맷(화면이나 파일에 출력되는 형식)�
   ## webterminal_allowed_origins
 </div>
 
-`/webterminal` WebSocket 세션을 열 수 있도록 허용되는 전체 오리진(origin) 목록을 쉼표로 구분해 지정합니다 (`scheme` + `host` + 선택적 `port`). 비어 있으면 동일 출처 정책이 엄격하게 적용됩니다 (`Origin`은 요청의 `scheme`, `host`, `port`와 일치해야 합니다). 브라우저는 `https`를 사용하지만 `request.isSecure()`는 `false`를 반환하는 TLS 종료 리버스 프록시 뒤의 배포 환경에서는 이 값을 설정하십시오. 예시: `https://example.com,https://app.example.com:8443`.
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />`/webterminal` WebSocket 세션을 열 수 있도록 허용되는 전체 오리진(origin) 목록을 쉼표로 구분해 지정합니다 (`scheme` + `host` + 선택적 `port`). 비어 있으면 동일 출처 정책이 엄격하게 적용됩니다 (`Origin`은 요청의 `scheme`, `host`, `port`와 일치해야 합니다). 브라우저는 `https`를 사용하지만 `request.isSecure()`는 `false`를 반환하는 TLS 종료 리버스 프록시 뒤의 배포 환경에서는 이 값을 설정하십시오. 예시: `https://example.com,https://app.example.com:8443`.
 
 {/*AUTOGENERATED_END*/}

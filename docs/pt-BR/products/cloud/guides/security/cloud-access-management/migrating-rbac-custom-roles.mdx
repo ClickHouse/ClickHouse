@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Migração do RBAC com funções personalizadas'
+sidebar_label: 'Migração do RBAC com funções personalizadas'
+sidebar_position: 4
+slug: /cloud/guides/security/migrating-rbac-custom-roles
+title: 'Migração do RBAC com funções personalizadas'
+description: "Guia para administradores sobre a migração para o novo sistema de Controle de Acesso Baseado em Funções no ClickHouse Cloud usando o assistente de migração"
+doc_type: 'guide'
+keywords: ['rbac', 'funções personalizadas', 'migração', 'controle de acesso', 'permissões', 'segurança']
+---
+
+Este guia destina-se a usuários com a função Admin no ClickHouse Cloud.
+
+Em junho de 2026, o ClickHouse Cloud adotou um novo sistema de controle de acesso baseado em funções (RBAC). Se a sua organização tiver membros ou API keys com permissões com escopo de serviço que não podem ser migradas automaticamente, use o assistente de migração para mapear essas permissões para novas funções. Este guia explica como o novo sistema funciona e como concluir a migração.
+
+<Warning>
+  **Conclua a migração assim que possível**
+
+  As organizações que não concluírem a migração até o prazo exibido no assistente e nas notificações por e-mail serão migradas automaticamente (consulte [O que acontece se você não migrar](#automated-migration)).
+</Warning>
+
+<div id="whats-changing">
+  ## O que está mudando
+</div>
+
+O novo sistema RBAC introduz definições de funções personalizadas e um controle de acesso mais granular. Em vez de um conjunto fixo de permissões com escopo de serviço, você define funções que mostram todas as permissões concedidas, deixando claro exatamente qual nível de acesso cada função oferece.
+
+Uma função pode combinar permissões de organização, serviço e banco de dados. Você pode aplicar essas permissões a todos os seus serviços e bancos de dados ou a um subconjunto deles. Para ver a lista completa de permissões e as funções padrão incluídas no ClickHouse Cloud, consulte [Funções e permissões do Console](/pt-BR/cloud/security/console-roles). Para obter instruções sobre como criar e editar funções após a migração, consulte [Gerenciar funções personalizadas](/pt-BR/cloud/guides/security/manage-custom-roles).
+
+A maioria das permissões é mapeada automaticamente para o novo modelo. As permissões com escopo de serviço que não podem ser mapeadas diretamente são aquelas que o assistente de migração solicita que você resolva.
+
+<div id="migration-wizard">
+  ## Conclua o assistente de migração
+</div>
+
+O assistente solicita que você crie novas funções que reflitam as permissões que seus membros e API keys têm atualmente e, em seguida, atribua essas funções aos membros e às chaves corretos. Seu progresso é salvo automaticamente, portanto, não é necessário concluir tudo em uma única sessão.
+
+<Steps>
+  <Step title="Abra o assistente de migração" id="open-wizard">
+    Na página **Users and roles**, siga o aviso de migração para abrir o assistente. Você também pode acessá-lo pelo banner de migração exibido no Console.
+  </Step>
+
+  <Step title="Crie funções para permissões não mapeadas" id="create-roles">
+    O assistente lista membros e API keys cujas permissões com escopo de serviço não puderam ser migradas automaticamente. Crie novas funções que correspondam ao acesso de que esses membros e chaves precisam. Consulte [Gerenciar funções personalizadas](/pt-BR/cloud/guides/security/manage-custom-roles) para obter detalhes sobre o escopo das permissões.
+  </Step>
+
+  <Step title="Atribua funções a cada membro e API key" id="assign-roles">
+    Atribua pelo menos uma nova função a cada membro, a cada convite pendente e a cada API key. Qualquer membro, convite ou chave que ficar com a coluna **New role** em branco impedirá o envio.
+  </Step>
+
+  <Step title="Mantenha pelo menos um administrador" id="keep-admin">
+    Atribua uma Admin role a pelo menos um membro existente. O assistente não permitirá o envio sem uma, pois, caso contrário, sua organização perderia o acesso administrativo após a migração.
+  </Step>
+
+  <Step title="Envie a migração" id="submit">
+    Quando cada membro, convite e API key tiver uma função, envie a migração. Se for bem-sucedida, você será redirecionado para a tab **Função**.
+  </Step>
+</Steps>
+
+Se você tentar enviar antes que essas condições sejam atendidas, o assistente exibirá uma mensagem identificando o que está faltando — membros sem funções, API keys sem funções ou a ausência de um administrador — para que você possa ir diretamente às entradas afetadas.
+
+<div id="automated-migration">
+  ## O que acontece se você não fizer a migração
+</div>
+
+Sempre que possível, conclua a migração manualmente para que suas funções reflitam o modelo de acesso pretendido. Se a organização não concluir a migração a tempo, o ClickHouse executará uma migração automatizada nas semanas seguintes.
+
+A migração automatizada cria uma função personalizada para cada usuário e para cada API key, espelhando as permissões existentes de cada usuário ou chave. Isso preserva o nível de acesso atual de todos, para que nenhum membro ou chave perca o acesso. Depois, você poderá revisar e consolidar essas funções na aba **Funções**.
+
+<div id="after-migration">
+  ## Após a migração
+</div>
+
+Revise as configurações do OpenAPI e do Terraform para mantê-las compatíveis com o novo sistema de funções. Talvez seja necessário atualizar automações que fazem referência às funções antigas.
+
+A função Query Endpoints passa a ser a função de leitor da API do serviço Basic. Atualize todas as integrações que dependem do nome anterior da função.
+
+Para orientações sobre como gerenciar funções daqui em diante, consulte [Gerenciar funções personalizadas](/pt-BR/cloud/guides/security/manage-custom-roles) e [Gerenciamento de acesso ao Cloud](/pt-BR/cloud/security/cloud_access_management).

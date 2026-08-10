@@ -1,0 +1,110 @@
+---
+title: 'Configuración de red privada de BYOC en Azure'
+slug: /cloud/reference/byoc/onboarding/network-azure
+sidebarTitle: 'Configuración de red privada de Azure'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'azure', 'private link']
+description: 'Configura Private Link para BYOC en Azure'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+ClickHouse BYOC en Azure admite la conectividad privada mediante Azure Private Link.
+
+<div id="common-prerequisites">
+  ## Requisitos previos
+</div>
+
+<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
+  ### Habilite el balanceador de carga privado para ClickHouse BYOC
+</div>
+
+En la consola de ClickHouse Cloud, habilite el **balanceador de carga privado** para su infraestructura BYOC.
+
+<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC: habilitar el balanceador de carga privado" border />
+
+<div id="setup-privatelink">
+  ## Configurar Azure Private Link
+</div>
+
+Azure Private Link proporciona una conexión segura y privada con tus servicios BYOC de ClickHouse. Todo el tráfico circula por la red de Azure, lo que garantiza que nunca transite por la Internet pública.
+
+<Steps>
+  <Step title="Habilita Private Link en la consola de ClickHouse" id="step-1-enable-private-link">
+    <Note>
+      Asegúrate de activar el **balanceador de carga privado** como requisito previo.
+    </Note>
+
+    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="Habilitar BYOC PrivateLink" border />
+  </Step>
+
+  <Step title={<>Obtenga el <code>Service name</code> del endpoint</>} id="step-2-obtain-endpoint-service-name">
+    1. En la consola de ClickHouse Cloud, vaya a la página Settings del servicio al que desea conectarse mediante Private Link.
+    2. Haga clic en &quot;Set up private endpoint&quot;.
+    3. En el flyout que se abre, copie los valores de `Service name` (el alias del servicio Private Link) y `DNS name`; los utilizará en los siguientes pasos. (Los valores pueden tardar un tiempo en generarse después de habilitar Private Link.)
+       <Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="md" alt="Endpoints privados" border />
+  </Step>
+
+  <Step title="Cree un endpoint privado en su red" id="step-3-create-endpoint">
+    1. Abra su propio **Azure Portal** (es decir, la suscripción de Azure donde se encuentra su aplicación cliente) → **Network Foundation** → **Private endpoints** → **Create**.
+    2. En la pestaña **Basics**, elija la suscripción, el grupo de recursos, el nombre y la región del endpoint privado. La región debe ser la de la VNet desde la que se conecta su aplicación cliente.
+       <Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Aspectos básicos para crear un endpoint privado" border />
+    3. En la pestaña **Resource**, seleccione **Connect to an Azure resource by resource ID or alias** e introduzca el `Service name` obtenido en el paso anterior.
+       <Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Selección de recursos del endpoint privado" border />
+    4. En la pestaña **Virtual Network**, elija la red virtual y la subred donde se creará el endpoint privado. De forma opcional, asocie un grupo de seguridad de aplicaciones para filtrar el tráfico hacia el endpoint privado.
+       <Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Selección de red virtual del endpoint privado" border />
+    5. Continúe por las pestañas restantes y haga clic en **Create**. El **Connection status** del endpoint privado creado permanecerá en estado **Pending** hasta que agregue su `Resource ID` a la lista de permitidos del servicio ClickHouse en los pasos siguientes.
+    6. Abra la interfaz de red asociada al endpoint privado y copie la **dirección IPv4 privada**; la utilizará en el paso de configuración de DNS.
+       <Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="Dirección IP del endpoint privado" border />
+  </Step>
+
+  <Step title={<>Añada el <code>ID de recurso</code> del punto de conexión privado a la lista de permitidos del servicio de ClickHouse</>} id="step-4-add-endpoint-id-to-services-allow-list">
+    Para obtener el Resource ID del endpoint privado, abra el endpoint privado creado anteriormente en Azure Portal y haga clic en **JSON View**; a continuación, copie el campo `id` de nivel superior (el **Resource ID** que aparece en la parte superior de la vista, con el formato `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`). No utilice los campos `id` anidados dentro del objeto `properties`:
+
+    <Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Resource ID del Private Endpoint" border />
+
+    1. En la ClickHouse Cloud console, vaya a la página Settings del servicio al que desea conectarse mediante Private Link.
+    2. Haga clic en &quot;Set up private endpoint&quot;.
+    3. En el panel lateral que se abre, introduzca el `Resource ID` obtenido anteriormente en el campo `Endpoint ID` y, opcionalmente, una descripción.
+    4. Haga clic en &quot;Crear endpoint&quot;.
+
+    <Note>
+      Si desea permitir el acceso desde una conexión de Private Link existente, use el menú desplegable de endpoints existentes.
+      El menú desplegable mostrará las conexiones de Private Link existentes con servicios de la misma infraestructura.
+    </Note>
+
+    <Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="md" alt="Filtro de Private Endpoints" border />
+
+    <Note>
+      No es necesaria ninguna aprobación manual en Azure Portal: una vez añadido el `Resource ID` a la allow list, la conexión del endpoint se aprueba automáticamente y su `LinkID` se añade automáticamente a la `AuthorizationPolicy` de Istio del servicio de ClickHouse. El **estado de conexión** del endpoint privado en su suscripción cambia a **Aprobado**.
+    </Note>
+  </Step>
+
+  <Step title="Configure el nombre DNS privado del endpoint" id="step-5-set-private-dns-name-for-endpoint">
+    <Note>
+      Hay varias formas de configurar DNS. Configure DNS según su caso de uso específico.
+    </Note>
+
+    Debe dirigir todos los subdominios (comodín) del &quot;nombre DNS&quot; (todo lo que aparece después del ID del servicio; por ejemplo, `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`) a la dirección IP del punto de conexión privado. Esto garantiza que los servicios y componentes de su VNet puedan resolverlo correctamente. Una configuración típica con Azure Private DNS:
+
+    1. [Cree una zona DNS privada](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal) con el &quot;nombre DNS&quot; sin el ID de servicio inicial; por ejemplo, `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`.
+    2. En la zona, cree un conjunto de registros con comodín: para **Nombre**, escriba `*` y, para **Dirección IP**, introduzca la dirección IP del punto de conexión privado que copió anteriormente.
+    3. [Vincule la zona DNS privada a su red virtual](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal#link-the-virtual-network) para que los clientes de la VNet puedan resolver la zona.
+
+    Verifique la configuración de DNS desde un host de su VNet: el &quot;nombre DNS&quot; debería resolverse en la dirección IP del punto de conexión privado:
+
+    ```bash
+    nslookup h5ju65kv87.privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com
+    ```
+  </Step>
+
+  <Step title="Acceder a una instancia mediante Private Link" id="step-6-connect-via-privatelink">
+    1. En la ClickHouse Cloud console, vaya a la página Settings del servicio.
+    2. Haga clic en &quot;Set up private endpoint&quot;.
+    3. En el flyout que se abre, copie el `DNS name`.
+       <Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="md" alt="Nombre DNS de Private Endpoint" border />
+       <Note>
+         El acceso a los servicios de ClickHouse a través de Private Link se controla mediante la **Istio Authorization Policy** a nivel de servicio, administrada por ClickHouse en su infraestructura BYOC.
+       </Note>
+  </Step>
+</Steps>

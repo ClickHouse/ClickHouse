@@ -49,7 +49,7 @@ your_profile_name:
       local_db_prefix: [<empty string>] # Database prefix of local tables on shards for distributed materializations. If empty, it uses the same database as the distributed table.
       allow_automatic_deduplication: [False] # Enable ClickHouse automatic deduplication for Replicated tables
       tcp_keepalive: [False] # Native client only, specify TCP keepalive configuration. Specify custom keepalive settings as [idle_time_sec, interval_sec, probes].
-      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection.
+      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection. Note: disabling connection reuse adds a new TCP/TLS handshake per model, which increases total `dbt run` wall time (typically ~200-500 ms per model). Combine with `threads > 1` for the best balance between distribution and throughput.
       custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
       database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
       threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
@@ -134,8 +134,8 @@ Replicated 引擎**不会**包含 `ON CLUSTER` 子句，因为它们旨在自行
 
 dbt 依赖写入后读取一致性模型。如果无法保证所有操作都发送到同一个副本，那么它与拥有多个副本的 ClickHouse 集群并不兼容。你在日常使用 dbt 时可能不会遇到问题，但可以根据集群情况采用一些策略来确保这一点：
 
-* 如果你使用的是 ClickHouse Cloud 集群，只需在 profile 的 `custom_settings` 属性中设置 `select_sequential_consistency: 1`。有关此设置的更多信息，请参见[这里](/zh/reference/settings/session-settings#select_sequential_consistency)。
-* 如果你使用的是自托管集群，请确保所有 dbt 请求都发送到同一个 ClickHouse 副本。如果上层有负载均衡器，请尝试使用某种 `replica aware routing`/`sticky sessions` 机制，以确保始终访问同一个副本。在 ClickHouse Cloud 之外的集群中添加设置 `select_sequential_consistency = 1`[不推荐](/zh/reference/settings/session-settings#select_sequential_consistency)。
+* 如果你使用的是 ClickHouse Cloud 集群，只需在 profile 的 `custom_settings` 属性中设置 `select_sequential_consistency: 1`。有关此设置的更多信息，请参见[这里](/zh/reference/settings/session-settings/other#select_sequential_consistency)。
+* 如果你使用的是自托管集群，请确保所有 dbt 请求都发送到同一个 ClickHouse 副本。如果上层有负载均衡器，请尝试使用某种 `replica aware routing`/`sticky sessions` 机制，以确保始终访问同一个副本。在 ClickHouse Cloud 之外的集群中添加设置 `select_sequential_consistency = 1`[不推荐](/zh/reference/settings/session-settings/other#select_sequential_consistency)。
 
 <div id="additional-clickhouse-macros">
   ## 其他 ClickHouse 宏

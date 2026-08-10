@@ -1,0 +1,122 @@
+---
+sidebar_label: 'Conector de materialización directa'
+sidebar_position: 4
+sidebarTitle: 'Conector de materialización directa'
+slug: /integrations/estuary/native
+description: 'Integra Estuary y ClickHouse con un conector que utiliza el protocolo nativo'
+title: 'Materialización directa de Estuary en ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://estuary.dev'
+keywords: ['estuary', 'ingestión de datos', 'etl', 'canalización', 'integración de datos']
+---
+
+import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Estuary ofrece un conector de materialización directo con ClickHouse que utiliza el [protocolo nativo](/es/interfaces/tcp) y el [formato nativo](/es/interfaces/formats/Native) de ClickHouse.
+
+Esto permite a Estuary:
+
+* Materializar datos tanto en instancias autohospedadas como en ClickHouse Cloud
+* Gestionar automáticamente tareas como la creación de tablas y la evolución del esquema
+* Admitir eliminaciones lógicas o físicas
+* Usar `ReplacingMergeTree` para actualizaciones estándar mediante combinación o `MergeTree` para actualizaciones delta
+* Ofrecer entrega exactamente una vez
+
+Consulte la [integración Kafka ClickPipe de Estuary](/es/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes) para conocer un flujo de trabajo de ClickPipes.
+
+<div id="setup-guide">
+  ## Guía de configuración
+</div>
+
+**Requisitos previos**
+
+Necesitará:
+
+* Una [cuenta de Estuary](https://dashboard.estuary.dev/register)
+* Una o más [**capturas**](https://docs.estuary.dev/concepts/captures/) en Estuary que extraigan datos de las fuentes que desee
+* Una instancia de ClickHouse autohospedada o una cuenta de ClickHouse Cloud
+* Un usuario de base de datos de ClickHouse con credenciales
+
+<Steps>
+  <Step title="Configurar ClickHouse para la integración" id="1-configure-clickhouse">
+    Para configurar el conector de ClickHouse de Estuary, deberá recopilar cierta información de su instancia de ClickHouse y configurar los permisos del usuario.
+
+    1. Copie el endpoint de host de su base de datos.
+
+       Para el puerto, use **9440** si TLS está habilitado o **9000** si TLS está deshabilitado.
+
+       El host y el puerto conformarán la **dirección** que deberá proporcionar a Estuary.
+
+    2. Conceda permisos al usuario de base de datos que utilizará Estuary.
+
+       Para crear y gestionar tablas automáticamente, Estuary necesitará permisos de `CREATE`, `SELECT`, `INSERT`, etc. en la base de datos de destino, así como permisos para detectar metadatos y gestionar particiones.
+
+       Puede conceder todos los permisos necesarios ejecutando estos comandos SQL y sustituyendo `<database>` y `<user>` por sus propios valores:
+
+       ```sql
+       -- Acceso a la base de datos de destino: CREATE TABLE, DROP TABLE, SELECT, INSERT, TRUNCATE, etc.
+       GRANT ALL ON <database>.* TO <user>;
+
+       -- Acceso a tablas del sistema para detectar metadatos y gestionar particiones.
+       -- Estos NO están incluidos en la concesión para la base de datos anterior.
+       GRANT SELECT ON system.columns TO <user>;
+       GRANT SELECT ON system.parts TO <user>;
+       GRANT SELECT ON system.tables TO <user>;
+       ```
+
+    3. Opcionalmente, restrinja el acceso del usuario al sistema únicamente a la base de datos de destino.
+
+       Puede hacerlo mediante políticas a nivel de fila. Por ejemplo:
+
+       ```sql
+       CREATE ROW POLICY estuary_columns ON system.columns FOR SELECT USING database = '<database>' TO <user>;
+       CREATE ROW POLICY estuary_parts ON system.parts FOR SELECT USING database = '<database>' TO <user>;
+       CREATE ROW POLICY estuary_tables ON system.tables FOR SELECT USING database = '<database>' TO <user>;
+       ```
+
+    A continuación, puede ir a Estuary para finalizar la configuración.
+  </Step>
+
+  <Step title="Crear una materialización de Estuary" id="2-create-an-estuary-materialization">
+    1. En el panel de Estuary, vaya a la página [Destinations](https://dashboard.estuary.dev/materializations).
+    2. Haga clic en **+ New Materialization**.
+    3. Seleccione el conector **ClickHouse**.
+    4. Complete la sección **Materialization Details**:
+       * Asigne un nombre único a la materialización
+       * Elija un plano de datos (proveedor de nube y región)
+    5. Complete los detalles de **Endpoint Config** para que Estuary pueda conectarse a su instancia de ClickHouse:
+
+       * **Address:** el host y el puerto de la instancia
+       * **Database:** nombre de la base de datos de destino
+       * **Authentication:** nombre de usuario y contraseña del usuario de base de datos
+
+       También puede configurar opciones adicionales, como el uso de eliminación física y el modo SSL que se utilizará.
+  </Step>
+
+  <Step title="Configurar colecciones de origen" id="3-configure-source-collections">
+    Elija las fuentes que desea materializar en ClickHouse en la sección **Source Collections**.
+
+    1. Vincule una **captura** existente o agregue colecciones de datos individuales para materializarlas en ClickHouse.
+    2. Si es necesario, seleccione una colección de datos de la lista para configurarla con más detalle. Las opciones de personalización incluyen:
+       * Elegir otro nombre de tabla para la colección
+       * Seleccionar el comportamiento de combinación de la colección (si se utiliza el modo de actualizaciones delta)
+       * Personalizar el comportamiento de selección de campos para controlar qué campos se materializan
+    3. Cuando esté conforme con cómo se materializarán los datos en ClickHouse, haga clic en **Next** y **Save and Publish**.
+
+    Estuary comenzará a cargar datos históricos de las colecciones seleccionadas en ClickHouse y, posteriormente, transmitirá las actualizaciones a medida que se produzcan.
+  </Step>
+</Steps>
+
+<div id="additional-resources">
+  ## Recursos adicionales
+</div>
+
+Para obtener más información sobre cómo configurar un conector de ClickHouse con Estuary, consulte la documentación de Estuary:
+
+* Consulte la [documentación de Estuary sobre la materialización de ClickHouse](https://docs.estuary.dev/reference/Connectors/materialization-connectors/ClickHouse/).
+* Además del flujo de trabajo basado en la UI descrito en estas instrucciones, también puede administrar la configuración de la canalización de Estuary mediante la CLI. Consulte las [guías de Estuary sobre `flowctl`](https://docs.estuary.dev/guides/flowctl/ci-cd/) para obtener más información sobre cómo trabajar con Estuary de forma programática.

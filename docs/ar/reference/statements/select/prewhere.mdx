@@ -18,9 +18,9 @@ doc_type: 'مرجع'
 
 يمكن أن يحدّد الاستعلام كلًا من `PREWHERE` و`WHERE` في الوقت نفسه. في هذه الحالة، يُنفَّذ `PREWHERE` قبل `WHERE`.
 
-إذا كان الإعداد [optimize&#95;move&#95;to&#95;prewhere](/ar/reference/settings/session-settings#optimize_move_to_prewhere) مضبوطًا على 0، فسيتم تعطيل الآليات الاستدلالية التي تنقل تلقائيًا أجزاءً من التعبيرات من `WHERE` إلى `PREWHERE`.
+إذا كان الإعداد [optimize&#95;move&#95;to&#95;prewhere](/ar/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) مضبوطًا على 0، فسيتم تعطيل الآليات الاستدلالية التي تنقل تلقائيًا أجزاءً من التعبيرات من `WHERE` إلى `PREWHERE`.
 
-إذا كان الاستعلام يحتوي على المُعدِّل [FINAL](/ar/reference/statements/select/from#final-modifier)، فإن تحسين `PREWHERE` لا يكون صحيحًا دائمًا. ولا يُفعَّل إلا إذا كان كل من الإعدادين [optimize&#95;move&#95;to&#95;prewhere](/ar/reference/settings/session-settings#optimize_move_to_prewhere) و[optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/ar/reference/settings/session-settings#optimize_move_to_prewhere_if_final) مفعّلَين.
+إذا كان الاستعلام يحتوي على المُعدِّل [FINAL](/ar/reference/statements/select/from#final-modifier)، فإن تحسين `PREWHERE` لا يكون صحيحًا دائمًا. ولا يُفعَّل إلا إذا كان كل من الإعدادين [optimize&#95;move&#95;to&#95;prewhere](/ar/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) و[optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/ar/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) مفعّلَين.
 
 <Note>
   يُنفَّذ قسم `PREWHERE` قبل `FINAL`، لذا قد تكون نتائج استعلامات `FROM ... FINAL` غير دقيقة عند استخدام `PREWHERE` مع حقول غير موجودة في قسم `ORDER BY` من الجدول.

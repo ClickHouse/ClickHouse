@@ -15,7 +15,7 @@ import SystemTableCloud from '/snippets/pt-BR/_system_table_cloud.mdx';
   ## Descrição
 </div>
 
-A tabela `system.part_log` é criada somente se a configuração do servidor [part&#95;log](/pt-BR/reference/settings/server-settings/settings#part_log) estiver definida.
+A tabela `system.part_log` é criada somente se a configuração do servidor [part&#95;log](/pt-BR/reference/settings/server-settings/settings/other#part_log) estiver definida.
 
 Esta tabela contém informações sobre eventos ocorridos com [partes de dados](/pt-BR/reference/engines/table-engines/mergetree-family/custom-partitioning-key) em tabelas da família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), como adição ou mesclagem de dados.
 
@@ -29,7 +29,7 @@ A tabela `system.part_log` contém as seguintes colunas:
 
 * `hostname` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Nome do host do servidor que executa a consulta.
 * `query_id` ([String](/pt-BR/reference/data-types/string)) — Identificador da consulta INSERT que criou esta parte de dados.
-* `event_type` ([Enum8(&#39;NewPart&#39; = 1, &#39;MergeParts&#39; = 2, &#39;DownloadPart&#39; = 3, &#39;RemovePart&#39; = 4, &#39;MutatePart&#39; = 5, &#39;MovePart&#39; = 6, &#39;MergePartsStart&#39; = 7, &#39;MutatePartStart&#39; = 8)](/pt-BR/reference/data-types/enum)) — Tipo do evento que ocorreu com a parte de dados. Pode ter um dos seguintes valores: NewPart — Inserção de uma nova parte de dados, MergePartsStart — A mesclagem das partes de dados foi iniciada, MergeParts — A mesclagem das partes de dados foi concluída, DownloadPart — Download de uma parte de dados, RemovePart — Remoção ou desanexação de uma parte de dados usando [DETACH PARTITION](/pt-BR/reference/statements/alter/partition#detach-partitionpart).MutatePartStart — A mutação de uma parte de dados foi iniciada, MutatePart — A mutação de uma parte de dados foi concluída, MovePart — Movimentação da parte de dados de um disco para outro.
+* `event_type` ([Enum8(&#39;NewPart&#39; = 1, &#39;MergeParts&#39; = 2, &#39;DownloadPart&#39; = 3, &#39;RemovePart&#39; = 4, &#39;MutatePart&#39; = 5, &#39;MovePart&#39; = 6, &#39;MergePartsStart&#39; = 7, &#39;MutatePartStart&#39; = 8)](/pt-BR/reference/data-types/enum)) — Tipo do evento que ocorreu com a parte de dados. Pode ter um dos seguintes valores: NewPart — Inserção de uma nova parte de dados, MergePartsStart — A mesclagem das partes de dados foi iniciada, MergeParts — A mesclagem das partes de dados foi concluída, DownloadPart — Download de uma parte de dados, RemovePart — Remoção ou desanexação de uma parte de dados usando [DETACH PARTITION](/pt-BR/sql-reference/statements/alter/partition#detach-partitionpart).MutatePartStart — A mutação de uma parte de dados foi iniciada, MutatePart — A mutação de uma parte de dados foi concluída, MovePart — Movimentação da parte de dados de um disco para outro.
 * `merge_reason` ([Enum8(&#39;NotAMerge&#39; = 1, &#39;RegularMerge&#39; = 2, &#39;TTLDeleteMerge&#39; = 3, &#39;TTLRecompressMerge&#39; = 4, &#39;TTLDropMerge&#39; = 5)](/pt-BR/reference/data-types/enum)) — O motivo do evento do tipo MERGE&#95;PARTS. Pode ter um dos seguintes valores: NotAMerge — O evento atual tem um tipo diferente de MERGE&#95;PARTS, RegularMerge — Um merge comum, TTLDeleteMerge, TTLDropMerge — Limpeza de dados expirados. TTLRecompressMerge — Recompressão da parte de dados com o.
 * `merge_algorithm` ([Enum8(&#39;Undecided&#39; = 0, &#39;Vertical&#39; = 1, &#39;Horizontal&#39; = 2)](/pt-BR/reference/data-types/enum)) — Algoritmo de mesclagem para o evento do tipo MERGE&#95;PARTS. Pode ter um dos seguintes valores: Undecided, Horizontal, Vertical
 * `event_date` ([Date](/pt-BR/reference/data-types/date)) — Data do evento.
@@ -43,7 +43,7 @@ A tabela `system.part_log` contém as seguintes colunas:
 * `partition_id` ([String](/pt-BR/reference/data-types/string)) — ID da partição em que a parte de dados foi inserida. A coluna assume o valor `all` se o particionamento for por `tuple()`.
 * `partition` ([String](/pt-BR/reference/data-types/string)) — O nome da partição.
 * `part_type` ([String](/pt-BR/reference/data-types/string)) — O tipo da parte. Valores possíveis: Wide e Compact.
-* `part_storage_type` ([String](/pt-BR/reference/data-types/string)) — O tipo de DataPartStorage. Valores possíveis: Packed - todos os arquivos são armazenados em um único blob, Full - um blob para cada arquivo.
+* `part_storage_type` ([String](/pt-BR/reference/data-types/string)) — O tipo de `DataPartStorage`. Valores possíveis: `Packed` - a maioria dos arquivos da parte é armazenada em um único arquivo compactado (projeções e alguns arquivos de serviço, como `txn_version.txt`, são gravados separadamente), `Full` - cada arquivo é armazenado separadamente.
 * `disk_name` ([String](/pt-BR/reference/data-types/string)) — O nome do disco em que a parte de dados se encontra.
 * `path_on_disk` ([String](/pt-BR/reference/data-types/string)) — Caminho absoluto da pasta que contém os arquivos da parte de dados.
 * `rows` ([UInt64](/pt-BR/reference/data-types/int-uint)) — O número de linhas na parte de dados.
@@ -97,6 +97,7 @@ part_name:               all_1_7_1
 partition_id:            all
 partition:               tuple()
 part_type:               Wide
+part_storage_type:       Full
 disk_name:               default
 path_on_disk:            ./data/store/1ad/1ad33424-f5f5-402b-ac03-ec82282634ab/all_1_7_1/
 rows:                    3285726 -- 3.29 million

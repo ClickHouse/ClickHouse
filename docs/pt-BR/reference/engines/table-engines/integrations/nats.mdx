@@ -44,8 +44,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
+    [nats_commit_on_select = false,]
     [nats_handle_error_mode = 'default']
 ```
 
@@ -59,34 +61,37 @@ Parâmetros opcionais:
 
 * `nats_schema` – Parâmetro que deve ser usado se o formato exigir uma definição de schema. Por exemplo, [Cap&#39;n Proto](https://capnproto.org/) exige o caminho para o arquivo de schema e o nome do objeto raiz `schema.capnp:Message`.
 * `nats_stream` – O nome de um stream existente no NATS JetStream.
-* `nats_consumer_name` – O nome de um pull consumer durável existente no NATS JetStream.
+* `nats_consumer_name` – O nome de um consumer pull durável existente no NATS JetStream.
 * `nats_num_consumers` – O número de consumers por tabela. Padrão: `1`. Especifique mais consumers se a taxa de transferência de um consumer for insuficiente, somente para NATS Core.
 * `nats_queue_group` – Nome do queue group dos assinantes NATS. O padrão é o nome da tabela.
 * `nats_max_reconnect` – Obsoleto e sem efeito; a reconexão é realizada permanentemente com o timeout `nats_reconnect_wait`.
 * `nats_reconnect_wait` – Tempo de espera, em milissegundos, entre cada tentativa de reconexão. Padrão: `2000`.
 * `nats_server_list` - Lista de servidores para conexão. Pode ser especificada para conectar a um cluster NATS.
-* `nats_skip_broken_messages` - Tolerância do parser de mensagens NATS a mensagens incompatíveis com o schema por bloco. Padrão: `0`. Se `nats_skip_broken_messages = N`, o engine ignora *N* mensagens NATS que não podem ser analisadas (uma mensagem equivale a uma linha de dados).
-* `nats_max_block_size` - Número de linhas coletadas por poll(s) para descarregar dados do NATS. Padrão: [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_insert_block_size).
-* `nats_flush_interval_ms` - Timeout para descarregar os dados lidos do NATS. Padrão: [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings#stream_flush_interval_ms).
+* `nats_skip_broken_messages` - Tolerância do parser de mensagens NATS a mensagens incompatíveis com o schema por bloco. Padrão: `0`. Se `nats_skip_broken_messages = N`, o engine ignora *N* mensagens NATS que não podem ser convertidas (uma mensagem equivale a uma linha de dados).
+* `nats_max_block_size` - Número de linhas coletadas por poll(s) para descarregar dados do NATS. Padrão: [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `nats_flush_interval_ms` - Timeout para descarregar os dados lidos do NATS. Padrão: [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_flush_interval_ms).
+* `nats_wait_for_flush_interval` - Se `true`, um ciclo de streaming em segundo plano permanece aberto durante todo o intervalo de descarregamento (`nats_flush_interval_ms` ou `stream_flush_interval_ms`, caso contrário), em vez de terminar assim que a fila do consumer é esvaziada, permitindo que mais mensagens se acumulem em um único bloco, ao custo de até um intervalo de descarregamento adicional na latência de ingestão. Padrão: `false` (comportamento de esvaziar e seguir com baixa latência).
 * `nats_username` - Nome de usuário do NATS.
 * `nats_password` - Senha do NATS.
 * `nats_token` - Token de autenticação do NATS.
 * `nats_credential_file` - Caminho para um arquivo de credentials do NATS.
+* `nats_credentials` - Conteúdo das credentials do NATS (a mesma carga útil de um arquivo `.creds` com JWT de usuário e seed).
 * `nats_startup_connect_tries` - Número de tentativas de conexão na inicialização. Padrão: `5`.
 * `nats_max_rows_per_message` — O número máximo de linhas gravadas em uma mensagem NATS para formatos baseados em linha. (padrão: `1`).
-* `nats_handle_error_mode` — Como lidar com erros no engine NATS. Valores possíveis: default (a exceção será lançada se não conseguirmos analisar uma mensagem), stream (a mensagem de exceção e a mensagem bruta serão salvas nas colunas virtuais `_error` e `_raw_message`).
+* `nats_commit_on_select` - Faz commit das mensagens quando uma consulta é realizada. Aplica-se somente ao JetStream; o NATS Core não tem confirmações. Padrão: `0`.
+* `nats_handle_error_mode` — Como lidar com erros no engine NATS. Valores possíveis: default (a exceção será lançada se não conseguirmos converter uma mensagem), stream (a mensagem de exceção e a mensagem bruta serão salvas nas colunas virtuais `_error` e `_raw_message`).
 
 Conexão SSL:
 
 Para uma conexão segura, use `nats_secure = 1`.
-A verificação do certificado é controlada pela variável de ambiente `CLICKHOUSE_NATS_TLS_SECURE`;
-Se o certificado estiver expirado, for autoassinado, estiver ausente ou inválido por qualquer outro motivo, desative a verificação definindo `CLICKHOUSE_NATS_TLS_SECURE=0`.
+A verificação de certificados é controlada pela variável de ambiente `CLICKHOUSE_NATS_TLS_SECURE`;
+Se o certificado estiver expirado, for autoassinado, estiver ausente ou for inválido por qualquer outro motivo, desative a verificação definindo `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
-Gravação na tabela NATS:
+Gravando em uma tabela NATS:
 
-Se a tabela lê apenas de um subject, qualquer inserção será publicada nesse mesmo subject.
-No entanto, se a tabela lê de vários subjects, precisamos especificar em qual subject queremos publicar.
-É por isso que, sempre que for inserir em uma tabela com vários subjects, é necessário definir `stream_like_engine_insert_queue`.
+Se a tabela lê de apenas um subject, qualquer insert publicará nesse mesmo subject.
+No entanto, se a tabela lê de múltiplos subjects, é preciso especificar em qual subject queremos publicar.
+Por isso, ao inserir em uma tabela com múltiplos subjects, é necessário definir a configuração `stream_like_engine_insert_queue`.
 Você pode selecionar um dos subjects dos quais a tabela lê e publicar seus dados nele. Por exemplo:
 
 ```sql
@@ -194,7 +199,7 @@ O engine NATS oferece suporte a todos os [formatos](/pt-BR/reference/formats/ind
 O número de linhas em uma mensagem NATS depende de o formato ser baseado em linhas ou em blocos:
 
 * Para formatos baseados em linhas, o número de linhas em uma mensagem NATS pode ser controlado pela configuração `nats_max_rows_per_message`.
-* Para formatos baseados em blocos, não é possível dividir um bloco em partes menores, mas o número de linhas em um bloco pode ser controlado pela configuração geral [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_block_size).
+* Para formatos baseados em blocos, não é possível dividir um bloco em partes menores, mas o número de linhas em um bloco pode ser controlado pela configuração geral [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size).
 
 <div id="using-jetstream">
   ## Usando o JetStream
@@ -288,7 +293,7 @@ Antes de usar o engine NATS com o NATS JetStream, você deve criar um stream NAT
 
   State:
 
-    Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
+  Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
       Acknowledgment Floor: Consumer sequence: 0 Stream sequence: 0
           Outstanding Acks: 0 out of maximum 1,000
       Redelivered Messages: 0
@@ -310,5 +315,7 @@ CREATE TABLE nats_jet_stream (
               nats_subjects = 'stream_subject',
               nats_format = 'JSONEachRow';
 ```
+
+As tabelas JetStream oferecem entrega de pelo menos uma vez: uma mensagem só é confirmada após ser inserida nas visões materializadas dependentes; portanto, uma mensagem cuja inserção falha ou é interrompida permanece sem confirmação e é entregue novamente. O NATS Core (sem JetStream) não oferece confirmação nem reprocessamento; portanto, tem entrega de no máximo uma vez, e uma mensagem interrompida é perdida.
 
 {/*AUTOGENERATED_END*/}

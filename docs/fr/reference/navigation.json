@@ -14,6 +14,7 @@
           "expanded": false,
           "group": "Instructions",
           "pages": [
+            "fr/reference/statements/index",
             {
               "expanded": false,
               "group": "ALTER",
@@ -43,8 +44,7 @@
                 "fr/reference/statements/alter/user",
                 "fr/reference/statements/alter/masking-policy",
                 "fr/reference/statements/alter/view"
-              ],
-              "root": "fr/reference/statements/alter/index"
+              ]
             },
             "fr/reference/statements/attach",
             "fr/reference/statements/check-grant",
@@ -54,11 +54,13 @@
               "expanded": false,
               "group": "CREATE",
               "pages": [
+                "fr/reference/statements/create/index",
                 "fr/reference/statements/create/database",
                 {
                   "expanded": false,
                   "group": "DICTIONARY",
                   "pages": [
+                    "fr/reference/statements/create/dictionary",
                     "fr/reference/statements/create/dictionary/attributes",
                     "fr/reference/statements/create/dictionary/embedded",
                     "fr/reference/statements/create/dictionary/lifetime",
@@ -66,6 +68,7 @@
                       "expanded": false,
                       "group": "Layouts",
                       "pages": [
+                        "fr/reference/statements/create/dictionary/layouts/overview",
                         "fr/reference/statements/create/dictionary/layouts/flat",
                         "fr/reference/statements/create/dictionary/layouts/hashed",
                         "fr/reference/statements/create/dictionary/layouts/hashed-array",
@@ -78,13 +81,13 @@
                         "fr/reference/statements/create/dictionary/layouts/polygon",
                         "fr/reference/statements/create/dictionary/layouts/ip-trie",
                         "fr/reference/statements/create/dictionary/layouts/regexp-tree"
-                      ],
-                      "root": "fr/reference/statements/create/dictionary/layouts/overview"
+                      ]
                     },
                     {
                       "expanded": false,
                       "group": "Sources",
                       "pages": [
+                        "fr/reference/statements/create/dictionary/sources/overview",
                         "fr/reference/statements/create/dictionary/sources/local-file",
                         "fr/reference/statements/create/dictionary/sources/executable-file",
                         "fr/reference/statements/create/dictionary/sources/executable-pool",
@@ -99,11 +102,9 @@
                         "fr/reference/statements/create/dictionary/sources/null",
                         "fr/reference/statements/create/dictionary/sources/yamlregexptree",
                         "fr/reference/statements/create/dictionary/sources/ytsaurus"
-                      ],
-                      "root": "fr/reference/statements/create/dictionary/sources/overview"
+                      ]
                     }
-                  ],
-                  "root": "fr/reference/statements/create/dictionary"
+                  ]
                 },
                 "fr/reference/statements/create/masking-policy",
                 "fr/reference/statements/create/function",
@@ -112,11 +113,19 @@
                 "fr/reference/statements/create/role",
                 "fr/reference/statements/create/row-policy",
                 "fr/reference/statements/create/settings-profile",
-                "fr/reference/statements/create/table",
+                {
+                  "expanded": false,
+                  "group": "TABLE",
+                  "pages": [
+                    "fr/reference/statements/create/table",
+                    "fr/reference/statements/create/table/codec",
+                    "fr/reference/statements/create/table/temporary-table",
+                    "fr/reference/statements/create/table/replace-table"
+                  ]
+                },
                 "fr/reference/statements/create/user",
                 "fr/reference/statements/create/view"
-              ],
-              "root": "fr/reference/statements/create/index"
+              ]
             },
             "fr/reference/statements/delete",
             "fr/reference/statements/describe-table",
@@ -141,6 +150,7 @@
               "expanded": false,
               "group": "SELECT",
               "pages": [
+                "fr/reference/statements/select/index",
                 "fr/reference/statements/select/all",
                 "fr/reference/statements/select/apply_modifier",
                 "fr/reference/statements/select/array-join",
@@ -165,8 +175,7 @@
                 "fr/reference/statements/select/union",
                 "fr/reference/statements/select/where",
                 "fr/reference/statements/select/with"
-              ],
-              "root": "fr/reference/statements/select/index"
+              ]
             },
             "fr/reference/statements/set-role",
             "fr/reference/statements/set",
@@ -177,18 +186,17 @@
             "fr/reference/statements/update",
             "fr/reference/statements/use",
             "fr/reference/statements/watch"
-          ],
-          "root": "fr/reference/statements/index"
+          ]
         },
         {
           "expandable": true,
           "expanded": false,
           "group": "Opérateurs",
           "pages": [
+            "fr/reference/operators/index",
             "fr/reference/operators/exists",
             "fr/reference/operators/distributed-ddl"
-          ],
-          "root": "fr/reference/operators/index"
+          ]
         }
       ]
     },
@@ -197,6 +205,7 @@
       "expanded": false,
       "group": "Types de données",
       "pages": [
+        "fr/reference/data-types/index",
         {
           "expanded": false,
           "group": "Types numériques",
@@ -209,7 +218,7 @@
         },
         {
           "expanded": false,
-          "group": "Types de chaînes",
+          "group": "Types String",
           "pages": [
             "fr/reference/data-types/string",
             "fr/reference/data-types/fixedstring"
@@ -237,7 +246,7 @@
         },
         {
           "expanded": false,
-          "group": "Types composés",
+          "group": "Types composites",
           "pages": [
             "fr/reference/data-types/array",
             "fr/reference/data-types/tuple",
@@ -285,12 +294,12 @@
           "expanded": false,
           "group": "Types de données spéciaux",
           "pages": [
+            "fr/reference/data-types/special-data-types/index",
             "fr/reference/data-types/special-data-types/expression",
             "fr/reference/data-types/special-data-types/interval",
             "fr/reference/data-types/special-data-types/nothing",
             "fr/reference/data-types/special-data-types/set"
-          ],
-          "root": "fr/reference/data-types/special-data-types/index"
+          ]
         },
         {
           "group": "Encodage binaire",
@@ -298,25 +307,28 @@
             "fr/reference/data-types/data-types-binary-encoding"
           ]
         }
-      ],
-      "root": "fr/reference/data-types/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Moteurs",
       "pages": [
+        "fr/reference/engines/engines",
         {
           "expanded": false,
           "group": "Moteurs de table",
           "pages": [
+            "fr/reference/engines/table-engines/index",
             {
               "expanded": false,
               "group": "Intégrations",
               "pages": [
+                "fr/reference/engines/table-engines/integrations/index",
                 "fr/reference/engines/table-engines/integrations/arrowflight",
                 "fr/reference/engines/table-engines/integrations/azure-queue",
                 "fr/reference/engines/table-engines/integrations/azureBlobStorage",
+                "fr/reference/engines/table-engines/integrations/bigquery",
                 "fr/reference/engines/table-engines/integrations/deltalake",
                 "fr/reference/engines/table-engines/integrations/embedded-rocksdb",
                 "fr/reference/engines/table-engines/integrations/ExternalDistributed",
@@ -340,23 +352,23 @@
                 "fr/reference/engines/table-engines/integrations/sqlite",
                 "fr/reference/engines/table-engines/integrations/time-series",
                 "fr/reference/engines/table-engines/integrations/ytsaurus"
-              ],
-              "root": "fr/reference/engines/table-engines/integrations/index"
+              ]
             },
             {
               "expanded": false,
               "group": "Famille Log",
               "pages": [
+                "fr/reference/engines/table-engines/log-family/index",
                 "fr/reference/engines/table-engines/log-family/log",
                 "fr/reference/engines/table-engines/log-family/stripelog",
                 "fr/reference/engines/table-engines/log-family/tinylog"
-              ],
-              "root": "fr/reference/engines/table-engines/log-family/index"
+              ]
             },
             {
               "expanded": false,
               "group": "Famille MergeTree",
               "pages": [
+                "fr/reference/engines/table-engines/mergetree-family/index",
                 "fr/reference/engines/table-engines/mergetree-family/mergetree",
                 "fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree",
                 "fr/reference/engines/table-engines/mergetree-family/annindexes",
@@ -369,13 +381,13 @@
                 "fr/reference/engines/table-engines/mergetree-family/summingmergetree",
                 "fr/reference/engines/table-engines/mergetree-family/textindexes",
                 "fr/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree"
-              ],
-              "root": "fr/reference/engines/table-engines/mergetree-family/index"
+              ]
             },
             {
               "expanded": false,
-              "group": "Spéciaux",
+              "group": "Spécial",
               "pages": [
+                "fr/reference/engines/table-engines/special/index",
                 "fr/reference/engines/table-engines/special/alias",
                 "fr/reference/engines/table-engines/special/buffer",
                 "fr/reference/engines/table-engines/special/dictionary",
@@ -394,16 +406,15 @@
                 "fr/reference/engines/table-engines/special/set",
                 "fr/reference/engines/table-engines/special/url",
                 "fr/reference/engines/table-engines/special/view"
-              ],
-              "root": "fr/reference/engines/table-engines/special/index"
+              ]
             }
-          ],
-          "root": "fr/reference/engines/table-engines/index"
+          ]
         },
         {
           "expanded": false,
           "group": "Moteurs de base de données",
           "pages": [
+            "fr/reference/engines/database-engines/index",
             "fr/reference/engines/database-engines/atomic",
             "fr/reference/engines/database-engines/backup",
             "fr/reference/engines/database-engines/datalake",
@@ -413,21 +424,21 @@
             "fr/reference/engines/database-engines/replicated",
             "fr/reference/engines/database-engines/shared",
             "fr/reference/engines/database-engines/sqlite"
-          ],
-          "root": "fr/reference/engines/database-engines/index"
+          ]
         }
-      ],
-      "root": "fr/reference/engines/engines"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Fonctions",
       "pages": [
+        "fr/reference/functions/index",
         {
           "expanded": false,
           "group": "Fonctions régulières",
           "pages": [
+            "fr/reference/functions/regular-functions/overview",
             "fr/reference/functions/regular-functions/ai-functions",
             "fr/reference/functions/regular-functions/arithmetic-functions",
             "fr/reference/functions/regular-functions/array-functions",
@@ -447,8 +458,9 @@
             "fr/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "Geo",
+              "group": "géo",
               "pages": [
+                "fr/reference/functions/regular-functions/geo/index",
                 "fr/reference/functions/regular-functions/geo/coordinates",
                 "fr/reference/functions/regular-functions/geo/flipCoordinates",
                 "fr/reference/functions/regular-functions/geo/geometry",
@@ -458,8 +470,7 @@
                 "fr/reference/functions/regular-functions/geo/polygon",
                 "fr/reference/functions/regular-functions/geo/s2",
                 "fr/reference/functions/regular-functions/geo/svg"
-              ],
-              "root": "fr/reference/functions/regular-functions/geo/index"
+              ]
             },
             "fr/reference/functions/regular-functions/hash-functions",
             "fr/reference/functions/regular-functions/in-functions",
@@ -473,7 +484,6 @@
             "fr/reference/functions/regular-functions/numeric-indexed-vector-functions",
             "fr/reference/functions/regular-functions/other-functions",
             "fr/reference/functions/regular-functions/random-functions",
-            "fr/reference/functions/regular-functions/overview",
             "fr/reference/functions/regular-functions/rounding-functions",
             "fr/reference/functions/regular-functions/splitting-merging-functions",
             "fr/reference/functions/regular-functions/string-functions",
@@ -488,13 +498,13 @@
             "fr/reference/functions/regular-functions/uniqtheta-functions",
             "fr/reference/functions/regular-functions/url-functions",
             "fr/reference/functions/regular-functions/uuid-functions"
-          ],
-          "root": "fr/reference/functions/regular-functions/regular-functions-index"
+          ]
         },
         {
           "expanded": false,
           "group": "Fonctions d’agrégation",
           "pages": [
+            "fr/reference/functions/aggregate-functions/index",
             "fr/reference/functions/aggregate-functions/combinators",
             "fr/reference/functions/aggregate-functions/grouping_function",
             "fr/reference/functions/aggregate-functions/parametric-functions",
@@ -663,16 +673,17 @@
                 "fr/reference/functions/aggregate-functions/welchTTest"
               ]
             }
-          ],
-          "root": "fr/reference/functions/aggregate-functions/index"
+          ]
         },
         {
           "expanded": false,
           "group": "Fonctions de table",
           "pages": [
+            "fr/reference/functions/table-functions/index",
             "fr/reference/functions/table-functions/arrowflight",
             "fr/reference/functions/table-functions/azureBlobStorage",
             "fr/reference/functions/table-functions/azureBlobStorageCluster",
+            "fr/reference/functions/table-functions/bigquery",
             "fr/reference/functions/table-functions/cluster",
             "fr/reference/functions/table-functions/deltalake",
             "fr/reference/functions/table-functions/deltalakeCluster",
@@ -698,6 +709,7 @@
             "fr/reference/functions/table-functions/jdbc",
             "fr/reference/functions/table-functions/loop",
             "fr/reference/functions/table-functions/merge",
+            "fr/reference/functions/table-functions/mergeTreeCodecBlockCounts",
             "fr/reference/functions/table-functions/mergeTreeIndex",
             "fr/reference/functions/table-functions/mergeTreeProjection",
             "fr/reference/functions/table-functions/mergeTreeTextIndex",
@@ -728,13 +740,13 @@
             "fr/reference/functions/table-functions/view",
             "fr/reference/functions/table-functions/ytsaurus",
             "fr/reference/functions/table-functions/zeros"
-          ],
-          "root": "fr/reference/functions/table-functions/index"
+          ]
         },
         {
           "expanded": false,
           "group": "Fonctions de fenêtre",
           "pages": [
+            "fr/reference/functions/window-functions/index",
             "fr/reference/functions/window-functions/cume_dist",
             "fr/reference/functions/window-functions/dense_rank",
             "fr/reference/functions/window-functions/first_value",
@@ -749,8 +761,7 @@
             "fr/reference/functions/window-functions/percent_rank",
             "fr/reference/functions/window-functions/rank",
             "fr/reference/functions/window-functions/row_number"
-          ],
-          "root": "fr/reference/functions/window-functions/index"
+          ]
         },
         {
           "group": "Fonctions définies par l’utilisateur",
@@ -759,14 +770,14 @@
             "fr/reference/functions/regular-functions/wasm_udf"
           ]
         }
-      ],
-      "root": "fr/reference/functions/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Formats",
       "pages": [
+        "fr/reference/formats/index",
         {
           "expanded": false,
           "group": "Arrow",
@@ -937,14 +948,14 @@
         "fr/reference/formats/Values",
         "fr/reference/formats/Vertical",
         "fr/reference/formats/XML"
-      ],
-      "root": "fr/reference/formats/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Paramètres",
       "pages": [
+        "fr/reference/settings/index",
         {
           "$ref": "./settings/server-settings/settings/navigation.json"
         },
@@ -958,15 +969,14 @@
           "$ref": "./settings/formats/navigation.json"
         },
         "fr/reference/settings/beta-and-experimental-features"
-      ],
-      "root": "fr/reference/settings/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Tables système",
       "pages": [
-        "fr/reference/system-tables/index",
+        "fr/reference/system-tables/overview",
         "fr/reference/system-tables/aggregate_function_combinators",
         "fr/reference/system-tables/aggregated_zookeeper_log",
         "fr/reference/system-tables/asynchronous_insert_log",
@@ -1001,6 +1011,7 @@
         "fr/reference/system-tables/database_replicas",
         "fr/reference/system-tables/databases",
         "fr/reference/system-tables/dead_letter_queue",
+        "fr/reference/system-tables/delta_lake_metadata_log",
         "fr/reference/system-tables/delta_metadata_log",
         "fr/reference/system-tables/detached_parts",
         "fr/reference/system-tables/detached_tables",
@@ -1036,6 +1047,7 @@
         "fr/reference/system-tables/jemalloc_stats",
         "fr/reference/system-tables/jemalloc_profile_text",
         "fr/reference/system-tables/kafka_consumers",
+        "fr/reference/system-tables/keeper_storage",
         "fr/reference/system-tables/keywords",
         "fr/reference/system-tables/licenses",
         "fr/reference/system-tables/macros",
@@ -1113,6 +1125,7 @@
         "fr/reference/system-tables/user_defined_functions",
         "fr/reference/system-tables/user_directories",
         "fr/reference/system-tables/user_processes",
+        "fr/reference/system-tables/user_query_log",
         "fr/reference/system-tables/users",
         "fr/reference/system-tables/view_refreshes",
         "fr/reference/system-tables/warnings",
@@ -1125,13 +1138,13 @@
         "fr/reference/system-tables/zookeeper_connection_log",
         "fr/reference/system-tables/zookeeper_log",
         "fr/reference/system-tables/zookeeper_watches"
-      ],
-      "root": "fr/reference/system-tables/overview"
+      ]
     },
     {
       "group": "Lacs de données",
-      "pages": [],
-      "root": "fr/reference/datalakes"
+      "pages": [
+        "fr/reference/datalakes"
+      ]
     }
   ]
 }

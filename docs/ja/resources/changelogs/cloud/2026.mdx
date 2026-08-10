@@ -5,6 +5,7 @@ title: 'Cloud 変更履歴 - 2026'
 description: '各 ClickHouse Cloud リリースの新機能を紹介する ClickHouse Cloud 変更履歴'
 doc_type: 'changelog'
 keywords: ['変更履歴', 'リリースノート', '更新', '新機能', 'Cloud の変更']
+rss: true
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
@@ -16,7 +17,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   ### HTTPS 経由の sticky レプリカルーティング (プライベートプレビュー)
 
-  通常の service URL に `?session_id=` パラメータを追加するだけで、特別なホスト名や DNS の変更なしに、標準的な HTTPS 経由で queries を特定の レプリカ に固定できるようになりました。これにより、一時テーブルのような session スコープのオブジェクトを queries 間で利用し続けることができ、繰り返し実行される queries が レプリカ ローカルのウォームキャッシュにヒットしやすくなります。これは、すべての Enterprise 顧客に対してプライベートプレビューで順次提供されており、Scale 顧客についてはリクエストに応じて利用できます。既存のサブドメインベースのルーティングも引き続き動作しますが、最終的にはこの方式へ移行する予定です。[レプリカ対応ルーティング](/manage/replica-aware-routing) のドキュメントをご覧ください。
+  通常の service URL に `?session_id=` パラメータを追加するだけで、特別なホスト名や DNS の変更なしに、標準的な HTTPS 経由で queries を特定の レプリカ に固定できるようになりました。これにより、一時テーブルのような session スコープのオブジェクトを queries 間で利用し続けることができ、繰り返し実行される queries が レプリカ ローカルのウォームキャッシュにヒットしやすくなります。これは、すべての Enterprise 顧客に対してプライベートプレビューで順次提供されており、Scale 顧客についてはリクエストに応じて利用できます。既存のサブドメインベースのルーティングも引き続き動作しますが、最終的にはこの方式へ移行する予定です。[レプリカ対応ルーティング](/ja/manage/replica-aware-routing) のドキュメントをご覧ください。
 
   ### billing period 開始日のカスタマイズ
 
@@ -66,7 +67,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   ClickPipes のインフラストラクチャは、5月26日以降に作成されたすべての新しい GCP サービスについて、ClickHouse Cloud サービスと同じ GCP リージョンで動作するようになりました。これには Private Service Connect (PSC) のサポートも含まれます。これにより、クラウド間のエグレスコストが削減され、レイテンシが低下し、データをローカルに保持できるほか、SSH トンネリングなどの回避策を使わずに GCP ネイティブのプライベートネットワーキング経由で GCP ソースに接続できます。既存のサービスの移行については、弊社チームにお問い合わせください。
 
-  詳細については、[ClickPipes 静的IPリスト](/ja/integrations/clickpipes/home#list-of-static-ips)を参照してください。
+  詳細については、[ClickPipes 静的IPリスト](/ja/integrations/clickpipes/networking/static-ips)を参照してください。
 
   ### ClickPipes for GCP Pub/Sub (プライベートプレビュー)
 
@@ -80,9 +81,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   詳細は、[ClickHouse Agentsのドキュメント](/ja/products/cloud/features/ai-ml/agents/index)をご覧ください。
 
-  ### ClickHouse Postgres (パブリックベータ)
+  ### ClickHouse Managed Postgres (パブリックベータ)
 
-  ローカルNVMeストレージ上の完全マネージド型Postgresがパブリックベータとして提供開始されました。AWS RDSと比較して5倍以上のTPSを実現し、OLTPとOLAPを単一のマネージドスタックに統合します。ネイティブCDCパイプラインにより、中間インフラストラクチャを介さずデータを直接ClickHouseへストリーミングできます。また、オープンソースの`pg_clickhouse`拡張機能を使用することで、標準的なPostgresセッションからClickHouseのテーブルをクエリできます。
+  ローカルNVMeストレージ上の完全マネージド型Postgresである ClickHouse Managed Postgres がパブリックベータとして提供開始されました。AWS RDSと比較して5倍以上のTPSを実現し、OLTPとOLAPを単一のマネージドスタックに統合します。ネイティブCDCパイプラインにより、中間インフラストラクチャを介さずデータを直接ClickHouseへストリーミングできます。また、オープンソースの`pg_clickhouse`拡張機能を使用することで、標準的なPostgresセッションからClickHouseのテーブルをクエリできます。
 
   詳細については、[Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements) をご覧ください。
 
@@ -119,7 +120,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   {/* vale on */}
 
-  Pythonで関数を記述し、zip圧縮してクラスターにアップロードするだけで、組み込み関数と同様にSQLから呼び出せるようになりました。ClickHouseは長期稼働するサンドボックスプロセスのプールを維持し、クエリ速度で行をパイプ処理します。そのため、アドホッククエリ、join、さらにはinsertのたびに起動するmaterialized viewなど、SQLが使えるあらゆる場所で関数を呼び出せます。モデルコードはデータのすぐそばに置かれ、デプロイはCloud consoleのアップロード画面一つで完結します。
+  Pythonで関数を記述し、zip圧縮してクラスターにアップロードするだけで、組み込み関数と同様にSQLから呼び出せるようになりました。ClickHouseは長期稼働するサンドボックスプロセスのプールを維持し、クエリ速度で行をパイプ処理します。そのため、アドホッククエリ、join、さらにはinsertのたびに発火するmaterialized viewなど、SQLが使えるあらゆる場所で関数を呼び出せます。モデルコードはデータのすぐそばに置かれ、デプロイはCloud consoleのアップロード画面一つで完結します。
 
   その機能を示すために、[デモ](https://github.com/ClickHouse/stock-anomaly-udf)を作成しました。StockHouseのリアルタイム株式取引データをもとに、小規模なPyTorchオートエンコーダーをトレーニングし、取引ティックが取り込まれる際に異常スコアを付与します。必要なのはUDF一つとDDLステートメント一つだけで、残りはすべて通常のSQLです。さらに、ネットワークアクセスUDF (プライベートベータ) のプレビューもこっそり盛り込みました。この機能を使うと、UDFからアウトバウンドのHTTPS呼び出しが可能になります。これを活用してニュースやSEC提出書類を取得し、特定の取引が異常に見える理由をClaudeに分類させています。
 
@@ -177,7 +178,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 <Update label="2026年5月8日">
   ### Postgres クエリインサイト (プライベートプレビュー)
 
-  [ClickHouse Cloud Managed Postgres](/ja/products/managed-postgres/overview) (プライベートプレビュー) で、新しい **クエリインサイト** タブが利用できるようになりました。影響度に基づいてすべてのクエリパターンを順位付けし、それぞれが遅い理由を次の 3 つの画面で示します。
+  [ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) (プライベートプレビュー) で、新しい **クエリインサイト** タブが利用できるようになりました。影響度に基づいてすべてのクエリパターンを順位付けし、それぞれが遅い理由を次の 3 つの画面で示します。
 
   * **概要** — 1 画面で確認できるデータベースの健全性
   * **Patterns** — 実行時間、CPU、エラー、P95 で並べ替え可能なテーブル
@@ -187,7 +188,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   ### データカタログインテグレーションの拡充
 
-  Data Sources UI 経由の [データカタログインテグレーション](/ja/products/cloud/features/data-catalogs) のサポートを拡充し、認証方式、テーブル形式、データカタログの種類を追加しました。
+  データソース UI 経由の [データカタログインテグレーション](/ja/products/cloud/features/data-catalogs) のサポートを拡充し、認証方式、テーブル形式、データカタログの種類を追加しました。
 
   * [AWS Glue Catalog](/ja/guides/use-cases/data-warehousing/glue-catalog) の IAM サポート
   * データカタログインテグレーション向けの [BigLake Metastore](/ja/guides/use-cases/data-warehousing/biglake-catalog) サポート
@@ -215,13 +216,13 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   Cloud コンソール の請求 UI で、すべての返金を直接確認できるようになりました。返金は処理されると表示されます。クレジットカードへの返金は、銀行によって明細への反映にさらに時間がかかる場合があります。
 
-  ### 組織の支出アラート (プライベートプレビュー)
+  ### 組織の支出額アラート (プライベートプレビュー)
 
-  組織の支出アラートがプライベートプレビューで利用可能になりました。請求期間ごとに設定した組織の利用額に対して、50%、75%、100% の時点で通知を受け取れます。通知チャネルには、メール、Cloud コンソール、Slack を選択できます。アラートは組織の総利用量に基づき、1 時間ごとに発報され、請求期間ごとに自動的にリセットされます。Org Admin または Billing Admin ロールが必要です。
+  組織の支出額アラートがプライベートプレビューで利用可能になりました。請求期間ごとに設定した組織の支出額に対して、50%、75%、100% の時点で通知を受け取れます。通知チャネルには、メール、Cloud コンソール、Slack を選択できます。アラートは組織の総利用額に基づき、1 時間ごとに発報され、請求期間ごとに自動的にリセットされます。Org Admin または Billing Admin ロールが必要です。
 
   ### AWS における ClickPipes のリージョン対応拡大
 
-  ClickHouse Cloud がサポートするすべての AWS リージョン (パブリックおよびプライベート) で ClickPipes が利用可能になり、対応リージョン数は 6 から 18 に拡大しました。これには Singapore (ap-southeast-1) 、Seoul (ap-northeast-2) 、Tokyo (ap-northeast-1) などの主要リージョンが含まれます。新しいリージョンは、2026 年 4 月 14 日以降に作成されたサービスで利用できます。詳細は [ドキュメント](/ja/integrations/clickpipes/home#list-of-static-ips) をご覧ください。
+  ClickHouse Cloud がサポートするすべての AWS リージョン (パブリックおよびプライベート) で ClickPipes が利用可能になり、対応リージョン数は 6 から 18 に拡大しました。これには Singapore (ap-southeast-1) 、Seoul (ap-northeast-2) 、Tokyo (ap-northeast-1) などの主要リージョンが含まれます。新しいリージョンは、2026 年 4 月 14 日以降に作成されたサービスで利用できます。詳細は [ドキュメント](/ja/integrations/clickpipes/networking/static-ips) をご覧ください。
 </Update>
 
 <Update label="2026年4月10日">
@@ -248,7 +249,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   * **2 ウィンドウ レコメンダーによる、より高度な自動スケーリング:** ClickHouse Cloud では、垂直自動スケーリングにデュアル ルックバック ウィンドウ方式を採用し、従来の単一の 30 時間ウィンドウを、3 時間の「small window」と 30 時間の「large window」を組み合わせた方式に置き換えました。これにより、スケールアップ時の応答性を損なうことなく、スケールダウンのレイテンシを最長 30 時間から最短 3 時間まで短縮し、変動するワークロードのインフラストラクチャ コストを削減できます。詳細は [ブログ記事](https://clickhouse.com/blog/smarter-auto-scaling)をご覧ください。
   * **Cloud コンソールでの監視:** 新しい概要ダッシュボードとインフラストラクチャ ダッシュボードにより、ClickHouse server の動作をこれまで以上に可視化できるようになりました。ClickHouse Cloud の利用時には、一般的な問題について Admin ユーザーにメール通知が送信されるようになりました。詳細は [ブログ記事](https://clickhouse.com/blog/clickhouse-cloud-new-monitoring-capabilities)をご覧ください。
   * **Compute-compute separation (warehouses):** プライマリサービス (親サービスとも呼ばれます) での自動アイドル化のサポートが、現在パブリックプレビューとして順次提供されています。この機能がお使いの組織でまだ有効になっていない場合は、アクセスについて[サポートにお問い合わせください](https://clickhouse.com/support/program)。この機能が一般提供に移行すると、既存のプライマリサービスでは自動アイドル化を有効にするオプションを利用でき、新しいプライマリサービスではデフォルトで有効になります。
-  * **Data Catalog integration:** ClickHouse Cloud では、データソース UI でデータレイク カタログのインテグレーションとして Iceberg REST Catalog と Microsoft OneLake をサポートするようになりました。接続すると、カタログはデータベースとして表示され、データを複製することなく Iceberg テーブルを直接読み取ることができます。
+  * **データカタログインテグレーション:** ClickHouse Cloud では、データソース UI でデータレイク カタログのインテグレーションとして Iceberg REST Catalog と Microsoft OneLake をサポートするようになりました。接続すると、カタログはデータベースとして表示され、データを複製することなく Iceberg テーブルを直接読み取ることができます。
   * **Bring Your Own Cloud (BYOC) on GCP is now generally available:** ClickHouse BYOC は Google Cloud で一般提供を開始し、自身の GCP プロジェクト内に ClickHouse サービスをデプロイして、厳格なデータ所在地要件に対応できるようになりました。詳細は[ドキュメント](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview)と[ブログ記事](https://clickhouse.com/blog/byoc-gcp-ga)をご覧ください。アクセスをご希望の場合は、[お問い合わせください](https://clickhouse.com/cloud/bring-your-own-cloud)。
   * **前払いクレジットおよび支払い方法の変更に関する請求通知:** ClickHouse Cloud は、コミットメント契約に基づいて前払いクレジットが組織に追加されたとき、または支払い方法 (クレジットカードまたはマーケットプレイスサブスクリプション) が更新されたときに、通知を送信するようになりました。通知は UI とメールでデフォルトで有効になっており、Slack にも送信するよう設定できます。
 </Update>
@@ -260,7 +261,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Update>
 
 <Update label="2026年2月20日">
-  * **ClickPipes:** 非アクティブ状態の Reverse private endpoints は、定義済みの猶予期間が経過すると自動的に削除されるようになりました。これにより、未使用または設定ミスの endpoints がバックエンドに無期限に残り続けることを防ぎます。詳細は、自動クリーンアップの[ドキュメント](/ja/integrations/clickpipes/aws-privatelink#automatic-cleanup)をご覧ください。
+  * **ClickPipes:** 非アクティブ状態の Reverse private endpoints は、定義済みの猶予期間が経過すると自動的に削除されるようになりました。これにより、未使用または設定ミスの endpoints がバックエンドに無期限に残り続けることを防ぎます。詳細は、自動クリーンアップの[ドキュメント](/ja/integrations/clickpipes/networking/aws-privatelink#automatic-cleanup)をご覧ください。
 </Update>
 
 <Update label="2026年2月13日">
@@ -275,7 +276,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Update>
 
 <Update label="2026年1月23日">
-  * ClickPipes が AWS `eu-west-1` で利用可能になりました。そのリージョンで 1 月 20 日以降に作成された新しい ClickHouse Cloud サービスでは、ClickPipes に同じリージョンが使用されます。それ以前に作成されたサービスでは、ClickPipes のデフォルトは `eu-central-1` です。詳細は[ドキュメント](/ja/integrations/clickpipes/home#list-of-static-ips)を参照してください。
+  * ClickPipes が AWS `eu-west-1` で利用可能になりました。そのリージョンで 1 月 20 日以降に作成された新しい ClickHouse Cloud サービスでは、ClickPipes に同じリージョンが使用されます。それ以前に作成されたサービスでは、ClickPipes のデフォルトは `eu-central-1` です。詳細は[ドキュメント](/ja/integrations/clickpipes/networking/static-ips)を参照してください。
 </Update>
 
 <Update label="2026年1月16日">

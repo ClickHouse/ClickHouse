@@ -20,13 +20,13 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 
 一条查询可以包含多个以逗号分隔的命令。
 
-查询处理的同步方式由 [mutations&#95;sync](/zh/reference/settings/session-settings#mutations_sync) 设置决定。默认情况下，它是异步的。
+查询处理的同步方式由 [mutations&#95;sync](/zh/reference/settings/session-settings/mutations#mutations_sync) 设置决定。默认情况下，它是异步的。
 
 **另请参阅**
 
 * [Mutations](/zh/reference/statements/alter/index#mutations)
 * [ALTER 查询的同步性](/zh/reference/statements/alter/index#synchronicity-of-alter-queries)
-* [mutations&#95;sync](/zh/reference/settings/session-settings#mutations_sync) 设置
+* [mutations&#95;sync](/zh/reference/settings/session-settings/mutations#mutations_sync) 设置
 * [轻量级 `UPDATE`](/zh/reference/statements/update) - 使用补丁分区片段的轻量级更新替代方案
 * [`APPLY PATCHES`](/zh/reference/statements/alter/apply-patches) - 手动应用轻量级更新中的补丁
 

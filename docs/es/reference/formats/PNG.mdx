@@ -22,8 +22,8 @@ doc_type: 'reference'
 Representa el resultado de una consulta como una imagen PNG. Resulta útil como herramienta de visualización integrada.
 
 El tamaño de la imagen de salida viene determinado por los ajustes
-[`output_format_image_width`](/es/reference/settings/formats#output_format_image_width) y
-[`output_format_image_height`](/es/reference/settings/formats#output_format_image_height)
+[`output_format_image_width`](/es/reference/settings/formats/output-format#output_format_image_width) y
+[`output_format_image_height`](/es/reference/settings/formats/output-format#output_format_image_height)
 (ambos con un valor predeterminado de 1024). Los píxeles no cubiertos por el resultado se rellenan de negro
 (en los modos `RGB` y escala de grises) o de negro transparente (en modo `RGBA`).
 
@@ -46,7 +46,7 @@ se limitan a `[0, 1]` y luego se escalan a `[0, 255]`.
 
 La posición de cada registro en la imagen se determina mediante uno de estos dos modos:
 
-* **Implícito** (el predeterminado: cuando no está presente ni `x` ni `y`). Cada registro corresponde
+* **Implícito** (el predeterminado — cuando no está presente ni `x` ni `y`). Cada registro corresponde
   a un único píxel; los píxeles se rellenan en orden de barrido: de izquierda a derecha y de arriba abajo.
 * **Explícito** (cuando están presentes las columnas `x` e `y`, ambas de tipo entero).
   Las columnas `x` e `y` indican las coordenadas del píxel. Los registros con coordenadas fuera
@@ -95,7 +95,7 @@ SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 </div>
 
 De forma predeterminada, el formato `PNG` escribe los bytes sin procesar de la imagen. La configuración
-[`output_format_image_terminal_mode`](/es/reference/settings/formats#output_format_image_terminal_mode)
+[`output_format_image_terminal_mode`](/es/reference/settings/formats/output-format#output_format_image_terminal_mode)
 hace que el formato muestre la imagen directamente en la terminal mediante un protocolo de imagen en línea:
 
 | Valor              | Comportamiento                                                                                                                                                         |

@@ -1,10 +1,10 @@
 ---
-sidebarTitle: 'Provisionamento SCIM com Okta'
+sidebarTitle: 'Provisioning SCIM com Okta'
 slug: /cloud/security/scim-setup
-title: 'Provisionamento SCIM com Okta'
-description: 'Como configurar o provisionamento SCIM entre Okta e ClickHouse Cloud'
+title: 'Provisioning SCIM com Okta'
+description: 'Como configurar o Provisioning SCIM entre Okta e ClickHouse Cloud'
 doc_type: 'guide'
-keywords: ['ClickHouse Cloud', 'SCIM', 'provisionamento', 'Okta', 'SSO', 'SAML', 'provedor de identidade', 'IdP', 'gerenciamento de usuários']
+keywords: ['ClickHouse Cloud', 'SCIM', 'Provisioning', 'Okta', 'SSO', 'SAML', 'provedor de identidade', 'IdP', 'gerenciamento de usuários']
 ---
 
 import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
@@ -14,9 +14,9 @@ import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBa
 
 <EnterprisePlanFeatureBadge feature="SCIM" />
 
-O ClickHouse Cloud oferece suporte a SCIM 2.0 (System for Cross-domain Identity Management) para automatizar o gerenciamento do ciclo de vida de usuários e grupos. Depois de se conectar ao seu provedor de identidade, cada usuário que você atribuir ao aplicativo ClickHouse Cloud é criado automaticamente na sua organização com a função correta, as atualizações de perfil são propagadas automaticamente e, ao remover um usuário do seu IdP, o acesso dele é revogado — sem convites manuais, sem contas órfãs.
+O ClickHouse Cloud oferece suporte a SCIM 2.0 (System for Cross-domain Identity Management) para automatizar o gerenciamento do ciclo de vida de usuários e grupos. Depois de se conectar ao seu provedor de identidade, cada usuário que você atribuir ao aplicativo ClickHouse Cloud é criado automaticamente na sua organização com a função correta, as atualizações de profile são propagadas automaticamente e, ao remover um usuário do seu IdP, o acesso dele é revogado — sem convites manuais, sem contas órfãs.
 
-Este guia mostra como configurar o provisionamento SCIM de ponta a ponta com o **Okta**. O endpoint SCIM do ClickHouse Cloud segue o SCIM 2.0 (RFC 7644), mas a autenticação só tem suporte via Basic Auth, e o Okta é o único provedor de identidade com o qual testamos. Outros IdPs SCIM 2.0 podem funcionar se conseguirem se autenticar usando Basic Auth, mas no momento não têm suporte oficial.
+Este guia mostra como configurar o Provisioning SCIM de ponta a ponta com o **Okta**. O endpoint SCIM do ClickHouse Cloud segue o SCIM 2.0 (RFC 7644). O Okta se autentica usando Basic Auth, que é o método usado neste guia. Se o seu provedor de identidade for o Microsoft Entra ID, siga o guia [Provisioning SCIM com Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup-entra).
 
 <div id="before-you-begin">
   ## Antes de começar
@@ -316,7 +316,7 @@ O Okta tenta novamente chamadas de provisionamento com falha, mas acaba movendo-
   </Accordion>
 
   <Accordion title="O SCIM funciona com Microsoft Entra ID, OneLogin ou outros IdPs SCIM 2.0?">
-    Oficialmente, não — o Okta é o único IdP que testamos e ao qual damos suporte hoje. O endpoint segue o SCIM 2.0 (RFC 7644), mas a autenticação é restrita a Basic Auth, então qualquer IdP que não consiga se autenticar via Basic Auth não funcionará. Outros IdPs SCIM 2.0 compatíveis com Basic Auth podem funcionar na prática, mas não oferecemos nenhuma garantia.
+    O Microsoft Entra ID também é compatível — consulte [Provisionamento SCIM com o Entra ID](/pt-BR/products/cloud/guides/security/cloud-access-management/scim-setup-entra). O endpoint segue o SCIM 2.0 (RFC 7644) e aceita Basic Auth (usado pelo Okta) ou um Bearer token (usado pelo Entra ID). Outros IdPs SCIM 2.0 podem funcionar na prática se conseguirem se autenticar de uma dessas formas, mas o Okta e o Entra ID são os IdPs que testamos e aos quais damos suporte hoje.
   </Accordion>
 
   <Accordion title="Em quanto tempo as alterações no Okta aparecem no ClickHouse Cloud?">

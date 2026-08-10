@@ -1148,16 +1148,16 @@ Vários tipos são aliases puros: o servidor envia o nome do alias no cabeçalho
 
 Os tipos geográficos são aliases de arrays e tuplas aninhados:
 
-| String do tipo               | Tipo wire subjacente      |
-| ---------------------------- | ------------------------- |
-| `Point`                      | `Tuple(Float64, Float64)` |
-| `Ring`, `LineString`         | `Array(Point)`            |
-| `Polygon`, `MultiLineString` | `Array(Ring)`             |
-| `MultiPolygon`               | `Array(Polygon)`          |
+| String do tipo                     | Tipo wire subjacente      |
+| ---------------------------------- | ------------------------- |
+| `Point`                            | `Tuple(Float64, Float64)` |
+| `Ring`, `LineString`, `MultiPoint` | `Array(Point)`            |
+| `Polygon`, `MultiLineString`       | `Array(Ring)`             |
+| `MultiPolygon`                     | `Array(Polygon)`          |
 
 Assim, uma coluna `Point` é decodificada exatamente como `Tuple(Float64, Float64)` (apresentada como `(1,2)`), um `Ring` como `Array(Tuple(Float64, Float64))` (`[(0,0),(1,1)]`) e assim por diante ao longo da hierarquia.
 
-`Geometry` também é um alias, mas de um [`Variant`](#variant) em vez de um array aninhado: seu payload é a variante dos seis tipos geo acima. O cabeçalho da coluna carrega apenas a string de tipo `Geometry` — ele **não** explicita a variante — portanto, um decodificador precisa expandi-la por conta própria. Como em qualquer `Variant`, os discriminadores seguem a ordem canônica dos aliases geo, ordenados por nome: `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`. Cada valor selecionado é então decodificado por meio do alias geo correspondente acima (`NULL` usa o discriminador `NULL` `255` de `Variant`).
+`Geometry` também é um alias, mas de um [`Variant`](#variant) em vez de um array aninhado: seu payload é a variante dos sete tipos geo acima. O cabeçalho da coluna carrega apenas a string de tipo `Geometry` — ele **não** explicita a variante — portanto, um decodificador precisa expandi-la por conta própria. Diferentemente de um `Variant` explicitamente definido pelo usuário, os discriminadores de `Geometry` **não** seguem a ordem ordenada por nome: eles são fixos para compatibilidade, e novos tipos geo são sempre apenas adicionados ao final. O mapeamento é `0` = `LineString`, `1` = `MultiLineString`, `2` = `MultiPolygon`, `3` = `Point`, `4` = `Polygon`, `5` = `Ring`, `6` = `MultiPoint` (adicionado na versão 26.7 — fluxos de servidores mais antigos simplesmente nunca contêm o discriminador `6`). Cada valor selecionado é então decodificado por meio do alias geo correspondente acima (`NULL` usa o discriminador `NULL` `255` de `Variant`).
 
 `SimpleAggregateFunction(func, T)` é um alias para seu tipo de valor `T`. Ele armazena um valor agregado já finalizado, portanto sua forma wire e sua representação são exatamente as de `T` (`SimpleAggregateFunction(sum, UInt64)` é decodificado como `UInt64`). Apenas a forma com um único tipo de valor é um alias dessa maneira; o tipo subjacente pode, por si só, ser composto.
 
@@ -1165,7 +1165,7 @@ Assim, uma coluna `Point` é decodificada exatamente como `Tuple(Float64, Float6
   Dois tipos relacionados **não** são aliases. Eles são tipos de coluna `Native` válidos — um cliente pode receber uma coluna `AggregateFunction` de um combinador `-State` ou de agregação distribuída, por exemplo — mas cada um carrega seu próprio payload especializado, que está fora do escopo desta página:
 
   * `AggregateFunction(func, ...)` contém um estado de agregação *intermediário* (não um valor finalizado); seu layout binário é específico da função de agregação e da versão.
-  * `QBit(T, N[, stride])` armazena um vetor com seus bit planes transpostos para workloads de busca vetorial; seu layout de stream on-wire (streams de bit-plane `FixedString` em ordem major por grupo, `element_size * (N / stride)` deles com um `stride` explícito) e sua codificação binária de tipo (tag `0x36`, ou `0x37` `QBitWithStride` quando `stride != N`) estão documentados na [página do tipo de dados `QBit`](/pt-BR/reference/data-types/qbit) e na referência de [codificação binária de tipos](/pt-BR/reference/data-types/data-types-binary-encoding), portanto um leitor `Native` não precisa recuperá-los do código-fonte em C++.
+  * `QBit(T, N[, stride])` armazena um vetor com seus bit planes transpostos para workloads de busca vetorial; seu layout de stream on-wire (fluxos de bit-plane `FixedString` em ordem major por grupo, `element_size * (N / stride)` deles com um `stride` explícito) e sua codificação binária de tipo (tag `0x36`, ou `0x37` `QBitWithStride` quando `stride != N`) estão documentados na [página do tipo de dados `QBit`](/pt-BR/reference/data-types/qbit) e na referência de [codificação binária de tipos](/pt-BR/reference/data-types/data-types-binary-encoding), portanto um leitor `Native` não precisa recuperá-los do código-fonte em C++.
 </Note>
 
 <div id="versioned-types">
@@ -1569,15 +1569,15 @@ flowchart LR
   ### Valores de byte do método
 </div>
 
-Estes três codecs são os que o servidor produz para o enquadramento `Native` de fluxo completo: a saída HTTP `compress=1` sempre usa `LZ4`, e o protocolo TCP nativo usa `LZ4`, `ZSTD` ou `NONE`, dependendo de `network_compression_method`. Um cliente `Native` genérico só precisa produzir e consumir estes.
+Estes três codecs são os que o servidor produz para o enquadramento `Native` de stream completo: a saída HTTP `compress=1` sempre usa `LZ4`, e o protocolo TCP nativo usa `LZ4`, `ZSTD` ou `NONE`, dependendo de `network_compression_method`. Um cliente `Native` genérico só precisa produzir e consumir estes.
 
 | Byte   | Método | Codificação do corpo                                                                                   |
 | ------ | ------ | ------------------------------------------------------------------------------------------------------ |
 | `0x02` | NONE   | O corpo são os bytes brutos (sem compressão). O frame ainda é emitido; o receptor verifica o checksum. |
 | `0x82` | LZ4    | O corpo está no **formato de bloco LZ4** — *não* no formato de frame LZ4. Sem número mágico.           |
-| `0x90` | ZSTD   | O corpo é um fluxo zstd bruto de frame único (o número mágico padrão do zstd faz parte do corpo).      |
+| `0x90` | ZSTD   | O corpo é um stream zstd bruto de frame único (o número mágico padrão do zstd faz parte do corpo).      |
 
-O byte do método também codifica os [codecs em nível de coluna](/pt-BR/reference/statements/create/table#column_compression_codec). Eles são aplicados por coluna nos caminhos em disco do MergeTree, em vez de ao enquadramento do fluxo completo, mas o caminho de entrada HTTP `decompress=1` obtém o codec do byte de método de cada frame, então qualquer um desses bytes pode aparecer legitimamente na entrada. Portanto, um decodificador compatível deve reconhecer todo o espaço atribuído e rejeitar um byte que não implemente, em vez de interpretar o corpo incorretamente. Seus corpos são específicos de cada codec e estão fora deste contrato genérico de frame:
+O byte do método também codifica os [codecs em nível de coluna](/pt-BR/reference/statements/create/table/codec). Eles são aplicados por coluna nos caminhos em disco do MergeTree, em vez de ao enquadramento do stream completo, mas o caminho de entrada HTTP `decompress=1` obtém o codec do byte de método de cada frame, então qualquer um desses bytes pode aparecer legitimamente na entrada. Portanto, um decodificador compatível deve reconhecer todo o espaço atribuído e rejeitar um byte que não implemente, em vez de interpretar o corpo incorretamente. Seus corpos são específicos de cada codec e estão fora deste contrato genérico de frame:
 
 | Byte   | Método                                                                         |
 | ------ | ------------------------------------------------------------------------------ |
@@ -1595,9 +1595,9 @@ O byte do método também codifica os [codecs em nível de coluna](/pt-BR/refere
 | `0x9e` | `Quantized`                                                                    |
 | `0x9f` | `ZXC`                                                                          |
 
-`0x9d` (`SZ3`) é um codec **experimental**, *lossy* com erro limitado para `Float32`, `Float64` e `Array` desses tipos. Uma tabela pode ser criada com `CODEC(SZ3)` somente quando `allow_experimental_codecs` estiver definido, mas o byte do método é sempre aceito na descompressão para que os dados gravados anteriormente continuem legíveis. `0x9f` (`ZXC`) é um codec LZ assimétrico: lento para comprimir, mas muito rápido para descomprimir, com uma razão entre `LZ4` e `ZSTD`. Os bytes `0x99` (`DeflateQpl`) e `0x9b` (`ZSTD_QPL`) foram atribuídos a codecs que depois foram removidos; eles estão reservados e não são reutilizados.
+`0x9d` (`SZ3`) é um codec **experimental**, *lossy* com erro limitado para `Float32`, `Float64` e `Array` desses tipos. Uma tabela pode ser criada com `CODEC(SZ3)` somente quando `allow_experimental_codecs` estiver definido, mas o byte do método é sempre aceito na descompressão para que os dados gravados anteriormente continuem legíveis. `0x9f` (`ZXC`) é um codec LZ assimétrico **experimental**: lento para comprimir, mas muito rápido para descomprimir, com uma razão entre `LZ4` e `ZSTD`. Uma tabela pode ser criada com `CODEC(ZXC)` somente quando `allow_experimental_codecs` estiver definido, mas o byte do método é sempre aceito na descompressão para que os dados gravados anteriormente continuem legíveis. Os bytes `0x99` (`DeflateQpl`) e `0x9b` (`ZSTD_QPL`) foram atribuídos a codecs que depois foram removidos; eles estão reservados e não são reutilizados.
 
-`0x9e` (`Quantized`) é um codec de coluna **experimental** para colunas vetoriais densas (`Array(Float32)` e semelhantes). Assim como `NONE`, ele é um pass-through — o corpo com precisão total é armazenado literalmente —, mas sua presença associa uma serialização que grava um fluxo complementar quantizado compacto usado para acelerar a busca vetorial. Uma tabela pode ser criada com `CODEC(Quantized(...))` somente quando `allow_experimental_codecs` estiver definido, e o byte do método é sempre aceito na descompressão.
+`0x9e` (`Quantized`) é um codec de coluna **experimental** para colunas vetoriais densas (`Array(Float32)` e semelhantes). Assim como `NONE`, ele é um pass-through — o corpo com precisão total é armazenado literalmente —, mas sua presença associa uma serialização que grava um stream complementar quantizado compacto usado para acelerar a busca vetorial. Uma tabela pode ser criada com `CODEC(Quantized(...))` somente quando `allow_experimental_codecs` estiver definido, e o byte do método é sempre aceito na descompressão.
 
 <div id="checksum">
   ### Checksum

@@ -203,6 +203,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 هنا اخترنا استخدام برنامج التشغيل الثنائي، الذي يستخدم بروتوكول ClickHouse
 الثنائي. ويمكنك أيضًا استخدام برنامج التشغيل &quot;http&quot;، الذي يستخدم واجهة HTTP.
 
+<Note>
+  إذا كنت تستخدم ClickHouse Cloud console لتشغيل SQL، فامنح مستخدم console الإداري حق الوصول إلى الخادم الخارجي:
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
+
 بعد ذلك، اربط مستخدم PostgreSQL بمستخدم ClickHouse. وأبسط طريقة للقيام بذلك
 هي تعيين مستخدم PostgreSQL الحالي إلى مستخدم بعيد على الخادم
 الخارجي:

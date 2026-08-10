@@ -189,13 +189,27 @@ keywords: ['резервные копии', 'аварийное восстано
 
   <Tab title="ВОССТАНОВЛЕНИЕ">
     ```sql
-    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    RESTORE ALL
     FROM S3(
         'https://testchbackups.s3.amazonaws.com/<uuid>',
         '<key id>',
         '<key secret>'
     )
+    SETTINGS restore_access_entities_with_current_grants = 1
     ```
+
+    Настройка `restore_access_entities_with_current_grants` доступна начиная с версии ClickHouse Cloud **26.4** (сборка **26.4.1.1942** или более поздняя).
+    Проверить версию, на которой работает ваш сервис, можно с помощью:
+
+    ```sql
+    SELECT version()
+    ```
+
+    Когда включена настройка `restore_access_entities_with_current_grants`, привилегии восстановленных пользователей и ролей ограничиваются теми, которые пользователь, выполняющий восстановление, может предоставить
+    (та же семантика, что и у [`GRANT CURRENT GRANTS`](/ru/sql-reference/statements/grant)), вместо ошибки выполнения `RESTORE`
+    с `ACCESS_DENIED`, если резервная копия содержит больше разрешений, чем пользователь, выполняющий восстановление, может предоставить.
+
+    В версиях раньше 26.4 не указывайте эту настройку.
   </Tab>
 </Tabs>
 

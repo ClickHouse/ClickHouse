@@ -66,38 +66,47 @@ Outros parâmetros comuns são herdados da configuração do servidor ClickHouse
 
 As configurações internas de coordenação ficam na seção `<keeper_server>.<coordination_settings>` e têm os seguintes parâmetros:
 
-| Parameter                          | Description                                                                                                                                                                                                                 | Default          |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `operation_timeout_ms`             | Tempo limite para uma única operação do cliente (ms)                                                                                                                                                                        | `10000`          |
-| `min_session_timeout_ms`           | Tempo limite mínimo da sessão do cliente (ms)                                                                                                                                                                               | `10000`          |
-| `session_timeout_ms`               | Tempo limite máximo da sessão do cliente (ms)                                                                                                                                                                               | `100000`         |
-| `dead_session_check_period_ms`     | Com que frequência o ClickHouse Keeper verifica sessões expiradas e as remove (ms)                                                                                                                                          | `500`            |
-| `heart_beat_interval_ms`           | Com que frequência um líder do ClickHouse Keeper envia heartbeats aos seguidores (ms)                                                                                                                                       | `500`            |
-| `election_timeout_lower_bound_ms`  | Se o seguidor não receber um heartbeat do líder dentro desse intervalo, ele pode iniciar uma eleição de líder. Deve ser menor ou igual a `election_timeout_upper_bound_ms`. O ideal é que não sejam iguais.               | `1000`           |
-| `election_timeout_upper_bound_ms`  | Se o seguidor não receber um heartbeat do líder dentro desse intervalo, ele deverá iniciar uma eleição de líder.                                                                                                          | `2000`           |
-| `rotate_log_storage_interval`      | Quantos registros de log armazenar em um único arquivo.                                                                                                                                                                     | `100000`         |
-| `reserved_log_items`               | Quantos registros de log de coordenação armazenar antes da compactação.                                                                                                                                                     | `100000`         |
-| `snapshot_distance`                | Com que frequência o ClickHouse Keeper criará novos snapshots (em número de registros nos logs).                                                                                                                            | `100000`         |
-| `snapshots_to_keep`                | Quantos snapshots manter.                                                                                                                                                                                                   | `3`              |
-| `stale_log_gap`                    | Limite a partir do qual o líder considera o seguidor desatualizado e envia o snapshot para ele em vez dos logs.                                                                                                            | `10000`          |
-| `fresh_log_gap`                    | Quando o nó passa a ser considerado atualizado.                                                                                                                                                                             | `200`            |
-| `max_requests_batch_size`          | Tamanho máximo do batch em número de requisições antes de ser enviado ao RAFT.                                                                                                                                              | `100`            |
-| `force_sync`                       | Chama `fsync` a cada gravação no log de coordenação.                                                                                                                                                                        | `true`           |
-| `quorum_reads`                     | Executa requisições de leitura como gravações em todo o consenso RAFT, com velocidade semelhante.                                                                                                                           | `false`          |
-| `raft_logs_level`                  | Nível de logging em texto sobre coordenação (trace, debug etc.).                                                                                                                                                            | `system default` |
-| `auto_forwarding`                  | Permite encaminhar requisições de gravação dos seguidores para o líder.                                                                                                                                                     | `true`           |
-| `shutdown_timeout`                 | Aguarda a conclusão das conexões internas e o desligamento (ms).                                                                                                                                                            | `5000`           |
-| `startup_timeout`                  | Se o servidor não se conectar aos outros participantes do quórum dentro do tempo limite especificado, ele será encerrado (ms).                                                                                              | `30000`          |
-| `async_replication`                | Habilita a replicação assíncrona. Todas as garantias de gravação e leitura são preservadas, com melhor desempenho. Essa configuração fica desabilitada por padrão para não quebrar a compatibilidade com versões anteriores | `false`          |
-| `latest_logs_cache_size_threshold` | Tamanho total máximo do cache em memória das entradas de log mais recentes                                                                                                                                                  | `1GiB`           |
-| `commit_logs_cache_size_threshold` | Tamanho total máximo do cache em memória das entradas de log necessárias em seguida para commit                                                                                                                             | `500MiB`         |
-| `disk_move_retries_wait_ms`        | Quanto tempo esperar entre retries após uma falha ocorrida enquanto um arquivo estava sendo movido entre discos                                                                                                             | `1000`           |
-| `disk_move_retries_during_init`    | Quantidade de retries após uma falha ocorrida enquanto um arquivo estava sendo movido entre discos durante a inicialização                                                                                                  | `100`            |
-| `experimental_use_rocksdb`         | Usa rocksdb como armazenamento backend                                                                                                                                                                                      | `0`              |
+| Parâmetro                                 | Descrição                                                                                                                                                                                                                   | Padrão           |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `operation_timeout_ms`                    | Tempo limite para uma única operação do cliente (ms)                                                                                                                                                                        | `10000`          |
+| `min_session_timeout_ms`                  | Tempo limite mínimo da sessão do cliente (ms)                                                                                                                                                                               | `10000`          |
+| `session_timeout_ms`                      | Tempo limite máximo da sessão do cliente (ms)                                                                                                                                                                               | `100000`         |
+| `dead_session_check_period_ms`            | Com que frequência o ClickHouse Keeper verifica sessões expiradas e as remove (ms)                                                                                                                                          | `500`            |
+| `heart_beat_interval_ms`                  | Com que frequência um líder do ClickHouse Keeper envia heartbeats aos seguidores (ms)                                                                                                                                       | `500`            |
+| `election_timeout_lower_bound_ms`         | Se o seguidor não receber um heartbeat do líder dentro desse intervalo, ele pode iniciar uma eleição de líder. Deve ser menor ou igual a `election_timeout_upper_bound_ms`. O ideal é que não sejam iguais.                 | `1000`           |
+| `election_timeout_upper_bound_ms`         | Se o seguidor não receber um heartbeat do líder dentro desse intervalo, ele deverá iniciar uma eleição de líder.                                                                                                            | `2000`           |
+| `rotate_log_storage_interval`             | Quantos registros de log armazenar em um único arquivo.                                                                                                                                                                     | `100000`         |
+| `reserved_log_items`                      | Quantos registros de log de coordenação armazenar antes da compactação.                                                                                                                                                     | `100000`         |
+| `snapshot_distance`                       | Com que frequência o ClickHouse Keeper criará novos snapshots (em número de registros nos logs).                                                                                                                            | `100000`         |
+| `snapshots_to_keep`                       | Quantos snapshots manter.                                                                                                                                                                                                   | `3`              |
+| `stale_log_gap`                           | Limite a partir do qual o líder considera o seguidor desatualizado e envia o snapshot para ele em vez dos logs.                                                                                                             | `10000`          |
+| `fresh_log_gap`                           | Quando o nó passa a ser considerado atualizado.                                                                                                                                                                             | `200`            |
+| `max_requests_batch_size`                 | Tamanho máximo do batch em número de requisições antes de ser enviado ao RAFT.                                                                                                                                              | `100`            |
+| `force_sync`                              | Chama `fsync` a cada gravação no log de coordenação.                                                                                                                                                                        | `true`           |
+| `quorum_reads`                            | Executa requisições de leitura como gravações em todo o consenso RAFT, com velocidade semelhante.                                                                                                                           | `false`          |
+| `raft_logs_level`                         | Nível de logging em texto sobre coordenação (trace, debug etc.).                                                                                                                                                            | `system default` |
+| `auto_forwarding`                         | Permite encaminhar requisições de gravação dos seguidores para o líder.                                                                                                                                                     | `true`           |
+| `shutdown_timeout`                        | Aguarda a conclusão das conexões internas e o desligamento (ms).                                                                                                                                                            | `5000`           |
+| `startup_timeout`                         | Se o servidor não se conectar aos outros participantes do quórum dentro do tempo limite especificado, ele será encerrado (ms).                                                                                              | `30000`          |
+| `async_replication`                       | Habilita a replicação assíncrona. Todas as garantias de gravação e leitura são preservadas, com melhor desempenho. Essa configuração fica desabilitada por padrão para não quebrar a compatibilidade com versões anteriores | `false`          |
+| `latest_logs_cache_size_threshold`        | Tamanho total máximo do cache em memória das entradas de log mais recentes                                                                                                                                                  | `1GiB`           |
+| `commit_logs_cache_size_threshold`        | Descontinuado. Usado para `log_readahead_commit_window_bytes` caso essa configuração não esteja definida.                                                                                                                   | -                |
+| `commit_logs_cache_entry_count_threshold` | Descontinuado, não tem efeito. Use `log_readahead_commit_window_bytes` em vez disso.                                                                                                                                        | -                |
+| `log_readahead_enabled`                   | Habilita a leitura antecipada decodificada por par para leituras de recuperação do changelog (replicação de seguidores).                                                                                                    | `false`          |
+| `log_readahead_window_bytes`              | Máximo de bytes de entradas decodificadas armazenadas em buffer por leitor de par. Deve ser pelo menos tão grande quanto um batch típico de append-entries.                                                                 | `64MiB`          |
+| `log_readahead_max_peer_readers`          | Número máximo de leitores de leitura antecipada simultâneos por par.                                                                                                                                                        | `8`              |
+| `log_readahead_eviction_timeout_ms`       | Tempo limite de inatividade após o qual um leitor de leitura antecipada por par inativo, ou o leitor de commit, é removido (uma ausência subsequente o recria).                                                             | `30000`          |
+| `log_readahead_pool_threads`              | Número de threads no pool de threads dedicado à leitura antecipada. `0` deriva o valor de `log_readahead_max_peer_readers`.                                                                                                 | `0`              |
+| `log_readahead_serve_wait_timeout_ms`     | Tempo máximo de espera pelo preenchimento da leitura antecipada em segundo plano antes de recorrer a uma leitura direta.                                                                                                    | `200`            |
+| `log_readahead_chunk_size`                | Número de entradas de log decodificadas por fragmento na tarefa de preenchimento de pré-leitura.                                                                                                                            | `16`             |
+| `log_readahead_commit_window_bytes`       | Tamanho total máximo das entradas de log decodificadas armazenadas em buffer à frente da thread de commit. `0` desabilita a pré-leitura de commit (o commit lê as entradas do disco uma a uma).                             | `500MiB`         |
+| `disk_move_retries_wait_ms`               | Quanto tempo esperar entre retries após uma falha ocorrida enquanto um arquivo estava sendo movido entre discos                                                                                                             | `1000`           |
+| `disk_move_retries_during_init`           | Quantidade de retries após uma falha ocorrida enquanto um arquivo estava sendo movido entre discos durante a inicialização                                                                                                  | `100`            |
+| `experimental_use_rocksdb`                | Usa rocksdb como armazenamento backend                                                                                                                                                                                      | `0`              |
 
-A configuração de quórum fica na seção `<keeper_server>.<raft_configuration>` e contém a descrição dos servidores.
+A configuração de quórum está localizada na seção `<keeper_server>.<raft_configuration>` e contém a descrição dos servidores.
 
-O único parâmetro para todo o quórum é `secure`, que habilita conexão criptografada para a comunicação entre os participantes do quórum. O parâmetro pode ser definido como `true` se uma conexão SSL for necessária para a comunicação interna entre os nós, ou deixado sem especificação caso contrário.
+O único parâmetro para todo o quórum é `secure`, que habilita uma conexão criptografada para a comunicação entre os participantes do quórum. O parâmetro pode ser definido como `true` se uma conexão SSL for necessária para a comunicação interna entre os nós ou deixado sem especificação caso contrário.
 
 Os principais parâmetros de cada `<server>` são:
 
@@ -107,7 +116,7 @@ Os principais parâmetros de cada `<server>` são:
 * `can_become_leader` — Defina como `false` para configurar o servidor como `learner`. Se omitido, o valor será `true`.
 
 <Note>
-  Em caso de mudança na topologia do seu cluster ClickHouse Keeper (por exemplo, ao substituir um servidor), certifique-se de manter consistente o mapeamento de `server_id` para `hostname` e evite trocar ou reutilizar um `server_id` existente para servidores diferentes (por exemplo, isso pode acontecer se você depender de scripts de automação para implantar o ClickHouse Keeper)
+  Em caso de mudança na topologia do seu cluster do ClickHouse Keeper (por exemplo, ao substituir um servidor), certifique-se de manter consistente o mapeamento de `server_id` para `hostname` e evite trocar ou reutilizar um `server_id` existente para servidores diferentes (por exemplo, isso pode acontecer se você depender de scripts de automação para implantar o ClickHouse Keeper)
 
   Se o host de uma instância do Keeper puder mudar, recomendamos definir e usar um hostname em vez de endereços IP. Alterar o hostname equivale a remover e adicionar o servidor novamente, o que, em alguns casos, pode ser impossível (por exemplo, por não haver instâncias do Keeper suficientes para quórum).
 </Note>
@@ -720,18 +729,28 @@ Além disso, todos os arquivos de snapshot serão movidos de `snapshot_local` e 
   ## Configurando o cache de logs
 </div>
 
-Para minimizar a quantidade de dados lidos do disco, o Keeper mantém entradas de log em cache na memória.
-Se as solicitações forem grandes, as entradas de log consumirão memória demais, então o volume de logs em cache é limitado.
-O limite é controlado por estas duas configurações:
+Para minimizar a quantidade de dados lidos do disco, o Keeper armazena em cache na memória as entradas de log.
+Se as solicitações forem grandes, as entradas de log ocuparão muita memória; por isso, a quantidade de logs armazenados em cache é limitada.
+O limite do cache dos logs mais recentes é controlado por:
 
 * `latest_logs_cache_size_threshold` - tamanho total dos logs mais recentes armazenados no cache
-* `commit_logs_cache_size_threshold` - tamanho total dos logs subsequentes que precisam ser confirmados em seguida
 
-Se os valores padrão forem grandes demais, você pode reduzir o uso de memória diminuindo essas duas configurações.
+Se o valor padrão for muito alto, reduza esta configuração para diminuir o uso de memória.
+
+As entradas de log necessárias para o próximo commit são fornecidas por um leitor de leitura antecipada decodificada, dimensionado por
+`log_readahead_commit_window_bytes` (`0` desativa a leitura antecipada para commit). Essa configuração substitui as
+configurações obsoletas `commit_logs_cache_size_threshold` e `commit_logs_cache_entry_count_threshold`,
+mantidas apenas para compatibilidade de configuração (a primeira ainda é mapeada para `log_readahead_commit_window_bytes` se
+este não estiver definido; a segunda não tem efeito). O mesmo mecanismo de leitura antecipada também atende às leituras de recuperação da
+replicação do seguidor quando `log_readahead_enabled` é `true`; consulte
+`log_readahead_window_bytes`, `log_readahead_max_peer_readers`, `log_readahead_eviction_timeout_ms`,
+`log_readahead_pool_threads`, `log_readahead_serve_wait_timeout_ms` e `log_readahead_chunk_size`
+nas [configurações internas de coordenação](#internal-coordination-settings) para conhecer os parâmetros de ajuste
+do lado do peer.
 
 <Note>
-  Você pode usar o comando `pfev` para verificar a quantidade de logs lidos de cada cache e do arquivo.
-  Você também pode usar métricas do endpoint do Prometheus para acompanhar o tamanho atual de ambos os caches.
+  Você pode usar o comando `pfev` para verificar a quantidade de logs lidos de cada cache e de um arquivo.
+  Também pode usar as métricas do endpoint do Prometheus para acompanhar o tamanho atual de ambos os caches.
 </Note>
 
 <div id="prometheus">

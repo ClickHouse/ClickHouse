@@ -42,7 +42,11 @@ Si prefiere usar una VPC existente para implementar ClickHouse BYOC, en lugar de
   </Step>
 
   <Step title="Configura tu cuenta de AWS" id="configure-aws-account">
-    La configuración inicial de BYOC crea un rol de IAM con privilegios (`ClickHouseManagementRole`) que permite a los controladores de BYOC de ClickHouse Cloud administrar tu infraestructura. Esto puede hacerse con una [plantilla de CloudFormation](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) o un [módulo de Terraform](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
+    La configuración inicial de BYOC crea un rol de IAM con privilegios (`ClickHouseManagementRole`) que permite a los controladores de BYOC de ClickHouse Cloud administrar tu infraestructura. Esto puede hacerse con una [plantilla de CloudFormation](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml) o un módulo de Terraform (consulta más abajo).
+
+    <Warning>
+      **El nombre del rol de IAM es un requisito estricto.** El rol debe conservar su nombre predeterminado, `ClickHouseManagementRole`; no se permiten prefijos, sufijos ni cambios de nombre para cumplir con una convención de nomenclatura organizativa, a menos que ClickHouse haya acordado explícitamente un nombre diferente de antemano (la entrada de Terraform `role_name` solo debe cambiarse en coordinación con ClickHouse). Un rol con otro nombre se aplica correctamente, pero el aprovisionamiento falla posteriormente porque ClickHouse no puede asumir el rol esperado. En general, no cambies nada de la plantilla o el módulo proporcionados sin la aprobación explícita de ClickHouse; las personalizaciones admitidas se exponen como parámetros.
+    </Warning>
 
     Al desplegar una configuración `BYO-VPC`, establece el parámetro `IncludeVPCWritePermissions` en `false` para asegurarte de que ClickHouse Cloud no reciba permisos para modificar tu VPC gestionada por el cliente.
 
@@ -50,17 +54,27 @@ Si prefiere usar una VPC existente para implementar ClickHouse BYOC, en lugar de
       Los buckets de almacenamiento, el cluster de Kubernetes y los recursos de cómputo necesarios para ejecutar ClickHouse no se incluyen en esta configuración inicial. Se aprovisionarán en un paso posterior. Aunque controlas tu VPC, ClickHouse Cloud sigue requiriendo permisos de IAM para crear y administrar el cluster de Kubernetes, roles de IAM para service accounts, buckets de S3 y otros recursos esenciales de tu cuenta de AWS.
     </Note>
 
-    #### Módulo alternativo de Terraform
+    #### Módulo de Terraform
 
-    Si prefieres usar Terraform en lugar de CloudFormation, usa el siguiente módulo:
+    Si prefieres usar Terraform en lugar de CloudFormation, usa el módulo [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
     ```hcl
     module "clickhouse_onboarding" {
-      source                     = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-      byoc_env                   = "production"
+      source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id                   = "<external-id-provided-by-clickhouse>"
       include_vpc_write_permissions = false
     }
     ```
+
+    Reemplaza `<version>` por la etiqueta más reciente de la [página de releases](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) del módulo; usa siempre la release más reciente.
+
+    El módulo genera `clickhouse_management_role_arn`. En el flujo estándar no necesitas realizar ninguna acción con él: el onboarding continúa en la consola de ClickHouse Cloud, pero tenlo a mano: ClickHouse te lo solicitará si tu configuración se desvía de los valores predeterminados (por ejemplo, si se coordina un nombre de rol personalizado).
+
+    El valor de `external_id` lo genera la consola de ClickHouse Cloud y lo comparten todas las infraestructuras BYOC de la misma cuenta de AWS. Consulta [ID externo de AWS](/es/products/bring-your-own-cloud/onboarding/standard#aws-external-id) para obtener más información, incluido el placeholder heredado `emptyid`.
+
+    <Note>
+      El módulo se distribuía anteriormente como un tarball en `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. Esa URL sigue disponible, pero está obsoleta; usa el módulo de GitHub anterior.
+    </Note>
   </Step>
 
   <Step title="Configura la infraestructura de BYOC" id="set-up-byoc-infrastructure">
@@ -96,9 +110,11 @@ Con roles de IAM gestionados por el cliente, usted:
 * Elimina los permisos de escritura de IAM del `ClickHouseManagementRole` usado para el acceso entre cuentas
 * Mantiene control total sobre los permisos de los roles y las relaciones de confianza
 
+Ambos módulos siguientes toman el `external_id` generado por la consola de ClickHouse Cloud; todas las infraestructuras de BYOC de la misma cuenta de AWS comparten el mismo ID externo. Consulte [ID externo de AWS](/es/products/bring-your-own-cloud/onboarding/standard#aws-external-id) para obtener más información, incluido el marcador de posición heredado `emptyid`.
+
 <Steps>
   <Step title="Configurar el rol de administración sin permisos de escritura de IAM" id="byo-iam-management-role">
-    Al realizar la [configuración inicial de BYOC](/es/cloud/reference/byoc/onboarding/standard), desactive los permisos de escritura de IAM en el rol de administración. Con la plantilla de CloudFormation, establezca el parámetro `IncludeIAMWritePermissions` en `false`. Con el módulo de Terraform:
+    Al realizar la [configuración inicial de BYOC](/es/products/bring-your-own-cloud/onboarding/standard), desactive los permisos de escritura de IAM en el rol de administración. Con la plantilla de CloudFormation, establezca el parámetro `IncludeIAMWritePermissions` en `false`. Con el módulo de Terraform:
 
     ```hcl
     module "clickhouse_onboarding" {

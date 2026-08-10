@@ -42,7 +42,11 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
   </Step>
 
   <Step title="AWS 계정 구성" id="configure-aws-account">
-    초기 BYOC 설정에서는 ClickHouse Cloud의 BYOC 컨트롤러가 인프라를 관리할 수 있도록 권한 있는 IAM 역할(`ClickHouseManagementRole`)을 생성합니다. 이는 [CloudFormation 템플릿](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) 또는 [Terraform 모듈](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz)을 사용해 수행할 수 있습니다.
+    초기 BYOC 설정에서는 ClickHouse Cloud의 BYOC 컨트롤러가 인프라를 관리할 수 있도록 권한 있는 IAM 역할(`ClickHouseManagementRole`)을 생성합니다. 이는 [CloudFormation 템플릿](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml) 또는 Terraform 모듈(아래 참조)을 사용해 수행할 수 있습니다.
+
+    <Warning>
+      **IAM 역할 이름은 반드시 준수해야 합니다.** ClickHouse가 사전에 다른 이름에 명시적으로 동의한 경우를 제외하고, 역할은 기본 이름인 `ClickHouseManagementRole`을 그대로 유지해야 합니다. 즉, 조직의 명명 규칙을 충족하기 위한 프리픽스, 서픽스 추가 또는 이름 변경은 허용되지 않습니다(Terraform `role_name` 입력은 ClickHouse와 협의한 경우에만 변경해야 합니다). 이름이 변경된 역할은 성공적으로 적용되지만 ClickHouse가 예상한 역할을 assume할 수 없으므로 프로비저닝이 실패합니다. 또한 ClickHouse의 명시적 승인 없이 제공된 템플릿이나 모듈의 어떤 항목도 변경하지 마십시오. 지원되는 사용자 지정은 매개변수로 제공됩니다.
+    </Warning>
 
     `BYO-VPC` 구성으로 배포하는 경우, ClickHouse Cloud가 고객 관리형 VPC를 수정할 권한을 받지 않도록 `IncludeVPCWritePermissions` 매개변수를 `false`로 설정하십시오.
 
@@ -50,17 +54,27 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
       ClickHouse 실행에 필요한 스토리지 버킷, Kubernetes 클러스터, 컴퓨트 리소스는 이 초기 설정에 포함되지 않습니다. 이러한 항목은 이후 단계에서 프로비저닝됩니다. VPC는 직접 제어하더라도, ClickHouse Cloud는 AWS 계정에서 Kubernetes 클러스터, 서비스 계정용 IAM 역할, S3 버킷 및 기타 필수 리소스를 생성하고 관리할 수 있는 IAM 권한이 여전히 필요합니다.
     </Note>
 
-    #### 대체 Terraform 모듈
+    #### Terraform 모듈
 
-    CloudFormation 대신 Terraform을 사용하려면 다음 모듈을 사용하십시오.
+    CloudFormation 대신 Terraform을 사용하려면 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 모듈을 사용하십시오:
 
     ```hcl
     module "clickhouse_onboarding" {
-      source                     = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-      byoc_env                   = "production"
+      source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id                   = "<external-id-provided-by-clickhouse>"
       include_vpc_write_permissions = false
     }
     ```
+
+    `<version>`을 모듈의 [릴리스 페이지](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)에 있는 최신 태그로 대체하십시오. 항상 최신 릴리스를 사용하십시오.
+
+    모듈은 `clickhouse_management_role_arn`을 출력합니다. 표준 흐름에서는 별도의 조치가 필요하지 않으며 온보딩은 ClickHouse Cloud 콘솔에서 계속 진행됩니다. 다만 기본값과 다른 설정을 사용하는 경우(예: 조율된 사용자 지정 역할 이름) ClickHouse에서 이를 요청할 수 있으므로 준비해 두십시오.
+
+    `external_id` 값은 ClickHouse Cloud 콘솔에서 생성되며 동일한 AWS 계정의 모든 BYOC 인프라에서 공유됩니다. 레거시 `emptyid` 플레이스홀더를 포함한 자세한 내용은 [AWS 외부 ID](/ko/products/bring-your-own-cloud/onboarding/standard#aws-external-id)를 참조하십시오.
+
+    <Note>
+      이 모듈은 이전에 `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`에서 tarball 형태로 배포되었습니다. 해당 URL은 계속 사용할 수 있지만 더 이상 사용되지 않으므로 위의 GitHub 모듈을 사용하십시오.
+    </Note>
   </Step>
 
   <Step title="BYOC 인프라 설정" id="set-up-byoc-infrastructure">
@@ -95,6 +109,8 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
 * ClickHouse Cloud가 원래 생성했을 인프라별 IAM 역할을 미리 생성합니다
 * 교차 계정 액세스에 사용되는 `ClickHouseManagementRole`에서 IAM 쓰기 권한을 제거합니다
 * 역할 권한과 신뢰 관계를 완전히 제어합니다
+
+아래 두 모듈은 ClickHouse Cloud 콘솔에서 생성된 `external_id`를 사용합니다. 동일한 AWS 계정의 모든 BYOC 인프라는 동일한 external ID를 공유합니다. 기존 `emptyid` placeholder를 포함한 자세한 내용은 [AWS external ID](/ko/products/bring-your-own-cloud/onboarding/standard#aws-external-id)를 참조하십시오.
 
 <Steps>
   <Step title="IAM 쓰기 권한 없이 관리 역할 구성" id="byo-iam-management-role">

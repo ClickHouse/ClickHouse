@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Migración de RBAC con roles personalizados'
+sidebar_label: 'Migración de RBAC con roles personalizados'
+sidebar_position: 4
+slug: /cloud/guides/security/migrating-rbac-custom-roles
+title: 'Migración de RBAC con roles personalizados'
+description: "Guía para administradores sobre la migración al nuevo sistema de control de acceso basado en roles de ClickHouse Cloud mediante el asistente de migración"
+doc_type: 'guide'
+keywords: ['rbac', 'roles personalizados', 'migración', 'control de acceso', 'permisos', 'seguridad']
+---
+
+Esta guía está dirigida a usuarios con el rol de Admin en ClickHouse Cloud.
+
+En junio de 2026, ClickHouse Cloud adoptó un nuevo sistema de control de acceso basado en roles (RBAC). Si su organización tiene miembros o claves de API con permisos con ámbito de servicio que no se pueden migrar automáticamente, utilizará un asistente de migración para asignar esos permisos a nuevos roles. Esta guía explica cómo funciona el nuevo sistema y cómo completar la migración.
+
+<Warning>
+  **Complete la migración lo antes posible**
+
+  Las organizaciones que no hayan completado la migración antes de la fecha límite indicada en el asistente y en las notificaciones por correo electrónico se migrarán automáticamente (consulte [Qué sucede si no realiza la migración](#automated-migration)).
+</Warning>
+
+<div id="whats-changing">
+  ## Qué cambia
+</div>
+
+El nuevo sistema RBAC incorpora definiciones de roles personalizados y un control de acceso más granular. En lugar de un conjunto fijo de permisos con ámbito de servicio, puede definir roles que muestren todos los permisos que conceden, de modo que quede claro exactamente qué acceso proporciona cada rol.
+
+Un rol puede combinar permisos de organización, servicio y base de datos. Puede aplicar esos permisos a todos sus servicios y bases de datos, o a un subconjunto de ellos. Para consultar la lista completa de permisos y los roles estándar incluidos con ClickHouse Cloud, vea [Console roles and permissions](/es/cloud/security/console-roles). Para obtener instrucciones sobre cómo crear y editar roles después de la migración, consulte [Administrar roles personalizados](/es/cloud/guides/security/manage-custom-roles).
+
+La mayoría de los permisos se asignan automáticamente al nuevo modelo. El asistente de migración le pedirá que gestione los permisos con ámbito de servicio que no se puedan asignar directamente.
+
+<div id="migration-wizard">
+  ## Complete el asistente de migración
+</div>
+
+El asistente le pide que cree nuevos roles que reflejen los permisos que tienen actualmente sus miembros y claves de API, y que հետո asigne esos roles a los miembros y claves correspondientes. Su progreso se guarda automáticamente, por lo que no es necesario completar el proceso en una sola sesión.
+
+<Steps>
+  <Step title="Abra el asistente de migración" id="open-wizard">
+    En la página **Users and roles**, siga el aviso de migración para abrir el asistente. También puede acceder a él desde el banner de migración que se muestra en la consola.
+  </Step>
+
+  <Step title="Cree roles para permisos sin asignar" id="create-roles">
+    El asistente muestra los miembros y las claves de API cuyos permisos con ámbito de servicio no se pudieron migrar automáticamente. Cree nuevos roles que se ajusten al acceso que necesitan estos miembros y claves. Consulte [Administrar roles personalizados](/es/cloud/guides/security/manage-custom-roles) para obtener más información sobre el ámbito de los permisos.
+  </Step>
+
+  <Step title="Asigne roles a cada miembro y clave de API" id="assign-roles">
+    Asigne al menos un rol nuevo a cada miembro, invitación pendiente y clave de API. Cualquier miembro, invitación o clave cuya columna **New role** quede en blanco impedirá el envío.
+  </Step>
+
+  <Step title="Mantenga al menos un administrador" id="keep-admin">
+    Asigne un rol de Admin al menos a un miembro existente. El asistente no le permitirá realizar el envío sin uno, ya que, de lo contrario, su organización perdería el acceso administrativo tras la migración.
+  </Step>
+
+  <Step title="Envíe la migración" id="submit">
+    Una vez que cada miembro, invitación y clave de API tenga un rol, envíe la migración. Si se realiza correctamente, se le redirigirá a la pestaña **Roles**.
+  </Step>
+</Steps>
+
+Si intenta realizar el envío antes de que se cumplan estas condiciones, el asistente mostrará un mensaje que indica qué falta —miembros sin roles, claves de API sin roles o la ausencia de un administrador— para que pueda ir directamente a las entradas afectadas.
+
+<div id="automated-migration">
+  ## Qué ocurre si no realiza la migración
+</div>
+
+Siempre que sea posible, complete la migración usted mismo para que sus roles reflejen el modelo de acceso previsto. Si su organización no completa la migración a tiempo, ClickHouse ejecutará una migración automatizada en las semanas siguientes.
+
+La migración automatizada crea un rol personalizado por usuario y otro por clave de API, cada uno con los permisos actuales del usuario o la clave correspondientes. Esto preserva el nivel de acceso actual de todos, por lo que ningún miembro ni clave pierde el acceso. Después, puede revisar y consolidar estos roles en la pestaña **Roles**.
+
+<div id="after-migration">
+  ## Después de la migración
+</div>
+
+Revise sus configuraciones de OpenAPI y Terraform para que sigan siendo compatibles con el nuevo sistema de roles. Puede que sea necesario actualizar las automatizaciones que hacen referencia a los roles anteriores.
+
+El rol Query Endpoints pasa a ser el rol de lector de API del servicio Basic. Actualice las integraciones que dependan del nombre anterior del rol.
+
+Para obtener orientación sobre la administración de roles en el futuro, consulte [Administrar roles personalizados](/es/cloud/guides/security/manage-custom-roles) y [Administración del acceso a Cloud](/es/cloud/security/cloud_access_management).

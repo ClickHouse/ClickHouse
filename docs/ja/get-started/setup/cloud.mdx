@@ -99,13 +99,13 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     ### ClickPipes
 
-    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes) は、多様なソースからのデータ取り込みを数回のクリックで実現するマネージドインテグレーションプラットフォームです。最も要求の厳しいワークロードを想定して設計されており、ClickPipes の堅牢でスケーラブルなアーキテクチャが安定したパフォーマンスと信頼性を実現します。ClickPipes は、長期的なストリーミング用途にも一回限りのデータ読み込みジョブにも対応しています。
+    [ClickPipes](/ja/integrations/clickpipes) は、多様なソースからのデータ取り込みを数回のクリックで実現するマネージド統合プラットフォームです。最も負荷の高いワークロード向けに設計されており、ClickPipes の堅牢でスケーラブルなアーキテクチャは一貫したパフォーマンスと信頼性を確保します。ClickPipes は、長期的なストリーミング用途にも一度限りのデータ読み込みジョブにも利用できます。
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="データソースを選択" border />
 
     <br />
 
-    ### SQL Consoleを使用してデータを追加する
+    ### SQL コンソールを使用してデータを追加する
 
     多くのデータベース管理システムと同様に、ClickHouse はテーブルを**データベース**に論理的にグループ化します。ClickHouse で新しいデータベースを作成するには、[`CREATE DATABASE`](/ja/reference/statements/create/database) コマンドを使用します。
 
@@ -154,7 +154,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     * ClickHouse の主キーは、テーブル内の各行で ***一意ではありません***
 
-    ClickHouseテーブルの主キーは、ディスクへの書き込み時にデータがどのようにソートされるかを決定します。8,192行または10MBのデータごと (**index granularity**と呼ばれます) に、主キーの索引ファイルへのエントリが作成されます。このgranularityの概念により、メモリに容易に収まる**スパースインデックス**が生成されます。granuleは、`SELECT`クエリの処理時に読み取られる最小単位のカラムデータのストライプを表します。
+    ClickHouseテーブルの主キーは、ディスクへの書き込み時にデータがどのようにソートされるかを決定します。8,192行または10MBのデータごと (**インデックス粒度**と呼ばれます) に、主キーのインデックスファイルへのエントリが作成されます。この粒度の概念により、メモリに容易に収まる**スパースインデックス**が生成されます。granule (粒度単位) は、`SELECT`クエリの処理時に読み取られる最小単位のカラムデータのストライプを表します。
 
     主キーは `PRIMARY KEY` パラメータを使用して定義できます。`PRIMARY KEY` を指定せずにテーブルを定義した場合、`ORDER BY` 句で指定されたタプルがキーになります。`PRIMARY KEY` と `ORDER BY` の両方を指定する場合、主キーはソート順のサブセットでなければなりません。
 
@@ -162,7 +162,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     ClickHouseのコアコンセプトを詳しく理解するには、[「コアコンセプト」](/ja/concepts/core-concepts/index)を参照してください。
 
-    #### テーブルへのデータ挿入
+    #### テーブルにデータを挿入する
 
     ClickHouse では使い慣れた [`INSERT INTO TABLE`](/ja/reference/statements/insert-into) コマンドを使用できますが、[`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルへの挿入が行われるたびに、ストレージ内に**パート**が作成される点を理解しておくことが重要です。
 
@@ -197,7 +197,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     ### ClickHouse Clientを使用したデータの追加
 
-    [**clickhouse client**](/ja/concepts/features/interfaces/cli) というコマンドラインツールを使用して、ClickHouse Cloud サービスに接続することもできます。左側のメニューの `Connect` をクリックすると、接続の詳細情報を確認できます。ダイアログが表示されたら、ドロップダウンから `Native` を選択してください。
+    [**clickhouse client**](/ja/concepts/features/interfaces/cli) というコマンドラインツールを使用して、ClickHouse Cloud サービスに接続することもできます。左側のメニューの `Connect` をクリックすると、これらの詳細にアクセスできます。ダイアログのドロップダウンから `Native` を選択してください。
 
     <Image img="/images/_snippets/client_details.webp" size="md" alt="clickhouse clientの接続情報" border />
 
@@ -303,7 +303,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     <br />
 
-    <Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt="CSVファイルからの新規行" />
+    <Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt="CSV ファイルから追加された行" />
 
     <br />
   </Step>
@@ -320,7 +320,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 次は？
 </div>
 
-* [チュートリアル](/get-started/quickstarts/tutorial)では、テーブルに200万行を挿入し、いくつかの分析クエリを作成します
+* [チュートリアル](/ja/get-started/quickstarts/tutorial)では、テーブルに200万行を挿入し、いくつかの分析クエリを作成します
 * 挿入手順付きの[サンプルデータセット](/ja/get-started/sample-datasets/index)一覧も用意しています
 * [ClickHouse 入門](https://clickhouse.com/company/events/getting-started-with-clickhouse/)の12分間のビデオをご覧ください
 * データが外部ソースから来ている場合は、メッセージキュー、データベース、パイプラインなどへの接続方法をまとめた[インテグレーションガイド集](/ja/integrations/home)をご覧ください

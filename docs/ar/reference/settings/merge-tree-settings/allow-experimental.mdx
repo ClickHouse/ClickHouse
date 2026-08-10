@@ -10,9 +10,26 @@ doc_type: 'reference'
 
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
-import VersionHistory from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
+import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشفرة المصدرية لـ ClickHouse.
+
+<div id="allow_experimental_adaptive_codec_selection">
+  ## allow_experimental_adaptive_codec_selection
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
+
+عند تفعيله، تختار عمليات الدمج والطفرات برنامج ترميز لكل كتلة للأعمدة التي تستخدم برنامج الترميز الافتراضي (من دون عبارة `CODEC` أو مع `CODEC(Default)`).
+تشمل الخيارات برنامج الترميز الافتراضي للجدول (راجع الإعداد `default_compression_codec`) و`NONE` وبرامج ترميز متخصصة ملائمة لنوع العمود.
+لا تدعم التكيّف حاليًا إلا الأنواع الشبيهة بالأعداد الصحيحة.
+يُختار أصغر ناتج. لذلك، لا يكون الضغط أسوأ من الإعداد الافتراضي مطلقًا، وتُخزَّن الكتل غير القابلة للضغط بصيغتها الخام.
+لا يُختار تكيفيًا أي عمود يتضمن برنامج الترميز الافتراضي له تشفيرًا (مثل `AES_128_GCM_SIV`)، لذا يُطبَّق التشفير دائمًا.
+تُبلّغ برامج الترميز لكل كتلة عبر دالة الجدول [`mergeTreeCodecBlockCounts`](/ar/reference/functions/table-functions/mergeTreeCodecBlockCounts).
 
 <div id="allow_experimental_replacing_merge_with_cleanup">
   ## allow_experimental_replacing_merge_with_cleanup

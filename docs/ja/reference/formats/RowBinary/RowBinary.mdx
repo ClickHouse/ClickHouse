@@ -580,7 +580,7 @@ RowBinary フォーマットでは、low-cardinality マーカーはワイヤ形
   カラムは `LowCardinality(Nullable(T))` として定義できますが、`Nullable(LowCardinality(T))` として定義することはできません。常に server から error になります。
 </Note>
 
-テスト時には、カバレッジを広げるために、[allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ja/reference/settings/session-settings#allow_suspicious_low_cardinality_types) を `1` に設定すると、`LowCardinality` 内でほとんどの data types を許可できます。
+テスト時には、カバレッジを広げるために、[allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ja/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) を `1` に設定すると、`LowCardinality` 内でほとんどの data types を許可できます。
 
 <div id="array">
   ### Array
@@ -725,7 +725,7 @@ SELECT CAST(map('foo', 1, 'bar', 2), 'Map(String, UInt32)') AS m
 この型は、ほかのデータ型のユニオンを表します。型 `Variant(T1, T2, ..., TN)` は、この型の各行が `T1`、`T2`、…、`TN` のいずれかの型、またはそのどれにも該当しない値 (`NULL` 値) を持つことを意味します。
 
 <Warning>
-  エンドユーザーにとっては `Variant(T1, T2)` と `Variant(T2, T1)` はまったく同じ意味ですが、ワイヤ形式では定義内の型の順序が重要です。定義内の型は常にアルファベット順にソートされます。これは、どのバリアントかが &quot;判別子&quot;、つまり定義内のデータ型の索引によってエンコードされるためです。
+  エンドユーザーにとっては `Variant(T1, T2)` と `Variant(T2, T1)` はまったく同じ意味ですが、ワイヤ形式では定義内の型の順序が重要です。定義内の型は常にアルファベット順にソートされます。これは、どのバリアントかが &quot;判別値&quot;、つまり定義内のデータ型の索引によってエンコードされるためです。
 </Warning>
 
 次の例を見てみましょう。
@@ -735,8 +735,8 @@ SET allow_experimental_variant_type = 1,
     allow_suspicious_variant_types = 1;
 CREATE OR REPLACE TABLE foo
 (
-  -- ユーザー入力での型の順序は関係ない。
-  -- 型はワイヤ形式では常にアルファベット順にソートされる。
+  -- It does not matter what is the order of types in the user input;
+  -- the types are always sorted alphabetically in the wire format.
   `var` Variant(
            Array(Int16),
            Bool,
@@ -755,26 +755,26 @@ SELECT * FROM foo FORMAT RowBinary;
 ```
 
 ```text
-0x01,                               // 型インデックス -> Bool
+0x01,                               // type index -> Bool
  0x01,                               // true
- 0x03,                               // 型インデックス -> FixedString(6)
+ 0x03,                               // type index -> FixedString(6)
  0x66, 0x6F, 0x6F, 0x62, 0x61, 0x72, // 'foobar' 
- 0x05,                               // 型インデックス -> Float64
+ 0x05,                               // type index -> Float64
  0x00, 0x00, 0x00, 0x00, 
- 0x00, 0x20, 0x59, 0x40,             // Float64 としての 100.5
- 0x06,                               // 型インデックス -> Int128
+ 0x00, 0x20, 0x59, 0x40,             // 100.5 as Float64
+ 0x06,                               // type index -> Int128
  0x64, 0x00, 0x00, 0x00, 
  0x00, 0x00, 0x00, 0x00, 
  0x00, 0x00, 0x00, 0x00, 
- 0x00, 0x00, 0x00, 0x00,             // Int128 としての 100
- 0x00,                               // 型インデックス -> Array(Int16)
- 0x03,                               // LEB128 - 配列の要素数は 3
- 0x01, 0x00,                         // Int16 としての 1
- 0x02, 0x00,                         // Int16 としての 2
- 0x03, 0x00,                         // Int16 としての 3
+ 0x00, 0x00, 0x00, 0x00,             // 100 as Int128
+ 0x00,                               // type index -> Array(Int16)
+ 0x03,                               // LEB128 - the array has 3 elements
+ 0x01, 0x00,                         // 1 as Int16
+ 0x02, 0x00,                         // 2 as Int16
+ 0x03, 0x00,                         // 3 as Int16
 ```
 
-`NULL` 値は、判別子バイト `0xFF` でエンコードされます:
+`NULL` 値は、判別値バイト `0xFF` でエンコードされます:
 
 ```sql
 SELECT NULL :: Variant(UInt32, String)
@@ -784,7 +784,7 @@ SELECT NULL :: Variant(UInt32, String)
 0xFF, // discriminant = NULL
 ```
 
-[allow&#95;suspicious&#95;variant&#95;types](/ja/reference/settings/session-settings#allow_suspicious_variant_types) 設定を使用すると、`Variant` 型をより網羅的にテストできます。
+[allow&#95;suspicious&#95;variant&#95;types](/ja/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) 設定を使用すると、`Variant` 型をより網羅的にテストできます。
 
 <div id="dynamic">
   ### Dynamic
@@ -993,13 +993,14 @@ Schema: `JSON(name String)`
 Geo は、地理データを表現するデータ型のカテゴリです。次の型が含まれます。
 
 * `Point` - `Tuple(Float64, Float64)` として表されます。
+* `MultiPoint` - `Array(Point)` または `Array(Tuple(Float64, Float64))` として表されます。
 * `Ring` - `Array(Point)` または `Array(Tuple(Float64, Float64))` として表されます。
 * `Polygon` - `Array(Ring)` または `Array(Array(Tuple(Float64, Float64)))` として表されます。
 * `MultiPolygon` - `Array(Polygon)` または `Array(Array(Array(Tuple(Float64, Float64))))` として表されます。
 * `LineString` - `Array(Point)` または `Array(Tuple(Float64, Float64))` として表されます。
 * `MultiLineString` - `Array(LineString)` または `Array(Array(Tuple(Float64, Float64)))` として表されます。
 
-Geo の値のワイヤ形式は、Tuple および Array の場合とまったく同じです。`RowBinaryWithNamesAndTypes` フォーマットのヘッダーには、これらの型の別名 (たとえば `Point`、`Ring`、`Polygon`、`MultiPolygon`、`LineString`、`MultiLineString`) が含まれます。
+Geo の値のワイヤ形式は、Tuple および Array の場合とまったく同じです。`RowBinaryWithNamesAndTypes` フォーマットのヘッダーには、これらの型の別名 (たとえば `Point`、`MultiPoint`、`Ring`、`Polygon`、`MultiPolygon`、`LineString`、`MultiLineString`) が含まれます。
 
 ```sql
 SELECT    (1.0, 2.0)                                       :: Point           AS point,
@@ -1076,9 +1077,9 @@ SELECT    (1.0, 2.0)                                       :: Point           AS
   ### Geometry
 </div>
 
-`Geometry` は、上記に挙げた任意の Geo 型を保持できる `Variant` 型です。ワイヤ上では `Variant` とまったく同じようにエンコードされ、後続する Geo 型を示す 判別子 バイトが付加されます。
+`Geometry` は、上記に挙げた任意の Geo 型を保持できる `Variant` 型です。ワイヤ上では `Variant` とまったく同じようにエンコードされ、後続する Geo 型を示す 判別値 バイトが付加されます。
 
-Geometry の 判別子 インデックスは次のとおりです。
+Geometry の 判別値 インデックスは次のとおりです。
 
 | インデックス | 型               |
 | ------ | --------------- |
@@ -1088,12 +1089,13 @@ Geometry の 判別子 インデックスは次のとおりです。
 | 3      | Point           |
 | 4      | Polygon         |
 | 5      | Ring            |
+| 6      | MultiPoint      |
 
 ワイヤ形式の構造:
 
 ```text
-// 1バイトのdiscriminant（0〜5）
-// 続いて対応するGeoタイプのデータ
+// 1 byte discriminant (0-6)
+// followed by the corresponding geo type data
 ```
 
 `Point` を `Geometry` としてエンコードした例:
@@ -1103,16 +1105,16 @@ SELECT ((1.0, 2.0)::Point)::Geometry
 ```
 
 ```text
-0x03,                                           // 判別子 = 3 (Point)
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X = 1.0 (Float64)
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y = 2.0 (Float64)
+0x03,                                           // discriminant = 3 (Point)
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X = 1.0 as Float64
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y = 2.0 as Float64
 ```
 
 `Ring` を `Geometry` としてエンコードした例:
 
 ```text
-0x05,       // 判別子 = 5 (Ring)
-0x02,       // LEB128 - Arrayは2点を持つ
+0x05,       // discriminant = 5 (Ring)
+0x02,       // LEB128 - array has 2 points
 // Point #1
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40, // X = 3.0
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40, // Y = 4.0

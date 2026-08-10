@@ -68,7 +68,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
   ## データ型の検出
 </div>
 
-その場でタプルを作成する際、ClickHouse は、指定された引数の値を格納できる最小の型として、各引数の型を推定します。値が [NULL](/ja/reference/settings/formats#input_format_null_as_default) の場合、推定される型は [Nullable](/ja/reference/data-types/nullable) です。
+その場でタプルを作成する際、ClickHouse は、指定された引数の値を格納できる最小の型として、各引数の型を推定します。値が [NULL](/ja/reference/settings/formats/input-format#input_format_null_as_default) の場合、推定される型は [Nullable](/ja/reference/data-types/nullable) です。
 
 データ型の自動検出の例:
 

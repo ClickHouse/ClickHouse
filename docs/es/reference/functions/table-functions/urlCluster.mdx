@@ -30,7 +30,7 @@ urlCluster(cluster_name, URL, format, structure)
 | `format`       | [Formato](/es/reference/formats/index) de los datos. Tipo: [String](/es/reference/data-types/string).                                                                   |
 | `structure`    | Estructura de la tabla en el formato `'UserID UInt64, Name String'`. Determina los nombres y tipos de las columnas. Tipo: [String](/es/reference/data-types/string). |
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor devuelto
 </div>
 
@@ -69,7 +69,7 @@ SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column
 </div>
 
 Los patrones entre `{ }` se usan para generar un conjunto de segmentos o para especificar direcciones de failover. Para ver los tipos de patrones admitidos y ejemplos, consulte la descripción de la función [remote](/es/reference/functions/table-functions/remote#globs-in-addresses).
-El carácter `|` dentro de los patrones se usa para especificar direcciones de failover. Se recorren en el mismo orden en que aparecen en el patrón. El número de direcciones generadas está limitado por el ajuste [glob&#95;expansion&#95;max&#95;elements](/es/reference/settings/session-settings#glob_expansion_max_elements).
+El carácter `|` dentro de los patrones se usa para especificar direcciones de failover. Se recorren en el mismo orden en que aparecen en el patrón. El número de direcciones generadas está limitado por el ajuste [glob&#95;expansion&#95;max&#95;elements](/es/reference/settings/session-settings/other#glob_expansion_max_elements).
 
 <div id="related">
   ## Relacionados

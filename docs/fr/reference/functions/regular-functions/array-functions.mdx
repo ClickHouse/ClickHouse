@@ -4248,7 +4248,7 @@ Vérifie si le tableau d’entrée est vide.
 Un tableau est considéré comme vide s’il ne contient aucun élément.
 
 <Note>
-  Peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns). Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la subcolumn [size0](/fr/reference/data-types/array#array-size) au lieu de lire et de traiter toute la array column. La query `SELECT empty(arr) FROM TABLE;` est transformée en `SELECT arr.size0 = 0 FROM TABLE;`.
+  Peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la subcolumn [size0](/fr/reference/data-types/array#array-size) au lieu de lire et de traiter toute la array column. La query `SELECT empty(arr) FROM TABLE;` est transformée en `SELECT arr.size0 = 0 FROM TABLE;`.
 </Note>
 
 La fonction fonctionne également avec les Strings ou les UUIDs.
@@ -5137,6 +5137,11 @@ Si le tableau ne contient pas la valeur recherchée, la fonction renvoie `0`.
 
 Les éléments définis sur `NULL` sont traités comme des valeurs normales.
 
+Les éléments `NaN` ne suivent pas la règle relative à `NULL` ci-dessus.
+Une comparaison scalaire de deux valeurs `NaN` (`NaN = NaN`) vaut `0`, mais `indexOf` peut néanmoins indiquer qu’un élément `NaN` a été trouvé.
+Le fait que ce soit le cas dépend de l’implémentation. Ne vous fiez pas à un comportement spécifique.
+Pour en trouver un, testez sa présence : `arrayFirstIndex(x -> isNaN(x), arr)` renvoie sa position, `arrayExists(x -> isNaN(x), arr)` un indicateur.
+
 **Syntaxe**
 
 ```sql
@@ -5335,7 +5340,7 @@ Vérifie si le tableau en entrée n’est pas vide.
 Un tableau est considéré comme non vide s’il contient au moins un élément.
 
 <Note>
-  Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns). Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la sous-colonne [size0](/fr/reference/data-types/array#array-size), au lieu de lire et traiter toute la colonne de tableau. La requête `SELECT notEmpty(arr) FROM table` est transformée en `SELECT arr.size0 != 0 FROM TABLE`.
+  Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la sous-colonne [size0](/fr/reference/data-types/array#array-size), au lieu de lire et traiter toute la colonne de tableau. La requête `SELECT notEmpty(arr) FROM table` est transformée en `SELECT arr.size0 != 0 FROM TABLE`.
 </Note>
 
 La fonction fonctionne également avec les chaînes de caractères et les UUIDs.
@@ -5483,7 +5488,7 @@ Les types pris en charge sont :
 
 * Tous les arguments `start`, `end`, `step` doivent être de l’un des types pris en charge ci-dessus. Les éléments du tableau renvoyé seront d’un supertype des arguments.
 
-* Une exception est levée si la fonction renvoie un tableau dont la longueur totale dépasse le nombre d’éléments spécifié par le paramètre [`function_range_max_elements_in_block`](/fr/reference/settings/session-settings#function_range_max_elements_in_block).
+* Une exception est levée si la fonction renvoie un tableau dont la longueur totale dépasse le nombre d’éléments spécifié par le paramètre [`function_range_max_elements_in_block`](/fr/reference/settings/session-settings/function#function_range_max_elements_in_block).
 
 * Renvoie `NULL` si l’un des arguments est de type Nullable(nothing). Une exception est levée si l’un des arguments a la valeur `NULL` (type Nullable(T)).
 

@@ -4248,7 +4248,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 تُعد المصفوفة فارغة إذا كانت لا تحتوي على أي عناصر.
 
 <Note>
-  يمكن تحسين أداء هذه الدالة بتفعيل [إعداد `optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة فقط [العمود الفرعي size0](/ar/reference/data-types/array#array-size) بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT empty(arr) FROM TABLE;` إلى `SELECT arr.size0 = 0 FROM TABLE;`.
+  يمكن تحسين أداء هذه الدالة بتفعيل [إعداد `optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة فقط [العمود الفرعي size0](/ar/reference/data-types/array#array-size) بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT empty(arr) FROM TABLE;` إلى `SELECT arr.size0 = 0 FROM TABLE;`.
 </Note>
 
 تعمل هذه الدالة أيضًا مع Strings أو UUIDs.
@@ -5132,10 +5132,15 @@ Raises a `NO_COMMON_TYPE` exception
 
 أُضيف في: v1.1.0
 
-يعيد موضع أول عنصر ذي القيمة &#39;x&#39; (بدءًا من 1) إذا كان موجودًا في المصفوفة.
+يعيد فهرس أول عنصر ذي القيمة &#39;x&#39; (بدءًا من 1) إذا كان موجودًا في المصفوفة.
 إذا كانت المصفوفة لا تحتوي على القيمة المطلوب البحث عنها، فستُرجِع الدالة `0`.
 
 تُعامَل العناصر المعيّنة إلى `NULL` على أنها قيم عادية.
+
+لا تتبع عناصر `NaN` قاعدة `NULL` المذكورة أعلاه.
+تكون المقارنة العددية لقيمتَي `NaN` (`NaN = NaN`) هي `0`، لكن قد يُبلّغ `indexOf` مع ذلك عن العثور على عنصر `NaN`.
+يعتمد ذلك على تفاصيل التنفيذ. لا تعتمد على سلوك محدد.
+للعثور على أحدها، اختبره: تُرجع `arrayFirstIndex(x -> isNaN(x), arr)` موضعه، وتُرجع `arrayExists(x -> isNaN(x), arr)` راية.
 
 **البنية**
 
@@ -5335,7 +5340,7 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 تُعدّ المصفوفة غير فارغة إذا كانت تحتوي على عنصر واحد على الأقل.
 
 <Note>
-  يمكن تحسينها عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [size0](/ar/reference/data-types/array#array-size) فقط بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT notEmpty(arr) FROM table` إلى `SELECT arr.size0 != 0 FROM TABLE`.
+  يمكن تحسينها عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [size0](/ar/reference/data-types/array#array-size) فقط بدلًا من قراءة عمود المصفوفة بالكامل ومعالجته. ويتحوّل الاستعلام `SELECT notEmpty(arr) FROM table` إلى `SELECT arr.size0 != 0 FROM TABLE`.
 </Note>
 
 تعمل الدالة أيضًا مع السلاسل النصية أو معرّفات UUID.
@@ -5482,7 +5487,7 @@ SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
 
 * يجب أن تكون جميع الوسائط `start` و`end` و`step` من أحد الأنواع المدعومة أعلاه. وستكون عناصر المصفوفة المُعادة من نوع أعم مشتق من أنواع الوسائط.
 
-* يُطرَح استثناء إذا أعادت الدالة مصفوفة يتجاوز طولها الإجمالي عدد العناصر المحدد في الإعداد [`function_range_max_elements_in_block`](/ar/reference/settings/session-settings#function_range_max_elements_in_block).
+* يُطرَح استثناء إذا أعادت الدالة مصفوفة يتجاوز طولها الإجمالي عدد العناصر المحدد في الإعداد [`function_range_max_elements_in_block`](/ar/reference/settings/session-settings/function#function_range_max_elements_in_block).
 
 * يعيد `NULL` إذا كان أي وسيط من النوع Nullable(nothing). ويُطرَح استثناء إذا كانت قيمة أي وسيط هي `NULL` (من النوع Nullable(T)).
 

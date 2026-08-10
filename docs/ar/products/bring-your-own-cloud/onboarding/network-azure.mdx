@@ -1,0 +1,110 @@
+---
+title: 'إعداد الشبكات الخاصة لـ BYOC على Azure'
+slug: /cloud/reference/byoc/onboarding/network-azure
+sidebarTitle: 'إعداد الشبكات الخاصة على Azure'
+keywords: ['BYOC', 'cloud', 'استخدم سحابتك الخاصة', 'azure', 'private link']
+description: 'إعداد Private Link لـ BYOC على Azure'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يدعم ClickHouse BYOC on Azure الاتصال عبر شبكة خاصة باستخدام Azure Private Link.
+
+<div id="common-prerequisites">
+  ## المتطلبات المسبقة
+</div>
+
+<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
+  ### تفعيل موازن التحميل الخاص لـ ClickHouse BYOC
+</div>
+
+في وحدة تحكم ClickHouse Cloud، فعّل **موازن التحميل الخاص** لبنية BYOC التحتية.
+
+<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC تفعيل موازن التحميل الخاص" border />
+
+<div id="setup-privatelink">
+  ## إعداد Private Link
+</div>
+
+يوفر Azure Private Link اتصالاً آمناً وخاصاً بخدمات ClickHouse BYOC لديك. وتبقى جميع حركة البيانات ضمن شبكة Azure، مما يضمن عدم عبورها الإنترنت العام مطلقاً.
+
+<Steps>
+  <Step title="فعّل Private Link في ClickHouse console" id="step-1-enable-private-link">
+    <Note>
+      تأكد من تفعيل **موازن التحميل الخاص** كمتطلب أساسي.
+    </Note>
+
+    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="تفعيل PrivateLink لـ BYOC" border />
+  </Step>
+
+  <Step title={<>احصل على <code>Service name</code> الخاص بنقطة النهاية</>} id="step-2-obtain-endpoint-service-name">
+    1. في ClickHouse Cloud console، انتقل إلى صفحة Settings للخدمة التي ترغب في الاتصال بها عبر Private Link.
+    2. انقر على &quot;Set up private endpoint&quot;.
+    3. في اللوحة المنبثقة التي تفتح، انسخ قيمتي `Service name` (الاسم المستعار لخدمة Private Link) و`DNS name` — ستستخدمهما في الخطوات التالية. (قد يستغرق إنشاء هذه القيم بعض الوقت بعد تمكين Private Link.)
+       <Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="md" alt="نقاط النهاية الخاصة" border />
+  </Step>
+
+  <Step title="أنشئ نقطة نهاية خاصة في شبكتك" id="step-3-create-endpoint">
+    1. افتح **Azure Portal** الخاص بك (أي اشتراك Azure الذي يوجد فيه تطبيق العميل) → **Network Foundation** → **Private endpoints** → **Create**.
+    2. في علامة التبويب **Basics**، اختر الاشتراك ومجموعة الموارد والاسم والمنطقة لنقطة النهاية الخاصة. يجب أن تكون المنطقة هي منطقة شبكة VNet التي يتصل منها تطبيق العميل.
+       <Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="إنشاء نقطة نهاية خاصة: الأساسيات" border />
+    3. في علامة التبويب **Resource**، اختر **Connect to an Azure resource by resource ID or alias** وأدخل `Service name` الذي حصلت عليه في الخطوة السابقة.
+       <Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="اختيار مورد نقطة النهاية الخاصة" border />
+    4. في علامة التبويب **Virtual Network**، اختر الشبكة الظاهرية والشبكة الفرعية حيث ستُنشأ نقطة النهاية الخاصة. ويمكنك اختياريًا إرفاق مجموعة أمان للتطبيقات لتصفية حركة المرور إلى نقطة النهاية الخاصة.
+       <Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="اختيار الشبكة الظاهرية لنقطة النهاية الخاصة" border />
+    5. تابع عبر علامات التبويب المتبقية وانقر على **Create**. ستكون **Connection status** لنقطة النهاية الخاصة التي أنشأتها في حالة **Pending** إلى أن تضيف `Resource ID` الخاص بها إلى قائمة السماح لخدمة ClickHouse في الخطوات التالية.
+    6. افتح واجهة الشبكة المرتبطة بنقطة النهاية الخاصة وانسخ **Private IPv4 address** — ستستخدمه في خطوة إعداد DNS.
+       <Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="عنوان IP لنقطة النهاية الخاصة" border />
+  </Step>
+
+  <Step title={<>أضف <code>معرّف المورد</code> الخاص بنقطة النهاية الخاصة إلى قائمة السماح لخدمة ClickHouse</>} id="step-4-add-endpoint-id-to-services-allow-list">
+    للحصول على Resource ID لنقطة النهاية الخاصة، افتح نقطة النهاية الخاصة التي أنشأتها سابقًا في Azure Portal وانقر على **JSON View**، ثم انسخ حقل `id` ذي المستوى الأعلى (أي **Resource ID** الظاهر في أعلى العرض، بالصيغة `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`). لا تستخدم حقول `id` المتداخلة داخل كائن `properties`:
+
+    <Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="معرّف مورد نقطة النهاية الخاصة" border />
+
+    1. في ClickHouse Cloud console، انتقل إلى صفحة Settings للخدمة التي تريد الاتصال بها عبر Private Link.
+    2. انقر على &quot;إعداد نقطة نهاية خاصة&quot;.
+    3. في اللوحة الجانبية المفتوحة، أدخل `Resource ID` الذي حصلت عليه أعلاه في حقل `Endpoint ID`، وأضف وصفًا اختياريًا.
+    4. انقر على &quot;إنشاء نقطة نهاية&quot;.
+
+    <Note>
+      إذا كنت تريد السماح بالوصول من اتصال Private Link حالي، فاستخدم القائمة المنسدلة لنقاط النهاية الحالية.
+      تعرض القائمة المنسدلة اتصالات Private Link الحالية بالخدمات ضمن البنية التحتية نفسها.
+    </Note>
+
+    <Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="md" alt="عامل تصفية نقاط النهاية الخاصة" border />
+
+    <Note>
+      لا يلزم الحصول على موافقة يدوية في Azure Portal — فبمجرد إضافة `Resource ID` إلى قائمة السماح، يُعتمد اتصال نقطة النهاية تلقائيًا، ويُضاف `LinkID` الخاص به تلقائيًا إلى `AuthorizationPolicy` في Istio لخدمة ClickHouse. تتغير **حالة الاتصال** لنقطة النهاية الخاصة في اشتراكك إلى **تمت الموافقة**.
+    </Note>
+  </Step>
+
+  <Step title="عيّن اسم DNS خاصًا لنقطة النهاية" id="step-5-set-private-dns-name-for-endpoint">
+    <Note>
+      توجد عدة طرق لتهيئة DNS. يُرجى إعداد DNS بما يتناسب مع حالة الاستخدام الخاصة بك.
+    </Note>
+
+    عليك توجيه جميع النطاقات الفرعية (wildcard) لـ &quot;اسم DNS&quot; (كل ما يلي معرّف الخدمة، مثل `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`) إلى عنوان IP لنقطة النهاية الخاصة. يضمن ذلك تمكّن الخدمات/المكونات ضمن VNet من حلّه على نحو صحيح. إعداد نموذجي باستخدام Azure Private DNS:
+
+    1. [أنشئ نطاق Private DNS](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal) باسم &quot;اسم DNS&quot; بعد إزالة معرّف الخدمة من بدايته، على سبيل المثال `privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`.
+    2. في النطاق، أنشئ مجموعة سجلات wildcard: عيّن **الاسم** إلى `*`، وأدخل عنوان IP لنقطة النهاية الخاصة الذي نسخته سابقًا في **عنوان IP**.
+    3. [اربط نطاق Private DNS بشبكتك الافتراضية](https://learn.microsoft.com/en-us/azure/dns/private-dns-getstarted-portal#link-the-virtual-network) لكي تتمكن العملاء ضمن VNet من حلّ النطاق.
+
+    تحقق من إعداد DNS من مضيف داخل VNet — ينبغي أن يُحل &quot;اسم DNS&quot; إلى عنوان IP لنقطة النهاية الخاصة:
+
+    ```bash
+    nslookup h5ju65kv87.privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com
+    ```
+  </Step>
+
+  <Step title="الوصول إلى مثيل عبر Private Link" id="step-6-connect-via-privatelink">
+    1. في ClickHouse Cloud console، انتقل إلى صفحة Settings الخاصة بالخدمة.
+    2. انقر على &quot;إعداد نقطة نهاية خاصة&quot;.
+    3. في اللوحة المنبثقة، انسخ `DNS name`.
+       <Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="md" alt="اسم DNS لنقطة النهاية الخاصة" border />
+       <Note>
+         يتحكم ClickHouse في الوصول إلى خدماته عبر Private Link من خلال **Istio Authorization Policy** على مستوى الخدمة، ضمن BYOC infrastructure الخاصة بك.
+       </Note>
+  </Step>
+</Steps>

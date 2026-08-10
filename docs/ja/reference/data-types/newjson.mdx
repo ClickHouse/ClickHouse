@@ -292,7 +292,7 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
 ```
 
 <Note>
-  compact な MergeTree パーツからサブカラムを効率的に読み取るには、MergeTree 設定 [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/ja/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts) が有効になっていることを確認してください。
+  compact な MergeTree パーツからサブカラムを効率的に読み取るには、MergeTree 設定 [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/ja/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts) が有効になっていることを確認してください。
 </Note>
 
 <div id="reading-json-sub-objects-as-sub-columns">
@@ -394,16 +394,16 @@ FROM test;
 `JSON` のパース時に、ClickHouse は各 JSON パスに対して最も適切なデータ型を検出しようとします。
 これは [入力データからの自動スキーマ推論](/ja/concepts/features/interfaces/schema-inference) と同様に機能し、同じ設定によって制御されます。
 
-* [input&#95;format&#95;try&#95;infer&#95;dates](/ja/reference/settings/formats#input_format_try_infer_dates)
-* [input&#95;format&#95;try&#95;infer&#95;datetimes](/ja/reference/settings/formats#input_format_try_infer_datetimes)
-* [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ja/reference/settings/formats#schema_inference_make_columns_nullable)
-* [input&#95;format&#95;json&#95;try&#95;infer&#95;numbers&#95;from&#95;strings](/ja/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)
-* [input&#95;format&#95;json&#95;infer&#95;incomplete&#95;types&#95;as&#95;strings](/ja/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;numbers&#95;as&#95;strings](/ja/reference/settings/formats#input_format_json_read_numbers_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;strings](/ja/reference/settings/formats#input_format_json_read_bools_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;numbers](/ja/reference/settings/formats#input_format_json_read_bools_as_numbers)
-* [input&#95;format&#95;json&#95;read&#95;arrays&#95;as&#95;strings](/ja/reference/settings/formats#input_format_json_read_arrays_as_strings)
-* [input&#95;format&#95;json&#95;infer&#95;array&#95;of&#95;dynamic&#95;from&#95;array&#95;of&#95;different&#95;types](/ja/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
+* [input&#95;format&#95;try&#95;infer&#95;dates](/ja/reference/settings/formats/input-format#input_format_try_infer_dates)
+* [input&#95;format&#95;try&#95;infer&#95;datetimes](/ja/reference/settings/formats/input-format#input_format_try_infer_datetimes)
+* [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ja/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable)
+* [input&#95;format&#95;json&#95;try&#95;infer&#95;numbers&#95;from&#95;strings](/ja/reference/settings/formats/input-format#input_format_json_try_infer_numbers_from_strings)
+* [input&#95;format&#95;json&#95;infer&#95;incomplete&#95;types&#95;as&#95;strings](/ja/reference/settings/formats/input-format#input_format_json_infer_incomplete_types_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;numbers&#95;as&#95;strings](/ja/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;strings](/ja/reference/settings/formats/input-format#input_format_json_read_bools_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;numbers](/ja/reference/settings/formats/input-format#input_format_json_read_bools_as_numbers)
+* [input&#95;format&#95;json&#95;read&#95;arrays&#95;as&#95;strings](/ja/reference/settings/formats/input-format#input_format_json_read_arrays_as_strings)
+* [input&#95;format&#95;json&#95;infer&#95;array&#95;of&#95;dynamic&#95;from&#95;array&#95;of&#95;different&#95;types](/ja/reference/settings/formats/input-format#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
 
 いくつか例を見てみましょう。
 
@@ -610,11 +610,11 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json;
 ```
 
 ```text title="Response"
-Code: 117. DB::Exception: JSONカラムにデータを挿入できません: JSONオブジェクトの解析中に重複したパスが見つかりました: a.b。挿入時に重複したパスをスキップするには、setting type_json_skip_duplicated_paths を有効にできます: スコープ内 SELECT CAST('{"a.b" : 42, "a" : {"b" : "Hello, World"}}', 'JSON') AS json. (INCORRECT_DATA)
+Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path found during parsing JSON object: a.b. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert: In scope SELECT CAST('{"a.b" : 42, "a" : {"b" : "Hello, World"}}', 'JSON') AS json. (INCORRECT_DATA)
 ```
 
 ドットを含むキーをそのまま保持し、ネストされたオブジェクトとしてフォーマットしないようにするには、
-設定 [json&#95;type&#95;escape&#95;dots&#95;in&#95;keys](/ja/reference/settings/formats#json_type_escape_dots_in_keys) (`25.8` 以降で利用可能) を有効にできます。この場合、パース時に JSON キー内のすべてのドットが
+設定 [json&#95;type&#95;escape&#95;dots&#95;in&#95;keys](/ja/reference/settings/formats/other#json_type_escape_dots_in_keys) (`25.8` 以降で利用可能) を有効にできます。この場合、パース時に JSON キー内のすべてのドットが
 `%2E` にエスケープされ、フォーマット時に再び元に戻されます。
 
 ```sql title="Query"
@@ -879,13 +879,13 @@ JSONカラムの内容を調べるために使用する関数の詳細につい�
 `advanced` の 3 種類があります。
 
 シリアル化バージョンは、MergeTree
-設定 [object&#95;shared&#95;data&#95;serialization&#95;version](/ja/reference/settings/merge-tree-settings#object_shared_data_serialization_version)
-および [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/ja/reference/settings/merge-tree-settings#object_shared_data_serialization_version_for_zero_level_parts)
+設定 [object&#95;shared&#95;data&#95;serialization&#95;version](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
+および [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
 で制御されます
 (ゼロレベルパーツはテーブルへのデータ挿入時に作成されるパーツで、merge によって作成されるパーツはより高いレベルになります) 。
 
 注: 共有データ構造のシリアライゼーションの変更がサポートされるのは、
-[object serialization version](/ja/reference/settings/merge-tree-settings#object_serialization_version) が `v3` の場合のみです
+[object serialization version](/ja/reference/settings/merge-tree-settings/other#object_serialization_version) が `v3` の場合のみです
 
 <div id="shared-data-map">
   #### Map
@@ -906,8 +906,8 @@ JSONカラムの内容を調べるために使用する関数の詳細につい�
 このシリアライゼーションは、データの書き込みや `JSON` カラム全体の読み取りにはあまり効率的ではありませんが、パスのサブカラムの読み取りにはより効率的です。
 必要なバケットからのみデータを読み取るためです。
 
-バケット数 `N` は、MergeTree 設定の [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ja/reference/settings/merge-tree-settings#object_shared_data_buckets_for_compact_part) (デフォルトは 8)
-および [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ja/reference/settings/merge-tree-settings#object_shared_data_buckets_for_wide_part) (デフォルトは 32) で制御されます。
+バケット数 `N` は、MergeTree 設定の [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part) (デフォルトは 8)
+および [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ja/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part) (デフォルトは 32) で制御されます。
 どちらの設定でも、許可される最大値は 256 です。
 
 <div id="shared-data-advanced">

@@ -24,7 +24,7 @@ metric_name2[...] = ...
 
 <Info>
   이 기능은 실험적 기능이며, 향후 릴리스에서 하위 호환되지 않는 방식으로 변경될 수 있습니다.
-  [allow&#95;experimental&#95;time&#95;series&#95;table](/ko/reference/settings/session-settings#allow_experimental_time_series_table) 설정을 사용하여
+  [allow&#95;experimental&#95;time&#95;series&#95;table](/ko/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) 설정을 사용하여
   TimeSeries 테이블 엔진 사용을 활성화하십시오.
   `set allow_experimental_time_series_table = 1` 명령을 입력하십시오.
 </Info>
@@ -114,7 +114,7 @@ CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSer
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
 ```
 
 두 형식을 모두 같은 `CREATE TABLE` 문에서 사용하는 경우, 선언된 타입이 일치해야 합니다.
@@ -143,11 +143,16 @@ materialized view는 대상 테이블이 하나인 반면
 
 *samples* 테이블에는 다음 컬럼이 있어야 합니다:
 
-| 이름          | 필수? | 기본 타입           | 가능한 타입                 | 설명                   |
-| ----------- | --- | --------------- | ---------------------- | -------------------- |
-| `id`        | [x] | `UUID`          | 모든 타입                  | 메트릭 이름과 태그 조합을 식별합니다 |
-| `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)`        | 시점                   |
-| `value`     | [x] | `Float64`       | `Float32` 또는 `Float64` | `timestamp`에 연결된 값   |
+| 이름          | 필수? | 기본 타입                 | 가능한 타입                 | 설명                   |
+| ----------- | --- | --------------------- | ---------------------- | -------------------- |
+| `id`        | [x] | `Tuple(UInt64, UUID)` | 모든 타입                  | 메트릭 이름과 태그 조합을 식별합니다 |
+| `timestamp` | [x] | `DateTime64(3)`       | `DateTime64(X)`        | 시점                   |
+| `value`     | [x] | `Float64`             | `Float32` 또는 `Float64` | `timestamp`에 연결된 값   |
+
+엔진이 자체적으로 생성하는 컬럼에는 시계열 압축 코덱이 적용됩니다:
+`timestamp CODEC(DoubleDelta, ZSTD(1))` 및 `value CODEC(Gorilla, ZSTD(1))`입니다. 거의 단조로운 타임스탬프는 일반 코덱으로는 거의
+압축되지 않으며, 그렇지 않으면 samples 테이블의 디스크상 크기에서 큰 비중을 차지할 수 있습니다.
+[컬럼 타입 조정](#adjusting-column-types)도 참조하십시오.
 
 <div id="tags-table">
   ### Tags 테이블
@@ -159,11 +164,11 @@ materialized view는 대상 테이블이 하나인 반면
 
 | Name                 | Mandatory? | Default type                          | Possible types                                                                                                          | Description                                                                                                      |
 | -------------------- | ---------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `id`                 | [x]        | `UUID`                                | any (must match the type of `id` in the [samples](#samples-table) table)                                                | `id`는 메트릭 이름과 태그의 조합을 식별합니다. DEFAULT 표현식은 이러한 식별자를 계산하는 방법을 지정합니다                                                |
+| `id`                 | [x]        | `Tuple(UInt64, UUID)`                 | any (must match the type of `id` in the [samples](#samples-table) table)                                                | `id`는 메트릭 이름과 태그의 조합을 식별합니다. DEFAULT 표현식은 이러한 식별자를 계산하는 방법을 지정합니다                                                |
 | `metric_name`        | [x]        | `LowCardinality(String)`              | `String` or `LowCardinality(String)`                                                                                    | 메트릭 이름                                                                                                           |
 | `<tag_value_column>` | [ ]        | `String`                              | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))`                                              | 특정 태그의 값입니다. 태그 이름과 해당 컬럼 이름은 [tags&#95;to&#95;columns](#settings) 설정에서 지정합니다                                    |
 | `tags`               | [x]        | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | 메트릭 이름을 담는 태그 `__name__`와 [tags&#95;to&#95;columns](#settings) 설정에 나열된 이름의 태그를 제외한 태그 맵                          |
-| `all_tags`           | [ ]        | `Map(String, String)`                 | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | 임시 컬럼이며, 각 행은 메트릭 이름을 담는 태그 `__name__`만 제외한 모든 태그의 맵입니다. 이 컬럼은 `id`를 계산할 때만 사용됩니다                                |
+| `all_tags`           | [ ]        | `Map(String, String)`                 | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | 일시적 컬럼이며, 각 행은 메트릭 이름을 담는 태그 `__name__`만 제외한 모든 태그의 맵입니다. 이 컬럼은 `id`를 계산할 때만 사용됩니다                                |
 | `min_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | 해당 `id`를 가진 시계열의 최소 타임스탬프입니다. [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings)가 `true`이면 이 컬럼이 생성됩니다 |
 | `max_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | 해당 `id`를 가진 시계열의 최대 타임스탬프입니다. [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings)가 `true`이면 이 컬럼이 생성됩니다 |
 
@@ -209,21 +214,21 @@ CREATE TABLE my_table
 ENGINE = TimeSeries
 SAMPLES INNER COLUMNS
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(Gorilla, ZSTD(1))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `all_tags` Map(String, String) EPHEMERAL,
     `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
-TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRICS INNER COLUMNS
 (
     `metric_family_name` String,
@@ -243,18 +248,19 @@ METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```sql
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID,
-    `timestamp` DateTime64(3),
-    `value` Float64
+    `id` Tuple(UInt64, UUID),
+    `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
+SETTINGS index_granularity = 32768
 ```
 
 ```sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
     `metric_name` LowCardinality(String),
     `tags` Map(LowCardinality(String), String),
     `all_tags` Map(String, String) EPHEMERAL,
@@ -264,7 +270,7 @@ CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 ENGINE = AggregatingMergeTree
 PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
-SETTINGS allow_dimensions_outside_sorting_key = 1
+SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```
 
 ```sql
@@ -277,6 +283,7 @@ CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 )
 ENGINE = ReplacingMergeTree
 ORDER BY metric_family_name
+SETTINGS index_granularity = 8192
 ```
 
 <div id="create-as">
@@ -296,18 +303,18 @@ ORDER BY metric_family_name
   ## 컬럼 타입 조정
 </div>
 
-`INNER COLUMNS` 절을 사용하면 내부 대상 테이블의 컬럼 타입을 조정할 수 있습니다. 예를 들어, timestamp를 마이크로초 단위로 저장하고 값을 `Float32`로 저장하려면 다음과 같습니다:
+`INNER COLUMNS` 절을 사용하면 내부 대상 테이블의 컬럼 타입을 조정할 수 있습니다. 예를 들어, 타임스탬프를 마이크로초 단위로 저장하고 값을 `Float32`로 저장하려면 다음을 사용합니다:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+```
+
+내부 컬럼을 코덱 없이 지정하면 기본 코덱이 사용됩니다:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
-```
-
-같은 절을 사용하여 코덱과 기타 컬럼 속성을 지정할 수 있습니다:
-
-```sql
-CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
 ```
 
 <div id="id-column">
@@ -322,7 +329,9 @@ CREATE TABLE my_table ENGINE=TimeSeries
 TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
 ```
 
-`id` 컬럼 유형은 `UUID`, `UInt64`, `UInt128` 또는 `FixedString(16)` 중 하나여야 합니다. `DEFAULT` 표현식이 지정되지 않으면 ClickHouse가 `id` 타입에 따라 이를 자동으로 선택합니다. samples 및 tags 내부 테이블에 선언된 `id` 타입은 서로 일치해야 합니다.
+`id` 컬럼은 비교 가능한 널 허용이 아닌 모든 타입일 수 있습니다. samples 및 tags 내부 테이블에 선언된 `id` 타입은 서로 일치해야 합니다.
+
+`id` 컬럼에 `DEFAULT` 표현식이 지정되지 않고 `id_generator` 설정도 지정되지 않은 경우, `id` 타입이 `UUID`, `UInt64`, `UInt128`, `FixedString(16)` 또는 이들 타입 두 개로 이루어진 튜플인 경우에만 ClickHouse가 `id` 타입에 따라 `DEFAULT` 표현식을 자동으로 선택합니다. 이러한 튜플에서는 자동으로 선택된 표현식이 첫 번째 구성 요소에서 메트릭 이름의 해시를 계산하고, 두 번째 구성 요소에서 모든 태그의 해시를 계산합니다.
 
 `id_generator` 설정을 사용하면 `INNER COLUMNS` 절을 사용하지 않고도 동일하게 사용자 지정할 수 있습니다:
 
@@ -430,14 +439,16 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 
 다음은 `TimeSeries` 테이블을 정의할 때 지정할 수 있는 설정 목록입니다.
 
-| 이름                                   | 유형   | 기본값            | 설명                                                                                                                                                                             |
-| ------------------------------------ | ---- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id_generator`                       | 표현식  | `id` 유형에 따라 다름 | 태그로부터 시계열의 식별자(지문)를 계산하는 표현식입니다. 설정하지 않으면 `id` 컬럼의 기본 표현식이 사용됩니다. `id` 컬럼의 기본 표현식도 설정되지 않은 경우 표현식이 자동으로 선택됩니다                                                                  |
-| `tags_to_columns`                    | 맵    | {}             | [tags](#tags-table) 테이블에서 어떤 태그를 별도의 컬럼으로 저장할지 지정하는 맵입니다. 구문: `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                       |
-| `use_all_tags_column_to_generate_id` | Bool | true           | 시계열 식별자를 계산하는 표현식을 생성할 때, 이 플래그를 사용하면 해당 계산에 `all_tags` 컬럼을 포함할 수 있습니다                                                                                                         |
-| `store_min_time_and_max_time`        | Bool | true           | true로 설정하면 테이블은 각 시계열에 대해 `min_time` 및 `max_time`을 저장합니다                                                                                                                       |
-| `aggregate_min_time_and_max_time`    | Bool | true           | 내부 대상 `tags` 테이블을 생성할 때, 이 플래그를 사용하면 `min_time` 컬럼의 유형으로 단순한 `Nullable(DateTime64(3))` 대신 `SimpleAggregateFunction(min, Nullable(DateTime64(3)))`를 사용합니다. `max_time` 컬럼도 동일합니다 |
-| `filter_by_min_time_and_max_time`    | Bool | true           | true로 설정하면 테이블은 시계열을 필터링할 때 `min_time` 및 `max_time` 컬럼을 사용합니다                                                                                                                  |
+| 이름                                   | 유형     | 기본값            | 설명                                                                                                                                                                             |
+| ------------------------------------ | ------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id_generator`                       | 표현식    | `id` 유형에 따라 다름 | 태그로부터 시계열의 식별자(지문)를 계산하는 표현식입니다. 설정하지 않으면 `id` 컬럼의 기본 표현식이 사용됩니다. `id` 컬럼의 기본 표현식도 설정되지 않은 경우 표현식이 자동으로 선택됩니다                                                                  |
+| `tags_to_columns`                    | 맵      | {}             | [tags](#tags-table) 테이블에서 어떤 태그를 별도의 컬럼으로 저장할지 지정하는 맵입니다. 구문: `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                     |
+| `use_all_tags_column_to_generate_id` | Bool   | true           | 시계열 식별자를 계산하는 표현식을 생성할 때, 이 플래그를 사용하면 해당 계산에 `all_tags` 컬럼을 포함할 수 있습니다                                                                                                         |
+| `store_min_time_and_max_time`        | Bool   | true           | true로 설정하면 테이블은 각 시계열에 대해 `min_time` 및 `max_time`을 저장합니다                                                                                                                       |
+| `aggregate_min_time_and_max_time`    | Bool   | true           | 내부 대상 `tags` 테이블을 생성할 때, 이 플래그를 사용하면 `min_time` 컬럼의 유형으로 단순한 `Nullable(DateTime64(3))` 대신 `SimpleAggregateFunction(min, Nullable(DateTime64(3)))`를 사용합니다. `max_time` 컬럼도 동일합니다 |
+| `filter_by_min_time_and_max_time`    | Bool   | true           | true로 설정하면 테이블은 시계열을 필터링할 때 `min_time` 및 `max_time` 컬럼을 사용합니다                                                                                                                  |
+| `samples_index_granularity`          | UInt64 | 32768          | 내부 [samples](#samples-table) 테이블의 `index_granularity`를 설정합니다. 명시적으로 설정하면 엔진 선언의 `index_granularity`를 재정의합니다. 외부 samples 테이블 및 MergeTree가 아닌 엔진에서는 무시됩니다                        |
+| `tags_index_granularity`             | UInt64 | 8192           | 내부 [tags](#tags-table) 테이블의 `index_granularity`를 설정합니다. 명시적으로 설정하면 엔진 선언의 `index_granularity`를 재정의합니다. 외부 tags 테이블 및 MergeTree가 아닌 엔진에서는 무시됩니다                                 |
 
 <div id="functions">
   # 함수

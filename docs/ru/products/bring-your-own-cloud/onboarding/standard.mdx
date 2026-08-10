@@ -36,49 +36,67 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </div>
 
 <div id="prepare-an-aws-account">
-  ### Подготовьте учетную запись AWS/проект GCP/подписку Azure
+  ### Подготовьте аккаунт AWS/проект GCP/подписку Azure
 </div>
 
-Подготовьте новую учетную запись AWS, проект GCP или подписку Azure в своей организации.
+Подготовьте новый аккаунт AWS, проект GCP или подписку Azure в своей организации.
 
 <Steps>
   <Step title="Выберите облачного провайдера" id="choose-cloud-provider">
-    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
+    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="Выбор CSP для BYOC" background="black" />
   </Step>
 
-  <Step title="Настройка учетной записи/проекта/подписки" id="account-setup">
-    Первичную настройку BYOC можно выполнить с помощью [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), [модуль Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) или [модуль Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). При этом создается высокопривилегированная учетная запись (роль IAM/сервисная учетная запись/сервисный субъект), которая позволяет контроллерам BYOC из ClickHouse Cloud управлять вашей инфраструктурой.
+  <Step title="Настройка аккаунта/проекта/подписки" id="account-setup">
+    Первоначальную настройку BYOC можно выполнить с помощью [шаблона CloudFormation (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml), [модуля Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) или [модуля Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). При этом создается высокопривилегированное удостоверение (роль IAM/сервисный аккаунт/сервисный субъект), которое позволяет контроллерам BYOC из ClickHouse Cloud управлять вашей инфраструктурой.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
+    <Warning>
+      **Применяйте артефакты онбординга строго в предоставленном виде.** Не изменяйте ничего в шаблоне CloudFormation или модуле Terraform — включая переименование ресурсов или добавление таких параметров, как `PermissionsBoundary`, — без явного одобрения ClickHouse. Автоматизация ClickHouse зависит от точного набора ресурсов, создаваемых этими артефактами; поддерживаемые настройки доступны в виде параметров. В частности, в AWS роль IAM должна сохранять имя по умолчанию `ClickHouseManagementRole` — без префикса или суффикса, — если ClickHouse заранее явно не согласовал другое имя. Технически модуль Terraform предоставляет входной параметр `role_name`, однако для этого необходимо соответствующим образом настроить автоматизацию ClickHouse. Поэтому его изменение без согласования (или переименование роли в шаблоне CloudFormation, где такого параметра нет) приводит к успешному применению стека, но сбою при подготовке инфраструктуры, поскольку ClickHouse не может принять ожидаемую роль.
+    </Warning>
+
+    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="Инициализация аккаунта BYOC" background="black" />
 
     <Note>
-      Бакеты хранилища, VPC/VNet, кластер Kubernetes и вычислительные ресурсы, необходимые для запуска ClickHouse, не входят в эту первоначальную настройку. Они будут подготовлены на следующем шаге.
+      Бакеты хранилища, VPC/VNet, кластер Kubernetes и вычислительные ресурсы, необходимые для запуска ClickHouse, не входят в первоначальную настройку. Они будут подготовлены на следующем шаге.
     </Note>
 
-    #### Альтернативный модуль Terraform для AWS
+    #### Модуль Terraform для AWS
 
-    Если вы предпочитаете использовать Terraform вместо CloudFormation для развертываний в AWS, мы также предоставляем [модуль Terraform для AWS](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
-
-    Использование:
+    Если для развертываний в AWS вы предпочитаете Terraform вместо CloudFormation, используйте модуль [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
     ```hcl
     module "clickhouse_onboarding" {
-      source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-      byoc_env = "production"
+      source      = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id = "<external-id-provided-by-clickhouse>"
     }
     ```
+
+    Замените `<version>` на последний тег со [страницы релизов](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) модуля — всегда используйте самый свежий релиз.
+
+    Модуль выводит `clickhouse_management_role_arn`. В стандартном сценарии никаких действий с ним не требуется: онбординг продолжается в консоли ClickHouse Cloud. Однако сохраните его: ClickHouse запросит его, если ваша конфигурация отличается от стандартной (например, если требуется согласовать пользовательское имя роли).
+
+    <Note>
+      Ранее модуль распространялся в виде архива tarball по адресу `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. Этот URL по-прежнему доступен, но устарел — используйте указанный выше модуль на GitHub.
+    </Note>
+
+    #### Внешний ID AWS
+
+    В AWS роль IAM, созданная при настройке, доверяет ClickHouse Cloud, используя [внешний ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) для защиты от атак типа «confused deputy». При запуске онбординга консоль ClickHouse Cloud генерирует внешний ID для вашего аккаунта AWS и предварительно заполняет его в ссылке CloudFormation. Если вы используете Terraform, передайте то же значение в параметре `external_id`. Все инфраструктуры BYOC в рамках одного аккаунта AWS используют один и тот же внешний ID.
+
+    <Note>
+      Для обратной совместимости инфраструктуры BYOC, прошедшие онбординг до появления внешних ID, используют значение-заполнитель `emptyid`. Консоль показывает это значение при добавлении инфраструктуры в аккаунт AWS с существующим legacy-развертыванием, чтобы все инфраструктуры в аккаунте сохраняли согласованную конфигурацию доверия. Если вы хотите перейти на уникальный внешний ID, обратитесь в ClickHouse Support.
+    </Note>
   </Step>
 
   <Step title="Настройте инфраструктуру BYOC" id="setup-byoc-infrastructure">
-    Вам будет предложено настроить инфраструктуру, включая бакеты хранилища, VPC/VNet и кластер Kubernetes, из консоли ClickHouse Cloud. Некоторые параметры необходимо определить на этом этапе, так как позже их уже нельзя будет изменить. В частности:
+    В консоли ClickHouse Cloud вам будет предложено настроить инфраструктуру, включая бакеты объектного хранилища, VPC/VNet и кластер Kubernetes. На этом этапе необходимо выбрать некоторые параметры, так как позже их изменить нельзя. В частности:
 
-    * **Регион**: Для развертываний BYOC доступны все **общедоступные регионы**, перечисленные в нашей документации [поддерживаемые регионы](/ru/products/cloud/reference/supported-regions). Частные регионы в настоящее время не поддерживаются.
+    * **Регион**: Для развертываний BYOC доступны все **публичные регионы**, перечисленные в нашей документации по [поддерживаемым регионам](/ru/products/cloud/reference/supported-regions). Частные регионы в настоящее время не поддерживаются.
 
-    * **Диапазон VPC/VNet CIDR**: По умолчанию для диапазона CIDR VPC (AWS/GCP) или VNet (Azure) BYOC используется `10.0.0.0/16`. Если вы планируете использовать пиринг VPC/VNet с другой учетной записью, убедитесь, что диапазоны CIDR не пересекаются. Выделите для BYOC подходящий диапазон CIDR минимального размера `/23`, чтобы разместить необходимые рабочие нагрузки.
+    * **Диапазон CIDR VPC/VNet**: По умолчанию для диапазона CIDR VPC BYOC (AWS/GCP) или VNet (Azure) используется `10.0.0.0/16`. Если вы планируете настроить пиринг VPC/VNet с другим аккаунтом, убедитесь, что диапазоны CIDR не пересекаются. Выделите для BYOC подходящий диапазон CIDR размером не менее `/23`, чтобы разместить необходимые рабочие нагрузки. Минимальный диапазон `/23` рассчитан лишь примерно на 30 подов сервера: каждая реплика использует IP-адреса, поэтому, если вы ожидаете роста развертывания, выделите больший диапазон (рекомендуется не менее `/22`).
 
-    * **Зоны доступности**: Если вы планируете использовать пиринг VPC, согласование зон доступности между исходной учетной записью и учетной записью BYOC может помочь сократить затраты на межзонный трафик. Например, в AWS суффиксы зон доступности (`a`, `b`, `c`) могут обозначать разные идентификаторы физических зон в разных учетных записях. Подробнее см. в [руководстве AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html).
+    * **Зоны доступности**: Если вы планируете использовать пиринг VPC, согласование зон доступности между исходным аккаунтом и аккаунтом BYOC может помочь снизить затраты на межзональный трафик. Например, в AWS суффиксы зон доступности (`a`, `b`, `c`) могут соответствовать разным идентификаторам физических зон в разных аккаунтах. Подробнее см. в [руководстве AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html).
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC set up infrastructure" background="black" />
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="Настройка инфраструктуры BYOC" background="black" />
   </Step>
 </Steps>
 

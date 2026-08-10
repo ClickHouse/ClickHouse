@@ -1,9 +1,9 @@
 ---
 slug: /cloud/managed-postgres/terraform
 sidebarTitle: 'Terraform'
-title: 'مرجع Terraform لـ Managed Postgres'
-description: 'مرجع لإدارة خدمات ClickHouse Managed Postgres باستخدام موفر Terraform من ClickHouse.'
-keywords: ['managed postgres', 'terraform', 'البنية التحتية كرمز', 'iac', 'موفر', 'برمجي']
+title: 'مرجع Terraform لـ ClickHouse Managed Postgres'
+description: 'مرجع لإدارة خدمات ClickHouse Managed Postgres باستخدام موفّر Terraform من ClickHouse.'
+keywords: ['managed postgres', 'terraform', 'البنية التحتية كرمز', 'iac', 'موفّر', 'برمجي']
 doc_type: 'guide'
 ---
 
@@ -20,7 +20,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 <Warning>
   **قم بالترقية إلى الموفّر v3.21.0 قبل 31 يوليو 2026**
 
-  اعتبارًا من **31 يوليو 2026**، توقفت واجهة برمجة تطبيقات Managed Postgres عن إرجاع كلمة مرور مستخدم فائق الصلاحيات وسلسلة الاتصال في استجاباتها؛ ولم تعد بيانات الاعتماد تُرجع إلا عند إنشاء خدمة أو إعادة تعيين كلمة مرورها. تعمل إصدارات الموفّر **v3.21.0 والإصدارات الأحدث** بالطريقة نفسها قبل هذا التغيير وبعده. تعتمد إصدارات الموفّر الأقدم على أن تعيد واجهة برمجة تطبيقات بيانات الاعتماد في الاستجابة: واعتبارًا من 31 يوليو 2026، لم تعد تملأ `connection_string`، كما أن الخدمة التي تُنشأ من دون تعريف `password` تنجح بينما لا يتم التقاط كلمة المرور المُولَّدة في أي مكان.
+  اعتبارًا من **31 يوليو 2026**، توقفت واجهة برمجة تطبيقات ClickHouse Managed Postgres عن إرجاع كلمة مرور مستخدم فائق الصلاحيات وسلسلة الاتصال في استجاباتها؛ ولم تعد بيانات الاعتماد تُرجع إلا عند إنشاء خدمة أو إعادة تعيين كلمة مرورها. تعمل إصدارات الموفّر **v3.21.0 والإصدارات الأحدث** بالطريقة نفسها قبل هذا التغيير وبعده. تعتمد إصدارات الموفّر الأقدم على أن تعيد واجهة برمجة تطبيقات بيانات الاعتماد في الاستجابة: واعتبارًا من 31 يوليو 2026، لم تعد تملأ `connection_string`، كما أن الخدمة التي تُنشأ من دون تعريف `password` تنجح بينما لا يتم التقاط كلمة المرور المُولَّدة في أي مكان.
 
   قم بالترقية قبل 31 يوليو 2026. تُرحَّل حالتك تلقائيًا عند أول `plan` أو `apply` باستخدام v3.21.0. إذا كانت أي من خدماتك تعتمد على كلمة مرور يُنشئها الخادم (من دون `password` في التهيئة)، فاستعدها أولًا باستخدام `terraform state pull` وصرّح بها، لأن v3.21.0 يتطلب `password` أو `password_wo` لخدمة قياسية.
 </Warning>
@@ -167,7 +167,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All Managed Postgres services in the organization.
+# All ClickHouse Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -180,7 +180,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## استيراد الخدمات الحالية
 </div>
 
-يمكن استيراد خدمات Managed Postgres الحالية إلى حالة Terraform باستخدام معرّف الخدمة:
+يمكن استيراد خدمات ClickHouse Managed Postgres الحالية إلى حالة Terraform باستخدام معرّف الخدمة:
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

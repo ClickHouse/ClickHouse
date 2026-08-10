@@ -34,7 +34,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 인수는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 사용해 전달할 수도 있습니다. 이 경우 `host`와 `port`는 별도로 지정해야 합니다. 프로덕션 환경에서는 이 방식을 권장합니다.
 
-<div id="returned_value">
+<div id="returned-value">
   ## 반환 값
 </div>
 
@@ -82,7 +82,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JO
 <Note>
   `(SELECT ...)` 형태의 서브쿼리는 서버로 전송되기 전에 ClickHouse에서 파싱된 다음 PostgreSQL 방언(PostgreSQL 식별자 인용 및 문자열 리터럴 이스케이프)으로 다시 직렬화됩니다. 따라서 유효한 ClickHouse SQL이어야 합니다. ClickHouse가 파싱하지 않는 PostgreSQL 전용 구문을 전달하려면 텍스트가 PostgreSQL로 그대로 전송되는 `query('...')` 형식을 사용하십시오.
 
-  바깥쪽 ClickHouse 쿼리의 외부 `WHERE`, `LIMIT`, 집계 등은 전달된 쿼리로 **푸시다운되지 않습니다** — 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. PostgreSQL에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings#external_table_strict_query)을 사용하면 푸시다운할 수 없는 외부 필터는 로컬에서 적용되는 대신 예외와 함께 거부됩니다.
+  바깥쪽 ClickHouse 쿼리의 외부 `WHERE`, `LIMIT`, 집계 등은 전달된 쿼리로 **푸시다운되지 않습니다** — 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. PostgreSQL에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 푸시다운할 수 없는 외부 필터는 로컬에서 적용되는 대신 예외와 함께 거부됩니다.
 </Note>
 
 PostgreSQL 측의 `INSERT` 쿼리는 각 `INSERT` 문 후 자동 커밋되는 PostgreSQL 트랜잭션 내에서 `COPY \"table_name\" (field1, field2, ... fieldN) FROM STDIN` 형태로 실행됩니다.

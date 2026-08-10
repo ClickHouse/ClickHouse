@@ -40,7 +40,7 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-يضيف عمودًا جديدًا إلى الجدول باستخدام `name` و`type` و[`codec`](/ar/reference/statements/create/table#column_compression_codec) و`default_expr` المحددة (راجع قسم [التعبيرات الافتراضية](/ar/reference/statements/create/table#default_values)).
+يضيف عمودًا جديدًا إلى الجدول باستخدام `name` و`type` و[`codec`](/ar/reference/statements/create/table/codec) و`default_expr` المحددة (راجع قسم [التعبيرات الافتراضية](/ar/reference/statements/create/table#default_values)).
 
 إذا كانت العبارة `IF NOT EXISTS` مضمنة، فلن يُرجع الاستعلام خطأً إذا كان العمود موجودًا بالفعل. وإذا حدّدت `AFTER name_after` (اسم عمود آخر)، فسيُضاف العمود بعد العمود المحدد في قائمة أعمدة الجدول. وإذا أردت إضافة عمود إلى بداية الجدول، فاستخدم العبارة `FIRST`. بخلاف ذلك، يُضاف العمود إلى نهاية الجدول. وفي سلسلة من الإجراءات، يمكن أن يكون `name_after` اسم عمود أُضيف في أحد الإجراءات السابقة.
 
@@ -175,7 +175,7 @@ ALTER COLUMN [IF EXISTS] name
 
 * قيم Enum لأنواع Enum/Enum8/Enum16
 
-للاطلاع على أمثلة على تعديل CODECS ضغط الأعمدة، راجع [Column Compression Codecs](/ar/reference/statements/create/table#column_compression_codec).
+للاطلاع على أمثلة على تعديل CODECS ضغط الأعمدة، راجع [Column Compression Codecs](/ar/reference/statements/create/table/codec).
 
 للاطلاع على أمثلة على تعديل TTL للأعمدة، راجع [Column TTL](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
@@ -323,7 +323,7 @@ ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred'
   ## MATERIALIZE COLUMN
 </div>
 
-يُحوِّل العمود إلى عمود materialized باستخدام تعبير قيمة `DEFAULT` أو `MATERIALIZED`. عند إضافة عمود materialized باستخدام `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`، لا تُملأ تلقائيًا الصفوف الحالية التي لا تحتوي على قيم materialized. ويمكن استخدام التعليمة `MATERIALIZE COLUMN` لإعادة كتابة بيانات العمود الحالية بعد إضافة تعبير `DEFAULT` أو `MATERIALIZED` أو تحديثه (إذ لا يؤدّي ذلك إلا إلى تحديث البيانات الوصفية، من دون تغيير البيانات الحالية). لاحظ أن تحويل عمود ضمن مفتاح الفرز إلى عمود materialized عملية غير صالحة، لأنها قد تؤدي إلى كسر ترتيب الفرز.
+يُجسِّد العمود إلى عمود مادي باستخدام تعبير قيمة `DEFAULT` أو `MATERIALIZED`. عند إضافة عمود مادي باستخدام `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`، لا تُملأ تلقائيًا الصفوف الحالية التي لا تحتوي على قيم مادية. ويمكن استخدام التعليمة `MATERIALIZE COLUMN` لإعادة كتابة بيانات العمود الحالية بعد إضافة تعبير `DEFAULT` أو `MATERIALIZED` أو تحديثه (إذ لا يؤدّي ذلك إلا إلى تحديث البيانات الوصفية، من دون تغيير البيانات الحالية). لاحظ أن تحويل عمود ضمن مفتاح الفرز إلى عمود مادي عملية غير صالحة، لأنها قد تؤدي إلى كسر ترتيب الفرز.
 ويُنفَّذ ذلك على هيئة [mutation](/ar/reference/statements/alter/index#mutations).
 
 بالنسبة إلى الأعمدة التي تحتوي على تعبير قيمة `MATERIALIZED` جديد أو محدَّث، يُعاد كتابة جميع الصفوف الحالية.
@@ -339,7 +339,7 @@ ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred'
 ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE COLUMN col [IN PARTITION partition | IN PARTITION ID 'partition_id'];
 ```
 
-* إذا حدّدت PARTITION، فسيُخزَّن العمود فعليًا للتقسيم المحدد فقط.
+* إذا حدّدت PARTITION، فسيُجسَّد العمود للتقسيم المحدد فقط.
 
 **مثال**
 
@@ -377,9 +377,20 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 └───────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
+<Note>
+  يعيد `MATERIALIZE COLUMN` دائمًا كتابة **قيم الأعمدة**. أما إعادة بناء [فهارس تخطي البيانات](/ar/sql-reference/statements/alter/skipping-index) (بما فيها الفهارس النصية) فتتوقف على تخطيط الجزء وطريقة تخزين الفهرس:
+
+  * في الأجزاء ذات التخطيط **wide + full-storage**، لا تُعاد تلقائيًا بناء ملفات فهارس التخطي **المستقلة** (والفهارس النصية) عند إعادة كتابة العمود فقط. بعد تغيير بيانات العمود الأساسية التي يعتمد عليها الفهرس، شغّل [`ALTER TABLE ... MATERIALIZE INDEX`](/ar/sql-reference/statements/alter/skipping-index#materialize-index) إذا احتجت إلى تحديث ملفات هذه الفهارس.
+  * **استثناء:** يُعاد حساب فهارس التخطي العادية المعبأة في `skp_idx.packed` قسرًا (تدفقات فرعية صغيرة لفهارس التخطي تقع ضمن القيمة الافتراضية لـ [`packed_skip_index_max_bytes`](/ar/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes)؛ ولا تُعبّأ فهارس النص الكامل بهذه الطريقة)، حتى في الأجزاء ذات التخطيط wide + full-storage.
+  * في **أي جزء لا يستخدم wide + full-storage** (بما في ذلك **compact + full** و**compact + packed** و**wide + packed**)، تسلك الطفرة مسار إعادة كتابة الجزء بالكامل وتعيد حساب الفهارس الثانوية الموجودة مسبقًا في ذلك الجزء قسرًا. تكون الأجزاء الصغيرة عادةً compact، مع استمرارها افتراضيًا في استخدام تخزين الجزء الكامل؛ لذا فهذه الحالة هي الأكثر شيوعًا لعمليات الإدراج الحديثة.
+
+  وبشكل منفصل، لا يحدّث `ADD INDEX` سوى البيانات الوصفية؛ فهو **لا** ينشئ الفهرس الجديد فعليًا فورًا (بما في ذلك الفهارس النصية) على الأجزاء التاريخية. تُنشأ الفهارس فعليًا على الأجزاء التاريخية إما عبر [`MATERIALIZE INDEX`](/ar/sql-reference/statements/alter/skipping-index#materialize-index) صريح، أو عند دمج لاحق إذا كان [`materialize_skip_indexes_on_merge`](/ar/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) مفعّلًا ولم يكن الفهرس مدرجًا في [`exclude_materialize_skip_indexes_on_merge`](/ar/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). يمثل `MATERIALIZE INDEX` الصريح المسار الحتمي عندما تحتاج إلى إنشاء الفهرس دون انتظار إعدادات الدمج.
+</Note>
+
 **انظر أيضًا**
 
 * [MATERIALIZED](/ar/reference/statements/create/view#materialized-view).
+* [MATERIALIZE INDEX](/ar/sql-reference/statements/alter/skipping-index#materialize-index).
 
 <div id="limitations">
   ## القيود

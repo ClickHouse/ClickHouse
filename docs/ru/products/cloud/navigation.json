@@ -6,10 +6,10 @@
         {
           "group": "Начало работы",
           "pages": [
+            "ru/products/cloud/getting-started/cloud-get-started",
             "ru/products/cloud/getting-started/intro",
             "ru/products/cloud/getting-started/resource-tour"
-          ],
-          "root": "ru/products/cloud/getting-started/cloud-get-started"
+          ]
         },
         {
           "group": "Возможности",
@@ -39,15 +39,17 @@
                 {
                   "group": "Автоматическое масштабирование",
                   "pages": [
+                    "ru/products/cloud/features/autoscaling/overview",
                     "ru/products/cloud/features/autoscaling/vertical",
+                    "ru/products/cloud/features/autoscaling/horizontal-autoscaling",
                     "ru/products/cloud/features/autoscaling/horizontal",
                     "ru/products/cloud/features/autoscaling/make-before-break",
                     "ru/products/cloud/features/autoscaling/idling",
                     "ru/products/cloud/features/autoscaling/scaling-recommendations",
                     "ru/products/cloud/features/autoscaling/scheduled-scaling"
-                  ],
-                  "root": "ru/products/cloud/features/autoscaling/overview"
+                  ]
                 },
+                "ru/products/cloud/features/large-single-replica-services",
                 "ru/products/cloud/features/infrastructure/parallel-replicas",
                 "ru/products/cloud/features/infrastructure/deployment-options",
                 "ru/products/cloud/features/infrastructure/shared-catalog",
@@ -65,8 +67,7 @@
                     "ru/products/cloud/features/admin-features/api/api-overview",
                     "ru/products/cloud/features/admin-features/api/openapi",
                     "ru/products/cloud/features/admin-features/api/postman"
-                  ],
-                  "root": "ru/products/cloud/features/admin-features/api/index"
+                  ]
                 },
                 "ru/products/cloud/features/admin-features/upgrades"
               ]
@@ -88,15 +89,16 @@
             {
               "group": "Резервные копии",
               "pages": [
+                "ru/products/cloud/features/backups/overview",
                 "ru/products/cloud/features/backups/faq"
-              ],
-              "root": "ru/products/cloud/features/backups/overview"
+              ]
             },
             "ru/products/cloud/features/support",
             {
               "expanded": false,
               "group": "AI/ML",
               "pages": [
+                "ru/products/cloud/features/ai-ml/index",
                 "ru/products/cloud/features/ai-ml/ask-ai",
                 "ru/products/cloud/features/ai-ml/aichat/using-ai-chat",
                 "ru/products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
@@ -106,11 +108,13 @@
                 {
                   "group": "ClickHouse Agents",
                   "pages": [
+                    "ru/products/cloud/features/ai-ml/agents/index",
                     "ru/products/cloud/features/ai-ml/agents/quickstart",
                     "ru/products/cloud/features/ai-ml/agents/chat",
                     {
                       "group": "Конструктор агентов",
                       "pages": [
+                        "ru/products/cloud/features/ai-ml/agents/builder/index",
                         "ru/products/cloud/features/ai-ml/agents/builder/model-parameters",
                         "ru/products/cloud/features/ai-ml/agents/builder/code-interpreter",
                         "ru/products/cloud/features/ai-ml/agents/builder/web-search",
@@ -119,25 +123,23 @@
                         "ru/products/cloud/features/ai-ml/agents/builder/mcp-servers",
                         "ru/products/cloud/features/ai-ml/agents/builder/skills",
                         "ru/products/cloud/features/ai-ml/agents/builder/subagents"
-                      ],
-                      "root": "ru/products/cloud/features/ai-ml/agents/builder/index"
+                      ]
                     },
                     "ru/products/cloud/features/ai-ml/agents/prompts",
                     "ru/products/cloud/features/ai-ml/agents/memory",
                     "ru/products/cloud/features/ai-ml/agents/marketplace",
                     "ru/products/cloud/features/ai-ml/agents/sharing-and-access"
-                  ],
-                  "root": "ru/products/cloud/features/ai-ml/agents/index"
+                  ]
                 },
                 "ru/products/cloud/features/ai-ml/model-developer-terms"
-              ],
-              "root": "ru/products/cloud/features/ai-ml/index"
+              ]
             }
           ]
         },
         {
           "group": "Справочник по Cloud",
           "pages": [
+            "ru/products/cloud/reference/index",
             "ru/products/cloud/reference/service-uptime",
             "ru/products/cloud/reference/account-close",
             "ru/products/cloud/reference/data-resiliency",
@@ -147,8 +149,7 @@
             "ru/products/cloud/reference/security/compliance-overview",
             "ru/products/cloud/reference/security/ai-compliance",
             "ru/products/cloud/reference/personal-data-access"
-          ],
-          "root": "ru/products/cloud/reference/index"
+          ]
         },
         {
           "group": "Биллинг",
@@ -166,40 +167,39 @@
                 "ru/products/cloud/reference/billing/marketplace/gcp-marketplace-committed",
                 "ru/products/cloud/reference/billing/marketplace/gcp-marketplace-payg",
                 "ru/products/cloud/reference/billing/marketplace/migrate-marketplace-payg-committed"
-              ],
-              "root": "ru/products/cloud/reference/billing/marketplace/index"
+              ]
             },
             {
               "expanded": false,
               "group": "ClickPipes",
               "pages": [
+                "ru/products/cloud/reference/billing/clickpipes/index",
                 "ru/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
                 "ru/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage"
-              ],
-              "root": "ru/products/cloud/reference/billing/clickpipes/index"
+              ]
             },
             "ru/products/cloud/reference/billing/network-data-transfer",
             "ru/products/cloud/reference/billing/payment-thresholds",
             "ru/products/cloud/reference/billing/spend-alerts",
             "ru/products/cloud/reference/billing/managing-payment-methods",
             "ru/products/cloud/reference/billing/billing-compliance"
-          ],
-          "root": "ru/products/cloud/reference/billing/index"
+          ]
         },
         {
           "group": "Руководства",
           "pages": [
+            "ru/products/cloud/guides/index",
             {
-              "group": "Лучшие практики",
+              "group": "Рекомендации",
               "pages": [
+                "ru/products/cloud/guides/best-practices/index",
                 "ru/products/cloud/guides/best-practices/multitenancy",
                 "ru/products/cloud/guides/best-practices/usagelimits"
-              ],
-              "root": "ru/products/cloud/guides/best-practices/index"
+              ]
             },
             {
               "expanded": false,
-              "group": "Общие сведения",
+              "group": "Общие",
               "pages": [
                 "ru/products/cloud/guides/cloud-compatibility",
                 "ru/products/cloud/guides/production-readiness"
@@ -209,8 +209,7 @@
               "expanded": false,
               "group": "Миграция",
               "pages": [
-                "ru/products/cloud/guides/migration/upload-a-csv-file",
-                "ru/products/cloud/guides/migration/oss-to-cloud-backup-restore"
+                "ru/products/cloud/guides/migration/upload-a-csv-file"
               ]
             },
             {
@@ -225,31 +224,31 @@
               "expanded": false,
               "group": "Резервные копии",
               "pages": [
+                "ru/products/cloud/guides/backups/index",
                 "ru/products/cloud/guides/backups/review-and-restore-backups",
                 "ru/products/cloud/guides/backups/configurable-backups",
                 {
                   "expanded": false,
-                  "group": "Собственная резервная копия",
+                  "group": "Использование собственной резервной копии",
                   "pages": [
                     "ru/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "ru/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
                     "ru/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands"
                   ]
                 }
-              ],
-              "root": "ru/products/cloud/guides/backups/index"
+              ]
             },
             {
               "expanded": false,
               "group": "Источники данных",
               "pages": [
+                "ru/products/cloud/guides/data-sources/index",
                 "ru/products/cloud/guides/data-sources/cloud-endpoints-api",
                 "ru/products/cloud/guides/data-sources/accessing-s3-data-securely",
                 "ru/products/cloud/guides/data-sources/secure-azure",
                 "ru/products/cloud/guides/data-sources/secure-gcs",
                 "ru/products/cloud/guides/data-sources/accessing-iceberg-data-securely"
-              ],
-              "root": "ru/products/cloud/guides/data-sources/index"
+              ]
             },
             {
               "expanded": false,
@@ -260,8 +259,7 @@
                   "group": "Режимы развертывания",
                   "pages": [
                     "ru/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
-                    "ru/products/cloud/guides/infrastructure/deployment-options/clickhouse-government",
-                    "ru/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                    "ru/products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
                   ]
                 }
               ]
@@ -272,20 +270,22 @@
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Управление доступом к Cloud",
+                  "group": "Управление доступом в Cloud",
                   "pages": [
+                    "ru/products/cloud/guides/security/cloud-access-management/index",
                     "ru/products/cloud/guides/security/cloud-access-management/manage-my-account",
                     "ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
                     "ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+                    "ru/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
                     "ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
                     "ru/products/cloud/guides/security/cloud-access-management/manage-database-users",
                     "ru/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
                     "ru/products/cloud/guides/security/cloud-access-management/scim-setup",
+                    "ru/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
                     "ru/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
                     "ru/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
                     "ru/products/cloud/guides/security/saml-sso-removal"
-                  ],
-                  "root": "ru/products/cloud/guides/security/cloud-access-management/index"
+                  ]
                 },
                 {
                   "expanded": false,
@@ -296,23 +296,23 @@
                       "expanded": false,
                       "group": "Частное сетевое подключение",
                       "pages": [
+                        "ru/products/cloud/guides/security/connectivity/private-networking/index",
                         "ru/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
                         "ru/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                         "ru/products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
-                      ],
-                      "root": "ru/products/cloud/guides/security/connectivity/private-networking/index"
+                      ]
                     }
                   ]
                 },
                 {
                   "expanded": false,
-                  "group": "Журналирование аудита",
+                  "group": "Журнал аудита",
                   "pages": [
+                    "ru/products/cloud/guides/security/audit-logging/index",
                     "ru/products/cloud/guides/security/audit-logging/console-audit-log",
                     "ru/products/cloud/guides/security/audit-logging/database-audit-log",
                     "ru/products/cloud/guides/security/audit-logging/byoc-security-playbook"
-                  ],
-                  "root": "ru/products/cloud/guides/security/audit-logging/index"
+                  ]
                 },
                 {
                   "expanded": false,
@@ -332,8 +332,7 @@
                 }
               ]
             }
-          ],
-          "root": "ru/products/cloud/guides/index"
+          ]
         },
         {
           "group": "Справочник API",
@@ -349,6 +348,9 @@
     },
     {
       "$ref": "../bring-your-own-cloud/navigation.json"
+    },
+    {
+      "sourceRef": "ClickHouse/airgap-docs"
     }
   ],
   "icon": "/images/icons/icon-clickhouse-cloud.svg",

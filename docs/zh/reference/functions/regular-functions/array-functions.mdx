@@ -4233,7 +4233,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 如果数组不包含任何元素，则视为空数组。
 
 <Note>
-  启用 [`optimize_functions_to_subcolumns` setting](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 后可对此进行优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT empty(arr) FROM TABLE;` 会转换为 `SELECT arr.size0 = 0 FROM TABLE;`。
+  启用 [`optimize_functions_to_subcolumns` setting](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 后可对此进行优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT empty(arr) FROM TABLE;` 会转换为 `SELECT arr.size0 = 0 FROM TABLE;`。
 </Note>
 
 该函数也适用于 String 或 UUID。
@@ -5122,6 +5122,11 @@ SELECT hasSubstr([1, 2, NULL, 3, 4], ['a'])
 
 值为 `NULL` 的元素会被视为普通值处理。
 
+`NaN` 元素不遵循上述 `NULL` 规则。
+两个 `NaN` 值的标量比较 (`NaN = NaN`) 为 `0`，但 `indexOf` 仍可能报告找到了 `NaN` 元素。
+是否如此取决于实现细节。请勿依赖特定行为。
+如需查找 `NaN`，请进行测试：`arrayFirstIndex(x -> isNaN(x), arr)` 返回其位置，`arrayExists(x -> isNaN(x), arr)` 返回一个标志。
+
 **语法**
 
 ```sql
@@ -5319,7 +5324,7 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 如果数组至少包含一个元素，则视为非空。
 
 <Note>
-  可通过启用 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 设置进行优化。当 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT notEmpty(arr) FROM table` 会转换为 `SELECT arr.size0 != 0 FROM TABLE`。
+  可通过启用 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 设置进行优化。当 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT notEmpty(arr) FROM table` 会转换为 `SELECT arr.size0 != 0 FROM TABLE`。
 </Note>
 
 该函数也适用于 String 或 UUID。
@@ -5456,7 +5461,7 @@ SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
 
 Introduced in: v1.1.0
 
-返回一个数字 Array，从 `start` 开始，以 `step` 为步长，到 `end - 1` 结束。
+返回一个数字 数组，从 `start` 开始，以 `step` 为步长，到 `end - 1` 结束。
 
 支持的类型有：
 
@@ -5466,7 +5471,7 @@ Introduced in: v1.1.0
 
 * 所有参数 `start`、`end`、`step` 都必须是上述支持的类型之一。返回的 数组 元素类型将是这些参数的超类型。
 
-* 如果函数返回的 数组 总长度超过设置 [`function_range_max_elements_in_block`](/zh/reference/settings/session-settings#function_range_max_elements_in_block) 指定的元素个数，则会抛出异常。
+* 如果函数返回的 数组 总长度超过设置 [`function_range_max_elements_in_block`](/zh/reference/settings/session-settings/function#function_range_max_elements_in_block) 指定的元素个数，则会抛出异常。
 
 * 如果任一参数的类型为 Nullable(nothing)，则返回 `NULL`。如果任一参数的值为 `NULL` (Nullable(T) 类型) ，则会抛出异常。
 

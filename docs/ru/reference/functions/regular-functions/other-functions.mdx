@@ -565,7 +565,7 @@ SELECT byteSize(NULL, 1, 0.3, '')
 
 См. раздел [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training), чтобы узнать, как обучать модели CatBoost на обучающем наборе данных.
 
-Файл модели должен находиться в каталоге [`user_files`](/ru/reference/settings/server-settings/settings#user_files_path), как и для функции [`file`](/ru/reference/functions/regular-functions/files#file).
+Файл модели должен находиться в каталоге [`user_files`](/ru/reference/settings/server-settings/settings/user#user_files_path), как и для функции [`file`](/ru/reference/functions/regular-functions/files#file).
 
 <Note>
   Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
@@ -1771,7 +1771,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
 Добавленный в: v20.1.0
 
 Возвращает объём файловой системы в байтах.
-Требуется настроить [path](/ru/reference/settings/server-settings/settings#path) к каталогу данных.
+Требуется настроить [path](/ru/reference/settings/server-settings/settings/other#path) к каталогу данных.
 
 <Note>
   Эта функция недетерминирована: для одних и тех же аргументов она может возвращать разные результаты.
@@ -1912,9 +1912,9 @@ FROM numbers(5);
 
 Меняет местами координаты x и y геометрических объектов. Эта операция меняет широту и долготу местами, что полезно при преобразовании между различными системами координат или при исправлении порядка координат.
 
-Для Point функция меняет местами координаты x и y. Для сложных геометрий (LineString, Polygon, MultiPolygon, Ring, MultiLineString) преобразование рекурсивно применяется к каждой паре координат.
+Для Point функция меняет местами координаты x и y. Для сложных геометрий (MultiPoint, LineString, Polygon, MultiPolygon, Ring, MultiLineString) преобразование рекурсивно применяется к каждой паре координат.
 
-Функция поддерживает как отдельные геометрические типы (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString), так и тип варианта Geometry.
+Функция поддерживает как отдельные геометрические типы (Point, MultiPoint, Ring, Polygon, MultiPolygon, LineString, MultiLineString), так и тип варианта Geometry.
 
 **Синтаксис**
 
@@ -1924,11 +1924,11 @@ flipCoordinates(geometry)
 
 **Аргументы**
 
-* `geometry` — геометрия, которую нужно преобразовать. Поддерживаемые типы: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)) или Geometry (вариант, содержащий любой из этих типов).
+* `geometry` — геометрия, которую нужно преобразовать. Поддерживаемые типы: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)) или Geometry (вариант, содержащий любой из этих типов).
 
 **Возвращаемое значение**
 
-Геометрия с переставленными координатами. Возвращаемый тип соответствует входному типу. [`Point`](/ru/reference/data-types/geo#point) или [`Ring`](/ru/reference/data-types/geo#ring) или [`Polygon`](/ru/reference/data-types/geo#polygon) или [`MultiPolygon`](/ru/reference/data-types/geo#multipolygon) или [`LineString`](/ru/reference/data-types/geo#linestring) или [`MultiLineString`](/ru/reference/data-types/geo#multilinestring) или [`Geometry`](/ru/reference/data-types/geo)
+Геометрия с переставленными координатами. Возвращаемый тип соответствует входному типу. [`Point`](/ru/reference/data-types/geo#point) или [`MultiPoint`](/ru/reference/data-types/geo#multipoint) или [`Ring`](/ru/reference/data-types/geo#ring) или [`Polygon`](/ru/reference/data-types/geo#polygon) или [`MultiPolygon`](/ru/reference/data-types/geo#multipolygon) или [`LineString`](/ru/reference/data-types/geo#linestring) или [`MultiLineString`](/ru/reference/data-types/geo#multilinestring) или [`Geometry`](/ru/reference/data-types/geo)
 
 **Примеры**
 
@@ -2019,6 +2019,62 @@ SELECT
     b
 FROM tab
 WHERE (a > 3) AND (b < 3)
+```
+
+<div id="formatQueryFromJSON">
+  ## formatQueryFromJSON
+</div>
+
+Добавленный в: v26.8.0
+
+Принимает JSON-представление SQL AST (созданное `parseQueryToJSON`) и преобразует его обратно в строку SQL-запроса.
+
+При использовании одного аргумента возвращает SQL в каноническом формате.
+При использовании двух аргументов `(json, original_query)` по возможности сохраняет комментарии, пробельные символы и отступы исходного запроса.
+
+Десериализованный AST ограничен текущими настройками сеанса `max_ast_depth` и `max_ast_elements`.
+Вместе с `parseQueryToJSON` эта функция позволяет программно анализировать и преобразовывать запросы
+в виде их JSON AST.
+
+**Синтаксис**
+
+```sql
+formatQueryFromJSON(json[, original_query])
+```
+
+**Аргументы**
+
+* `json` — JSON-строка, представляющая SQL AST. [`String`](/ru/reference/data-types/string)
+* `original_query` — Необязательный параметр. Исходный SQL-запрос для сохранения форматирования. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+Строка SQL-запроса. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Цикл преобразования**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'));
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT a, b FROM t WHERE x > 1'))─┐
+│ SELECT a, b FROM t WHERE x > 1                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Сохранять форматирование**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* comment */ a FROM t');
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT a FROM t'), 'SELECT /* comment */ a FROM t')─┐
+│ SELECT /* comment */ a FROM t                                                             │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="formatQueryOrNull">
@@ -2480,7 +2536,7 @@ c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCar
 Генерирует и возвращает последовательные числа, начиная с предыдущего значения счётчика.
 Эта функция принимает строковый аргумент — идентификатор серии, а также необязательное начальное значение.
 Сервер должен быть настроен для работы с Keeper.
-Серии хранятся в узлах Keeper по пути, который можно настроить в [`series_keeper_path`](/ru/reference/settings/server-settings/settings#series_keeper_path) в конфигурации сервера.
+Серии хранятся в узлах Keeper по пути, который можно настроить в [`series_keeper_path`](/ru/reference/settings/server-settings/settings/other#series_keeper_path) в конфигурации сервера.
 
 <Note>
   Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
@@ -2629,7 +2685,7 @@ SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header
 Добавленный в: v20.1.0
 
 Возвращает значение макроса из файла конфигурации сервера.
-Макросы определяются в разделе [`<macros>`](/ru/reference/settings/server-settings/settings#macros) файла конфигурации и могут использоваться, чтобы различать серверы по удобным именам, даже если у них сложные имена узлов.
+Макросы определяются в разделе [`<macros>`](/ru/reference/settings/server-settings/settings/other#macros) файла конфигурации и могут использоваться, чтобы различать серверы по удобным именам, даже если у них сложные имена узлов.
 Если функция выполняется в контексте distributed таблицы, она создаёт обычный столбец со значениями для каждого сегмента.
 
 <Note>
@@ -4505,6 +4561,55 @@ SELECT obfuscateQueryWithSeed('SELECT 1', 100) = obfuscateQueryWithSeed('SELECT 
 true
 ```
 
+<div id="parseQueryToJSON">
+  ## parseQueryToJSON
+</div>
+
+Добавлено в: v26.8.0
+
+Разбирает строку SQL-запроса в AST (абстрактное синтаксическое дерево) и возвращает JSON-представление этого дерева.
+Полученный JSON можно передать в `formatQueryFromJSON` для восстановления SQL-запроса или напрямую отправить
+на сервер, указав значение `clickhouse_json` для настройки `dialect` (при включённой настройке `enable_json_ast_dialect`).
+
+Это полезно для инструментов, которым необходимо программно анализировать или преобразовывать запросы, минуя
+грамматику SQL.
+
+Не для каждого SQL-запроса можно получить точное JSON-представление. Запросы, содержащие данные, которые невозможно
+воспроизвести в JSON-форме (например, встроенные данные `INSERT ... VALUES` / `INSERT ... FORMAT`), а также типы узлов AST,
+для которых ещё не реализована JSON-сериализация, отклоняются с ошибкой `BAD_ARGUMENTS`, вместо создания JSON, который
+`formatQueryFromJSON` не сможет прочитать обратно.
+
+Ограничения разбора (`max_query_size`, `max_parser_depth`, `max_parser_backtracks`) берутся из текущих
+настроек сеанса.
+
+**Синтаксис**
+
+```sql
+parseQueryToJSON(sql)
+```
+
+**Аргументы**
+
+* `sql` — строка SQL-запроса для разбора. [`String`](/ru/reference/data-types/string)
+
+**Возвращаемое значение**
+
+JSON-строка, представляющая AST. [`String`](/ru/reference/data-types/string)
+
+**Примеры**
+
+**Простой SELECT**
+
+```sql title=Query
+SELECT formatQueryFromJSON(parseQueryToJSON('SELECT 1'));
+```
+
+```response title=Response
+┌─formatQueryFromJSON(parseQueryToJSON('SELECT 1'))─┐
+│ SELECT 1                                          │
+└───────────────────────────────────────────────────┘
+```
+
 <div id="parseReadableSize">
   ## parseReadableSize
 </div>
@@ -4987,7 +5092,7 @@ FROM
 
   Состояние сбрасывается с каждым новым блоком данных.
   Из-за такого поведения, приводящего к ошибкам, функция объявлена устаревшей, и вместо неё рекомендуется использовать [оконные функции](/ru/reference/functions/window-functions/index).
-  Чтобы разрешить использование этой функции, можно использовать настройку [`allow_deprecated_error_prone_window_functions`](/ru/reference/settings/session-settings#allow_deprecated_error_prone_window_functions).
+  Чтобы разрешить использование этой функции, можно использовать настройку [`allow_deprecated_error_prone_window_functions`](/ru/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions).
 </Warning>
 
 **Синтаксис**
@@ -5104,7 +5209,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
   Из-за такого поведения, подверженного ошибкам, функция помечена как устаревшая.
   Вместо неё рекомендуется использовать [оконные функции](/ru/reference/functions/window-functions/index).
 
-  Чтобы разрешить использование этой функции, можно включить настройку [`allow_deprecated_error_prone_window_functions`](/ru/reference/settings/session-settings#allow_deprecated_error_prone_window_functions).
+  Чтобы разрешить использование этой функции, можно включить настройку [`allow_deprecated_error_prone_window_functions`](/ru/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions).
 </Warning>
 
 Результат функции зависит от того, какие блоки данных были затронуты, и от порядка данных в блоке.

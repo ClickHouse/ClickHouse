@@ -1,6 +1,6 @@
 ---
 description: 'توثيق استعلام SELECT'
-sidebarTitle: 'SELECT'
+sidebarTitle: 'نظرة عامة'
 slug: /sql-reference/statements/select/
 title: 'استعلام SELECT'
 doc_type: 'reference'
@@ -199,7 +199,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 يمكنك استخدام المرادفات (الأسماء المستعارة باستخدام `AS`) في أي جزء من الاستعلام.
 
-تدعم بنود `GROUP BY` و`ORDER BY` و`LIMIT BY` الوسيطات الموضعية. لتمكين ذلك، فعِّل الإعداد [enable&#95;positional&#95;arguments](/ar/reference/settings/session-settings#enable_positional_arguments). بعد ذلك، على سبيل المثال، سيؤدي `ORDER BY 1,2` إلى فرز صفوف الجدول حسب العمود الأول ثم العمود الثاني.
+تدعم بنود `GROUP BY` و`ORDER BY` و`LIMIT BY` الوسيطات الموضعية. لتمكين ذلك، فعِّل الإعداد [enable&#95;positional&#95;arguments](/ar/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments). بعد ذلك، على سبيل المثال، سيؤدي `ORDER BY 1,2` إلى فرز صفوف الجدول حسب العمود الأول ثم العمود الثاني.
 
 <div id="implementation-details">
   ## تفاصيل التنفيذ

@@ -2165,14 +2165,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 引入版本：v21.7.0
 
 将一个值序列化为其 JSON 表示形式。支持多种数据类型和嵌套结构。
-默认情况下，64 位[整数](/zh/reference/data-types/int-uint)或更大的整数 (例如 `UInt64` 或 `Int128`) 会以引号括起来。[output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats#output_format_json_quote_64bit_integers) 控制此行为。
-特殊值 `NaN` 和 `inf` 会被替换为 `null`。启用 [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats#output_format_json_quote_denormals) 设置可显示它们。
+默认情况下，64 位[整数](/zh/reference/data-types/int-uint)或更大的整数 (例如 `UInt64` 或 `Int128`) 会以引号括起来。[output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) 控制此行为。
+特殊值 `NaN` 和 `inf` 会被替换为 `null`。启用 [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats/output-format#output_format_json_quote_denormals) 设置可显示它们。
 序列化 [枚举](/zh/reference/data-types/enum) 值时，该函数会输出其名称。
 
 另请参见：
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/zh/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/zh/reference/settings/formats/output-format#output_format_json_quote_denormals)
 
 **语法**
 

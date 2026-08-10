@@ -15,7 +15,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePl
 
 ClickHouse Cloud admite el inicio de sesión único (SSO) a través de Security Assertion Markup Language (SAML). Esto le permite iniciar sesión de forma segura en su organización de ClickHouse Cloud autenticándose con su proveedor de identidad (IdP).
 
-Admitimos SSO iniciado por el proveedor de servicios, múltiples organizaciones que usan conexiones independientes y aprovisionamiento just-in-time. También admitimos el [aprovisionamiento SCIM](/es/products/cloud/guides/security/cloud-access-management/scim-setup) en private preview, con soporte para Okta. Aún no admitimos la correspondencia de atributos.
+Admitimos SSO iniciado por el proveedor de servicios, múltiples organizaciones que usan conexiones independientes y aprovisionamiento just-in-time. También admitimos el aprovisionamiento de SCIM en private preview con [Okta](/es/products/cloud/guides/security/cloud-access-management/scim-setup) y [Microsoft Entra ID](/es/products/cloud/guides/security/cloud-access-management/scim-setup-entra). Aún no admitimos la correspondencia de atributos.
 
 Los clientes que habilitan integraciones SAML también pueden designar el rol predeterminado que se asignará a los nuevos usuarios y ajustar la configuración del tiempo de espera de sesión.
 
@@ -364,5 +364,5 @@ El resto de esta guía trata la configuración que solo se realiza una vez.
 </div>
 
 * [Manage cloud users](/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — administra los permisos y restringe el acceso únicamente a las conexiones SAML.
-* [Aprovisionamiento de SCIM](/es/products/cloud/guides/security/cloud-access-management/scim-setup) — automatiza el aprovisionamiento de usuarios y grupos (private preview).
+* Aprovisionamiento de SCIM — automatiza el aprovisionamiento de usuarios y grupos con [Okta](/es/products/cloud/guides/security/cloud-access-management/scim-setup) o [Microsoft Entra ID](/es/products/cloud/guides/security/cloud-access-management/scim-setup-entra) (private preview).
 * [Console roles and permissions](/es/products/cloud/reference/security/console-roles) — los roles que puedes asignar como rol predeterminado de SAML.

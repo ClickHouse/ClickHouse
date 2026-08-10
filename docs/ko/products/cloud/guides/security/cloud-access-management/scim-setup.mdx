@@ -1,10 +1,10 @@
 ---
-sidebarTitle: 'Okta를 통한 SCIM 프로비저닝'
+sidebarTitle: 'Okta를 통한 SCIM Provisioning'
 slug: /cloud/security/scim-setup
-title: 'Okta를 통한 SCIM 프로비저닝'
-description: 'Okta와 ClickHouse Cloud 간 SCIM 프로비저닝을 설정하는 방법'
+title: 'Okta를 통한 SCIM Provisioning'
+description: 'Okta와 ClickHouse Cloud 간 SCIM Provisioning을 설정하는 방법'
 doc_type: 'guide'
-keywords: ['ClickHouse Cloud', 'SCIM', '프로비저닝', 'Okta', 'SSO', 'SAML', 'IdP(Identity Provider)', 'IdP', '사용자 관리']
+keywords: ['ClickHouse Cloud', 'SCIM', 'Provisioning', 'Okta', 'SSO', 'SAML', 'IdP(Identity Provider)', 'IdP', '사용자 관리']
 ---
 
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
@@ -16,7 +16,7 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리할 수 있도록 SCIM 2.0(System for Cross-domain Identity Management)을 지원합니다. IdP(Identity Provider)에 연결하면 ClickHouse Cloud 애플리케이션에 할당한 모든 사용자가 조직에 자동으로 생성되고 적절한 역할이 부여됩니다. 또한 프로필 업데이트도 자동으로 반영되며, IdP에서 사용자를 제거하면 해당 사용자의 접근 권한도 함께 제거됩니다 — 수동으로 초대할 필요도 없고, 고아 계정이 남을 일도 없습니다.
 
-이 가이드에서는 **Okta**를 사용해 SCIM Provisioning을 처음부터 끝까지 설정하는 방법을 설명합니다. ClickHouse Cloud SCIM 엔드포인트는 SCIM 2.0(RFC 7644)을 따르지만 authentication은 Basic Auth를 통해서만 지원되며, 테스트를 거친 IdP(Identity Provider)는 Okta뿐입니다. 다른 SCIM 2.0 IdP도 Basic Auth로 authentication할 수 있다면 작동할 수 있지만, 현재는 공식 지원 대상이 아닙니다.
+이 가이드에서는 **Okta**를 사용해 SCIM Provisioning을 처음부터 끝까지 설정하는 방법을 설명합니다. ClickHouse Cloud SCIM 엔드포인트는 SCIM 2.0(RFC 7644)을 따릅니다. Okta는 Basic Auth를 사용해 인증하며, 이 가이드에서도 이를 사용합니다. IdP(Identity Provider)가 Microsoft Entra ID인 경우에는 대신 [Entra ID를 통한 SCIM Provisioning](/ko/products/cloud/guides/security/cloud-access-management/scim-setup-entra) 가이드를 따르십시오.
 
 <div id="before-you-begin">
   ## 시작하기 전에
@@ -188,7 +188,7 @@ ClickHouse Cloud는 사용자와 그룹의 수명 주기를 자동으로 관리�
 
     ![그룹에 애플리케이션 할당](/images/cloud/security/scim-okta/scim-okta-16.webp)
 
-    **그룹을 Push합니다.** 애플리케이션의 **Provisioning** 탭에서 `Push Groups → Find groups by name`을 클릭하고 그룹을 검색한 다음 `Save`를 클릭합니다. 각 역할 그룹에 대해 이 과정을 반복합니다. Provisioning이 완료되면 각 그룹의 **Push Status**가 &#42;&#42;Active (Pushed)&#42;&#42;로 표시되어야 합니다.
+    **그룹을 Push합니다.** 애플리케이션의 **Provisioning** 탭에서 `Push Groups → Find groups by name`을 클릭하고 그룹을 검색한 다음 `Save`를 클릭합니다. 각 역할 그룹에 대해 이 과정을 반복합니다. Provisioning이 완료되면 각 그룹의 **Push Status**가 **Active (Pushed)**로 표시되어야 합니다.
 
     ![애플리케이션의 Push Groups 탭에서 이름으로 Group Push 설정](/images/cloud/security/scim-okta/scim-okta-17.webp)
 
@@ -316,7 +316,7 @@ Okta는 실패한 Provisioning 호출을 재시도하지만, 결국 이를 **Tas
   </Accordion>
 
   <Accordion title="SCIM은 Microsoft Entra ID, OneLogin 또는 다른 SCIM 2.0 IdP에서 작동합니까?">
-    공식적으로는 그렇지 않습니다 — 현재 테스트를 거쳐 지원하는 유일한 IdP는 Okta입니다. 엔드포인트는 SCIM 2.0(RFC 7644)을 따르지만, 인증 방식이 Basic Auth로 제한되므로 Basic Auth로 인증할 수 없는 IdP는 사용할 수 없습니다. Basic Auth를 지원하는 다른 SCIM 2.0 IdP도 실제로는 작동할 수 있지만, 이를 보장하지는 않습니다.
+    Microsoft Entra ID도 지원됩니다 — [Entra ID를 통한 SCIM Provisioning](/ko/products/cloud/guides/security/cloud-access-management/scim-setup-entra)을 참조하십시오. 엔드포인트는 SCIM 2.0(RFC 7644)을 따르며 Basic Auth(Okta에서 사용) 또는 Bearer token(Entra ID에서 사용) 중 하나를 허용합니다. 다른 SCIM 2.0 IdP도 이들 방식 중 하나로 인증할 수 있다면 실제로 작동할 수 있지만, 현재 테스트를 거쳐 지원하는 IdP는 Okta와 Entra ID입니다.
   </Accordion>
 
   <Accordion title="Okta의 변경 사항은 얼마나 빨리 ClickHouse Cloud에 반영됩니까?">

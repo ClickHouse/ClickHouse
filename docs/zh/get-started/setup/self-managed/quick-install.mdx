@@ -18,9 +18,10 @@ doc_type: 'guide'
     curl https://clickhouse.com/ | sh
     ```
 
-    在 Linux 和 macOS 上，这还会将 [`clickhousectl`](https://github.com/ClickHouse/clickhousectl)
-    安装到 `~/.local/bin` (并创建一个 `chctl` 符号链接) ，这样你就可以管理本地的 ClickHouse
-    版本和服务器。
+    在 Linux 和 macOS 上，这还会将 ClickHouse 命令行客户端 [`clickhousectl`](/zh/install/clickhousectl)
+    安装到 `~/.local/bin` (并创建一个 `chctl` 别名)。`clickhousectl`
+    可帮助你安装和管理多个本地 ClickHouse 版本、在后台运行服务器，
+    以及管理 ClickHouse Cloud。有关基于命令行客户端的工作流程，请参阅 [clickhousectl 安装页面](/zh/install/clickhousectl)。
 
     如果只想安装 `clickhouse` 可执行文件而不安装 `clickhousectl`，请设置
     `CLICKHOUSE_ONLY=1`：

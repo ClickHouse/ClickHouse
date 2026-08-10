@@ -268,6 +268,7 @@ ClickHouse 的特权层级如下所示：
   * `SHOW FILESYSTEM CACHES`
   * [`数据源`](#sources)
     * `AZURE`
+    * `BIGQUERY`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -285,6 +286,9 @@ ClickHouse 的特权层级如下所示：
     * `SQLITE`
     * `URL`
   * [`SYSTEM`](#system)
+    * `SYSTEM BACKGROUND`
+      * `SYSTEM STREAMING ENGINES`
+      * `SYSTEM VIEWS`
     * `SYSTEM CLEANUP`
     * `SYSTEM DROP CACHE`
       * `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -344,7 +348,6 @@ ClickHouse 的特权层级如下所示：
     * `SYSTEM TTL MERGES`
     * `SYSTEM UNFREEZE`
     * `SYSTEM UNLOAD PRIMARY KEY`
-    * `SYSTEM VIEWS`
     * `SYSTEM VIRTUAL PARTS UPDATE`
     * `SYSTEM WAIT LOADING PARTS`
   * [`表引擎`](#table-engine)
@@ -643,6 +646,9 @@ GRANT CLUSTER ON *.* TO <username>
   * `SYSTEM REPLICATION QUEUES`。级别：`TABLE`。别名：`SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
   * `SYSTEM SYNC REPLICA`。级别：`TABLE`。别名：`SYNC REPLICA`
   * `SYSTEM RESTART REPLICA`。级别：`TABLE`。别名：`RESTART REPLICA`
+  * `SYSTEM BACKGROUND`。级别：`GROUP`
+    * `SYSTEM STREAMING ENGINES`。级别：`TABLE`
+    * `SYSTEM VIEWS`。级别：`VIEW`。别名：`SYSTEM REFRESH VIEW`, `SYSTEM START VIEWS`, `SYSTEM STOP VIEWS`, `SYSTEM START VIEW`, `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEWS`, `SYSTEM PAUSE VIEW`, `SYSTEM CANCEL VIEW`, `REFRESH VIEW`, `START VIEWS`, `STOP VIEWS`, `START VIEW`, `STOP VIEW`, `PAUSE VIEWS`, `PAUSE VIEW`, `CANCEL VIEW`
   * `SYSTEM FLUSH`。级别：`GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`。级别：`TABLE`。别名：`FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`。级别：`GLOBAL`。别名：`FLUSH LOGS`
@@ -675,6 +681,7 @@ GRANT CLUSTER ON *.* TO <username>
 可用参数：
 
 * `AZURE`
+* `BIGQUERY`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -797,9 +804,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 </div>
 
 如果同时启用
-[`display_secrets_in_show_and_select` 服务器设置](/zh/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+[`display_secrets_in_show_and_select` 服务器设置](/zh/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select)
 和
-[`format_display_secrets_in_show_and_select` 格式设置](/zh/reference/settings/formats#format_display_secrets_in_show_and_select)，
+[`format_display_secrets_in_show_and_select` 格式设置](/zh/reference/settings/formats/format#format_display_secrets_in_show_and_select)，
 则允许用户在 `SHOW` 和 `SELECT` 查询中查看 secrets。
 
 <div id="named-collection-admin">
@@ -827,6 +834,8 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 <div id="table-engine">
   ### 表引擎
 </div>
+
+<CloudNotSupportedBadge />
 
 允许在创建表时使用指定的表引擎。适用于[表引擎](/zh/reference/engines/table-engines/index)。
 

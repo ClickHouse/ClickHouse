@@ -73,10 +73,10 @@ ClickHouse Cloud 계정에 로그인했는지 확인하십시오. 아직 계정�
   ### 소스 Postgres 데이터베이스 연결 추가하기
 </div>
 
-4. 사전 준비 단계에서 구성한 소스 Postgres 데이터베이스의 연결 정보를 입력합니다.
+4. 사전 요구사항 단계에서 구성한 소스 Postgres 데이터베이스의 연결 정보를 입력합니다.
 
 <Info>
-  연결 정보를 입력하기 전에 방화벽 규칙의 허용 목록에 ClickPipes IP 주소를 추가했는지 확인하십시오. ClickPipes IP 주소 목록은 [여기](/ko/integrations/clickpipes/home#list-of-static-ips)에서 확인할 수 있습니다.
+  연결 정보를 입력하기 전에 방화벽 규칙의 허용 목록에 ClickPipes IP 주소를 추가했는지 확인하십시오. ClickPipes IP 주소 목록은 [여기](/ko/integrations/clickpipes/networking/static-ips)에서 확인할 수 있습니다.
   자세한 내용은 [이 페이지 상단](#prerequisites)에 연결된 소스 Postgres 설정 가이드를 참조하십시오.
 </Info>
 
@@ -88,7 +88,7 @@ ClickHouse Cloud 계정에 로그인했는지 확인하십시오. 아직 계정�
 
 소스 Postgres 데이터베이스가 AWS에서 호스팅되는 경우 AWS Private Link를 사용해 연결할 수 있습니다. 데이터 전송을
 비공개로 유지하려는 경우에 유용합니다.
-[연결 설정 가이드](/ko/integrations/clickpipes/aws-privatelink)를 따르십시오.
+[연결 설정 가이드](/ko/integrations/clickpipes/networking/aws-privatelink)를 따르십시오.
 
 <div id="optional-changing-tls-settings">
   #### (선택 사항) TLS 설정 변경하기
@@ -113,7 +113,7 @@ ClickHouse Cloud 계정에 로그인했는지 확인하십시오. 아직 계정�
 4. 연결을 확인하려면 &quot;Verify Connection&quot;을 클릭하세요.
 
 <Note>
-  ClickPipes가 SSH 터널을 설정할 수 있도록 SSH 배스천 호스트의 방화벽 규칙에 [ClickPipes IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 허용 목록에 추가하십시오.
+  ClickPipes가 SSH 터널을 설정할 수 있도록 SSH 배스천 호스트의 방화벽 규칙에 [ClickPipes IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 허용 목록에 추가하십시오.
 </Note>
 
 연결 정보를 모두 입력한 후 &quot;다음&quot;을 클릭하세요.
