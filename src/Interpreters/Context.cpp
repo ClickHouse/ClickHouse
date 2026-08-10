@@ -6466,6 +6466,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
 {
     ClusterDiscovery * discovery_to_update = nullptr;
     ClusterDiscovery * discovery_just_created_ptr = nullptr;
+    bool clusters_changed = false;
     {
         std::lock_guard lock(shared->clusters_mutex);
 
@@ -6514,6 +6515,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
                 discovery_to_update = shared->cluster_discovery.get();
 
             ++shared->clusters_version;
+            clusters_changed = true;
         }
 
         /// Constructor already applied config. Start outside this lock if the server is ready;
@@ -6530,6 +6532,9 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
     if (discovery_just_created_ptr && getApplicationType() == ApplicationType::SERVER && isServerCompletelyStarted())
         discovery_just_created_ptr->start();
 
+    /// Avoid DDL host-id refresh / log noise when remote_servers (and discovery) did not change.
+    /// Still notify when discovery was just created (e.g. allow-flag-only reload).
+    if (clusters_changed || discovery_to_update || discovery_just_created_ptr)
     {
         SharedLockGuard lock(shared->mutex);
         if (shared->ddl_worker)
