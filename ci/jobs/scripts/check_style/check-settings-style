@@ -67,6 +67,17 @@ FNR == 1 {
     print name " " filename type " SettingsDeclaration"
     next
 }
+/^[[:space:]]*ALIAS\(/ {
+    # ALIAS(Type, name, ...) - the with-alias declarator is named ALIAS (instead of
+    # DECLARE_WITH_ALIAS) in some settings lists, e.g. LIST_OF_SERVER_SETTINGS_*,
+    # FORMAT_FACTORY_SETTINGS and LIST_OF_COORDINATION_SETTINGS.
+    s = $0; sub(/.*ALIAS\(/, "", s)
+    split(s, parts, ",")
+    type = parts[1]; gsub(/^[ \t]+|[ \t]+$/, "", type)
+    name = parts[2]; gsub(/^[ \t]+|[ \t]+$/, "", name)
+    print name " " filename type " SettingsDeclaration"
+    next
+}
 /^[[:space:]]*DECLARE\(/ {
     # DECLARE(Type, name, ...)
     s = $0; sub(/.*DECLARE\(/, "", s)

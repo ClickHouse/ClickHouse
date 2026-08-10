@@ -531,6 +531,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     addSettingsLike(res_columns, EntityType::MergeTreeSetting, MergeTreeSettings{}, MERGE_TREE_SETTINGS_SOURCE);
     addSettingAliases(res_columns, EntityType::MergeTreeSetting, MergeTreeSettings{}, MERGE_TREE_SETTINGS_SOURCE);
     addSettingsLike(res_columns, EntityType::ServerSetting, ServerSettings{}, SERVER_SETTINGS_SOURCE);
+    addSettingAliases(res_columns, EntityType::ServerSetting, ServerSettings{}, SERVER_SETTINGS_SOURCE);
 
     /// The format dictionary is keyed by the lower-cased name; `creators.name` carries the original case.
     for (const auto & name_and_creators : FormatFactory::instance().getAllFormats())

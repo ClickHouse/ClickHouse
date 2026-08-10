@@ -242,7 +242,7 @@ total_memory_profiler_step: 4194304
 # Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit,
 # which is 4 MiB by default but can be lowered if 'total_memory_profiler_step' is lowered.
 # You may want to set 'total_memory_profiler_step' to 1 for extra fine grained sampling.
-total_memory_tracker_sample_probability: 0
+# total_memory_profiler_sample_probability: 0
 
 # Set limit on number of open files (default: maximum). This setting makes sense on Mac OS X because getrlimit() fails to retrieve
 # correct maximum value.

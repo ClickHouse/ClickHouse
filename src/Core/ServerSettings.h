@@ -56,6 +56,8 @@ struct ServerSettings
     void set(std::string_view name, const Field & value);
 
     std::vector<std::string_view> getAllRegisteredNames() const;
+    std::vector<std::string_view> getAllAliasNames() const;
+    static std::string_view resolveName(std::string_view name);
     std::string_view getDescription(std::string_view name) const;
     std::string_view getTypeName(std::string_view name) const;
     String getDefaultValueString(std::string_view name) const;

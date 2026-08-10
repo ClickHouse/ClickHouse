@@ -8,4 +8,4 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 query_id="aggregating_merge_tree_simple_aggregate_function_string_query100_profile100_$CLICKHOUSE_DATABASE"
 ${CLICKHOUSE_CLIENT} --query="select sleep(1)" --query_id="$query_id" --query_profiler_real_time_period_ns=10000000
 ${CLICKHOUSE_CLIENT} --query="system flush logs trace_log"
-${CLICKHOUSE_CLIENT} --query="select count(*) > 1 from system.trace_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id'"
+${CLICKHOUSE_CLIENT} --query="select count(*) > 1 from system.trace_log where event_date >= yesterday() AND event_time >= now() - 600 AND trace_type = 'Real' AND query_id = '$query_id'"
