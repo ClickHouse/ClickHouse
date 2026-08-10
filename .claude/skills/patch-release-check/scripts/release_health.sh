@@ -281,20 +281,12 @@ while IFS='|' read -r id concl stat created; do
             cls="ok"; n_ok=$((n_ok+1)) ;;
         failure)
             # GUARD == the version-bump-PR guard specifically: the traceback must
-            # show the guard's frame AND a `raise RuntimeError` source line. Match
-            # that combination, NOT a line number (which drifts) and NOT bare
-            # `raise RuntimeError` — other failures raise AssertionError and must
-            # classify as OTHER.
-            #
-            # Both frame names are accepted: the guard raises from
-            # `_assert_no_open_version_bump_prs` (ci/jobs/auto_release_job.py) in the
-            # praktika workflow and from `_prepare` (tests/ci/auto_release.py) in the
-            # legacy GH-Actions one. The script looks back DAYS (14 by default), so
-            # for the first two weeks after the praktika migration that window still
-            # contains legacy runs; dropping `_prepare` would classify their guard
-            # failures as OTHER and hide whether the recent autorelease outages were
-            # caused by an open version-bump PR. Keep both until the lookback can no
-            # longer reach a legacy run.
+            # show the guard's frame `in _assert_no_open_version_bump_prs`
+            # (ci/jobs/auto_release_job.py) AND a `raise RuntimeError` source
+            # line. Match that combination, NOT a line number (which drifts) and
+            # NOT bare `raise RuntimeError` — other failures raise AssertionError
+            # and must classify as OTHER.
+            # `_prepare` is the legacy frame, still inside the DAYS lookback.
             if flog="$(fetch_failed_log "$id")"; then
                 # Use here-strings, NOT `printf "$flog" | grep -q`: grep -q exits on
                 # first match and SIGPIPEs the producer (rc 141), which `set -o pipefail`

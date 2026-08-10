@@ -104,13 +104,12 @@ result is non-empty. The guard runs before any per-branch dispatch, so a guard f
 
 > The script classifies `GUARD` only when the failed-step log shows **both** a guard
 > traceback frame **and** the `raise RuntimeError` source line — not a line number
-> (which drifts) and not bare `RuntimeError`. Both frame names are accepted:
-> `in _assert_no_open_version_bump_prs` (`ci/jobs/auto_release_job.py`, praktika) and
-> `in _prepare` (`tests/ci/auto_release.py`, legacy GH Actions), because the default
-> 14-day lookback still reaches legacy runs for the first two weeks after the praktika
-> migration. Other failures — e.g. a branch reported with the `ERROR` status because it
-> has no release tag — classify as `OTHER`, not `GUARD`, so the operator is not sent to
-> hunt version-bump PRs when the guard is actually clear.
+> (which drifts) and not bare `RuntimeError`. Both frames count:
+> `in _assert_no_open_version_bump_prs` (`ci/jobs/auto_release_job.py`) and the legacy
+> `in _prepare` (`tests/ci/auto_release.py`), which the 14-day lookback still reaches
+> for two weeks after the praktika migration. Other failures — e.g. a branch reported
+> `ERROR` for having no release tag — classify as `OTHER`, so the operator is not sent
+> to hunt version-bump PRs when the guard is clear.
 
 > The GitHub Actions log does **not** name the offending PR — the list is sent to a
 > Slack alert, not stdout. Find it two ways:

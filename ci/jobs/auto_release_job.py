@@ -55,15 +55,9 @@ def _fetch_history() -> None:
     actions/checkout fetches only the workflow ref, but prepare reads
     `origin/<release_branch>` and the release tags to measure how far each
     branch has moved since its last release. Mirrors the fetch phase of
-    ci/jobs/release_job.py.
-
-    `--unshallow` is the only fetch here that moves the shallow boundary: the
-    refspec and tag fetches below leave a depth-1 clone shallow. A shallow clone
-    silently truncates `git rev-list {tag}..origin/{branch}` and the
-    `VERSION_GITHASH..{commit}` tweak count, so the run would skip
-    release-worthy commits or probe S3 under the wrong version instead of
-    failing. Fail-close: run it only when the repo is actually shallow (it
-    errors out on a complete one) and let any real failure abort the job."""
+    ci/jobs/release_job.py."""
+    # `--unshallow` is the only fetch that deepens the clone, and it errors out on
+    # a complete repository - so gate it instead of swallowing its failures.
     shallow = Shell.get_output_or_raise("git rev-parse --is-shallow-repository")
     if shallow.strip() == "true":
         Shell.check(
@@ -155,12 +149,8 @@ def _failed_statuses(sha: str) -> List[str]:
     """Commit-status contexts whose latest state is not success.
 
     Keeps only the newest status per context (GitHub records one row per
-    update) before deciding pass/fail, matching the legacy logic.
-
-    Reads with `strict=True`: a commit with no statuses and a `/statuses` read
-    that kept 5xx-ing both yield empty output, and the non-strict form would
-    hand back the same empty list, i.e. "everything is green". Raising lets the
-    job fail instead of releasing a commit whose statuses were never read."""
+    update) before deciding pass/fail, matching the legacy logic."""
+    # Strict: an exhausted read returns "", indistinguishable from "no statuses".
     out = GH.get_output_with_retries(
         f"gh api --paginate repos/{{owner}}/{{repo}}/commits/{sha}/statuses"
         f" --jq '.[] | [.context, .state, .updated_at] | @tsv'",
@@ -225,19 +215,12 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
 
     commit_sha is the newest fully-green commit within MAX_COMMITS_TO_CONSIDER
     of the branch head, excluding the version-bump commit; empty when none
-    qualifies, with `reason` explaining why.
-
-    `status` is what the branch's sub-result should report when there is no
-    candidate: SKIPPED for an ordinary "nothing to release yet", ERROR for a
-    branch that can never be released as it stands."""
+    qualifies, with `reason` explaining why, and `status` for the sub-result to
+    report: SKIPPED when nothing is ready yet, ERROR when the branch can never be
+    released as it stands."""
     tag = _latest_release_tag(branch)
     if not tag:
-        # A `release`-labeled branch with no `v<branch>.*` tag is broken release
-        # metadata, not a branch that is merely not ready yet: nothing will ever
-        # make it releasable until someone fixes the tags. The legacy driver hard
-        # failed here (`assert refs`) and the patch-release-check runbook still
-        # treats it as a hard failure, so keep it visible instead of letting the
-        # daily run stay green over a permanently unreleasable branch.
+        # Broken release metadata, not a branch that is merely not ready yet.
         return "", "no release tag found", Result.Status.ERROR
     if tag.endswith("new"):
         return (
@@ -294,11 +277,8 @@ def _find_release_candidate(branch: str) -> Tuple[str, str, str]:
 
 
 def _latest_create_release_run_id() -> int:
-    """Newest CreateRelease run id, or 0 when the workflow has never run.
-
-    Strict for the same reason as `_failed_statuses`: falling back to 0 on a read
-    failure would make `_await_new_run` accept an arbitrary historical dispatch as
-    "our" run and stop watching the release this job actually triggered."""
+    """Newest CreateRelease run id, or 0 when the workflow has never run."""
+    # Strict: falling back to 0 would make `_await_new_run` accept a foreign run.
     out = GH.get_output_with_retries(
         f"gh run list --workflow {CREATE_RELEASE_WORKFLOW} -L1 --json databaseId"
         f" --jq '.[0].databaseId // 0'",

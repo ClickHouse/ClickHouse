@@ -225,13 +225,10 @@ def test_failed_statuses_keeps_newest_per_context(monkeypatch):
 
 
 def test_status_reads_are_strict():
-    """The `/statuses` read must not fail open.
+    """The `/statuses` and run-id reads must not fail open.
 
     ``GH.get_output_with_retries`` returns ``""`` once retries are exhausted,
-    which is indistinguishable from "this commit has no statuses" — so a
-    non-strict read would let `_find_release_candidate` treat a commit whose
-    statuses were never read as fully green. Same for the CreateRelease run-id
-    read, where a fallback would attach the watch to a historical dispatch.
+    which is indistinguishable from an empty result.
     """
     text = _read(JOB)
     for fn in ("_failed_statuses", "_latest_create_release_run_id"):
@@ -243,9 +240,8 @@ def test_status_reads_are_strict():
 def test_fetch_history_does_not_swallow_unshallow_failures(monkeypatch):
     """``--unshallow`` must run strictly, and only on a shallow clone.
 
-    It is the only fetch that deepens the clone — the refspec/tag fetches leave a
-    depth-1 checkout shallow — so a swallowed failure would silently truncate the
-    `rev-list` ranges the release candidate and version tweak are derived from.
+    It is the only fetch that deepens the clone, so a swallowed failure would
+    silently truncate the `rev-list` ranges the release decisions come from.
     """
     m = _job_module()
     calls = []
@@ -286,9 +282,7 @@ def test_find_release_candidate_skips_new_branch(monkeypatch):
 def test_find_release_candidate_errors_without_release_tag(monkeypatch):
     """A missing ``v<branch>.*`` tag must not be normalised to ``SKIPPED``.
 
-    It means the release metadata is broken — no later run can fix itself — so
-    reporting it like an ordinary "nothing to release yet" would let the daily
-    AutoReleases run stay green while the branch is permanently unreleasable.
+    It means broken release metadata, so the daily run must not stay green.
     """
     m = _job_module()
     monkeypatch.setattr(m, "_latest_release_tag", lambda branch: None)
