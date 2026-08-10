@@ -25,9 +25,12 @@ open_definer="open_definer_04841_${CLICKHOUSE_DATABASE}"
 # Pin every query-cache setting so the flaky check's settings randomizer cannot change the outcome.
 qc="use_query_cache = 1, enable_reads_from_query_cache = 1, enable_writes_to_query_cache = 1, query_cache_min_query_runs = 0, query_cache_min_query_duration = 0, query_cache_use_only_when_data_was_not_changed = 1"
 
-# The tables read by a definer with a row policy are separate from the ones read without: a table that
-# has any row policy is not readable at all by a user none of its policies mention, so a single shared
-# table could not serve both cases.
+# A table that has any row policy is not readable at all by a user none of its policies mention, so the
+# tables read by a definer with a row policy get a second, literally always true policy for the invoker.
+# Such a filter does not affect what the invoker reads and is deliberately not counted by the consistency
+# check, so the *only* difference between the caller context and the view's effective context here is the
+# definer's non-trivial policy - which is exactly what this test is about. The tables read without any
+# policy are separate ones, so that they are unaffected.
 $CLICKHOUSE_CLIENT -q "
     CREATE USER ${definer}, ${open_definer};
     GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.* TO ${definer}, ${open_definer};
@@ -43,6 +46,8 @@ $CLICKHOUSE_CLIENT -q "
 
     CREATE ROW POLICY policy_04841 ON ${CLICKHOUSE_DATABASE}.t_policy_04841 FOR SELECT USING x = 1 TO ${definer};
     CREATE ROW POLICY policy_target_04841 ON ${CLICKHOUSE_DATABASE}.target_policy_04841 FOR SELECT USING x = 1 TO ${definer};
+    CREATE ROW POLICY policy_all_04841 ON ${CLICKHOUSE_DATABASE}.t_policy_04841 FOR SELECT USING 1 TO CURRENT_USER;
+    CREATE ROW POLICY policy_target_all_04841 ON ${CLICKHOUSE_DATABASE}.target_policy_04841 FOR SELECT USING 1 TO CURRENT_USER;
 
     -- The definer of this view sees only one row of the table, so what the view returns depends on a row
     -- policy that the invoker's context does not have.
@@ -112,7 +117,7 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE v_definer_04841;
     DROP TABLE v_open_04841;
     DROP TABLE v_none_04841;
-    DROP ROW POLICY policy_04841 ON ${CLICKHOUSE_DATABASE}.t_policy_04841;
-    DROP ROW POLICY policy_target_04841 ON ${CLICKHOUSE_DATABASE}.target_policy_04841;
+    DROP ROW POLICY policy_04841, policy_all_04841 ON ${CLICKHOUSE_DATABASE}.t_policy_04841;
+    DROP ROW POLICY policy_target_04841, policy_target_all_04841 ON ${CLICKHOUSE_DATABASE}.target_policy_04841;
     DROP USER ${definer}, ${open_definer};
 "

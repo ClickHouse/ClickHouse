@@ -26,6 +26,11 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY x;
     INSERT INTO src VALUES (1), (2);
     CREATE ROW POLICY policy_04842 ON ${CLICKHOUSE_DATABASE}.src FOR SELECT USING x = 1 TO ${definer};
+    -- A table with any row policy is unreadable by a user none of its policies mention, so give the
+    -- refreshing view's own reader a literally always true one. Such a filter is deliberately not
+    -- counted by the consistency check, so the definer's non-trivial policy is the only difference
+    -- between the refresh context and the view's effective context.
+    CREATE ROW POLICY policy_all_04842 ON ${CLICKHOUSE_DATABASE}.src FOR SELECT USING 1 TO CURRENT_USER;
 
     -- The definer sees only part of \`src\`, so what this view returns depends on a row policy that the
     -- refreshing view's own context cannot see.
@@ -55,7 +60,7 @@ done
 
 # Without a row policy for the definer the source hash is available again, so refreshes of an unchanged
 # source are skipped: the row count stops growing.
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY policy_04842 ON ${CLICKHOUSE_DATABASE}.src"
+$CLICKHOUSE_CLIENT -q "DROP ROW POLICY policy_04842, policy_all_04842 ON ${CLICKHOUSE_DATABASE}.src"
 for _ in {1..120}
 do
     before=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM mv")
