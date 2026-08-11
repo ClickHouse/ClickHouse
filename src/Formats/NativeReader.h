@@ -25,11 +25,8 @@ class NativeReader
 {
 public:
     /// If a non-zero server_revision is specified, additional block information may be expected and read.
-    /// `string_with_size_stream` overrides how the size-stream String layout is chosen (see NativeWriter);
-    /// unset on the protocol (follows server_revision), set by the Native/Buffers format from its setting.
     NativeReader(
-        ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_ = std::nullopt,
-        std::optional<bool> string_with_size_stream_ = std::nullopt);
+        ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_ = std::nullopt);
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
@@ -38,8 +35,7 @@ public:
         const Block & header_,
         UInt64 server_revision_,
         std::optional<FormatSettings> format_settings_ = std::nullopt,
-        BlockMissingValues * block_missing_values_ = nullptr,
-        std::optional<bool> string_with_size_stream_ = std::nullopt);
+        BlockMissingValues * block_missing_values_ = nullptr);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
@@ -66,7 +62,6 @@ private:
     Block header;
     UInt64 server_revision;
     std::optional<FormatSettings> format_settings = std::nullopt;
-    std::optional<bool> string_with_size_stream;
     BlockMissingValues * block_missing_values = nullptr;
 
     bool use_index = false;

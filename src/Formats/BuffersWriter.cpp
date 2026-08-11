@@ -1,13 +1,12 @@
 #include <Formats/BuffersWriter.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnReplicated.h>
-#include <Core/ProtocolDefines.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Formats/NativeWriter.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+
+#include <Columns/IColumn.h>
 
 #include <Core/Block.h>
 
@@ -40,20 +39,13 @@ void BuffersWriter::write(const Block & block)
     {
         const auto & column = block.safeGetByPosition(i);
 
-        /// Buffers uses the same per-column representation as Native. The offsets String layout is
-        /// opt-in through a format setting (the format stays portable by default). Unlike Native,
-        /// there is no per-column serialization kind on the wire, so only the type-level
-        /// serialization versions apply — never column-derived kinds such as Sparse.
-        SerializationPtr serialization = column.type->getSerialization(
-            SerializationInfoSettings::enableAllSupportedSerializations(format_settings.native.write_string_with_size_stream));
+        /// Buffers is a plain format (not the protocol): it always uses the portable per-value String
+        /// layout and a type-level serialization (never column-derived kinds like Sparse), so the column
+        /// must be densified to match it. convertToFullIfWrapped strips Const/Replicated/Sparse but
+        /// keeps the LowCardinality type.
+        SerializationPtr serialization = column.type->getSerialization(SerializationInfoSettings::enableAllSupportedSerializations());
 
-        /// Buffers carries no per-column serialization kind on the wire, so the column must be dense
-        /// before it reaches the type-level serializer (NativeWriter::writeData only strips Const and
-        /// compressed wrappers). A ColumnSparse/ColumnReplicated from the pipeline would otherwise
-        /// fail the typeid_cast inside the dense serializer. recursiveRemoveReplicated (not just the
-        /// top-level convertToFullColumnIfReplicated) also strips a replicated child of a tuple. This
-        /// mirrors the densification NativeWriter::getSerializationAndColumn does for the no-marker path.
-        ColumnPtr dense_column = recursiveRemoveSparse(recursiveRemoveReplicated(column.column));
+        ColumnPtr dense_column = column.column->convertToFullIfWrapped();
 
         WriteBufferFromOwnString buffer;
 

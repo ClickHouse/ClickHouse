@@ -37,8 +37,8 @@ namespace ErrorCodes
 
 
 NativeReader::NativeReader(
-    ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_, std::optional<bool> string_with_size_stream_)
-    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_), string_with_size_stream(string_with_size_stream_)
+    ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_)
+    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_)
 {
 }
 
@@ -47,13 +47,11 @@ NativeReader::NativeReader(
     const Block & header_,
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
-    BlockMissingValues * block_missing_values_,
-    std::optional<bool> string_with_size_stream_)
+    BlockMissingValues * block_missing_values_)
     : istr(istr_)
     , header(header_)
     , server_revision(server_revision_)
     , format_settings(std::move(format_settings_))
-    , string_with_size_stream(string_with_size_stream_)
     , block_missing_values(block_missing_values_)
 {
 }
@@ -211,18 +209,12 @@ Block NativeReader::read()
         SerializationPtr serialization;
         ColumnPtr read_column;
 
-        /// The size-stream String layout is decided by the caller: the native protocol derives it from
-        /// the negotiated revision, the Native/Buffers format from its own setting. It is orthogonal to
-        /// the framing gated by the revision and needs no per-column wire marker.
-        const bool with_string_size_stream
-            = string_with_size_stream.value_or(server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
-
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             /// NativeReader must enable all supported serializations (e.g. nullable sparse) here. Since it operates on
             /// in-memory state, it should be able to handle all possible serialization variants.
-            auto info = column.type->createSerializationInfo(
-                SerializationInfoSettings::enableAllSupportedSerializations(with_string_size_stream));
+            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations(
+                server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
 
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);
@@ -236,18 +228,7 @@ Block NativeReader::read()
         }
         else
         {
-            /// No per-column kind on the wire below the custom-serialization revision, so the column
-            /// is dense; a format setting can still select the size-stream String layout.
-            if (with_string_size_stream)
-            {
-                auto info = column.type->createSerializationInfo(
-                    SerializationInfoSettings::enableAllSupportedSerializations(true));
-                serialization = column.type->getSerialization(*info);
-            }
-            else
-            {
-                serialization = column.type->getDefaultSerialization();
-            }
+            serialization = column.type->getDefaultSerialization();
             auto new_column = column.type->createColumn(*serialization);
             new_column->reserve(rows);
             read_column = std::move(new_column);

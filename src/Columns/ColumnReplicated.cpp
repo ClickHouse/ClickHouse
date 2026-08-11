@@ -1,7 +1,6 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnReplicated.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
@@ -769,28 +768,6 @@ ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bo
         return replicated.convertToFullColumnIfReplicated();
 
     return column;
-}
-
-ColumnPtr recursiveRemoveReplicated(const ColumnPtr & column)
-{
-    if (!column)
-        return column;
-
-    /// Recurse into tuple elements: a tuple element can be lazily replicated even when the tuple
-    /// column itself is not, and `convertToFullColumnIfReplicated` only unwraps a top-level column.
-    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
-    {
-        auto columns = column_tuple->getColumns();
-        if (columns.empty())
-            return column;
-
-        for (auto & element : columns)
-            element = recursiveRemoveReplicated(element);
-
-        return ColumnTuple::create(columns);
-    }
-
-    return column->convertToFullColumnIfReplicated();
 }
 
 void compactReplicatedColumns(Columns & columns)

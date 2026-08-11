@@ -20,7 +20,7 @@ doc_type: 'reference'
 
 Unlike [Native](/reference/formats/Native), it does **not** store column names, column types, or any extra metadata.
 
-In this format, data is written and read by [blocks](/resources/develop-contribute/introduction/architecture#block) in a binary format. Buffers uses the same per-column binary representation as the [Native](/reference/formats/Native) format and respects the same Native format settings. In particular the [offsets `String` layout](/reference/interfaces/specs/NativeFormat#string-type) is opt-in through `output_format_native_write_string_with_size_stream` (writing) and `input_format_native_read_string_with_size_stream` (reading); both sides must agree, so a reader has to be given the same setting the writer used. By default the format stays on the portable per-value layout. Unlike Native, Buffers never uses per-column serialization kinds (such as Sparse), because there is no place for them in the framing.
+In this format, data is written and read by [blocks](/resources/develop-contribute/introduction/architecture#block) in a binary format. Buffers uses the same per-column binary representation as the [Native](/reference/formats/Native) format and respects the same Native format settings.
 
 For each block, the following sequence is written:
 1. Number of columns (UInt64, little-endian).

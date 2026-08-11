@@ -12,7 +12,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -35,8 +34,7 @@ NativeWriter::NativeWriter(
     std::optional<FormatSettings> format_settings_,
     bool remove_low_cardinality_,
     IndexForNativeFormat * index_,
-    size_t initial_size_of_file_,
-    std::optional<bool> string_with_size_stream_)
+    size_t initial_size_of_file_)
     : ostr(ostr_)
     , client_revision(client_revision_)
     , header(header_)
@@ -44,7 +42,6 @@ NativeWriter::NativeWriter(
     , initial_size_of_file(initial_size_of_file_)
     , remove_low_cardinality(remove_low_cardinality_)
     , format_settings(std::move(format_settings_))
-    , string_with_size_stream(string_with_size_stream_)
 {
     if (index)
     {
@@ -99,19 +96,13 @@ void NativeWriter::flush()
 }
 
 std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(
-    UInt64 client_revision, const ColumnWithTypeAndName & column, bool with_string_size_stream)
+    UInt64 client_revision, const ColumnWithTypeAndName & column)
 {
-    /// `with_string_size_stream` is decided by the caller: the native protocol derives it from the
-    /// negotiated revision, the Native/Buffers format from its own setting. It is orthogonal to the
-    /// framing that the revision gates below and needs no per-column wire marker.
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
         ColumnPtr result_column = column.column;
-        /// Below the replicated-serialization revision a peer cannot decode a REPLICATED kind stack.
-        /// getSerializationInfo would still emit one for a lazily replicated tuple child (DataTypeTuple
-        /// appends REPLICATED per child), so densify recursively rather than only the top level.
         if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
-            result_column = recursiveRemoveReplicated(result_column);
+            result_column = result_column->convertToFullColumnIfReplicated();
         if (client_revision < DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
             result_column = recursiveRemoveSparse(result_column);
         if (client_revision < DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION)
@@ -120,25 +111,15 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
                 result_column = recursiveRemoveSparse(result_column);
         }
 
+        /// The size-stream String layout follows the peer revision and needs no per-column wire marker.
         auto info = column.type->getSerializationInfo(
-            *result_column, SerializationInfoSettings::enableAllSupportedSerializations(with_string_size_stream));
+            *result_column,
+            SerializationInfoSettings::enableAllSupportedSerializations(
+                client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
         return {column.type->getSerialization(*info), info, result_column};
     }
 
-    /// Below the custom-serialization revision there is no per-column kind on the wire, so the column
-    /// must be fully dense. `recursiveRemoveReplicated` also strips nested `ColumnReplicated` (e.g. a
-    /// replicated tuple child), which `convertToFullColumnIfReplicated` leaves in place.
-    ColumnPtr result_column = recursiveRemoveSparse(recursiveRemoveReplicated(column.column));
-    if (with_string_size_stream)
-    {
-        /// Build the serialization from a type-level info (default kinds), exactly like the reader on
-        /// this no-marker path, so we never emit a column-derived kind the reader would not
-        /// reconstruct; the info only selects the size-stream String version.
-        auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations(true));
-        return {column.type->getSerialization(*info), nullptr, result_column};
-    }
-
-    return {column.type->getDefaultSerialization(), nullptr, result_column};
+    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
 }
 
 size_t NativeWriter::write(const Block & block)
@@ -223,9 +204,7 @@ size_t NativeWriter::write(const Block & block)
         SerializationPtr serialization;
         {
             SerializationInfoPtr info;
-            const bool with_string_size_stream
-                = string_with_size_stream.value_or(client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
-            std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column, with_string_size_stream);
+            std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column);
             if (info)
             {
                 writeBinary(static_cast<UInt8>(info->hasCustomSerialization()), ostr);

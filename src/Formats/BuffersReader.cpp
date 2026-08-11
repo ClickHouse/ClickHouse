@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Core/ProtocolDefines.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
@@ -64,10 +63,9 @@ Block BuffersReader::read()
 
         ColumnPtr & read_column = column.column;
 
-        /// Symmetric with BuffersWriter: the offsets String layout is opt-in through a format setting
-        /// (type-level versions only; there are no serialization kinds in Buffers).
-        auto serialization = column.type->getSerialization(
-            SerializationInfoSettings::enableAllSupportedSerializations(format_settings.native.read_string_with_size_stream));
+        /// Buffers is a plain format (not the protocol), so it always uses the portable per-value
+        /// String layout - only type-level versions apply, there are no serialization kinds in Buffers.
+        auto serialization = column.type->getSerialization(SerializationInfoSettings::enableAllSupportedSerializations());
 
         const size_t before = istr.count();
 

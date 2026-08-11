@@ -340,7 +340,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `has_custom_serialization` byte | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION` | `54454` | The per-column [`has_custom_serialization`](#column-wire-layout) byte is omitted; every column uses default serialization (no sparse, replicated, or detached forms). |
 | `LowCardinality` on the wire | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE` | `54405` | Special case — does **not** follow the simple below-threshold rule. `LowCardinality(T)` is stripped to base type `T` only when the revision is *non-zero* and below `54405`, or when stripping is forced separately. Revision `0` keeps it. See the note below. |
 | V2 `Dynamic` / `JSON` serialization | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION` | `54473` | `Dynamic` and `JSON`/`Object` use V1 serialization (with the `max_dynamic_*` parameter) instead of V2. |
-| Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54489` | Applies to the native TCP protocol. Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). In the `Native`/`Buffers` *format* the offsets layout is not gated by the revision but by the `output_format_native_write_string_with_size_stream` / `input_format_native_read_string_with_size_stream` settings (off by default). When in effect the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of a `LowCardinality` column: a `LowCardinality` dictionary is always written with the default nested serialization, so its `String` values keep the per-value layout (this includes `LowCardinality(String)` and `LowCardinality(Nullable(String))`). |
+| Offsets `String` serialization | `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` | `54489` | Below the threshold `String` column data uses the per-value layout (`VarUInt` length prefix + raw bytes per row) instead of the [offsets layout](#string-type) (cumulative byte offsets as `UInt64`, then all data concatenated). Gated purely on the revision, with no per-column wire marker. At or above the threshold the offsets layout also applies to `String` nested inside composite types (`Array`, `Nullable`, `Map`, `Tuple`, `Variant`, `Dynamic`, `JSON`), but **not** to the dictionary of a `LowCardinality` column: a `LowCardinality` dictionary is always written with the default nested serialization, so its `String` values keep the per-value layout (this includes `LowCardinality(String)` and `LowCardinality(Nullable(String))`). The `Buffers` format is not part of the protocol and always uses the per-value layout. |
 | Aggregate-function versioning | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING` | `54452` | `AggregateFunction` state is written without an embedded version. |
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
@@ -368,7 +368,7 @@ When both peers are the same modern build, the two directions land on the same r
 
 #### `FORMAT Native` output — revision 0 by default, raisable over HTTP {#revision-output}
 
-The `Native` *output* format defaults to revision **`0`**. This covers `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` output `clickhouse-client` writes; in each case the output factory hands `FormatSettings::client_protocol_version` straight to the `NativeWriter`, which governs the `BlockInfo` / `has_custom_serialization` framing. The offsets `String` layout is **not** governed by `client_protocol_version` here: the output format selects it only from `output_format_native_write_string_with_size_stream` (default off), so `FORMAT Native` and `FORMAT Buffers` behave the same and both stay portable by default.
+The `Native` *output* format defaults to revision **`0`**. This covers `SELECT ... FORMAT Native` over HTTP, `INTO OUTFILE ... FORMAT Native`, and the `Native` output `clickhouse-client` writes; in each case the output factory hands `FormatSettings::client_protocol_version` straight to the `NativeWriter`, which governs the `BlockInfo` / `has_custom_serialization` framing *and* the offsets `String` layout. So an HTTP `SELECT ... FORMAT Native` with a raised `client_protocol_version` (≥ `54489`) writes the offsets layout, while the default revision `0` keeps the portable per-value layout.
 
 Over HTTP that default is not the end of the story. A client can raise it with the `?client_protocol_version=<n>` query parameter, which the HTTP handler treats as a reserved parameter rather than a SQL setting: it lands on the query context, and the format layer copies it into `FormatSettings`. Set it high enough and the HTTP `FORMAT Native` output starts including the `BlockInfo` prefix and the `has_custom_serialization` byte, just like the TCP path — so do not assume an HTTP `FORMAT Native` payload is always revision `0`.
 
@@ -378,13 +378,13 @@ Because the parameter lands on the whole query context, it reaches every `Native
 
 The `Native` *input* format always builds its `NativeReader` at revision **`0`**. It never expects a `BlockInfo` prefix, never reads the `has_custom_serialization` byte, and always assumes default serialization — whether it is parsing the body of an `INSERT ... FORMAT Native`, reading a `Native` file, or inferring a schema. `?client_protocol_version=<n>` does not raise the input revision (only the output side reads that parameter).
 
-The offsets `String` layout is the one thing the input format can opt into, and it does so through a dedicated setting rather than the revision: set `input_format_native_read_string_with_size_stream = 1` to read a stream written with `output_format_native_write_string_with_size_stream = 1`. Both default off, so the format stays portable; the reader must be given the same setting the writer used. This is a plain query setting, so an asynchronous insert carries it in its batch key like any other setting.
+Because the input revision is always `0`, the input format always reads the per-value `String` layout; a stream written with the offsets layout (over the native TCP protocol, or via a raised-`client_protocol_version` `SELECT ... FORMAT Native`) is not read back through `FORMAT Native` input — the same asymmetry as the `BlockInfo` framing.
 
 ### Round-trip implications {#revision-round-trip}
 
 For `FORMAT Native` the default is revision `0` at both ends. Data written by `SELECT ... FORMAT Native` at revision `0` reads straight back into `INSERT ... FORMAT Native` with no surprises.
 
-A stream produced at a raised output revision (`?client_protocol_version=<n>` on the `SELECT`) carries the `BlockInfo` and `has_custom_serialization` framing, which the input format — always at revision `0` — does not read back. So raising `client_protocol_version` only makes sense for a consumer that speaks the native TCP protocol, not for a `FORMAT Native` round trip over HTTP. The offsets `String` layout is separate from this framing: it is controlled by `output_format_native_write_string_with_size_stream` / `input_format_native_read_string_with_size_stream`, so a `FORMAT Native` round trip with those two set on both ends works at revision `0`.
+A stream produced at a raised output revision (`?client_protocol_version=<n>` on the `SELECT`) carries the `BlockInfo` and `has_custom_serialization` framing and the offsets `String` layout, none of which the input format — always at revision `0` — reads back. So raising `client_protocol_version` only makes sense for a consumer that speaks the native TCP protocol, not for a `FORMAT Native` round trip over HTTP.
 
 Files are the asymmetric case. A raised `?client_protocol_version=` on a server-side `INSERT INTO FUNCTION file(...)` (or `s3`, `url`) *writes* the file at that revision, but a `file(...)` *read* always parses at revision `0` — so such a file does not round-trip. Either leave `client_protocol_version` off the writing request so the file is plain revision `0`, or move the data over the native TCP protocol, where each direction uses the handshake-negotiated revision.
 
@@ -392,7 +392,7 @@ Files are the asymmetric case. A raised `?client_protocol_version=` on a server-
 |---|---|---|---|
 | Native TCP Data packet | Peer's advertised revision (per direction) | Peer's advertised revision (per direction) | `BlockInfo` whenever revision `> 0`; `has_custom_serialization` at `≥ 54454` |
 | `SELECT ... FORMAT Native` over HTTP | `client_protocol_version` (default `0`) | n/a | Only if `client_protocol_version` raised |
-| `INSERT ... FORMAT Native` over HTTP (body) | n/a | `0` (always) | Framing absent; offsets `String` layout only if `input_format_native_read_string_with_size_stream` |
+| `INSERT ... FORMAT Native` over HTTP (body) | n/a | `0` (always) | Framing absent; `String` always per-value |
 | `INSERT INTO FUNCTION file`/`s3`/`url(..., 'Native')` over HTTP | `client_protocol_version` (default `0`) | `0` (reads always) | On write only if `client_protocol_version` raised — such a file does not read back |
 | `INTO OUTFILE` / local `clickhouse-client` `FORMAT Native` | `0` | `0` | Absent (but `LowCardinality` is kept — see note above) |
 
@@ -717,7 +717,7 @@ Each value carries its own length on the wire.
 
 #### String {#string-type}
 
-Type string: `String`. A `String` column has two wire layouts. Over the native TCP protocol the layout is selected by the protocol revision (see [What the revision gates](#what-the-revision-gates)); in the `Native`/`Buffers` *format* it is selected by the `output_format_native_write_string_with_size_stream` / `input_format_native_read_string_with_size_stream` settings (off by default, so the format stays portable).
+Type string: `String`. A `String` column has two wire layouts, selected by the protocol revision (see [What the revision gates](#what-the-revision-gates)). The revision is the negotiated revision on the native TCP protocol, and `client_protocol_version` for `FORMAT Native` output (default `0`); `FORMAT Native` input is always revision `0`, and the `Buffers` format always uses the per-value layout.
 
 **Per-value layout** — below `DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION` (`54489`), which includes the revision-`0` default of `FORMAT Native`: a sequence of `num_rows` length-prefixed byte sequences:
 
@@ -737,7 +737,7 @@ A column of 3 strings `["ab", "", "c"]` (6 bytes total):
 01 63                    row 2: length 1, "c"
 ```
 
-**Offsets layout** — at revision `54489` and above over the native protocol, or when `output_format_native_write_string_with_size_stream` is set for the `Native`/`Buffers` format: two concatenated streams, the cumulative byte offsets first, then all data:
+**Offsets layout** — at revision `54489` and above: two concatenated streams, the cumulative byte offsets first, then all data:
 
 ```text
 [UInt64 × num_rows: cumulative byte offset (end of each value), little-endian]

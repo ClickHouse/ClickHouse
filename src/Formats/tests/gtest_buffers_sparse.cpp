@@ -5,7 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
-#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Formats/BuffersReader.h>
 #include <Formats/BuffersWriter.h>
@@ -17,8 +16,7 @@ using namespace DB;
 
 /// The Buffers format carries no per-column serialization kind, so a ColumnSparse reaching the
 /// writer must be densified before the type-level serializer (which only accepts a dense column).
-/// Build a sparse String column explicitly and round-trip it through Buffers at both the default
-/// (per-value) and the offsets revisions.
+/// Build a sparse String column explicitly and round-trip it through Buffers.
 TEST(BuffersFormat, SparseStringColumn)
 {
     constexpr size_t n = 10;
@@ -48,29 +46,24 @@ TEST(BuffersFormat, SparseStringColumn)
         return block;
     };
 
-    for (bool with_size_stream : {false, true})
+    FormatSettings format_settings;
+
+    WriteBufferFromOwnString out;
+    BuffersWriter writer(out, std::make_shared<const Block>(header), format_settings);
+    writer.write(make_sparse_block());
+    out.finalize();
+
+    ReadBufferFromString in(out.str());
+    BuffersReader reader(in, header, format_settings);
+    Block result = reader.read();
+
+    ASSERT_EQ(result.rows(), n);
+    const auto & column = *result.getByPosition(0).column;
+    for (size_t i = 0; i < n; ++i)
     {
-        FormatSettings format_settings;
-        format_settings.native.write_string_with_size_stream = with_size_stream;
-        format_settings.native.read_string_with_size_stream = with_size_stream;
-
-        WriteBufferFromOwnString out;
-        BuffersWriter writer(out, std::make_shared<const Block>(header), format_settings);
-        writer.write(make_sparse_block());
-        out.finalize();
-
-        ReadBufferFromString in(out.str());
-        BuffersReader reader(in, header, format_settings);
-        Block result = reader.read();
-
-        ASSERT_EQ(result.rows(), n) << "with_size_stream " << with_size_stream;
-        const auto & column = *result.getByPosition(0).column;
-        for (size_t i = 0; i < n; ++i)
-        {
-            Field got;
-            column.get(i, got);
-            Field expected = Field(String(i == 3 ? "rare1" : i == 7 ? "rare2" : ""));
-            ASSERT_EQ(got, expected) << "with_size_stream " << with_size_stream << ", row " << i;
-        }
+        Field got;
+        column.get(i, got);
+        Field expected = Field(String(i == 3 ? "rare1" : i == 7 ? "rare2" : ""));
+        ASSERT_EQ(got, expected) << "row " << i;
     }
 }

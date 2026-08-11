@@ -6,6 +6,8 @@
 namespace DB
 {
 
+class ColumnString;
+
 struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization::DeserializeBinaryBulkState
 {
     /// Holds full string values when `need_string_data` is true
@@ -107,6 +109,17 @@ private:
     /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
     void deserializeBinaryBulkWithSizeStream(
         ColumnPtr & column,
+        size_t rows_offset,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsCache * cache) const;
+    /// Deserializes the size/offset stream (checking `position_independent_encoding`), appends the
+    /// [rows_offset, ...) range to `column`'s offsets and returns {bytes_to_skip, bytes_to_read} for
+    /// the data stream ({0, 0} when the size-stream getter yields nothing).
+    /// Precondition: settings.path.back() == Substream::StringSizes.
+    std::pair<size_t, size_t> deserializeStringOffsetsAndGetDataRange(
+        ColumnString & column,
         size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,

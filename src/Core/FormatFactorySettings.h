@@ -696,12 +696,6 @@ Write data of [JSON](/reference/data-types/newjson) column as [String](/referenc
     DECLARE(Bool, output_format_native_use_flattened_dynamic_and_json_serialization, false, R"(
 Write data of [JSON](/reference/data-types/newjson) and [Dynamic](/reference/data-types/dynamic) columns in a flattened format (all types/paths as separate subcolumns).
 )", 0) \
-    DECLARE(Bool, output_format_native_write_string_with_size_stream, false, R"(
-Write `String` columns with a separate stream of cumulative byte offsets (the same layout `Array` uses for its offsets) instead of a per-value length prefix. This lets a reader preallocate the exact amount of memory and read the data in one bulk copy. The data is no longer portable to a reader that does not expect this layout, so the reader must be told to expect it with `input_format_native_read_string_with_size_stream`.
-)", 0) \
-    DECLARE(Bool, input_format_native_read_string_with_size_stream, false, R"(
-Read `String` columns written with a separate stream of cumulative byte offsets, as produced by `output_format_native_write_string_with_size_stream`.
-)", 0) \
     \
     DECLARE(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::BestEffort, R"(
 Allows choosing a parser of the text representation of date and time.

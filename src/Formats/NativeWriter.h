@@ -23,12 +23,9 @@ class NativeWriter
 public:
     /** If non-zero client_revision is specified, additional block information can be written.
       */
-    /// `string_with_size_stream` overrides how the size-stream String layout is chosen. Leave it
-    /// unset on the native protocol - it then follows `client_revision`. The Native/Buffers *format*
-    /// sets it explicitly from its format setting, so the format never depends on `client_revision`.
     NativeWriter(
         WriteBuffer & ostr_, UInt64 client_revision_, SharedHeader header_, std::optional<FormatSettings> format_settings_ = std::nullopt, bool remove_low_cardinality_ = false,
-        IndexForNativeFormat * index_ = nullptr, size_t initial_size_of_file_ = 0, std::optional<bool> string_with_size_stream_ = std::nullopt);
+        IndexForNativeFormat * index_ = nullptr, size_t initial_size_of_file_ = 0);
 
     SharedHeader getHeader() const { return header; }
 
@@ -37,7 +34,7 @@ public:
     void flush();
 
     static std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> getSerializationAndColumn(
-        UInt64 client_revision, const ColumnWithTypeAndName & column, bool with_string_size_stream);
+        UInt64 client_revision, const ColumnWithTypeAndName & column);
 
     static void writeData(const ISerialization & serialization, const ColumnPtr & column, WriteBuffer & ostr, const std::optional<FormatSettings> & format_settings, UInt64 offset, UInt64 limit, UInt64 client_revision);
 
@@ -52,7 +49,6 @@ private:
 
     bool remove_low_cardinality;
     std::optional<FormatSettings> format_settings;
-    std::optional<bool> string_with_size_stream;
 };
 
 }
