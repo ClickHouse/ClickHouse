@@ -7,6 +7,7 @@
 #include <Common/BitPackedStringArray.h>
 #include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
+#include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
@@ -195,8 +196,9 @@ private:
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 
-    /// Reusable buffer to avoid repeated heap allocations during deserialization.
+    /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
+    PaddedPODArray<char> deserialization_buffer;
 };
 
 /// Closed range of rows.

@@ -315,7 +315,7 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
     }
 
     auto postings = std::make_shared<PostingList>();
-    resolveCodec(header).decode(istr, *postings);
+    resolveCodec(header).decode(istr, *postings, deserialization_buffer);
     return postings;
 }
 

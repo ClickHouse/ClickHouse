@@ -147,7 +147,7 @@ public:
     ///
     /// Decompression restores delta values and then performs an inclusive scan
     /// to reconstruct absolute row ids.
-    void decode(ReadBuffer & in, PostingList & postings);
+    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer);
 
 private:
     void reset()
@@ -205,7 +205,7 @@ private:
     /// Decodes into the `current_segment` member and advances `prev_row_id`.
     void decodeBlock(std::span<const std::byte> & in, size_t count);
 
-    /// All segments
+    /// All segments. Filled on encode only: decode reads the payload from the buffer passed to it.
     std::string compressed_data;
     /// Last encoded/decoded row id
     uint32_t prev_row_id = 0;
@@ -244,7 +244,7 @@ public:
     PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
 
     void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
-    void decode(ReadBuffer & in, PostingList & postings) const override;
+    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
 };
 
 /// A codec that applies no compression: a posting list block is stored as
@@ -260,7 +260,7 @@ public:
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
     void encode(const PostingList &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
-    void decode(ReadBuffer & in, PostingList & postings) const override;
+    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
 };
 
 }

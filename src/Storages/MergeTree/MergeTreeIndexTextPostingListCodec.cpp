@@ -9,6 +9,22 @@
 namespace DB
 {
 
+/// Returns `num_bytes` contiguous bytes read from `in` and advances it past them.
+/// Points into the buffer of `in` if the data is already there, into `buffer` otherwise.
+static const char * readContiguousBytes(ReadBuffer & in, size_t num_bytes, PaddedPODArray<char> & buffer)
+{
+    if (in.position() && static_cast<size_t>(in.buffer().end() - in.position()) >= num_bytes)
+    {
+        const char * data = in.position();
+        in.position() += num_bytes;
+        return data;
+    }
+
+    buffer.resize(num_bytes);
+    in.readStrict(buffer.data(), num_bytes);
+    return buffer.data();
+}
+
 /// Normalize the requested block size to a multiple of BLOCK_SIZE.
 /// We encode/decode posting lists in fixed-size blocks, and the SIMD bit-packing
 /// implementation expects block-aligned sizes for efficient processing.
@@ -78,7 +94,7 @@ void SegmentedPostingListCodec::insert(std::span<uint32_t> row_ids)
         flushCurrentSegment();
 }
 
-void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings)
+void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer)
 {
     Header header;
     header.read(in);
@@ -92,21 +108,17 @@ void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings)
     const size_t tail_size = header.cardinality % BLOCK_SIZE;
 
     current_segment.reserve(BLOCK_SIZE);
-    if (header.payload_bytes > (compressed_data.capacity() - compressed_data.size()))
-        compressed_data.reserve(compressed_data.size() + header.payload_bytes);
-    compressed_data.resize(header.payload_bytes);
+    const char * payload_data = readContiguousBytes(in, header.payload_bytes, buffer);
+    std::span<const std::byte> payload(reinterpret_cast<const std::byte *>(payload_data), header.payload_bytes);
 
-    in.readStrict(compressed_data.data(), header.payload_bytes);
-
-    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte*>(compressed_data.data()), compressed_data.size());
     for (size_t i = 0; i < num_blocks; i++)
     {
-        decodeBlock(compressed_data_span, BLOCK_SIZE);
+        decodeBlock(payload, BLOCK_SIZE);
         postings.addMany(current_segment.size(), current_segment.data());
     }
     if (tail_size)
     {
-        decodeBlock(compressed_data_span, tail_size);
+        decodeBlock(payload, tail_size);
         postings.addMany(current_segment.size(), current_segment.data());
     }
 }
@@ -214,34 +226,22 @@ void encodePostingsInBlocks(
 
 }
 
-void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings) const
-{
-    SegmentedPostingListCodec impl;
-    impl.decode(in, postings);
-}
-
-void PostingListCodecBitpacking::encode(
-        const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
+void PostingListCodecBitpacking::encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
 {
     encodePostingsInBlocks(postings, max_rowids_in_segment, IPostingListCodec::Type::Bitpacking, info, out);
 }
 
-void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings) const
+void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const
+{
+    SegmentedPostingListCodec impl;
+    impl.decode(in, postings, buffer);
+}
+
+void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const
 {
     size_t num_bytes = 0;
     readVarUInt(num_bytes, in);
-
-    /// If the posting list is completely in the buffer, avoid copying.
-    if (in.position() && in.position() + num_bytes <= in.buffer().end())
-    {
-        postings = PostingList::read(in.position());
-        in.position() += num_bytes;
-        return;
-    }
-
-    PaddedPODArray<char> buffer(num_bytes);
-    in.readStrict(buffer.data(), num_bytes);
-    postings = PostingList::read(buffer.data());
+    postings = PostingList::read(readContiguousBytes(in, num_bytes, buffer));
 }
 
 }
