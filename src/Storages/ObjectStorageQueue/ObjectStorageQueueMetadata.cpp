@@ -2085,6 +2085,7 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         throw Exception(ErrorCodes::KEEPER_EXCEPTION, "{}", error_msg);
     }
 
+    reconcileFailedFilesCache();
     LOG_INFO(log, "Successfully dropped {} failed files", file_paths.size());
 }
 
