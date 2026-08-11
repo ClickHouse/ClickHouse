@@ -3223,3 +3223,97 @@ def test_dedup_log_rotation_fenced_after_record(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_DETACH_CLONE_ROLLBACK = "12345678-abcd-abcd-abcd-12345678ab36"
+
+
+def test_detach_clone_removed_when_covering_part_creation_fails(started_cluster):
+    """
+    Regression for the rollback scope of a rejected `DETACH PART` / `DETACH PARTITION`: the
+    detached clone is written to shared `detached/` BEFORE the covering empty part is created and
+    committed, and the rollback used to cover only the commit (`renameAndCommitEmptyParts`). A
+    failure inside `createEmptyDataParts` (or `initCoverageWithNewEmptyParts`) therefore returned
+    an error while leaving a durable, attachable `detached/<part>` copy behind — once the live
+    part was later retired for real, a normal `ATTACH PARTITION` could re-import data from a
+    `DETACH` that never committed.
+
+    The `merge_tree_create_empty_part_inject_failure` failpoint fails exactly that window: after
+    the clone is durable and before the covering empty part exists. The rollback must remove the
+    clone in both entrypoints.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_create_empty_part_inject_failure"
+    table = "test_detach_clone_rollback"
+
+    def detached_count():
+        return int(
+            node1.query(
+                f"SELECT count() FROM system.detached_parts"
+                f" WHERE database = currentDatabase() AND table = '{table}'"
+            ).strip()
+        )
+
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DETACH_CLONE_ROLLBACK}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
+
+        part_name = node1.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+            f" AND table = '{table}' AND active AND partition = '1' AND rows > 0 LIMIT 1"
+        ).strip()
+        assert part_name
+
+        # `DETACH PART`: the clone is durable when the injected failure fires, so the rollback
+        # must remove it and the part must stay active.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="Injected failure into MergeTreeData::createEmptyPart"):
+                node1.query(f"ALTER TABLE {table} DETACH PART '{part_name}'")
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4, (
+                "DETACH PART failed before its commit but the part was still hidden"
+            )
+            assert detached_count() == 0, (
+                "A DETACH PART rejected after writing its clone left the attachable copy behind"
+            )
+
+            # `DETACH PARTITION`: same fail-open window in the other entrypoint.
+            with pytest.raises(Exception, match="Injected failure into MergeTreeData::createEmptyPart"):
+                node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4, (
+                "DETACH PARTITION failed before its commit but the parts were still hidden"
+            )
+            assert detached_count() == 0, (
+                "A DETACH PARTITION rejected after writing its clones left attachable copies behind"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The decisive behavior-level check: retire the partition for real, then ATTACH it.
+        # Nothing may come back — with the fail-open window, the stale clones of the rejected
+        # DETACHes above would resurrect the dropped rows here.
+        node1.query(f"ALTER TABLE {table} DROP PARTITION 1")
+        assert node1.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip() == "2\n4"
+        node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+        rows = node1.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+        assert rows == "2\n4", (
+            f"ATTACH PARTITION resurrected data from a DETACH that never committed, got: {rows!r}"
+        )
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass

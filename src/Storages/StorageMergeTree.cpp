@@ -3447,25 +3447,41 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                 auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
                 auto cloned_storage = part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
                 if (cloned_storage && (*getSettings())[MergeTreeSetting::leader_election])
-                    detached_clones.emplace_back(getStoragePolicy()->getDiskByName(cloned_storage->getDiskName()), cloned_storage->getPartDirectory());
+                {
+                    /// The clone's `part_dir` is prefixed with `detached/` (it lives in the
+                    /// detached namespace); the rollback helper prepends that prefix itself,
+                    /// so store the bare directory name.
+                    detached_clones.emplace_back(
+                        getStoragePolicy()->getDiskByName(cloned_storage->getDiskName()),
+                        fs::path(cloned_storage->getPartDirectory()).filename().string());
+                }
             }
 
             {
-                auto future_parts = initCoverageWithNewEmptyParts({part});
-
-                LOG_TEST(log, "Made {} empty parts in order to cover {} part. With txn {}",
-                         fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
-                         transaction.getTID());
-
-                auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
+                FutureNewEmptyParts future_parts;
+                MutableDataPartsVector new_data_parts;
+                std::vector<scope_guard> tmp_dir_holders;
+                /// The rollback must cover the ENTIRE post-clone path, not only the commit: any
+                /// failure between writing the clone above and committing the covering empty
+                /// part leaves a durable, attachable `detached/<part>` copy of a `DETACH` that
+                /// never committed.
                 try
                 {
+                    future_parts = initCoverageWithNewEmptyParts({part});
+
+                    LOG_TEST(log, "Made {} empty parts in order to cover {} part. With txn {}",
+                             fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
+                             transaction.getTID());
+
+                    std::tie(new_data_parts, tmp_dir_holders) = createEmptyDataParts(*this, future_parts, txn);
                     renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
                 }
                 catch (...)
                 {
                     /// A rejected `DETACH` must not leave persistent detached copies behind on
                     /// shared storage: a later `ATTACH` could re-import data from a DDL that failed.
+                    if (!detached_clones.empty())
+                        tryLogCurrentException(log, "DETACH was rejected before its commit; removing the detached copies it already wrote");
                     removeDetachedClonesOfRejectedDetach(detached_clones);
                     throw;
                 }
@@ -3586,27 +3602,39 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                     auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
                     auto cloned_storage = part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
                     if (cloned_storage && (*getSettings())[MergeTreeSetting::leader_election])
-                        detached_clones.emplace_back(getStoragePolicy()->getDiskByName(cloned_storage->getDiskName()), cloned_storage->getPartDirectory());
+                    {
+                        /// The clone's `part_dir` is prefixed with `detached/` (it lives in the
+                        /// detached namespace); the rollback helper prepends that prefix itself,
+                        /// so store the bare directory name.
+                        detached_clones.emplace_back(
+                            getStoragePolicy()->getDiskByName(cloned_storage->getDiskName()),
+                            fs::path(cloned_storage->getPartDirectory()).filename().string());
+                    }
                 }
             }
 
-            auto future_parts = initCoverageWithNewEmptyParts(parts);
-
-            LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
-                     future_parts.size(), parts.size(),
-                     fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
-                     transaction.getTID());
-
-
-            auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
+            FutureNewEmptyParts future_parts;
+            MutableDataPartsVector new_data_parts;
+            std::vector<scope_guard> tmp_dir_holders;
+            /// See the comment in `dropPart` — the rollback covers the entire post-clone path.
             try
             {
+                future_parts = initCoverageWithNewEmptyParts(parts);
+
+                LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
+                         future_parts.size(), parts.size(),
+                         fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames(parts), ", "),
+                         transaction.getTID());
+
+                std::tie(new_data_parts, tmp_dir_holders) = createEmptyDataParts(*this, future_parts, txn);
                 renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
             }
             catch (...)
             {
                 /// A rejected `DETACH` must not leave persistent detached copies behind on
                 /// shared storage: a later `ATTACH` could re-import data from a DDL that failed.
+                if (!detached_clones.empty())
+                    tryLogCurrentException(log, "DETACH was rejected before its commit; removing the detached copies it already wrote");
                 removeDetachedClonesOfRejectedDetach(detached_clones);
                 throw;
             }
@@ -4743,6 +4771,13 @@ void StorageMergeTree::clearDataAfterPartitionDDL(std::string_view ddl_kind, boo
 
 void StorageMergeTree::removeDetachedClonesOfRejectedDetach(const std::vector<DetachedCloneToRollback> & clones)
 {
+    /// Fail-closed: a removal failure must fail the command instead of being swallowed —
+    /// otherwise the `DETACH` would return its original exception while the attachable
+    /// `detached/<part>` copy stays durable on shared storage, and a later `ATTACH` could
+    /// resurrect data from a `DETACH` that never committed. Attempt every clone (so one
+    /// failure does not leave the rest behind), then rethrow the first error, which names
+    /// the copies that require manual cleanup before an `ATTACH` in their ranges is safe.
+    std::exception_ptr first_error;
     for (const auto & [disk, dir_name] : clones)
     {
         try
@@ -4752,9 +4787,14 @@ void StorageMergeTree::removeDetachedClonesOfRejectedDetach(const std::vector<De
         }
         catch (...)
         {
-            tryLogCurrentException(log, fmt::format("Cannot remove detached copy {} of a rejected DETACH", dir_name));
+            tryLogCurrentException(log, fmt::format(
+                "Cannot remove detached copy {} of a rejected DETACH; it remains attachable and must be removed manually", dir_name));
+            if (!first_error)
+                first_error = std::current_exception();
         }
     }
+    if (first_error)
+        std::rethrow_exception(first_error);
 }
 
 void StorageMergeTree::throwIfTransactionalPartitionOpUnderLeaderElection(const MergeTreeTransactionPtr & txn, std::string_view command) const

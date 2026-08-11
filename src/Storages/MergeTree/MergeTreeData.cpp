@@ -454,6 +454,11 @@ namespace FailPoints
     extern const char merge_tree_leader_election_stale_lease_mid_clear_empty_parts[];
     extern const char merge_tree_grab_old_parts_skip[];
 
+    /// Deterministically fails `createEmptyPart`, i.e. the window between writing a `DETACH`ed
+    /// part's clone to shared `detached/` and committing the covering empty part: the rollback
+    /// of the already-durable detached clones must run for the whole post-clone path.
+    extern const char merge_tree_create_empty_part_inject_failure[];
+
     /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of a sequence
     /// of permanent changes to the shared `detached/` namespace (`ATTACH PARTITION`): the first
     /// change succeeds and the next fence rejects the command, so the rollback journal is
@@ -12990,6 +12995,11 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
         const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn) const
 {
+    fiu_do_on(FailPoints::merge_tree_create_empty_part_inject_failure,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure into MergeTreeData::createEmptyPart");
+    });
+
     auto settings = getSettings();
 
     auto block = metadata_snapshot->getSampleBlock();
