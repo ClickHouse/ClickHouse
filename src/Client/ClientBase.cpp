@@ -3891,6 +3891,14 @@ bool ClientBase::processAIChat(const String & text)
     if (!checkAIProviderAcknowledgment())
         return true;
 
+    /// Mark the queries the agent generates and runs on the connection (schema exploration,
+    /// documentation lookups and the read-only/confirmed queries) with the client's own name in
+    /// `client_agent`, so they are distinguishable from user-typed queries in the query log.
+    /// Restored after the turn, so ordinary queries keep whatever `client_agent` was detected.
+    const String saved_client_agent = client_context->getClientInfo().client_agent;
+    client_context->getClientInfo().client_agent = "clickhouse-" + getName();
+    SCOPE_EXIT({ client_context->getClientInfo().client_agent = saved_client_agent; });
+
     try
     {
         ai_agent->chat(text);
