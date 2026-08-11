@@ -43,6 +43,9 @@ ${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT i
 echo "--- row value is valid as a comparison operand"
 ${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t WHERE (id, val) = (2, 'y'))) ORDER BY id"
 
+echo "--- tuple of predicates in WHERE is lowered to a conjunction"
+${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t WHERE (id > 1, val = 'y'))) ORDER BY id"
+
 echo "--- tuple in the SELECT list is rejected by ClickHouse (SQLite: row value misused)"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM sqlite('${DB_PATH}', (SELECT tuple(id, val) FROM t))" 2>&1 | grep -q "BAD_ARGUMENTS" && echo "rejected"
 

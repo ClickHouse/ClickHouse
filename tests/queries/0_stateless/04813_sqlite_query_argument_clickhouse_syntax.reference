@@ -4,6 +4,8 @@
 1	x
 --- row value is valid as a comparison operand
 2	y
+--- tuple of predicates in WHERE is lowered to a conjunction
+2	y
 --- tuple in the SELECT list is rejected by ClickHouse (SQLite: row value misused)
 rejected
 --- tuple literal in the SELECT list is rejected by ClickHouse
