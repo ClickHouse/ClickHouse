@@ -48,6 +48,13 @@ docker run -d --name seaweedfs -p 8333:8333 \
 
 The S3 endpoint listens on port 8333. Once the stack is up, more buckets can be created at any time with `echo "s3.bucket.create -name mybucket" | docker exec -i seaweedfs weed shell`.
 
+By default a write is acknowledged once it is handed to the operating system. To fsync every write to disk before acknowledging it, enable fsync on the bucket:
+
+```bash
+echo "fs.configure -locationPrefix=/buckets/clickhouse/ -fsync -apply" | \
+  docker exec -i seaweedfs weed shell
+```
+
 ## S3-backed MergeTree {#s3-backed-mergetree}
 
 The S3-backed merge tree configuration is compatible with minor changes:
