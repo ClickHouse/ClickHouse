@@ -79,6 +79,10 @@ OPTIMIZE TABLE tab FINAL;
 SELECT countIf(explain ILIKE '%__text_index%') > 0 AND countIf(explain ILIKE '%is_deleted = 0%') > 0
 FROM (EXPLAIN actions = 1, pretty = 1 SELECT count() FROM tab FINAL WHERE str = 'bar');
 
+-- 1: same, via the separate PREWHERE rewrite path
+SELECT countIf(explain ILIKE '%__text_index%') > 0 AND countIf(explain ILIKE '%is_deleted = 0%') > 0
+FROM (EXPLAIN actions = 1, pretty = 1 SELECT count() FROM tab FINAL PREWHERE str = 'bar');
+
 SELECT count() FROM tab;                            -- 3: the tombstone is still on disk
 SELECT count() FROM tab FINAL WHERE str = 'bar';    -- 0: deleted row is dropped
 SELECT count() FROM tab FINAL WHERE str = 'baz';    -- 1: survivor
