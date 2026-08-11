@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsString additional_result_filter;
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool enable_writes_to_query_cache;
+    extern const SettingsBool implicit_transaction;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -515,6 +516,14 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
     /// across the read. Fail closed until the hash is made transaction-snapshot-aware: the consistent
     /// query cache is bypassed and `REFRESH ... IF CHANGED` refreshes unconditionally.
     if (context->getCurrentTransaction())
+        return {};
+
+    /// `implicit_transaction` starts the transaction only later, on the cache-miss path (after the
+    /// cache probe that calls into here), so at probe time `getCurrentTransaction` is still null even
+    /// though the read itself will run on a transaction snapshot. That is the same live-state-vs-snapshot
+    /// divergence as above - a cache entry created outside a transaction could be served to a query that
+    /// would have read a different snapshot - so fail closed as if the transaction had already begun.
+    if (context->getSettingsRef()[Setting::implicit_transaction])
         return {};
 
     ASTs filter_asts;
