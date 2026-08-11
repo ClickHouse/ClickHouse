@@ -89,9 +89,12 @@ MergeTreeIndexGranuleSpatialBbox::MergeTreeIndexGranuleSpatialBbox(const String 
 
 void MergeTreeIndexGranuleSpatialBbox::serializeBinary(WriteBuffer & ostr) const
 {
+    /// A granule can legitimately have no data: all rows in it may be empty
+    /// Ring/Polygon/MultiPolygon values (`[]`). Encode that explicitly instead of
+    /// throwing, so such granules are stored as non-prunable rather than failing the insert.
+    writeBinaryLittleEndian(static_cast<UInt8>(has_data ? 1 : 0), ostr);
     if (!has_data)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Attempt to serialize empty spatial_bbox index granule for index '{}'", index_name);
+        return;
 
     writeBinaryLittleEndian(xmin, ostr);
     writeBinaryLittleEndian(ymin, ostr);
@@ -101,11 +104,16 @@ void MergeTreeIndexGranuleSpatialBbox::serializeBinary(WriteBuffer & ostr) const
 
 void MergeTreeIndexGranuleSpatialBbox::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
 {
+    UInt8 has_data_byte = 0;
+    readBinaryLittleEndian(has_data_byte, istr);
+    has_data = has_data_byte != 0;
+    if (!has_data)
+        return;
+
     readBinaryLittleEndian(xmin, istr);
     readBinaryLittleEndian(ymin, istr);
     readBinaryLittleEndian(xmax, istr);
     readBinaryLittleEndian(ymax, istr);
-    has_data = true;
 }
 
 
