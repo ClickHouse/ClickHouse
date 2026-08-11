@@ -120,3 +120,58 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.altered
     MODIFY ORDER BY (a, runningConcurrency(s2, e2)); -- { serverError BAD_ARGUMENTS }
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+-- A TTL expression must be deterministic too, with `allow_suspicious_ttl_expressions` as the
+-- escape hatch. Table-scoped, so these rows stay parallel-safe.
+CREATE TABLE ttl_04872 (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree ORDER BY a
+    TTL s + toIntervalSecond(runningConcurrency(s, e)); -- { serverError BAD_ARGUMENTS }
+
+SET allow_suspicious_ttl_expressions = 1;
+CREATE TABLE ttl_04872 (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree ORDER BY a
+    TTL s + toIntervalSecond(runningConcurrency(s, e));
+DROP TABLE ttl_04872;
+SET allow_suspicious_ttl_expressions = 0;
+
+-- Sibling control: the same expression with a function that is already non-deterministic is
+-- refused on both sides of this change, so the row above is a statement about the declaration.
+CREATE TABLE ttl_sibling_04872 (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree ORDER BY a
+    TTL s + toIntervalSecond(rowNumberInAllBlocks()); -- { serverError BAD_ARGUMENTS }
+
+-- Negative control: a deterministic TTL expression is still accepted.
+CREATE TABLE ttl_plain_04872 (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree ORDER BY a
+    TTL s + toIntervalSecond(1);
+DROP TABLE ttl_plain_04872;
+
+-- Reading a table with a pending mutation that assigns the function is refused while
+-- `apply_mutations_on_fly` is on: the on-fly path would have to evaluate it per part. The
+-- mutation itself is accepted, and once it materialises the table reads normally again, so the
+-- refusal lasts only as long as the mutation is unfinished. There is no setting that skips it.
+CREATE TABLE onfly_04872 (a UInt64, s DateTime, e DateTime, v UInt32) ENGINE = MergeTree ORDER BY a;
+SYSTEM STOP MERGES onfly_04872;
+INSERT INTO onfly_04872 VALUES (1, '2020-01-01 00:00:00', '2020-01-01 00:00:10', 0);
+
+SET apply_mutations_on_fly = 1;
+ALTER TABLE onfly_04872 UPDATE v = runningConcurrency(s, e) WHERE 1;
+SELECT v FROM onfly_04872; -- { serverError BAD_ARGUMENTS }
+
+-- `allow_nondeterministic_mutations` guards mutation submission on `Replicated*` tables, not
+-- this read, so it does not help here.
+SELECT v FROM onfly_04872 SETTINGS allow_nondeterministic_mutations = 1; -- { serverError BAD_ARGUMENTS }
+
+-- Negative control: with the on-fly path off, the same pending mutation is invisible to the read.
+SELECT 'onfly off', v FROM onfly_04872 SETTINGS apply_mutations_on_fly = 0;
+
+-- The refusal ends with the mutation.
+SYSTEM START MERGES onfly_04872;
+ALTER TABLE onfly_04872 UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'onfly after materialisation', v FROM onfly_04872;
+SET apply_mutations_on_fly = 0;
+DROP TABLE onfly_04872;
+
+-- Sibling control for the same read path.
+CREATE TABLE onfly_sibling_04872 (a UInt64, s DateTime, e DateTime, v UInt32) ENGINE = MergeTree ORDER BY a;
+SYSTEM STOP MERGES onfly_sibling_04872;
+INSERT INTO onfly_sibling_04872 VALUES (1, '2020-01-01 00:00:00', '2020-01-01 00:00:10', 0);
+ALTER TABLE onfly_sibling_04872 UPDATE v = rowNumberInAllBlocks() WHERE 1;
+SELECT v FROM onfly_sibling_04872 SETTINGS apply_mutations_on_fly = 1; -- { serverError BAD_ARGUMENTS }
+DROP TABLE onfly_sibling_04872;
