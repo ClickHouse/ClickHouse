@@ -449,6 +449,75 @@ def test_reload_remove_retries_failed_unregister(start_cluster):
     reload_config_on_all(CONFIG_WITH_PWD)
 
 
+def test_reload_remove_readd_cancels_pending_unregister(start_cluster):
+    """Re-adding the same discovery path must cancel a queued pending unregister."""
+    reload_config_on_all(CONFIG_WITH_PWD)
+    check_on_cluster(
+        list(nodes.values()),
+        len(nodes),
+        cluster_name="test_reload_cluster",
+        what="count()",
+        msg="Cluster not ready before remove/re-add unregister test",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
+
+    node0 = nodes["node0"]
+    node1 = nodes["node1"]
+    node0.query(
+        "SYSTEM ENABLE FAILPOINT cluster_discovery_unregister_fail",
+        password="passwordAbc",
+    )
+    try:
+        reload_config_on_node(node0, CONFIG_NO_DISCOVERY)
+
+        for retry in range(10):
+            count = int(
+                node0.query(
+                    "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster'",
+                    password="passwordAbc",
+                )
+            )
+            if count == 0:
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError("node0 still exposes removed discovery cluster after reload")
+
+        # Re-add while unregister is still failing so pending cleanup remains queued.
+        reload_config_on_node(node0, CONFIG_WITH_PWD)
+        check_on_cluster(
+            [node0, node1],
+            len(nodes),
+            cluster_name="test_reload_cluster",
+            what="count()",
+            msg="Cluster was not restored on node0 after re-add",
+            query_params={"password": "passwordAbc"},
+            retries=6,
+        )
+    finally:
+        node0.query(
+            "SYSTEM DISABLE FAILPOINT cluster_discovery_unregister_fail",
+            password="passwordAbc",
+        )
+
+    # Pending retry must not delete the live ephemeral after re-add.
+    for _ in range(15):
+        hosts = int(
+            node1.query(
+                "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster'",
+                password="passwordAbc",
+            )
+        )
+        if hosts != len(nodes):
+            raise AssertionError(
+                f"Pending unregister deleted re-registered ephemeral; hosts on node1={hosts}"
+            )
+        time.sleep(1)
+
+    reload_config_on_all(CONFIG_WITH_PWD)
+
+
 def test_reload_add_remove_multicluster_root(start_cluster):
     reload_config_on_all(CONFIG_MULTICLUSTER_ROOT)
 

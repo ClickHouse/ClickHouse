@@ -227,6 +227,9 @@ private:
     /// Returns false if Keeper remove failed; caller should queue a retry.
     bool unregisterFromZk(const ClusterInfo & info);
     bool tryUnregisterPath(const String & zk_name, const String & zk_root, const String & cluster_name_for_log);
+    /// Drop pending cleanup for a path that is live again (participant re-registered).
+    void cancelPendingUnregister(const String & zk_name, const String & zk_root);
+    bool hasActiveParticipantOnPath(const String & zk_name, const String & zk_root) const;
     /// Retries failed unregisters. Returns true when the queue is empty.
     bool retryPendingUnregisters();
 

@@ -326,6 +326,11 @@ void ClusterDiscovery::addStaticCluster(ParsedStaticDiscovery && parsed)
             /* observer_mode= */ parsed.observer,
             /* invisible= */ parsed.invisible));
 
+    /// Re-adding a participant on the same path must not let a stale pending unregister
+    /// delete the ephemeral after registerInZk (or before the first upsert).
+    if (!parsed.observer)
+        cancelPendingUnregister(parsed.zk_name, parsed.zk_root);
+
     get_nodes_callbacks[name] = std::make_shared<Coordination::WatchCallback>(
         [cluster_name = name, my_clusters_to_update = clusters_to_update](auto)
         {
@@ -910,6 +915,7 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
         if (existing == payload)
         {
             LOG_DEBUG(log, "Current node {} already registered in cluster {} with up-to-date data", current_node_name, info.name);
+            cancelPendingUnregister(info.zk_name, info.zk_root);
             return;
         }
         /// Recreate ephemeral so children watches fire; setData alone does not notify peers.
@@ -917,6 +923,7 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
     }
 
     zk->create(node_path, payload, zkutil::CreateMode::Ephemeral);
+    cancelPendingUnregister(info.zk_name, info.zk_root);
     LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);
 }
 
@@ -961,6 +968,26 @@ bool ClusterDiscovery::unregisterFromZk(const ClusterInfo & info)
     }
 }
 
+void ClusterDiscovery::cancelPendingUnregister(const String & zk_name, const String & zk_root)
+{
+    std::erase_if(
+        pending_zk_unregisters,
+        [&](const PendingZkUnregister & pending)
+        {
+            return pending.zk_name == zk_name && pending.zk_root == zk_root;
+        });
+}
+
+bool ClusterDiscovery::hasActiveParticipantOnPath(const String & zk_name, const String & zk_root) const
+{
+    for (const auto & [_, info] : clusters_info)
+    {
+        if (!info.current_node_is_observer && info.zk_name == zk_name && info.zk_root == zk_root)
+            return true;
+    }
+    return false;
+}
+
 bool ClusterDiscovery::retryPendingUnregisters()
 {
     if (pending_zk_unregisters.empty())
@@ -971,6 +998,16 @@ bool ClusterDiscovery::retryPendingUnregisters()
 
     for (const auto & pending : pending_zk_unregisters)
     {
+        /// Cluster was re-added on this path; do not delete its live ephemeral.
+        if (hasActiveParticipantOnPath(pending.zk_name, pending.zk_root))
+        {
+            LOG_DEBUG(
+                log,
+                "Skipping pending unregister for cluster '{}' because a participant is active on the same path",
+                pending.cluster_name);
+            continue;
+        }
+
         bool ok = false;
         try
         {
