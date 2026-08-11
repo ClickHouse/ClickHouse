@@ -1,12 +1,10 @@
 #include <Processors/Port.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -54,13 +52,6 @@ Int64 getCurrentThreadMemoryUsage()
     return thread.memory_tracker.get() + thread.untracked_memory.load();
 }
 
-CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_codec)
-{
-    ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    return CompressionCodecFactory::instance().get(ast, nullptr);
-}
-
 std::pair<MergeTreeIndexOutputStreams, std::vector<std::unique_ptr<MergeTreeIndexWriterStream>>>
 makeOutputStreams(
     const MergeTreeIndexSubstreams & index_substreams,
@@ -70,7 +61,7 @@ makeOutputStreams(
     const String & marks_file_extension,
     const MergeTreeWriterSettings & settings)
 {
-    auto marks_compression_codec = makeMarksCompressionCodec(settings.marks_compression_codec);
+    auto marks_compression_codec = CompressionCodecFactory::instance().get(settings.marks_compression_codec);
     MergeTreeIndexOutputStreams streams;
     std::vector<std::unique_ptr<MergeTreeIndexWriterStream>> streams_holders;
 
