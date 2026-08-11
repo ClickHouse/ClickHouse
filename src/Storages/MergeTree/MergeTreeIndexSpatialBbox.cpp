@@ -181,27 +181,51 @@ MergeTreeIndexConditionSpatialBbox::extractQueryBbox(
         if (node->function_base && node->function_base->isSpatialPredicate()
             && node->children.size() >= 2)
         {
+            /// `pointInPolygon` is variadic: besides a single Polygon/MultiPolygon argument,
+            /// it also accepts a MultiPolygon spread across several constant polygon
+            /// arguments, e.g. pointInPolygon(geom, poly1, poly2, ...), matching a point
+            /// that falls in ANY of them. The query bbox must therefore be the union of
+            /// all constant geometry children, not just the first one, or granules that
+            /// only match a later argument would be incorrectly pruned.
             const ActionsDAG::Node * input_child = nullptr;
-            const ActionsDAG::Node * const_child = nullptr;
+            bool has_bbox = false;
+            QueryBbox bbox;
             for (const auto * child : node->children)
             {
                 if (child->type == ActionsDAG::ActionType::INPUT
                     && child->result_name == col_name
                     && !input_child)
+                {
                     input_child = child;
-                else if (child->type == ActionsDAG::ActionType::COLUMN
-                         && child->is_deterministic_constant
-                         && !const_child)
-                    const_child = child;
+                    continue;
+                }
+
+                if (child->type != ActionsDAG::ActionType::COLUMN || !child->is_deterministic_constant)
+                    continue;
+
+                double xmin = 0;
+                double ymin = 0;
+                double xmax = 0;
+                double ymax = 0;
+                if (!tryExtractConstGeoBbox(child, xmin, ymin, xmax, ymax))
+                    continue;
+
+                if (!has_bbox)
+                {
+                    bbox = {xmin, ymin, xmax, ymax};
+                    has_bbox = true;
+                }
+                else
+                {
+                    bbox.xmin = std::min(bbox.xmin, xmin);
+                    bbox.ymin = std::min(bbox.ymin, ymin);
+                    bbox.xmax = std::max(bbox.xmax, xmax);
+                    bbox.ymax = std::max(bbox.ymax, ymax);
+                }
             }
 
-            if (input_child && const_child)
-            {
-                QueryBbox bbox;
-                if (tryExtractConstGeoBbox(const_child,
-                    bbox.xmin, bbox.ymin, bbox.xmax, bbox.ymax))
-                    return bbox;
-            }
+            if (input_child && has_bbox)
+                return bbox;
         }
 
         /// Only recurse into `and` children: an `or` (or any other function) can be true
