@@ -1,18 +1,21 @@
--- Tags: no-ordinary-database, no-replicated-database
+-- Tags: no-ordinary-database, no-replicated-database, need-query-parameters
 -- no-ordinary-database: CREATE OR REPLACE requires an Atomic database.
 -- no-replicated-database: POPULATE is not supported in a Replicated database.
 
 -- The DROPs that CREATE OR REPLACE issues internally (cleaning up its temporary table on failure,
 -- and dropping the replaced table after the swap) are steps of one user statement, not user DROPs,
 -- so `ignore_drop_queries_probability` must not skip or rewrite them. When it does, the temporary
--- table is stranded as a `_tmp_replace_*` table that is invisible to the user, holds its data and
--- survives a restart, and one is leaked per statement.
+-- table is left behind as a `_tmp_replace_*` table that still holds its data and survives a
+-- restart, and one is leaked per statement.
+--
+-- The setup and teardown DROPs below pin the setting to 0: they are ordinary user DROPs, so the
+-- injection this test turns on would eat them too and leave the test's own tables behind.
 
 SET ignore_drop_queries_probability = 1;
 
 SELECT '-- failure path: the temporary table must be cleaned up, not stranded';
 
-DROP TABLE IF EXISTS dst_04796 SYNC;
+DROP TABLE IF EXISTS dst_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE dst_04796 (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO dst_04796 SELECT number FROM numbers(10);
 
@@ -44,15 +47,13 @@ CREATE OR REPLACE TABLE dst_04796 (a UInt64) ENGINE = MergeTree ORDER BY a AS SE
 
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '%tmp_replace%';
 
-DROP TABLE dst_04796 SYNC;
+DROP TABLE dst_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
 
 SELECT '-- a view temporary is not MergeTree, so its internal DROP would be rewritten to TRUNCATE';
 
--- A rewritten internal DROP takes an exclusive lock on the temporary storage under the outer
--- statement's query id (which already holds read locks on it), so it can also raise
--- `RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked`.
-DROP TABLE IF EXISTS src_04796 SYNC;
-DROP TABLE IF EXISTS mv_04796 SYNC;
+-- A rewritten internal DROP asks for an exclusive lock under the outer statement's query id.
+DROP TABLE IF EXISTS src_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS mv_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
 
 CREATE TABLE src_04796 (id UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO src_04796 SELECT number FROM numbers(100);
@@ -67,14 +68,29 @@ SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LI
 -- The failed replace must leave the original view working.
 SELECT count() FROM mv_04796;
 
+SELECT '-- CREATE OR REPLACE VIEW on a non-Atomic database takes its own internal DROP path';
+
+-- On a non-Atomic database the replace is done by dropping the existing view in place, and a
+-- rewritten DROP reaches `StorageView`, which supports no TRUNCATE.
+SET allow_deprecated_database_ordinary = 1;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
+
+CREATE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v_04796 AS SELECT 1 AS x;
+CREATE OR REPLACE VIEW {CLICKHOUSE_DATABASE_1:Identifier}.v_04796 AS SELECT 2 AS x;
+-- The replacement must be the new definition, not the old one left in place.
+SELECT x FROM {CLICKHOUSE_DATABASE_1:Identifier}.v_04796;
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SETTINGS ignore_drop_queries_probability = 0;
+
 SELECT '-- a user DROP is still skipped: the setting keeps doing what it is for';
 
-DROP TABLE IF EXISTS user_drop_04796 SYNC;
+DROP TABLE IF EXISTS user_drop_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE user_drop_04796 (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO user_drop_04796 SELECT number FROM numbers(10);
 DROP TABLE user_drop_04796;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'user_drop_04796';
 
-DROP TABLE mv_04796 SYNC;
-DROP TABLE src_04796 SYNC;
+DROP TABLE mv_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE src_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE IF EXISTS user_drop_04796 SYNC SETTINGS ignore_drop_queries_probability = 0;

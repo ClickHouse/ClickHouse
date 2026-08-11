@@ -9,5 +9,7 @@
 -- a view temporary is not MergeTree, so its internal DROP would be rewritten to TRUNCATE
 0
 100
+-- CREATE OR REPLACE VIEW on a non-Atomic database takes its own internal DROP path
+2
 -- a user DROP is still skipped: the setting keeps doing what it is for
 1

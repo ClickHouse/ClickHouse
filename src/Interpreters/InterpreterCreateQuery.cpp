@@ -2241,6 +2241,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             /// Don't check dependencies during DROP of the view, because we will recreate
             /// it with the same name and all dependencies will remain valid.
             drop_context->setSetting("check_table_dependencies", false);
+            /// A step of one user statement, not a user DROP: `ignore_drop_queries_probability` must not skip it.
+            drop_context->setDDLOrOnClusterInternal(true);
             InterpreterDropQuery interpreter(drop_ast, drop_context);
             interpreter.execute();
         }
