@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 
 #include <base/unit.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Core/Defines.h>
 #include <Core/Joins.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -31,10 +34,11 @@ bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
 {
     WriteBufferFromOwnString out;
     settings.writeChangedBinary(out);
-    return out.str().find("allow_experimental_codecs") != std::string::npos;
+    return out.str().contains("allow_experimental_codecs");
 }
 
-bool sortingStepCarriesSetting(const String & codec, bool allow_experimental_codecs, size_t max_bytes_before_external_sort)
+bool sortingStepCarriesSetting(
+    const String & codec, bool allow_experimental_codecs, size_t max_bytes_before_external_sort, bool sorting_is_reachable = true)
 {
     SortingStep::Settings sort_settings(/*max_block_size_=*/65536);
     sort_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
@@ -43,7 +47,7 @@ bool sortingStepCarriesSetting(const String & codec, bool allow_experimental_cod
     sort_settings.max_bytes_in_block_before_external_sort = max_bytes_before_external_sort;
 
     QueryPlanSerializationSettings settings;
-    sort_settings.updatePlanSettings(settings);
+    sort_settings.updatePlanSettings(settings, sorting_is_reachable);
     return wireCarriesSetting(settings);
 }
 
@@ -61,10 +65,10 @@ JoinSettings makeJoinSettings(const String & codec, bool allow_experimental_code
     return join_settings;
 }
 
-bool joinCarriesSetting(const JoinSettings & join_settings)
+bool joinCarriesSetting(const JoinSettings & join_settings, bool constant_join_is_possible = true)
 {
     QueryPlanSerializationSettings settings;
-    join_settings.updatePlanSettings(settings);
+    join_settings.updatePlanSettings(settings, constant_join_is_possible);
     return wireCarriesSetting(settings);
 }
 
@@ -91,6 +95,10 @@ TEST(ExperimentalSpillCodecPlanSetting, SortingStepEmitsItOnlyForAnExternalSort)
     /// `MergeSortingTransform::consume` never touches the temporary data with the threshold at `0`.
     EXPECT_FALSE(sortingStepCarriesSetting(experimental_codec, true, /*max_bytes_before_external_sort=*/0));
 
+    /// Sorting settings riding along a join that no sorting-based algorithm can execute configure nothing,
+    /// so even an external-sort threshold does not put the opt-in on the wire.
+    EXPECT_FALSE(sortingStepCarriesSetting(experimental_codec, true, 1_MiB, /*sorting_is_reachable=*/false));
+
     EXPECT_FALSE(sortingStepCarriesSetting(plain_codec, true, 1_MiB));
     EXPECT_FALSE(sortingStepCarriesSetting(experimental_codec, false, 1_MiB));
 }
@@ -100,7 +108,7 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
     /// An in-memory hash join with no external-join threshold and no in-memory size limits never reaches
     /// temporary-file join code.
     auto in_memory_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
-    EXPECT_FALSE(in_memory_hash.canSpillToTemporaryFiles());
+    EXPECT_FALSE(in_memory_hash.canSpillToTemporaryFiles(/*constant_join_is_possible=*/true));
     EXPECT_FALSE(joinCarriesSetting(in_memory_hash));
 
     auto in_memory_parallel_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::PARALLEL_HASH});
@@ -110,7 +118,7 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
     /// absolute setting or the ratio enables it.
     auto spilling_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
     spilling_hash.max_bytes_before_external_join = 1_MiB;
-    EXPECT_TRUE(spilling_hash.canSpillToTemporaryFiles());
+    EXPECT_TRUE(spilling_hash.canSpillToTemporaryFiles(/*constant_join_is_possible=*/false));
     EXPECT_TRUE(joinCarriesSetting(spilling_hash));
 
     auto ratio_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
@@ -121,17 +129,21 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
     /// right table to disk.
     for (auto algorithm : {JoinAlgorithm::GRACE_HASH, JoinAlgorithm::PARTIAL_MERGE,
                            JoinAlgorithm::PREFER_PARTIAL_MERGE, JoinAlgorithm::AUTO})
-        EXPECT_TRUE(joinCarriesSetting(makeJoinSettings(experimental_codec, true, {algorithm})));
+        EXPECT_TRUE(joinCarriesSetting(makeJoinSettings(experimental_codec, true, {algorithm}), /*constant_join_is_possible=*/false));
 
-    /// `ConstantJoin` (`CROSS` and comma joins) spills once the in-memory size limits would be exceeded,
-    /// whatever the algorithm is.
+    /// `ConstantJoin` (`CROSS`, comma and constant-predicate joins) spills once the in-memory size limits
+    /// would be exceeded, whatever the algorithm is - but only a join whose shape admits a `ConstantJoin`
+    /// can reach it. A join keyed by a genuine equality never does, so for it the size limits alone must
+    /// not put the opt-in on the wire.
     auto hash_with_size_limit = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
     hash_with_size_limit.max_bytes_in_join = 1_MiB;
-    EXPECT_TRUE(joinCarriesSetting(hash_with_size_limit));
+    EXPECT_TRUE(joinCarriesSetting(hash_with_size_limit, /*constant_join_is_possible=*/true));
+    EXPECT_FALSE(joinCarriesSetting(hash_with_size_limit, /*constant_join_is_possible=*/false));
 
     auto hash_with_row_limit = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
     hash_with_row_limit.max_rows_in_join = 1000;
-    EXPECT_TRUE(joinCarriesSetting(hash_with_row_limit));
+    EXPECT_TRUE(joinCarriesSetting(hash_with_row_limit, /*constant_join_is_possible=*/true));
+    EXPECT_FALSE(joinCarriesSetting(hash_with_row_limit, /*constant_join_is_possible=*/false));
 
     /// A spilling join still needs nothing on the wire for a non-experimental codec, or without the opt-in.
     auto plain = makeJoinSettings(plain_codec, true, {JoinAlgorithm::GRACE_HASH});
@@ -139,4 +151,41 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
 
     auto no_opt_in = makeJoinSettings(experimental_codec, false, {JoinAlgorithm::GRACE_HASH});
     EXPECT_FALSE(joinCarriesSetting(no_opt_in));
+}
+
+TEST(ExperimentalSpillCodecPlanSetting, ConstantJoinIsRuledOutByACrossSideEquality)
+{
+    tryRegisterFunctions();
+
+    /// CROSS / comma joins are always executed by `ConstantJoin`.
+    EXPECT_TRUE(JoinOperator(JoinKind::Cross).canBecomeConstantJoin());
+    EXPECT_TRUE(JoinOperator(JoinKind::Comma).canBecomeConstantJoin());
+
+    /// An empty expression is an always-true predicate: a join with a constant.
+    EXPECT_TRUE(JoinOperator(JoinKind::Inner).canBecomeConstantJoin());
+
+    auto type = std::make_shared<DataTypeUInt64>();
+    ColumnsWithTypeAndName left_header{{type, "l.k"}, {type, "l.v"}};
+    ColumnsWithTypeAndName right_header{{type, "r.k"}, {type, "r.v"}};
+    JoinExpressionActions expression_actions(left_header, right_header);
+    auto actions_dag = expression_actions.getActionsDAG();
+    actions_dag->getOutputs() = actions_dag->getInputs();
+
+    auto make_equality = [&](const String & lhs, const String & rhs)
+    {
+        return JoinActionRef::transform({
+            JoinActionRef(actions_dag->tryFindInOutputs(lhs), expression_actions),
+            JoinActionRef(actions_dag->tryFindInOutputs(rhs), expression_actions),
+        }, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+    };
+
+    /// `l.k = r.k` becomes a hash-join key, so the join can never degenerate to a `ConstantJoin`.
+    JoinOperator keyed_join(JoinKind::Inner);
+    keyed_join.expression.push_back(make_equality("l.k", "r.k"));
+    EXPECT_FALSE(keyed_join.canBecomeConstantJoin());
+
+    /// A same-side equality is not a join key; without a cross-side one the join may still convert to CROSS.
+    JoinOperator same_side_join(JoinKind::Inner);
+    same_side_join.expression.push_back(make_equality("l.k", "l.v"));
+    EXPECT_TRUE(same_side_join.canBecomeConstantJoin());
 }

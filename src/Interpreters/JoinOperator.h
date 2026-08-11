@@ -47,6 +47,12 @@ struct JoinOperator
     void serialize(WriteBuffer & out, const ActionsDAG * actions_dag_) const;
     static JoinOperator deserialize(ReadBuffer & in, JoinExpressionActions & expression_actions);
 
+    /// Whether the planner can end up executing this join with `ConstantJoin` (a CROSS / comma join, or a
+    /// join whose predicate degenerates to a constant). A join keyed by an equality between the two inputs
+    /// always keeps its hash-join clause and can be neither a join with a constant predicate nor converted
+    /// to CROSS, so for it this returns false. Conservative: true whenever `ConstantJoin` cannot be ruled out.
+    bool canBecomeConstantJoin() const;
+
     String dump() const;
 };
 
@@ -120,18 +126,20 @@ struct JoinSettings
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);
 
-    void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+    void updatePlanSettings(QueryPlanSerializationSettings & settings, bool constant_join_is_possible) const;
 
     /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),
     /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`
     /// (the smaller of the two applies). Returns 0 if neither is set, meaning no automatic spilling.
     static UInt64 getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join);
 
-    /// Whether any join built from these settings can reach temporary files, i.e. whether
+    /// Whether a join built from these settings can reach temporary files, i.e. whether
     /// `temporary_files_codec` can ever be resolved. `false` for the in-memory-only configurations
-    /// (`hash` / `parallel_hash` / `direct` / `full_sorting_merge` with no external-join threshold and no
-    /// in-memory size limits), which therefore need not carry the spill-codec opt-in in a serialized plan.
-    bool canSpillToTemporaryFiles() const;
+    /// (`hash` / `parallel_hash` / `direct` / `full_sorting_merge` with no external-join threshold),
+    /// which therefore need not carry the spill-codec opt-in in a serialized plan. The in-memory size
+    /// limits (`max_rows_in_join` / `max_bytes_in_join`) trigger spilling only in `ConstantJoin`, so they
+    /// count only when the join shape admits one (`JoinOperator::canBecomeConstantJoin`).
+    bool canSpillToTemporaryFiles(bool constant_join_is_possible) const;
 
     /// Combines the stored raw absolute and ratio settings using local memory limits.
     /// Recomputed on every executor so distributed queries pick up per-node memory.

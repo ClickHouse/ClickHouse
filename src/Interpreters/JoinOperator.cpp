@@ -248,7 +248,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
 }
 
-void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, bool constant_join_is_possible) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -289,7 +289,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
     /// the matching comment in `AggregatingStep::serializeSettings` and
     /// `spillCodecNeedsExperimentalCodecsOptIn`.
-    if (spillCodecNeedsExperimentalCodecsOptIn(canSpillToTemporaryFiles(), allow_experimental_codecs, temporary_files_codec))
+    if (spillCodecNeedsExperimentalCodecsOptIn(canSpillToTemporaryFiles(constant_join_is_possible), allow_experimental_codecs, temporary_files_codec))
         settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
     settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;
@@ -311,7 +311,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
 }
 
-bool JoinSettings::canSpillToTemporaryFiles() const
+bool JoinSettings::canSpillToTemporaryFiles(bool constant_join_is_possible) const
 {
     /// A `hash` / `parallel_hash` / `direct` / `full_sorting_merge` join reaches temporary files only through
     /// the automatic conversion to a spilling hash join, which both planners gate on an external-join
@@ -332,8 +332,10 @@ bool JoinSettings::canSpillToTemporaryFiles() const
     }
 
     /// `ConstantJoin` (`CROSS`, comma and constant-predicate joins, used for every algorithm) streams the
-    /// right table to disk as soon as the in-memory size limits would be exceeded.
-    return max_rows_in_join != 0 || max_bytes_in_join != 0;
+    /// right table to disk as soon as the in-memory size limits would be exceeded — but only when the join
+    /// shape admits a `ConstantJoin` at all: a join keyed by a genuine equality never reaches it, so for
+    /// such a join the size limits alone cannot cause a spill.
+    return constant_join_is_possible && (max_rows_in_join != 0 || max_bytes_in_join != 0);
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)
@@ -394,6 +396,28 @@ static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const 
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node '{}' in node map", node->result_name);
     }
+}
+
+bool JoinOperator::canBecomeConstantJoin() const
+{
+    if (isCrossOrComma(kind))
+        return true;
+
+    /// A cross-side equality is claimed as a hash-join key (`addJoinPredicatesToTableJoin` in
+    /// `JoinStepLogical.cpp`, same operator and sides test), so with one present the planning keeps at
+    /// least one key clause: the predicate is not constant and the no-keys conversion to CROSS never
+    /// fires, ruling `ConstantJoin` out. Any other expression shape may still degenerate to a constant
+    /// or convert to CROSS, so it conservatively keeps the answer true.
+    for (const auto & condition : expression)
+    {
+        auto [op, lhs, rhs] = condition.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+        if ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft()))
+            return false;
+    }
+
+    return true;
 }
 
 void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const

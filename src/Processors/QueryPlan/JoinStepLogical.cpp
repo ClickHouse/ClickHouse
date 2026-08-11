@@ -1966,8 +1966,16 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 
 void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
-    join_settings.updatePlanSettings(settings);
-    sorting_settings.updatePlanSettings(settings);
+    join_settings.updatePlanSettings(settings, join_operator.canBecomeConstantJoin());
+
+    /// The sorting settings of a join are consumed only by the sorts the planner adds around a
+    /// full-sorting-merge join or an IEJoin (`addSortingForMergeJoin`, `constructIEJoinStep`). With none of
+    /// those algorithms enabled they configure nothing, so they must not put the spill-codec opt-in on the
+    /// wire for a join that can only be executed by an in-memory algorithm.
+    bool join_can_use_sorting = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::FULL_SORTING_MERGE)
+        || TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+        || TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN);
+    sorting_settings.updatePlanSettings(settings, /*sorting_is_reachable=*/join_can_use_sorting);
 }
 
 static void serializeNodeList(
