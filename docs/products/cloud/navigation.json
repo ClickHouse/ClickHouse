@@ -32,6 +32,7 @@
                 "products/cloud/features/autoscaling/overview",
                 "products/cloud/reference/settings",
                 "products/cloud/features/autoscaling/vertical",
+                "products/cloud/features/autoscaling/horizontal-autoscaling",
                 "products/cloud/features/autoscaling/horizontal",
                 "products/cloud/features/autoscaling/make-before-break",
                 "products/cloud/features/autoscaling/idling",
@@ -43,6 +44,7 @@
               "expanded": false,
               "group": "Compute and storage",
               "pages": [
+                "products/cloud/features/large-single-replica-services",
                 "products/cloud/features/infrastructure/parallel-replicas",
                 "products/cloud/features/infrastructure/shared-catalog",
                 "products/cloud/features/infrastructure/shared-merge-tree",

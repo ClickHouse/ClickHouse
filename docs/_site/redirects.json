@@ -1620,6 +1620,10 @@
     "source": "/products/cloud/guides"
   },
   {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides/index"
+  },
+  {
     "destination": "/products/cloud/guides/security/data-masking",
     "source": "/cloud/guides/data-masking"
   },
@@ -2026,6 +2030,10 @@
   {
     "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/products/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference/index"
   },
   {
     "destination": "/products/cloud/reference/architecture",
@@ -39964,8 +39972,12 @@
     "source": "/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/reference/functions/regular-functions/overview",
     "source": "/sql-reference/functions/regular-functions"
+  },
+  {
+    "destination": "/reference/functions/regular-functions/overview",
+    "source": "/reference/functions/regular-functions/regular-functions-index"
   },
   {
     "destination": "/reference/functions/regular-functions/rounding-functions",
