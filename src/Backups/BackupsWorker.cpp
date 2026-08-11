@@ -1184,6 +1184,11 @@ void BackupsWorker::doRestore(
         RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
                                     backup, context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
         restorer.run(RestorerFromBackup::RESTORE);
+
+        /// NOTE: the callback above runs inside each restore task, so every value it publishes is a
+        /// mid-flight snapshot. All the tasks have joined by now, so this publish is the authoritative one.
+        setNumFilesAndSize(restore_id, backup->getNumFiles(), backup->getTotalSize(), backup->getNumEntries(),
+                           backup->getUncompressedSize(), backup->getCompressedSize(), backup->getNumReadFiles(), backup->getNumReadBytes());
     }
 }
 
@@ -1408,8 +1413,10 @@ void BackupsWorker::setNumFilesAndSize(const OperationID & id, size_t num_files,
     info.num_entries = num_entries;
     info.uncompressed_size = uncompressed_size;
     info.compressed_size = compressed_size;
-    info.num_read_files = num_read_files;
-    info.num_read_bytes = num_read_bytes;
+    /// A restore publishes these from inside each of its concurrent tasks, and a task's value is
+    /// snapshotted before this call, so a later call can carry an older count. They never decrease.
+    info.num_read_files = std::max(info.num_read_files, num_read_files);
+    info.num_read_bytes = std::max(info.num_read_bytes, num_read_bytes);
 }
 
 
