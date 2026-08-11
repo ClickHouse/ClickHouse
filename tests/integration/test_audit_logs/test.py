@@ -717,8 +717,11 @@ def test_audit_log_failed_database_statement_object_names(start_cluster):
     # double-quoted bash string, where a backquote starts a command substitution.
     assert_audit_log_contain_with_retry(node_ddl, missing_db)
     log_content = node_ddl.grep_in_log(missing_db, from_host=True, filename="clickhouse-server.audit.log")
+    # The cleanup `DROP DATABASE IF EXISTS` above succeeds and produces its own `Drop` record
+    # with exception code 0 for the same database name; skip it and keep only the failed drop.
     lines = [line for line in log_content.strip().split("\n")
-             if "AUDIT:" in line and "Drop" in line and missing_db in line]
+             if "AUDIT:" in line and "Drop" in line and missing_db in line
+             and "IF EXISTS" not in line]
     assert len(lines) >= 1, "A failed DROP DATABASE must produce a DDL audit record"
 
     # Audit message format: "TYPE, COMMAND, EXCEPTION_CODE, USER, IP, OBJECT_NAMES, QUERY".
