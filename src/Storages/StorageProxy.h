@@ -16,8 +16,8 @@ public:
 
     virtual StoragePtr getNested() const = 0;
 
-    /// The wrapped storage if it already exists, or null. Never creates it, so that observers
-    /// iterating every table cannot trigger a lazy load or a remote call for a table function.
+    /// The wrapped storage if it already exists, or null. Never creates it, so an observer
+    /// iterating every table cannot trigger a load.
     virtual StoragePtr tryGetNested() const { return nullptr; }
 
     String getName() const override { return "Proxy"; }
@@ -166,8 +166,7 @@ public:
     bool supportsDelete() const override { return getNested()->supportsDelete(); }
     bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
 
-    /// `UPDATE` and `DELETE FROM` ask the catalog pointer before running, so both the check and the
-    /// execution have to reach the nested storage.
+    /// `UPDATE` and `DELETE FROM` ask the catalog pointer first, so the check must reach the nested storage.
     std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override
     {
         return getNested()->supportsLightweightUpdate();
@@ -187,8 +186,7 @@ public:
 
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 
-    /// `IStorage::backupData` is a no-op, so an unforwarded proxy would produce an empty backup
-    /// that still reports success.
+    /// `IStorage::backupData` is a no-op, so without this the backup is empty but reports success.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
     {
         getNested()->backupData(backup_entries_collector, data_path_in_backup, partitions);
@@ -202,15 +200,15 @@ public:
     bool supportsBackupPartition() const override { return getNested()->supportsBackupPartition(); }
     void finalizeRestoreFromBackup() override { getNested()->finalizeRestoreFromBackup(); }
 
-    /// The planner uses this to decide parallel replica eligibility, and the base default of
-    /// false silently disables parallel replicas for the nested table.
+    /// The planner decides parallel replica eligibility from this, and the default of false
+    /// silently disables them.
     bool isMergeTree() const override { return getNested()->isMergeTree(); }
 
     /// Gates the table-level `async_insert` setting, which is otherwise silently ignored.
     bool areAsynchronousInsertsEnabled() const override { return getNested()->areAsynchronousInsertsEnabled(); }
 
-    /// The proxy's snapshot is bound to the proxy and carries no engine-specific data, which the
-    /// nested storage would misread, so build a snapshot from the nested storage instead.
+    /// The proxy's snapshot carries no engine-specific data, which the nested storage would
+    /// misread, so build one from the nested storage instead.
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr query_context) const override
     {
         auto nested = getNested();
@@ -256,10 +254,8 @@ public:
 
 };
 
-/// Resolves a proxy to the storage it wraps, for callers that reach a storage by casting to a
-/// concrete engine type. A lazily loaded table is a proxy until its first access; while the real
-/// storage does not exist yet the proxy is returned unchanged, so such a cast still fails and the
-/// caller skips the table instead of forcing it to load.
+/// Resolves a proxy to the storage it wraps, for callers that cast to a concrete engine type.
+/// Returns the proxy unchanged while the real storage does not exist, so the cast still fails.
 inline StoragePtr resolveStorageProxy(const StoragePtr & storage)
 {
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
@@ -279,8 +275,8 @@ inline StoragePtr resolveStorageProxyLoading(const StoragePtr & storage)
     return storage;
 }
 
-/// False only while a proxy has not created the storage it wraps, which is the state a lazily
-/// loaded table is in before its first access. Everything else is loaded by definition.
+/// False only while a proxy has not created the storage it wraps, which is where a lazily loaded
+/// table sits before its first access.
 inline bool isStorageLoaded(const StoragePtr & storage)
 {
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))

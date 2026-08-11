@@ -1371,7 +1371,6 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    /// Naming a table explicitly makes loading it the expected cost of the command.
     const StoragePtr table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
     auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
@@ -1447,9 +1446,8 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
 
-    /// Naming a table explicitly makes loading it the expected cost of the command. The resolved
-    /// pointer must not outlive this check: `waitDetachedTableNotInUse` below waits for the last
-    /// reference to the detached table to be released.
+    /// The resolved pointer must not outlive this check. `waitDetachedTableNotInUse` below waits
+    /// for the last reference to the detached table to be released.
     if (!dynamic_cast<const StorageReplicatedMergeTree *>(resolveStorageProxyLoading(table).get()))
     {
         if (throw_on_error)
@@ -2186,7 +2184,6 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
             break;
     }
 
-    /// Naming a table explicitly makes loading it the expected cost of the command.
     table = resolveStorageProxyLoading(table);
 
     if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
@@ -2235,7 +2232,6 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 void InterpreterSystemQuery::waitLoadingParts()
 {
     getContext()->checkAccess(AccessType::SYSTEM_WAIT_LOADING_PARTS, table_id);
-    /// Naming a table explicitly makes loading it the expected cost of the command.
     StoragePtr table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
     if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
@@ -2320,7 +2316,6 @@ namespace
 
 MergeTreeData & getMergeTreeWithManualSelector(const StoragePtr & table, const StorageID & table_id, const char * action)
 {
-    /// Naming a table explicitly makes loading it the expected cost of the command.
     auto resolved = resolveStorageProxyLoading(table);
     auto * merge_tree = dynamic_cast<MergeTreeData *>(resolved.get());
     if (!merge_tree)
@@ -2405,7 +2400,6 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     if (!table_id.empty())
     {
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
-        /// Naming a table explicitly makes loading it the expected cost of the command.
         StoragePtr table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
 
         if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
@@ -2715,7 +2709,6 @@ void InterpreterSystemQuery::prewarmMarkCache()
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
 
-    /// Naming a table explicitly makes loading it the expected cost of the command.
     auto table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
     if (!merge_tree)
@@ -2740,7 +2733,6 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
 
-    /// Naming a table explicitly makes loading it the expected cost of the command.
     auto table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
     if (!merge_tree)

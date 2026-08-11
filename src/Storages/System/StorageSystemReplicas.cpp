@@ -194,7 +194,6 @@ void StorageSystemReplicas::readImpl(
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            /// A lazily loaded table is wrapped in a proxy, which is not a StorageReplicatedMergeTree.
             const auto table = resolveStorageProxy(iterator->table());
             if (!table)
                 continue;

@@ -3173,8 +3173,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
     auto clone_data_parts_from_source_table = [&] () -> size_t
     {
-        /// The log entry names the source table, so loading it is the expected cost of executing
-        /// the entry. Leaving it proxied would make the checks below read it as not replicated.
+        /// Leaving this proxied would make the checks below read the source as not replicated.
         source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(source_table_id, getContext()));
         if (!source_table)
         {
@@ -9503,7 +9502,6 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
 void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::movePartitionToTable");
-    /// The destination is named explicitly, so loading it is the expected cost of the command.
     auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(resolveStorageProxyLoading(dest_table));
     if (!dest_table_storage)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

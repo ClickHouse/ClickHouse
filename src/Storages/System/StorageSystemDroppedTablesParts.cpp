@@ -39,7 +39,6 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
         if (!storage)
             continue;
 
-        /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
         storage = resolveStorageProxy(storage);
 
         UUID storage_uuid = storage->getStorageID().uuid;

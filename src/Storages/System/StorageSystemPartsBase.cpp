@@ -162,8 +162,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();
-                    /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
-                    StoragePtr storage = resolveStorageProxy(iterator->table());
+                            StoragePtr storage = resolveStorageProxy(iterator->table());
                     if (!storage)
                         continue;
 

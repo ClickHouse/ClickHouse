@@ -403,11 +403,10 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
         },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
+        /// Keep last: the temporary-table branch below identifies this column by position.
         {"is_loaded", std::make_shared<DataTypeUInt8>(),
-            "Whether the table engine has been created in memory. A table in a database with "
-            "`lazy_load_tables` is reported as not loaded until its first access, and the columns "
-            "describing its structure and size are unknown while that is the case. Keep this column last: "
-            "the temporary-table branch below identifies it by position."
+            "Whether the table engine exists in memory. With `lazy_load_tables` it is 0 until the "
+            "first access, and the structure and size columns are unknown while it is."
         },
     };
 
@@ -1001,8 +1000,7 @@ protected:
                     ++res_index;
                 }
 
-                /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
-                auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(resolveStorageProxy(table));
+                    auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(resolveStorageProxy(table));
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)

@@ -443,29 +443,12 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
     if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
         return false;
 
-    /// Only the MergeTree family is deferred. Other engines are unsafe behind a proxy for two
-    /// reasons: message queues such as Kafka start consuming in `startup`, which a proxy defers
-    /// indefinitely because nothing reads from them directly, and engines like Set or Join are
-    /// reached by casting to a concrete storage type, which a proxy does not satisfy.
-    /// An allowlist keeps a newly added engine eager until it is known to be safe.
+    /// Only the MergeTree family is deferred. Message queues start consuming in `startup` and
+    /// engines like Set are reached by a concrete-type cast, neither of which survives a proxy.
     if (!query.storage || !query.storage->engine || !query.storage->engine->name.ends_with("MergeTree"))
         return false;
 
     return true;
-}
-
-/// A lazy proxy reports only the columns from the `CREATE` query. Everything else about the table
-/// structure is unknown until the real storage exists, which `system.tables.is_loaded` exposes.
-static StorageInMemoryMetadata buildLazyTableMetadata(
-    const ASTCreateQuery & query, ContextMutablePtr local_context, LoadingStrictnessLevel mode)
-{
-    StorageInMemoryMetadata metadata;
-
-    if (query.columns_list && query.columns_list->columns)
-        metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(
-            *query.columns_list->columns, local_context, mode));
-
-    return metadata;
 }
 
 void DatabaseOrdinary::loadTableLazy(
@@ -478,7 +461,12 @@ void DatabaseOrdinary::loadTableLazy(
 
     LOG_TRACE(log, "Lazy-loading table {}", name.getFullName());
 
-    StorageInMemoryMetadata metadata = buildLazyTableMetadata(query, local_context, mode);
+    /// The proxy reports only the columns. The rest of the structure is unknown until the real
+    /// storage exists, which `system.tables.is_loaded` reflects.
+    StorageInMemoryMetadata metadata;
+    if (query.columns_list && query.columns_list->columns)
+        metadata.setColumns(InterpreterCreateQuery::getColumnsDescription(
+            *query.columns_list->columns, local_context, mode));
 
     StorageID table_id(name.database, query.getTable(), query.uuid);
     String table_data_path = getTableDataPath(query);

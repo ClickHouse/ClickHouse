@@ -1239,6 +1239,7 @@ CREATE TABLE system.tables
     `target_database` String,
     `target_table` String,
     `definer` String,
+    `is_loaded` UInt8,
     `table` String ALIAS name
 )
 ENGINE = SystemTables

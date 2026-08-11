@@ -69,8 +69,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             // If they have some lag it will be reflected as soon as they are load.
             for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
             {
-                /// A lazily loaded table is wrapped in a proxy, which is not a StorageReplicatedMergeTree.
-                const auto table = resolveStorageProxy(iterator->table());
+                    const auto table = resolveStorageProxy(iterator->table());
                 if (!table)
                     continue;
 

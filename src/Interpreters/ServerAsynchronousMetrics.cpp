@@ -451,7 +451,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 if (is_system)
                     ++total_number_of_tables_system;
 
-                /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
                 const auto table = resolveStorageProxy(iterator->table());
                 if (!table)
                     continue;
@@ -641,7 +640,6 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
-            /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
             const auto table = resolveStorageProxy(iterator->table());
             if (!table)
                 continue;

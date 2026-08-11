@@ -90,7 +90,6 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            /// A lazily loaded table is wrapped in a proxy, which is not a StorageReplicatedMergeTree.
             const auto table = resolveStorageProxy(iterator->table());
             if (!table)
                 continue;

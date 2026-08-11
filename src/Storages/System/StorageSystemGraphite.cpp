@@ -53,7 +53,6 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
             const auto table = resolveStorageProxy(iterator->table());
             if (!table)
                 continue;
