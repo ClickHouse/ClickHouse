@@ -34,7 +34,9 @@ SELECT p, n FROM t_04700 ORDER BY p, n SETTINGS apply_mutations_on_fly = 1;
 SYSTEM START MERGES t_04700;
 
 -- The pending mutations are executed in the background and produce the same result.
-ALTER TABLE t_04700 UPDATE n = n IN PARTITION 1 WHERE 1 SETTINGS mutations_sync = 2;
+-- The barrier mutation must not be partition-scoped: waiting for a mutation scoped to
+-- partition 1 would not wait for the pending lightweight delete in partition 2.
+ALTER TABLE t_04700 UPDATE n = n WHERE 1 SETTINGS mutations_sync = 2;
 
 SELECT p, n FROM t_04700 ORDER BY p, n SETTINGS apply_mutations_on_fly = 0;
 

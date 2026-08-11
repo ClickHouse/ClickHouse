@@ -21,6 +21,10 @@ SYSTEM STOP MERGES t_04702;
 
 ALTER TABLE t_04702 UPDATE n = n + 100 IN PARTITION 'a' WHERE 1;
 
+-- The mutation entry becomes visible in `system.mutations` only after the replica loads it
+-- back from ZooKeeper, which normally happens asynchronously; pull it explicitly.
+SYSTEM SYNC REPLICA t_04702 PULL;
+
 -- The persisted command is scoped to the resolved partition id, not to the original literal.
 SELECT command FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_04702' AND NOT is_done;
