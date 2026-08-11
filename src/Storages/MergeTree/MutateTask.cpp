@@ -3859,6 +3859,20 @@ bool MutateTask::prepare()
             {
                 delta.reset();
             }
+
+            /// A timestamp of exactly 0 (the epoch) means "no TTL" to the rest of the machinery:
+            /// `ITTLAlgorithm::isTTLExpired` never expires it and `MergeTreeDataPartTTLInfo::update`
+            /// excludes it from `min`. A part whose rows computed to it never records a fingerprint
+            /// (see `TTLDeleteAlgorithm::finalize`), so a present fingerprint guarantees every stored
+            /// row timestamp is non-zero and lies in `[min, max]`. It remains to reject a shift that
+            /// could move some row's timestamp ONTO zero - silently flipping it from "expired long ago"
+            /// to "never expires" - which is possible only when the shifted range covers zero.
+            if (delta
+                && source_ttl_infos.table_ttl.min + *delta <= 0
+                && source_ttl_infos.table_ttl.max + *delta >= 0)
+            {
+                delta.reset();
+            }
         }
 
         /// `materialize_ttl_recalculate_only` promises that `MATERIALIZE TTL` only refreshes the parts'
@@ -3888,10 +3902,17 @@ bool MutateTask::prepare()
         /// for a metadata-only refresh, which is exactly what the shift does): clone the part and shift
         /// its TTL infos. `ITTLAlgorithm::isTTLExpired` treats `ttl == current_time` as expired, so the
         /// comparison must be strict: a part whose earliest expiry equals `time_of_mutation` is partially
-        /// expired and takes the regular rewrite below. Rewriting `ttl.txt` and `checksums.txt` in place
+        /// expired and takes the regular rewrite below. The part's OLD max TTL must not be expired
+        /// either: the regular rewrite drops such a part's data wholesale, before even looking at the
+        /// new expression (`all_data_dropped` in `TTLTransform` is decided on the part's stored infos),
+        /// so cloning it - however live its rows are under the new TTL - would produce a different
+        /// result than the rewrite. Rewriting `ttl.txt` and `checksums.txt` in place
         /// is only possible when every file of the part is stored separately; a packed part cannot be
         /// modified after it is written, so it takes the regular rewrite below as well.
-        if (delta && (recalculate_only || source_ttl_infos.table_ttl.min + *delta > ctx->time_of_mutation)
+        if (delta
+            && (recalculate_only
+                || (source_ttl_infos.table_ttl.min + *delta > ctx->time_of_mutation
+                    && source_ttl_infos.table_ttl.max > ctx->time_of_mutation))
             && isFullPartStorage(ctx->source_part->getDataPartStorage()))
         {
             LOG_TRACE(ctx->log, "Part {} is not expired after MATERIALIZE TTL, cloning and shifting TTL by {} seconds to mutation version {}",

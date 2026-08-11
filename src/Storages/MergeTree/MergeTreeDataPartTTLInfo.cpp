@@ -18,6 +18,8 @@ void MergeTreeDataPartTTLInfo::update(time_t time)
 {
     if (time && (!min || time < min))
         min = time;
+    else if (!time)
+        has_epoch_timestamps = true;
 
     max = std::max(time, max);
 }
@@ -27,6 +29,7 @@ void MergeTreeDataPartTTLInfo::update(const MergeTreeDataPartTTLInfo & other_inf
     if (other_info.min && (!min || other_info.min < min))
         min = other_info.min;
 
+    has_epoch_timestamps |= other_info.has_epoch_timestamps;
     max = std::max(other_info.max, max);
     if (ttl_finished.has_value())
         ttl_finished = ttl_finished.value() && other_info.finished();

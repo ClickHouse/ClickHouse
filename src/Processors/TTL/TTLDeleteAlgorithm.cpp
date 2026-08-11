@@ -65,9 +65,28 @@ void TTLDeleteAlgorithm::finalize(const MutableDataPartPtr & data_part) const
     {
         data_part->ttl_infos.table_ttl = new_ttl_info;
         /// Record the rows-TTL expression and time zone these timestamps were computed under
-        /// (see `MergeTreeDataPartTTLInfos`).
-        data_part->ttl_infos.table_ttl_expression = description.result_column;
-        data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(description);
+        /// (see `MergeTreeDataPartTTLInfos`) - but only when this algorithm actually recomputed them
+        /// by scanning the rows. When the min TTL is not expired (and the recomputation is not forced),
+        /// `execute` never looks at the rows and `new_ttl_info` is just a copy of the incoming infos,
+        /// so the fingerprint those bounds were computed under is the one already propagated into
+        /// `data_part->ttl_infos` by `MergeTreeDataPartTTLInfos::update` - stamping the current
+        /// metadata expression over it could mislabel bounds computed under an older TTL expression.
+        if (isMinTTLExpired())
+        {
+            /// A timestamp of exactly 0 (the epoch) means "no TTL" to the rest of the machinery and is
+            /// excluded from the stored `min`, so if any surviving row computed to it, the bounds are
+            /// not a complete summary of the part and must not carry a fingerprint.
+            if (new_ttl_info.has_epoch_timestamps)
+            {
+                data_part->ttl_infos.table_ttl_expression.clear();
+                data_part->ttl_infos.table_ttl_timezone.clear();
+            }
+            else
+            {
+                data_part->ttl_infos.table_ttl_expression = description.result_column;
+                data_part->ttl_infos.table_ttl_timezone = getRowsTTLTimeZoneFingerprint(description);
+            }
+        }
     }
 
     data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);

@@ -28,6 +28,13 @@ struct MergeTreeDataPartTTLInfo
     bool finished() const { return ttl_finished.value_or(false); }
     bool initialized() const { return min != 0 || max != 0; }
 
+    /// Whether `update` saw a timestamp of exactly 0 (the epoch). The TTL machinery treats such a
+    /// timestamp as "no TTL": `ITTLAlgorithm::isTTLExpired` never expires it and `update` excludes it
+    /// from `min`, so a row that computed to it is invisible in the stored bounds. Transient - used
+    /// while the infos are being computed to decide whether the rows-TTL fingerprint may be recorded
+    /// (see `MergeTreeDataPartTTLInfos::table_ttl_expression`); not serialized to `ttl.txt`.
+    bool has_epoch_timestamps = false;
+
     void update(time_t time);
     void update(const MergeTreeDataPartTTLInfo & other_info);
 };
