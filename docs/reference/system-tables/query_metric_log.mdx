@@ -843,6 +843,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_FilesystemCacheCheckCorrectness` ([UInt64](/reference/data-types/int-uint)) — Number of times FileCache::assertCacheCorrectness was called
 - `ProfileEvent_FilesystemCacheCheckCorrectnessMicroseconds` ([UInt64](/reference/data-types/int-uint)) — How much time does FileCache::assertCacheCorrectness takes
 - `ProfileEvent_FileSegmentWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Wait on DOWNLOADING state
+- `ProfileEvent_FileSegmentWaitTimeouts` ([UInt64](/reference/data-types/int-uint)) — Number of times waiting on a DOWNLOADING file segment timed out (see `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 - `ProfileEvent_FileSegmentCompleteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Duration of FileSegment::complete() in filesystem cache
 - `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Lock file segment time
 - `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/reference/data-types/int-uint)) — File segment write() time
