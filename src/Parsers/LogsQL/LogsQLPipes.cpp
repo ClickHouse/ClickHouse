@@ -2373,9 +2373,13 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
 
     if (name == "count_empty")
     {
+        /// The field value is compared as a string, like in VictoriaLogs, where every field
+        /// value is a string and a missing (NULL) value is indistinguishable from an empty one.
         ASTs empty_checks;
         for (const auto & arg : args)
-            empty_checks.push_back(makeASTFunction("equals", columnExpr(arg), makeStringLiteral("")));
+            empty_checks.push_back(makeASTFunction("equals",
+                makeASTFunction("ifNull", makeASTFunction("toString", columnExpr(arg)), makeStringLiteral("")),
+                makeStringLiteral("")));
         ASTPtr all_empty = empty_checks.size() == 1 ? empty_checks[0] : [&]
         {
             auto function = makeASTFunction("and");
@@ -2442,10 +2446,17 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
 
     if (name == "sum_len")
     {
-        /// The total length of the values across all listed fields.
-        ASTPtr total = makeASTFunction("length", columnExpr(args[0]));
+        /// The total length of the values across all listed fields. The length is taken from
+        /// the string representation of the value, like in VictoriaLogs, where every field
+        /// value is a string; a missing (NULL) value counts as an empty string.
+        auto value_length = [&](const String & field)
+        {
+            return makeASTFunction("length",
+                makeASTFunction("ifNull", makeASTFunction("toString", columnExpr(field)), makeStringLiteral("")));
+        };
+        ASTPtr total = value_length(args[0]);
         for (size_t i = 1; i < args.size(); ++i)
-            total = makeASTFunction("plus", total, makeASTFunction("length", columnExpr(args[i])));
+            total = makeASTFunction("plus", total, value_length(args[i]));
         return {canonical, [total](ASTPtr condition) { return makeAggregate("sum", {total->clone()}, condition); }};
     }
 
@@ -2479,11 +2490,25 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
 
             if (!is_avg)
             {
-                /// The values of all listed fields are pooled together.
-                ASTPtr total = makeAggregate("sum", {columns[0]->clone()}, condition);
-                for (size_t i = 1; i < columns.size(); ++i)
-                    total = makeASTFunction("plus", total, makeAggregate("sum", {columns[i]->clone()}, condition ? condition->clone() : ASTPtr{}));
-                return total;
+                /// The values of all listed fields are pooled together. `sum` of a
+                /// fully-NULL column is NULL, and it must contribute nothing instead of
+                /// poisoning the whole total, so every per-column sum is NULL-coalesced;
+                /// with no present values at all the sum is NULL, like for a single field.
+                ASTPtr total;
+                ASTPtr values;
+                for (const auto & column : columns)
+                {
+                    ASTPtr column_sum = makeASTFunction("ifNull",
+                        makeAggregate("sum", {column->clone()}, condition ? condition->clone() : ASTPtr{}),
+                        makeUInt64Literal(0));
+                    ASTPtr column_values = makeAggregate("count", {column->clone()}, condition ? condition->clone() : ASTPtr{});
+                    total = total ? makeASTFunction("plus", total, column_sum) : column_sum;
+                    values = values ? makeASTFunction("plus", values, column_values) : column_values;
+                }
+                return makeASTFunction("if",
+                    makeASTFunction("greater", values, makeUInt64Literal(0)),
+                    total,
+                    make_intrusive<ASTLiteral>(Field()));
             }
 
             /// The pooled average is the sum of the present values divided by their number:
