@@ -42,9 +42,11 @@ def setup_table(name, extra_settings="", n=node):
     settings = "min_bytes_for_wide_part = 0"
     if extra_settings:
         settings += ", " + extra_settings
-    n.query(f"""CREATE TABLE {name} (key UInt64, id UInt64, value String,
+    n.query(
+        f"""CREATE TABLE {name} (key UInt64, id UInt64, value String,
             PROJECTION p (SELECT key, id, value ORDER BY id))
-            ENGINE = MergeTree ORDER BY key SETTINGS {settings}""")
+            ENGINE = MergeTree ORDER BY key SETTINGS {settings}"""
+    )
     n.query(
         f"INSERT INTO {name} SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -194,9 +196,7 @@ def packed_archive_member(part_path, member, n=node, disk="default"):
     rel = os.path.relpath(os.path.join(part_path, "data.packed"), root)
     out_rel = "tmp_packed_extract"
     out_abs = os.path.join(root, out_rel)
-    n.exec_in_container(
-        ["bash", "-c", f"rm -rf {out_abs}"], privileged=True, user="root"
-    )
+    n.exec_in_container(["bash", "-c", f"rm -rf {out_abs}"], privileged=True, user="root")
     n.exec_in_container(
         [
             "bash",
@@ -250,14 +250,17 @@ def minio_keys():
 
 def sibling_blob_keys(uuid, part, n=node):
     # local_path is relative to the disk root; the store/<prefix>/<uuid>/ segment is unique per table
-    return set(n.query(f"""SELECT remote_path FROM system.remote_data_paths
-                WHERE local_path LIKE '%/{uuid}/{part}.p.proj/%'""").split())
+    return set(
+        n.query(
+            f"""SELECT remote_path FROM system.remote_data_paths
+                WHERE local_path LIKE '%/{uuid}/{part}.p.proj/%'"""
+        ).split()
+    )
 
 
 # ==============================================================================
 # A. Layout basics and format selection
 # ==============================================================================
-
 
 # This test checks that a projection defaults to the nested layout when the format setting is
 # unset, so a flat sibling is never written by accident.
@@ -295,8 +298,7 @@ def test_layout_default_is_nested():
 def test_layout_flat_setting_persists(storage_kind):
     # create table with a 'flat' projection
     setup_table(
-        "t_flat_setting",
-        with_storage("projection_storage_format = 'flat'", storage_kind),
+        "t_flat_setting", with_storage("projection_storage_format = 'flat'", storage_kind)
     )
 
     # assert structure: the server wrote the projection as a flat sibling, not nested
@@ -407,10 +409,12 @@ def test_layout_convert_nested_to_flat(storage_kind):
     # create table with a default (nested) projection, insert two parts
     node.query("DROP TABLE IF EXISTS t_n2f SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query(f"""CREATE TABLE t_n2f (key UInt64, id UInt64, value String,
+    node.query(
+        f"""CREATE TABLE t_n2f (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
            ENGINE = MergeTree ORDER BY key
-           SETTINGS {with_storage("min_bytes_for_wide_part = 0", storage_kind)}""")
+           SETTINGS {with_storage("min_bytes_for_wide_part = 0", storage_kind)}"""
+    )
     for rng in ("numbers(1000)", "numbers(1000, 1000)"):
         node.query(
             f"INSERT INTO t_n2f SELECT number, number * 2, toString(number) FROM {rng}"
@@ -434,10 +438,7 @@ def test_layout_convert_nested_to_flat(storage_kind):
     # assert SELECT and CHECK TABLE
     assert active_parts("t_n2f") == "1"
     assert broken_projection_parts("t_n2f") == "0"
-    assert (
-        proj_query("t_n2f", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
-    )
+    assert proj_query("t_n2f", extra_settings="force_optimize_projection = 1") == "100\t4950"
     assert check_table("t_n2f") == "1"
 
 
@@ -485,17 +486,13 @@ def test_layout_convert_flat_to_nested(storage_kind):
     # assert SELECT and CHECK TABLE
     assert active_parts("t_f2n") == "1"
     assert broken_projection_parts("t_f2n") == "0"
-    assert (
-        proj_query("t_f2n", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
-    )
+    assert proj_query("t_f2n", extra_settings="force_optimize_projection = 1") == "100\t4950"
     assert check_table("t_f2n") == "1"
 
 
 # ==============================================================================
 # B. Lifecycle operations carry the flat sibling
 # ==============================================================================
-
 
 # This test checks that a replicated fetch materializes the projection in the flat layout on the
 # receiving replica, instead of a nested or missing sibling. (Issue #5)
@@ -589,12 +586,8 @@ def test_carry_replicated_merge(storage_kind):
 # @pytest.mark.xfail(reason=REVIEW + "3472535412", strict=False)
 def test_carry_attach_partition_from(storage_kind):
     # create 'flat' source and destination tables
-    setup_table(
-        "t_src", with_storage("projection_storage_format = 'flat'", storage_kind)
-    )
-    setup_table(
-        "t_dst", with_storage("projection_storage_format = 'flat'", storage_kind)
-    )
+    setup_table("t_src", with_storage("projection_storage_format = 'flat'", storage_kind))
+    setup_table("t_dst", with_storage("projection_storage_format = 'flat'", storage_kind))
 
     # clear the destination and attach the source partition into it
     node.query("TRUNCATE TABLE t_dst")
@@ -619,9 +612,7 @@ def test_carry_attach_partition_from(storage_kind):
 # @pytest.mark.xfail(reason=REVIEW + "3473543140", strict=False)
 def test_carry_detach_attach_part(storage_kind):
     # create table with a 'flat' projection, capture baseline
-    setup_table(
-        "t_da", with_storage("projection_storage_format = 'flat'", storage_kind)
-    )
+    setup_table("t_da", with_storage("projection_storage_format = 'flat'", storage_kind))
     baseline = proj_query("t_da")
     name = part_name("t_da")
 
@@ -634,11 +625,7 @@ def test_carry_detach_attach_part(storage_kind):
     table_root = p.rsplit("/", 1)[0]
     assert path_exists(f"{p}.p.proj")
     leftover = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"find {table_root}/detached -maxdepth 1 -name '*.proj' | wc -l",
-        ],
+        ["bash", "-c", f"find {table_root}/detached -maxdepth 1 -name '*.proj' | wc -l"],
         privileged=True,
         user="root",
     ).strip()
@@ -660,9 +647,7 @@ def test_carry_detach_attach_part(storage_kind):
 # - assert the projection is healthy and SELECT matches baseline
 def test_carry_detach_attach_no_mixed_state(storage_kind):
     # create table with a 'flat' projection, capture baseline
-    setup_table(
-        "t_mix", with_storage("projection_storage_format = 'flat'", storage_kind)
-    )
+    setup_table("t_mix", with_storage("projection_storage_format = 'flat'", storage_kind))
     baseline = proj_query("t_mix")
     live = part_dir("t_mix")
     name = part_name("t_mix")
@@ -680,11 +665,7 @@ def test_carry_detach_attach_no_mixed_state(storage_kind):
     p = part_dir("t_mix")
     assert path_exists(f"{p}.p.proj")
     leftover = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"find {table_root}/detached -maxdepth 1 -name '*.proj' | wc -l",
-        ],
+        ["bash", "-c", f"find {table_root}/detached -maxdepth 1 -name '*.proj' | wc -l"],
         privileged=True,
         user="root",
     ).strip()
@@ -721,10 +702,7 @@ def test_carry_after_restart_detach_attach():
     p = part_dir("t_reload")
     assert path_exists(f"{p}.p.proj")
     assert broken_projection_parts("t_reload") == "0"
-    assert (
-        proj_query("t_reload", extra_settings="force_optimize_projection = 1")
-        == baseline
-    )
+    assert proj_query("t_reload", extra_settings="force_optimize_projection = 1") == baseline
 
 
 # This test checks that after DETACH PART, system.detached_parts shows exactly one entry (no junk
@@ -779,11 +757,7 @@ def test_carry_detached_parts_surface():
     assert not path_exists(f"{table_root}/detached/{name}")
     assert not path_exists(f"{table_root}/detached/{name}.p.proj")
     leftovers = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"find {table_root}/detached -maxdepth 1 -name '*.proj' | wc -l",
-        ],
+        ["bash", "-c", f"find {table_root}/detached -maxdepth 1 -name '*.proj' | wc -l"],
         privileged=True,
         user="root",
     ).strip()
@@ -812,7 +786,9 @@ def test_carry_materialize_projection(storage_kind):
 
     # add and materialize the projection
     node.query("ALTER TABLE t_mat ADD PROJECTION p (SELECT key, id, value ORDER BY id)")
-    node.query("ALTER TABLE t_mat MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2")
+    node.query(
+        "ALTER TABLE t_mat MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2"
+    )
 
     # assert structure: flat sibling, no nested dir, no tmp residue
     p = part_dir("t_mat")
@@ -848,11 +824,13 @@ def test_carry_lightweight_delete_rebuild():
     # create table with a 'flat' projection that rebuilds on lightweight delete
     node.query("DROP TABLE IF EXISTS t_lwd SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_lwd (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_lwd (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-               lightweight_mutation_projection_mode = 'rebuild'""")
+               lightweight_mutation_projection_mode = 'rebuild'"""
+    )
     node.query(
         "INSERT INTO t_lwd SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -868,10 +846,7 @@ def test_carry_lightweight_delete_rebuild():
     # assert SELECT and CHECK TABLE
     assert node.query("SELECT count() FROM t_lwd").strip() == "500"
     assert broken_projection_parts("t_lwd") == "0"
-    assert (
-        proj_query("t_lwd", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
-    )
+    assert proj_query("t_lwd", extra_settings="force_optimize_projection = 1") == "100\t4950"
     assert check_table("t_lwd") == "1"
 
 
@@ -914,10 +889,7 @@ def test_carry_multiple_projections(storage_kind):
     assert int(active_projection_parts("t_multi")) >= 2
     assert broken_projection_parts("t_multi") == "0"
     assert check_table("t_multi") == "1"
-    assert (
-        proj_query("t_multi", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
-    )
+    assert proj_query("t_multi", extra_settings="force_optimize_projection = 1") == "100\t4950"
 
 
 # This test checks that a partitioned 'flat' table keeps a per-partition flat sibling through a
@@ -958,10 +930,7 @@ def test_carry_partitioned_merge(storage_kind):
 
     # assert SELECT and CHECK TABLE
     assert broken_projection_parts("t_part") == "0"
-    assert (
-        proj_query("t_part", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
-    )
+    assert proj_query("t_part", extra_settings="force_optimize_projection = 1") == "100\t4950"
     assert check_table("t_part") == "1"
 
 
@@ -984,16 +953,16 @@ def test_carry_rename_table():
 
     # create a 'flat' table with a projection and capture the baseline before the rename
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_ren_db.src (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_ren_db.src (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
            ENGINE = MergeTree ORDER BY key
-           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'""")
+           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+    )
     node.query(
         "INSERT INTO t_ren_db.src SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
-    baseline = proj_query(
-        "t_ren_db.src", extra_settings="force_optimize_projection = 1"
-    )
+    baseline = proj_query("t_ren_db.src", extra_settings="force_optimize_projection = 1")
 
     # rename the table; the data directory moves on disk
     node.query("RENAME TABLE t_ren_db.src TO t_ren_db.dst")
@@ -1044,9 +1013,7 @@ def test_carry_move_part_to_disk(storage_kind):
     )
 
     # the projection is materialized on the default disk; capture the forced-projection baseline
-    baseline = proj_query(
-        "t_move_carry", extra_settings="force_optimize_projection = 1"
-    )
+    baseline = proj_query("t_move_carry", extra_settings="force_optimize_projection = 1")
     assert active_projection_parts("t_move_carry") == "1"
     src = part_dir("t_move_carry")
     name = part_name("t_move_carry")
@@ -1075,7 +1042,6 @@ def test_carry_move_part_to_disk(storage_kind):
 # C. Sibling cleanup on removal
 # ==============================================================================
 
-
 # This test checks that outdated-part cleanup removes the flat projection sibling too, instead of
 # leaving it stranded after the part is dropped. (Issue #1)
 # Scenario:
@@ -1085,9 +1051,7 @@ def test_carry_move_part_to_disk(storage_kind):
 # @pytest.mark.xfail(reason=REVIEW + "3472535408", strict=False)
 def test_cleanup_drop_part_removes_sibling(storage_kind):
     # create table with a 'flat' projection
-    setup_table(
-        "t_rm", with_storage("projection_storage_format = 'flat'", storage_kind)
-    )
+    setup_table("t_rm", with_storage("projection_storage_format = 'flat'", storage_kind))
     p = part_dir("t_rm")
     assert path_exists(f"{p}.p.proj")
 
@@ -1192,7 +1156,6 @@ def test_cleanup_tolerates_missing_sibling():
 # ==============================================================================
 # D. Stale residue and destination-clearing
 # ==============================================================================
-
 
 # This test checks that when an insert reuses a failed insert's tmp dir, collision cleanup wipes the
 # stale flat sibling too; else the fresh projection is written into the leftover and published live.
@@ -1300,11 +1263,13 @@ def test_residue_live_not_adopted():
     # create a 'flat' table that does not materialize the projection on insert
     node.query("DROP TABLE IF EXISTS t_adopt SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_adopt (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_adopt (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-               materialize_projections_on_insert = 0""")
+               materialize_projections_on_insert = 0"""
+    )
 
     # plant a stale sibling at the future live name, then insert a projection-less part there
     plant_stale_live_sibling(f"{table_path('t_adopt')}/all_1_1_0.p.proj")
@@ -1520,11 +1485,13 @@ def test_flat_projection_sibling_move_rollback():
     # create a 'flat' table with two projections (so a part has two sibling dirs), DETACH the partition
     node.query("DROP TABLE IF EXISTS t_sib_rollback SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_sib_rollback (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_sib_rollback (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id ORDER BY id),
            PROJECTION q (SELECT key, value ORDER BY value))
            ENGINE = MergeTree ORDER BY key
-           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'""")
+           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+    )
     node.query(
         "INSERT INTO t_sib_rollback SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -1542,7 +1509,9 @@ def test_flat_projection_sibling_move_rollback():
             "ALTER TABLE t_sib_rollback ATTACH PARTITION tuple()"
         )
     finally:
-        node.query("SYSTEM DISABLE FAILPOINT throw_after_flat_projection_sibling_move")
+        node.query(
+            "SYSTEM DISABLE FAILPOINT throw_after_flat_projection_sibling_move"
+        )
 
     # the rollback returned the part and BOTH siblings to detached/<name>, leaving no attaching_ residue
     assert active_parts("t_sib_rollback") == "0"
@@ -1562,7 +1531,6 @@ def test_flat_projection_sibling_move_rollback():
 # ==============================================================================
 # E. Unowned-sibling filter (residue that a part does not own must not be carried)
 # ==============================================================================
-
 
 # This test checks that MOVE PART (cross-disk clonePart) copies only the part's own projections, so
 # an unowned residue sibling is structurally excluded from the moved part.
@@ -1616,11 +1584,13 @@ def test_unowned_attach_cross_disk_skips():
     node.query("DROP TABLE IF EXISTS t_att_dst SYNC")
     node.query("SYSTEM STOP MERGES")
     for tname, policy in (("t_att_src", ""), ("t_att_dst", ", storage_policy = 's3'")):
-        node.query(f"""CREATE TABLE {tname} (key UInt64, id UInt64, value String,
+        node.query(
+            f"""CREATE TABLE {tname} (key UInt64, id UInt64, value String,
                 PROJECTION p (SELECT key, id ORDER BY id))
                 ENGINE = MergeTree ORDER BY key
                 SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-                    materialize_projections_on_insert = 0{policy}""")
+                    materialize_projections_on_insert = 0{policy}"""
+        )
     node.query(
         "INSERT INTO t_att_src SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -1649,11 +1619,13 @@ def test_unowned_mutation_skips():
     # create a projection-less-on-insert 'flat' table
     node.query("DROP TABLE IF EXISTS t_mut SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_mut (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_mut (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-               materialize_projections_on_insert = 0""")
+               materialize_projections_on_insert = 0"""
+    )
     node.query(
         "INSERT INTO t_mut SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -1695,8 +1667,7 @@ def _make_desync_pair(
     donor_id_type="UInt64",
 ):
     """Victim table whose part has NO projection dir/record + a donor providing a real dir.
-    The donor knobs shape the planted dir: row count/values, projection definition, column type.
-    """
+    The donor knobs shape the planted dir: row count/values, projection definition, column type."""
     donor_projection = donor_projection or projection
     node.query(f"DROP TABLE IF EXISTS {prefix} SYNC")
     node.query(f"DROP TABLE IF EXISTS {prefix}_donor SYNC")
@@ -1704,10 +1675,12 @@ def _make_desync_pair(
     settings = "min_bytes_for_wide_part = 0"
     if extra:
         settings += ", " + extra
-    node.query(f"""CREATE TABLE {prefix} (key UInt64, id UInt64, value String,
+    node.query(
+        f"""CREATE TABLE {prefix} (key UInt64, id UInt64, value String,
            PROJECTION {projection})
            ENGINE = MergeTree ORDER BY key
-           SETTINGS {settings}, materialize_projections_on_insert = 0""")
+           SETTINGS {settings}, materialize_projections_on_insert = 0"""
+    )
     node.query(
         f"""CREATE TABLE {prefix}_donor (key UInt64, id {donor_id_type}, value String,
            PROJECTION {donor_projection})
@@ -1743,11 +1716,13 @@ def test_desync_unlisted_dir_ignored():
     # create a 'flat' source table and a projection-less-on-insert twin
     setup_table("t_warn_src", "projection_storage_format = 'flat'")
     node.query("DROP TABLE IF EXISTS t_warn SYNC")
-    node.query("""CREATE TABLE t_warn (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_warn (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-               materialize_projections_on_insert = 0""")
+               materialize_projections_on_insert = 0"""
+    )
     node.query(
         "INSERT INTO t_warn SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -1917,9 +1892,7 @@ def test_desync_flat_unlisted_ignored():
 def test_desync_flat_same_shape_not_adopted():
     # build a FLAT desync pair whose donor holds a different row range of the same shape
     _make_desync_pair(
-        "t_hole",
-        "projection_storage_format = 'flat'",
-        donor_offset=1000,  # rows 1000..1999
+        "t_hole", "projection_storage_format = 'flat'", donor_offset=1000  # rows 1000..1999
     )
     p = part_dir("t_hole")
     donor_sib = f"{part_dir('t_hole_donor')}.p.proj"
@@ -1973,17 +1946,13 @@ def test_recovery_flat_recompute_missing_projection_checksums():
     assert _manifest_mentions_projection(p)
     assert active_projection_parts("t_recomp") == "1"
     assert broken_projection_parts("t_recomp") == "0"
-    assert (
-        proj_query("t_recomp", extra_settings="force_optimize_projection = 1")
-        == baseline
-    )
+    assert proj_query("t_recomp", extra_settings="force_optimize_projection = 1") == baseline
     assert check_table("t_recomp") == "1"
 
 
 # ==============================================================================
 # G. Reload consistency
 # ==============================================================================
-
 
 # This test checks that reloading a part does not mark a present flat projection broken: the
 # consistency check probed a nested dir for the "p.proj" entry, so a flat sibling was reported missing.
@@ -2040,7 +2009,6 @@ def test_reload_check_table_dropped_projection():
 # ==============================================================================
 # H. Zero-copy and blob lifecycle on object storage
 # ==============================================================================
-
 
 # This test checks that on zero-copy storage a mutation keeps blobs hardlinked by flat projections:
 # the removal filters the keep-list by the logical dir name ("p.proj/..."), so entries under the
@@ -2109,12 +2077,14 @@ def test_blob_mutation_hardlinks():
     # create a 'flat' table whose projection excludes the mutated column
     node.query("DROP TABLE IF EXISTS t_hl SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_hl (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_hl (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
                old_parts_lifetime = 1, cleanup_delay_period = 1, max_cleanup_delay_period = 3,
-               cleanup_delay_period_random_add = 1""")
+               cleanup_delay_period_random_add = 1"""
+    )
     node.query("SYSTEM STOP CLEANUP t_hl")
     node.query(
         "INSERT INTO t_hl SELECT number, number * 2, toString(number) FROM numbers(1000)"
@@ -2154,11 +2124,13 @@ def test_blob_mutation_always_copy():
     # create a 'flat' table that copies instead of hardlinking, projection excludes the mutated column
     node.query("DROP TABLE IF EXISTS t_copy SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_copy (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_copy (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-                    always_use_copy_instead_of_hardlinks = 1""")
+                    always_use_copy_instead_of_hardlinks = 1"""
+    )
     node.query(
         "INSERT INTO t_copy SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -2194,11 +2166,13 @@ def test_blob_orphan_gc_removes_without_zero_copy():
     # create a 'flat' table on the s3 disk, record the sibling's blob keys
     node.query("DROP TABLE IF EXISTS t_leak SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_leak (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_leak (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-               storage_policy = 's3'""")
+               storage_policy = 's3'"""
+    )
     node.query(
         "INSERT INTO t_leak SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -2241,16 +2215,20 @@ def test_blob_publish_sweep_removes():
     node.query("DROP TABLE IF EXISTS t_sweep SYNC")
     node.query("DROP TABLE IF EXISTS t_sweep_donor SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_sweep_donor (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_sweep_donor (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-               storage_policy = 's3'""")
-    node.query("""CREATE TABLE t_sweep (key UInt64, id UInt64, value String,
+               storage_policy = 's3'"""
+    )
+    node.query(
+        """CREATE TABLE t_sweep (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-               storage_policy = 's3', materialize_projections_on_insert = 0""")
+               storage_policy = 's3', materialize_projections_on_insert = 0"""
+    )
     node.query(
         "INSERT INTO t_sweep_donor SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -2298,11 +2276,13 @@ def test_blob_attach_sweep_removes():
     node.query("DROP TABLE IF EXISTS t_att_donor SYNC")
     node.query("SYSTEM STOP MERGES")
     for tname in ("t_att", "t_att_donor"):
-        node.query(f"""CREATE TABLE {tname} (key UInt64, id UInt64, value String,
+        node.query(
+            f"""CREATE TABLE {tname} (key UInt64, id UInt64, value String,
                PROJECTION p (SELECT key, id ORDER BY id))
                ENGINE = MergeTree ORDER BY key
                SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-                   storage_policy = 's3'""")
+                   storage_policy = 's3'"""
+        )
         node.query(
             f"INSERT INTO {tname} SELECT number, number * 2, toString(number) FROM numbers(1000)"
         )
@@ -2345,7 +2325,6 @@ def test_blob_attach_sweep_removes():
 # I. Orphan-sibling garbage collection
 # ==============================================================================
 
-
 # This test checks that the periodic cleaner reaps aged orphan siblings from the live root but never
 # a young one (it may belong to an in-flight rename); moving/ falls to the stale-moving-parts sweep,
 # and startup (age 0) reaps everything.
@@ -2385,9 +2364,7 @@ def test_orphan_gc_periodic_and_startup():
     assert not path_exists(aged)
     wait_for(lambda: not path_exists(moving_aged))
     assert not path_exists(moving_aged)
-    assert path_exists(
-        young
-    )  # age guard: far younger than the 3600s lifetime, cannot age out mid-test
+    assert path_exists(young)  # age guard: far younger than the 3600s lifetime, cannot age out mid-test
 
     # restart: startup() runs the age-0 sweep synchronously, before its background tasks start. A table
     # read blocks on waitTableStarted until startup() has finished, so the young orphan is already reaped
@@ -2420,9 +2397,7 @@ def test_orphan_gc_spares_inflight_rename():
 
     # trigger inserts must not create flat siblings of their own: their publish rename would park on
     # the same failpoint that holds the DROP DETACHED window open
-    node.query(
-        "ALTER TABLE t_race MODIFY SETTING materialize_projections_on_insert = 0"
-    )
+    node.query("ALTER TABLE t_race MODIFY SETTING materialize_projections_on_insert = 0")
 
     # age the detached sibling and an aged decoy orphan (a positive control for the cleaner cycling)
     decoy = f"{root}/detached/gone_0_0_0.p.proj"
@@ -2443,7 +2418,8 @@ def test_orphan_gc_spares_inflight_rename():
             f"ALTER TABLE t_race DROP DETACHED PART '{name}' SETTINGS allow_drop_detached = 1"
         )
         wait_for(
-            lambda: path_exists(f"{root}/detached/deleting_{name}") and path_exists(sib)
+            lambda: path_exists(f"{root}/detached/deleting_{name}")
+            and path_exists(sib)
         )
         assert path_exists(f"{root}/detached/deleting_{name}")
 
@@ -2500,11 +2476,7 @@ def test_orphan_gc_broken_part_preserves_sibling():
     # check does not force the load), so wait for the broken part to land in detached/ before asserting.
     def find_broken_part():
         return node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"find {root}/detached -maxdepth 1 -type d -name 'broken*{name}' | head -1",
-            ],
+            ["bash", "-c", f"find {root}/detached -maxdepth 1 -type d -name 'broken*{name}' | head -1"],
             privileged=True,
             user="root",
         ).strip()
@@ -2520,7 +2492,6 @@ def test_orphan_gc_broken_part_preserves_sibling():
 # J. Freeze / shadow siblings
 # ==============================================================================
 
-
 # This test checks that FREEZE copies the flat projection sibling into shadow/, instead of dropping it. (Issue #2)
 # Scenario:
 # - create a 'flat' table
@@ -2534,11 +2505,7 @@ def test_freeze_copies_sibling():
 
     # assert a projection sibling exists under shadow/
     found = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "find /var/lib/clickhouse/shadow/flatproj -name '*p.proj' | head -1",
-        ],
+        ["bash", "-c", "find /var/lib/clickhouse/shadow/flatproj -name '*p.proj' | head -1"],
         privileged=True,
         user="root",
     ).strip()
@@ -2601,19 +2568,13 @@ def test_freeze_unfreeze_reaps_ownerless_sibling():
     assert path_exists(f"{owner}.p.proj")
 
     # simulate the crash window: the sibling was copied, the parent dir was not
-    node.exec_in_container(
-        ["bash", "-c", f"rm -rf {owner}"], privileged=True, user="root"
-    )
+    node.exec_in_container(["bash", "-c", f"rm -rf {owner}"], privileged=True, user="root")
     node.query("ALTER TABLE t_shadow UNFREEZE WITH NAME 'orph'")
 
     # assert the owner-less sibling was reaped and the live table is untouched
     assert node.wait_for_log_line("Removing frozen projection sibling")
     leftovers = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "find /var/lib/clickhouse/shadow/orph -name '*.proj' 2>/dev/null | wc -l",
-        ],
+        ["bash", "-c", "find /var/lib/clickhouse/shadow/orph -name '*.proj' 2>/dev/null | wc -l"],
         privileged=True,
         user="root",
     ).strip()
@@ -2632,10 +2593,12 @@ def test_freeze_unfreeze_partition_scopes_reap():
     # create a partitioned 'flat' table and freeze it
     node.query("DROP TABLE IF EXISTS t_shadow2 SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_shadow2 (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_shadow2 (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id ORDER BY id))
            ENGINE = MergeTree PARTITION BY key % 2 ORDER BY key
-           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'""")
+           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+    )
     node.query(
         "INSERT INTO t_shadow2 SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -2652,17 +2615,11 @@ def test_freeze_unfreeze_partition_scopes_reap():
         user="root",
     ).strip()
     assert owner0 != ""
-    node.exec_in_container(
-        ["bash", "-c", f"rm -rf {owner0}"], privileged=True, user="root"
-    )
+    node.exec_in_container(["bash", "-c", f"rm -rf {owner0}"], privileged=True, user="root")
 
     def orphan_sibling_count():
         return node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "find /var/lib/clickhouse/shadow/orph2 -name '0_*.proj' 2>/dev/null | wc -l",
-            ],
+            ["bash", "-c", "find /var/lib/clickhouse/shadow/orph2 -name '0_*.proj' 2>/dev/null | wc -l"],
             privileged=True,
             user="root",
         ).strip()
@@ -2680,7 +2637,6 @@ def test_freeze_unfreeze_partition_scopes_reap():
 # ==============================================================================
 # K. Backup and restore
 # ==============================================================================
-
 
 # This test checks that BACKUP/RESTORE stores and finds flat projection data under the LOGICAL name
 # (<part>/p.proj/...), so backups are layout-independent; the physical sibling name would restore a
@@ -2705,42 +2661,29 @@ def test_backup_restore_flat():
     # back up the table and assert the backup uses the logical name, not the physical sibling name
     node.query("BACKUP TABLE t_bk TO File('/var/lib/clickhouse/backups/t_bk')")
     physical_dirs = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "find /var/lib/clickhouse/backups/t_bk -type d -name '*.*.proj' | wc -l",
-        ],
+        ["bash", "-c", "find /var/lib/clickhouse/backups/t_bk -type d -name '*.*.proj' | wc -l"],
         privileged=True,
         user="root",
     ).strip()
     assert physical_dirs == "0"
     logical_dirs = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "find /var/lib/clickhouse/backups/t_bk -type d -name 'p.proj' | wc -l",
-        ],
+        ["bash", "-c", "find /var/lib/clickhouse/backups/t_bk -type d -name 'p.proj' | wc -l"],
         privileged=True,
         user="root",
     ).strip()
     assert logical_dirs == "1"
 
     # restore into a new table and assert it is healthy and matches baseline
-    node.query(
-        "RESTORE TABLE t_bk AS t_bk2 FROM File('/var/lib/clickhouse/backups/t_bk')"
-    )
+    node.query("RESTORE TABLE t_bk AS t_bk2 FROM File('/var/lib/clickhouse/backups/t_bk')")
     assert node.query("SELECT count() FROM t_bk2").strip() == "1000"
     assert broken_projection_parts("t_bk2") == "0"
-    assert (
-        proj_query("t_bk2", extra_settings="force_optimize_projection = 1") == baseline
-    )
+    assert proj_query("t_bk2", extra_settings="force_optimize_projection = 1") == baseline
     assert check_table("t_bk2") == "1"
 
 
 # ==============================================================================
 # L. fsync durability smoke
 # ==============================================================================
-
 
 # This test checks that fsync_part_directory=1 exercises the directory-sync points added for flat
 # siblings across the lifecycle (power-loss durability itself is untestable in CI; guard placement is
@@ -2754,11 +2697,13 @@ def test_fsync_flat_lifecycle():
     # create a 'flat' table with fsync enabled, insert data
     node.query("DROP TABLE IF EXISTS t_fsync SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_fsync (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_fsync (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-               fsync_part_directory = 1, old_parts_lifetime = 1""")
+               fsync_part_directory = 1, old_parts_lifetime = 1"""
+    )
     node.query(
         "INSERT INTO t_fsync SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -2766,9 +2711,7 @@ def test_fsync_flat_lifecycle():
 
     # add and materialize a second projection, then merge
     node.query("ALTER TABLE t_fsync ADD PROJECTION q (SELECT id, key ORDER BY key)")
-    node.query(
-        "ALTER TABLE t_fsync MATERIALIZE PROJECTION q SETTINGS mutations_sync = 2"
-    )
+    node.query("ALTER TABLE t_fsync MATERIALIZE PROJECTION q SETTINGS mutations_sync = 2")
     node.query("SYSTEM START MERGES t_fsync")
     node.query("OPTIMIZE TABLE t_fsync FINAL")
 
@@ -2807,11 +2750,13 @@ def test_packed_replace_partition_no_parent_artifacts_in_projection():
     for t, zk in (("t_pk_rp_src", "src"), ("t_pk_rp_dst", "dst")):
         node.query(f"DROP TABLE IF EXISTS {t} SYNC")
         node.query("SYSTEM STOP MERGES")
-        node.query(f"""CREATE TABLE {t} (key UInt64, id UInt64, value String,
+        node.query(
+            f"""CREATE TABLE {t} (key UInt64, id UInt64, value String,
                 PROJECTION p (SELECT key, id, value ORDER BY id))
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_pk_rp_{zk}', '1')
                 ORDER BY key
-                SETTINGS min_bytes_for_wide_part = 0, {PACKED}""")
+                SETTINGS min_bytes_for_wide_part = 0, {PACKED}"""
+        )
     node.query(
         "INSERT INTO t_pk_rp_src SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -2871,11 +2816,7 @@ def test_packed_freeze_excludes_residue():
     # the shadow copy carries the owned projection but no residue
     name = part_name("t_pk_frz")
     shadow = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"find /var/lib/clickhouse/shadow/pkfrz -maxdepth 4 -name '{name}' -type d | head -1",
-        ],
+        ["bash", "-c", f"find /var/lib/clickhouse/shadow/pkfrz -maxdepth 4 -name '{name}' -type d | head -1"],
         privileged=True,
         user="root",
     ).strip()
@@ -2910,8 +2851,7 @@ def test_packed_detach_attach_carries_projection():
     assert path_exists(f"{p}/p.proj/data.packed")
     assert broken_projection_parts("t_pk_da") == "0"
     assert (
-        proj_query("t_pk_da", extra_settings="force_optimize_projection = 1")
-        == baseline
+        proj_query("t_pk_da", extra_settings="force_optimize_projection = 1") == baseline
     )
     assert check_table("t_pk_da") == "1"
 
@@ -2928,8 +2868,7 @@ def test_packed_flat_lifecycle():
     # old_parts_lifetime = 1: sibling removal happens at part removal, so dropped parts must not
     # linger as Outdated for the default 8 minutes
     setup_table(
-        "t_pk_flat",
-        f"projection_storage_format = 'flat', old_parts_lifetime = 1, {PACKED}",
+        "t_pk_flat", f"projection_storage_format = 'flat', old_parts_lifetime = 1, {PACKED}"
     )
     node.query(
         "INSERT INTO t_pk_flat SELECT number, number * 2, toString(number) FROM numbers(1000, 1000)"
@@ -3029,11 +2968,7 @@ def test_packed_flat_freeze_unfreeze():
     node.query("ALTER TABLE t_pk_fz FREEZE WITH NAME 'pkflat'")
 
     sibling = node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "find /var/lib/clickhouse/shadow/pkflat -name '*.p.proj' -type d | head -1",
-        ],
+        ["bash", "-c", "find /var/lib/clickhouse/shadow/pkflat -name '*.p.proj' -type d | head -1"],
         privileged=True,
         user="root",
     ).strip()
@@ -3122,18 +3057,13 @@ def test_os_materialize_projection_rebuild(storage_kind, disk):
     )
 
     # add and materialize the projection (rebuild path inside a mutation)
-    node.query(
-        "ALTER TABLE t_os_mat ADD PROJECTION p (SELECT key, id, value ORDER BY id)"
-    )
-    node.query(
-        "ALTER TABLE t_os_mat MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2"
-    )
+    node.query("ALTER TABLE t_os_mat ADD PROJECTION p (SELECT key, id, value ORDER BY id)")
+    node.query("ALTER TABLE t_os_mat MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2")
 
     # the mutation succeeded; a projection read must not open a vacated tmp_mut_ path
     assert broken_projection_parts("t_os_mat") == "0"
     assert (
-        proj_query("t_os_mat", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
+        proj_query("t_os_mat", extra_settings="force_optimize_projection = 1") == "100\t4950"
     )
     assert check_table("t_os_mat") == "1"
 
@@ -3142,8 +3072,7 @@ def test_os_materialize_projection_rebuild(storage_kind, disk):
     block_until_tables_loaded("t_os_mat")
     assert broken_projection_parts("t_os_mat") == "0"
     assert (
-        proj_query("t_os_mat", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
+        proj_query("t_os_mat", extra_settings="force_optimize_projection = 1") == "100\t4950"
     )
 
 
@@ -3168,8 +3097,7 @@ def test_os_update_projected_column_rebuild(storage_kind, disk):
     )
     assert broken_projection_parts("t_os_upd") == "0"
     assert (
-        proj_query("t_os_upd", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
+        proj_query("t_os_upd", extra_settings="force_optimize_projection = 1") == "100\t4950"
     )
     assert check_table("t_os_upd") == "1"
 
@@ -3201,8 +3129,7 @@ def test_os_lightweight_delete_rebuild(storage_kind, disk):
     assert broken_projection_parts("t_os_lwd") == "0"
     # rows with id < 200 (key < 100) are untouched by the delete: still 100 rows, sum(key) = 4950
     assert (
-        proj_query("t_os_lwd", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
+        proj_query("t_os_lwd", extra_settings="force_optimize_projection = 1") == "100\t4950"
     )
     assert check_table("t_os_lwd") == "1"
 
@@ -3231,8 +3158,7 @@ def test_os_optimize_final_merge(storage_kind, disk):
 
     assert broken_projection_parts("t_os_merge") == "0"
     assert (
-        proj_query("t_os_merge", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
+        proj_query("t_os_merge", extra_settings="force_optimize_projection = 1") == "100\t4950"
     )
     assert check_table("t_os_merge") == "1"
 
@@ -3260,8 +3186,7 @@ def test_os_mutation_carries_unprojected_column(storage_kind, disk):
     )
     assert broken_projection_parts("t_os_carry") == "0"
     assert (
-        proj_query("t_os_carry", extra_settings="force_optimize_projection = 1")
-        == "100\t4950"
+        proj_query("t_os_carry", extra_settings="force_optimize_projection = 1") == "100\t4950"
     )
     assert check_table("t_os_carry") == "1"
 
@@ -3269,7 +3194,6 @@ def test_os_mutation_carries_unprojected_column(storage_kind, disk):
 # ==============================================================================
 # R. Reload keeps per-part layout truth (AI review blockers)
 # ==============================================================================
-
 
 # This test checks that a part written in the 'flat' layout keeps its sibling-aware cleanup after
 # the table is switched back to 'legacy_nested' and the server restarts: projection_storage_format
@@ -3338,9 +3262,7 @@ def test_reload_foreign_sibling_not_owned():
     assert active_projection_parts("t_foreign") == "0"
 
     # a lifecycle operation must not carry the unowned dir to the new location
-    node.query(
-        f"ALTER TABLE t_foreign MOVE PART '{part_name('t_foreign')}' TO DISK 's3'"
-    )
+    node.query(f"ALTER TABLE t_foreign MOVE PART '{part_name('t_foreign')}' TO DISK 's3'")
     dst = part_dir("t_foreign")
     assert dst != src  # the part really moved
     assert not path_exists(f"{dst}.p.proj")
@@ -3362,11 +3284,13 @@ def test_reload_foreign_sibling_not_owned():
 def test_broken_part_detach_excludes_foreign_sibling():
     node.query("DROP TABLE IF EXISTS t_broken_foreign SYNC")
     node.query("SYSTEM STOP MERGES")
-    node.query("""CREATE TABLE t_broken_foreign (key UInt64, id UInt64, value String,
+    node.query(
+        """CREATE TABLE t_broken_foreign (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
            ENGINE = MergeTree ORDER BY key
            SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
-               materialize_projections_on_insert = 0""")
+               materialize_projections_on_insert = 0"""
+    )
     node.query(
         "INSERT INTO t_broken_foreign SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -3387,11 +3311,7 @@ def test_broken_part_detach_excludes_foreign_sibling():
     # test_orphan_gc_broken_part_preserves_sibling)
     def find_broken_part():
         return node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"find {root}/detached -maxdepth 1 -type d -name 'broken*{name}' | head -1",
-            ],
+            ["bash", "-c", f"find {root}/detached -maxdepth 1 -type d -name 'broken*{name}' | head -1"],
             privileged=True,
             user="root",
         ).strip()
