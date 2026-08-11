@@ -152,6 +152,7 @@ static struct InitFiu
     ONCE(framing_throw_after_final_progress) \
     ONCE(write_buffer_valid_utf8_finalize_throw) \
     ONCE(http_output_finalize_throw) \
+    ONCE(http_push_delayed_results_throw) \
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \

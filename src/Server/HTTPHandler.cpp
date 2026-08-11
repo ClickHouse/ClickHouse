@@ -95,6 +95,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char http_output_finalize_throw[];
+    extern const char http_push_delayed_results_throw[];
 }
 
 namespace
@@ -745,9 +746,9 @@ try
     }
 
     /// A framed response fails closed once its transmission has started. That covers a failure in
-    /// the middle of `Output::finalize` (which pushes the delayed results, finalizes the
-    /// compression and closes the response stream - `isFinalized` is set at its start) and a
-    /// failure of the framed exception delivery itself: when `handle_exception_in_output_format`
+    /// the middle of `Output::finalize` after some of the response was pushed towards the client
+    /// (pushing the delayed results, finalizing the compression, closing the response stream) and
+    /// a failure of the framed exception delivery itself: when `handle_exception_in_output_format`
     /// throws while writing the terminal `exception` packet (for example while draining the `log`
     /// / `profile_events` queues) after `data` packets were already streamed, the escaped
     /// exception lands here with the packet stream unterminated and `exception_is_written` still
@@ -771,10 +772,17 @@ try
     /// set up for `wait_end_of_query` discards the stream buffered in the cascade (which does not
     /// pass through `out_maybe_compressed` until `pushDelayedResults`) and writes a fresh framed
     /// exception response, and the generic path produces a proper HTTP error response.
+    /// Deliberately NOT gated on `Output::isFinalized`: `finalized` is latched at the very start
+    /// of `Output::finalize`, before `pushDelayedResults` moves anything out of the cascade. Under
+    /// `wait_end_of_query` that push can fail before a single delayed byte reaches
+    /// `out_maybe_compressed` (finalizing the cascade, reopening a temporary file to re-read it),
+    /// and then the response is still untouched - `response.sent()` is false and both counters
+    /// are zero - so a clean error response is still possible and fail-close would only turn a
+    /// reportable error into an aborted connection for no benefit.
     bool framed_bytes_produced = (used_output.out_maybe_compressed && used_output.out_maybe_compressed->count() > 0)
         || (used_output.out_holder && used_output.out_holder->count() > 0);
     if (used_output.framed && !used_output.exception_is_written
-        && (used_output.isFinalized() || response.sent() || framed_bytes_produced))
+        && (response.sent() || framed_bytes_produced))
     {
         used_output.cancel();
         return false;
@@ -1188,6 +1196,14 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
 
 void HTTPHandler::Output::pushDelayedResults() const
 {
+    /// Test-only: emulate a failure before any delayed byte reaches the real response (finalizing
+    /// the cascade, reopening a temporary file to re-read it). A framed response must still get a
+    /// proper HTTP error response here, not an aborted connection (see `trySendExceptionToClient`).
+    fiu_do_on(FailPoints::http_push_delayed_results_throw,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before pushing the delayed results");
+    });
+
     auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(out_maybe_delayed_and_compressed.get());
     if (!cascade_buffer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected CascadeWriteBuffer");
