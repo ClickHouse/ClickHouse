@@ -71,9 +71,10 @@ struct ServerSettings
 
     static void addToProgramOptions(Poco::Util::OptionSet & options);
 
-    /// Mirror the command-line values of the settings backed by a nested config key (e.g.
-    /// `openssl_server_required_tls_v1_2` -> `openSSL.server.requireTLSv1_2`) into that key, so that the
-    /// components reading the raw configuration and `system.server_settings` always agree.
+    /// Mirror the command-line values of the settings backed by a config key different from the setting
+    /// name (e.g. `openssl_server_required_tls_v1_2` -> `openSSL.server.requireTLSv1_2`, or `config_file`
+    /// -> `config-file`) into that key, so that the components reading the raw configuration and
+    /// `system.server_settings` always agree.
     /// Must be called before the configuration file is loaded - see the implementation for the details.
     static void mirrorCommandLineToConfigPaths(const std::vector<std::string> & argv, Poco::Util::LayeredConfiguration & config);
 

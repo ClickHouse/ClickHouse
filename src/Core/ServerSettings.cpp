@@ -2092,16 +2092,20 @@ void ServerSettings::mirrorCommandLineToConfigPaths(const std::vector<std::strin
     std::vector<std::pair<std::string, std::string>> ordered_args;
     argsToConfig(argv, *command_line, 0, nullptr, &ordered_args);
 
-    /// Both spellings of every affected setting, mapped to the setting's index. Only the settings whose
-    /// config key is a nested one are affected. This also excludes `config_file`, whose key (`config-file`)
-    /// belongs to the built-in option of the same name and is consumed while the configuration is being
-    /// loaded.
+    /// Both spellings of every affected setting, mapped to the setting's index. Every setting backed by
+    /// a config key different from the setting name is affected. This includes `config_file`, whose key
+    /// (`config-file`) belongs to the built-in option of the same name: `BaseDaemon::loadConfiguration`
+    /// resolves the configuration file from the `config-file` key of the layered configuration, and this
+    /// function runs before that, so publishing the winning value under `config-file` makes the flat
+    /// spelling (`-- --config_file ...`) actually select the configuration file instead of only being
+    /// reported by `system.server_settings` (and consumed by e.g. the relative `hdfs_libhdfs3_conf`
+    /// resolution) while the server runs on a different config.
     const auto & accessor = ServerSettingsTraits::Accessor::instance();
     std::unordered_map<std::string_view, size_t> spellings;
     for (size_t i = 0; i < accessor.size(); ++i)
     {
         std::string_view path = accessor.getPath(i);
-        if (path.find('.') == std::string_view::npos)
+        if (path.empty())
             continue;
         spellings[accessor.getName(i)] = i;
         spellings[path] = i;

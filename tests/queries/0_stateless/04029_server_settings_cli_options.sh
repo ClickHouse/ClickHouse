@@ -255,3 +255,58 @@ $CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name 
 kill $PID 2>/dev/null
 wait $PID 2>/dev/null
 trap '' EXIT
+
+# Test 11: The `config_file` setting is backed by the `config-file` key, which is what
+# `BaseDaemon::loadConfiguration` resolves the configuration file from. Passing the flat spelling
+# after the `--` separator must therefore actually select the configuration file, and
+# `system.server_settings` must report the config file the server really runs on. Use a config file
+# with a distinctive `max_connections` value as the marker that it was genuinely loaded.
+srv_dir11="${CLICKHOUSE_TMP}/srv11"
+mkdir -p "$srv_dir11"
+cfg11="$srv_dir11/custom_config.xml"
+cat > "$cfg11" <<XML
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <console>true</console>
+    </logger>
+    <max_connections>777</max_connections>
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+    <profiles>
+        <default/>
+    </profiles>
+    <quotas>
+        <default/>
+    </quotas>
+</clickhouse>
+XML
+$CLICKHOUSE_BINARY server \
+    -- --config_file "$cfg11" --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir11/" > "${CLICKHOUSE_TMP}/server11.log" 2>&1 &
+PID=$!
+
+trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
+
+for i in {1..30}; do
+    sleep 1
+    $CLICKHOUSE_CLIENT --query "SELECT 1" >/dev/null 2>&1 && break
+    if [[ $i == 30 ]]; then
+        cat "${CLICKHOUSE_TMP}/server11.log"
+        exit 1
+    fi
+done
+
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'max_connections'"
+$CLICKHOUSE_CLIENT --query "SELECT value = '$cfg11' FROM system.server_settings WHERE name = 'config-file'"
+
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+trap '' EXIT
