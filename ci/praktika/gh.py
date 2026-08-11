@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shlex
+import sys
 import tempfile
 import time
 import traceback
@@ -32,6 +33,9 @@ API_GET_RETRY_MAX_BACKOFF = 60
 # Statuses transient by definition. Everything else keeps the flat per-attempt sleep:
 # telling a transient 403 from a terminal one needs a body match this cannot do.
 API_GET_RETRYABLE_STATUSES = frozenset({429})
+# How many times an `on_http_error` callback may restart the attempt budget. Bounds the
+# reset path, which skips the sleep, so a callback that always accepts cannot spin.
+API_GET_MAX_BUDGET_RESETS = 1
 
 
 def _elide(text, limit=_GH_DIAGNOSTIC_FIELD_LIMIT):
@@ -226,11 +230,13 @@ class GH:
         response, which a caller could not tell apart from an empty result.
 
         ``on_http_error(exc)`` returning True restarts the attempt budget without
-        sleeping, so a caller can retry under different credentials. It is not
-        forwarded to ``requests.get``.
+        sleeping, so a caller can retry under different credentials. It is honoured at
+        most ``API_GET_MAX_BUDGET_RESETS`` times; past that the status is handled as an
+        ordinary error. It is not forwarded to ``requests.get``.
         """
         exc = None
         attempt = 0
+        resets = 0
         while attempt < retries:
             attempt += 1
             # A transport failure carries no status; a response status downgrades this.
@@ -241,7 +247,12 @@ class GH:
                 return response
             except requests.HTTPError as e:
                 exc = e
-                if on_http_error is not None and on_http_error(e):
+                if (
+                    on_http_error is not None
+                    and resets < API_GET_MAX_BUDGET_RESETS
+                    and on_http_error(e)
+                ):
+                    resets += 1
                     attempt = 0
                     continue
                 grow_backoff = (
@@ -257,9 +268,12 @@ class GH:
                     if grow_backoff
                     else sleep
                 )
+                # Callers parse this function's stdout (a release tag is read out of it),
+                # so diagnostics belong on stderr.
                 print(
                     f"WARNING: Exception [{_elide(str(exc))}] while getting [{url}], "
-                    f"attempt {attempt} of {retries}, retrying in {delay} seconds"
+                    f"attempt {attempt} of {retries}, retrying in {delay} seconds",
+                    file=sys.stderr,
                 )
                 time.sleep(delay)
 
@@ -1598,7 +1612,6 @@ class GH:
 
 if __name__ == "__main__":
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser(description="GitHub PR comment helper")
     subparsers = parser.add_subparsers(dest="command")

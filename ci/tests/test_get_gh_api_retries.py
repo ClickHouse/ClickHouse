@@ -234,14 +234,63 @@ def test_transport_error_gets_backoff(monkeypatch, transport_error):
 
 # Row 10: the retry diagnostic is the only trace a CI operator gets, so pin the marker and
 # the two fields the message promises. Reverting to a bare one-line message, or dropping
-# the attempt or the delay, must redden this row.
-def test_retry_log_names_attempt_and_delay(monkeypatch, capsys):
+# the attempt or the delay, must redden this row. The stream is pinned in both directions:
+# stdout carries caller data (row 10b), so echoing the diagnostic there too is a defect.
+def test_retry_log_names_attempt_and_delay_on_stderr(monkeypatch, capsys):
     _run_api_get(monkeypatch, [504])
 
-    lines = [l for l in capsys.readouterr().out.splitlines() if "WARNING" in l]
+    captured = capsys.readouterr()
+    lines = [l for l in captured.err.splitlines() if "WARNING" in l]
     assert lines
     assert "attempt 1 of 5" in lines[0]
     assert "retrying in 3 seconds" in lines[0]
+    assert "WARNING" not in captured.out
+
+
+# Row 10b: `tests/docker_scripts/upgrade_runner.sh:30` captures the stdout of
+# `get_previous_release_tag.py` into a shell variable and splices it unquoted into
+# `git clone --branch=$var`, so anything this read path writes to stdout turns a retried
+# read into a corrupted clone.
+def test_stdout_stays_parseable_across_a_retried_read(monkeypatch, capsys):
+    _run_api_get(monkeypatch, [504, 504, 200])
+    print("v25.8.1.100-lts")
+
+    assert capsys.readouterr().out == "v25.8.1.100-lts\n"
+
+
+# Row 10c: the budget reset skips the sleep, so an unbounded one is a tight loop against
+# api.github.com. `on_http_error` is documented as an extension point, so the bound has to
+# hold for a callback that always accepts, not only for the in-tree shim (rows 6, 7, 8c).
+# The transport is capped so that removing the guard fails this row instead of hanging it:
+# past the cap the request raises, which the loop treats as an ordinary error and exhausts.
+def test_budget_resets_are_bounded(monkeypatch):
+    sleeps: list = []
+    calls, _ = _install_fake_transport(monkeypatch, [404], b"", None, sleeps)
+    unguarded = gh_module.requests.get
+    ceiling = gh_module.API_GET_RETRIES_COUNT * (
+        1 + gh_module.API_GET_MAX_BUDGET_RESETS
+    )
+
+    def capped_get(url, **get_kwargs):
+        if calls["count"] >= ceiling:
+            raise AssertionError(
+                f"budget resets are unbounded: over {ceiling} requests"
+            )
+        return unguarded(url, **get_kwargs)
+
+    monkeypatch.setattr(gh_module.requests, "get", capped_get)
+
+    with pytest.raises(RuntimeError, match="Unable to request data from GH API"):
+        GH.api_get(URL, on_http_error=lambda _e: True)
+
+    # One attempt is spent triggering the single allowed reset, then a fresh full budget.
+    assert (
+        calls["count"]
+        == gh_module.API_GET_MAX_BUDGET_RESETS + gh_module.API_GET_RETRIES_COUNT
+    )
+    assert calls["count"] <= ceiling
+    # Only the attempts after the allowance is spent reach the sleep block.
+    assert sleeps == [3, 3, 3, 3]
 
 
 # Row 11: exhaustion raises. `get_output_with_retries` returns '' on exhaustion by
