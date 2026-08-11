@@ -11,6 +11,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+# The log tables outlive the tables this test drops, and `clickhouse-test --database` reuses one
+# database for every test, so tagging by database alone would let one run match another's rows.
+run_id="lwu57-$CLICKHOUSE_DATABASE-$RANDOM$RANDOM"
+
 function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT infinite_sleep" 2>/dev/null || true
@@ -158,7 +162,7 @@ function run()
     timeout_ms=1000
     start_parked_holder "$table_name" "$mode"
 
-    tag="lwu57-$mode-$timeout_ms-$CLICKHOUSE_DATABASE"
+    tag="$run_id-$mode-$timeout_ms"
     error=$($CLICKHOUSE_CLIENT --query "
         SET enable_lightweight_update = 1;
         UPDATE $table_name SET v = 200 WHERE s = 'xx'
@@ -187,7 +191,7 @@ function run()
         read -r label timeout_s <<< "$arm"
         start_parked_holder "$table_name" "$mode"
 
-        tag="lwu57-$mode-$label-$CLICKHOUSE_DATABASE"
+        tag="$run_id-$mode-$label"
         $CLICKHOUSE_CLIENT --query_id "$tag" --query "
             SET enable_lightweight_update = 1;
             UPDATE $table_name SET v = 400 WHERE s = 'xx'
@@ -244,7 +248,7 @@ function run_churn()
     # nothing and only change the `in_progress` directory.
     # Bounded as well as stoppable, so that killing the test cannot leave the loop behind updating a
     # dropped table.
-    churn_stop="$CLICKHOUSE_TMP/lwu57_churn_stop_$CLICKHOUSE_DATABASE"
+    churn_stop="$CLICKHOUSE_TMP/${run_id}_churn_stop"
     rm -f "$churn_stop"
     (
         end=$((SECONDS + 120))
@@ -258,7 +262,7 @@ function run_churn()
     ) &
     churn_pid=$!
 
-    tag="lwu57-churn-$CLICKHOUSE_DATABASE"
+    tag="$run_id-churn"
     $CLICKHOUSE_CLIENT --query_id "$tag" --query "
         SET enable_lightweight_update = 1;
         UPDATE $table_name SET v = 500 WHERE s = 'xx'
@@ -288,12 +292,15 @@ function run_churn()
         exit 2
     fi
 
-    release_holder
-    wait "$waiter_pid"
-
+    # Churn stops before the lock is released. Those commits have already woken a parent directory
+    # watch as many times as they are going to, and once the waiter is runnable they would instead
+    # make it lose the parent version compare-and-swap an unbounded number of times.
     touch "$churn_stop"
     wait $churn_pid 2>/dev/null || true
     rm -f "$churn_stop"
+
+    release_holder
+    wait "$waiter_pid"
 
     read -r _ tries _ <<< "$(query_stats "$tag")"
     # One try to find the conflict, one to acquire after it clears. A watch on the parent directory
@@ -345,7 +352,7 @@ function run_cancel()
 
     # max_execution_time rather than KILL QUERY: both are enforced by QueryStatus::checkTimeLimit(),
     # and this needs no second client racing to catch the waiter in system.processes.
-    tag="lwu57-cancel-$CLICKHOUSE_DATABASE"
+    tag="$run_id-cancel"
     error=$($CLICKHOUSE_CLIENT --query "
         SET enable_lightweight_update = 1;
         UPDATE $table_name SET v = 99 WHERE s LIKE 'xx%'
@@ -365,7 +372,7 @@ function run_cancel()
     # watch per chunk: a timed out tryWait deregisters nothing, so that would leave a live callback
     # per chunk on one node. The watch is set by exactly one call, on the conflicting update's node,
     # so a query that waits through N chunks must still register once per outer iteration.
-    tag="lwu57-watch-$CLICKHOUSE_DATABASE"
+    tag="$run_id-watch"
     $CLICKHOUSE_CLIENT --query "
         SET enable_lightweight_update = 1;
         UPDATE $table_name SET v = 77 WHERE s LIKE 'xx%'
@@ -427,7 +434,7 @@ function run_cas_contention()
         INSERT INTO $table_name SELECT number $vals FROM numbers(5);
     "
 
-    tag="lwu57-cas-$CLICKHOUSE_DATABASE"
+    tag="$run_id-cas"
     for k in $(seq 0 $((writers - 1)))
     do
         (
