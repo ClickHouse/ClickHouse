@@ -78,7 +78,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// unknown name (`QueryPlanSerializationSettings::readBinary` throws), so towards such a peer the name is
 /// written only when omitting it could corrupt two-level distributed merging - failing closed on an explicit
 /// error instead of silently mixing the two hash methods, whose two-level bucket numbering differs.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 5;
+/// Version 6 ships text-index direct-read state on a serialized `ReadFromMergeTree` (the search queries
+/// behind the `__text_index_*` virtual columns and their default expressions). An older peer would leave
+/// the payload unconsumed and misparse the rest of the plan, so the serializer fails closed below
+/// version 6 when the read carries such state.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 6;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -91,6 +95,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING = 5;
+/// First query-plan serialization version that ships text-index direct-read state on a serialized
+/// `ReadFromMergeTree`. Gates writing it in `ReadFromMergeTree::serialize`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TEXT_INDEX_READ_TASKS = 6;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

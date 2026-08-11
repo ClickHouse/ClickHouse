@@ -1915,6 +1915,14 @@ MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const Action
     return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
 }
 
+MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexConditionForVirtualColumns(
+    TextSearchMode global_search_mode,
+    std::unordered_map<String, TextSearchQueryPtr> queries_by_virtual_column,
+    ContextPtr context) const
+{
+    return std::make_shared<MergeTreeIndexConditionText>(global_search_mode, std::move(queries_by_virtual_column), context, index.sample_block, normalized_index_column_name, tokenizer.get(), preprocessor, postprocessor, params.positions);
+}
+
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
 {
     DataTypePtr nested_type = data_type;

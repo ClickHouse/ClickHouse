@@ -8608,9 +8608,7 @@ Make distributed query plan.
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
 - `correlated_subqueries_use_in_memory_buffer = 0`;
-- `use_skip_indexes_on_data_read = 0`;
-- `compile_expressions = 0`;
-- `query_plan_direct_read_from_text_index = 0`.
+- `compile_expressions = 0`.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.

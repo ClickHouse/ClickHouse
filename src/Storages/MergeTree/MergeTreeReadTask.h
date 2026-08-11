@@ -70,7 +70,6 @@ struct IndexReadTask
 {
     NamesAndTypesList columns;
     MergeTreeIndexWithCondition index;
-    bool is_final = false;
 };
 
 /// Ordered map to ensure deterministic iteration order.

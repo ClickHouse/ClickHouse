@@ -8,6 +8,9 @@
 namespace DB
 {
 
+class ReadBuffer;
+class WriteBuffer;
+
 class TextIndexTokensCache;
 using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
 
@@ -40,6 +43,14 @@ enum class TextIndexDirectReadMode : uint8_t
     Hint,
 };
 
+/// Source form of a search pattern: a LIKE pattern plus a case flag.
+/// The compiled OptimizedRegularExpression cannot be serialized, so queries keep the source form and recompile it.
+struct TextSearchPatternSource
+{
+    String like_pattern;
+    bool case_insensitive = false;
+};
+
 /// Represents a single text-search function
 struct TextSearchQuery
 {
@@ -48,7 +59,7 @@ struct TextSearchQuery
         TextSearchMode search_mode_,
         TextIndexDirectReadMode direct_read_mode_,
         VectorWithMemoryTracking<String> tokens_,
-        std::vector<OptimizedRegularExpression> patterns_ = {},
+        std::vector<TextSearchPatternSource> pattern_sources_ = {},
         VectorWithMemoryTracking<String> phrase_tokens_ = {});
 
     const String & getFunctionName() const { return function_name; }
@@ -59,6 +70,9 @@ struct TextSearchQuery
     const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
     UInt128 getHash() const { return hash; }
 
+    void serialize(WriteBuffer & out) const;
+    static std::shared_ptr<TextSearchQuery> deserialize(ReadBuffer & in);
+
 private:
     void initializeHash();
 
@@ -68,7 +82,10 @@ private:
     TextIndexDirectReadMode direct_read_mode;
     /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
+    /// Compiled in the constructor from `pattern_sources`.
     std::vector<OptimizedRegularExpression> patterns;
+    /// Source of truth for `patterns`: serialization and the hash use it, the compiled form is not invertible.
+    std::vector<TextSearchPatternSource> pattern_sources;
     /// Not sorted, not deduplicated.
     VectorWithMemoryTracking<String> phrase_tokens;
     /// Precomputed in the constructor because getHash is called on hot paths.
@@ -89,8 +106,21 @@ using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPos
 class MergeTreeIndexConditionText final : public IMergeTreeIndexCondition, public WithContext
 {
 public:
+    /// Extracts the search queries from `predicate`.
     MergeTreeIndexConditionText(
         const ActionsDAG::Node * predicate,
+        ContextPtr context_,
+        const Block & index_sample_block,
+        const std::optional<String> & normalized_index_column_name_,
+        TokenizerPtr tokenizer_,
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        MergeTreeIndexTextPostprocessorPtr postprocessor_,
+        bool has_positions_);
+
+    /// Takes the search queries shipped in a distributed plan, keyed by virtual column name.
+    MergeTreeIndexConditionText(
+        TextSearchMode global_search_mode_,
+        std::unordered_map<String, TextSearchQueryPtr> virtual_column_to_search_query_,
         ContextPtr context_,
         const Block & index_sample_block,
         const std::optional<String> & normalized_index_column_name_,
@@ -159,6 +189,19 @@ private:
 
     using RPN = std::vector<RPNElement>;
 
+    /// Initializes everything except the search queries; both public constructors delegate to it.
+    MergeTreeIndexConditionText(
+        ContextPtr context_,
+        const Block & index_sample_block,
+        const std::optional<String> & normalized_index_column_name_,
+        TokenizerPtr tokenizer_,
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        MergeTreeIndexTextPostprocessorPtr postprocessor_,
+        bool has_positions_);
+
+    /// Sorts the tokens collected from the search queries and builds the cardinalities cache over them.
+    void finalizeSearchTokens(const NameSet & tokens);
+
     bool traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const;
 
     bool traverseFunctionNode(
@@ -185,7 +228,10 @@ private:
     /// Builds the OR-list of token sets for a `match`-style regexp, folding the required substring
     /// into every alternative. Returns an empty list when the regexp imposes no token requirement.
     std::vector<VectorWithMemoryTracking<String>> regexpToTokensForQueries(const String & regexp_string) const;
-    std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
+    std::vector<TextSearchPatternSource> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
+
+    /// Creates token/header/postings caches (either the global ones or query-local ones).
+    void initializeCaches();
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 

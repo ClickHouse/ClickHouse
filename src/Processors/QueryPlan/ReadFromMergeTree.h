@@ -28,6 +28,10 @@ using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 class LazilyReadFromMergeTree;
 struct QueryIdHolder;
 
+struct TextSearchQuery;
+using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
+enum class TextSearchMode : uint8_t;
+
 struct MergeTreeDataSelectSamplingData
 {
     bool use_sampling = false;
@@ -415,7 +419,27 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
+    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns);
+
+    /// State shipped with a serialized plan to rebuild `index_read_tasks` on the receiving node.
+    /// It cannot be re-derived there: the shipped filter references `__text_index_*` virtual columns.
+    struct SerializedTextIndexReadTask
+    {
+        struct Column
+        {
+            String name;
+            TextSearchQueryPtr search_query;
+            /// Default expression of the virtual column (null if none).
+            /// The reader evaluates it for parts where the index is not materialized.
+            ASTPtr default_expression;
+        };
+
+        String index_name;
+        TextSearchMode global_search_mode{};
+        std::vector<Column> columns;
+    };
+
+    using SerializedTextIndexReadTasks = std::vector<SerializedTextIndexReadTask>;
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
@@ -506,6 +530,11 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    void serializeTextIndexReadTasks(Serialization & ctx) const;
+    static SerializedTextIndexReadTasks deserializeTextIndexReadTasks(Deserialization & ctx);
+    /// Rebuilds `index_read_tasks` from the shipped state against this node's own metadata.
+    void restoreTextIndexReadTasks(const SerializedTextIndexReadTasks & tasks);
+
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 
