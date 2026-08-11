@@ -447,7 +447,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
-            auto column_in_part = getColumnInPart(*name_and_type);
+            const auto & column_in_part = columns_to_read[pos];
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
             copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
