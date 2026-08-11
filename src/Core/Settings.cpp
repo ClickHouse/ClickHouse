@@ -6887,6 +6887,9 @@ Cloud default value: `1`.
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
 )", 0) \
+    DECLARE(Bool, filesystem_cache_verbose_logging, false, R"(
+Emit `TEST`-level log messages for every filesystem cache buffer refill (state of the read, remaining size to read, bytes read). Only for debugging: the messages are formatted once per read, so enabling it on a query that does many small cached reads adds a large amount of logging overhead. The messages are only visible when the log level is `test` anyway (see `send_logs_level`).
+)", 0) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \

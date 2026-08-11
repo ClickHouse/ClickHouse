@@ -2261,6 +2261,12 @@ html.dark .prose a.experimentalBadge:not(.card):not(.card *),
     margin-top: 0 !important;
 }
 
+/* Keep contextual controls visible below long tables of contents */
+#table-of-contents-content {
+    max-height: calc(100vh - 22rem);
+    overflow-y: auto;
+}
+
 /* Fix layout overlap in flex-row-reverse pages (like secure-rds) */
 @media (min-width: 1280px) {
     .flex.flex-row-reverse>.relative.grow {
