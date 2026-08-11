@@ -1,4 +1,9 @@
 1	a
 rejected
+rejected-again
+alive
+1	(2,'x')
+nested-rejected
+nested-rejected-again
 alive
 OK
