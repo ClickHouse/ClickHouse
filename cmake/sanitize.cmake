@@ -14,6 +14,17 @@
 # comparing against the empty string.
 set (SANITIZE "" CACHE STRING "Enable one of the code sanitizers")
 
+# `set(... CACHE ...)` does not retag an entry that already exists, so a build directory
+# configured while SANITIZE was still an `option` keeps a BOOL-typed entry, and `ccmake` /
+# `cmake-gui` keep presenting it as a checkbox whose only writable values are ON/OFF.
+# Retag it in place: a stale `OFF` stays falsy and keeps meaning "no sanitizer", while the
+# STRING type lets the user type a real sanitizer name.
+get_property (sanitize_cache_type CACHE SANITIZE PROPERTY TYPE)
+if (sanitize_cache_type STREQUAL "BOOL")
+    set_property (CACHE SANITIZE PROPERTY TYPE STRING)
+endif()
+unset (sanitize_cache_type)
+
 ## -fno-omit-frame-pointer is required: the query profiler relies on frame-pointer-based
 ## stack unwinding under sanitizer builds (via abseil's GetStackTrace in StackTrace.cpp).
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
