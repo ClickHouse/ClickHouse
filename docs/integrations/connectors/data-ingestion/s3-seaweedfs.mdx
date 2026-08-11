@@ -37,19 +37,16 @@ For a local test setup, create a file `s3config.json` with the S3 credentials:
 }
 ```
 
-Then start the whole SeaweedFS stack in one container and create a bucket:
+Then start the whole SeaweedFS stack in one container - the `-bucket` flag creates the bucket on startup:
 
 ```bash
 docker run -d --name seaweedfs -p 8333:8333 \
   -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
   chrislusf/seaweedfs:latest \
-  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json
-
-echo "s3.bucket.create -name clickhouse" | \
-  docker exec -i seaweedfs weed shell -master=localhost:9333
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
 ```
 
-The S3 endpoint listens on port 8333.
+The S3 endpoint listens on port 8333. Once the stack is up, more buckets can be created at any time with `echo "s3.bucket.create -name mybucket" | docker exec -i seaweedfs weed shell`.
 
 ## S3-backed MergeTree {#s3-backed-mergetree}
 
