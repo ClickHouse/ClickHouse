@@ -2749,7 +2749,10 @@ def test_lost_leadership_during_snapshot_does_not_publish_stale_marker(started_c
     # is released first, while the new leader is still mid-snapshot - exactly the window in which the
     # stale marker used to be written.
     pause_line = "Pausing before marking the initial snapshot as completed"
-    abort_line = "Keeper session expired, releasing replication leadership"
+    # The deposed worker is parked inside its startup attempt, so the leadership-session fence aborts that
+    # attempt and the leadership is released through the failed-startup path (not through the session-expiry
+    # check of the coordination task, which only sees an already-released claim afterwards).
+    abort_line = "Released replication leadership after a failed startup attempt"
     failpoint = "materialized_postgresql_pause_before_marking_snapshot_completed"
 
     pg_manager.create_postgres_table("test_table")
@@ -2825,7 +2828,10 @@ def test_deposed_worker_aborts_redo_snapshot_before_touching_shared_state(starte
     # dropping the slot the successor just created.
     marker_pause_line = "Pausing before marking the initial snapshot as completed"
     redo_pause_line = "Pausing before redoing the initial snapshot"
-    demotion_line = "Keeper session expired, releasing replication leadership"
+    # Both workers are deposed while parked inside a startup attempt, so the leadership-session fence aborts
+    # that attempt and the leadership is released through the failed-startup path (not through the
+    # session-expiry check of the coordination task, which only sees an already-released claim afterwards).
+    demotion_line = "Released replication leadership after a failed startup attempt"
     truncate_line = "Truncated nested table"
     marker_failpoint = "materialized_postgresql_pause_before_marking_snapshot_completed"
     redo_failpoint = "materialized_postgresql_pause_before_redo_snapshot_truncate"
