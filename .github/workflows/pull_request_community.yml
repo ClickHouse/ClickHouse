@@ -2074,7 +2074,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "Community PR" --ci --timestamp
 
   stateless_tests_amd_binary_cas_s3_storage_parallel:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_binary, build_amd_debug, build_arm_binary, config_workflow, fast_test, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBjYXMgczMgc3RvcmFnZSwgcGFyYWxsZWwp') }}
     name: "Stateless tests (amd_binary, cas s3 storage, parallel)"
@@ -2122,7 +2122,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_binary, cas s3 storage, parallel)' --workflow "Community PR" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_cas_s3_storage_parallel_1_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_arm_binary, config_workflow, fast_test, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgY2FzIHMzIHN0b3JhZ2UsIHBhcmFsbGVsLCAxLzIp') }}
     name: "Stateless tests (amd_asan_ubsan, cas s3 storage, parallel, 1/2)"
@@ -2170,7 +2170,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, cas s3 storage, parallel, 1/2)' --workflow "Community PR" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_cas_s3_storage_parallel_2_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_arm_binary, config_workflow, fast_test, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgY2FzIHMzIHN0b3JhZ2UsIHBhcmFsbGVsLCAyLzIp') }}
     name: "Stateless tests (amd_asan_ubsan, cas s3 storage, parallel, 2/2)"
@@ -2506,7 +2506,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, cas s3 storage, parallel)' --workflow "Community PR" --ci --timestamp
 
   stateless_tests_amd_binary_cas_storage_parallel:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_binary, build_amd_debug, build_arm_binary, config_workflow, fast_test, stateless_tests_amd_debug_parallel, stateless_tests_arm_binary_parallel]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBjYXMgc3RvcmFnZSwgcGFyYWxsZWwp') }}
     name: "Stateless tests (amd_binary, cas storage, parallel)"

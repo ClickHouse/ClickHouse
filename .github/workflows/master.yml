@@ -2861,7 +2861,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_binary_cas_s3_storage_parallel:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBjYXMgczMgc3RvcmFnZSwgcGFyYWxsZWwp') }}
     name: "Stateless tests (amd_binary, cas s3 storage, parallel)"
@@ -2912,7 +2912,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_binary, cas s3 storage, parallel)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_cas_s3_storage_parallel_1_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgY2FzIHMzIHN0b3JhZ2UsIHBhcmFsbGVsLCAxLzIp') }}
     name: "Stateless tests (amd_asan_ubsan, cas s3 storage, parallel, 1/2)"
@@ -2963,7 +2963,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, cas s3 storage, parallel, 1/2)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_cas_s3_storage_parallel_2_2:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_asan_ubsan, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgY2FzIHMzIHN0b3JhZ2UsIHBhcmFsbGVsLCAyLzIp') }}
     name: "Stateless tests (amd_asan_ubsan, cas s3 storage, parallel, 2/2)"
@@ -3320,7 +3320,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, cas s3 storage, parallel)' --workflow "MasterCI" --ci --timestamp
 
   stateless_tests_amd_binary_cas_storage_parallel:
-    runs-on: [self-hosted, altinity-on-demand, altinity-builder, 16c]
+    runs-on: [self-hosted, altinity-on-demand, altinity-func-tester, 16c]
     needs: [build_amd_binary, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBjYXMgc3RvcmFnZSwgcGFyYWxsZWwp') }}
     name: "Stateless tests (amd_binary, cas storage, parallel)"
