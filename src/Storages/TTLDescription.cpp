@@ -1242,10 +1242,15 @@ static ExpressionAndSets buildExpressionAndSets(
                 NamesAndTypesList narrow_source_columns;
                 for (const auto & required_column : *required_source_columns)
                 {
-                    /// Widening preserves column names, so the name is always present in `columns`.
-                    auto original = columns.tryGetByName(required_column.name);
-                    chassert(original.has_value());
-                    narrow_source_columns.push_back(*original);
+                    /// The analysis can also report subcolumns (e.g. `j.ts` of a `JSON` column) that are
+                    /// not in `columns`. Keep those as reported: widening only alters the types of
+                    /// top-level temporal columns, and no subcolumn of a widened column changes its type
+                    /// (`Nullable` is preserved, so `.null` stays `UInt8`), so the reported types match
+                    /// what the narrow analysis would report.
+                    if (auto original = columns.tryGetByName(required_column.name))
+                        narrow_source_columns.push_back(*original);
+                    else
+                        narrow_source_columns.push_back(required_column);
                 }
                 *required_source_columns = std::move(narrow_source_columns);
             }
