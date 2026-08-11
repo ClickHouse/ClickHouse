@@ -34,7 +34,8 @@ public:
         std::unordered_set<String> paths_to_skip_ = {},
         std::vector<String> path_regexps_to_skip_ = {},
         size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
-        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
+        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        std::vector<String> path_regexps_shared_data_ = {});
 
     DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
 
@@ -77,6 +78,9 @@ public:
     UnorderedMapWithMemoryTracking<String, SerializationPtr> getTypedPathSerializations() const;
     const std::unordered_set<String> & getPathsToSkip() const { return paths_to_skip; }
     const std::vector<String> & getPathRegexpsToSkip() const { return path_regexps_to_skip; }
+    /// Paths matching one of these regexps are always stored in shared data and are never promoted
+    /// to a dedicated dynamic-path subcolumn, regardless of the max_dynamic_paths budget.
+    const std::vector<String> & getPathRegexpsSharedData() const { return path_regexps_shared_data; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
@@ -99,10 +103,19 @@ private:
     std::unordered_set<String> paths_to_skip;
     /// List of regular expressions that should be used to skip paths during data parsing.
     std::vector<String> path_regexps_to_skip;
+    /// List of regular expressions for paths that must always be stored in shared data and must
+    /// never be promoted to a dedicated dynamic-path subcolumn.
+    std::vector<String> path_regexps_shared_data;
     /// Limit on the number of paths that can be stored as subcolumn.
     size_t max_dynamic_paths;
     /// Limit of dynamic types that should be used for Dynamic columns.
     size_t max_dynamic_types;
 };
+
+/// If `type` is a DataTypeObject (optionally wrapped in Nullable), returns its SHARED REGEXP
+/// patterns; otherwise returns an empty vector. Used to plumb path_regexps_shared_data down to
+/// merge-time dynamic-path selection (see ColumnObject::chooseDynamicStructureForMerge), where only
+/// the column's type gives access to it.
+std::vector<String> tryGetPathRegexpsSharedDataForMerge(const DataTypePtr & type);
 
 }

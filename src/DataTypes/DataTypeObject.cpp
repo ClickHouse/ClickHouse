@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
@@ -62,17 +63,32 @@ DataTypeObject::DataTypeObject(
     std::unordered_set<String> paths_to_skip_,
     std::vector<String> path_regexps_to_skip_,
     size_t max_dynamic_paths_,
-    size_t max_dynamic_types_)
+    size_t max_dynamic_types_,
+    std::vector<String> path_regexps_shared_data_)
     : schema_format(schema_format_)
     , typed_paths(std::move(typed_paths_))
     , paths_to_skip(std::move(paths_to_skip_))
     , path_regexps_to_skip(std::move(path_regexps_to_skip_))
+    , path_regexps_shared_data(std::move(path_regexps_shared_data_))
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
 {
     /// Check if regular expressions are valid.
     for (const auto & regexp_str : path_regexps_to_skip)
     {
+        re2::RE2::Options options;
+        /// Don't log errors to stderr.
+        options.set_log_errors(false);
+        auto regexp = re2::RE2(regexp_str, options);
+        if (!regexp.ok())
+            throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Invalid regexp '{}': {}", regexp_str, regexp.error());
+    }
+
+    for (const auto & regexp_str : path_regexps_shared_data)
+    {
+        if (regexp_str.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "SHARED REGEXP pattern cannot be empty");
+
         re2::RE2::Options options;
         /// Don't log errors to stderr.
         options.set_log_errors(false);
@@ -94,6 +110,11 @@ DataTypeObject::DataTypeObject(
             if (re2::RE2::FullMatch(typed_path, re2::RE2(path_regex_to_skip)))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regex_to_skip);
         }
+
+        /// Note: an exact typed-path hint is intentionally NOT checked against path_regexps_shared_data.
+        /// Typed paths are always forced dynamic subcolumns by a higher-precedence, entirely separate
+        /// mechanism, so a typed path matching a SHARED REGEXP pattern is not a real conflict: the typed
+        /// path simply always wins and the SHARED REGEXP rule has no effect on it.
     }
 }
 
@@ -131,6 +152,7 @@ bool DataTypeObject::equals(const IDataType & rhs) const
         }
 
         return schema_format == object->schema_format && paths_to_skip == object->paths_to_skip && path_regexps_to_skip == object->path_regexps_to_skip
+            && path_regexps_shared_data == object->path_regexps_shared_data
             && max_dynamic_types == object->max_dynamic_types && max_dynamic_paths == object->max_dynamic_paths;
     }
 
@@ -161,6 +183,7 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                     typed_paths_serializations,
                     paths_to_skip,
                     path_regexps_to_skip,
+                    path_regexps_shared_data,
                     getDynamicType(),
                     dynamic_serialization,
                     buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
@@ -172,6 +195,7 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 typed_paths_serializations,
                 paths_to_skip,
                 path_regexps_to_skip,
+                path_regexps_shared_data,
                 getDynamicType(),
                 dynamic_serialization,
                 buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
@@ -181,6 +205,7 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 typed_paths_serializations,
                 paths_to_skip,
                 path_regexps_to_skip,
+                path_regexps_shared_data,
                 getDynamicType(),
                 dynamic_serialization,
                 buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
@@ -231,8 +256,9 @@ String DataTypeObject::doGetName() const
     for (const auto & path : sorted_typed_paths)
     {
         write_separator();
-        /// We must quote path "SKIP" to avoid its confusion with SKIP keyword.
-        if (boost::to_upper_copy(path) == "SKIP")
+        /// We must quote paths "SKIP" and "SHARED" to avoid their confusion with the SKIP/SHARED keywords.
+        auto upper_path = boost::to_upper_copy(path);
+        if (upper_path == "SKIP" || upper_path == "SHARED")
             out << backQuote(path) << " " << typed_paths.at(path)->getName();
         else
             out << backQuoteIfNeed(path) << " " << typed_paths.at(path)->getName();
@@ -255,6 +281,12 @@ String DataTypeObject::doGetName() const
         out << "SKIP REGEXP " << quoteString(skip_regexp);
     }
 
+    for (const auto & shared_data_regexp : path_regexps_shared_data)
+    {
+        write_separator();
+        out << "SHARED REGEXP " << quoteString(shared_data_regexp);
+    }
+
     if (!first)
         out << ")";
 
@@ -268,7 +300,13 @@ MutableColumnPtr DataTypeObject::createColumn() const
     for (const auto & [path, type] : typed_paths)
         typed_path_columns[path] = type->createColumn();
 
-    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+    auto column = ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+    /// Bake the SHARED REGEXP patterns into the column itself, so that ANY code path that creates
+    /// new dynamic paths on it (parsing, generic Field-based insert, insertFrom/insertRangeFrom
+    /// column copies, merges) is guaranteed to respect them, not just JSON text/binary parsing.
+    if (!path_regexps_shared_data.empty())
+        assert_cast<ColumnObject &>(*column).setPathRegexpsSharedDataForMerge(path_regexps_shared_data);
+    return column;
 }
 
 void DataTypeObject::forEachChild(const ChildCallback & callback) const
@@ -539,6 +577,7 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     const DataTypeObject::SchemaFormat & schema_format,
     const std::unordered_set<String> & paths_to_skip,
     const std::vector<String> & path_regexps_to_skip,
+    const std::vector<String> & path_regexps_shared_data,
     size_t max_dynamic_paths,
     size_t max_dynamic_types,
     const DataTypePtr & dynamic_type,
@@ -555,7 +594,7 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
         }
     }
 
-    auto sub_object_type = std::make_shared<DataTypeObject>(schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
+    auto sub_object_type = std::make_shared<DataTypeObject>(schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types, path_regexps_shared_data);
     auto sub_object_serialization = SerializationSubObject::create(prefix, typed_sub_paths_serializations, dynamic_type, dynamic_serialization);
     return {std::move(sub_object_type), std::move(sub_object_serialization)};
 }
@@ -610,7 +649,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     {
         const String prefix = *sub_object_subcolumn + ".";
         auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
-            prefix, typed_paths, typed_paths_serializations, schema_format, paths_to_skip, path_regexps_to_skip,
+            prefix, typed_paths, typed_paths_serializations, schema_format, paths_to_skip, path_regexps_to_skip, path_regexps_shared_data,
             max_dynamic_paths, max_dynamic_types, getDynamicType(), dynamic_path_serialization);
 
         std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(sub_object_serialization);
@@ -652,7 +691,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
         const String prefix = combined_path + ".";
         auto dynamic_result_type = getDynamicType();
         auto [sub_object_type, sub_object_serialization] = buildSubObjectTypeAndSerialization(
-            prefix, typed_paths, typed_paths_serializations, schema_format, paths_to_skip, path_regexps_to_skip,
+            prefix, typed_paths, typed_paths_serializations, schema_format, paths_to_skip, path_regexps_to_skip, path_regexps_shared_data,
             max_dynamic_paths, max_dynamic_types, dynamic_result_type, dynamic_path_serialization);
 
         auto literal_serialization = SerializationObjectDynamicPath::create(dynamic_path_serialization, combined_path, /*path_subcolumn=*/"", dynamic_result_type, dynamic_path_serialization, dynamic_result_type);
@@ -734,6 +773,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     std::unordered_map<String, DataTypePtr> typed_paths;
     std::unordered_set<String> paths_to_skip;
     std::vector<String> path_regexps_to_skip;
+    std::vector<String> path_regexps_shared_data;
 
     size_t max_dynamic_types = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES;
     size_t max_dynamic_paths = DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS;
@@ -804,10 +844,26 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
             path_regexps_to_skip.push_back(literal->value.safeGet<String>());
         }
+        else if (object_type_argument->shared_path_regexp)
+        {
+            const auto * literal = object_type_argument->shared_path_regexp->as<ASTLiteral>();
+            if (!literal || literal->value.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in SHARED REGEXP section of {} type arguments: {}. Expected string literal with path regexp", magic_enum::enum_name(schema_format), object_type_argument->shared_path_regexp->formatForErrorMessage());
+
+            path_regexps_shared_data.push_back(literal->value.safeGet<String>());
+        }
     }
 
     std::sort(path_regexps_to_skip.begin(), path_regexps_to_skip.end());
-    return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types);
+    std::sort(path_regexps_shared_data.begin(), path_regexps_shared_data.end());
+    return std::make_shared<DataTypeObject>(
+        schema_format,
+        std::move(typed_paths),
+        std::move(paths_to_skip),
+        std::move(path_regexps_to_skip),
+        max_dynamic_paths,
+        max_dynamic_types,
+        std::move(path_regexps_shared_data));
 }
 
 const DataTypePtr & DataTypeObject::getTypeOfSharedData()
@@ -845,6 +901,11 @@ void DataTypeObject::updateHashImpl(SipHash & hash) const
     hash.update(path_regexps_to_skip.size());
     for (const auto & regexp : path_regexps_to_skip)
         hash.update(regexp);
+
+    // Include path regexps for shared data in the hash
+    hash.update(path_regexps_shared_data.size());
+    for (const auto & regexp : path_regexps_shared_data)
+        hash.update(regexp);
 }
 
 DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
@@ -864,6 +925,18 @@ UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getType
     for (const auto & [path, type] : typed_paths)
         result.emplace(path, type->getDefaultSerialization());
     return result;
+}
+
+std::vector<String> tryGetPathRegexpsSharedDataForMerge(const DataTypePtr & type)
+{
+    const IDataType * current = type.get();
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(current))
+        current = nullable->getNestedType().get();
+
+    if (const auto * object = typeid_cast<const DataTypeObject *>(current))
+        return object->getPathRegexpsSharedData();
+
+    return {};
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)
@@ -896,7 +969,8 @@ To declare a column of `JSON` type, you can use the following syntax:
     max_dynamic_types=M,
     some.path TypeName,
     SKIP path.to.skip,
-    SKIP REGEXP 'paths_regexp'
+    SKIP REGEXP 'paths_regexp',
+    SHARED REGEXP 'paths_regexp'
 )
 ```
 Where the parameters in the syntax above are defined as:
@@ -908,6 +982,7 @@ Where the parameters in the syntax above are defined as:
 | `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
+| `SHARED REGEXP 'path_regexp'` | An optional hint with a regular expression for paths that must always be stored in [shared data](#shared-data-structure). All paths that match this regular expression are never promoted to a dedicated dynamic-path sub-column, regardless of `max_dynamic_paths` or how frequently they occur. Useful to prevent high-cardinality path prefixes (for example `output.ConfigMap.*`) from ever competing for a dynamic-path slot.                                                                                                                                                                                                                                                                                                                          |               |
 
 <WhenToUseJson />
 

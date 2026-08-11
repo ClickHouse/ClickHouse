@@ -66,7 +66,11 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
-const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 0;
+/// Version 1 adds path_regexps_shared_data (SHARED REGEXP patterns) after path_regexps_to_skip.
+/// This is the highest version this build can write/read; the encoder only writes it for JSON types
+/// that actually need it (i.e. have non-empty path_regexps_shared_data), writing version 0 otherwise
+/// to keep the wire format unchanged for JSON types that don't use the new syntax.
+const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 1;
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
 {
@@ -519,8 +523,14 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
                 break;
 
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            const auto & path_regexps_shared_data = object_type.getPathRegexpsSharedData();
+            /// Only bump the on-wire version for types that actually use SHARED REGEXP: this keeps the
+            /// encoding of every JSON type that doesn't use the new syntax byte-identical to what an
+            /// older ClickHouse version writes/expects, so mixed-version clusters (e.g. during a
+            /// rolling upgrade) keep working for all JSON columns that don't use the new feature.
+            const UInt8 serialization_version = path_regexps_shared_data.empty() ? 0 : TYPE_JSON_SERIALIZATION_VERSION;
             /// Write version of the serialization because we can add new arguments in the JSON type.
-            writeBinary(TYPE_JSON_SERIALIZATION_VERSION, buf);
+            writeBinary(serialization_version, buf);
             writeVarUInt(object_type.getMaxDynamicPaths(), buf);
             writeBinary(UInt8(object_type.getMaxDynamicTypes()), buf);
             const auto & typed_paths = object_type.getTypedPaths();
@@ -538,6 +548,12 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             writeVarUInt(path_regexps_to_skip.size(), buf);
             for (const auto & regexp : path_regexps_to_skip)
                 writeStringBinary(regexp, buf);
+            if (serialization_version >= 1)
+            {
+                writeVarUInt(path_regexps_shared_data.size(), buf);
+                for (const auto & regexp : path_regexps_shared_data)
+                    writeStringBinary(regexp, buf);
+            }
             break;
         }
         default:
@@ -863,13 +879,34 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
                 readStringBinary(regexp, buf);
                 path_regexps_to_skip.push_back(regexp);
             }
+
+            /// path_regexps_shared_data was introduced in version 1. Older peers encode version 0
+            /// and never write this field, so it stays empty when reading their data.
+            std::vector<String> path_regexps_shared_data;
+            if (serialization_version >= 1)
+            {
+                size_t path_regexps_shared_data_size = 0;
+                readVarUInt(path_regexps_shared_data_size, buf);
+                if (path_regexps_shared_data_size > MAX_ARRAY_SIZE)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps for shared data during JSON type decoding: {}. Maximum: {}", path_regexps_shared_data_size, MAX_ARRAY_SIZE);
+
+                path_regexps_shared_data.reserve(path_regexps_shared_data_size);
+                for (size_t i = 0; i != path_regexps_shared_data_size; ++i)
+                {
+                    String regexp;
+                    readStringBinary(regexp, buf);
+                    path_regexps_shared_data.push_back(regexp);
+                }
+            }
+
             return std::make_shared<DataTypeObject>(
                 DataTypeObject::SchemaFormat::JSON,
                 typed_paths,
                 paths_to_skip,
                 path_regexps_to_skip,
                 max_dynamic_paths,
-                max_dynamic_types);
+                max_dynamic_types,
+                path_regexps_shared_data);
         }
     }
 

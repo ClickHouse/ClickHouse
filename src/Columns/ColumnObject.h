@@ -11,6 +11,9 @@
 #include <Common/SetWithMemoryTracking.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/re2.h>
+
+#include <list>
 
 namespace DB
 {
@@ -205,6 +208,16 @@ public:
     void takeExactDynamicStructureFrom(const IColumn & source) override;
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
+
+    /// Sets the SHARED REGEXP patterns (from the column's DataTypeObject) that this column must
+    /// respect: paths matching one of these patterns are never turned into a dynamic path (by
+    /// `tryToAddNewDynamicPath`, and therefore also by `chooseDynamicStructureForMerge`, which relies
+    /// on it), regardless of their statistics or of spare dynamic-path budget, since they must always
+    /// be stored in shared data. Set automatically by `DataTypeObject::createColumn()` and propagated
+    /// by `cloneEmpty()`/`cloneResized()`; callers normally don't need to call this directly (kept
+    /// public for the merge machinery, which sets it explicitly on columns assembled outside of
+    /// `createColumn()`, e.g. `MergedData::initialize`).
+    void setPathRegexpsSharedDataForMerge(const std::vector<String> & path_regexps_shared_data_);
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }
@@ -403,6 +416,21 @@ private:
     /// Statistics on the number of non-null values for each dynamic path and for some shared data paths in the MergeTree data part.
     /// Calculated during serializing of data part in MergeTree. Used to determine the set of dynamic paths for the merged part.
     StatisticsPtr statistics;
+    /// SHARED REGEXP patterns from the column's DataTypeObject, set via `setPathRegexpsSharedDataForMerge`.
+    /// Consulted by `tryToAddNewDynamicPath`, so paths matching one of these patterns are never turned
+    /// into a dynamic path by any caller (parsing, generic insert, insertFrom/insertRangeFrom, merge).
+    /// Empty by default (no restriction).
+    std::list<re2::RE2> path_regexps_shared_data_for_merge;
+
+    /// Copies `path_regexps_shared_data_for_merge` onto another ColumnObject, e.g. a clone produced by
+    /// `cloneEmpty()`/`cloneResized()`. RE2 objects aren't copyable, so this goes through the original
+    /// pattern strings. No-op if empty.
+    void copyPathRegexpsSharedDataForMerge(IColumn & to) const;
 };
+
+/// If `column` is a ColumnObject (optionally wrapped in any combination of Nullable/Sparse/Replicated),
+/// calls `setPathRegexpsSharedDataForMerge` on it with `path_regexps_shared_data`. No-op otherwise or
+/// if `path_regexps_shared_data` is empty. Must be called before `chooseDynamicStructureForMerge`.
+void setPathRegexpsSharedDataForMergeRecursively(IColumn & column, const std::vector<String> & path_regexps_shared_data);
 
 }

@@ -1158,8 +1158,16 @@ namespace
 {
 
 /// Checks if the only difference between two JSON (DataTypeObject) types is their
-/// typed_paths. All other parameters must be identical, making this safe to treat
-/// as a metadata-only conversion without rewriting data.
+/// typed_paths and/or path_regexps_shared_data. All other parameters must be identical, making this
+/// safe to treat as a metadata-only conversion without rewriting data.
+///
+/// path_regexps_shared_data may differ freely: adding, removing, or changing SHARED REGEXP patterns
+/// never requires an immediate data rewrite. Unlike typed_paths (which force a dedicated subcolumn
+/// and thus affect the on-disk column layout), SHARED REGEXP patterns only prevent a path from being
+/// promoted to a dynamic-path subcolumn; they don't move existing data around by themselves. Any
+/// dynamic-path data made stale by a newly-added pattern is naturally picked up as shared data by the
+/// next merge, via ColumnObject::chooseDynamicStructureForMerge (see setPathRegexpsSharedDataForMerge
+/// there), so no forced rewrite is needed here.
 bool isJSONTypeHintOnlyChange(const IDataType * from_type, const IDataType * to_type)
 {
     const auto * from_json = typeid_cast<const DataTypeObject *>(from_type);
