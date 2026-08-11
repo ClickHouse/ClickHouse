@@ -21,7 +21,8 @@ namespace ProfileEvents
 {
     /// Event identifier (index in array).
     using Event = StrongTypedef<size_t, struct EventTag>;
-    using Count = size_t;
+    /// Not `size_t`: counters are 64-bit even on 32-bit platforms, and must match `Increment`.
+    using Count = UInt64;
     using Increment = Int64;
 
     /// Counter cells are plain `Count`, accessed atomically via `std::atomic_ref`. Keeping the

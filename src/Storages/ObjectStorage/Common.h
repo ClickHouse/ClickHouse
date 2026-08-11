@@ -14,5 +14,8 @@ struct StorageParsedArguments
     bool partition_columns_in_data_file = true;
     bool partition_columns_in_data_file_was_set = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
+    /// Set when a base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from a named
+    /// collection, so that the resolved URL can be materialized back into the persisted engine args.
+    String url_overridden_by_base_setting;
 };
 }
