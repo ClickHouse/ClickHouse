@@ -103,7 +103,7 @@ TEST(AIAgent, ResetBaselinesRecentQueries)
 
     /// `? clear` starts a fresh conversation: the buffered recent-query history is part of the
     /// conversation being cleared, so nothing recorded before the reset may be replayed.
-    harness.agent->reset();
+    (*harness.agent).reset();
     harness.agent->chat("second question");
 
     ASSERT_EQ(harness.transport->conversations.size(), 2u);
@@ -145,6 +145,38 @@ TEST(AIAgent, UserTextIsNotMixedIntoToolResultsAfterFailedStep)
     /// The rendering of the server-function transport keeps the question, too.
     const String rendered = AIServerFunctionTransport::renderConversation(messages);
     EXPECT_NE(rendered.find("second question"), String::npos);
+}
+
+TEST(AIAgent, FailedTurnDoesNotMergeIntoNextQuestion)
+{
+    /// The first model call fails outright, leaving a dangling plain-text user message.
+    /// The next question must start a fresh turn instead of being appended to the stale
+    /// unanswered prompt.
+    AgentWithMock harness({errorStep("provider unavailable"), textStep("recovered")});
+
+    harness.agent->chat("first question");
+    harness.agent->chat("second question");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 2u);
+    const auto & messages = harness.transport->conversations[1];
+
+    ASSERT_FALSE(messages.empty());
+    const auto & last = messages.back();
+    EXPECT_EQ(last.role, ai::kMessageRoleUser);
+    const String last_text = last.get_text();
+    EXPECT_NE(last_text.find("second question"), String::npos);
+    EXPECT_EQ(last_text.find("first question"), String::npos);
+
+    /// The failed turn is closed with a synthetic assistant message to keep the roles alternating.
+    ASSERT_GE(messages.size(), 3u);
+    EXPECT_EQ(messages[messages.size() - 2].role, ai::kMessageRoleAssistant);
+}
+
+TEST(AIAgent, DisplaySanitizesControlCharacters)
+{
+    EXPECT_EQ(
+        AIAgentDisplay::sanitizeForTerminal("safe\ntext\twith\x1b[31mansi\x1b]52;c;evil\x07 and \r control \x7f bytes"),
+        "safe\ntext\twith[31mansi]52;c;evil and  control  bytes");
 }
 
 #endif
