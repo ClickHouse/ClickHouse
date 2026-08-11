@@ -795,3 +795,64 @@ fi
 
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${URL_USER}"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${URL_DB}"
+
+# The engine of an engine-less `CREATE ... AS SELECT` is inferred from `default_table_engine`
+# (`default_temporary_table_engine` for a temporary table) by `setEngine`, and
+# `getTablePropertiesAndNormalizeCreateQuery` then checks the `TABLE ENGINE` grant on the inferred
+# engine before the populating `SELECT` is analyzed — exactly as it does for an explicit engine.
+# A user who may create the destination but lacks that grant is stopped there, so the source must
+# stay attached on the way to the `ACCESS_DENIED`. With the grant in place, the same statement over
+# a free destination name no longer stops and must still detach its source.
+IMPLICIT_USER="user_reattach_implicit_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${IMPLICIT_USER}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_implicit_dst"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_implicit_src"
+
+# The source is a `Log` table so that the user's missing `TABLE ENGINE ON MergeTree` / `ON Memory`
+# grant affects only the inferred destination engine: the hook's own reattach preflight on the source
+# requires the grant for the source's engine, which the user has.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_implicit_src (a UInt64) ENGINE = Log"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_implicit_src VALUES (1)"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${IMPLICIT_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT ALL ON ${CLICKHOUSE_DATABASE}.* TO ${IMPLICIT_USER}"
+${CLICKHOUSE_CLIENT} -q "GRANT CREATE TEMPORARY TABLE ON *.* TO ${IMPLICIT_USER}"
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON Log TO ${IMPLICIT_USER}"
+
+function check_implicit_engine_denied()
+{
+    REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${IMPLICIT_USER}" \
+        --reattach_tables_before_query_execution=1 \
+        --default_table_engine=MergeTree --default_temporary_table_engine=Memory \
+        --query "$1" 2>&1)
+    REATTACH_STATUS=$?
+    if [ "$REATTACH_STATUS" -eq 0 ]; then
+        echo "FAIL (query unexpectedly succeeded)"
+    elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+        echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_implicit_src"; then
+        echo "FAIL (source detached for an engine-rejected query)"
+    else
+        echo "OK"
+    fi
+}
+
+check_implicit_engine_denied "CREATE TABLE t_reattach_implicit_dst AS SELECT * FROM t_reattach_implicit_src"
+check_implicit_engine_denied "CREATE TEMPORARY TABLE t_reattach_implicit_tmp AS SELECT * FROM t_reattach_implicit_src"
+
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON MergeTree TO ${IMPLICIT_USER}"
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${IMPLICIT_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --default_table_engine=MergeTree --create_table_empty_primary_key_by_default=1 \
+    --query "CREATE TABLE t_reattach_implicit_dst AS SELECT * FROM t_reattach_implicit_src" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -ne 0 ]; then
+    echo "FAIL (client error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_implicit_src"; then
+    echo "OK"
+else
+    echo "FAIL (source not detached for a granted implicit-engine statement)"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_implicit_dst"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_implicit_src"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${IMPLICIT_USER}"

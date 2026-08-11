@@ -114,6 +114,7 @@
 #endif
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -179,6 +180,8 @@ namespace Setting
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool create_index_ignore_unique;
+    extern const SettingsDefaultTableEngine default_table_engine;
+    extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsBool async_insert;
@@ -1480,6 +1483,42 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
 
     if (!context->getAccess()->isGranted(createQueryDestinationAccess(create, destination_database, destination_table)))
         return true;
+
+    /// `createQueryDestinationAccess` covers the `TABLE ENGINE` grant only for an engine spelled out in the
+    /// statement, but `getTablePropertiesAndNormalizeCreateQuery` re-checks that grant after `setEngine` has
+    /// inferred an engine for the engine-less forms — and it does so before the populating `SELECT` is
+    /// analyzed. Mirror the inference for the shapes whose engine comes from a setting, read without touching
+    /// any collected source: a temporary table takes `default_temporary_table_engine` (and `setEngine` rejects
+    /// a `Replicated`/`Shared`/`KeeperMap` default for it outright), a plain table with no `AS src` structure
+    /// source takes `default_table_engine`, and a `None` default makes `setEngine` throw `ENGINE_REQUIRED` —
+    /// all before any source is read. The remaining engine-less shapes never reach that grant check before
+    /// their sources: an engine inherited from an `AS src` source is read from that source's stored
+    /// definition, a materialized view keeps its inner engine in the target clause (which the re-check does
+    /// not cover), an `ATTACH` takes the engine from stored metadata, and dictionaries and ordinary/window
+    /// views take no engine at all.
+    if (create.table && !create.attach && !create.is_dictionary && !create.isView() && !create.as_table_function
+        && !(create.storage && create.storage->engine))
+    {
+        std::optional<DefaultTableEngine> default_engine;
+        if (create.isTemporary())
+            default_engine = context->getSettingsRef()[Setting::default_temporary_table_engine].value;
+        else if (create.as_table.empty())
+            default_engine = context->getSettingsRef()[Setting::default_table_engine].value;
+
+        if (default_engine)
+        {
+            if (*default_engine == DefaultTableEngine::None)
+                return true;
+
+            const String engine_name = SettingFieldDefaultTableEngine(*default_engine).toString();
+            if (create.isTemporary()
+                && (engine_name.starts_with("Replicated") || engine_name.starts_with("Shared") || engine_name == "KeeperMap"))
+                return true;
+
+            if (!context->getAccess()->isGranted(AccessType::TABLE_ENGINE, engine_name))
+                return true;
+        }
+    }
 
     /// A stub `ATTACH` (no engine and no column list) applies the table definition from stored metadata
     /// and rejects any user-supplied clause it would otherwise silently drop — `AS src`, `AS SELECT`,
