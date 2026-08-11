@@ -313,12 +313,20 @@ void SerializationSparse::enumerateStreams(
     {
         const auto * type_nullable = data.type ? &assert_cast<const DataTypeNullable &>(*data.type) : nullptr;
         settings.path.back() = Substream::SparseNullMap;
-        settings.path.back().creator = std::make_shared<NullMapSubcolumnCreator>(offsets_data.column, column_size);
         auto null_map_data = SubstreamData(sparse_null_map)
                                  .withType(type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr)
                                  .withColumn(nullptr) /// subcolumn will be created in NullMapSubcolumnCreator based on offsets
                                  .withSerializationInfo(data.serialization_info);
-        settings.path.back().data = null_map_data;
+
+        /// Sparse null maps are derived from offsets. Materialize this leaf on demand because
+        /// createFromPath applies regular subcolumn creators only to ancestors of the requested leaf.
+        if (offsets_data.column)
+        {
+            auto null_map_creator = std::make_shared<NullMapSubcolumnCreator>(offsets_data.column, column_size);
+            null_map_data.withLazyColumnCreator([null_map_creator] { return null_map_creator->create(ColumnPtr{}); });
+        }
+
+        settings.path.back().data = std::move(null_map_data);
         callback(settings.path);
     }
 
