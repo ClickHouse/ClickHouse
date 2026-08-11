@@ -19,6 +19,11 @@ using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buff
 struct KeeperConfiguration;
 using KeeperConfigurationPtr = std::shared_ptr<KeeperConfiguration>;
 
+/// Translate coordination settings into the `raft_params` NuRaft is started with. Split out of
+/// `KeeperServer::launchRaftServer` so the translation - unit conversions and the narrowing to the
+/// int32 most of these fields are - can be tested without starting a server.
+nuraft::raft_params buildRaftParams(const CoordinationSettings & coordination_settings, LoggerPtr log);
+
 class KeeperServer
 {
 public:
