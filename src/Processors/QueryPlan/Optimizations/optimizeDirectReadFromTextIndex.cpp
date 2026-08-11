@@ -566,8 +566,11 @@ private:
         /// Taken from the original node because processTextIndexFunction may wrap it into an alias below.
         const auto * nullable_argument = findNullableDataArgument(function_node);
 
-        /// The preprocessor is only applied to the haystack of the functions it rewrites.
-        const bool preprocessed = nullable_argument && needApplyPreprocessor(function_name);
+        /// The preprocessor is only applied to the haystack of the functions it rewrites, and the NULLs it
+        /// makes are only observable when the predicate itself is Nullable. The source column need not be:
+        /// `nullIf(str, '')` over a plain String makes NULLs of its own.
+        const bool preprocessed = needApplyPreprocessor(function_name)
+            && isNullableOrLowCardinalityNullable(function_node.result_type);
 
         /// A preprocessor that can turn a non-NULL row into NULL (e.g. `nullIf(str, '')`) puts NULLs in the
         /// index that the argument's null map cannot see, so materialized and unmaterialized parts would

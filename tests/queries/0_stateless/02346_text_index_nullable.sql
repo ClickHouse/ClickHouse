@@ -735,7 +735,10 @@ SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0 FROM
 DROP TABLE tab;
 
 SELECT 'String with a null-producing preprocessor and a Nullable needle';
--- The predicate is Nullable only because of the needle, so there is no null map to restore.
+-- The source column is not Nullable, but the preprocessor still makes row 2 NULL and the Nullable needle
+-- makes that NULL observable. Nothing in the source describes it, so direct read is not used here either.
+-- (With a non-Nullable needle the rewritten predicate is cast back to UInt8 and the row-level path raises
+-- CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, which is a separate pre-existing problem and left alone.)
 
 CREATE TABLE tab
 (
@@ -748,10 +751,14 @@ ORDER BY id;
 
 INSERT INTO tab VALUES (1, 'hello'), (2, ''), (3, 'foo');
 
-SELECT '-- a Nullable needle over a String haystack keeps direct read';
-SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0 FROM
+SELECT '-- row 2 is NULL for the rewritten predicate, so only row 3 is kept';
+SELECT id FROM tab WHERE NOT hasToken(str, toNullable('hello')) ORDER BY id;
+SELECT id FROM tab WHERE NOT hasToken(str, toNullable('hello')) ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT '-- direct read is not used for it';
+SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') FROM
 (
-    EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(str, toNullable('hello'))
+    EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(str, toNullable('hello'))
     SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'
 );
 

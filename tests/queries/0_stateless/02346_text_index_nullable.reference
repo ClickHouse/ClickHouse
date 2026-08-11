@@ -285,5 +285,8 @@ Nullable(String) with a null-producing preprocessor
 -- lower(toNullable(str)): direct read is kept
 1
 String with a null-producing preprocessor and a Nullable needle
--- a Nullable needle over a String haystack keeps direct read
-1
+-- row 2 is NULL for the rewritten predicate, so only row 3 is kept
+3
+3
+-- direct read is not used for it
+0
