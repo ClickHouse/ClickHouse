@@ -302,7 +302,7 @@ FROM example_table;
 Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
 
 :::warning
-We do not recommend using this function. In most cases, use the [uniq](https://clickhouse.com/docs/reference/functions/aggregate-functions/uniq) or [uniqCombined](https://clickhouse.com/docs/reference/functions/aggregate-functions/uniqCombined) function.
+We do not recommend using this function. In most cases, use the [uniq](/reference/functions/aggregate-functions/uniq) or [uniqCombined](/reference/functions/aggregate-functions/uniqCombined) function.
 :::
 
 <details>
@@ -377,7 +377,7 @@ Calculates the exact number of different argument values.
 :::warning
 The `uniqExact` function uses more memory than `uniq`, because the size of the state has unbounded growth as the number of different values increases.
 Use the `uniqExact` function if you absolutely need an exact result.
-Otherwise use the [`uniq`](https://clickhouse.com/docs/reference/functions/aggregate-functions/uniq) function.
+Otherwise use the [`uniq`](/reference/functions/aggregate-functions/uniq) function.
 :::
     )";
     FunctionDocumentation::Syntax syntax_uniqExact = R"(

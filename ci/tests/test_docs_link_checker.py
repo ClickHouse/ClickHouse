@@ -119,8 +119,10 @@ def test_canonical_link_checker_rewrites_source_code_urls():
         ),
         "/sql-reference/data-types/date": "/reference/data-types/date",
     }
-    text = """See https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/.
+    text = """[MergeTree](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/)
+See https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/.\\n
 [Date](/sql-reference/data-types/date.md)
+[Dynamic](https://clickhouse.com/docs/reference/data-types/dynamic)
 """
 
     aliases = canonical_links_check.find_aliases_in_text(
@@ -130,7 +132,15 @@ def test_canonical_link_checker_rewrites_source_code_urls():
     assert [(old, new) for _start, _end, old, new in aliases] == [
         (
             "https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/",
+            "/reference/engines/table-engines/mergetree-family/mergetree",
+        ),
+        (
+            "https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/",
             "https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree",
         ),
         ("/sql-reference/data-types/date.md", "/reference/data-types/date"),
+        (
+            "https://clickhouse.com/docs/reference/data-types/dynamic",
+            "/reference/data-types/dynamic",
+        ),
     ]

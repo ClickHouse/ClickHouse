@@ -9,9 +9,11 @@ and becomes a 404.
 
 The check covers Markdown/MDX pages included by the regular lychee pass plus the
 shared JavaScript/JSX snippets translated by GT. Code examples and MDX comments
-are masked before scanning. ``--fix`` rewrites redirect sources to their final
-internal destinations; redirects themselves remain unchanged for external and
-historical traffic.
+are masked before scanning. It also covers documentation embedded in C++ source,
+where Markdown links to ``clickhouse.com/docs`` must be root-relative; bare URLs
+used by runtime help remain absolute but must use canonical routes. ``--fix``
+rewrites redirect sources to their final internal destinations; redirects
+themselves remain unchanged for external and historical traffic.
 """
 
 import argparse
@@ -34,13 +36,16 @@ LOCALE_DIRS = {"ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"}
 # first two forms, while ClickHouse's locale component fixer covers the latter;
 # all of them must start from a canonical English route.
 MARKDOWN_LINK = re.compile(r"\]\(\s*(?P<url>/[^\s)]+)")
+PUBLIC_MARKDOWN_LINK = re.compile(
+    r"\]\(\s*(?P<url>https://clickhouse\.com/docs(?:/en)?/[^\s)]+)"
+)
 NAVIGATION_URL = re.compile(
     r"(?<![A-Za-z0-9_])(?:(?:['\"])?(?:href|to)(?:['\"])?)[ \t]*[:=][ \t]*"
     r"\{?[ \t]*(?P<quote>['\"`])(?P<url>/[^'\"`\s$]+)(?P=quote)"
 )
 BARE_DOCS_URL = re.compile(
     r"(?P<url>https://clickhouse\.com/docs(?:/en)?/"
-    r"[^\s'\"`)<>]*[A-Za-z0-9_/#?=&%+~-])"
+    r"[^\s'\"`)<>\\]*[A-Za-z0-9_/#?=&%+~-])"
 )
 
 MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.DOTALL)
@@ -92,7 +97,7 @@ def load_redirects(docs_root):
     return redirects
 
 
-def canonicalize_url(url, redirects):
+def canonicalize_url(url, redirects, make_relative=False):
     """Return the final redirect destination, preserving caller fragments."""
     public_prefix = ""
     internal_url = url
@@ -108,46 +113,50 @@ def canonicalize_url(url, redirects):
         if lookup.endswith(extension):
             lookup = lookup[: -len(extension)]
             break
-    if lookup not in redirects:
+    if lookup in redirects:
+        destination = redirects[lookup]
+        seen = {lookup}
+        while True:
+            destination_path, destination_suffix = split_path_suffix(destination)
+            next_lookup = destination_path.rstrip("/") or "/"
+            if next_lookup not in redirects:
+                break
+            if next_lookup in seen:
+                return None
+            seen.add(next_lookup)
+            next_destination = redirects[next_lookup]
+            # A fragment/query deliberately attached by a redirect belongs to that
+            # redirect. Otherwise carry the suffix forward to the final page.
+            if destination_suffix and not split_path_suffix(next_destination)[1]:
+                next_destination += destination_suffix
+            destination = next_destination
+    elif public_prefix and make_relative:
+        destination = lookup
+    else:
         return None
-
-    destination = redirects[lookup]
-    seen = {lookup}
-    while True:
-        destination_path, destination_suffix = split_path_suffix(destination)
-        next_lookup = destination_path.rstrip("/") or "/"
-        if next_lookup not in redirects:
-            break
-        if next_lookup in seen:
-            return None
-        seen.add(next_lookup)
-        next_destination = redirects[next_lookup]
-        # A fragment/query deliberately attached by a redirect belongs to that
-        # redirect. Otherwise carry the suffix forward to the final page.
-        if destination_suffix and not split_path_suffix(next_destination)[1]:
-            next_destination += destination_suffix
-        destination = next_destination
 
     if original_suffix and not split_path_suffix(destination)[1]:
         destination += original_suffix
-    return public_prefix + destination
+    return destination if make_relative else public_prefix + destination
 
 
 def find_aliases_in_text(text, redirects, include_public_urls=False):
     masked = mask_non_links(text)
     aliases = []
     occupied = set()
-    patterns = [MARKDOWN_LINK, NAVIGATION_URL]
+    patterns = [(MARKDOWN_LINK, False), (NAVIGATION_URL, False)]
     if include_public_urls:
-        patterns.append(BARE_DOCS_URL)
-    for pattern in patterns:
+        patterns.extend(((PUBLIC_MARKDOWN_LINK, True), (BARE_DOCS_URL, False)))
+    for pattern, make_relative in patterns:
         for match in pattern.finditer(masked):
             start, end = match.span("url")
             if (start, end) in occupied:
                 continue
             occupied.add((start, end))
             original = text[start:end]
-            canonical = canonicalize_url(original, redirects)
+            canonical = canonicalize_url(
+                original, redirects, make_relative=make_relative
+            )
             if canonical and canonical != original:
                 aliases.append((start, end, original, canonical))
     return sorted(aliases)

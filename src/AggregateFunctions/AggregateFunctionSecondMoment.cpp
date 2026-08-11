@@ -86,7 +86,7 @@ Where:
 - $n$ is the population size
 
 :::note
-This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`varPopStable`](https://clickhouse.com/docs/reference/functions/aggregate-functions/varPopStable) function. It works slower but provides a lower computational error.
+This function uses a numerically unstable algorithm. If you need [numerical stability](https://en.wikipedia.org/wiki/Numerical_stability) in calculations, use the [`varPopStable`](/reference/functions/aggregate-functions/varPopStable) function. It works slower but provides a lower computational error.
 :::
     )";
     FunctionDocumentation::Syntax syntax_varPop = R"(
