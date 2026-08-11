@@ -96,7 +96,7 @@ SELECT count()
 FROM customer, numbers(2000) AS n
 WHERE
     c_nationkey = n.number::Int32
-SETTINGS join_runtime_filter_exact_values_limit=1, join_runtime_bloom_filter_bytes=100, max_block_size=10, max_threads=1, log_comment='Q4';
+SETTINGS join_runtime_filter_exact_values_limit=1, join_runtime_bloom_filter_bytes=100, join_runtime_filter_from_fixed_hash_table=0, max_block_size=10, max_threads=1, log_comment='Q4';
 
 
 -- Check all blocks were skipped
