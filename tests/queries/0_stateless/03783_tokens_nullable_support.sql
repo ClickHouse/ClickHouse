@@ -1,12 +1,19 @@
--- Test nullable support for tokens() function
+-- Test nullable support for tokens
 
 SELECT '-- Test basic nullable string';
 SELECT tokens(toNullable('hello world'));
 SELECT tokens(materialize(toNullable('hello world')));
 SELECT tokens(CAST(NULL AS Nullable(String)));
-SELECT tokens('hello world', NULL);
-SELECT tokens('hello world', NULL, 3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT tokens(toNullable(NULL)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- Test optional arguments are non-nullable';
+SELECT tokens('hello world', NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('hello world', NULL, 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('hello world', CAST(NULL AS Nullable(String))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('hello world', toNullable('ngrams'), 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('hello world', 'ngrams', CAST(NULL AS Nullable(UInt8))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('hello world', 'sparseGrams', 3, CAST(NULL AS Nullable(UInt8))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tokens('hello world', 'sparseGrams', 3, 4, CAST(NULL AS Nullable(UInt8))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT '-- Test with different tokenizer';
 SELECT tokens(toNullable('abc def'), 'ngrams', 3);

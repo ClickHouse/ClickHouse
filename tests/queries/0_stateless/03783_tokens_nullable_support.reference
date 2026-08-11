@@ -2,7 +2,7 @@
 ['hello','world']
 ['hello','world']
 []
-['hello','world']
+-- Test optional arguments are non-nullable
 -- Test with different tokenizer
 ['abc','bc ','c d',' de','def']
 []

@@ -1,14 +1,11 @@
 #include "config.h"
 
+#include <ranges>
 #include <string_view>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
-#include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -20,15 +17,15 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
-#include <ranges>
+#include <Common/Exception.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_COLUMN;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -57,25 +54,10 @@ struct LikePatternTokensTraits
 
 std::string_view getTokenizerNameOrDefault(const ColumnsWithTypeAndName & arguments)
 {
-    if (arguments.size() < 2 || arguments[arg_tokenizer].column == nullptr)
+    if (arguments.size() < 2)
         return SplitByNonAlphaTokenizer::getExternalName();
 
-    const IColumn * column = arguments[arg_tokenizer].column.get();
-
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(column))
-        column = &column_const->getDataColumn();
-
-    if (checkAndGetColumn<ColumnNothing>(column) || column->size() == 0)
-        return SplitByNonAlphaTokenizer::getExternalName();
-
-    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column))
-    {
-        if (column_nullable->isNullAt(0))
-            return SplitByNonAlphaTokenizer::getExternalName();
-        column = &column_nullable->getNestedColumn();
-    }
-
-    return column->getDataAt(0);
+    return arguments[arg_tokenizer].column->getDataAt(0);
 }
 
 std::unique_ptr<ITokenizer> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view function_name)
@@ -219,12 +201,16 @@ private:
                 }
                 else
                 {
-                    forEachToken(tokenizer_, input.data(), input.size(), [&](const char * token_start, size_t token_len)
-                    {
-                        column_result.insertData(token_start, token_len);
-                        ++tokens_count;
-                        return false;
-                    });
+                    forEachToken(
+                        tokenizer_,
+                        input.data(),
+                        input.size(),
+                        [&](const char * token_start, size_t token_len)
+                        {
+                            column_result.insertData(token_start, token_len);
+                            ++tokens_count;
+                            return false;
+                        });
                 }
             }
 
@@ -276,10 +262,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
 
-    static FunctionOverloadResolverPtr create(ContextPtr)
-    {
-        return std::make_unique<FunctionTokensOverloadResolver>();
-    }
+    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<FunctionTokensOverloadResolver>(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -290,33 +273,14 @@ public:
             return isStringOrFixedString(type);
         };
 
-        auto is_string_nullable_string_or_nothing = [](const IDataType & type)
-        {
-            if (isStringOrNullableString(type) || isNothing(type))
-                return true;
-            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(&type))
-                return isNothing(nullable_type->getNestedType());
-            return false;
-        };
-
-        auto is_column_const_or_nullable_nothing = [](const IColumn & column)
-        {
-            if (isColumnConst(column))
-                return true;
-            if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&column))
-                if (checkAndGetColumn<ColumnNothing>(&nullable_column->getNestedColumn()) != nullptr)
-                    return true;
-            return false;
-        };
-
-        FunctionArgumentDescriptors mandatory_args{
-            {"value", is_string_or_fixed_string_nullable, nullptr, "String or FixedString"}};
+        FunctionArgumentDescriptors mandatory_args{{"value", is_string_or_fixed_string_nullable, nullptr, "String or FixedString"}};
 
         FunctionArgumentDescriptors optional_args;
 
         if (arguments.size() > 1)
         {
-            optional_args.emplace_back("tokenizer", is_string_nullable_string_or_nothing, is_column_const_or_nullable_nothing, "const String");
+            optional_args.emplace_back(
+                "tokenizer", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
             validateFunctionArguments(name, {arguments[arg_value], arguments[arg_tokenizer]}, mandatory_args, optional_args);
 
             if (arguments.size() == 3)
@@ -324,12 +288,15 @@ public:
                 const auto tokenizer_name = getTokenizerNameOrDefault(arguments);
 
                 if (tokenizer_name == NgramsTokenizer::getExternalName())
-                    optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                    optional_args.emplace_back(
+                        "ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 else if (tokenizer_name == SplitByStringTokenizer::getExternalName())
-                    optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
+                    optional_args.emplace_back(
+                        "separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
 #if USE_ICU
-                else if (tokenizer == IcuTokenizer::getExternalName())
-                    optional_args.emplace_back("locale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
+                else if (tokenizer_name == IcuTokenizer::getExternalName())
+                    optional_args.emplace_back(
+                        "locale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
 #endif
             }
             else if (arguments.size() == 4 || arguments.size() == 5)
@@ -338,10 +305,16 @@ public:
 
                 if (tokenizer_name == SparseGramsTokenizer::getExternalName())
                 {
-                    optional_args.emplace_back("min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
-                    optional_args.emplace_back("max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                    optional_args.emplace_back(
+                        "min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                    optional_args.emplace_back(
+                        "max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                     if (arguments.size() == 5)
-                        optional_args.emplace_back("min_cutoff_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
+                        optional_args.emplace_back(
+                            "min_cutoff_length",
+                            static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8),
+                            isColumnConst,
+                            "const UInt8");
                 }
             }
         }
@@ -402,37 +375,53 @@ tokens(value, 'array')
 )";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer",
+         "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu`, `japanese`, `ngrams`, "
+         "`sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.",
+         {"const String"}},
         {"locale", "Only relevant if argument `tokenizer` is `icu`: The mandatory locale, for example `'ja'`.", {"const String"}},
-        {"n", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
-        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
-        {"min_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum gram length, defaults to 3.", {"const UInt8"}},
-        {"max_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the maximum gram length, defaults to 100.", {"const UInt8"}},
-        {"min_cutoff_length", "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum cutoff length.", {"const UInt8"}},
+        {"n",
+         "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set "
+         "explicitly, defaults to `3`.",
+         {"const UInt8"}},
+        {"separators",
+         "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set "
+         "explicitly, defaults to `[' ']`.",
+         {"const Array(String)"}},
+        {"min_length",
+         "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum gram length, defaults to "
+         "3.",
+         {"const UInt8"}},
+        {"max_length",
+         "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the maximum gram length, defaults to "
+         "100.",
+         {"const UInt8"}},
+        {"min_cutoff_length",
+         "Only relevant if argument `tokenizer` is `sparseGrams`: An optional parameter which defines the minimum cutoff length.",
+         {"const UInt8"}},
     };
 
     /// tokensForLikePattern rejects tokenizers without LIKE-pattern support (e.g. `japanese`), so its
     /// tokenizer list omits `japanese`.
     FunctionDocumentation::Arguments arguments_like = arguments;
-    arguments_like[arg_tokenizer] = {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}};
+    arguments_like[arg_tokenizer]
+        = {"tokenizer",
+           "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and "
+           "`array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.",
+           {"const String"}};
 
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Default tokenizer",
-        R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
-        R"(
+    FunctionDocumentation::Examples examples
+        = {{"Default tokenizer",
+            R"(SELECT tokens('test1,;\\\\ test2,;\\\\ test3,;\\\\   test4') AS tokens;)",
+            R"(
 ['test1','test2','test3','test4']
-        )"
-    },
-    {
-        "Ngram tokenizer",
-        "SELECT tokens('abc def', 'ngrams', 3) AS tokens;",
-        R"(
+        )"},
+           {"Ngram tokenizer",
+            "SELECT tokens('abc def', 'ngrams', 3) AS tokens;",
+            R"(
 ['abc','bc ','c d',' de','def']
-        )"
-    }
-    };
+        )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
@@ -457,17 +446,15 @@ This function is primarily intended for debugging and testing purposes,
 and is used internally to analyze tokenization behavior for LIKE patterns.
 )";
         FunctionDocumentation::Syntax syntax_like = "tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])";
-        FunctionDocumentation::Examples examples_like = {
-            {
-                "Default tokenizer",
+        FunctionDocumentation::Examples examples_like
+            = {{"Default tokenizer",
                 R"(SELECT tokensForLikePattern('%test1,test2,test3%') AS tokens;)",
                 R"(
                     ['test2']
-                    )"
-            }
-        };
+                    )"}};
         FunctionDocumentation::IntroducedIn introduced_in_like = {26, 3};
-        FunctionDocumentation documentation_like = {description_like, syntax_like, arguments_like, {}, returned_value, examples_like, introduced_in_like, category};
+        FunctionDocumentation documentation_like
+            = {description_like, syntax_like, arguments_like, {}, returned_value, examples_like, introduced_in_like, category};
 
         factory.registerFunction<FunctionTokensOverloadResolver<LikePatternTokensTraits>>(documentation_like);
     }
