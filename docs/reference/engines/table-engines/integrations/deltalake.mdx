@@ -1,6 +1,6 @@
 ---
-description: 'This engine provides an integration with Delta Lake tables in Amazon S3,
-  supporting reads, writes and creating new tables.'
+description: 'This engine provides a read-only integration with existing Delta Lake
+  tables in Amazon S3.'
 sidebarTitle: 'DeltaLake'
 slug: /engines/table-engines/integrations/deltalake
 title: 'DeltaLake table engine'
@@ -12,9 +12,7 @@ This engine provides an integration with existing [Delta Lake](https://github.co
 
 ## Create a DeltaLake table {#create-table}
 
-A `DeltaLake` table can be created either over an **existing** Delta Lake table in S3, GCP or Azure storage, or at an **empty** location, in which case a brand-new Delta Lake table is created (the initial `_delta_log` is written).
-
-Creating a new table is experimental and requires `allow_experimental_delta_lake_create_table = 1`; writing the initial commit additionally requires `allow_experimental_delta_lake_writes = 1`. If the location already contains a `_delta_log`, the statement attaches to the existing table instead: for a plain (non-catalog) `DeltaLake` table no settings are required, while onboarding an existing table into a `DataLakeCatalog` (Unity) database requires `allow_experimental_delta_lake_create_table = 1` (its schema is read through the kernel to register it). With an explicit column list the declared columns are attached as-is and adapted to the data on read. When creating a new table the `PARTITION BY`, `ORDER BY`, `PRIMARY KEY` and `SAMPLE BY` clauses are not yet supported. Column types with no compatible Delta type are rejected (for example `UInt64`, `Decimal` with precision above 38, and `LowCardinality`); other types are stored as the closest Delta type, so a column may be read back as a different but compatible ClickHouse type (for example `UInt8` as `Int16`, `Date` as `Date32`, and `DateTime` as `DateTime64(6)`).
+To create a DeltaLake table it must already exist in S3, GCP or Azure storage. The commands below do not take DDL parameters to create a new table.
 
 <Tabs>
 <Tab title="S3">
