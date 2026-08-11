@@ -2,6 +2,8 @@
 -- SealGatedReadTransforms which start reading only after the build side completes its runtime
 -- filter, and the filter then prunes whole mark ranges by the primary key at task-cut time.
 
+-- Runtime filters (and therefore the gating) exist only with the analyzer.
+SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
 SET enable_join_seal_gated_reading = 1;
 -- The gating marks only plain local reads (no parallel replicas).
@@ -24,13 +26,13 @@ DROP TABLE IF EXISTS t_seal_probe;
 DROP TABLE IF EXISTS t_seal_build;
 
 CREATE TABLE t_seal_probe (k UInt64, v String) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 32;
-INSERT INTO t_seal_probe SELECT number, toString(number) FROM numbers(250000);
+    SETTINGS index_granularity = 8;
+INSERT INTO t_seal_probe SELECT number, toString(number) FROM numbers(50000);
 OPTIMIZE TABLE t_seal_probe FINAL;
 
 CREATE TABLE t_seal_build (k UInt64) ENGINE = MergeTree ORDER BY k;
--- 5 keys spread over the probe primary key range: almost all of the ~7800 marks are prunable.
-INSERT INTO t_seal_build SELECT number * 50000 FROM numbers(5);
+-- 5 keys spread over the probe primary key range: almost all of the ~6250 marks are prunable.
+INSERT INTO t_seal_build SELECT number * 10000 FROM numbers(5);
 
 -- The gated result must match the ungated one.
 SELECT /* seal_gated_join */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k;
@@ -77,9 +79,9 @@ SELECT /* seal_join_by_shards */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t
 -- ... and FINAL.
 DROP TABLE IF EXISTS t_seal_probe_final;
 CREATE TABLE t_seal_probe_final (k UInt64, v String) ENGINE = ReplacingMergeTree ORDER BY k
-    SETTINGS index_granularity = 32;
-INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(50000);
-INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(50000);
+    SETTINGS index_granularity = 8;
+INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(20000);
+INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(20000);
 SELECT /* seal_final */ count(), sum(p.k) FROM t_seal_probe_final AS p FINAL JOIN t_seal_build AS b ON p.k = b.k;
 DROP TABLE t_seal_probe_final;
 
@@ -87,8 +89,8 @@ DROP TABLE t_seal_probe_final;
 -- pruning has to keep exactly the marks containing the build keys.
 DROP TABLE IF EXISTS t_seal_probe_desc;
 CREATE TABLE t_seal_probe_desc (k UInt64, v String) ENGINE = MergeTree ORDER BY (k DESC)
-    SETTINGS index_granularity = 32;
-INSERT INTO t_seal_probe_desc SELECT number, toString(number) FROM numbers(250000);
+    SETTINGS index_granularity = 8;
+INSERT INTO t_seal_probe_desc SELECT number, toString(number) FROM numbers(50000);
 OPTIMIZE TABLE t_seal_probe_desc FINAL;
 SELECT /* seal_gated_reverse_key */ count(), sum(p.k) FROM t_seal_probe_desc AS p JOIN t_seal_build AS b ON p.k = b.k;
 DROP TABLE t_seal_probe_desc;
@@ -129,13 +131,13 @@ SELECT count() FROM t_seal_probe AS p JOIN t_seal_build AS b ON cityHash64(p.k) 
 
 SYSTEM FLUSH LOGS query_log;
 
--- The probe part has ~7800 marks and the 5 join keys live in at most 10 of them, so almost
+-- The probe part has ~6250 marks and the 5 join keys live in at most 10 of them, so almost
 -- all marks must be dropped at task-cut time and only a few granules may be read.
 -- Do not assert on ReadPoolRangeRefinerDroppedCuts: whether a cut is dropped as a whole
 -- depends on the task sizing regime, which is environment-dependent and randomized in CI.
 SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 7000 AS dropped_marks,
-    read_rows < 100000 AS read_few_rows
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
+    read_rows < 20000 AS read_few_rows
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
@@ -145,7 +147,7 @@ WHERE current_database = currentDatabase()
 -- Without gating nothing is dropped by the refiner and the whole table is read.
 SELECT
     ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] AS dropped_marks,
-    read_rows >= 250000 AS read_all_rows
+    read_rows >= 50000 AS read_all_rows
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
@@ -154,7 +156,7 @@ WHERE current_database = currentDatabase()
 
 -- The empty build side prunes every mark of the probe side.
 SELECT
-    read_rows < 100000 AS read_few_rows
+    read_rows < 20000 AS read_few_rows
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
@@ -163,8 +165,8 @@ WHERE current_database = currentDatabase()
 
 -- The single-stream read prunes just like the multi-threaded one.
 SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 7000 AS dropped_marks,
-    read_rows < 100000 AS read_few_rows
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
+    read_rows < 20000 AS read_few_rows
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
@@ -192,8 +194,8 @@ WHERE current_database = currentDatabase()
 
 -- The prefetched pool drops the same marks as the default pool.
 SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 7000 AS dropped_marks,
-    read_rows < 100000 AS read_few_rows
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
+    read_rows < 20000 AS read_few_rows
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
@@ -203,8 +205,8 @@ WHERE current_database = currentDatabase()
 -- The reverse-sorted key prunes just like the ascending one (and the matching rows,
 -- checked above, prove the surviving marks are the right ones).
 SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 7000 AS dropped_marks,
-    read_rows < 100000 AS read_few_rows
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
+    read_rows < 20000 AS read_few_rows
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
@@ -214,7 +216,7 @@ WHERE current_database = currentDatabase()
 -- The gated read pruned at task-cut time and the read-time pruning by the same filter was
 -- skipped as redundant: no granules were even considered by it.
 SELECT
-    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 7000 AS dropped_marks,
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 6000 AS dropped_marks,
     ProfileEvents['RuntimeFilterGranulesConsidered'] AS read_time_granules_considered
 FROM system.query_log
 WHERE current_database = currentDatabase()
