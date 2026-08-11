@@ -57,6 +57,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::setGetObjectTime(size_t elapse
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
+    ++generation;
     state = FileStatus::State::Processing;
     processing_start_time = now();
     processing_end_time = {};
@@ -67,12 +68,14 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
+    ++generation;
     state = FileStatus::State::Processed;
     chassert(processing_end_time);
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
+    ++generation;
     state = FileStatus::State::Failed;
     if (!processing_end_time)
         setProcessingEndTime();
@@ -82,6 +85,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & e
 
 void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 {
+    ++generation;
     state = FileStatus::State::None;
     processing_start_time = {};
     processing_end_time = {};
@@ -91,6 +95,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 {
+    ++generation;
     state = state_;
 }
 

@@ -51,6 +51,7 @@ public:
         std::atomic<time_t> processing_end_time = 0;
         std::atomic<size_t> retries = 0;
         std::atomic<UInt64> get_object_time_ms = 0;
+        std::atomic<uint64_t> generation{0};  /// Incremented on every state transition, for eviction race detection
 
     private:
         mutable std::mutex last_exception_mutex;
