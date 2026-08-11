@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/StorageSystemGraphite.h>
 
@@ -52,7 +53,8 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
+            const auto table = resolveStorageProxy(iterator->table());
             if (!table)
                 continue;
 

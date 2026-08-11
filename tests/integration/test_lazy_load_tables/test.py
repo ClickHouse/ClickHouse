@@ -300,6 +300,83 @@ def test_comment_visible_before_first_access(env):
     )
 
 
+def test_skip_index_sizes_after_access(env):
+    """`system.data_skipping_indices` reads the size columns from the catalog object, which needs
+    `getSecondaryIndexSizes` to reach the real storage."""
+    env.create_table(
+        DB, "t", "id UInt64, v String, INDEX idx_v v TYPE bloom_filter GRANULARITY 1"
+    )
+    instance.query(f"INSERT INTO {DB}.t SELECT number, toString(number) FROM numbers(1000)")
+    env.reload(DB)
+
+    # Before any access the definition is visible but the sizes cannot be known without loading.
+    assert env.is_deferred(DB, "t")
+    assert (
+        instance.query(
+            f"SELECT name FROM system.data_skipping_indices WHERE database = '{DB}' AND table = 't'"
+        ).strip()
+        == "idx_v"
+    )
+    assert env.is_deferred(DB, "t"), "reading the index sizes must not load the table"
+
+    assert int(instance.query(f"SELECT count() FROM {DB}.t")) == 1000
+    sizes = instance.query(
+        f"SELECT data_compressed_bytes > 0, data_uncompressed_bytes > 0, marks_bytes > 0 "
+        f"FROM system.data_skipping_indices WHERE database = '{DB}' AND table = 't'"
+    ).strip()
+    assert sizes == "1\t1\t1", sizes
+
+
+def test_implicit_minmax_indices_visible_before_access(env):
+    """`add_minmax_index_for_*` adds indices that no `INDEX` clause mentions, so the proxy has to
+    synthesize them the same way the engine does."""
+    env.create_table(
+        DB,
+        "t",
+        "id UInt64, s String",
+        extra="SETTINGS add_minmax_index_for_numeric_columns = 1, add_minmax_index_for_string_columns = 1",
+    )
+    env.reload(DB)
+
+    assert env.is_deferred(DB, "t")
+    deferred = instance.query(
+        f"SELECT count() FROM system.data_skipping_indices WHERE database = '{DB}' AND table = 't'"
+    ).strip()
+
+    assert int(instance.query(f"SELECT count() FROM {DB}.t")) == 0
+    loaded = instance.query(
+        f"SELECT count() FROM system.data_skipping_indices WHERE database = '{DB}' AND table = 't'"
+    ).strip()
+
+    assert deferred == loaded, f"deferred={deferred} loaded={loaded}"
+    assert int(loaded) >= 2, loaded
+
+
+def test_system_graphite_retentions(env):
+    """`system.graphite_retentions` reaches GraphiteMergeTree through a MergeTreeData cast, and
+    GraphiteMergeTree is deferred like the rest of the family."""
+    if env.table_engine != "MergeTree":
+        pytest.skip("the Graphite section is specific to plain GraphiteMergeTree")
+
+    instance.query(
+        f"CREATE TABLE {DB}.graphite (metric String, value Float64, timestamp UInt32, date Date, updated UInt32) "
+        f"ENGINE = GraphiteMergeTree('graphite_rollup') ORDER BY (metric, timestamp)"
+    )
+    env.reload(DB)
+
+    assert env.is_deferred(DB, "graphite")
+    assert int(instance.query(f"SELECT count() FROM {DB}.graphite")) == 0
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM system.graphite_retentions "
+                f"WHERE has(Tables.database, '{DB}') AND has(Tables.table, 'graphite')"
+            )
+        )
+        > 0
+    )
+
+
 def test_system_schedule_merge(env):
     """SYSTEM SCHEDULE MERGE reaches the storage through a MergeTreeData cast."""
     env.create_table(

@@ -179,6 +179,31 @@ public:
         return std::nullopt;
     }
 
+    std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter, ContextPtr query_context) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->totalRowsByPartitionPredicate(filter, query_context);
+        return std::nullopt;
+    }
+
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->totalBytesUncompressed(settings);
+        return std::nullopt;
+    }
+
+    /// `system.data_skipping_indices` asks every table for these, so answering must not load one.
+    IndexSizeByName getSecondaryIndexSizes() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->getSecondaryIndexSizes();
+        return {};
+    }
+
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override
     {
         std::lock_guard lock{nested_mutex};

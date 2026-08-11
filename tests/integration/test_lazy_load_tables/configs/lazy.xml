@@ -38,4 +38,18 @@
         <shard>1</shard>
         <replica>r1</replica>
     </macros>
+
+    <graphite_rollup>
+        <default>
+            <function>max</function>
+            <retention>
+                <age>0</age>
+                <precision>60</precision>
+            </retention>
+            <retention>
+                <age>3600</age>
+                <precision>300</precision>
+            </retention>
+        </default>
+    </graphite_rollup>
 </clickhouse>

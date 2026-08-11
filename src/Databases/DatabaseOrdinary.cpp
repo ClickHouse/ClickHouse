@@ -67,6 +67,14 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsString storage_policy;
+    extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
+    extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
+    extern const MergeTreeSettingsBool escape_index_filenames;
 }
 
 namespace ServerSetting
@@ -544,12 +552,33 @@ static StorageInMemoryMetadata buildLazyTableMetadata(
     if (query.comment)
         metadata.setComment(query.comment->as<ASTLiteral &>().value.safeGet<String>());
 
+    /// The index settings decide both the implicit minmax indices and the file naming of the
+    /// explicit ones, so they have to be resolved the way the engine resolves them: server defaults
+    /// for the engine, then the SETTINGS clause of this table.
+    const auto & default_settings = query.storage->engine->name.starts_with("Replicated")
+        ? local_context->getReplicatedMergeTreeSettings()
+        : local_context->getMergeTreeSettings();
+    MergeTreeSettings storage_settings = default_settings;
+    auto storage_def_copy = storage_def->clone();
+    storage_settings.loadFromQuery(
+        storage_def_copy->as<ASTStorage &>(), local_context, /*is_loading_from_existing_metadata*/ true);
+
+    metadata.add_minmax_index_for_numeric_columns = storage_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+    metadata.add_minmax_index_for_string_columns = storage_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+    metadata.add_minmax_index_for_temporal_columns = storage_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+    metadata.add_minmax_index_for_block_number_column = storage_settings[MergeTreeSetting::add_minmax_index_for_block_number_column]
+        && storage_settings[MergeTreeSetting::enable_block_number_column];
+    metadata.add_minmax_index_for_block_offset_column = storage_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column]
+        && storage_settings[MergeTreeSetting::enable_block_offset_column];
+    metadata.escape_index_filenames = storage_settings[MergeTreeSetting::escape_index_filenames];
+
     if (query.columns_list)
     {
         if (query.columns_list->indices)
             for (const auto & index : query.columns_list->indices->children)
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(
-                    index->clone(), metadata.columns, /*is_implicitly_created*/ false, /*escape_filenames*/ true, local_context));
+                    index->clone(), metadata.columns, /*is_implicitly_created*/ false,
+                    metadata.escape_index_filenames, local_context));
 
         if (query.columns_list->projections)
             for (const auto & projection : query.columns_list->projections->children)
@@ -559,6 +588,11 @@ static StorageInMemoryMetadata buildLazyTableMetadata(
         if (query.columns_list->constraints)
             metadata.constraints = ConstraintsDescription(query.columns_list->constraints->children);
     }
+
+    /// Reuse the engine's own synthesis so the implicit indices cannot drift from it.
+    for (const auto & column : metadata.columns)
+        metadata.addImplicitIndicesForColumn(column, local_context);
+    metadata.addImplicitIndicesForVirtualColumns(local_context);
 
     return metadata;
 }

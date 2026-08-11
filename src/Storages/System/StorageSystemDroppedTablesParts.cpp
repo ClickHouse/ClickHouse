@@ -1,5 +1,6 @@
 #include <Access/ContextAccess.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
+#include <Storages/StorageProxy.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -37,6 +38,9 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
         StoragePtr storage = dropped_table.table;
         if (!storage)
             continue;
+
+        /// A lazily loaded table is wrapped in a proxy, which is not a MergeTreeData.
+        storage = resolveStorageProxy(storage);
 
         UUID storage_uuid = storage->getStorageID().uuid;
         String database_name = storage->getStorageID().getDatabaseName();
