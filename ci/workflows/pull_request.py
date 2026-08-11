@@ -234,6 +234,7 @@ workflow = Workflow.Config(
     enable_slack_feed=True,
     pre_hooks=[
         can_be_tested,
+        "python3 ./ci/jobs/scripts/workflow_hooks/ci_links.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
