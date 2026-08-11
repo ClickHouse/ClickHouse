@@ -6852,7 +6852,7 @@
     "source": "/jp/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/ja/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/jp/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -10572,7 +10572,7 @@
     "source": "/jp/interfaces/third-party/integrations"
   },
   {
-    "destination": "/ja/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ja/integrations/language-clients/third-party/client-libraries",
     "source": "/jp/interfaces/third-party/moose-olap"
   },
   {
@@ -11048,7 +11048,7 @@
     "source": "/jp/managing-data/core-concepts"
   },
   {
-    "destination": "/ja/concepts/features/operations/delete/delete-mutations",
+    "destination": "/ja/reference/statements/alter/delete",
     "source": "/jp/managing-data/delete_mutations"
   },
   {
@@ -13804,7 +13804,7 @@
     "source": "/jp/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/ja/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/ja/reference/functions/regular-functions/overview",
     "source": "/jp/sql-reference/functions/regular-functions"
   },
   {
@@ -17608,7 +17608,7 @@
     "source": "/ko/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/ko/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/ko/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -21324,7 +21324,7 @@
     "source": "/ko/interfaces/third-party/integrations"
   },
   {
-    "destination": "/ko/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ko/integrations/language-clients/third-party/client-libraries",
     "source": "/ko/interfaces/third-party/moose-olap"
   },
   {
@@ -21800,7 +21800,7 @@
     "source": "/ko/managing-data/core-concepts"
   },
   {
-    "destination": "/ko/concepts/features/operations/delete/delete-mutations",
+    "destination": "/ko/reference/statements/alter/delete",
     "source": "/ko/managing-data/delete_mutations"
   },
   {
@@ -24556,7 +24556,7 @@
     "source": "/ko/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/ko/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/ko/reference/functions/regular-functions/overview",
     "source": "/ko/sql-reference/functions/regular-functions"
   },
   {
@@ -29716,7 +29716,7 @@
     "source": "/ru/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/ru/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/ru/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -33432,7 +33432,7 @@
     "source": "/ru/interfaces/third-party/integrations"
   },
   {
-    "destination": "/ru/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ru/integrations/language-clients/third-party/client-libraries",
     "source": "/ru/interfaces/third-party/moose-olap"
   },
   {
@@ -33908,7 +33908,7 @@
     "source": "/ru/managing-data/core-concepts"
   },
   {
-    "destination": "/ru/concepts/features/operations/delete/delete-mutations",
+    "destination": "/ru/reference/statements/alter/delete",
     "source": "/ru/managing-data/delete_mutations"
   },
   {
@@ -36664,7 +36664,7 @@
     "source": "/ru/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/ru/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/ru/reference/functions/regular-functions/overview",
     "source": "/ru/sql-reference/functions/regular-functions"
   },
   {
@@ -43276,7 +43276,7 @@
     "source": "/zh/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/zh/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/zh/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -46992,7 +46992,7 @@
     "source": "/zh/interfaces/third-party/integrations"
   },
   {
-    "destination": "/zh/integrations/language-clients/third-party/moose-olap",
+    "destination": "/zh/integrations/language-clients/third-party/client-libraries",
     "source": "/zh/interfaces/third-party/moose-olap"
   },
   {
@@ -47468,7 +47468,7 @@
     "source": "/zh/managing-data/core-concepts"
   },
   {
-    "destination": "/zh/concepts/features/operations/delete/delete-mutations",
+    "destination": "/zh/reference/statements/alter/delete",
     "source": "/zh/managing-data/delete_mutations"
   },
   {
@@ -50224,7 +50224,7 @@
     "source": "/zh/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/zh/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/zh/reference/functions/regular-functions/overview",
     "source": "/zh/sql-reference/functions/regular-functions"
   },
   {
