@@ -209,6 +209,9 @@ KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_, KeeperS
     , special_response_router(std::move(special_response_router_))
     , log(getLogger("KeeperRequestDispatcher"))
 {
+    if (!special_response_router)
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcher requires a special response router");
+
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
     size_t max_request_queue_size = coordination_settings[CoordinationSetting::max_request_queue_size];
     requests_queue.init(max_request_queue_size);
@@ -1068,7 +1071,7 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     response->error = error;
     response->enqueue_ts = std::chrono::steady_clock::now();
     DB::KeeperResponseForSession response_for_session{request_for_session.session_id, response};
-    if (special_response_router && special_response_router(response_for_session))
+    if (special_response_router(response_for_session))
         return;
     onResponse(std::move(response_for_session));
 }

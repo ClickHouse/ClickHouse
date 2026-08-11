@@ -245,4 +245,23 @@ TEST(KeeperDispatcher, SessionIDErrorReachesRealWaiter)
     EXPECT_EQ(keeper_dispatcher.new_session_id_requests.count(internal_id), 0u) << "the waiter entry leaked";
 }
 
+/// Both dispatchers refuse an empty router, so a caller cannot omit the wiring and silently lose
+/// SessionID error responses. The rejection is a LOGICAL_ERROR, which aborts in debug and sanitizer
+/// builds, so the contract is asserted on that abort rather than with EXPECT_THROW.
+TEST(KeeperDispatcher, SessionIDRouterIsRequired)
+{
+    /// Re-executes the binary instead of forking a process that holds the fixture's threads.
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    DispatcherFixture fixture;
+    auto * server = fixture.server.get();
+
+    EXPECT_DEATH(
+        DB::KeeperRequestDispatcher(server, DB::KeeperSpecialResponseRouter{}),
+        "KeeperRequestDispatcher requires a special response router");
+    EXPECT_DEATH(
+        DB::KeeperRequestDispatcherOld(server, DB::KeeperSpecialResponseRouter{}),
+        "KeeperRequestDispatcherOld requires a special response router");
+}
+
 #endif
