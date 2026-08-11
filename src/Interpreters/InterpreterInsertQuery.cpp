@@ -1298,6 +1298,16 @@ BlockIO InterpreterInsertQuery::execute()
 
     res.pipeline.addStorageHolder(table);
 
+    /// Keep the share lock until the pipeline finishes (not just while it is being built), so that
+    /// the dependent-view discovery and the commit of the inserted data are indivisible with respect
+    /// to an exclusive lock on the table. The atomic `CREATE MATERIALIZED VIEW ... POPULATE` relies
+    /// on this: under its brief exclusive lock on the source, any concurrent `INSERT` has either
+    /// already committed (and is covered by the pinned snapshot) or has not yet discovered the
+    /// dependent views (and will see the newly registered view).
+    QueryPlanResourceHolder insert_resources;
+    insert_resources.table_locks.emplace_back(std::move(table_lock));
+    res.pipeline.addResources(std::move(insert_resources));
+
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         res.pipeline.addStorageHolder(mv->getTargetTable());
 
