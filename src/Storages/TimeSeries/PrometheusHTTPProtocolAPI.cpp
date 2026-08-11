@@ -914,7 +914,13 @@ void PrometheusHTTPProtocolAPI::getLabels(
     /// has a non-empty value for it.
     auto tag_columns = getConfiguredTagColumns();
 
-    String label_keys_expr = fmt::format("mapKeys({})", TimeSeriesColumnNames::Tags);
+    /// An empty label value means the label is absent (the write path strips such entries, and
+    /// `/api/v1/series` and the matcher translation treat them as the missing case), but a supported
+    /// external `tags` table can still contain rows like `tags = {'env': ''}`. Keep only the map keys
+    /// whose value is non-empty, so this endpoint reports the same logical label set as the others.
+    String label_keys_expr = fmt::format(
+        "arrayMap(x -> toString(x.1), arrayFilter(x -> x.2 != '', arrayZip(mapKeys({0}), mapValues({0}))))",
+        TimeSeriesColumnNames::Tags);
     if (!tag_columns.empty())
     {
         String configured;
@@ -932,8 +938,8 @@ void PrometheusHTTPProtocolAPI::getLabels(
                 quoteString(tag_columns[i].first));
         }
         label_keys_expr = fmt::format(
-            "arrayConcat(arrayMap(k -> toString(k), mapKeys({})), arrayFilter(x -> x != '', [{}]))",
-            TimeSeriesColumnNames::Tags,
+            "arrayConcat({}, arrayFilter(x -> x != '', [{}]))",
+            label_keys_expr,
             configured);
     }
 
