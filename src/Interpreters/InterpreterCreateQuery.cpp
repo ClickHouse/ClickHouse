@@ -91,6 +91,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseOverlay.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
@@ -780,7 +781,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// which already loads the source's create query through the facade, and it is fail-closed
     /// the same way as `DESCRIBE` / `SHOW CREATE` (a failing existence probe on a remote-catalog
     /// source is remasked as the same `ACCESS_DENIED` a denied healthy source would produce).
-    if (!create.as_table.empty() && mode <= LoadingStrictnessLevel::SECONDARY_CREATE)
+    /// The gate is keyed on fresh user input rather than on the strictness level ordering: only
+    /// loading previously-validated metadata (server startup / force-restore) is exempt. Today no
+    /// grammar reaches here with `attach` and a schema-copy `as_table` at once (`ATTACH TABLE x AS`
+    /// only accepts `[NOT] REPLICATED`), so this keeps the check fail-closed if that ever changes.
+    if (!create.as_table.empty() && !isLoadingFromExistingMetadata(mode))
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(as_database_name))
