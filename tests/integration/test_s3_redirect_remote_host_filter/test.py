@@ -91,3 +91,19 @@ def test_301_redirect_target_is_host_filtered(cluster):
 
     # And the server must not have sent a single request to the disallowed target.
     assert _followed(cluster) == "NO", "ClickHouse followed the 301 to a disallowed host (SSRF)"
+
+
+def test_failed_301_redirect_is_not_cached(cluster):
+    node = cluster.instances["node"]
+    table = "s3_redirect_cache"
+    node.query(f"DROP TABLE IF EXISTS {table}")
+    node.query(
+        f"CREATE TABLE {table} (x UInt8) "
+        "ENGINE = S3('http://resolver:8080/cache/key.csv', NOSIGN, 'CSV')"
+    )
+    try:
+        for _ in range(2):
+            error = node.query_and_get_error(f"SELECT * FROM {table}")
+            assert "Too many redirects" in error
+    finally:
+        node.query(f"DROP TABLE {table}")

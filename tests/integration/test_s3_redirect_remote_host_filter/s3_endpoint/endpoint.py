@@ -3,12 +3,12 @@
 # Client::getURIFromError validates the redirect target against RemoteHostFilter
 # (SSRF protection), mirroring the Poco 307 path.
 #
-# Every S3 request is answered with 301 Moved Permanently whose Location points at
+# S3 requests are answered with 301 Moved Permanently whose Location points at
 # this same container's IP address, reached under a name (the raw IP) that is NOT in
 # <remote_url_allow_hosts>. A correctly-behaving server rejects that target with
 # UNACCEPTABLE_URL before connecting. If the redirect were followed, the rewritten
 # request would land on /forbidden_hit and flip the "followed" flag -- which the test
-# asserts never happens.
+# asserts never happens. The `cache` bucket redirects to the allow-listed resolver name.
 import socket
 
 from bottle import response, route, run
@@ -17,6 +17,7 @@ from bottle import response, route, run
 # "host" from the allow-listed name "resolver", so the host filter must deny it.
 OWN_IP = socket.gethostbyname(socket.gethostname())
 REDIRECT_TARGET = OWN_IP + ":8080"
+ALLOWED_REDIRECT_TARGET = "resolver:8080"
 
 followed_redirect = {"hit": False}
 
@@ -38,9 +39,16 @@ def followed():
 @route("/<_bucket>/<_path:path>", ["GET", "POST", "PUT", "HEAD", "DELETE"])
 def server(_bucket, _path=""):
     suffix = _bucket if not _path else _bucket + "/" + _path
-    response.set_header("Location", "http://" + REDIRECT_TARGET + "/forbidden_hit/" + suffix)
+    if _bucket == "cache":
+        target = ALLOWED_REDIRECT_TARGET
+        target_path = suffix
+    else:
+        target = REDIRECT_TARGET
+        target_path = "forbidden_hit/" + suffix
+    response.set_header("Location", "http://" + target + "/" + target_path)
     response.status = 301
-    return "Redirected"
+    response.content_type = "application/xml"
+    return "<Error><Code>PermanentRedirect</Code><Endpoint>{}</Endpoint></Error>".format(target)
 
 
 @route("/")

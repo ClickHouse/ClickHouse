@@ -692,21 +692,20 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
 
     bool found_new_endpoint = false;
-    // if we found correct endpoint after 301 responses, update the cache for future requests
-    SCOPE_EXIT(
-        if (found_new_endpoint)
-        {
-            auto uri_override = request.getURIOverride();
-            chassert(uri_override.has_value());
-            updateURIForBucket(bucket, std::move(*uri_override));
-        }
-    );
 
     for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
     {
         auto result = request_fn(request);
         if (result.IsSuccess())
+        {
+            if (found_new_endpoint)
+            {
+                auto uri_override = request.getURIOverride();
+                chassert(uri_override.has_value());
+                updateURIForBucket(bucket, std::move(*uri_override));
+            }
             return result;
+        }
 
         CurrentThread::checkIfNotCancelled();
 
@@ -750,6 +749,8 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
         if (initial_endpoint.substr(11) == "amazonaws.com") // Check if user didn't mention any region
             new_uri->addRegionToURI(request.getRegionOverride());
+
+        client_configuration.remote_host_filter.checkURL(Poco::URI(new_uri->endpoint));
 
         const auto & current_uri_override = request.getURIOverride();
         /// we already tried with this URI
@@ -1057,15 +1058,7 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
     auto uri = resolved_endpoint.GetResult().GetURI();
     uri.SetAuthority(endpoint);
 
-    S3::URI result(uri.GetURIString());
-
-    /// The endpoint is taken from an attacker-controllable 301 response (Location header or
-    /// <Endpoint> XML), so validate it against RemoteHostFilter before following the redirect,
-    /// otherwise a malicious S3 server can redirect us to internal hosts (SSRF). This mirrors
-    /// the Poco 307 path in PocoHTTPClient. Throws UNACCEPTABLE_URL.
-    client_configuration.remote_host_filter.checkURL(result.uri);
-
-    return result;
+    return S3::URI(uri.GetURIString());
 }
 
 // Do a list request because head requests don't have body in response
