@@ -23,8 +23,9 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
     --query "INSERT INTO ${TABLE} VALUES (1, 'East', 10), (2, 'West', 20), (3, 'East', 30)"
 
-# region is an identity partition column: it is absent from the data files and is backfilled from
-# the manifest after the reader, so it must never be filtered inside the reader.
+# region is an identity partition column, so it must not be filtered inside the reader: in a table
+# whose data files omit it the value comes from the manifest only after the reader runs. ClickHouse
+# writes it into the files, so this test asserts the contract, not the backfilled value.
 echo "-- filter on the identity column returns its rows"
 ${CLICKHOUSE_CLIENT} --query "SELECT id FROM ${TABLE} WHERE region = 'East' ORDER BY id"
 
