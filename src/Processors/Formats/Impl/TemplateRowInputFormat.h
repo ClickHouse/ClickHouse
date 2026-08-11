@@ -124,11 +124,22 @@ public:
 private:
     bool readsNumericValueIntoBoolColumn() const override { return false; }
 
+    /// `TemplateRowInputFormat::deserializeField` picks an escaping rule per placeholder
+    /// (`row_format.escaping_rules[file_column]`), so a single format-level value-form contract
+    /// exists only when every placeholder uses the same rule; the capabilities are then derived
+    /// from that rule exactly as in `CustomSeparated`. For a row format mixing different rules
+    /// they keep the conservative defaults: a caller comparing an inferred schema against an
+    /// expected one then misses a mismatch that only an escaping rule could reveal, but never
+    /// invents one.
+    bool readsTypedJSONValueTokens() const override { return homogeneous_escaping_rule == FormatSettings::EscapingRule::JSON; }
+    bool readsQuotedTextValues() const override { return homogeneous_escaping_rule == FormatSettings::EscapingRule::Quoted; }
+
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     PeekableReadBuffer buf;
     const ParsedTemplateFormatString format;
     const ParsedTemplateFormatString row_format;
+    const std::optional<FormatSettings::EscapingRule> homogeneous_escaping_rule;
     TemplateFormatReader format_reader;
     bool first_row = true;
     JSONInferenceInfo json_inference_info;
