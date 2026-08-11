@@ -106,7 +106,10 @@ public:
     /// rule is `Quoted`: `CustomSeparated` / `Regexp` (`format_custom_escaping_rule` /
     /// `format_regexp_escaping_rule`), and `Template` when every placeholder uses it. A
     /// caller comparing an inferred schema against an expected one uses this to flag an inferred
-    /// numeric type going into one of those destinations as a structure mismatch.
+    /// numeric type going into one of those destinations as a structure mismatch, and likewise an
+    /// inferred `Array` / `Tuple` / `Map` / `Bool` — derived only from an unquoted bracket or word
+    /// token — going into a `String` destination, whose quoted-text deserializer also requires an
+    /// opening quote.
     virtual bool readsQuotedTextValues() const { return false; }
 
     /// True when the parser maps the input's fields to destination columns by name rather than by

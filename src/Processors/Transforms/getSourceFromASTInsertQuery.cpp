@@ -441,9 +441,20 @@ String getInsertDataSchemaMismatchDescription(
         /// by default), so for them the inferred token type is a genuine structure mismatch exactly when
         /// the respective setting is disabled. Formats that store typed values (`BSONEachRow`, `MsgPack`)
         /// reject a non-string value for a `String` column outright, so for them any inferred non-`String`
-        /// type is a genuine structure mismatch. Anything else inferred (a date, a `UUID`, ... —
-        /// necessarily inferred from a quoted string token) is read into a `String` column verbatim in
-        /// every format.
+        /// type is a genuine structure mismatch. The quoted-text formats (`readsQuotedTextValues`)
+        /// accept a `String` value only when the token was actually quoted: an unquoted bracket or
+        /// word token — the only thing the `Quoted` escaping rule's inference can have derived an
+        /// `Array` / `Tuple` / `Map` / `Bool` from (`readQuotedFieldInto` tokenizes those forms, and
+        /// `tryInferString` maps a quoted token only to `String` or a date / datetime) — is rejected
+        /// by `SerializationString::deserializeTextQuoted`, which requires an opening quote, so those
+        /// inferred types are a genuine structure mismatch there (e.g. `[1,2]|1.5` into
+        /// `(s String, n UInt8)` for `CustomSeparated` with `format_custom_escaping_rule = 'Quoted'`,
+        /// where `s` itself fails to parse; a bare number is handled by the quoted-text arm of the
+        /// numeric rule above). An inferred `Nothing` (a column of `NULL` literals) stays inconclusive:
+        /// with `input_format_null_as_default` (on by default) the quoted-text parser reads `NULL`
+        /// into a plain `String` column as the default value. Anything else inferred (a date, a
+        /// `UUID`, ... — necessarily inferred from a quoted string token) is read into a `String`
+        /// column verbatim in every format, including the quoted-text ones.
         if (which_expected.isString())
         {
             if (format_reads_typed_json_value_tokens)
@@ -458,6 +469,10 @@ String getInsertDataSchemaMismatchDescription(
                     return format_settings.json.read_objects_as_strings;
                 return true;
             }
+            if (format_reads_quoted_text_values
+                && (which_inferred.isArray() || which_inferred.isTuple() || which_inferred.isMap()
+                    || isBool(inferred_unwrapped)))
+                return false;
             return format_reads_any_value_into_string_column || which_inferred.isString();
         }
 
