@@ -150,7 +150,7 @@ materialized view는 해당 [SELECT](/ko/reference/statements/select/index) 쿼�
 
 `TO [db].[table]` 없이 materialized view를 생성할 때는 데이터를 저장할 테이블 엔진인 `ENGINE`을 지정해야 합니다.
 
-`TO [db].[table]`과 함께 materialized view를 생성할 때는 `POPULATE`를 함께 사용할 수 없습니다.
+`TO [db].[table]`과 함께 materialized view를 생성할 때는 `POPULATE`를 사용하여 기존 소스 데이터로 대상 테이블을 백필할 수도 있습니다(대상 테이블에 이미 데이터가 있을 수 있으며, 이 경우 백필된 행은 추가됩니다). `POPULATE`는 `REFRESH`와 함께 사용할 수 없습니다. [갱신 가능 구체화 뷰](#refreshable-materialized-view)는 첫 번째 갱신으로 채워지므로, `POPULATE`를 사용하면 초기 데이터가 두 번 로드됩니다(대신 `EMPTY`를 사용하여 첫 번째 갱신을 건너뛰십시오).
 
 materialized view는 다음과 같이 동작합니다. `SELECT`에 지정된 테이블에 데이터를 삽입하면, 삽입된 데이터의 일부가 이 `SELECT` 쿼리로 변환되고 그 결과가 뷰에 삽입됩니다.
 
@@ -168,15 +168,20 @@ materialized view는 다음과 같이 동작합니다. `SELECT`에 지정된 테
   `materialized_views_ignore_errors`는 `system.*_log` 테이블에서 기본적으로 `true`입니다.
 </Note>
 
-`POPULATE`를 지정하면, 뷰를 생성할 때 기존 테이블 데이터가 마치 `CREATE TABLE ... AS SELECT ...`를 수행하는 것처럼 뷰에 삽입됩니다. 그렇지 않으면 쿼리에는 뷰를 생성한 이후 테이블에 삽입된 데이터만 포함됩니다. 뷰 생성 중에 테이블에 삽입된 데이터는 뷰에 삽입되지 않으므로 `POPULATE` 사용은 **권장하지 않습니다**.
+`POPULATE`를 지정하면 뷰를 생성할 때 기존 원본 테이블 데이터가 뷰에 삽입됩니다. 그렇지 않으면 뷰에는 뷰를 생성한 후 원본 테이블에 삽입된 데이터만 포함됩니다.
+
+일반 `CREATE MATERIALIZED VIEW`에서 `POPULATE`는 기본적으로 **원자적**입니다(설정 `materialized_views_populate_atomically = 1`). 원본 테이블에 짧은 배타적 잠금을 설정한 상태에서 뷰는 원본 테이블의 새 삽입을 구독하고 기존 데이터의 스냅샷을 함께 가져오므로, 채우기와 동시에 삽입되는 모든 행은 누락되거나 중복되지 않고 뷰에 **정확히 한 번** 전달됩니다. 이후 (오래 실행될 수 있는) 채우기는 잠금을 유지하지 않고 고정된 스냅샷을 읽습니다.
+
+이는 로컬 삽입 경로의 원자성입니다. 배타적 잠금은 **동일한 서버에서** 이 원본 테이블의 스토리지 잠금을 획득하는 삽입과만 직렬화되므로, exactly-once 보장은 이 서버를 통해 도착하는 삽입에 적용됩니다. 이는 클러스터 전체 보장이 아닙니다. 채우기와 동시에 `ReplicatedMergeTree` 원본의 다른 레플리카에 삽입되거나 분산 쓰기 경로(예: `Distributed` 테이블에 삽입하거나 `ON CLUSTER`를 통해 삽입)를 통해 삽입된 행은 이 범위에 포함되지 않으므로 여전히 누락되거나 중복될 수 있습니다.
+
+채우기가 실패하면(예: 사용 중인 원본 테이블의 배타적 잠금을 `lock_acquire_timeout` 내에 획득할 수 없거나 실행 중인 뷰의 `SELECT`에서 예외가 발생하는 경우) 방금 생성된 뷰가 삭제되고 `CREATE` 쿼리가 실패합니다. 생성된 항목은 남지 않으므로 간단히 다시 시도할 수 있습니다. `TO [db].[table]` 형식에서는 이 롤백이 뷰만 삭제하며, 기존 대상 테이블은 삭제하지 않습니다. 단, 실패한 채우기가 이미 대상에 삽입한 행은 해당 테이블에 대한 실패한 `INSERT ... SELECT` 이후와 마찬가지로 그대로 남으므로, `CREATE`를 다시 시도하면 해당 행이 다시 삽입됩니다. 백필이 정확해야 한다면 비워진 대상 테이블 또는 새 대상 테이블에 다시 시도하거나 `ReplacingMergeTree`와 같은 중복 제거 엔진을 사용하십시오.
 
 <Note>
-  `POPULATE`는 `CREATE TABLE ... AS SELECT ...`처럼 동작하므로 다음과 같은 제한이 있습니다.
+  원자성을 보장하려면 원본 테이블이 고정된 특정 시점의 스냅샷을 읽을 수 있어야 합니다. 즉, `MergeTree` 엔진 계열 및 `Memory`가 해당합니다. 그 밖의 모든 원본(뷰, `Distributed`, `Merge`, `Buffer`, `Log` 엔진 계열 또는 `Atomic` 데이터베이스에 속하지 않는 테이블)에서는 데이터 채우기가 레거시 비원자적 동작(서버 로그에 기록됨)으로 대체됩니다. 기존 데이터는 별도의 조정되지 않은 스냅샷으로 읽히므로, 데이터 채우기 중에 삽입된 행이 누락되거나 중복될 수 있습니다. 이 경우 정확한 데이터가 필요하다면 뷰를 생성하고 별도의 `INSERT ... SELECT`를 실행하십시오. `materialized_views_populate_atomically = 0`을 설정하면 모든 원본에 대해 이 레거시 동작이 강제됩니다.
 
-  * 복제된 데이터베이스에서는 지원되지 않습니다
-  * ClickHouse Cloud에서는 지원되지 않습니다
+  원자적 데이터 채우기는 일반 `CREATE MATERIALIZED VIEW`에만 적용됩니다. `CREATE OR REPLACE` / `REPLACE MATERIALIZED VIEW ... POPULATE`는 항상 레거시 비원자적 데이터 채우기를 사용합니다.
 
-  대신 별도의 `INSERT ... SELECT`를 사용할 수 있습니다.
+  `POPULATE`는 `Replicated` 데이터베이스에서 지원되지 않으며(`database_replicated_allow_heavy_create`를 사용하여 재정의 가능), ClickHouse Cloud에서도 지원되지 않습니다. 이 재정의를 통해 활성화하면 데이터 채우기는 항상 레거시 비원자적 방식으로 수행됩니다. 실패한 데이터 채우기는 모든 레플리카에서 일관되게 롤백할 수 없기 때문입니다.
 </Note>
 
 `SELECT` 쿼리에는 `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`를 포함할 수 있습니다. 해당 변환은 삽입된 데이터의 각 블록에서 서로 독립적으로 수행된다는 점에 유의하십시오. 예를 들어 `GROUP BY`가 설정된 경우 데이터는 삽입 중에 집계되지만, 이는 삽입된 데이터의 단일 패킷 내에서만 수행됩니다. 이후에는 데이터가 추가로 집계되지 않습니다. 예외적으로 `SummingMergeTree`처럼 자체적으로 데이터 집계를 수행하는 `ENGINE`을 사용할 때는 다릅니다.

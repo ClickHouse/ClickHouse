@@ -96,7 +96,7 @@ AS SELECT ...
   ### CREATE OR REPLACE MATERIALIZED VIEW
 </div>
 
-`CREATE OR REPLACE MATERIALIZED VIEW` substitui atomicamente uma VIEW materializada existente e sua tabela de armazenamento interna (se houver). A operação requer um motor de banco de dados `Atomic` ou `Replicated`.
+`CREATE OR REPLACE MATERIALIZED VIEW` substitui atomicamente uma visão materializada existente e sua tabela de armazenamento interna (se houver). A operação requer um motor de banco de dados `Atomic` ou `Replicated`.
 
 ```sql
 CREATE OR REPLACE MATERIALIZED VIEW [db.]name [ON CLUSTER cluster]
@@ -143,23 +143,23 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 ```
 
 <Tip>
-  Aqui está um guia passo a passo sobre como usar [VIEWs materializadas](/pt-BR/concepts/features/materialized-views/cascading-materialized-views).
+  Aqui está um guia passo a passo sobre como usar [visões materializadas](/pt-BR/concepts/features/materialized-views/cascading-materialized-views).
 </Tip>
 
-VIEWs materializadas armazenam dados transformados pela consulta [SELECT](/pt-BR/reference/statements/select/index) correspondente.
+visões materializadas armazenam dados transformados pela consulta [SELECT](/pt-BR/reference/statements/select/index) correspondente.
 
-Ao criar uma VIEW materializada sem `TO [db].[table]`, você deve especificar `ENGINE` — o motor de tabela usado para armazenar os dados.
+Ao criar uma visão materializada sem `TO [db].[table]`, você deve especificar `ENGINE` — o motor de tabela usado para armazenar os dados.
 
-Ao criar uma VIEW materializada com `TO [db].[table]`, você também não pode usar `POPULATE`.
+Ao criar uma visão materializada com `TO [db].[table]`, você também pode usar `POPULATE` para preencher retroativamente a tabela de destino com os dados de origem existentes (a tabela de destino já pode conter dados; nesse caso, as linhas preenchidas retroativamente são acrescentadas). `POPULATE` não pode ser combinado com `REFRESH`: uma [visão materializada atualizável](#refreshable-materialized-view) é preenchida por sua primeira atualização, portanto, `POPULATE` carregaria os dados iniciais duas vezes (use `EMPTY` para ignorar a primeira atualização).
 
-Uma VIEW materializada é implementada da seguinte forma: ao inserir dados na tabela especificada em `SELECT`, parte dos dados inseridos é transformada por essa consulta `SELECT`, e o resultado é inserido na VIEW.
+Uma visão materializada é implementada da seguinte forma: ao inserir dados na tabela especificada em `SELECT`, parte dos dados inseridos é transformada por essa consulta `SELECT`, e o resultado é inserido na VIEW.
 
 <Note>
-  visões materializadas no ClickHouse usam **nomes de colunas** em vez da ordem das colunas durante a inserção na tabela de destino. Se alguns nomes de colunas não estiverem presentes no resultado da consulta `SELECT`, o ClickHouse usará um valor padrão, mesmo que a coluna não seja [Nullable](/pt-BR/reference/data-types/nullable). Uma prática segura é adicionar aliases para todas as colunas ao usar visões materializadas.
+  VIEWs materializadas no ClickHouse usam **nomes de colunas** em vez da ordem das colunas durante a inserção na tabela de destino. Se alguns nomes de colunas não estiverem presentes no resultado da consulta `SELECT`, o ClickHouse usará um valor padrão, mesmo que a coluna não seja [Nullable](/pt-BR/reference/data-types/nullable). Uma prática segura é adicionar aliases para todas as colunas ao usar VIEWs materializadas.
 
-  visões materializadas no ClickHouse funcionam mais como gatilhos de inserção. Se houver alguma agregação na consulta da VIEW, ela será aplicada apenas ao lote de dados recém-inseridos. Quaisquer alterações nos dados existentes da tabela de origem (como update, delete, drop partition etc.) não alteram a visão materializada.
+  VIEWs materializadas no ClickHouse funcionam mais como gatilhos de inserção. Se houver alguma agregação na consulta da VIEW, ela será aplicada apenas ao lote de dados recém-inseridos. Quaisquer alterações nos dados existentes da tabela de origem (como update, delete, drop partition etc.) não alteram a VIEW materializada.
 
-  visões materializadas no ClickHouse não têm comportamento determinístico em caso de erro. Isso significa que os blocos que já tiverem sido gravados serão preservados na tabela de destino, mas todos os blocos após o erro não serão.
+  VIEWs materializadas no ClickHouse não têm comportamento determinístico em caso de erro. Isso significa que os blocos que já tiverem sido gravados serão preservados na tabela de destino, mas todos os blocos após o erro não serão.
 
   Por padrão, se o envio para uma das VIEWs gerar uma exceção, a consulta `INSERT` falhará. Não há garantia de que o bloco já tenha chegado à tabela de origem nesse ponto — isso depende do momento em que o pipeline de inserção estava, não do erro da VIEW. Tente novamente o `INSERT` com falha com desduplicação de inserção (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`) para obter entrega exactly-once para a tabela de origem e todas as VIEWs dependentes.
 
@@ -168,20 +168,25 @@ Uma VIEW materializada é implementada da seguinte forma: ao inserir dados na ta
   `materialized_views_ignore_errors` é `true` por padrão para tabelas `system.*_log`.
 </Note>
 
-Se você especificar `POPULATE`, os dados existentes da tabela serão inseridos na VIEW no momento da criação, como se fosse executado um `CREATE TABLE ... AS SELECT ...`. Caso contrário, a consulta conterá apenas os dados inseridos na tabela após a criação da VIEW. **Não recomendamos** usar `POPULATE`, pois os dados inseridos na tabela durante a criação da VIEW não serão inseridos nela.
+Se você especificar `POPULATE`, os dados existentes da tabela de origem serão inseridos na VIEW durante sua criação. Caso contrário, a VIEW conterá apenas os dados inseridos na tabela de origem após a criação da VIEW.
+
+Para uma `CREATE MATERIALIZED VIEW` simples, `POPULATE` é **atômico** por padrão (configuração `materialized_views_populate_atomically = 1`): a VIEW passa a receber novas inserções na tabela de origem e um snapshot dos dados existentes é obtido simultaneamente, sob um breve bloqueio exclusivo na tabela de origem, para que cada linha inserida concorrentemente com o preenchimento seja entregue à VIEW **exatamente uma vez** — sem omissões nem duplicações. O preenchimento, possivelmente de longa duração, lê então o snapshot fixado sem manter nenhum bloqueio.
+
+Essa é uma atomicidade local do caminho de inserção: o bloqueio exclusivo só serializa com inserções que adquirem o bloqueio de armazenamento dessa tabela de origem **no mesmo servidor**; portanto, a garantia de exatamente uma vez abrange inserções que chegam por este servidor. Não é uma garantia para todo o cluster — linhas inseridas em outra réplica de uma origem `ReplicatedMergeTree` ou por um caminho de gravação distribuído (por exemplo, em uma tabela `Distributed` ou via `ON CLUSTER`) concorrentemente com o preenchimento estão fora desse recorte e ainda podem ser omitidas ou duplicadas.
+
+Se o preenchimento falhar — por exemplo, se o bloqueio exclusivo em uma tabela de origem ocupada não puder ser adquirido dentro de `lock_acquire_timeout`, ou se o `SELECT` da VIEW gerar uma exceção durante a execução — a VIEW recém-criada será excluída e a consulta `CREATE` falhará, sem deixar nada do que foi criado, portanto, ela poderá simplesmente ser tentada novamente. Para a forma `TO [db].[table]`, essa reversão exclui apenas a VIEW, nunca a tabela de destino preexistente — mas as linhas que o preenchimento com falha já inseriu no destino permanecem lá, exatamente como após um `INSERT ... SELECT` com falha nessa tabela, portanto, tentar o `CREATE` novamente as insere outra vez. Se o preenchimento precisar ser exato, tente novamente em uma tabela de destino truncada ou nova, ou use um mecanismo de desduplicação como `ReplacingMergeTree`.
 
 <Note>
-  Como `POPULATE` funciona como `CREATE TABLE ... AS SELECT ...`, ele tem algumas limitações:
+  A atomicidade exige que a tabela de origem seja compatível com a leitura de um snapshot fixado em um ponto no tempo — a família `MergeTree` e `Memory`. Para qualquer outra origem (uma VIEW, `Distributed`, `Merge`, `Buffer`, a família `Log` ou uma tabela que não esteja em um banco de dados `Atomic`), o preenchimento recorre ao comportamento legado, não atômico (registrado no log do servidor): os dados existentes são lidos com um snapshot separado e não coordenado, portanto, linhas inseridas durante o preenchimento podem ser perdidas ou duplicadas. Nesse caso, crie a VIEW e execute um `INSERT ... SELECT` separado se precisar de dados exatos. Definir `materialized_views_populate_atomically = 0` força esse comportamento legado para todas as origens.
 
-  * Não é compatível com banco de dados Replicated
-  * Não é compatível com ClickHouse Cloud
+  O preenchimento atômico aplica-se apenas a `CREATE MATERIALIZED VIEW` simples. `CREATE OR REPLACE` / `REPLACE MATERIALIZED VIEW ... POPULATE` sempre usam o preenchimento legado, não atômico.
 
-  Em vez disso, pode-se usar um `INSERT ... SELECT` separado.
+  `POPULATE` não é compatível com bancos de dados `Replicated` (use `database_replicated_allow_heavy_create` para contornar essa restrição) e não é compatível com ClickHouse Cloud. Quando é habilitado por meio dessa substituição, o preenchimento é sempre o legado, não atômico — um preenchimento com falha não poderia ser revertido de forma consistente em todas as réplicas.
 </Note>
 
 Uma consulta `SELECT` pode conter `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Observe que as transformações correspondentes são realizadas de forma independente em cada bloco de dados inseridos. Por exemplo, se `GROUP BY` estiver definido, os dados serão agregados durante a inserção, mas apenas dentro de um único pacote de dados inseridos. Os dados não serão agregados posteriormente. A exceção é ao usar um `ENGINE` que realiza agregação de dados por conta própria, como `SummingMergeTree`.
 
-Se a visão materializada usar a construção `TO [db.]name`, você pode fazer `DETACH` da VIEW, executar `ALTER` na tabela de destino e, em seguida, fazer `ATTACH` da VIEW previamente desanexada (`DETACH`).
+Se a VIEW materializada usar a construção `TO [db.]name`, você pode fazer `DETACH` da VIEW, executar `ALTER` na tabela de destino e, em seguida, fazer `ATTACH` da VIEW previamente desanexada (`DETACH`).
 
 As VIEWs têm a mesma aparência das tabelas normais. Por exemplo, elas são listadas no resultado da consulta `SHOW TABLES`.
 

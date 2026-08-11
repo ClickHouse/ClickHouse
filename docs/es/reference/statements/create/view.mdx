@@ -150,7 +150,7 @@ Las vistas materializadas almacenan los datos transformados por la consulta [SEL
 
 Al crear una vista materializada sin `TO [db].[table]`, debes especificar `ENGINE`: el motor de tabla para almacenar los datos.
 
-Al crear una vista materializada con `TO [db].[table]`, tampoco puedes usar `POPULATE`.
+Al crear una vista materializada con `TO [db].[table]`, también puedes usar `POPULATE` para rellenar la tabla de destino con datos históricos de los datos de origen existentes (la tabla de destino ya puede contener datos, en cuyo caso se añaden las filas rellenadas). `POPULATE` no se puede combinar con `REFRESH`: una [vista materializada actualizable](#refreshable-materialized-view) se rellena mediante su primera actualización, por lo que `POPULATE` cargaría los datos iniciales dos veces (usa `EMPTY` para omitir la primera actualización en su lugar).
 
 Una vista materializada se implementa de la siguiente manera: al insertar datos en la tabla especificada en `SELECT`, una parte de los datos insertados se transforma mediante esta consulta `SELECT`, y el resultado se inserta en la vista.
 
@@ -168,15 +168,20 @@ Una vista materializada se implementa de la siguiente manera: al insertar datos 
   `materialized_views_ignore_errors` es `true` de forma predeterminada para las tablas `system.*_log`.
 </Note>
 
-Si especifica `POPULATE`, los datos existentes de la tabla se insertan en la vista al crearla, como si se hiciera un `CREATE TABLE ... AS SELECT ...`. De lo contrario, la consulta contiene solo los datos insertados en la tabla después de crear la vista. **No recomendamos** usar `POPULATE`, ya que los datos insertados en la tabla durante la creación de la vista no se insertarán en ella.
+Si especifica `POPULATE`, los datos existentes de la tabla de origen se insertan en la vista al crearla. De lo contrario, la vista contiene solo los datos insertados en la tabla de origen después de crearla.
+
+Para un `CREATE MATERIALIZED VIEW` simple, `POPULATE` es **atómico** de forma predeterminada (configuración `materialized_views_populate_atomically = 1`): la vista se suscribe a las nuevas inserciones en la tabla de origen y se toma simultáneamente una instantánea de los datos existentes, bajo un breve bloqueo exclusivo en la tabla de origen, de modo que cada fila insertada de forma concurrente durante la carga inicial se entrega a la vista **exactamente una vez**: no se omite ni se duplica. A continuación, la carga inicial (que puede ser prolongada) lee la instantánea fijada sin mantener ningún bloqueo.
+
+Esta es una atomicidad local de la ruta de inserción: el bloqueo exclusivo solo se serializa con las inserciones que adquieren el bloqueo de almacenamiento de esta tabla de origen **en el mismo servidor**, por lo que la garantía de entrega exactamente una vez cubre las inserciones que llegan a través de este servidor. No es una garantía para todo el clúster: las filas insertadas en otra réplica de un origen `ReplicatedMergeTree`, o mediante una ruta de escritura distribuida (por ejemplo, en una tabla `Distributed` o mediante `ON CLUSTER`), de forma concurrente con la carga inicial, quedan fuera de este alcance y aún pueden omitirse o duplicarse.
+
+Si la carga inicial falla —por ejemplo, si no se puede adquirir el bloqueo exclusivo en una tabla de origen ocupada dentro de `lock_acquire_timeout`, o si el `SELECT` de la vista genera una excepción durante su ejecución—, la vista recién creada se elimina y la consulta `CREATE` falla, sin dejar nada de lo que creó, por lo que puede reintentarse sin más. Para la forma `TO [db].[table]`, esta reversión elimina solo la vista, nunca la tabla de destino preexistente; pero las filas que la carga inicial fallida ya insertó en el destino permanecen allí, exactamente como después de un `INSERT ... SELECT` fallido en esa tabla, por lo que reintentar el `CREATE` las inserta de nuevo. Si el relleno debe ser exacto, vuelva a intentarlo con una tabla de destino truncada o nueva, o use un motor de deduplicación como `ReplacingMergeTree`.
 
 <Note>
-  Dado que `POPULATE` funciona como `CREATE TABLE ... AS SELECT ...`, tiene limitaciones:
+  La atomicidad requiere que la tabla de origen permita leer una instantánea fijada en un momento dado: la familia `MergeTree` y `Memory`. Para cualquier otra fuente (una vista, `Distributed`, `Merge`, `Buffer`, la familia `Log` o una tabla que no esté en una base de datos `Atomic`), la carga inicial recurre al comportamiento heredado no atómico (registrado en el registro del servidor): los datos existentes se leen con una instantánea independiente y no coordinada, por lo que las filas insertadas durante la carga inicial pueden omitirse o duplicarse. En ese caso, cree la vista y ejecute un `INSERT ... SELECT` por separado si necesita datos exactos. Establecer `materialized_views_populate_atomically = 0` fuerza este comportamiento heredado para todas las fuentes.
 
-  * No es compatible con base de datos `Replicated`
-  * No es compatible con ClickHouse Cloud
+  La carga inicial atómica se aplica únicamente a `CREATE MATERIALIZED VIEW` simple. `CREATE OR REPLACE` / `REPLACE MATERIALIZED VIEW ... POPULATE` siempre usan la carga inicial heredada no atómica.
 
-  En su lugar, se puede usar un `INSERT ... SELECT` por separado.
+  `POPULATE` no es compatible con las bases de datos `Replicated` (use `database_replicated_allow_heavy_create` para anularlo) ni con ClickHouse Cloud. Cuando se habilita mediante esa sobrescritura, la carga inicial siempre es la heredada no atómica: una carga inicial fallida no podría revertirse de forma coherente en todas las réplicas.
 </Note>
 
 Una consulta `SELECT` puede contener `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Tenga en cuenta que las transformaciones correspondientes se realizan de forma independiente en cada bloque de datos insertados. Por ejemplo, si se establece `GROUP BY`, los datos se agregan durante la inserción, pero solo dentro de un único paquete de datos insertados. Los datos no se volverán a agregar después. La excepción es cuando se usa un `ENGINE` que realiza la agregación de datos por sí mismo, como `SummingMergeTree`.

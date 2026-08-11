@@ -150,7 +150,7 @@ Les vues matérialisées stockent les données transformées par la requête [SE
 
 Lors de la création d’une vue matérialisée sans `TO [db].[table]`, vous devez spécifier `ENGINE` — le moteur de table utilisé pour stocker les données.
 
-Lors de la création d’une vue matérialisée avec `TO [db].[table]`, vous ne pouvez pas non plus utiliser `POPULATE`.
+Lors de la création d’une vue matérialisée avec `TO [db].[table]`, vous pouvez également utiliser `POPULATE` pour préremplir la table cible à partir des données existantes de la source (la table cible peut déjà contenir des données, auquel cas les lignes issues du préremplissage y sont ajoutées). `POPULATE` ne peut pas être combiné avec `REFRESH` : une [vue matérialisée rafraîchissable](#refreshable-materialized-view) est remplie lors de son premier rafraîchissement, donc `POPULATE` chargerait deux fois les données initiales (utilisez plutôt `EMPTY` pour ignorer le premier rafraîchissement).
 
 Une vue matérialisée fonctionne comme suit : lors de l’insertion de données dans la table spécifiée dans `SELECT`, une partie des données insérées est transformée par cette requête `SELECT`, puis le résultat est inséré dans la vue.
 
@@ -168,15 +168,20 @@ Une vue matérialisée fonctionne comme suit : lors de l’insertion de donnée
   `materialized_views_ignore_errors` vaut `true` par défaut pour les tables `system.*_log`.
 </Note>
 
-Si vous spécifiez `POPULATE`, les données existantes de la table sont insérées dans la vue lors de sa création, comme avec un `CREATE TABLE ... AS SELECT ...`. Sinon, la requête ne contient que les données insérées dans la table après la création de la vue. Nous **ne recommandons pas** d’utiliser `POPULATE`, car les données insérées dans la table pendant la création de la vue n’y seront pas insérées.
+Si vous spécifiez `POPULATE`, les données existantes de la table source sont insérées dans la vue lors de sa création. Sinon, la vue ne contient que les données insérées dans la table source après la création de la vue.
+
+Pour un simple `CREATE MATERIALIZED VIEW`, `POPULATE` est **atomique** par défaut (paramètre `materialized_views_populate_atomically = 1`) : la vue s’abonne aux nouvelles insertions dans la table source et un instantané des données existantes est pris simultanément, sous un bref verrou exclusif sur la table source, afin que chaque ligne insérée de manière concurrente avec le remplissage soit livrée à la vue **exactement une fois** — ni omise ni dupliquée. Le remplissage (potentiellement de longue durée) lit ensuite l’instantané figé sans conserver de verrou.
+
+Il s’agit d’une atomicité locale du chemin d’insertion : le verrou exclusif ne se sérialise qu’avec les insertions qui acquièrent le verrou de stockage de cette table source **sur le même serveur**, de sorte que la garantie exactly-once couvre les insertions arrivant via ce serveur. Il ne s’agit pas d’une garantie à l’échelle du cluster — les lignes insérées sur une autre réplique d’une source `ReplicatedMergeTree`, ou via un chemin d’écriture distribué (par exemple, dans une table `Distributed` ou via `ON CLUSTER`), de manière concurrente avec le remplissage, sont hors de ce périmètre et peuvent toujours être omises ou dupliquées.
+
+Si le remplissage échoue — par exemple, si le verrou exclusif sur une table source occupée ne peut pas être acquis dans le délai `lock_acquire_timeout`, ou si le `SELECT` de la vue génère une exception lors de son exécution — la vue qui vient d’être créée est supprimée et la requête `CREATE` échoue, sans rien laisser de ce qu’elle a créé, afin de pouvoir être simplement réessayée. Pour la forme `TO [db].[table]`, cette annulation ne supprime que la vue, jamais la table cible préexistante — mais les lignes que le remplissage ayant échoué a déjà insérées dans la cible y restent, exactement comme après un `INSERT ... SELECT` ayant échoué dans cette table, et réessayer le `CREATE` les insère à nouveau. Si le remplissage doit être exact, réessayez dans une table cible tronquée ou nouvelle, ou utilisez un moteur de déduplication tel que `ReplacingMergeTree`.
 
 <Note>
-  Étant donné que `POPULATE` fonctionne comme `CREATE TABLE ... AS SELECT ...`, il présente des limitations :
+  Le caractère atomique exige que la table source prenne en charge la lecture d’un instantané figé à un instant donné : la famille `MergeTree` et `Memory`. Pour toute autre source (une vue, `Distributed`, `Merge`, `Buffer`, la famille `Log` ou une table ne figurant pas dans une base de données `Atomic`), le remplissage revient au comportement legacy non atomique (consigné dans le journal du serveur) : les données existantes sont lues à l’aide d’un instantané distinct, non coordonné, de sorte que les lignes insérées pendant le remplissage peuvent être omises ou dupliquées. Dans ce cas, créez la vue et exécutez un `INSERT ... SELECT` distinct si vous avez besoin de données exactes. Définir `materialized_views_populate_atomically = 0` force ce comportement legacy pour toutes les sources.
 
-  * Il n’est pas pris en charge avec une base de données Replicated
-  * Il n’est pas pris en charge dans ClickHouse Cloud
+  Le remplissage atomique s’applique uniquement à `CREATE MATERIALIZED VIEW` simple. `CREATE OR REPLACE` / `REPLACE MATERIALIZED VIEW ... POPULATE` utilisent toujours le remplissage legacy non atomique.
 
-  À la place, vous pouvez utiliser un `INSERT ... SELECT` distinct.
+  `POPULATE` n’est pas pris en charge avec les bases de données `Replicated` (utilisez `database_replicated_allow_heavy_create` pour outrepasser cette restriction) et n’est pas pris en charge dans ClickHouse Cloud. Lorsqu’il est activé par cette dérogation, le remplissage est toujours legacy et non atomique : un échec du remplissage ne pourrait pas être annulé de manière cohérente sur toutes les répliques.
 </Note>
 
 Une requête `SELECT` peut contenir `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Notez que les transformations correspondantes sont effectuées indépendamment sur chaque bloc de données insérées. Par exemple, si `GROUP BY` est défini, les données sont agrégées pendant l’insertion, mais uniquement à l’intérieur d’un seul paquet de données insérées. Les données ne seront pas agrégées davantage. L’exception est l’utilisation d’un `ENGINE` qui effectue lui-même l’agrégation des données, comme `SummingMergeTree`.
