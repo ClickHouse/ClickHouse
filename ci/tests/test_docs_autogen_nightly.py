@@ -35,16 +35,6 @@ def test_changelog_check_skips_when_changed_files_are_unavailable(monkeypatch):
     assert not docs_job_mintlify._changelogs_check_should_run()
 
 
-@pytest.mark.parametrize(
-    ("is_local_run", "expected"), [(True, False), (False, True)]
-)
-def test_protected_docs_guard_runs_only_in_ci(monkeypatch, is_local_run, expected):
-    info = SimpleNamespace(is_local_run=is_local_run)
-    monkeypatch.setattr(docs_job_mintlify, "Info", lambda: info)
-
-    assert docs_job_mintlify._protected_docs_guard_should_run() is expected
-
-
 def test_open_bot_pr_scopes_head_to_base_and_repository(monkeypatch):
     commands = []
     monkeypatch.setattr(

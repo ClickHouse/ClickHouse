@@ -186,19 +186,19 @@ Guidelines:
 - Python 3
 - Docker, with the Docker service running
 
-### Run the docs checks {#run-docs-checks}
+### Run a docs check {#run-docs-check}
 
-From the repository root, run:
+From the repository root, pass the check name to `--test`. For example, to validate the Mintlify configuration and content, run:
 
 ```shell
-python3 -m ci.praktika run "Docs check (Mintlify)"
+python3 -m ci.praktika run "Docs check (Mintlify)" --test "Validate docs.json"
 ```
 
-Praktika pulls the configured `clickhouse/docs-builder` image and runs the locally supported docs checks in a container, so you do not need to install their dependencies.
+Praktika pulls the configured `clickhouse/docs-builder` image and runs the selected check in a container, so you do not need to install its dependencies.
 
 ### Run individual checks {#run-individual-docs-checks}
 
-Pass a check name to `--test` to run it individually. The match is case-insensitive and accepts partial names, but using the full names below avoids selecting the wrong check.
+The following checks can be run locally. The `--test` match is case-insensitive and accepts partial names, but using the full names below avoids selecting the wrong check.
 
 | Check | Command | What it does |
 |---|---|---|
