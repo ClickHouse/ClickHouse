@@ -20,6 +20,20 @@ const char * __asan_default_options()
     /// aborting. Removable once llvm/llvm-project#206649 lands in our toolchain.
     return "halt_on_error=1 abort_on_error=1 allocator_may_return_null=1";
 }
+#endif
+
+#ifdef HWADDRESS_SANITIZER
+const char * __hwasan_default_options()
+{
+    /// halt_on_error/abort_on_error aren't HWASan flags (halt_on_error already defaults to
+    /// true here); allocator_may_return_null is shared with ASan.
+    return "allocator_may_return_null=1";
+}
+#endif
+
+/// LeakSanitizer hooks: shared between ASan and HWASan builds, both of which bundle
+/// lsan_common into their runtime archive and resolve these hooks by symbol name.
+#if defined(ADDRESS_SANITIZER) || defined(HWADDRESS_SANITIZER)
 const char * __lsan_default_options()
 {
     return "max_allocation_size_mb=32768 allocator_may_return_null=1";

@@ -17,7 +17,14 @@ set (COMPILER_RT_DIR "${CMAKE_BINARY_DIR}/contrib/compiler-rt-cmake")
 set (BUILTINS_LIBRARY "${COMPILER_RT_DIR}/libclang_rt_builtins.a")
 
 set (SANITIZER_RUNTIMES "")
-if (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
+if ((SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined") AND CLICKHOUSE_HWASAN)
+    # HWASan build (SANITIZE=hwaddress; cmake/sanitize.cmake sets CLICKHOUSE_HWASAN and normalizes
+    # SANITIZE to address): link the HWASan runtime; it covers UBSan too when combined.
+    set (SANITIZER_RUNTIMES
+        "${COMPILER_RT_DIR}/libclang_rt_hwasan.a"
+        "${COMPILER_RT_DIR}/libclang_rt_hwasan_cxx.a"
+    )
+elseif (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
     # When ASan and UBSan are combined, the ASan runtime covers UBSan too.
     # ubsan_standalone must NOT be added — it shares sanitizer_common symbols
     # with asan and causes duplicate symbol errors.

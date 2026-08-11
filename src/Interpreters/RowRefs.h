@@ -84,6 +84,9 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 /// field 56-bit-safe; that does NOT limit rows per key (the saturated count already falls back to
 /// the node's 56-bit `total_rows`), it only lowers the load-free `rows()` fast path from keys with
 /// up to 32766 rows to keys with up to 126 rows - still covering most practical duplication.
+/// HWASan builds already use that 7-bit count layout: heap pointers carry an 8-bit tag in bits
+/// 63..56 that the packing relocates into bits 55..48 (see `RowRefList`). There this error means
+/// the 48-bit VA itself overflowed into those bits.
 [[noreturn]] void throwRowRefPointerTooLarge();
 
 /// Mapped value of MapsAll join hash maps (ALL JOINs / non-unique keys): a tagged 8-byte word.
@@ -91,10 +94,22 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 ///   - bit 63 is 0 and the word is not 0: a pointer (bits 47..0) to an arena-allocated `Batch` node,
 ///     with the duplicate count packed into bits 62..48 (saturating; see COUNT_SAT). The count lets
 ///     the probe loop read `rows` straight from the cell word without dereferencing the node.
+///     (HWASan builds shift the count to bits 62..56 and keep the pointer's tag byte in bits 55..48.)
 /// The node is allocated only when the first duplicate of a key arrives, so ALL-join cells are as
 /// small as ANY-join cells for every key type, and unique keys never touch the arena.
 struct RowRefList
 {
+#if defined(HWADDRESS_SANITIZER)
+    /// HWASan keeps an 8-bit tag in pointer bits 63..56. It can't stay there in the packed word
+    /// (its MSB would collide with the bit 63 inline flag), so it moves to bits 55..48 - always
+    /// zero in a 48-bit VA - and the count shrinks to 7 bits. Unpacking restores the tag, so
+    /// `Batch` dereferences stay HWASan-checked.
+    static constexpr UInt64 PTR_MASK = (1ull << 48) - 1;
+    static constexpr UInt32 TAG_SHIFT = 48;
+    static constexpr UInt32 COUNT_SHIFT = 56;
+    /// Sentinel stored in the count field meaning "count >= COUNT_SAT, load total_rows from the node".
+    static constexpr UInt32 COUNT_SAT = 0x7Fu;
+#else
     /// Low 48 bits of a list word hold the node pointer; bits 62..48 hold the saturating count.
     /// See the comment of `throwRowRefPointerTooLarge` for why 48 bits are enough and for the
     /// contingency if user-space mappings ever cross the 47-bit boundary.
@@ -102,6 +117,7 @@ struct RowRefList
     static constexpr UInt32 COUNT_SHIFT = 48;
     /// Sentinel stored in the count field meaning "count >= COUNT_SAT, load total_rows from the node".
     static constexpr UInt32 COUNT_SAT = 0x7FFFu;
+#endif
 
     /// A single 64-byte node. The cell word always points at the FIRST ("cell") node of a key.
     /// `head` and the local slots are one contiguous `refs` array (refs[0] is the head) so the
@@ -154,10 +170,21 @@ struct RowRefList
 
     bool isInline() const { return refWordIsInline(word); }
 
+    /// The `Batch` pointer bits of a packed word (under HWASan also moving the relocated tag
+    /// back into bits 63..56, where dereferences expect it).
+    static UInt64 batchPtrBits(UInt64 word_)
+    {
+#if defined(HWADDRESS_SANITIZER)
+        return (word_ & PTR_MASK) | (((word_ >> TAG_SHIFT) & 0xFFull) << 56);
+#else
+        return word_ & PTR_MASK;
+#endif
+    }
+
     const Batch * asBatch() const
     {
         chassert(word != 0 && !isInline());
-        return reinterpret_cast<const Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
+        return reinterpret_cast<const Batch *>(batchPtrBits(word)); /// NOLINT(performance-no-int-to-ptr)
     }
 
     /// Not const on purpose: a const-qualified version returning a mutable `Batch *` would leak
@@ -166,7 +193,7 @@ struct RowRefList
     Batch * asBatch() /// NOLINT(readability-make-member-function-const)
     {
         chassert(word != 0 && !isInline());
-        return reinterpret_cast<Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
+        return reinterpret_cast<Batch *>(batchPtrBits(word)); /// NOLINT(performance-no-int-to-ptr)
     }
 
     /// Total number of rows for this key. Load-free unless the count saturated.
@@ -368,10 +395,17 @@ private:
     void setListWord(Batch * b, UInt64 total_rows_)
     {
         const UInt64 ptr = reinterpret_cast<UInt64>(b);
+        const UInt64 count = total_rows_ < COUNT_SAT ? total_rows_ : COUNT_SAT;
+#if defined(HWADDRESS_SANITIZER)
+        /// Bits 55..48 must be vacant to receive the relocated tag byte (see PTR_MASK above).
+        if (ptr & (0xFFull << TAG_SHIFT)) [[unlikely]]
+            throwRowRefPointerTooLarge();
+        word = (ptr & PTR_MASK) | ((ptr >> 56) << TAG_SHIFT) | (count << COUNT_SHIFT);
+#else
         if (ptr & ~PTR_MASK) [[unlikely]]
             throwRowRefPointerTooLarge();
-        const UInt64 count = total_rows_ < COUNT_SAT ? total_rows_ : COUNT_SAT;
         word = ptr | (count << COUNT_SHIFT);
+#endif
     }
 };
 

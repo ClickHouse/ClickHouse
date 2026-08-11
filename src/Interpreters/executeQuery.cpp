@@ -253,7 +253,7 @@ namespace FailPoints
 
 static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
 {
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(HWADDRESS_SANITIZER)
     const auto data = std::make_unique_for_overwrite<char[]>(16);
     [[maybe_unused]] volatile char c = data[16];
 #elif defined(THREAD_SANITIZER)

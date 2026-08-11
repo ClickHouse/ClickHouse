@@ -1,18 +1,64 @@
 # Possible values:
 # - `address` (ASan)
+# - `hwaddress` (HWASan, arm64 Linux only)
 # - `memory` (MSan)
 # - `thread` (TSan)
 # - `undefined` (UBSan)
 # - "" (no sanitizing)
+# `address` and `hwaddress` may be combined with `undefined`, e.g. `address,undefined`.
 option (SANITIZE "Enable one of the code sanitizers" "")
 
 ## -fno-omit-frame-pointer is required: the query profiler relies on frame-pointer-based
 ## stack unwinding under sanitizer builds (via abseil's GetStackTrace in StackTrace.cpp).
 set (SAN_FLAGS "${SAN_FLAGS} -g -fno-omit-frame-pointer -DSANITIZER")
 
+# HWASan (hardware-assisted AddressSanitizer, `-fsanitize=hwaddress`) is an explicit, opt-in
+# sanitizer selected by SANITIZE=hwaddress (or hwaddress,undefined), supported only on arm64
+# Linux. Unlike software ASan it stores shadow state in pointer tags (top byte, TBI) rather than
+# a full shadow mapping, which is much cheaper on aarch64. It must be requested explicitly:
+# SANITIZE=address stays software ASan on every architecture, arm64 included.
+if (SANITIZE STREQUAL "hwaddress" OR SANITIZE STREQUAL "hwaddress,undefined")
+    if (NOT (ARCH_AARCH64 AND OS_LINUX))
+        message (FATAL_ERROR "HWASan (SANITIZE=${SANITIZE}) is only supported on arm64 Linux.")
+    endif ()
+
+    set (CLICKHOUSE_HWASAN 1)
+
+    # Disable HWASan global tagging. LLVM tags globals by default off-Android, so every
+    # instrumented global's address carries a top-byte tag. Hand-written aarch64 asm reaches
+    # globals via plain `adrp` (R_AARCH64_ADR_PREL_PG_HI21), whose ±4 GiB range the tagged
+    # displacement overflows; ClickHouse links many such files (e.g. OpenSSL's *-armv8.S
+    # referencing OPENSSL_armcap_P). Turning tagging off keeps heap/stack checks and only
+    # forgoes global-buffer-overflow detection. Via -mllvm so it also reaches cargo's C
+    # (RUST_CFLAGS derives from CMAKE_C_FLAGS).
+    #
+    # -Wno-unused-command-line-argument: these flags also reach pure link invocations, where
+    # -mllvm has nothing to compile and clang warns `argument unused during compilation`;
+    # silence it so the noise doesn't trip cargo's cc-rs feature probes.
+    set (HWASAN_EXTRA_FLAGS "-mllvm -hwasan-globals=0 -Wno-unused-command-line-argument")
+
+    # Normalize SANITIZE to the equivalent software-ASan value for the rest of the build. HWASan
+    # shares ASan's sanitizer_common/lsan_common/UBSan runtime plumbing, so every downstream
+    # `SANITIZE STREQUAL "address"` / "address,undefined" / `MATCHES "address"` check (jemalloc,
+    # UBSan suppressions across contrib, boost.context, ...) must fire exactly as for ASan. The
+    # HWASan-specific divergences (the instrumentation flag below, the runtime archives, and the
+    # Rust/cxxabi handling) are gated on CLICKHOUSE_HWASAN instead of the SANITIZE string.
+    if (SANITIZE STREQUAL "hwaddress,undefined")
+        set (SANITIZE "address,undefined")
+    else ()
+        set (SANITIZE "address")
+    endif ()
+endif ()
+
 if (SANITIZE)
     if (SANITIZE STREQUAL "address")
-        set (ASAN_FLAGS "-fsanitize=address -fsanitize-address-use-after-scope")
+        if (CLICKHOUSE_HWASAN)
+            # -fsanitize-address-use-after-scope has no HWASan equivalent.
+            # HWASAN_EXTRA_FLAGS (above) disables global tagging; see the comment there.
+            set (ASAN_FLAGS "-fsanitize=hwaddress ${HWASAN_EXTRA_FLAGS}")
+        else ()
+            set (ASAN_FLAGS "-fsanitize=address -fsanitize-address-use-after-scope")
+        endif ()
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SAN_FLAGS} ${ASAN_FLAGS}")
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${ASAN_FLAGS}")
 
@@ -113,7 +159,12 @@ if (SANITIZE)
         set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SAN_FLAGS} ${UBSAN_FLAGS}")
 
     elseif (SANITIZE STREQUAL "address,undefined")
-        set (ASAN_UBSAN_FLAGS "-fsanitize=address,undefined -fsanitize-address-use-after-scope -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
+        if (CLICKHOUSE_HWASAN)
+            set (ASAN_UBSAN_FLAGS "-fsanitize=hwaddress,undefined ${HWASAN_EXTRA_FLAGS}")
+        else ()
+            set (ASAN_UBSAN_FLAGS "-fsanitize=address,undefined -fsanitize-address-use-after-scope")
+        endif ()
+        set (ASAN_UBSAN_FLAGS "${ASAN_UBSAN_FLAGS} -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
         if (ENABLE_FUZZING)
             set (ASAN_UBSAN_FLAGS "${ASAN_UBSAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
         endif()

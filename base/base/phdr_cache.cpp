@@ -81,7 +81,9 @@ extern "C"
 void __lsan_ignore_object(const void *); // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 }
 
-#ifndef ADDRESS_SANITIZER
+/// Under ASan/HWASan the real `__lsan_ignore_object` comes from the bundled lsan_common;
+/// defining this stub too would be a duplicate-symbol link error.
+#if !defined(ADDRESS_SANITIZER) && !defined(HWADDRESS_SANITIZER)
 extern "C" void __lsan_ignore_object(const void *) {} // NOLINT
 #endif
 

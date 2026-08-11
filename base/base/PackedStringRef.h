@@ -28,6 +28,7 @@
 ///                  high 32 bits of length (large)
 ///   bytes  8..14 : payload 4..10  (small)
 ///                  low 56 bits of pointer in little-endian byte order (medium / large)
+///                  (under HWASan: low 48 address bits followed by the relocated pointer tag)
 ///   byte   15    : tag byte
 ///                    bit 7    : LARGE flag
 ///                    bits 3-6 : SMALL length (4 bits, 0 if not small)
@@ -61,9 +62,15 @@ struct PackedStringRef
     /// Low 56 bits of `high`: the packed pointer of the medium / large encodings.
     /// 56 bits fit any user-space pointer on the supported targets: Linux x86-64 keeps user
     /// addresses below 2^56 even with 5-level paging, and AArch64 virtual addresses take at
-    /// most 52 bits. Pointer tagging that sets the top bits (e.g. HWASan) would make the
-    /// truncation lossy; the setters assert the invariant in debug builds.
+    /// most 52 bits. Under HWASan, the pointer tag from bits 63..56 is relocated into bits
+    /// 55..48, leaving the low 48 address bits in place. Heap and stack allocations stay below
+    /// 2^48 without an explicit address hint, as required by `RowRefList` too.
+#if defined(HWADDRESS_SANITIZER)
+    static constexpr uint64_t POINTER_MASK = (uint64_t(1) << 48) - 1;
+    static constexpr uint64_t RELOCATED_TAG_MASK = uint64_t(0xFF) << 48;
+#else
     static constexpr uint64_t POINTER_MASK = (uint64_t(1) << (PACKED_POINTER_BYTES * 8)) - 1;
+#endif
 
 private:
     ALWAYS_INLINE uint8_t * rawBytes() { return reinterpret_cast<uint8_t *>(this); }
@@ -101,6 +108,30 @@ private:
                 value |= static_cast<uint64_t>(src[i]) << (i * 8);
         }
         return value;
+    }
+
+    /// Pack a pointer into the seven-byte pointer payload. HWASan occupies the top byte of a
+    /// pointer with its memory tag, so retain it separately from the 48-bit virtual address.
+    static ALWAYS_INLINE uint64_t packPointer(const char * ptr)
+    {
+        const uint64_t value = reinterpret_cast<uintptr_t>(ptr);
+#if defined(HWADDRESS_SANITIZER)
+        chassert((value & RELOCATED_TAG_MASK) == 0);
+        return (value & POINTER_MASK) | ((value >> 8) & RELOCATED_TAG_MASK);
+#else
+        chassert((value & ~POINTER_MASK) == 0);
+        return value;
+#endif
+    }
+
+    static ALWAYS_INLINE const char * unpackPointer(uint64_t value)
+    {
+#if defined(HWADDRESS_SANITIZER)
+        value = (value & POINTER_MASK) | ((value & RELOCATED_TAG_MASK) << 8);
+#else
+        value &= POINTER_MASK;
+#endif
+        return reinterpret_cast<const char *>(value);
     }
 
 public:
@@ -143,7 +174,7 @@ public:
 
     ALWAYS_INLINE const char * getMediumPtr() const
     {
-        return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
+        return unpackPointer(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
 
     ALWAYS_INLINE uint64_t getLargeSize() const
@@ -153,7 +184,7 @@ public:
 
     ALWAYS_INLINE const char * getLargePtr() const
     {
-        return reinterpret_cast<const char *>(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
+        return unpackPointer(loadLE(rawBytes() + sizeof(uint64_t), PACKED_POINTER_BYTES));
     }
 
     ALWAYS_INLINE uint32_t getHash() const
@@ -186,20 +217,18 @@ public:
         return {getLargePtr(), getLargeSize()};
     }
 
-    /// Set the medium-string pointer (low 56 bits) and clear the tag byte.
+    /// Set the medium-string pointer and clear the tag byte.
     /// Used by `keyHolderPersistKey` to rebind the key to arena-owned memory.
     ALWAYS_INLINE void setMediumPointer(const char * ptr)
     {
-        chassert((reinterpret_cast<uintptr_t>(ptr) >> (PACKED_POINTER_BYTES * 8)) == 0);
-        storeLE(rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
+        storeLE(rawBytes() + sizeof(uint64_t), packPointer(ptr), PACKED_POINTER_BYTES);
         rawBytes()[TAG_BYTE_OFFSET] = 0;
     }
 
-    /// Set the large-string pointer (low 56 bits) and set the LARGE tag byte.
+    /// Set the large-string pointer and set the LARGE tag byte.
     ALWAYS_INLINE void setLargePointer(const char * ptr)
     {
-        chassert((reinterpret_cast<uintptr_t>(ptr) >> (PACKED_POINTER_BYTES * 8)) == 0);
-        storeLE(rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
+        storeLE(rawBytes() + sizeof(uint64_t), packPointer(ptr), PACKED_POINTER_BYTES);
         rawBytes()[TAG_BYTE_OFFSET] = LARGE_TAG_BYTE;
     }
 
@@ -259,14 +288,14 @@ public:
             if constexpr (std::endian::native == std::endian::little)
             {
                 r.low = hash | (len << 32);
-                r.high = reinterpret_cast<uintptr_t>(ptr) & POINTER_MASK;
+                r.high = packPointer(ptr);
             }
             else
             {
                 uint32_t len32 = static_cast<uint32_t>(len);
                 std::memcpy(r.rawBytes(), &hash, sizeof(hash));
                 std::memcpy(r.rawBytes() + MEDIUM_LENGTH_OFFSET, &len32, sizeof(len32));
-                storeLE(r.rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
+                storeLE(r.rawBytes() + sizeof(uint64_t), packPointer(ptr), PACKED_POINTER_BYTES);
             }
             return r;
         }
@@ -275,12 +304,12 @@ public:
         if constexpr (std::endian::native == std::endian::little)
         {
             r.low = len;
-            r.high = (reinterpret_cast<uintptr_t>(ptr) & POINTER_MASK) | (uint64_t(LARGE_TAG_BYTE) << 56);
+            r.high = packPointer(ptr) | (uint64_t(LARGE_TAG_BYTE) << 56);
         }
         else
         {
             storeLE(r.rawBytes(), len, sizeof(uint64_t));
-            storeLE(r.rawBytes() + sizeof(uint64_t), reinterpret_cast<uintptr_t>(ptr), PACKED_POINTER_BYTES);
+            storeLE(r.rawBytes() + sizeof(uint64_t), packPointer(ptr), PACKED_POINTER_BYTES);
             r.rawBytes()[TAG_BYTE_OFFSET] = LARGE_TAG_BYTE;
         }
         return r;
@@ -308,9 +337,9 @@ inline ALWAYS_INLINE bool operator==(PackedStringRef lhs, PackedStringRef rhs)
         if (lhs_tag != rhs_tag || (lhs_tag & PackedStringRef::SMALL_LEN_NIBBLE_MASK))
             return false;
 
-        const char * lhs_ptr = reinterpret_cast<const char *>(lhs.high & PackedStringRef::POINTER_MASK);
-        const char * rhs_ptr = reinterpret_cast<const char *>(rhs.high & PackedStringRef::POINTER_MASK);
         const size_t size = (lhs_tag & PackedStringRef::LARGE_TAG_BYTE) ? lhs.low : (lhs.low >> 32);
+        const char * lhs_ptr = (lhs_tag & PackedStringRef::LARGE_TAG_BYTE) ? lhs.getLargePtr() : lhs.getMediumPtr();
+        const char * rhs_ptr = (rhs_tag & PackedStringRef::LARGE_TAG_BYTE) ? rhs.getLargePtr() : rhs.getMediumPtr();
 #if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
         return memequalWide(lhs_ptr, rhs_ptr, size);
 #else

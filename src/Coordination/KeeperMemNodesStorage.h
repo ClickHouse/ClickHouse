@@ -68,7 +68,7 @@ private:
     CompactChildrenSet children{};
 };
 
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
+#if !defined(ADDRESS_SANITIZER) && !defined(HWADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
     static_assert(sizeof(CompactChildrenSet) == 16);
     static_assert(sizeof(KeeperMemNode) == 104);
     static_assert(

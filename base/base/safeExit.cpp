@@ -6,7 +6,7 @@
 #include <base/safeExit.h>
 #include <base/defines.h> /// for THREAD_SANITIZER
 
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(HWADDRESS_SANITIZER)
 #    include <sanitizer/lsan_interface.h>
 #endif
 
@@ -18,7 +18,7 @@
     (void)syscall(SYS_exit_group, code);
     UNREACHABLE();
 #else
-#    if defined(ADDRESS_SANITIZER)
+#    if defined(ADDRESS_SANITIZER) || defined(HWADDRESS_SANITIZER)
     /// Run the leak check now, while all memory is still reachable through global pointers.
     /// _exit() bypasses static destructors and atexit handlers, so cleanup routines
     /// (e.g., OPENSSL_cleanup) never run, causing their global state to appear leaked

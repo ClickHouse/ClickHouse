@@ -6,7 +6,8 @@
 #
 # Targets created:
 #   * clang_rt_builtins             — always
-#   * clang_rt_asan / asan_static / asan_cxx — if SANITIZE matches address
+#   * clang_rt_asan / asan_static / asan_cxx — software ASan (SANITIZE matches address)
+#   * clang_rt_hwasan / hwasan_cxx           — HWASan (CLICKHOUSE_HWASAN, i.e. SANITIZE=hwaddress)
 #   * clang_rt_msan / msan_cxx               — if SANITIZE = memory
 #   * clang_rt_tsan / tsan_cxx               — if SANITIZE = thread
 #   * clang_rt_ubsan_standalone / ubsan_standalone_cxx — if SANITIZE = undefined
@@ -277,6 +278,7 @@ include(sources/interception.cmake)
 include(sources/lsan.cmake)
 include(sources/ubsan.cmake)
 include(sources/asan.cmake)
+include(sources/hwasan.cmake)
 include(sources/msan.cmake)
 include(sources/tsan.cmake)
 include(sources/xray.cmake)
@@ -372,7 +374,7 @@ endfunction()
 # 3. ASan
 # ============================================================
 #
-if (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
+if ((SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined") AND NOT CLICKHOUSE_HWASAN)
     # Combined sources for the main asan archive: preinit + main + sanitizer_common
     # + interception + lsan_common + ubsan helpers, all flat in one archive so
     # everything resolves with --whole-archive and no inter-archive ordering.
@@ -442,6 +444,67 @@ if (SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined")
         CXX_STANDARD 17
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
     _register_compiler_rt_target(clang_rt_asan_cxx)
+endif()
+
+#
+# ============================================================
+# 3b. HWASan (hardware-assisted ASan, aarch64 only)
+# ============================================================
+#
+# Built instead of ASan when CLICKHOUSE_HWASAN is set (see cmake/sanitize.cmake). Mirrors the
+# ASan archive split, minus asan_static (HWASan has no asan_rtl_static.cpp counterpart):
+#   libclang_rt.hwasan.a     — preinit + main + sanitizer_common + interception
+#                              + lsan_common + ubsan helpers, bundled
+#   libclang_rt.hwasan_cxx.a — hwasan_new_delete.cpp
+#
+# The bundling matches upstream's OBJECT_LIBS for clang_rt.hwasan (hwasan/CMakeLists.txt).
+# Without RTUbsan, `-fsanitize=hwaddress,undefined` code fails to link with undefined
+# `__ubsan_handle_*` symbols.
+if ((SANITIZE STREQUAL "address" OR SANITIZE STREQUAL "address,undefined") AND CLICKHOUSE_HWASAN)
+    set(_hwasan_combined_full "")
+    foreach (s ${HWASAN_PREINIT_SOURCES} ${HWASAN_SOURCES})
+        list(APPEND _hwasan_combined_full "${COMPILER_RT_DIR}/lib/hwasan/${s}")
+    endforeach()
+    foreach (s ${SANITIZER_COMMON_SOURCES} ${SANITIZER_COMMON_LIBC_SOURCES}
+                ${SANITIZER_COMMON_COVERAGE_SOURCES} ${SANITIZER_COMMON_SYMBOLIZER_SOURCES})
+        list(APPEND _hwasan_combined_full "${SANCOMMON_DIR}/${s}")
+    endforeach()
+    foreach (s ${INTERCEPTION_SOURCES})
+        list(APPEND _hwasan_combined_full "${INTERCEPTION_DIR}/${s}")
+    endforeach()
+    foreach (s ${LSAN_COMMON_SOURCES})
+        list(APPEND _hwasan_combined_full "${LSAN_DIR}/${s}")
+    endforeach()
+    foreach (s ${UBSAN_SOURCES})
+        list(APPEND _hwasan_combined_full "${UBSAN_DIR}/${s}")
+    endforeach()
+
+    add_library(clang_rt_hwasan STATIC ${_hwasan_combined_full})
+    target_include_directories(clang_rt_hwasan PRIVATE ${SANITIZER_INCLUDE_DIRS})
+    target_compile_options(clang_rt_hwasan PRIVATE ${SANITIZER_COMMON_FLAGS})
+    # HWASAN_WITH_INTERCEPTORS defaults to 0 in hwasan.h, but upstream builds it as 1 for every
+    # non-Fuchsia target. With it off, the libc interceptors compile out: no `pthread_create`
+    # wrapper (child threads never run `__hwasan_thread_enter()` and SEGV on first tagged
+    # access), and the malloc/operator new/delete replacements are dropped (heap never tagged).
+    # Define it to 1 to match upstream; several TUs read it, so it must be target-wide.
+    target_compile_definitions(clang_rt_hwasan PRIVATE ${SANITIZER_COMMON_DEFS} HWASAN_WITH_INTERCEPTORS=1)
+    set_target_properties(clang_rt_hwasan PROPERTIES
+        C_STANDARD 11 CXX_STANDARD 17
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    _register_compiler_rt_target(clang_rt_hwasan)
+
+    # hwasan_cxx — only hwasan_new_delete.cpp, RTTI disabled (matches upstream).
+    add_library(clang_rt_hwasan_cxx STATIC "${COMPILER_RT_DIR}/lib/hwasan/${HWASAN_CXX_SOURCES}")
+    target_include_directories(clang_rt_hwasan_cxx PRIVATE ${SANITIZER_INCLUDE_DIRS})
+    target_compile_options(clang_rt_hwasan_cxx PRIVATE ${SANITIZER_COMMON_FLAGS})
+    # hwasan_new_delete.cpp only compiles operator new/delete under
+    # HWASAN_REPLACE_OPERATORS_NEW_AND_DELETE (defaults to HWASAN_WITH_INTERCEPTORS); define it
+    # to 1 here too so this archive provides tagged operator new/delete.
+    target_compile_definitions(clang_rt_hwasan_cxx PRIVATE ${SANITIZER_COMMON_DEFS} HWASAN_WITH_INTERCEPTORS=1)
+    set_target_properties(clang_rt_hwasan_cxx PROPERTIES
+        CXX_STANDARD 17
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+    _register_compiler_rt_target(clang_rt_hwasan_cxx)
 endif()
 
 #

@@ -402,7 +402,8 @@ void ThreadFuzzer::setup() const
 #endif
 
 /// The loongarch64's glibc_version is 2.36
-#if defined(ADDRESS_SANITIZER) || defined(__loongarch64)
+/// HWASan disables jemalloc like ASan does, so it needs the same dlsym-based lookup below.
+#if defined(ADDRESS_SANITIZER) || defined(HWADDRESS_SANITIZER) || defined(__loongarch64)
 #if USE_JEMALLOC
 #error "ASan cannot be used with jemalloc"
 #endif

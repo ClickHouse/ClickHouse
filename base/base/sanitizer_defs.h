@@ -26,6 +26,20 @@
 #    endif
 #endif
 
+/// Detect hardware-assisted AddressSanitizer (HWASan, aarch64-only). Separate from
+/// ADDRESS_SANITIZER: its runtime only provides `__hwasan_*`, not `__asan_*`. But it shares
+/// ASan's sanitizer_common/lsan_common plumbing, so most ADDRESS_SANITIZER-gated logic that
+/// doesn't call the ASan-specific poisoning API applies under HWADDRESS_SANITIZER too.
+#if !defined(HWADDRESS_SANITIZER)
+#    if defined(ch_has_feature)
+#        if ch_has_feature(hwaddress_sanitizer)
+#            define HWADDRESS_SANITIZER 1
+#        endif
+#    elif defined(__SANITIZE_HWADDRESS__)
+#        define HWADDRESS_SANITIZER 1
+#    endif
+#endif
+
 #if !defined(THREAD_SANITIZER)
 #    if defined(ch_has_feature)
 #        if ch_has_feature(thread_sanitizer)
@@ -59,8 +73,8 @@
 /// We used to have only ABORT_ON_LOGICAL_ERROR macro, but most of its uses were actually in places where we didn't care about logical errors
 /// but wanted to check exactly if the current build type is debug or with sanitizer. This new macro is introduced to fix those places.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-#    if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) \
-        || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+#    if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(HWADDRESS_SANITIZER) || defined(THREAD_SANITIZER) \
+        || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
 #        define DEBUG_OR_SANITIZER_BUILD
 #    endif
 #endif
@@ -74,6 +88,9 @@
 #define ALWAYS_INLINE_NO_SANITIZE_UNDEFINED __attribute__((__always_inline__, __no_sanitize__("undefined")))
 #define DISABLE_SANITIZER_INSTRUMENTATION __attribute__((disable_sanitizer_instrumentation))
 
+/// Gated on ADDRESS_SANITIZER only, not HWADDRESS_SANITIZER: these call
+/// `__asan_{,un}poison_memory_region`, which exist only in the ASan runtime. Under HWASan
+/// they stay no-ops (its tag-based `__hwasan_tag_memory` equivalent is not yet wired up).
 #if !__has_include(<sanitizer/asan_interface.h>) || !defined(ADDRESS_SANITIZER)
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)
 #   define ASAN_POISON_MEMORY_REGION(a, b)
