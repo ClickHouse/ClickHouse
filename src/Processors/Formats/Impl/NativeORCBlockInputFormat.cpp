@@ -1858,9 +1858,15 @@ static ColumnWithTypeAndName readColumnWithBigNumberFromBinaryData(
 static ColumnWithTypeAndName readColumnWithDateData(
     const orc::ColumnVectorBatch * orc_column,
     const String & column_name,
-    const DataTypePtr & type_hint,
+    const DataTypePtr & raw_type_hint,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
+    /// The hint is the raw header type: `readColumnFromORCColumn` strips an outer Nullable but not
+    /// LowCardinality, so e.g. a LowCardinality(DateTime('UTC')) target would fall through to the
+    /// raw Int32 branch below and the later context-less cast would read the day count as unix
+    /// seconds. Strip the wrappers so such targets take the same branches as the plain types.
+    const DataTypePtr type_hint = raw_type_hint ? removeNullable(recursiveRemoveLowCardinality(raw_type_hint)) : nullptr;
+
     DataTypePtr internal_type;
     bool check_date32_range = false;
     bool check_date_range = false;

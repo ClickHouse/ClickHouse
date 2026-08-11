@@ -895,8 +895,14 @@ static ColumnWithTypeAndName readColumnWithBooleanData(const std::shared_ptr<arr
 }
 
 static ColumnWithTypeAndName readColumnWithDate32Data(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name,
-                                                      const DataTypePtr & type_hint, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+                                                      const DataTypePtr & raw_type_hint, FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
+    /// The hint is the raw header type, so it may be wrapped in LowCardinality and/or Nullable.
+    /// Strip the wrappers, otherwise e.g. a LowCardinality(DateTime64(9)) target would skip the
+    /// range checks below and the later context-less cast would clamp out-of-range values with
+    /// the default overflow mode instead of honoring `date_time_overflow_behavior`.
+    const DataTypePtr type_hint = raw_type_hint ? removeNullable(recursiveRemoveLowCardinality(raw_type_hint)) : nullptr;
+
     DataTypePtr internal_type;
     bool check_date32_range = false;
     bool check_date_range = false;
