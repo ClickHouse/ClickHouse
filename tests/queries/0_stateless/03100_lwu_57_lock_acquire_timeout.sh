@@ -19,7 +19,7 @@ function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT infinite_sleep" 2>/dev/null || true
     wait || true
-    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_timeout_sync SYNC; DROP TABLE IF EXISTS t_lwu_timeout_auto SYNC; DROP TABLE IF EXISTS t_lwu_cas SYNC; DROP TABLE IF EXISTS t_lwu_cancel SYNC" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_timeout_sync SYNC; DROP TABLE IF EXISTS t_lwu_timeout_auto SYNC; DROP TABLE IF EXISTS t_lwu_cas SYNC; DROP TABLE IF EXISTS t_lwu_cancel SYNC; DROP TABLE IF EXISTS t_lwu_plain_sync SYNC; DROP TABLE IF EXISTS t_lwu_plain_auto SYNC" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -64,6 +64,8 @@ function start_parked_holder()
 {
     local table_name=$1
     local mode=$2
+    # A plain MergeTree keeps the lock in process memory, so there is no node to count.
+    local in_keeper=${3:-1}
 
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT infinite_sleep"
 
@@ -80,7 +82,10 @@ function start_parked_holder()
     fi
 
     # The pause is reached after the lock is taken, so this must already hold.
-    wait_for_lock_held "$table_name" "$mode"
+    if [[ "$in_keeper" == "1" ]]
+    then
+        wait_for_lock_held "$table_name" "$mode"
+    fi
 }
 
 # Lets the parked holder finish and release the lock. Callers wait for the background jobs they
@@ -238,6 +243,55 @@ function run()
         SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 0;
     "
     echo "$mode zero-timeout uncontended succeeded"
+
+    $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
+}
+
+# A non-replicated table holds the same lock in process memory rather than in Keeper, and both of its
+# modes must be as interruptible as the Keeper ones: cancellation is polled between wait chunks in
+# one shared helper. Same oracle as the arm above, and equally clock-free.
+function run_plain()
+{
+    local mode=$1
+    table_name="t_lwu_plain_$mode"
+
+    $CLICKHOUSE_CLIENT --query "
+        DROP TABLE IF EXISTS $table_name SYNC;
+
+        CREATE TABLE $table_name (id UInt64, s String, v UInt64)
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            enable_block_number_column = 1,
+            enable_block_offset_column = 1;
+
+        INSERT INTO $table_name VALUES (1, 'aa', 0) (2, 'bb', 0) (3, 'cc', 0);
+    "
+
+    start_parked_holder "$table_name" "$mode" 0
+
+    tag="$run_id-plain-$mode-cancel"
+    error=$($CLICKHOUSE_CLIENT --query "
+        SET enable_lightweight_update = 1;
+        UPDATE $table_name SET v = 500 WHERE s = 'xx'
+        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 30,
+                 max_execution_time = 2, timeout_overflow_mode = 'throw', log_comment = '$tag';
+    " 2>&1 >/dev/null) && error=""
+
+    cancelled=0
+    if [[ "$error" == *"maximum: 2000 ms"* ]]; then cancelled=1; fi
+    echo "plain $mode cancelled-in-wait $cancelled"
+
+    release_holder
+    wait
+
+    # The unconditional first attempt is what keeps a zero timeout working, here as in Keeper.
+    $CLICKHOUSE_CLIENT --query "
+        SET enable_lightweight_update = 1;
+        UPDATE $table_name SET v = 300 WHERE id = 1
+        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 0;
+    "
+    echo "plain $mode zero-timeout uncontended succeeded"
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
 }
@@ -496,6 +550,8 @@ function run_cas_contention()
 
 run "sync"
 run "auto"
+run_plain "sync"
+run_plain "auto"
 run_churn
 run_cas_contention
 run_cancel

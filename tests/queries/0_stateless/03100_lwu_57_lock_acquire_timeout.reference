@@ -8,6 +8,10 @@ auto 60000 succeeded contended 1
 auto huge-timeout succeeded contended 1
 auto cancelled-in-wait 1
 auto zero-timeout uncontended succeeded
+plain sync cancelled-in-wait 1
+plain sync zero-timeout uncontended succeeded
+plain auto cancelled-in-wait 1
+plain auto zero-timeout uncontended succeeded
 churn succeeded tries_bounded 1
 cas reached true backed_off true
 cancel interrupted 1 promptly 1

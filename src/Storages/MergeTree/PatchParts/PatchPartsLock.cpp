@@ -57,19 +57,28 @@ Int64 getRemainingMs(const Stopwatch & watch, Int64 timeout_ms)
     return std::max<Int64>(timeout_ms - static_cast<Int64>(watch.elapsedMilliseconds()), 0);
 }
 
-/// Waits for the watch the caller registered on `event`, in chunks so that cancellation is polled
-/// in between. The watch must stay registered once and the event must not be reset between chunks:
-/// it is one-shot, and a timed out tryWait deregisters nothing.
-void waitInterruptibly(const ContextPtr & context, Poco::Event & event, const Stopwatch & watch, Int64 timeout_ms)
+/// Calls `wait_chunk` with a slice of the remaining time until it reports success, polling query
+/// cancellation in between. Returns false once the timeout is exhausted. `wait_chunk` must not
+/// discard the state it waits on between calls: a Poco::Event watch is one-shot, and a timed out
+/// wait deregisters nothing.
+template <typename WaitChunk>
+bool waitInterruptibly(const ContextPtr & context, const Stopwatch & watch, Int64 timeout_ms, WaitChunk && wait_chunk)
 {
     for (auto remaining_ms = getRemainingMs(watch, timeout_ms); remaining_ms > 0; remaining_ms = getRemainingMs(watch, timeout_ms))
     {
         if (auto query_status = context->getProcessListElementSafe())
             query_status->checkTimeLimit();
 
-        if (event.tryWait(std::min(max_wait_chunk_ms, remaining_ms)))
-            return;
+        if (wait_chunk(std::min(max_wait_chunk_ms, remaining_ms)))
+            return true;
     }
+
+    return false;
+}
+
+void waitInterruptibly(const ContextPtr & context, Poco::Event & event, const Stopwatch & watch, Int64 timeout_ms)
+{
+    waitInterruptibly(context, watch, timeout_ms, [&](Int64 chunk_ms) { return event.tryWait(chunk_ms); });
 }
 
 zkutil::EphemeralNodeHolderPtr getLockForSyncMode(
@@ -342,19 +351,41 @@ bool UpdateAffectedColumnsWithCounters::hasConflict(const UpdateAffectedColumns 
     return false;
 }
 
-void PlainLightweightUpdatesSync::lockColumns(const UpdateAffectedColumns & affected_columns, size_t timeout_ms)
+void PlainLightweightUpdatesSync::lockColumns(
+    const ContextPtr & context, const UpdateAffectedColumns & affected_columns, Int64 timeout_ms)
 {
+    auto no_conflict = [&] { return !in_progress_columns.hasConflict(affected_columns); };
+
     std::unique_lock lock(in_progress_mutex);
+    Stopwatch acquire_watch;
 
-    bool res = in_progress_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]
+    /// The first check is unconditional, so an uncontended update still succeeds at zero timeout.
+    if (!no_conflict())
     {
-        return !in_progress_columns.hasConflict(affected_columns);
-    });
+        auto wait_chunk = [&](Int64 chunk_ms)
+        {
+            return in_progress_cv.wait_for(lock, std::chrono::milliseconds(chunk_ms), no_conflict);
+        };
 
-    if (!res)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to get lock in {} ms for lightweight update with auto mode", timeout_ms);
+        if (!waitInterruptibly(context, acquire_watch, timeout_ms, wait_chunk))
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Failed to get lock in {} ms for lightweight update with auto mode", timeout_ms);
+    }
 
     in_progress_columns.add(affected_columns);
+}
+
+bool PlainLightweightUpdatesSync::lockSyncMutex(
+    const ContextPtr & context, std::unique_lock<std::timed_mutex> & sync_lock, Int64 timeout_ms)
+{
+    Stopwatch acquire_watch;
+
+    /// The first attempt is unconditional, so an uncontended update still succeeds at zero timeout.
+    if (sync_lock.try_lock())
+        return true;
+
+    auto wait_chunk = [&](Int64 chunk_ms) { return sync_lock.try_lock_for(std::chrono::milliseconds(chunk_ms)); };
+    return waitInterruptibly(context, acquire_watch, timeout_ms, wait_chunk);
 }
 
 void PlainLightweightUpdatesSync::releaseColumns(const UpdateAffectedColumns & affected_columns)
