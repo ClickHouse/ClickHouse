@@ -4301,6 +4301,39 @@ class QueryResultElement extends HTMLElement
         };
     }
 
+    /// Compare two x values of a chart. They are numbers most of the time, but 64-bit integers and
+    /// decimals arrive as strings in `JSONCompactColumns`, hence the numeric comparison of anything
+    /// that looks like a number, with a lexicographic comparison as the last resort.
+    static _compareChartX(a, b)
+    {
+        const x = Number(a);
+        const y = Number(b);
+        if (Number.isFinite(x) && Number.isFinite(y)) { return x < y ? -1 : x > y ? 1 : 0; }
+        return a < b ? -1 : a > b ? 1 : 0;
+    }
+
+    /// uPlot requires the x values to be sorted in ascending order: it derives the x scale range
+    /// from the first and the last value and locates the point under the cursor with a binary
+    /// search over them. A descending result (`ORDER BY ... DESC`, a common way to write a query)
+    /// still draws a plausible-looking line, but every hover balloon then shows a mirrored point.
+    /// The order of the result is the user's business, so reorder the data here instead.
+    /// Returns the argument as is in the common (already sorted) case.
+    static _sortChartDataByX(json)
+    {
+        const x = json[0];
+        for (let i = 1; i < x.length; ++i)
+        {
+            if (QueryResultElement._compareChartX(x[i - 1], x[i]) > 0)
+            {
+                /// The index is the tie-breaker, so that equal x values keep their relative order.
+                const order = Array.from(x.keys()).sort(
+                    (a, b) => QueryResultElement._compareChartX(x[a], x[b]) || a - b);
+                return json.map((column) => order.map((idx) => column[idx]));
+            }
+        }
+        return json;
+    }
+
     /// `isValid` (optional) is checked right after the async uPlot load and before any DOM
     /// mutation, so a tab switch during the first (slow) load cannot let this stale render
     /// paint into the now-active tab's shared result element.
@@ -4308,6 +4341,8 @@ class QueryResultElement extends HTMLElement
     {
         await this._loadUplot();
         if (isValid && !isValid()) return;
+
+        json = QueryResultElement._sortChartDataByX(json);
 
         if (this._uplot)
         {
