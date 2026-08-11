@@ -13,6 +13,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/RemoteHostFilter.h>
 #include <Poco/URI.h>
+#include <Poco/Net/IPAddress.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -49,6 +50,7 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
     extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsString ai_function_text_default_credentials;
+    extern const SettingsBool ai_function_allow_insecure_endpoint;
 }
 
 namespace ErrorCodes
@@ -61,7 +63,7 @@ namespace
 {
 
 /// Strip control characters (U+0000..U+001F except \t \n \r) that break JSON serialization.
-String sanitizeTextForAI(std::string_view input)
+String sanitizeForModel(std::string_view input)
 {
     String output;
     output.reserve(input.size());
@@ -73,6 +75,17 @@ String sanitizeTextForAI(std::string_view input)
             output.push_back(static_cast<char>(ch));
     }
     return output;
+}
+
+/// Whether an endpoint host refers to the local machine.
+bool isLoopbackHost(const String & host)
+{
+    if (host == "localhost")
+        return true;
+    Poco::Net::IPAddress address;
+    if (Poco::Net::IPAddress::tryParse(host, address))
+        return address.isLoopback();
+    return false;
 }
 
 /// Providers serialize integer fields (`max_tokens`, `dimensions`) as `Int64` (Poco JSON has no
@@ -260,7 +273,19 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     if (params.collection.endpoint.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
 
-    context->getRemoteHostFilter().checkURL(Poco::URI(params.collection.endpoint));
+    const Poco::URI endpoint_uri(params.collection.endpoint);
+    context->getRemoteHostFilter().checkURL(endpoint_uri);
+
+    /// Refuse to send prompts and API keys over an unencrypted connection to a remote host.
+    /// Local hosts are exempt, the `ai_function_allow_insecure_endpoint` setting overrides the check.
+    if (endpoint_uri.getScheme() != "https"
+        && !isLoopbackHost(endpoint_uri.getHost())
+        && !context->getSettingsRef()[Setting::ai_function_allow_insecure_endpoint])
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "AI named collection '{}' uses an insecure endpoint '{}': prompts and the API key would be sent to a "
+            "remote host over an unencrypted connection. Use an 'https://' endpoint, or set "
+            "'ai_function_allow_insecure_endpoint' to allow plaintext requests to remote hosts.",
+            credentials, params.collection.endpoint);
 
     /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
     /// not silently ignore a `model` defined in the named collection: reject it instead.
@@ -343,6 +368,102 @@ void FunctionBaseAI::insertProcessedResult(IColumn & column, const String & proc
     column.insertData(processed.data(), processed.size());
 }
 
+AIParamSpecs FunctionBaseAI::embeddingParams()
+{
+    return {
+        {"credentials", AIParamKind::String, std::nullopt},
+        {"dimensions", AIParamKind::UInt, Field(UInt64(0))},
+    };
+}
+
+FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
+    IAIProvider & provider,
+    const String & model,
+    UInt64 dimensions,
+    const String & function_name,
+    const VectorWithMemoryTracking<std::string_view> & inputs,
+    size_t max_batch_size,
+    UInt64 max_retries,
+    UInt64 retry_delay_ms,
+    bool throw_on_error,
+    AIQuotaTracker & quota,
+    const ConnectionTimeouts & timeouts)
+{
+    EmbeddingResult result;
+    result.embeddings.resize(inputs.size());
+
+    for (size_t batch_start = 0; batch_start < inputs.size(); batch_start += max_batch_size)
+    {
+        if (quota.checkQuotas())
+        {
+            result.texts_skipped += inputs.size() - batch_start;
+            break;
+        }
+
+        size_t batch_end = std::min(batch_start + max_batch_size, inputs.size());
+
+        AIEmbeddingRequest ai_embedding_request;
+        ai_embedding_request.model = model;
+        ai_embedding_request.dimensions = dimensions;
+        ai_embedding_request.function_name = function_name;
+        ai_embedding_request.inputs.reserve(batch_end - batch_start);
+        for (size_t k = batch_start; k < batch_end; ++k)
+            ai_embedding_request.inputs.emplace_back(inputs[k]);
+
+        AIEmbeddingResponse ai_embedding_response;
+        bool batch_ok = false;
+        for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
+        {
+            /// Check quotas before every request.
+            /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
+            if (quota.checkQuotas())
+                break;
+
+            try
+            {
+                /// Update api_calls/quotas before call so failed calls are still added to total.
+                ++result.api_calls;
+                quota.recordAttempt();
+                ai_embedding_response = provider.embed(ai_embedding_request, timeouts);
+                result.input_tokens += ai_embedding_response.input_tokens;
+                quota.recordTokens(ai_embedding_response.input_tokens, 0);
+                batch_ok = true;
+                break;
+            }
+            catch (...)
+            {
+                if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
+                    continue;
+                }
+
+                if (!throw_on_error) /// Skip to next batch, this batch's inputs stay empty.
+                    break;
+
+                throw;
+            }
+        }
+
+        if (!batch_ok)
+        {
+            result.texts_skipped += batch_end - batch_start;
+            continue;
+        }
+
+        chassert(ai_embedding_response.embeddings.size() == ai_embedding_request.inputs.size(),
+            "Number of inputs does not match number of output embeddings");
+
+        for (size_t k = 0; k < ai_embedding_response.embeddings.size(); ++k)
+        {
+            result.embeddings[batch_start + k] = std::move(ai_embedding_response.embeddings[k]);
+            ++result.texts_embedded;
+        }
+    }
+
+    return result;
+}
+
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     const auto & settings = getContext()->getSettingsRef();
@@ -355,7 +476,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// Row-independent validation must run before the zero-row fast path so malformed constant
     /// arguments fail consistently regardless of source size.
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
-    String system_prompt = sanitizeTextForAI(buildSystemPrompt(arguments, params));
+    String system_prompt = sanitizeForModel(buildSystemPrompt(arguments, params));
     auto response_format = buildResponseFormat(arguments);
     auto provider = createAIProvider(params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
 
@@ -412,7 +533,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             continue;
         }
 
-        String user_message = sanitizeTextForAI(buildUserMessage(arguments, i));
+        String user_message = sanitizeForModel(buildUserMessage(arguments, i));
         String result;
         bool success = false;
 

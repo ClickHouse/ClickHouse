@@ -21,7 +21,10 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
+/// WebAssembly cannot walk its own call stack from user code, and there is no libunwind for it.
+#if !defined(OS_WASM)
 #include <libunwind.h>
+#endif
 #include <fmt/format.h>
 
 #include <boost/algorithm/string/split.hpp>
@@ -287,7 +290,7 @@ std::string getSignalCodeDescription(int sig, int si_code)
     }
 }
 
-static void * getCallerAddress(const ucontext_t & context)
+static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
@@ -537,7 +540,9 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     asynchronous_stack_unwinding = true;
     if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
     {
-#if defined(OS_DARWIN)
+#if defined(OS_WASM)
+        size = 0;
+#elif defined(OS_DARWIN)
         size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
 #else
         size = unw_backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
@@ -583,7 +588,10 @@ StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offse
 
 void StackTrace::tryCapture()
 {
-#if defined(OS_DARWIN)
+#if defined(OS_WASM)
+    /// No way to walk the stack; every trace is empty.
+    size = 0;
+#elif defined(OS_DARWIN)
     /// backtrace()/__thread_stack_pcs walks the frame-pointer chain. Safe across boost::context fibers
     /// thanks to the make_fcontext null frame-pointer terminator (issue #111579); malloc-free, so it is
     /// also usable from allocator hooks (e.g. jemalloc sample tracking) that run under DENY_ALLOCATIONS.

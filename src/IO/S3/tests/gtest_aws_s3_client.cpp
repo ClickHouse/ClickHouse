@@ -856,10 +856,11 @@ public:
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
         , server(std::make_unique<Poco::Net::HTTPServer>(
               new FixedETagHandlerFactory(std::move(body), std::move(etag)),
-              *server_socket, new Poco::Net::HTTPServerParams()))
+              *server_socket, makeMockServerParams()))
     {
         server->start();
     }
+    ~FixedETagServer() { server->stop(); }
     std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
@@ -925,10 +926,11 @@ public:
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
         , server(std::make_unique<Poco::Net::HTTPServer>(
               new IfMatchAwareHandlerFactory(std::move(body), std::move(etag)),
-              *server_socket, new Poco::Net::HTTPServerParams()))
+              *server_socket, makeMockServerParams()))
     {
         server->start();
     }
+    ~IfMatchAwareServer() { server->stop(); }
     std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;

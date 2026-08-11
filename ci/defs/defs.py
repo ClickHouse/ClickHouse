@@ -235,6 +235,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/wasm-builder",
+        path="./ci/docker/integration/wasm_builder",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/arrowflight-server-test",
         path="./ci/docker/integration/arrowflight",
         platforms=Docker.Platforms.arm_amd,
@@ -367,7 +373,6 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
-    DOCS = "Docs check"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
@@ -380,6 +385,7 @@ class JobNames:
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
+    BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
@@ -422,8 +428,8 @@ class JobNames:
 
 
 class ToolSet:
-    COMPILER_C = "clang-21"
-    COMPILER_CPP = "clang++-21"
+    COMPILER_C = "clang-22"
+    COMPILER_CPP = "clang++-22"
 
     COMPILER_CACHE = "sccache"
     COMPILER_CACHE_LEGACY = "sccache"
