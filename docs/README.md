@@ -179,6 +179,27 @@ Guidelines:
 
 <a name="how-to-build-docs"/>
 
-## How to Build Documentation
+## Run docs CI locally {#run-docs-ci-locally}
 
-You can build your documentation manually by following the instructions in the docs repo [contrib-writing-guide](https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/contrib-writing-guide.md). Also, our CI runs the documentation build after the `pr-documentation` label is added to PR. You can see the results of a build in the GitHub interface. If you have no permissions to add labels, a reviewer of your PR will add it.
+The docs CI checks run in Docker through Praktika. Install Python 3 and Docker, start Docker, and run the checks relevant to your change from the repository root. Praktika pulls the configured `clickhouse/docs-builder` image and runs each check in the container, so you do not need to install the check dependencies locally.
+
+To run the full docs check locally:
+
+```shell
+python3 -m ci.praktika run "Docs check (Mintlify)"
+```
+
+Pass a check name to `--test` to run it individually. The match is case-insensitive and accepts partial names, but using the full names below avoids selecting the wrong check.
+
+| Check | Command | What it does |
+|---|---|---|
+| `Check snippet imports` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check snippet imports"` | Verifies that snippets import every custom MDX component they use and do not import the custom `Image` component. |
+| `Validate docs.json` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Validate docs.json"` | Runs `mint validate` to validate the Mintlify configuration and MDX content. |
+| `Check internal links and anchors` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check internal links and anchors"` | Checks English documentation links and heading anchors offline. |
+| `Check redirects` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check redirects"` | Verifies that every destination in `_site/redirects.json`, including any anchor, exists. |
+| `Check external links (warnings)` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check external links (warnings)"` | Checks external HTTP links and reports failures as non-blocking warnings. |
+| `Check locale links` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check locale links"` | Checks that links in translated documentation resolve to existing files; translated heading fragments are not checked. |
+| `Check locale component links` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check locale component links"` | Validates localized links in JSX components and MDX data, and checks referenced image assets. |
+| `Check quickstarts` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check quickstarts"` | Validates quickstart frontmatter and markers, then checks that generated explorer data and badges are current. |
+| `Check changelogs` | `python3 -m ci.praktika run "Docs check (Mintlify)" --pr <PR_NUMBER> --test "Check changelogs"` | Checks that generated changelog cards, content, and navigation are current. This change-gated check runs only when the specified pull request changes a changelog input, output, or checker. |
+| `No direct edits to generated or read-only docs` | CI only | Rejects direct changes to generated regions and documentation copied from another repository. It requires pull-request revisions and merge-base metadata supplied by CI. |
