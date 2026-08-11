@@ -10,6 +10,8 @@ Array(UInt32)	1
 [100,200]	2
 -- widen dotted compact: size0, sibling member
 2	[10,20]
+-- widen dotted compact: sibling member, size0
+[10,20]	2
 -- widen dotted compact: type of the read parent
 Array(UInt64)
 -- widen dotted wide: part column types
@@ -24,6 +26,8 @@ Array(UInt32)	1
 [100,200]	2
 -- widen dotted wide: size0, sibling member
 2	[10,20]
+-- widen dotted wide: sibling member, size0
+[10,20]	2
 -- widen dotted wide: type of the read parent
 Array(UInt64)
 -- widen dotted rewritten: part column types
@@ -38,6 +42,8 @@ Array(UInt64)	1
 [100,200]	2
 -- widen dotted rewritten: size0, sibling member
 2	[10,20]
+-- widen dotted rewritten: sibling member, size0
+[10,20]	2
 -- widen dotted rewritten: type of the read parent
 Array(UInt64)
 -- widen+nullable dotted compact: part column types
@@ -50,6 +56,8 @@ Array(UInt32)	1
 [100,200]	[0,0]
 -- widen+nullable dotted compact: subcolumn, sibling member
 [0,0]	[10,20]
+-- widen+nullable dotted compact: sibling member, subcolumn
+[10,20]	[0,0]
 -- widen+nullable dotted wide: part column types
 Array(UInt32)	1
 -- widen+nullable dotted wide: subcolumn alone
@@ -60,6 +68,8 @@ Array(UInt32)	1
 [100,200]	[0,0]
 -- widen+nullable dotted wide: subcolumn, sibling member
 [0,0]	[10,20]
+-- widen+nullable dotted wide: sibling member, subcolumn
+[10,20]	[0,0]
 -- widen+nullable dotted rewritten: part column types
 Array(Nullable(UInt64))	1
 -- widen+nullable dotted rewritten: subcolumn alone
@@ -70,30 +80,44 @@ Array(Nullable(UInt64))	1
 [100,200]	[0,0]
 -- widen+nullable dotted rewritten: subcolumn, sibling member
 [0,0]	[10,20]
+-- widen+nullable dotted rewritten: sibling member, subcolumn
+[10,20]	[0,0]
 -- lowcardinality dotted compact: part column types
 Array(String)	1
 -- lowcardinality dotted compact: parent alone
 ['a','b']
 -- lowcardinality dotted compact: size0, parent
 2	['a','b']
+-- lowcardinality dotted compact: parent, size0
+['a','b']	2
 -- lowcardinality dotted compact: size0, sibling member
 2	[10,20]
+-- lowcardinality dotted compact: sibling member, size0
+[10,20]	2
 -- lowcardinality dotted wide: part column types
 Array(String)	1
 -- lowcardinality dotted wide: parent alone
 ['a','b']
 -- lowcardinality dotted wide: size0, parent
 2	['a','b']
+-- lowcardinality dotted wide: parent, size0
+['a','b']	2
 -- lowcardinality dotted wide: size0, sibling member
 2	[10,20]
+-- lowcardinality dotted wide: sibling member, size0
+[10,20]	2
 -- lowcardinality dotted rewritten: part column types
 Array(LowCardinality(String))	1
 -- lowcardinality dotted rewritten: parent alone
 ['a','b']
 -- lowcardinality dotted rewritten: size0, parent
 2	['a','b']
+-- lowcardinality dotted rewritten: parent, size0
+['a','b']	2
 -- lowcardinality dotted rewritten: size0, sibling member
 2	[10,20]
+-- lowcardinality dotted rewritten: sibling member, size0
+[10,20]	2
 -- widen scalar control: part column types
 UInt32	1
 -- widen scalar control

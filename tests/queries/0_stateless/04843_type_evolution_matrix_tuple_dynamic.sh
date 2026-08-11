@@ -8,8 +8,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `04842_type_evolution_matrix_nullable.sh` for the design): a part written before a
 # `MODIFY COLUMN` that wrapped a `Nested` member into `Tuple(...)` or `Dynamic` keeps the
 # unwrapped data until the mutation rewrites it, and subcolumn reads of the member must resolve
-# against the part's own type in every projection order. Also covers a depth-3 subcolumn path
-# (`member.element.null`) after an ALTER that made a `Tuple` element `Nullable`.
+# against the part's own type in every projection order - each cell that reads the subcolumn
+# next to another column therefore also has the reversed cell where the other column comes
+# first. Also covers a depth-3 subcolumn path (`member.element.null`) after an ALTER that made
+# a `Tuple` element `Nullable`.
+#
+# All cells are accumulated into one `clickhouse-client` invocation: client startup dominates
+# under sanitizers, and the flaky check runs the test many times in parallel with itself, so
+# per-cell invocations can push a run past the per-test time limit.
 
 function state_settings()
 {
@@ -47,10 +53,12 @@ function state_check()
         GROUP BY type ORDER BY type;"
 }
 
+queries=""
+
 # `Array(String)` -> `Array(Tuple(x String))`: the values are strings parseable as tuples.
 for state in compact wide rewritten; do
     table="t_matrix_tuple_dotted_${state}"
-    $CLICKHOUSE_CLIENT -q "
+    queries+="
         DROP TABLE IF EXISTS $table;
         CREATE TABLE $table (id UInt8, \`arr.n\` Array(String), \`arr.i\` Array(UInt64))
         ENGINE = MergeTree ORDER BY id
@@ -67,8 +75,12 @@ for state in compact wide rewritten; do
         SELECT \`arr.n\`, \`arr.n\`.x FROM $table SETTINGS max_threads = 1;
         SELECT '-- tuple dotted $state: subcolumn, sibling member';
         SELECT \`arr.n\`.x, \`arr.i\` FROM $table SETTINGS max_threads = 1;
+        SELECT '-- tuple dotted $state: sibling member, subcolumn';
+        SELECT \`arr.i\`, \`arr.n\`.x FROM $table SETTINGS max_threads = 1;
         SELECT '-- tuple dotted $state: subcolumn, unrelated scalar';
         SELECT \`arr.n\`.x, id FROM $table SETTINGS max_threads = 1;
+        SELECT '-- tuple dotted $state: unrelated scalar, subcolumn';
+        SELECT id, \`arr.n\`.x FROM $table SETTINGS max_threads = 1;
         DROP TABLE $table;
     "
 done
@@ -77,7 +89,7 @@ done
 # and the typed subcolumn `.String` reads them back as `Nullable(String)`.
 for state in compact wide rewritten; do
     table="t_matrix_dynamic_dotted_${state}"
-    $CLICKHOUSE_CLIENT -q "
+    queries+="
         DROP TABLE IF EXISTS $table;
         CREATE TABLE $table (id UInt8, \`arr.n\` Array(String), \`arr.i\` Array(UInt64))
         ENGINE = MergeTree ORDER BY id
@@ -94,8 +106,16 @@ for state in compact wide rewritten; do
         SELECT \`arr.n\`, \`arr.n\`.String FROM $table SETTINGS max_threads = 1;
         SELECT '-- dynamic dotted $state: typed subcolumn, sibling member';
         SELECT \`arr.n\`.String, \`arr.i\` FROM $table SETTINGS max_threads = 1;
+        SELECT '-- dynamic dotted $state: sibling member, typed subcolumn';
+        SELECT \`arr.i\`, \`arr.n\`.String FROM $table SETTINGS max_threads = 1;
+        SELECT '-- dynamic dotted $state: typed subcolumn, unrelated scalar';
+        SELECT \`arr.n\`.String, id FROM $table SETTINGS max_threads = 1;
+        SELECT '-- dynamic dotted $state: unrelated scalar, typed subcolumn';
+        SELECT id, \`arr.n\`.String FROM $table SETTINGS max_threads = 1;
         SELECT '-- dynamic dotted $state: absent typed subcolumn, sibling member';
         SELECT \`arr.n\`.Int64, \`arr.i\` FROM $table SETTINGS max_threads = 1;
+        SELECT '-- dynamic dotted $state: sibling member, absent typed subcolumn';
+        SELECT \`arr.i\`, \`arr.n\`.Int64 FROM $table SETTINGS max_threads = 1;
         DROP TABLE $table;
     "
 done
@@ -104,7 +124,7 @@ done
 # `a` Nullable, so `arr.n.a.null` crosses the member, the tuple element and the wrapper.
 for state in compact wide rewritten; do
     table="t_matrix_tuple_deep_${state}"
-    $CLICKHOUSE_CLIENT -q "
+    queries+="
         DROP TABLE IF EXISTS $table;
         CREATE TABLE $table (id UInt8, \`arr.n\` Array(Tuple(a String, b Float64)), \`arr.i\` Array(UInt64))
         ENGINE = MergeTree ORDER BY id
@@ -121,8 +141,14 @@ for state in compact wide rewritten; do
         SELECT \`arr.n\`.b, \`arr.n\`.a.null FROM $table SETTINGS max_threads = 1;
         SELECT '-- tuple deep $state: depth-3 subcolumn, parent';
         SELECT \`arr.n\`.a.null, \`arr.n\` FROM $table SETTINGS max_threads = 1;
+        SELECT '-- tuple deep $state: parent, depth-3 subcolumn';
+        SELECT \`arr.n\`, \`arr.n\`.a.null FROM $table SETTINGS max_threads = 1;
         SELECT '-- tuple deep $state: depth-3 subcolumn, sibling member';
         SELECT \`arr.n\`.a.null, \`arr.i\` FROM $table SETTINGS max_threads = 1;
+        SELECT '-- tuple deep $state: sibling member, depth-3 subcolumn';
+        SELECT \`arr.i\`, \`arr.n\`.a.null FROM $table SETTINGS max_threads = 1;
         DROP TABLE $table;
     "
 done
+
+$CLICKHOUSE_CLIENT -q "$queries"
