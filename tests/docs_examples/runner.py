@@ -36,7 +36,8 @@ Each example that runs gets one of three outcomes:
 Examples that are not `ok` must be listed in the known-failures file, which records why each one
 cannot pass. The run fails if an example fails that is not on the list, and also if a listed example
 starts passing, so that the list shrinks as the documentation is fixed. Regenerate it with
-`--update-known-failures` after checking that every new entry is justified. An entry can also be
+`--update-known-failures` (which requires a complete run: `--global-objects` and no `--filter`)
+after checking that every new entry is justified. An entry can also be
 marked `unstable`, for the handful of examples whose output is random enough to sometimes match the
 documented one; any outcome of those is accepted.
 
@@ -537,6 +538,16 @@ def main():
     parser.add_argument("--verbose", action="store_true", help="list the outcome of every example")
     args = parser.parse_args()
 
+    # Only a complete run describes the whole picture: a filtered run would drop every other entry,
+    # and a run without --global-objects skips the global-object examples, so the rewritten baseline
+    # would silently disagree with the CI mode.
+    if args.update_known_failures and args.filter:
+        print("--update-known-failures cannot be combined with --filter", file=sys.stderr)
+        return 1
+    if args.update_known_failures and not args.global_objects:
+        print("--update-known-failures requires --global-objects", file=sys.stderr)
+        return 1
+
     client = Client(args.host, args.port, args.user, args.password, args.timeout)
     examples = load_examples(client)
 
@@ -599,10 +610,6 @@ def main():
             )
 
     if args.update_known_failures:
-        # Only a complete run describes the whole picture; a filtered one would drop everything else.
-        if args.filter:
-            print("--update-known-failures cannot be combined with --filter", file=sys.stderr)
-            return 1
         save_known_failures(args.known_failures, outcomes, known)
         return 0
 
