@@ -26,6 +26,8 @@ public:
     std::string getZooKeeperPath() const override;
 
     bool supportsEmptyFilesWithoutBlobs() const override;
+    bool supportsInlineData() const override;
+    bool appliesOperationsEagerly() const override;
     bool areBlobPathsRandom() const override;
     ObjectStorageKeyGeneratorPtr getKeyGenerator() const override;
 

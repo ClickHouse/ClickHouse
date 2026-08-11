@@ -44,6 +44,16 @@ bool MetadataStorageFromCacheObjectStorage::supportsEmptyFilesWithoutBlobs() con
     return underlying->supportsEmptyFilesWithoutBlobs();
 }
 
+bool MetadataStorageFromCacheObjectStorage::supportsInlineData() const
+{
+    return underlying->supportsInlineData();
+}
+
+bool MetadataStorageFromCacheObjectStorage::appliesOperationsEagerly() const
+{
+    return underlying->appliesOperationsEagerly();
+}
+
 bool MetadataStorageFromCacheObjectStorage::areBlobPathsRandom() const
 {
     return underlying->areBlobPathsRandom();
