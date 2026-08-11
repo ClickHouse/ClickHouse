@@ -3443,4 +3443,30 @@ TEST_F(WallabyTest, DecompressMalformedInputReservedXorFlagBit)
     verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 24), "Cannot decompress Wallaby-encoded data, unknown XOR flags", 192);
 }
 
+TEST_F(WallabyTest, RecoversTheWinningScaleFromABudgetAbortedScan)
+{
+    /// The exceptions recorded by a scan that hits its size budget still identify the scale the
+    /// data needs. Every sampled position holds 100.0, so the only initial candidate is its exact
+    /// scale alpha = -2. The 4-decimal majority elsewhere sits ~7e9 ULPs away from 100.0 - beyond
+    /// the 2^32-ULP adjustment threshold - so each of its values is a hard exception of that scan,
+    /// which aborts on the exception budget long before finishing. The winner alpha = 4 (10-bit
+    /// Frame-of-Reference lanes over 1000000..1000992, ~1.3 KiB, no exceptions) is discoverable
+    /// only from the values the aborted scan excepted; the XOR mode needs ~4 KiB on the ~34
+    /// differing mantissa bits of every adjacency. An encoder revision that probed exceptions
+    /// only after a completed scan dropped them on the abort path and fell through to XOR.
+    const auto is_sampled_position = wallabySampledPositions();
+    std::vector<Float64> values(1024, 100.0);
+    size_t placed = 0;
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        if (!is_sampled_position[i])
+        {
+            ++placed;
+            values[i] = 100.0 + static_cast<Float64>(placed) / 1e4;
+        }
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 800u);
+}
+
 }

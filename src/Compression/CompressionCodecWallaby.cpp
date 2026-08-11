@@ -1148,6 +1148,32 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         }
     };
 
+    /// Probe exception values for the scale they would need: when sampling only saw a
+    /// low-precision majority, this is what discovers the higher-precision scale. The probes
+    /// are spread over the whole exception list with a stride instead of taking the first
+    /// few, so that a handful of very wide outliers at the front of the vector cannot hide
+    /// the scale that the remaining exceptions share.
+    const auto probe_exceptions = [&]()
+    {
+        if (exception_count == 0)
+            return;
+        const UInt32 probes = std::min<UInt32>(exception_count, 16);
+        const UInt32 stride = std::max<UInt32>(1, exception_count / probes);
+        for (UInt32 p = 0; p < probes; ++p)
+        {
+            const UInt32 e = std::min<UInt32>(p * stride, exception_count - 1);
+            std::optional<Int32> probe_exact;
+            if (auto exception_alpha = findAlpha<T>(values[exception_positions[e]], &probe_exact))
+                consider_candidate(*exception_alpha);
+            /// The tolerant vote of a disturbed decimal can repeat a scale it is an
+            /// exception of; the exact scale is the one that absorbs it into the lanes.
+            if (probe_exact)
+                consider_candidate(*probe_exact);
+        }
+    };
+
+    bool probed_aborted_scan = false;
+
     const auto evaluate_candidate = [&](Int32 candidate)
     {
         evaluated[alpha_index(candidate)] = true;
@@ -1167,6 +1193,23 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             for (UInt32 i = 0; i < sampled_alpha_count; ++i)
                 if (sampled_alphas[i] == candidate && sampled_exact_alphas[i] != sampled_alphas[i])
                     consider_candidate(sampled_exact_alphas[i]);
+            /// The exceptions recorded before the scan hit its budget are equally real values of
+            /// the vector, and they are exactly the ones this scale cannot represent - the scale
+            /// they need is a candidate that absorbs them into the lanes. Without this, a block
+            /// whose every sampled position votes one low-precision scale (so the tolerant-vote
+            /// fallback above has nothing to add) drops all record of the high-precision
+            /// majority the moment its only candidate aborts, and never discovers the wider
+            /// scale that wins. One aborted scan's probes are enough per vector: the strided
+            /// probes sample the population of unrepresentable values, which every abandoned
+            /// prefix of the same vector shares, and any candidate they seed that completes
+            /// keeps probing through the path below. Data with no decimal structure at all
+            /// (where every probe comes back empty and every candidate aborts) pays this
+            /// bounded discovery cost once instead of once per abandoned scale.
+            if (!probed_aborted_scan)
+            {
+                probed_aborted_scan = true;
+                probe_exceptions();
+            }
             return;
         }
 
@@ -1184,27 +1227,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             generate_trailing_zero_candidates(candidate);
         }
 
-        /// Probe exception values for the scale they would need: when sampling only saw a
-        /// low-precision majority, this is what discovers the higher-precision scale. The probes
-        /// are spread over the whole exception list with a stride instead of taking the first
-        /// few, so that a handful of very wide outliers at the front of the vector cannot hide
-        /// the scale that the remaining exceptions share.
-        if (exception_count > 0)
-        {
-            const UInt32 probes = std::min<UInt32>(exception_count, 16);
-            const UInt32 stride = std::max<UInt32>(1, exception_count / probes);
-            for (UInt32 p = 0; p < probes; ++p)
-            {
-                const UInt32 e = std::min<UInt32>(p * stride, exception_count - 1);
-                std::optional<Int32> probe_exact;
-                if (auto exception_alpha = findAlpha<T>(values[exception_positions[e]], &probe_exact))
-                    consider_candidate(*exception_alpha);
-                /// The tolerant vote of a disturbed decimal can repeat a scale it is an
-                /// exception of; the exact scale is the one that absorbs it into the lanes.
-                if (probe_exact)
-                    consider_candidate(*probe_exact);
-            }
-        }
+        probe_exceptions();
 
         /// The values with the widest adjustments play the same role: a high-precision minority
         /// no longer becomes exceptions (the adjustment absorbs it), but the scale that would
