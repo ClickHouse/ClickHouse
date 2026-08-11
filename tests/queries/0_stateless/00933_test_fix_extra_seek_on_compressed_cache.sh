@@ -6,7 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS small_table"
 
 $CLICKHOUSE_CLIENT --query="CREATE TABLE small_table (a UInt64 default 0, n UInt64) ENGINE = MergeTree() PARTITION BY tuple() ORDER BY (a) SETTINGS min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns=0"
@@ -16,7 +15,10 @@ $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE small_table FINAL;"
 
 # optimize_trivial_count_with_sparsity_filter=0: keep the count reading data instead of being served
 # from the num_defaults counter (n's default is 0), otherwise nothing touches the uncompressed cache.
-cached_query="SELECT count() FROM small_table WHERE n > 0 SETTINGS optimize_trivial_count_with_sparsity_filter = 0;"
+# use_statistics_cache=1: the test asserts only user data is read (ReadCompressedBytes stays 0 after
+# warmup); with `use_statistics_cache = 0` part pruning reloads statistics from disk, adding
+# compressed reads and breaking that assertion.
+cached_query="SELECT count() FROM small_table WHERE n > 0 SETTINGS optimize_trivial_count_with_sparsity_filter = 0, use_statistics_cache = 1;"
 
 $CLICKHOUSE_CLIENT --log_queries 1 --use_uncompressed_cache 1 --query="$cached_query"
 $CLICKHOUSE_CLIENT --log_queries 1 --use_uncompressed_cache 1 --allow_prefetched_read_pool_for_remote_filesystem 0 --allow_prefetched_read_pool_for_local_filesystem 0 --query_id="test-query-uncompressed-cache" --query="$cached_query"
