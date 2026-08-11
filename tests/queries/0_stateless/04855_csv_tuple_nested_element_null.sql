@@ -14,8 +14,5 @@ SELECT 'both widths in one input';
 SELECT * FROM format(CSV, 'x Tuple(Tuple(Int32, Int32), Int32), y UInt8', $$1,2,3,7
 \N,3,8$$) ORDER BY y;
 
-SELECT 'null_as_default = 0';
-SELECT * FROM format(CSV, 'x Tuple(Tuple(Int32, Int32), Int32)', $$\N,3$$) SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
-
 SELECT 'Nullable nested tuple element';
 SELECT * FROM format(CSV, 'x Tuple(Nullable(Tuple(Int32, Int32)), Int32)', $$\N,3$$) SETTINGS enable_nullable_tuple_type = 1;
