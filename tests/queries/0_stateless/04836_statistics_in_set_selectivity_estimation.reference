@@ -1,0 +1,11 @@
+--- statistics are materialized (merged part, level >= 1) ---
+1
+--- size-based estimate used only above the limit ---
+1	1
+--- the estimate never changes the result ---
+19994	1	1
+--- same PREWHERE as the exact ranges ---
+1
+1
+--- an unbuilt set is skipped rather than filled ---
+1
