@@ -1659,15 +1659,11 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                 /// with bounded polling to avoid indefinite hangs.
                 LOG_INFO(log, "Another replica is executing SYSTEM DROP S3QUEUE FAILED FILES, waiting for completion");
 
-                /// Timeout strategy: when failed_file_ttl_sec=0 (default "store forever"),
-                /// /failed can be arbitrarily large since there's no automatic cleanup, so use
-                /// a generous 60s timeout. When TTL is set, use proportional timeout:
-                /// max(5, min(60, 10 * failed_file_ttl_sec)) - larger TTL implies larger expected
-                /// /failed subtrees. Floor ensures responsiveness; ceiling prevents indefinite waits.
-                const UInt64 ttl_sec = table_metadata.failed_files_ttl_sec.load();
-                const size_t timeout_seconds = (ttl_sec == 0)
-                    ? 60  /// No TTL: /failed can be arbitrarily large, use generous timeout
-                    : std::max<size_t>(5, std::min<size_t>(60, 10 * ttl_sec));
+                /// Timeout is independent of failed_file_ttl_sec: TTL controls retention (when nodes
+                /// become eligible for cleanup), not cleanup speed or /failed tree size. Tree size
+                /// depends on failure rate and cleanup interval. Use a flat 60s timeout - generous
+                /// enough for slow Keeper or large /failed trees, short enough to avoid indefinite waits.
+                static constexpr size_t timeout_seconds = 60;
                 const size_t max_iterations = timeout_seconds * 10; /// Poll every 100ms
 
                 for (size_t i = 0; i < max_iterations; ++i)
