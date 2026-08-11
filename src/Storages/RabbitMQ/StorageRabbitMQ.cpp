@@ -217,7 +217,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         .username = username,
         .password = password,
         .vhost = config.getString("rabbitmq.vhost", getContext()->getMacros()->expand((*rabbitmq_settings)[RabbitMQSetting::rabbitmq_vhost])),
-        .secure = (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_secure].value,
+        .secure = secure_connection,
         .connection_string = address_string
     };
 
