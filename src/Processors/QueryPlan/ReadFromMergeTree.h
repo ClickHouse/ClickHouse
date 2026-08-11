@@ -319,7 +319,7 @@ public:
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
         const std::optional<TopKFilterInfo> & top_k_filter_info,
-        const StorageSnapshotPtr & storage_snapshot,
+        const StorageSnapshotPtr & storage_snapshot_,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         size_t num_streams,

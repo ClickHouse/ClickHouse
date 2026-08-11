@@ -2744,7 +2744,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageSnapshotPtr & storage_snapshot_,
     const SelectQueryInfo & query_info_,
     ContextPtr context_,
     size_t num_streams,
@@ -2761,7 +2761,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
-    const auto & metadata_snapshot = storage_snapshot->metadata;
+    const auto & metadata_snapshot = storage_snapshot_->metadata;
     AnalysisResult result;
     RangesInDataParts res_parts;
     const auto & settings = context_->getSettingsRef();
@@ -2882,7 +2882,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         && query_info_.prewhere_info->prewhere_actions.isSuitableForConstantFolding())
     {
         auto header = query_info_.prewhere_info->prewhere_actions.updateHeader(
-            storage_snapshot->getSampleBlockForColumns(
+            storage_snapshot_->getSampleBlockForColumns(
                 query_info_.prewhere_info->prewhere_actions.getRequiredColumnsNames()));
         const auto & filter_column = header.getByName(query_info_.prewhere_info->prewhere_column_name).column;
         if (filter_column && ConstantFilterDescription(*filter_column).always_false)

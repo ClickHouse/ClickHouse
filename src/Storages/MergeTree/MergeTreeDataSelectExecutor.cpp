@@ -1809,7 +1809,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         mutations_snapshot,
         std::nullopt,
         top_k_filter_info,
-        metadata_snapshot,
+        std::make_shared<StorageSnapshot>(data, metadata_snapshot),
         query_info,
         context,
         num_streams,
