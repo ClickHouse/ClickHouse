@@ -164,13 +164,11 @@ public:
         {
             Hit,
             Miss,
-            End,
         };
 
-        Kind kind = Kind::End;
+        Kind kind = Kind::Miss;
         /// Hit: one committed run. Miss: ONE cell of this tier containing the position (may
-        /// overhang the asked span via grid rounding / object-end clamp). End: past the object's
-        /// tiling.
+        /// overhang the asked span via grid rounding / object-end clamp).
         ByteRange range{};
         /// Hit only. A re-ask of the same run may return a fresh reader or a
         /// null one - the walker collects exactly one per run either way.
