@@ -115,38 +115,27 @@ std::optional<ColumnPtr> convertColumnToTypeCheckEnum(
     }
 }
 
-/// Fast path for a single native-number key: convert all members with one accurate batch cast instead
-/// of a per-member cast. Applies only when the target and every member's source type are plain native
-/// numbers (no `Bool`/`Decimal`/`Enum`/`Nullable`/wide-int) - exactly the case where
-/// `castColumnAccurateOrNull` provably matches the strict per-member `convertColumnToType` (pinned by
-/// `gtest_convert_column_to_type`). It is element-wise, so per-row results and their order are identical
-/// to the per-member loop; only not-representable values (NULL in the cast result) are dropped, matching
-/// strict conversion into the non-nullable native target. Returns false (caller uses the per-member
-/// loop) for anything else, so no reordering or behavior change can leak in. `out` is the non-nullable
-/// target column being built.
-bool tryConvertNativeNumberMembersBatch(IColumn & out, const SetMembers & members, const DataTypePtr & lhs_type)
+/// Whether a whole `source`-typed column can be converted to `lhs_type` with one accurate batch cast
+/// instead of per-element conversion: both must be plain native numbers (no
+/// `Bool`/`Decimal`/`Enum`/`Nullable`/wide-int). This is exactly the case where
+/// `castColumnAccurateOrNull` provably matches the strict per-element `convertColumnToType` (pinned by
+/// `gtest_convert_column_to_type`).
+bool nativeBatchApplicable(const DataTypePtr & source_type, const DataTypePtr & lhs_type)
 {
-    if (!isNativeNumber(lhs_type) || isBool(lhs_type))
-        return false;
+    return isNativeNumber(source_type) && isNativeNumber(lhs_type) && !isBool(source_type) && !isBool(lhs_type);
+}
 
-    if (members.empty())
-        return true;
+/// Batch-convert every row of `source` (a column of `source_type`) into `lhs_type` with one accurate
+/// cast and append the results to `out`. Precondition: `nativeBatchApplicable(source_type, lhs_type)`.
+/// The cast is element-wise, so per-row results and their order match the per-element loop; only
+/// not-representable values (NULL in the cast result) are dropped, matching strict conversion into the
+/// non-nullable native target. `out` is the non-nullable target column being built.
+void appendNativeBatch(IColumn & out, const IColumn & source, const DataTypePtr & source_type, const DataTypePtr & lhs_type)
+{
+    if (source.empty())
+        return;
 
-    const DataTypePtr & source_type = members.front().type;
-    if (!isNativeNumber(source_type) || isBool(source_type))
-        return false;
-    for (const auto & member : members)
-        if (!member.type->equals(*source_type))
-            return false;
-
-    /// Gather the size-1 member columns into one column of the (homogeneous) source type. This is a
-    /// plain copy - no conversion - so the single accurate cast below carries all the per-element cost.
-    MutableColumnPtr gathered = source_type->createColumn();
-    gathered->reserve(members.size());
-    for (const auto & member : members)
-        gathered->insertRangeFrom(*member.column, 0, 1);
-
-    ColumnPtr casted = castColumnAccurateOrNull({std::move(gathered), source_type, ""}, lhs_type);
+    ColumnPtr casted = castColumnAccurateOrNull({source.getPtr(), source_type, ""}, lhs_type);
     casted = casted->convertToFullColumnIfConst();
     const auto & nullable = assert_cast<const ColumnNullable &>(*casted);
     const auto & null_map = nullable.getNullMapData();
@@ -156,7 +145,36 @@ bool tryConvertNativeNumberMembersBatch(IColumn & out, const SetMembers & member
     for (size_t i = 0, size = null_map.size(); i < size; ++i)
         if (!null_map[i])
             out.insertFrom(nested, i);
+}
 
+/// Fast path for a single native-number key whose members are separate size-1 columns (e.g. a `Tuple`
+/// collection): gather them into one column and convert with a single batch cast. Returns false (caller
+/// uses the per-member loop) unless the target and every member share a plain native-number type, so no
+/// reordering or behavior change can leak in. For an `Array` collection the elements are already
+/// contiguous, so `build_from_array` converts the data column directly and never reaches here.
+bool tryConvertNativeNumberMembersBatch(IColumn & out, const SetMembers & members, const DataTypePtr & lhs_type)
+{
+    if (!isNativeNumber(lhs_type) || isBool(lhs_type))
+        return false;
+
+    if (members.empty())
+        return true;
+
+    const DataTypePtr & source_type = members.front().type;
+    if (!nativeBatchApplicable(source_type, lhs_type))
+        return false;
+    for (const auto & member : members)
+        if (!member.type->equals(*source_type))
+            return false;
+
+    /// Gather the size-1 member columns into one column of the (homogeneous) source type. This is a
+    /// plain copy - no conversion - so the single accurate cast carries all the per-element cost.
+    MutableColumnPtr gathered = source_type->createColumn();
+    gathered->reserve(members.size());
+    for (const auto & member : members)
+        gathered->insertRangeFrom(*member.column, 0, 1);
+
+    appendNativeBatch(out, *gathered, source_type, lhs_type);
     return true;
 }
 
@@ -373,6 +391,191 @@ SetMembers membersFromArray(const ColumnPtr & rhs_column, const DataTypePtr & ar
     return members;
 }
 
+/// Single native key (`x IN [...]`): batch-convert the whole key column with one accurate cast, then
+/// emit the set column honoring NULLs. `source` is the (non-nullable) native value column and
+/// `element_null` (may be null) marks genuine NULL array elements - i.e. a `Nullable(native)` element
+/// type. `source_type`/`lhs_type` may be `Nullable`; only their inner native types matter for the cast.
+///
+/// Per row, matching the general per-element single-key loop exactly:
+///   - genuine NULL element -> insert NULL iff `transform_null_in` and the target is nullable, else skip;
+///   - not-representable value (NULL in the accurate-cast result) -> skip;
+///   - otherwise -> insert the converted value.
+ColumnsWithTypeAndName buildSingleNativeKey(
+    const ColumnPtr & source, const DataTypePtr & source_type, const DataTypePtr & lhs_type,
+    const NullMap * element_null, bool transform_null_in)
+{
+    ColumnPtr casted = castColumnAccurateOrNull({source, removeNullable(source_type), ""}, removeNullable(lhs_type));
+    casted = casted->convertToFullColumnIfConst();
+    const auto & casted_nullable = assert_cast<const ColumnNullable &>(*casted);
+    const IColumn & casted_nested = casted_nullable.getNestedColumn();
+
+    const bool lhs_nullable = lhs_type->isNullable();
+    MutableColumnPtr out = lhs_type->createColumn();
+    out->reserve(source->size());
+
+    for (size_t row = 0, n = source->size(); row < n; ++row)
+    {
+        if (element_null && (*element_null)[row])
+        {
+            if (transform_null_in && lhs_nullable)
+            {
+                auto & nullable_out = assert_cast<ColumnNullable &>(*out);
+                nullable_out.getNestedColumn().insertDefault();
+                nullable_out.getNullMapData().push_back(UInt8(1));
+            }
+            continue;
+        }
+
+        if (casted_nullable.isNullAt(row)) /// not representable in the target
+            continue;
+
+        if (lhs_nullable)
+        {
+            auto & nullable_out = assert_cast<ColumnNullable &>(*out);
+            nullable_out.getNestedColumn().insertFrom(casted_nested, row);
+            nullable_out.getNullMapData().push_back(UInt8(0));
+        }
+        else
+        {
+            out->insertFrom(casted_nested, row);
+        }
+    }
+
+    ColumnsWithTypeAndName res(1);
+    res[0].type = lhs_type;
+    res[0].column = std::move(out);
+    return res;
+}
+
+/// Batch-convert `k > 1` parallel source key columns (each `n` rows) into `target_types` with one
+/// accurate cast per key, then keep only the rows where every key converts. Precondition: every
+/// `nativeBatchApplicable(source_types[j], target_types[j])` (in particular every target is a
+/// non-nullable native number).
+///
+/// A set row (one key tuple) is kept iff it is not an array-element NULL (`element_null`, for an
+/// `Array(Nullable(Tuple))` RHS; may be null) and every key value is exactly representable in its target
+/// (a NULL in the accurate-cast result means not-representable; native targets are non-nullable so
+/// `transform_null_in` never keeps a NULL). This matches the general per-element multi-key loop exactly,
+/// but converts each key column as a whole instead of cutting per element.
+ColumnsWithTypeAndName buildNativeKeysBatch(
+    const Columns & sources, const DataTypes & source_types, const DataTypes & target_types, const NullMap * element_null)
+{
+    const size_t k = sources.size();
+    const size_t n = sources.empty() ? 0 : sources[0]->size();
+
+    std::vector<const ColumnNullable *> casted(k);
+    Columns casted_holder(k);
+    for (size_t j = 0; j < k; ++j)
+    {
+        ColumnPtr c = castColumnAccurateOrNull({sources[j], source_types[j], ""}, target_types[j]);
+        casted_holder[j] = c->convertToFullColumnIfConst();
+        casted[j] = &assert_cast<const ColumnNullable &>(*casted_holder[j]);
+    }
+
+    MutableColumns out(k);
+    for (size_t j = 0; j < k; ++j)
+    {
+        out[j] = target_types[j]->createColumn();
+        out[j]->reserve(n);
+    }
+
+    for (size_t row = 0; row < n; ++row)
+    {
+        bool skip = element_null && (*element_null)[row];
+        for (size_t j = 0; !skip && j < k; ++j)
+            skip = casted[j]->isNullAt(row);
+        if (skip)
+            continue;
+        for (size_t j = 0; j < k; ++j)
+            out[j]->insertFrom(casted[j]->getNestedColumn(), row);
+    }
+
+    ColumnsWithTypeAndName res(k);
+    for (size_t j = 0; j < k; ++j)
+    {
+        res[j].type = target_types[j];
+        res[j].column = std::move(out[j]);
+    }
+    return res;
+}
+
+/// Columnar fast path for an `Array` RHS whose key columns are all native numbers - single scalar key
+/// (`x IN [...]`, including a `Nullable` element type and/or a `Nullable` key) or a multi-column key over
+/// an array of tuples (`(a, b) IN [(1, 2), (3, 4)]`). Because an `Array` is homogeneous, every element
+/// shares one nested type, so the `k` key values are already laid out as `k` contiguous columns (the
+/// array's data column, or the sub-columns of its data `Tuple`) - converted directly, without
+/// `membersFromArray` cutting each element into a size-1 column. Returns nullopt (caller uses the general
+/// per-element path, preserving its exact errors) unless every target key column is native (ignoring an
+/// outer `Nullable`) and the RHS shape lines up.
+std::optional<ColumnsWithTypeAndName> tryBuildFromNativeArray(
+    const ColumnPtr & rhs_column, const DataTypePtr & nested_type, const DataTypes & lhs_unpacked_types,
+    GetSetElementParams params)
+{
+    const size_t k = lhs_unpacked_types.size();
+
+    ColumnPtr full = rhs_column->convertToFullColumnIfConst();
+    const ColumnPtr & data = assert_cast<const ColumnArray &>(*full).getDataPtr();
+
+    if (k == 1)
+    {
+        /// Single scalar key: the array's data column is the only key column. Multi-key handling below
+        /// requires non-nullable native keys, but a single key can be `Nullable` on either side - the
+        /// per-row NULL policy is handled by `buildSingleNativeKey`.
+        const DataTypePtr & lhs_type = lhs_unpacked_types[0];
+        if (!nativeBatchApplicable(removeNullable(nested_type), removeNullable(lhs_type)))
+            return std::nullopt;
+
+        /// Unwrap a `Nullable` element type into the inner native column + the element null-map.
+        ColumnPtr source = data;
+        const NullMap * element_null = nullptr;
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(data.get()))
+        {
+            element_null = &nullable->getNullMapData();
+            source = nullable->getNestedColumnPtr();
+        }
+
+        return buildSingleNativeKey(source, nested_type, lhs_type, element_null, params.transform_null_in);
+    }
+
+    {
+        Columns sources;
+        DataTypes source_types;
+        const NullMap * element_null = nullptr;
+        /// Multi-column key: the elements must be tuples of matching arity, all key columns native.
+        DataTypePtr inner = nested_type;
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(inner.get()))
+            inner = nullable_type->getNestedType();
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(inner.get());
+        if (!tuple_type)
+            return std::nullopt;
+
+        const auto & element_types = tuple_type->getElements();
+        if (element_types.size() != k)
+            return std::nullopt;
+        for (size_t j = 0; j < k; ++j)
+            if (!nativeBatchApplicable(element_types[j], lhs_unpacked_types[j]))
+                return std::nullopt;
+
+        const IColumn * data_col = data.get();
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(data_col))
+        {
+            element_null = &nullable->getNullMapData();
+            data_col = &nullable->getNestedColumn();
+        }
+        const auto & tuple_column = assert_cast<const ColumnTuple &>(*data_col);
+
+        sources.reserve(k);
+        source_types.reserve(k);
+        for (size_t j = 0; j < k; ++j)
+        {
+            sources.push_back(tuple_column.getColumnPtr(j));
+            source_types.push_back(element_types[j]);
+        }
+
+        return buildNativeKeysBatch(sources, source_types, lhs_unpacked_types, element_null);
+    }
+}
+
 /// Build set members from a `Tuple` collection column (size-1, holds one tuple): the members are the
 /// tuple's elements (each a size-1 column), with the tuple element types.
 SetMembers membersFromTuple(const ColumnPtr & rhs_column, const DataTypePtr & tuple_type)
@@ -502,6 +705,13 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
 
     auto build_from_array = [&](const DataTypePtr & type)
     {
+        /// Hot path: an `Array` RHS whose key columns are all native numbers (single scalar key, or a
+        /// multi-column key over an array of tuples). The array is homogeneous, so its elements are
+        /// already contiguous key columns - convert them directly, without `membersFromArray` cutting
+        /// each element into a size-1 column. Everything else keeps the general per-element path.
+        const auto & nested_type = assert_cast<const DataTypeArray &>(*type).getNestedType();
+        if (auto fast = tryBuildFromNativeArray(rhs_column, nested_type, lhs_unpacked_types, params))
+            return std::move(*fast);
         return createBlockFromCollection(membersFromArray(rhs_column, type), lhs_unpacked_types, params);
     };
 
