@@ -1,7 +1,7 @@
 const SessionSettingsExplorer = () => {
   // El renderizador de producción de Mintlify evalúa el componente exportado sin
-  // conservar las vinculaciones del ámbito del módulo. El estado de inicialización diferida conserva los datos generados en
-  // ese ámbito de evaluación y los crea una sola vez por montaje.
+  // conservar las vinculaciones del ámbito del módulo. El estado perezoso mantiene los datos generados en
+  // ese ámbito de evaluación y los construye solo una vez por montaje.
   const [entries] = useState(() => [
     {
       label: "additional_*",
@@ -3461,12 +3461,25 @@ const SessionSettingsExplorer = () => {
               return renderGroup(item.value, childContinuations, itemIsLast, [...path, entry.label])
             }
             return (
-              <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
-                <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
-                {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={`/docs${item.value.href}`} className="no-underline hover:underline">
-                  {item.value.name}
-                </a>
+              <div key={item.value.name} className="grid min-w-max items-start gap-x-3 whitespace-nowrap" style={{ gridTemplateColumns: "44ch max-content" }}>
+                <span className="flex min-w-0 items-start">
+                  <span aria-hidden="true" className="w-4 shrink-0" />
+                  {branch(branchPrefix(childContinuations, itemIsLast))}
+                  <a href={`/docs${item.value.href}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
+                    {item.value.name.split("_").map((part, index, parts) => (
+                      <span key={`${part}-${index}`}>
+                        {part}
+                        {index < parts.length - 1 ? "_" : ""}
+                        {index < parts.length - 1 && <wbr />}
+                      </span>
+                    ))}
+                  </a>
+                </span>
+                {item.value.default !== undefined && (
+                  <span title="Valor predeterminado" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                    (predeterminado: {item.value.default})
+                  </span>
+                )}
               </div>
             )
           })}

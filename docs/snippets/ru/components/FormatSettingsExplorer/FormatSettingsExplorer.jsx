@@ -1,6 +1,6 @@
 const FormatSettingsExplorer = () => {
   // Рендерер Mintlify в production-окружении оценивает экспортируемый компонент,
-  // не сохраняя привязки в области видимости модуля. Ленивое состояние хранит сгенерированные данные
+  // не сохраняя привязки области видимости модуля. Ленивое состояние хранит сгенерированные данные
   // в этой области оценки, создавая их только один раз при монтировании.
   const [entries] = useState(() => [
     {
@@ -638,12 +638,25 @@ const FormatSettingsExplorer = () => {
               return renderGroup(item.value, childContinuations, itemIsLast, [...path, entry.label])
             }
             return (
-              <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
-                <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
-                {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={`/docs${item.value.href}`} className="no-underline hover:underline">
-                  {item.value.name}
-                </a>
+              <div key={item.value.name} className="grid min-w-max items-start gap-x-3 whitespace-nowrap" style={{ gridTemplateColumns: "44ch max-content" }}>
+                <span className="flex min-w-0 items-start">
+                  <span aria-hidden="true" className="w-4 shrink-0" />
+                  {branch(branchPrefix(childContinuations, itemIsLast))}
+                  <a href={`/docs${item.value.href}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
+                    {item.value.name.split("_").map((part, index, parts) => (
+                      <span key={`${part}-${index}`}>
+                        {part}
+                        {index < parts.length - 1 ? "_" : ""}
+                        {index < parts.length - 1 && <wbr />}
+                      </span>
+                    ))}
+                  </a>
+                </span>
+                {item.value.default !== undefined && (
+                  <span title="Значение по умолчанию" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                    (по умолчанию: {item.value.default})
+                  </span>
+                )}
               </div>
             )
           })}
@@ -680,13 +693,13 @@ const FormatSettingsExplorer = () => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} совпадений: {matchingCount === 1 ? "настройка" : "настройки"}
+            {matchingCount} {matchingCount === 1 ? "найденная настройка" : (matchingCount % 10 >= 2 && matchingCount % 10 <= 4 && (matchingCount % 100 < 10 || matchingCount % 100 >= 20) ? "найденные настройки" : "найденных настроек")}
           </span>
         </div>
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
         <div className="flex min-w-full items-center justify-between gap-4">
-          <div className="min-w-max font-semibold">/format-настройки</div>
+          <div className="min-w-max font-semibold">/format-settings</div>
           <button
             type="button"
             aria-label={allGroupsExpanded ? "Свернуть всё" : "Развернуть всё"}
@@ -704,7 +717,7 @@ const FormatSettingsExplorer = () => {
         {filteredEntries.length > 0 ? (
           filteredEntries.map((entry, index) => renderGroup(entry, [], index === filteredEntries.length - 1))
         ) : (
-          <div className="py-2 text-gray-500 dark:text-gray-400">Нет совпадающих настроек</div>
+          <div className="py-2 text-gray-500 dark:text-gray-400">Настройки не найдены</div>
         )}
       </div>
     </div>

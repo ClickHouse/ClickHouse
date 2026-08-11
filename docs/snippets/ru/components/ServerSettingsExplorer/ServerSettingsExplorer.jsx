@@ -1,7 +1,7 @@
 const ServerSettingsExplorer = () => {
-  // Рендерер Mintlify в production-окружении вычисляет экспортируемый компонент,
-  // не сохраняя привязки в области видимости модуля. Отложенное состояние сохраняет сгенерированные данные
-  // в этой области видимости и создаёт их только один раз при каждом монтировании.
+  // Рендерер Mintlify в production-режиме выполняет экспортируемый компонент,
+  // не сохраняя привязки на уровне модуля. Ленивое состояние хранит сгенерированные данные
+  // в этой области выполнения и создает их только один раз за монтирование.
   const [entries] = useState(() => [
     {
       label: "access_control_*",
@@ -392,7 +392,7 @@ const ServerSettingsExplorer = () => {
       settings: [
         { name: "http_handlers", href: "/reference/settings/server-settings/settings/http#http_handlers" },
         { name: "http_options_response", href: "/reference/settings/server-settings/settings/http#http_options_response" },
-        { name: "http_server_default_response", href: "/reference/settings/server-settings/settings/http#http_server_default_response", default: '"ОК.\\n"' }
+        { name: "http_server_default_response", href: "/reference/settings/server-settings/settings/http#http_server_default_response", default: '"Ok.\\n"' }
       ],
       children: []
     },
@@ -1671,12 +1671,25 @@ const ServerSettingsExplorer = () => {
               return renderGroup(item.value, childContinuations, itemIsLast, [...path, entry.label])
             }
             return (
-              <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
-                <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
-                {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={`/docs${item.value.href}`} className="no-underline hover:underline">
-                  {item.value.name}
-                </a>
+              <div key={item.value.name} className="grid min-w-max items-start gap-x-3 whitespace-nowrap" style={{ gridTemplateColumns: "44ch max-content" }}>
+                <span className="flex min-w-0 items-start">
+                  <span aria-hidden="true" className="w-4 shrink-0" />
+                  {branch(branchPrefix(childContinuations, itemIsLast))}
+                  <a href={`/docs${item.value.href}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
+                    {item.value.name.split("_").map((part, index, parts) => (
+                      <span key={`${part}-${index}`}>
+                        {part}
+                        {index < parts.length - 1 ? "_" : ""}
+                        {index < parts.length - 1 && <wbr />}
+                      </span>
+                    ))}
+                  </a>
+                </span>
+                {item.value.default !== undefined && (
+                  <span title="Значение по умолчанию" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                    (по умолчанию: {item.value.default})
+                  </span>
+                )}
               </div>
             )
           })}

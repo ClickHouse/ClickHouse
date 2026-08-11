@@ -1,7 +1,7 @@
 const ServerSettingsExplorer = () => {
-  // Mintlify의 프로덕션 렌더러는 모듈 스코프 바인딩을 유지하지 않은 채
-  // 내보낸 컴포넌트를 평가합니다. 지연(lazy) 상태를 사용하면 생성된 데이터가
-  // 해당 평가 스코프에 유지되면서 마운트당 한 번만 생성됩니다.
+  // Mintlify의 프로덕션 렌더러는 모듈 범위 바인딩을 보존하지 않은 채
+  // 내보낸 컴포넌트를 평가합니다. 지연 상태(lazy state)는 생성된 데이터를
+  // 해당 평가 범위에 보관하여 마운트당 한 번만 생성되도록 합니다.
   const [entries] = useState(() => [
     {
       label: "access_control_*",
@@ -1671,12 +1671,25 @@ const ServerSettingsExplorer = () => {
               return renderGroup(item.value, childContinuations, itemIsLast, [...path, entry.label])
             }
             return (
-              <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
-                <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
-                {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={`/docs${item.value.href}`} className="no-underline hover:underline">
-                  {item.value.name}
-                </a>
+              <div key={item.value.name} className="grid min-w-max items-start gap-x-3 whitespace-nowrap" style={{ gridTemplateColumns: "44ch max-content" }}>
+                <span className="flex min-w-0 items-start">
+                  <span aria-hidden="true" className="w-4 shrink-0" />
+                  {branch(branchPrefix(childContinuations, itemIsLast))}
+                  <a href={`/docs${item.value.href}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
+                    {item.value.name.split("_").map((part, index, parts) => (
+                      <span key={`${part}-${index}`}>
+                        {part}
+                        {index < parts.length - 1 ? "_" : ""}
+                        {index < parts.length - 1 && <wbr />}
+                      </span>
+                    ))}
+                  </a>
+                </span>
+                {item.value.default !== undefined && (
+                  <span title="기본값" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                    (기본값: {item.value.default})
+                  </span>
+                )}
               </div>
             )
           })}

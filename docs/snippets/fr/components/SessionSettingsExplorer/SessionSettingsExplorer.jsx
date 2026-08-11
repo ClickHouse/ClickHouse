@@ -1,6 +1,6 @@
 const SessionSettingsExplorer = () => {
   // Le moteur de rendu de production de Mintlify évalue le composant exporté sans
-  // conserver les liaisons de portée module. Un état paresseux conserve les données générées
+  // conserver les liaisons au niveau du module. L'état paresseux conserve les données générées
   // dans cette portée d'évaluation tout en ne les construisant qu'une seule fois par montage.
   const [entries] = useState(() => [
     {
@@ -3461,12 +3461,25 @@ const SessionSettingsExplorer = () => {
               return renderGroup(item.value, childContinuations, itemIsLast, [...path, entry.label])
             }
             return (
-              <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
-                <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
-                {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={`/docs${item.value.href}`} className="no-underline hover:underline">
-                  {item.value.name}
-                </a>
+              <div key={item.value.name} className="grid min-w-max items-start gap-x-3 whitespace-nowrap" style={{ gridTemplateColumns: "44ch max-content" }}>
+                <span className="flex min-w-0 items-start">
+                  <span aria-hidden="true" className="w-4 shrink-0" />
+                  {branch(branchPrefix(childContinuations, itemIsLast))}
+                  <a href={`/docs${item.value.href}`} className="min-w-0 whitespace-normal no-underline hover:underline" style={{ overflowWrap: "anywhere" }}>
+                    {item.value.name.split("_").map((part, index, parts) => (
+                      <span key={`${part}-${index}`}>
+                        {part}
+                        {index < parts.length - 1 ? "_" : ""}
+                        {index < parts.length - 1 && <wbr />}
+                      </span>
+                    ))}
+                  </a>
+                </span>
+                {item.value.default !== undefined && (
+                  <span title="Valeur par défaut" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
+                    (par défaut : {item.value.default})
+                  </span>
+                )}
               </div>
             )
           })}
