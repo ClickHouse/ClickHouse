@@ -1424,8 +1424,9 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
 
         fiu_do_on(FailPoints::refresh_mv_incremental_fail_after_append,
         {
+            /// ABORTED (not LOGICAL_ERROR): must fail the refresh gracefully, not trip abort_on_logical_error.
             if (incremental)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Injected failure after incremental append (test)");
+                throw Exception(ErrorCodes::ABORTED, "Injected failure after incremental append (test)");
         });
 
         /// Exchange tables.
