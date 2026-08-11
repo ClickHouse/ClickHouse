@@ -53,7 +53,9 @@ FROM (SELECT a FROM events_04872 ANY LEFT JOIN keys_04872 ON events_04872.a = ke
       WHERE runningConcurrency(s, e) = 2 AND keys_04872.b > 1)
 SETTINGS query_plan_convert_any_join_to_semi_or_anti_join = 0;
 
--- The remaining two accepted argument types, which take separate execution paths.
+-- The remaining two accepted argument types, which take separate execution paths. Pinned at 1 for
+-- the same reason as the rows above: the setting is randomized off on some runs, and an unpinned
+-- row would silently stop exercising the pass.
 CREATE TABLE events_date_04872 (a UInt64, s Date, e Date) ENGINE = Memory;
 CREATE TABLE events_dt64_04872 (a UInt64, s DateTime64(3), e DateTime64(3)) ENGINE = Memory;
 INSERT INTO events_date_04872 VALUES (1, '2020-01-01', '2020-01-11'), (2, '2020-01-05', '2020-01-21'), (3, '2020-01-06', '2020-01-07');
@@ -61,11 +63,13 @@ INSERT INTO events_dt64_04872 VALUES (1, '2020-01-01 00:00:00.000', '2020-01-01 
 
 SELECT 'carrier date', count()
 FROM (SELECT a FROM events_date_04872 LEFT JOIN keys_04872 ON events_date_04872.a = keys_04872.b
-      WHERE runningConcurrency(s, e) = 2 AND keys_04872.b > 1);
+      WHERE runningConcurrency(s, e) = 2 AND keys_04872.b > 1)
+SETTINGS query_plan_convert_outer_join_to_inner_join = 1;
 
 SELECT 'carrier datetime64', count()
 FROM (SELECT a FROM events_dt64_04872 LEFT JOIN keys_04872 ON events_dt64_04872.a = keys_04872.b
-      WHERE runningConcurrency(s, e) = 2 AND keys_04872.b > 1);
+      WHERE runningConcurrency(s, e) = 2 AND keys_04872.b > 1)
+SETTINGS query_plan_convert_outer_join_to_inner_join = 1;
 
 -- Control: a pure predicate selecting the same row. Already correct before the fix, so a
 -- regression here means the fixture, not the fix, changed.
@@ -105,6 +109,14 @@ ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_partition_key
     (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree
     PARTITION BY runningConcurrency(s, e) ORDER BY a; -- { serverError BAD_ARGUMENTS }
 
+-- Unlike a key, a secondary index is exempt on attach, so a table an earlier version created
+-- still loads. The key here is deliberately deterministic, so only the index is under test.
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_index
+    (a UInt64, s DateTime, e DateTime,
+     INDEX i runningConcurrency(s, e) TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY a;
+SELECT 'legacy index attaches', count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.legacy_index;
+
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.rejected
     (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree
     ORDER BY runningConcurrency(s, e); -- { serverError BAD_ARGUMENTS }
@@ -120,6 +132,28 @@ ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.altered
     MODIFY ORDER BY (a, runningConcurrency(s2, e2)); -- { serverError BAD_ARGUMENTS }
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+-- A secondary index expression must be deterministic too, but unlike a key it is validated only
+-- when the statement introduces it, which is why the attach above keeps loading.
+CREATE TABLE idx_04872 (a UInt64, s DateTime, e DateTime,
+    INDEX i runningConcurrency(s, e) TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY a; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE idx_04872 (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree ORDER BY a;
+ALTER TABLE idx_04872
+    ADD INDEX i runningConcurrency(s, e) TYPE minmax GRANULARITY 1; -- { serverError BAD_ARGUMENTS }
+DROP TABLE idx_04872;
+
+-- Sibling control: an index over an already-non-deterministic running function is refused the same
+-- way, so the rows above state what a correct running function does today.
+CREATE TABLE idx_sibling_04872 (a UInt64, s DateTime, e DateTime,
+    INDEX i rowNumberInAllBlocks() TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY a; -- { serverError BAD_ARGUMENTS }
+
+-- Negative control: a deterministic index expression is still accepted.
+CREATE TABLE idx_plain_04872 (a UInt64, s DateTime, e DateTime,
+    INDEX i s TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a;
+DROP TABLE idx_plain_04872;
 
 -- A TTL expression must be deterministic too, with `allow_suspicious_ttl_expressions` as the
 -- escape hatch. Table-scoped, so these rows stay parallel-safe.
