@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"reader_executor_window_size", 4194304, 4194304, "New experimental ReaderExecutor setting: bytes served per read window."},
             {"reader_executor_block_size", 1048576, 1048576, "New experimental ReaderExecutor setting: buffer chunk size for source reads."},
+            {"input_format_json_max_string_column_growth_step", 0, 0, "New setting to cap the power-of-two growth of the JSON column's internal String buffers while materializing JSON, bounding over-allocation."},
             {"max_insert_threads", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"use_indexes_refiner_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by skip indexes or a projection index before read tasks are created in MergeTree read pools."},
