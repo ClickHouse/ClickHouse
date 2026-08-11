@@ -15,15 +15,23 @@
             </values>
         </substitution>
         <substitution>
+            <name>ngram_table</name>
+            <values>
+                <value>json_bf_perf_plain</value>
+                <value>json_bf_perf_ngrams</value>
+            </values>
+        </substitution>
+        <substitution>
             <name>json_row</name>
             <values>
-                <value>concat('{"user":{"id":', toString(number), ',"name":"user-', toString(number), '"},"tags":["tag-', toString(number), '","common"],"event":{"kind":"kind-', toString(number % 32), '"}}')</value>
+                <value>concat('{"user":{"id":', toString(number), ',"name":"', base64Encode(reinterpretAsString(sipHash128(number))), '"},"tags":["tag-', toString(number), '","common"],"event":{"kind":"kind-', toString(number % 32), '"}}')</value>
             </values>
         </substitution>
     </substitutions>
 
     <create_query>DROP TABLE IF EXISTS json_bf_perf_plain</create_query>
     <create_query>DROP TABLE IF EXISTS json_bf_perf_indexed</create_query>
+    <create_query>DROP TABLE IF EXISTS json_bf_perf_ngrams</create_query>
 
     <create_query>
         CREATE TABLE json_bf_perf_plain
@@ -36,10 +44,24 @@
         )
         ENGINE = MergeTree
         ORDER BY id
-        SETTINGS index_granularity = 256
+        SETTINGS index_granularity = 8192
     </create_query>
     <create_query>
         CREATE TABLE json_bf_perf_indexed
+        (
+            id UInt64,
+            data JSON(
+                user.id UInt64,
+                user.name String,
+                tags Array(Nullable(String))),
+            INDEX data_idx data TYPE jsonbf_v1(false_positive_rate = 0.01) GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS index_granularity = 8192
+    </create_query>
+    <create_query>
+        CREATE TABLE json_bf_perf_ngrams
         (
             id UInt64,
             data JSON(
@@ -50,17 +72,19 @@
         )
         ENGINE = MergeTree
         ORDER BY id
-        SETTINGS index_granularity = 256
+        SETTINGS index_granularity = 8192
     </create_query>
-    <fill_query>INSERT INTO json_bf_perf_plain SELECT number, {json_row} FROM numbers(3000000)</fill_query>
-    <fill_query>INSERT INTO json_bf_perf_indexed SELECT number, {json_row} FROM numbers(3000000)</fill_query>
+    <fill_query>INSERT INTO json_bf_perf_plain SELECT number, {json_row} FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO json_bf_perf_indexed SELECT number, {json_row} FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO json_bf_perf_ngrams SELECT number, {json_row} FROM numbers(10000000)</fill_query>
 
-    <query>SELECT count() FROM {table} WHERE data.user.id = 2500000</query>
-    <query>SELECT count() FROM {table} WHERE data.user.id = 4000000</query>
-    <query>SELECT count() FROM {table} WHERE data.user.name = 'user-2500000'</query>
-    <query>SELECT count() FROM {table} WHERE has(data.tags, 'tag-2500000')</query>
-    <query>SELECT count() FROM {table} WHERE data.user.name LIKE '%2500000%'</query>
+    <query>SELECT count() FROM {table} WHERE data.user.id = 8500000</query>
+    <query>SELECT count() FROM {table} WHERE data.user.id = 11000000</query>
+    <query>SELECT count() FROM {table} WHERE data.user.name = 'XWUz4pdxBqvshVjLulOzxA=='</query>
+    <query>SELECT count() FROM {table} WHERE has(data.tags, 'tag-8500000')</query>
+    <query>SELECT count() FROM {ngram_table} WHERE data.user.name LIKE '%4pdxBqvshVjL%'</query>
 
     <drop_query>DROP TABLE IF EXISTS json_bf_perf_plain</drop_query>
     <drop_query>DROP TABLE IF EXISTS json_bf_perf_indexed</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_bf_perf_ngrams</drop_query>
 </test>
