@@ -1097,6 +1097,14 @@ static bool tryAddDisjunctiveConditions(
 /// join has extra admission checks that depend on the not-yet-built physical plan above): a nested join
 /// input conservatively disables the gate. Join keys that are not plain input columns (an expression
 /// computed by the pre-join actions, e.g. a type cast) disable it likewise.
+///
+/// The gate is also deliberately narrower than `checkSupportedReadingStep` in what it reads from:
+/// only a direct `ReadFromMergeTree` qualifies, while `optimizeReadInOrder` can additionally exploit
+/// the order of `ReadFromMerge` and `ReadFromObjectStorageStep`. A `Merge` table has no single sorting
+/// key to probe `wouldReadInOrderBeUseful` with (only a common prefix computed across the selected
+/// tables at optimization time), and an in-order object-storage read is a much rarer and less tested
+/// combination - so for now these sources conservatively fall through to the next algorithm in the
+/// `join_algorithm` list, which is the documented contract of `sorted_merge` selection.
 static bool joinInputCanBeReadInJoinKeyOrder(
     const QueryPlan::Node & input,
     const Names & key_names,
