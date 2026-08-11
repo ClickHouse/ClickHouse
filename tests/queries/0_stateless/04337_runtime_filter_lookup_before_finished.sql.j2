@@ -57,6 +57,10 @@ SET max_bytes_before_external_join = 1000000000;
 -- would build the filter from rf_probe and lose the unfinished-merge window this test stresses.
 -- Pin to 0 (false) so rf_build always stays on the build side.
 SET query_plan_join_swap_table = 0;
+-- A fabricated probe-side row count from randomized join-order statistics can land at or below
+-- the threshold, in which case no runtime filter is built and find() is never reached.
+SET query_plan_optimize_join_order_randomize = 0;
+SET join_runtime_filter_min_probe_rows = 0;
 
 {% for i in range(60) -%}
 SELECT count() FROM rf_probe AS l JOIN rf_build AS r ON l.k = r.k FORMAT Null;
