@@ -26,6 +26,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -2104,35 +2105,23 @@ std::optional<UInt128> StorageMerge::getModificationHash(const StorageSnapshotPt
             if (!table)
                 return false;
 
-            const auto id = table->getStorageID();
-
-            /// A row policy on a source table filters what the current user reads through this `Merge`
-            /// table without the source itself changing, and a policy change is invisible to the source's
-            /// own hash - fail closed, matching `computeTableModificationHashForConsistency`. A filter
-            /// that is literally always true does not affect the result and is not counted.
-            if (auto row_policy_filter = query_context->getRowPolicyFilter(id.database_name, id.table_name, RowPolicyFilterType::SELECT_FILTER);
-                row_policy_filter && !row_policy_filter->isAlwaysTrue())
-                return true;
-
-            /// Refresh lazily applied external metadata before hashing, so that the first read through
-            /// this `Merge` table does not report a change that is only the child's own first-use
-            /// metadata update (see `getModificationHashWithRefreshedMetadata`). It touches the same external
-            /// resource as the child's own hash below, which this path already probes.
-            auto table_hash = getModificationHashWithRefreshedMetadata(table, query_context);
+            /// Recurse through `computeTableModificationHashForConsistency` rather than probing the child
+            /// storage directly. Besides refreshing lazily applied external metadata and failing closed on
+            /// a row policy, it gates the probe on the current user's `SELECT` access to the child. An
+            /// actual `Merge` read enforces per-child `SELECT` in `getSelectedTables`, while this hash runs
+            /// before any access check - without the gate, a user who lost access to one child could still
+            /// get a cache hit backed by that child's current hash (and, since the query-cache key folds
+            /// only the user and role IDs, keep reading previously cached rows from it), and could probe
+            /// external children (an HTTP request, an object listing) with server credentials. The same
+            /// applies to `system.tables.modification_hash`, which calls into here as well. The helper also
+            /// folds the resolved table identity (database, name, UUID) into the returned hash, so two
+            /// source tables with identical contents do not cancel out and two different tables that happen
+            /// to report the same modification hash (e.g. the same `ETag`) are distinguished.
+            auto table_hash = computeTableModificationHashForConsistency(table->getStorageID(), query_context);
             if (!table_hash)
                 return true; /// This source cannot tell whether it changed - assume the worst for the whole Merge.
 
-            /// Fold the table identity into the hash so that two source tables with identical contents do
-            /// not cancel out when combined, and - crucially - so that two different tables that happen to
-            /// report the same modification hash (e.g. the same `ETag`) are distinguished. Fold the UUID,
-            /// which uniquely identifies a table incarnation regardless of name reuse, in addition to the
-            /// database and table name.
-            SipHash per_table;
-            per_table.update(id.database_name);
-            per_table.update(id.table_name);
-            per_table.update(id.uuid);
-            per_table.update(*table_hash);
-            table_hashes.push_back(per_table.get128());
+            table_hashes.push_back(*table_hash);
             return false;
         });
 
