@@ -3,12 +3,29 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <cstdlib>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// Read an API key from the environment, treating an empty value as unset: a stale
+/// `export OPENAI_API_KEY=""` in a shell profile must not hijack the provider selection
+/// from a real `ANTHROPIC_API_KEY` (and vice versa), and an empty key can never
+/// authenticate anyway.
+const char * getKeyFromEnvironment(const char * name)
+{
+    const char * value = std::getenv(name); // NOLINT(concurrency-mt-unsafe)
+    return (value != nullptr && *value != '\0') ? value : nullptr;
+}
+
 }
 
 AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
@@ -20,19 +37,19 @@ AIClientResult AIClientFactory::createClient(const AIConfiguration & config)
     if (config.provider.empty())
     {
         LOG_DEBUG(logger, "No AI provider specified, trying environment-based fallbacks");
-        auto client = ai::openai::try_create_client();
-        if (client.has_value())
+        if (const char * openai_key = getKeyFromEnvironment("OPENAI_API_KEY"))
         {
-            result.client = std::move(client);
+            result.client = ai::openai::create_client(openai_key, /*base_url=*/ "");
             result.inferred_from_env = true;
             result.provider = "openai";
+            if (getKeyFromEnvironment("ANTHROPIC_API_KEY"))
+                result.unused_environment_key = "ANTHROPIC_API_KEY";
             return result;
         }
 
-        client = ai::anthropic::try_create_client();
-        if (client.has_value())
+        if (const char * anthropic_key = getKeyFromEnvironment("ANTHROPIC_API_KEY"))
         {
-            result.client = std::move(client);
+            result.client = ai::anthropic::create_client(anthropic_key, /*base_url=*/ "");
             result.inferred_from_env = true;
             result.provider = "anthropic";
             return result;

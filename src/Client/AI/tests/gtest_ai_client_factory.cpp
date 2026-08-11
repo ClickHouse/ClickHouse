@@ -10,12 +10,51 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Environment.h>
 
+#include <cstdlib>
+#include <optional>
+#include <string>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// Sets or unsets an environment variable for the duration of a scope, restoring the previous state.
+class ScopedEnvironment
+{
+public:
+    ScopedEnvironment(const std::string & name_, const std::optional<std::string> & value)
+        : name(name_)
+    {
+        if (const char * old = std::getenv(name.c_str())) // NOLINT(concurrency-mt-unsafe)
+            saved = old;
+        apply(value);
+    }
+
+    ~ScopedEnvironment()
+    {
+        apply(saved);
+    }
+
+private:
+    void apply(const std::optional<std::string> & value) const
+    {
+        if (value)
+            setenv(name.c_str(), value->c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+        else
+            unsetenv(name.c_str()); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    std::string name;
+    std::optional<std::string> saved;
+};
+
 }
 
 /// Test AIClientFactory with no configuration
@@ -308,6 +347,51 @@ TEST(AIClientFactory, ProviderCaseSensitivity)
             FAIL() << "Lowercase provider name should be recognized";
         }
     }
+}
+
+/// An environment variable set to an empty string must be treated as unset: a stale
+/// `export OPENAI_API_KEY=""` must not hijack the provider selection from a real
+/// `ANTHROPIC_API_KEY`, and an empty key cannot authenticate anyway.
+TEST(AIClientFactory, EmptyEnvironmentKeysAreIgnored)
+{
+    AIConfiguration config;
+
+    {
+        ScopedEnvironment openai_env("OPENAI_API_KEY", "");
+        ScopedEnvironment anthropic_env("ANTHROPIC_API_KEY", "test-anthropic-key");
+
+        auto result = AIClientFactory::createClient(config);
+        ASSERT_TRUE(result.client.has_value());
+        EXPECT_EQ("anthropic", result.provider);
+        EXPECT_TRUE(result.inferred_from_env);
+        EXPECT_TRUE(result.unused_environment_key.empty());
+    }
+
+    {
+        ScopedEnvironment openai_env("OPENAI_API_KEY", "");
+        ScopedEnvironment anthropic_env("ANTHROPIC_API_KEY", "");
+
+        auto result = AIClientFactory::createClient(config);
+        EXPECT_FALSE(result.client.has_value());
+        EXPECT_TRUE(result.no_configuration_found);
+    }
+}
+
+/// When the keys of both providers are present, the one that is picked is a documented
+/// priority choice, and the result reports the other one so the user can be told how to
+/// switch if the automatic choice is not what they meant.
+TEST(AIClientFactory, ReportsUnusedEnvironmentKey)
+{
+    AIConfiguration config;
+
+    ScopedEnvironment openai_env("OPENAI_API_KEY", "test-openai-key");
+    ScopedEnvironment anthropic_env("ANTHROPIC_API_KEY", "test-anthropic-key");
+
+    auto result = AIClientFactory::createClient(config);
+    ASSERT_TRUE(result.client.has_value());
+    EXPECT_EQ("openai", result.provider);
+    EXPECT_TRUE(result.inferred_from_env);
+    EXPECT_EQ("ANTHROPIC_API_KEY", result.unused_environment_key);
 }
 
 /// Test configuration loading with missing required fields
