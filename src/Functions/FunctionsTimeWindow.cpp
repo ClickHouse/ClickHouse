@@ -820,7 +820,7 @@ This function can only be used with `WINDOW VIEW`.
         {"timezone", "Optional. Timezone name.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_window_id = {"Returns the window identifier of the corresponding window.", {"UInt32"}};
-    FunctionDocumentation::Examples examples_window_id = {{"Window ID", "SELECT windowID(now(), toIntervalDay('1'))", ""}};
+    FunctionDocumentation::Examples examples_window_id = {{"Window ID", "SELECT windowID(toDateTime('2026-01-02 03:04:05', 'UTC'), toIntervalDay('1'))", "1767398400"}};
     FunctionDocumentation::IntroducedIn introduced_in_window_id = {22, 1};
     FunctionDocumentation::Category category_window_id = FunctionDocumentation::Category::TimeWindow;
     FunctionDocumentation documentation_window_id = {description_window_id, syntax_window_id, arguments_window_id, {}, returned_value_window_id, examples_window_id, introduced_in_window_id, category_window_id};

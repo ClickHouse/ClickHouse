@@ -733,8 +733,24 @@ Unlike the encode function, `bech32Decode` will automatically handle padded Fixe
     };
     FunctionDocumentation::ReturnedValue bech32Decode_returned_value = {"Returns a tuple consisting of `(hrp, data)` that was used to encode the string. The data is in binary format.", {"Tuple(String, String)"}};
     FunctionDocumentation::Examples bech32Decode_examples = {
-        {"Decode address", "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)", ""},
-        {"Testnet address", "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)", ""}
+        {
+            "Decode address",
+            "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS tup)",
+            R"(
+┌─hrp─┬─data─────────────────────────────────────┐
+│ bc  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
+            )"
+        },
+        {
+            "Testnet address",
+            "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS tup)",
+            R"(
+┌─hrp─┬─data─────────────────────────────────────┐
+│ tb  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
+            )"
+        }
     };
     FunctionDocumentation::IntroducedIn bech32Decode_introduced_in = {25, 6};
     FunctionDocumentation::Category bech32Decode_category = FunctionDocumentation::Category::Encoding;
