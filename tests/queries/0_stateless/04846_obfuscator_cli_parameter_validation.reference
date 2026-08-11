@@ -1,0 +1,5 @@
+The option '--order' must be greater than zero
+The option '--order' must not exceed 1000, got 100000
+The option '--frequency-desaturate' must be in the range [0, 1]
+a full generation pass over the input produced no rows
+5

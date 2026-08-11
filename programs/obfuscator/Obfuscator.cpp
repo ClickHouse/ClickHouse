@@ -77,6 +77,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
@@ -178,6 +179,8 @@ try
     markov_model_params.frequency_add = options["frequency-add"].as<UInt64>();
     markov_model_params.frequency_desaturate = options["frequency-desaturate"].as<double>();
     markov_model_params.determinator_sliding_window_size = options["determinator-sliding-window-size"].as<UInt64>();
+
+    markov_model_params.validate("The option '--order'", "The option '--frequency-desaturate'");
 
     /// Create the header block
     SharedContextHolder shared_context = Context::createShared();
@@ -326,6 +329,8 @@ try
     UInt64 processed_rows = 0;
     while (processed_rows < limit)
     {
+        UInt64 processed_rows_before_pass = processed_rows;
+
         if (!silent)
             std::cerr << "Generating data\n";
 
@@ -361,6 +366,14 @@ try
                 std::cerr << "Processed " << processed_rows << " rows\n";
         }
         out_executor.finish();
+
+        /// Fail closed: if a full generation pass produced no rows (e.g. the input is empty while
+        /// an explicit --limit was given), throw instead of rebuilding the input pipeline forever.
+        if (processed_rows == processed_rows_before_pass)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot generate {} rows: a full generation pass over the input produced no rows (the input is empty)",
+                limit);
 
         obfuscator.updateSeed();
         rewind_needed = true;

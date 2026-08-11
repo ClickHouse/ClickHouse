@@ -37,6 +37,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -522,6 +523,26 @@ struct MarkovModelParameters
         readBinary(frequency_add, in);
         readBinary(frequency_desaturate, in);
         readBinary(determinator_sliding_window_size, in);
+    }
+
+    /// Validates the user-provided parameters. Shared between the `obfuscate` table function and the
+    /// standalone `clickhouse obfuscator` tool so both surfaces enforce the same contract.
+    /// `order_name` and `frequency_desaturate_name` are the user-facing names of the corresponding
+    /// parameters (a setting name for the table function, a command-line option for the tool).
+    void validate(std::string_view order_name, std::string_view frequency_desaturate_name) const
+    {
+        if (order == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must be greater than zero", order_name);
+
+        /// The Markov model preallocates a vector of `order` code points and performs work proportional to
+        /// `order` for every code point it consumes and generates, so an unbounded value would either exhaust
+        /// memory or throw `std::length_error` from the allocation. Reject absurd values with a clear error.
+        static constexpr size_t max_order = 1000;
+        if (order > max_order)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must not exceed {}, got {}", order_name, max_order, order);
+
+        if (frequency_desaturate < 0.0 || frequency_desaturate > 1.0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} must be in the range [0, 1]", frequency_desaturate_name);
     }
 };
 
