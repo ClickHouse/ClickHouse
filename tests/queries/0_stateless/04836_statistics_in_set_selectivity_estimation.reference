@@ -7,5 +7,7 @@
 --- same PREWHERE as the exact ranges ---
 1
 1
+--- expression on the left: same PREWHERE above and below the limit ---
+1
 --- an unbuilt set is skipped rather than filled ---
 1
