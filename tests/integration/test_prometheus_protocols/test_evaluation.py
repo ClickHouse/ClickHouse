@@ -281,6 +281,13 @@ def send_test_data():
         ]
     )
 
+    send_data(
+        [
+            ({"__name__": "fractional_values", "id": str(i)}, {120: 0.1})
+            for i in range(10)
+        ]
+    )
+
     # Classic Prometheus histogram buckets for `histogram_quantile` testing.
     # At t=300 the cumulative counts are: le=0.1 -> 10, le=0.5 -> 30, le=1.0 -> 50, le=+Inf -> 60.
     # That describes 10 observations <= 0.1s, 20 in (0.1, 0.5], 20 in (0.5, 1.0], and 10 in (1.0, +Inf).
@@ -737,6 +744,29 @@ def test_at_start_and_end_modifiers():
         120,
         '{"resultType": "vector", "result": []}',
         [],
+    )
+
+
+def test_sum_prometheus_aggregate():
+    assert (
+        node.query(
+            "SELECT sumPrometheus(value) "
+            "FROM (SELECT arrayJoin([2, 8, 1e100, -1e100]::Array(Float64)) AS value)"
+        )
+        == "10\n"
+    )
+
+    # Verify that corrections from independently accumulated states survive merging.
+    assert (
+        node.query(
+            "SELECT sumPrometheusMerge(state) FROM "
+            "("
+            "    SELECT arrayReduce('sumPrometheusState', [2, 1e100]::Array(Float64)) AS state "
+            "    UNION ALL "
+            "    SELECT arrayReduce('sumPrometheusState', [8, -1e100]::Array(Float64)) AS state"
+            ")"
+        )
+        == "10\n"
     )
 
 
@@ -3834,6 +3864,37 @@ def test_aggregation_operators():
         120,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "73"]}]}',
         [["[]", "1970-01-01 00:02:00.000", 73]],
+    )
+
+    # Prometheus uses compensated summation, so ten 0.1 samples sum to exactly 1.
+    do_query_test(
+        "sum(fractional_values)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "1"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # Repeated infinities keep their sign instead of poisoning the compensation.
+    do_query_test(
+        "sum(bar / 0)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "inf"]],
+    )
+
+    do_query_test(
+        "sum(-bar / 0)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "-inf"]],
+    )
+
+    # Opposite infinities must still produce NaN.
+    do_query_test(
+        "sum((bar - 20) / 0)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "nan"]],
     )
 
     do_query_test(

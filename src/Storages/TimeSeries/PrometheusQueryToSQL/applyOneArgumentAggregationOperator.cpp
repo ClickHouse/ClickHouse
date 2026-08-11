@@ -61,7 +61,7 @@ namespace
             {"sum",
              {
                  [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
-                 { return makeASTFunction("sumForEach", std::move(v)); },
+                 { return makeASTFunction("sumPrometheusForEach", std::move(v)); },
              }},
 
             {"min",
