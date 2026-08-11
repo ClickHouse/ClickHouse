@@ -45,9 +45,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"max_insert_threads", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
+            {"use_indexes_refiner_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by skip indexes or a projection index before read tasks are created in MergeTree read pools."},
             {"s3_base", "", "", "New setting to specify the base URL for resolving relative URLs in the s3 table function and the S3 table engine."},
             {"use_query_condition_cache_for_top_k", false, false, "New setting to gate the query condition cache for `ORDER BY ... LIMIT n` (TopK) reads; disabled by default."},
-            {"use_projection_index_in_read_pools", false, false, "New setting to drop mark ranges fully filtered out by a projection index before read tasks are created in MergeTree read pools."},
+            {"use_projection_index_in_read_pools", false, false, "Obsolete setting, renamed to `use_indexes_refiner_in_read_pools`."},
             {"allow_distinct_partitions_independently", false, true, "New setting to enable independent per-partition evaluation of `DISTINCT` when the partition expression is a deterministic function of the `DISTINCT` columns."},
             {"force_distinct_partitions_independently", false, false, "New setting to force independent per-partition evaluation of `DISTINCT` even when the cost heuristic would skip it."},
             {"max_number_of_partitions_for_independent_distinct", 128, 128, "New setting: maximal number of partitions to apply independent per-partition `DISTINCT`."},
@@ -61,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_allow_insecure_endpoint", true, false, "AI functions now reject insecure (http) endpoints to remote hosts by default."},
             {"ai_function_max_api_calls_per_query", 0, 1000, "Bound outbound AI function HTTP calls per query by default (previously 0 - unlimited)."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
+            {"materialized_views_populate_atomically", false, true, "New setting that makes plain `CREATE MATERIALIZED VIEW ... POPULATE` locally atomic: existing data is snapshotted and the view is subscribed to new inserts together, under a brief exclusive lock on the source, so rows inserted through the same server are neither missed nor duplicated. The guarantee covers the local insert path only - inserts arriving on another replica or through a distributed write are outside the cut - and it requires a source that can provide a pinned snapshot (the `MergeTree` family and `Memory`); other sources, as well as `CREATE OR REPLACE` / `REPLACE`, keep the legacy non-atomic population. Set to `false` for the legacy non-atomic behavior everywhere."},
             {"format_hive_text_rows_delimiter", "\n", "\n", "New setting for the delimiter at the end of each row in the HiveText output format."},
             {"optimize_trivial_count_with_sparsity_filter", false, true, "Promote to BETA and enable by default: serve `SELECT count() FROM t WHERE <pred>` from the persisted per-column `num_defaults` / `num_rows` counters when `<pred>` partitions rows into defaults vs non-defaults. Requires the MergeTree setting `compute_exact_num_defaults_for_sparse_columns` (also enabled by default now)."},
             {"input_format_parquet_dictionary_filter_push_down", 0, 1024 * 1024, "New setting enabling Parquet row-group pruning based on dictionary page contents (reader v3). The value is the maximum dictionary page size in bytes for which the optimization applies; 0 (the previous behavior) disables it."},
@@ -1352,6 +1354,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
+            {"always_fetch_mutated_part", false, false, "New setting to make a replica fetch mutated parts instead of executing mutations locally"},
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},
             {"compute_exact_num_defaults_for_sparse_columns", false, true, "Promote to BETA and enable by default: compute the exact per-column `num_defaults` counter during inserts and merges (instead of the sampling estimate), so `optimize_trivial_count_with_sparsity_filter` and sparsity-based pruning can rely on it."},
             {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
