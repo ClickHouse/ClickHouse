@@ -74,9 +74,9 @@
 #if CLICKHOUSE_CLOUD
     #include <Interpreters/FileCache/FileCacheFactory.h>
     #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+    #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
+    #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #endif
-#include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 
 
 namespace ProfileEvents
@@ -623,7 +623,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
     global_ctx->virtual_columns = global_ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList();
-    global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings);
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
@@ -651,6 +650,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
+    /// Snapshot of pending mutations for the source parts, fetched once and reused for
+    /// `alter_conversions` below, so the expired-columns check observes the same mutations.
+    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
+
+    MergeTreeData::IMutationsSnapshot::Params params
+    {
+        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
+        .min_part_metadata_version = parts_info.min_metadata_version,
+        .min_part_data_versions = nullptr,
+        .max_mutation_versions = nullptr,
+        .need_data_mutations = false,
+        .need_alter_mutations = !patch_parts.empty(),
+        .need_patch_parts = false,
+        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+    };
+
+    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
+
     /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
     /// expired to avoid unnecessary reads or writes during merges.
     ///
@@ -675,12 +692,55 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 columns_present_in_parts.emplace(col.name);
         }
 
+        /// The only live values of a column may sit in the patch parts selected for this merge: a
+        /// column added by `ADD COLUMN` and then filled by a lightweight `UPDATE` is physically
+        /// absent from all base parts. Such a column is not expired - expiring it would drop the
+        /// column from the read set, so the patch would never be requested and its values lost.
+        NameSet columns_present_in_patch_parts;
+        for (const auto & patch_part : patch_parts)
+        {
+            for (const auto & col : patch_part->getColumns())
+                columns_present_in_patch_parts.emplace(col.name);
+        }
+
+        NameSet storage_column_names;
+        storage_column_names.reserve(global_ctx->storage_columns.size());
+        for (const auto & storage_column : global_ctx->storage_columns)
+            storage_column_names.emplace(storage_column.name);
+
+        /// A pending `RENAME COLUMN old -> new` is applied on-fly at read time: `storage_columns`
+        /// already carries `new`, while the source parts still physically store `old`. Treat `new`
+        /// as present whenever a base or patch part holds the matching `old` name, so the merge does not wrongly
+        /// expire and drop a not-yet-materialized rename target of a column with no default
+        /// expression (see #80648). If `old` is itself a live storage column (re-added while the
+        /// rename is pending), the physical data will belong to `new` only after the rename
+        /// materializes, so fall back to expiring `new` and let the rename mutation re-derive it.
+        NameSet renamed_column_targets;
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+#if CLICKHOUSE_CLOUD
+                , nullptr
+#endif
+                );
+            for (const auto & rename : conversions->getRenameMap())
+            {
+                if ((columns_present_in_parts.contains(rename.rename_from)
+                     || columns_present_in_patch_parts.contains(rename.rename_from))
+                    && !storage_column_names.contains(rename.rename_from))
+                    renamed_column_targets.emplace(rename.rename_to);
+            }
+        }
+
         const auto & columns_desc = global_ctx->metadata_snapshot->getColumns();
 
         /// Any storage column not present in any part and without a default expression is considered expired
         for (const auto & storage_column : global_ctx->storage_columns)
         {
-            if (!columns_present_in_parts.contains(storage_column.name) && !columns_desc.getDefault(storage_column.name))
+            if (!columns_present_in_parts.contains(storage_column.name)
+                && !columns_present_in_patch_parts.contains(storage_column.name)
+                && !renamed_column_targets.contains(storage_column.name)
+                && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
     }
@@ -711,6 +771,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             exclude_index_names = parseIdentifiersOrStringLiteralsToSet(exclude_indexes_string, global_ctx->context->getSettingsRef());
     }
 
+    const bool has_block_columns = enabledBlockNumberColumn(global_ctx) && enabledBlockOffsetColumn(global_ctx);
+    global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings, has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     extractMergingAndGatheringColumns(exclude_index_names);
 
     const auto & expired_columns = global_ctx->new_data_part->expired_columns;
@@ -764,22 +826,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         else
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
     }
-
-    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
-
-    MergeTreeData::IMutationsSnapshot::Params params
-    {
-        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = parts_info.min_metadata_version,
-        .min_part_data_versions = nullptr,
-        .max_mutation_versions = nullptr,
-        .need_data_mutations = false,
-        .need_alter_mutations = !patch_parts.empty(),
-        .need_patch_parts = false,
-        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
-    };
-
-    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
 
     if (!patch_parts.empty())
     {
@@ -1268,7 +1314,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
         }
-        else if (projection.with_block_number || projection.with_block_offset)
+        else if (projection.with_block_number)
         {
             /// Commit-order projections are not written during insert (block number is not yet finalized).
             /// When some source parts don't have the projection, rebuild it during the horizontal phase
@@ -2207,9 +2253,6 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     for (auto & [name, marks] : cached_index_marks)
         global_ctx->cached_index_marks.emplace(name, std::move(marks));
 
-    global_ctx->new_data_part->getDataPartStorage().setPreferredFileOrder(
-        global_ctx->new_data_part->getPreferredFileOrder());
-
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
     global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
 
@@ -2352,7 +2395,11 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             {
                 const auto & part = global_ctx->future_part->parts[part_idx];
 
-                if (index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
+                /// An empty part contributes nothing to the merged index and its files are empty.
+                if (part->rows_count == 0)
+                    continue;
+
+                if (index_ptr->getDeserializedFormat(part->checksums, index_ptr->getFileName(), &part->getDataPartStorage()))
                 {
                     /// If text index exists in the source part, take it as is.
                     segments.emplace_back(part->getDataPartStoragePtr(), index_ptr->getFileName(), part_idx);
@@ -2929,7 +2976,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
         /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
         /// Build index if it is not materialized in the data part.
-        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
+        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part.checksums, index_ptr->getFileName(), &data_part.getDataPartStorage()))
         {
             description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));

@@ -15,7 +15,6 @@ from .cidb import CIDB
 from .digest import Digest
 from .event import EventFeed
 from .gh import GH
-from .gh_auth import GHAuth
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .info import Info
@@ -26,6 +25,25 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
+
+_GH_authenticated = False
+
+
+def _GH_Auth():
+    global _GH_authenticated
+    if _GH_authenticated:
+        return True
+    if not Settings.USE_CUSTOM_GH_AUTH:
+        return True
+    from .gh_auth import GHAuth
+
+    try:
+        GHAuth.auth_from_settings()
+        _GH_authenticated = True
+        return True
+    except Exception as e:
+        print(f"WARNING: GH auth failed: {e}")
+        return False
 
 
 class Runner:
@@ -316,7 +334,7 @@ class Runner:
                 )
 
         if job.enable_gh_auth:
-            if not GHAuth.auth(workflow, no_strict=True):
+            if not _GH_Auth():
                 Utils.raise_with_error("GH auth failed - required by job")
 
         print("INFO: disk status before running a job:")
@@ -794,7 +812,7 @@ class Runner:
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
-            if GHAuth.auth(workflow, no_strict=True):
+            if _GH_Auth():
                 if not GH.post_commit_status(
                     name=job.name,
                     status=result.status,
@@ -812,7 +830,7 @@ class Runner:
             status_updated = HtmlRunnerHooks.post_run(workflow, job)
             if status_updated:
                 print(f"Update GH commit status [{result.name}]: [{status_updated}]")
-                if GHAuth.auth(workflow, no_strict=True):
+                if _GH_Auth():
                     GH.post_commit_status(
                         name=workflow.name,
                         status=status_updated,
@@ -842,7 +860,7 @@ class Runner:
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
-        ) and GHAuth.auth(workflow, no_strict=True):
+        ) and _GH_Auth():
             workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
@@ -867,7 +885,7 @@ class Runner:
             and workflow.is_event_pull_request()
         ):
             try:
-                GHAuth.auth(workflow, no_strict=True)
+                _GH_Auth()
                 workflow_result = Result.from_fs(workflow.name)
                 if workflow_result.is_ok():
                     if not GH.merge_pr():

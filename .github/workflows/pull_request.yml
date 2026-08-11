@@ -1803,7 +1803,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Bugfix validation (unit tests)' --workflow "PR" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_distributed_plan_parallel:
-    runs-on: [self-hosted, pr-amd-large]
+    runs-on: [self-hosted, pr-amd-medium-cpu]
     needs: [build_amd_asan_ubsan, build_arm_tidy, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwp') }}
     name: "Stateless tests (amd_asan_ubsan, distributed plan, parallel)"

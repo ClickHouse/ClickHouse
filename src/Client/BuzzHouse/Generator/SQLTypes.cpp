@@ -2497,30 +2497,12 @@ String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt)
 {
     String ret;
     const uint32_t limit = rg.randomInt<uint32_t>(0, 10);
-    GeoTypes imp = gt;
-
-    if (gt == GeoTypes::Geometry)
-    {
-        /// Pick any concrete geo type. In the enumeration, `Geometry` sits between `MultiPolygon` and `MultiPoint`,
-        /// so remap a draw of `Geometry` to `MultiPoint` to cover all seven concrete alternatives uniformly.
-        const uint32_t choice = rg.randomInt<uint32_t>(1, static_cast<uint32_t>(GeoTypes::Geometry));
-        imp = choice == static_cast<uint32_t>(GeoTypes::Geometry) ? GeoTypes::MultiPoint : static_cast<GeoTypes>(choice);
-    }
+    const GeoTypes imp
+        = gt == GeoTypes::Geometry ? static_cast<GeoTypes>(rg.randomInt<uint32_t>(1, static_cast<uint32_t>(GeoTypes::MultiPolygon))) : gt;
 
     switch (imp)
     {
         case GeoTypes::Point: ret = nextGeoPoint(rg); break;
-        case GeoTypes::MultiPoint:
-            /// Set of points, no closure requirement
-            ret += "[";
-            for (uint32_t i = 0; i < limit; i++)
-            {
-                if (i != 0)
-                    ret += ", ";
-                ret += nextGeoPoint(rg);
-            }
-            ret += "]";
-            break;
         case GeoTypes::Ring:
             /// Closed ring: array of points where first == last
             ret = nextGeoRing(rg, limit);

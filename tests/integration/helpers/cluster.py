@@ -4321,28 +4321,6 @@ class ClickHouseCluster:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
                             break
-
-            if not sanitizer_assert_instance and not ignore_sanitizer and self.use_keeper:
-                # Keeper (zooN) containers are not in self.instances, so the per-instance
-                # scan above never covers them. Sanitizers write to raw stderr, which the
-                # keeper entrypoint redirects (via --logger.stderr) to a host-mounted
-                # stderr.log; scan it so a Keeper sanitizer report is detected reliably
-                # and ends up in the collected logs.
-                for i in range(1, 4):
-                    keeper_stderr = os.path.join(
-                        self.keeper_instance_dir_prefix + f"{i}", "log", "stderr.log"
-                    )
-                    if not os.path.exists(keeper_stderr):
-                        continue
-                    with open(keeper_stderr, "r", errors="replace") as f:
-                        if any(SANITIZER_SIGN in line for line in f):
-                            sanitizer_assert_instance = f"zoo{i}"
-                            logging.error(
-                                "Sanitizer in Keeper instance zoo%s log %s",
-                                i,
-                                keeper_stderr,
-                            )
-                            break
         else:
             logging.warning(
                 "docker compose up was not called. Trying to export docker.log for running containers"

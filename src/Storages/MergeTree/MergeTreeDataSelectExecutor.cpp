@@ -92,6 +92,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool per_part_index_stats;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
@@ -110,6 +111,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
@@ -1550,10 +1552,23 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
             || !settings[Setting::allow_experimental_analyzer]
+            /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
+            /// by normal reads: those may exclude a granule whose only matching rows are deleted.
+            || !settings[Setting::apply_deleted_mask]
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
             || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        return;
+
+    /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
+    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, skip the
+    /// consult entirely for any read stamped as TopK — including shapes where no `__topKFilter` node
+    /// is folded into the filter DAG (skip-index-only TopK, or a query with a PREWHERE), whose plain
+    /// condition hash would otherwise still hit entries primed by an ordinary `SELECT ... WHERE`.
+    /// The write sides are gated symmetrically (see updateQueryConditionCache, setTopKColumn and
+    /// selectRangesToRead), so with the gate off a TopK read neither reads nor writes the cache.
+    if (top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k])
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
@@ -1571,7 +1586,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     /// different disjunction mode) never reads them. The two verdicts are merged: a mark may be
     /// skipped iff either verdict says it does not match. This keeps the pure-QCC case
     /// (use_skip_indexes = 0 still reusing row-level entries) working while preventing the
-    /// skip-index poisoning of issue #108519. TopK WHERE reads also consult the
+    /// skip-index poisoning of issue #108519. TopK WHERE reads (which only get here when
+    /// `use_query_condition_cache_for_top_k` is on, see the gate above) also consult the
     /// `topk_reuse_predicate_only_hash` so plain `SELECT ... WHERE` entries can be reused;
     /// TopK-salted entries are not read otherwise.
 
@@ -1759,6 +1775,9 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
+        /// Reaching this point with a TopK read implies `use_query_condition_cache_for_top_k` is on
+        /// (the gate returns early above otherwise), so the WHERE consult key is always partitioned
+        /// by the TopK plan (with the predicate-only reuse path) for TopK reads.
         auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ true);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
@@ -1774,9 +1793,11 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     const Names & column_names_to_return,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     ContextPtr context,
     size_t num_streams,
-    PartitionIdToMaxBlockPtr max_block_numbers_to_read) const
+    PartitionIdToMaxBlockPtr max_block_numbers_to_read,
+    bool use_query_condition_cache) const
 {
     size_t total_parts = parts.size();
     if (total_parts == 0)
@@ -1787,7 +1808,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         parts,
         mutations_snapshot,
         std::nullopt,
-        std::nullopt,
+        top_k_filter_info,
         metadata_snapshot,
         query_info,
         context,
@@ -1800,7 +1821,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         indexes,
         /*find_exact_ranges*/false,
         /*is_parallel_reading_from_replicas*/false,
-        /*use_query_condition_cache*/true,
+        use_query_condition_cache,
         /*supports_skip_indexes_on_data_read*/false);
 }
 
@@ -2488,7 +2509,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
 {
-    if (!index_helper->getDeserializedFormat(*part, index_helper->getFileName()))
+    if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName(), &part->getDataPartStorage()))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
             (fs::path(part->getDataPartStorage().getFullPath()) / index_helper->getFileName()).string());
@@ -2865,7 +2886,7 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache)
 {
-    if (!skip_index_minmax->getDeserializedFormat(*part, skip_index_minmax->getFileName()))
+    if (!skip_index_minmax->getDeserializedFormat(part->checksums, skip_index_minmax->getFileName(), &part->getDataPartStorage()))
     {
         return nullptr;
     }

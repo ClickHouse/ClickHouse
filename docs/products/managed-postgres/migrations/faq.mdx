@@ -1,21 +1,21 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: 'FAQ'
-title: 'ClickHouse Managed Postgres migrations FAQ'
+title: 'Managed Postgres migrations FAQ'
 description: 'Frequently asked questions about migrating data to ClickHouse Managed Postgres.'
 keywords: ['postgres', 'migration', 'faq', 'managed postgres', 'logical replication', 'enum', 'unique constraint']
 doc_type: 'reference'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import PrivatePreviewBadge from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-Many questions about how Postgres replication works — including `TOAST` columns, replication slots, publications, schema changes, and data type mappings — are covered in the [ClickPipes for Postgres FAQ](/integrations/clickpipes/postgres/faq). The information there applies to ClickHouse Managed Postgres migrations as well.
+Many questions about how Postgres replication works — including `TOAST` columns, replication slots, publications, schema changes, and data type mappings — are covered in the [ClickPipes for Postgres FAQ](/integrations/clickpipes/postgres/faq). The information there applies to Managed Postgres migrations as well.
 
 ### I'm seeing an "invalid input value for enum" error during replication {#invalid-enum-value}
 
-This error occurs when the source Postgres has an enum value that doesn't exist on the target ClickHouse Managed Postgres. Logical replication doesn't automatically propagate `ALTER TYPE ... ADD VALUE` commands, so new enum values added on the source after the initial schema setup will cause inserts to fail on the target.
+This error occurs when the source Postgres has an enum value that doesn't exist on the target Managed Postgres. Logical replication doesn't automatically propagate `ALTER TYPE ... ADD VALUE` commands, so new enum values added on the source after the initial schema setup will cause inserts to fail on the target.
 
 To fix this, add the missing value to the enum type on the target Postgres:
 

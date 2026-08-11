@@ -48,7 +48,6 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -3073,11 +3072,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         Int64 temp_index = insert_increment.get();
         MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, getLevelForAdoptedPart(src_data, src_part->info.level));
 
-        IDataPartStorage::ClonePartParams clone_params
-        {
-            .txn = local_context->getCurrentTransaction(),
-            .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
-        };
+        IDataPartStorage::ClonePartParams clone_params{.txn = local_context->getCurrentTransaction()};
         if (replace)
         {
             /// Replace can only work on the same disk
@@ -3260,7 +3255,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!dest_table_storage->canReplacePartition(src_part))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Cannot move partition '{}' because part '{}' has inconsistent granularity with table",
                             partition_id, src_part->name);
 
@@ -3272,7 +3267,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         {
             .txn = local_context->getCurrentTransaction(),
             .copy_instead_of_hardlink = (*getSettings())[MergeTreeSetting::always_use_copy_instead_of_hardlinks],
-            .invalidated_columns_to_write = {BlockNumberColumn::name, BlockOffsetColumn::name},
         };
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(

@@ -1897,9 +1897,12 @@ static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
 
     const auto & client_info = mutable_context->getClientInfo();
+    auto min_major = static_cast<UInt64>(DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
+    auto min_minor = static_cast<UInt64>(DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
 
     bool need_to_disable_two_level_aggregation = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        client_info.connection_tcp_protocol_version < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+        client_info.connection_client_version_major < min_major &&
+        client_info.connection_client_version_minor < min_minor;
 
     if (need_to_disable_two_level_aggregation)
     {

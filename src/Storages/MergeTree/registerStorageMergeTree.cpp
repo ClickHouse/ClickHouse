@@ -757,41 +757,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// Reject expression-style elements at parse time: runtime consumers
             /// look up keys via `block.getByName(<column name>)`, so an
             /// expression-style UK passes DDL but crashes the first INSERT.
-            ///
-            /// Also reject a UK element that names a non-stored column: an existing
-            /// ALIAS / EPHEMERAL column, or a virtual column (`_part`, ...). The
-            /// INSERT-time SST write (`block.getByName(...)`) and the load-time
-            /// dense-index rebuild (`part->getColumns()`) both read the stored
-            /// block, so such a column would be absent at runtime. `getKeyFromAST`
-            /// below resolves against physical + virtual columns, so it would let a
-            /// virtual element pass DDL entirely, and reject an ALIAS/EPHEMERAL one
-            /// only with a confusing UNKNOWN_IDENTIFIER ("missing column"); this
-            /// gives a clear reason. A name that matches no column at all (not
-            /// physical, not virtual) is left for `getKeyFromAST` (UNKNOWN_IDENTIFIER).
             {
                 const ASTPtr & uk_ast = args.storage_def->unique_key->ptr();
-                auto is_plain_identifier = [](const ASTPtr & node) -> const ASTIdentifier *
+                auto is_plain_identifier = [](const ASTPtr & node) -> bool
                 {
-                    return node ? node->as<ASTIdentifier>() : nullptr;
-                };
-                auto reject_non_physical = [&](const ASTIdentifier & ident)
-                {
-                    const String & name = ident.name();
-                    /// Virtual columns (`_part`, `_part_offset`, ...) are not in
-                    /// `metadata.columns` but ARE resolvable by `getKeyFromAST`
-                    /// (it sees physical + virtual), so a virtual UK element would
-                    /// pass DDL and then crash the first INSERT on
-                    /// `block.getByName(...)`. Reject it here.
-                    if (metadata.virtuals.has(name))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "UNIQUE KEY columns must be real stored columns; "
-                            "virtual columns such as `{}` are not allowed",
-                            name);
-                    if (metadata.columns.has(name) && !metadata.columns.hasPhysical(name))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "UNIQUE KEY column `{}` must be a physical (stored) column; "
-                            "ALIAS and EPHEMERAL columns are not allowed",
-                            name);
+                    return node && node->as<ASTIdentifier>() != nullptr;
                 };
 
                 const auto * as_function = uk_ast->as<ASTFunction>();
@@ -801,8 +771,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     {
                         for (const auto & child : as_function->arguments->children)
                         {
-                            const auto * ident = is_plain_identifier(child);
-                            if (!ident)
+                            if (!is_plain_identifier(child))
                             {
                                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "UNIQUE KEY must be a list of column identifiers. "
@@ -810,15 +779,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                                     "only bare column names are allowed.",
                                     child ? child->formatForErrorMessage() : String("<null>"));
                             }
-                            reject_non_physical(*ident);
                         }
                     }
                 }
-                else if (const auto * ident = is_plain_identifier(uk_ast))
-                {
-                    reject_non_physical(*ident);
-                }
-                else
+                else if (!is_plain_identifier(uk_ast))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "UNIQUE KEY must be a list of column identifiers. "
@@ -994,11 +958,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (!statistics_types_str.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         {
-            /// Reject deprecated statistics types (currently `minmax`) only when a table is freshly created
-            /// with them in `auto_statistics_types`. Skipped for ATTACH and replicated propagation so that
-            /// existing tables which still carry `minmax` in the setting keep loading.
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
-                validateAutoStatisticsTypes(statistics_types_str);
             addImplicitStatistics(metadata.columns, statistics_types_str);
         }
 

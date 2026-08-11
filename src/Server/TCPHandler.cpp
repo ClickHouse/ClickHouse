@@ -496,13 +496,6 @@ void TCPHandler::runImpl()
             return;
         }
 
-        /// An interserver peer that failed authentication has not proven knowledge of the
-        /// cluster secret, so nothing is serialized back to it (an exception would disclose
-        /// error details, including whether the named cluster exists); the connection is just
-        /// closed. The failure is recorded in `system.session_log`.
-        if (is_interserver_mode && e.code() == ErrorCodes::AUTHENTICATION_FAILED)
-            throw;
-
         try
         {
             /// We try to send error information to the client.
@@ -2089,39 +2082,6 @@ void TCPHandler::receiveHello()
             LOG_WARNING(LogFrequencyLimiter(log, 10),
                         "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         processClusterNameAndSalt();
-
-        /// Reject interserver mode unless the cluster has a `<secret>`; otherwise any client
-        /// could enter interserver mode and exercise pre-auth protocol packets. An unknown
-        /// cluster (`getCluster` throws) is rejected the same way, so an unauthenticated peer
-        /// cannot distinguish the two cases. The failure is recorded in `system.session_log`
-        /// via `onAuthenticationFailure`, and the connection is closed without serializing
-        /// the exception back to the unauthenticated peer (see the handshake catch block).
-        try
-        {
-            String cluster_secret;
-            try
-            {
-                cluster_secret = server.context()->getCluster(cluster)->getSecret();
-            }
-            catch (const Exception & e)
-            {
-                throw Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
-            }
-
-            if (cluster_secret.empty())
-                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                    "Interserver authentication failed: cluster '{}' is not configured with a secret", cluster);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::AUTHENTICATION_FAILED)
-                throw;
-
-            session = makeSession();
-            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), e);
-            throw;
-        }
-
         return;
     }
 
@@ -2622,7 +2582,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             /// the query was come, since the real address is the address of
             /// the initiator server, while we are interested in client's
             /// address.
-            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, *client_info.initial_address, client_info.current_address, external_roles);
+            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, *client_info.initial_address, *client_info.current_address, external_roles);
         }
 
         is_interserver_authenticated = true;

@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <memory>
 #include <optional>
 #include <Analyzer/QueryNode.h>

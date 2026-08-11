@@ -1,12 +1,12 @@
 ---
-title: Identifying expensive queries by memory usage in ClickHouse
+title: Identifying Expensive Queries by Memory Usage in ClickHouse
 description: Learn how to use the `system.query_log` table to find the most memory-intensive queries in ClickHouse, with examples for clustered and standalone setups.
 date: 2023-06-07
 tags: ['Performance and Optimizations']
 keywords: ['Expensive Queries', 'Memory Usage']
 ---
 
-## Using the `system.query_log` table {#using-the-systemquery-log-table}
+## Using the `system.query_log` table
 
 The following useful query shows which of your executed queries used the most memory.
 
@@ -27,7 +27,6 @@ FROM
     clusterAllReplicas(default, system.query_log)
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'
@@ -51,14 +50,7 @@ The response looks like:
 <Note>
 If you do not have a `system.query_log` table, then you likely do not have query logging enabled. View the details of the [`query_log` setting](/reference/settings/server-settings/settings#server_configuration_parameters-query-log) for details on how to enable it.
 </Note>
-
-<Note>
-**`query_log` contains more than the queries you submitted**
-
-A single submitted query can appear as several rows: the initial query (`is_initial_query = 1`) plus derivative or internal steps (`is_initial_query = 0`), such as secondary queries for distributed execution or the internal queries used to evaluate views. Those internal rows have their own `query_id` values—assigned by ClickHouse and sometimes including a label such as `queryView...`—so do not assume every `query_id` matches what your client reported. To attribute usage to the query as you ran it, filter on `is_initial_query = 1` or match `query_id = initial_query_id`. See [How to identify the most expensive queries](/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries#initial_query_id-vs-query_id) and the [`query_log` reference](/reference/system-tables/query_log) for details.
-</Note>
-
-If you do not have a cluster, you can query your single `system.query_log` table directly:
+If you do not have a cluster, use can just query your one `system.query_log` table directly:
 
 ```sql
 SELECT
@@ -71,7 +63,6 @@ FROM
     system.query_log
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'

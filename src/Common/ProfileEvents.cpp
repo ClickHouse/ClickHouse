@@ -450,8 +450,6 @@
     M(UniqueKeyIndexCacheHits, "Number of times an entry has been found in the UNIQUE KEY index cache, so we didn't have to load an SST block.", ValueType::Number) \
     M(UniqueKeyIndexCacheMisses, "Number of times an entry has not been found in the UNIQUE KEY index cache, so we had to load an SST block from disk.", ValueType::Number) \
     M(UniqueKeySSTWriteMicroseconds, "Total wall-clock time spent inside an `SSTIndexWriter` lifetime — covers SST `Open`, every `addEncoded` Put, and `Finish` + copy-via-`writeFile` in `finalizeToStorage`. Excludes work the static helpers do before constructing the writer (encode + non-prefix-path sort). Emitted once per writer.", ValueType::Microseconds) \
-    M(UniqueKeyLoadTimeSSTRebuildCount, "Number of UNIQUE KEY parts whose `unique_key_index.sst` was rebuilt at load time after the crash-before-flush window.", ValueType::Number) \
-    M(UniqueKeyLoadTimeSSTRebuildMicroseconds, "Total time spent rebuilding `unique_key_index.sst` at load time (sequential read of UK columns + SST write).", ValueType::Microseconds) \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.", ValueType::Number) \
     M(SelectedPartsTotal, "Number of total data parts before selecting which ones to read from a MergeTree table.", ValueType::Number) \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.", ValueType::Number) \
@@ -1124,6 +1122,8 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueTaggedObjects, "Number of objects tagged as part of after_processing = tag", ValueType::Number) \
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number) \
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockLostOwnership, "Number of times ownership of a bucket lock was detected as lost in S3(Azure)Queue. Non-zero value indicates too small persistent_processing_node_ttl_seconds or a bug", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockRefreshes, "Number of successful bucket lock refreshes in S3(Azure)Queue", ValueType::Number) \
     M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number) \
@@ -1758,19 +1758,6 @@ Counters::Snapshot::Snapshot()
     : counters_holder(new Count[num_counters] {})
 {}
 
-Counters::Snapshot::Snapshot(const Snapshot & other)
-    : counters_holder(new Count[num_counters] {})
-{
-    std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
-}
-
-Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
-{
-    Snapshot tmp(other);
-    counters_holder = std::move(tmp.counters_holder);
-    return *this;
-}
-
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
@@ -1970,8 +1957,6 @@ void Counters::incrementNoTrace(Event event, Count amount)
 
 void Counters::incrementSignalSafe(Event event, Count amount)
 {
-    static_assert(std::atomic_ref<Count>::is_always_lock_free);
-
     Counters * current = this;
     /// Must stay async-signal-safe (called from signal/crash handlers), so unlike `incrementNoTrace`
     /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.

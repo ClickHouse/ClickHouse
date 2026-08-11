@@ -7,7 +7,7 @@ description: "Configurez ClickHouse BYOC sur Azure à l'aide du module Terraform
 doc_type: 'reference'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import PrivatePreviewBadge from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <PrivatePreviewBadge />
 
@@ -35,13 +35,17 @@ Les autres aspects du déploiement — comme l’[architecture](/fr/products/bri
 </div>
 
 <Steps>
-  <Step title="1. Appliquez le module Terraform" id="apply-terraform-module">
+  <Step>
+    ### 1. Appliquez le module Terraform
+
     Pour démarrer l’onboarding BYOC sur Azure, appliquez le [module Terraform pour Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) fourni par ClickHouse dans votre **tenant et abonnement cibles**.
 
     Consultez la documentation du module pour connaître les variables requises et la procédure d’application. Une fois appliqué, le module aura configuré l’identité et les autorisations nécessaires dans votre environnement Azure.
   </Step>
 
-  <Step title="2. Fournissez les ID à ClickHouse" id="provide-ids">
+  <Step>
+    ### 2. Fournissez les ID à ClickHouse
+
     Partagez les informations suivantes avec l’équipe ClickHouse :
 
     * **ID de l’abonnement cible** — L’abonnement Azure dans lequel les ressources BYOC seront créées

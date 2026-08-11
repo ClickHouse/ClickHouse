@@ -6,6 +6,9 @@ tags: ['Errors and Exceptions']
 keywords: ['OOM', 'memory limit exceeded']
 ---
 
+{frontMatter.description}
+{/* truncate */}
+
 import { Image } from "/snippets/components/Image.jsx";
 
 ## Memory limit exceeded for query {#troubleshooting-out-of-memory-issues}
@@ -65,3 +68,4 @@ algorithm is preferred until memory limits are violated, at which point the
 partial_merge algorithm is attempted. Finally, concerning joins, we encourage
 readers to be aware of the behavior of distributed joins and how to minimize
 their memory consumption. More information can be found [here](/reference/statements/in#distributed-subqueries).
+

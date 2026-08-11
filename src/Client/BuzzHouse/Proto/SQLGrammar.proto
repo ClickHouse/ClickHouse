@@ -1372,7 +1372,6 @@ enum GeoTypes {
     Polygon = 5;
     MultiPolygon = 6;
     Geometry = 7;
-    MultiPoint = 8;
 }
 
 message BottomTypeName {

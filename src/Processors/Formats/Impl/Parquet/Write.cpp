@@ -1500,7 +1500,6 @@ void writeFileFooter(FileWriteState & file,
         {
             if (type->getCustomName() &&
                 (type->getCustomName()->getName() == WKBPointTransform::name ||
-                type->getCustomName()->getName() == WKBMultiPointTransform::name ||
                 type->getCustomName()->getName() == WKBLineStringTransform::name ||
                 type->getCustomName()->getName() == WKBPolygonTransform::name ||
                 type->getCustomName()->getName() == WKBMultiLineStringTransform::name ||

@@ -4368,10 +4368,10 @@ Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set 
 Maximum number of points, rings, or polygons allowed in a single WKB geometry element during parsing by `readWKB` and related functions. This protects against excessive memory allocations from malformed WKB data. Set to 0 to use the hard-coded limit (100 million).
 )", 0) \
     DECLARE(UInt64, max_rand_distribution_trials, 1'000'000'000, R"(
-Maximum number of trials allowed for random distribution functions such as `randBinomial` and `randNegativeBinomial`. This prevents extremely long computation times with large trial counts. `0` disables the limit, and the setting may be raised above its default, except for `randBinomial`, which always rejects more than 10^9 trials because the cost of a single sample is proportional to the number of trials in the worst case, with a probability that grows with it.
+Maximum number of trials allowed for random distribution functions such as `randBinomial` and `randNegativeBinomial`. This prevents extremely long computation times with large trial counts.
 )", 0) \
     DECLARE(Float, max_rand_distribution_parameter, 1e6, R"(
-Maximum value for distribution shape parameters in random distribution functions such as `randChiSquared`, `randStudentT`, and `randFisherF`. This prevents extremely long computation times with extreme parameter values. `0` disables the limit; values for which the sampler does not terminate at all are still rejected.
+Maximum value for distribution shape parameters in random distribution functions such as `randChiSquared`, `randStudentT`, and `randFisherF`. This prevents extremely long computation times with extreme parameter values.
 )", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limits the maximum number of partitions in a single inserted block
@@ -4459,7 +4459,9 @@ Disabled by default.
     DECLARE(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
 Allow S3 access that originates from user SQL to use server-managed credentials.
 
-When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, `role_arn`-based STS assume-role, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1`, a `role_arn`, or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
+When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1` or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
+
+`role_arn`-based STS assume-role (`extra_credentials(role_arn = '...')`) stays allowed even when this setting is disabled: the target role must explicitly trust the identity the server runs under, and only the assumed role's credentials ever sign the query's S3 requests, so the server's own credentials are not exposed to the query. This is the documented way to grant ClickHouse Cloud access to a private bucket. The role is assumed with the query's own base keys when the query supplies a complete pair; otherwise the STS AssumeRole call is signed by the server's ambient identity. Static keys from the server `<s3>`/endpoint config or from a named collection are never used as the STS base for a query-supplied role, and a `role_arn` configured in the server `<s3>` config is not applied to user queries at all. Dynamic `disk(type=s3, role_arn=...)` definitions remain covered by the restriction.
 
 Whether a credential-less request asks for environment credentials is decided by `use_environment_credentials`. Named collections default it to `0`, so a collection that only specifies a URL reads anonymously. The `s3`/`s3Cluster` table functions and `S3`/`S3Queue` engines use the built-in default (`1`) unless the server `<s3>` config sets it otherwise; set `<s3><use_environment_credentials>0</use_environment_credentials></s3>` to make their credential-less reads anonymous by default too (otherwise such a request is refused and must use `NOSIGN`). Disks defined in the server configuration are unaffected and keep using environment credentials by default; user-created dynamic `disk(type = s3, ...)` definitions are covered by the restriction (see above) and are rejected when they rely on default/environment credentials.
 
@@ -5332,7 +5334,7 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
-- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`, `MULTIPOINT`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `GEOMETRYCOLLECTION` map to `String`.
+- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`MULTIPOINT`, `GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `MULTIPOINT` or `GEOMETRYCOLLECTION` map to `String`.
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
@@ -5919,6 +5921,16 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(Bool, use_query_condition_cache_for_top_k, false, R"(
+Enable the [query condition cache](/operations/query-condition-cache) for queries that use the `ORDER BY <column> LIMIT n` (TopK) optimization (dynamic filtering or skip-index based). When disabled, such reads neither consult nor populate the cache.
+
+Such queries can drop granules during execution depending on the running threshold, so their cache entries are partitioned by the TopK plan parameters and by the set of parts read. This setting is disabled by default while the soundness of these cache entries is being established; it has no effect unless `use_query_condition_cache` is also enabled.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
@@ -6398,9 +6410,6 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
-)", 0) \
-    DECLARE(Bool, query_plan_short_circuit_constant_false_join, true, R"(
-Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to the analyzer (`enable_analyzer = 1`) and to non-distributed plans.
 )", 0) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
 Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
@@ -7442,9 +7451,6 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 └───────────────────────────────┘
 ```
 )", 0) \
-    DECLARE(Bool, allow_lossy_numeric_supertype, false, R"(
-When enabled, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` over a set of numeric arguments that has no lossless common type (for example a `Decimal` and a `Float64`, or an `Int64` and a `Float64`) resolve to a numeric supertype (`Float64`) instead of failing, with possible precision loss. This allows the result to be used directly with value-combining aggregate functions like `sum`, `avg`, `min` and `max`. This is independent of `use_variant_as_common_type`: the numeric supertype is produced whether or not `use_variant_as_common_type` is enabled. When disabled (the default), such argument sets have no common type, so they either become a `Variant` (if `use_variant_as_common_type` is enabled) or raise `NO_COMMON_TYPE`.
-)", 0) \
     DECLARE(Bool, enable_order_by_all, true, R"(
 Enables or disables sorting with `ORDER BY ALL` syntax, see [ORDER BY](../../sql-reference/statements/select/order-by.md).
 
@@ -7842,7 +7848,7 @@ Cloud default value: `1`.
 Allow the analyzer.
 )", IMPORTANT, enable_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
-Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
+Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined on subexpressions inside the SELECT list are also considered (for example, in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is defined on a subexpression inside the SELECT list rather than as a top-level alias, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
 )", 0) \
     DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
@@ -7860,6 +7866,20 @@ Possible values:
 
 - 0 - `FINAL` applies only to the table it is specified on.
 - 1 - `FINAL` on the left-most table of a JOIN is applied to all joined tables.
+)", 0) \
+    DECLARE(Bool, analyzer_compatibility_multiple_joins_qualify_column_names, false, R"(
+When enabled and the `FROM` clause of a query contains two or more `JOIN`s (comma-separated tables count; `ARRAY JOIN` does not), the analyzer names result columns the way the old analyzer's multiple-joins rewrite did:
+- columns produced by expanding `*`, `<table>.*` or `COLUMNS('<regexp>')` get names of the form `<alias-or-table>.<column>` (the qualifier is the table expression's alias if it has one, otherwise the table name without the database, otherwise the CTE name; columns of a joined subquery without an alias are left unqualified). Two kinds of column keep their bare name because they belong to the join rather than to a single table expression: a column produced by `ARRAY JOIN`, and a key merged by `JOIN ... USING`. Outer references such as `SELECT ll.arr` or `SELECT ll.k` therefore do not resolve in those two shapes;
+- the identifier-list form `COLUMNS(col1, col2)` is not a matcher expansion: each column keeps the name exactly as its identifier was written, so `COLUMNS(x)` produces `x` and `COLUMNS(a.x)` produces `a.x`;
+- an unaliased column reference in the `SELECT` list keeps its name exactly as written (e.g. `SELECT a.x` produces a column named `a.x` even when `x` is unambiguous).
+
+This makes outer queries that reference such columns by their qualified names work, for example:
+
+```sql
+SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
+```
+
+Takes effect only when the analyzer is enabled (`enable_analyzer = 1`).
 )", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
@@ -8262,14 +8282,6 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL) \
-    DECLARE(UniqueKeyProbeImplementation, unique_key_probe_implementation, UniqueKeyProbeImplementation::Auto, R"(
-Selects the UNIQUE KEY write-path probe implementation. Currently only a single-threaded
-baseline exists, so `auto` and `simple` both resolve to it.
-
-Reserved: this setting has no effect yet — the value is not read until the UNIQUE KEY INSERT
-write path that constructs the probe is wired up. Declared now so the lever ships with the
-implementation.
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
@@ -8518,9 +8530,6 @@ Number of blocks that are skipped before trying to dynamically re-enable a runti
 )", EXPERIMENTAL) \
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
 If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_runtime_filter_min_probe_rows, 1000, R"(
-If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. Set to 0 to always create the runtime filter regardless of the estimated probe size.
 )", EXPERIMENTAL) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
@@ -8795,9 +8804,6 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     /// Dumps profile events to column of type Map(String, String)
     void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
-    /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
-    std::map<String, String> changedToMap() const;
-
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
@@ -8896,22 +8902,6 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     }
 
     offsets.push_back(offsets.back() + size);
-}
-
-std::map<String, String> SettingsImpl::changedToMap() const
-{
-    std::map<String, String> result;
-
-    const auto & accessor = Traits::Accessor::instance();
-    for (size_t i = 0; i < accessor.size(); ++i)
-        if (accessor.isValueChanged(*this, i))
-            result.emplace(accessor.getName(i), accessor.getValueString(*this, i));
-
-    for (const auto & custom : custom_settings_map)
-        if (custom.second.changed)
-            result.emplace(custom.first, custom.second.toString());
-
-    return result;
 }
 
 void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
@@ -9231,11 +9221,6 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
 {
     impl->dumpToMapColumn(column, changed_only);
-}
-
-std::map<String, String> Settings::changedToMap() const
-{
-    return impl->changedToMap();
 }
 
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)

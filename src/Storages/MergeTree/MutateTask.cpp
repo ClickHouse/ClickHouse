@@ -1,4 +1,5 @@
 #include <Interpreters/TreeRewriter.h>
+
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -83,6 +84,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
+    extern const MergeTreeSettingsBool enable_block_number_column;
+    extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
     extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
@@ -624,6 +627,18 @@ static void splitAndModifyMutationCommands(
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
     }
+
+    /// Any mutation that processes data through the interpreter also materializes `_block_number` and `_block_offset` columns when they are enabled.
+    if (!for_interpreter.empty())
+    {
+        const auto data_settings = part->storage.getSettings();
+
+        if ((*data_settings)[MergeTreeSetting::enable_block_number_column] && !part_columns.has(BlockNumberColumn::name))
+            for_interpreter.emplace_back(MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = BlockNumberColumn::name, .data_type = BlockNumberColumn::type});
+
+        if ((*data_settings)[MergeTreeSetting::enable_block_offset_column] && !part_columns.has(BlockOffsetColumn::name))
+            for_interpreter.emplace_back(MutationCommand{.type = MutationCommand::Type::READ_COLUMN, .column_name = BlockOffsetColumn::name, .data_type = BlockOffsetColumn::type});
+    }
 }
 
 static void addRenamedColumnToColumnsSubstreams(
@@ -736,6 +751,8 @@ getColumnsForNewDataPart(
         bool need_column = false;
         if (name == RowExistsColumn::name)
             need_column = deleted_mask_updated || (part_columns.has(name) && !affects_all_columns);
+        else if (name == BlockNumberColumn::name || name == BlockOffsetColumn::name)
+            need_column = part_columns.has(name) || updated_header.has(name);
         else
             need_column = part_columns.has(name);
 
@@ -1083,9 +1100,6 @@ static NameSet collectFilesToSkip(
 
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
-
-    /// We need to hardlink this file because otherwise hardlinked persistent virtual columns may be rolled back.
-    files_to_skip.erase(IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
 
     auto skip_index = [&files_to_skip, &mrk_extension, &source_part](const MergeTreeIndexPtr & index)
     {
@@ -1913,36 +1927,10 @@ void PartMergerWriter::createBuildTextIndexesTask()
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
 {
-    const auto & projection = *ctx->projections_to_build[projection_idx];
-
-    /// When mutations like CLEAR COLUMN do not include all columns in the pipeline output,
-    /// projections that depend on those columns still need to be rebuilt (e.g., for non-full
-    /// part storage). Add any missing required columns with default values so that projection
-    /// calculation does not fail with "Not found column in block".
-    Block block_for_projection;
-    bool added_missing_columns = false;
-    for (const auto & col_name : projection.required_columns)
-    {
-        if (!block.has(col_name))
-        {
-            if (!added_missing_columns)
-            {
-                block_for_projection = block;
-                added_missing_columns = true;
-            }
-            auto column_desc = ctx->metadata_snapshot->getColumns().getPhysical(col_name);
-            block_for_projection.insert(
-                {column_desc.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst(),
-                 column_desc.type,
-                 col_name});
-        }
-    }
-    const Block & projection_input = added_missing_columns ? block_for_projection : block;
-
     Chunk squashed_chunk;
     {
         ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-        Block block_to_squash = projection.calculate(projection_input, starting_offset, ctx->context);
+        Block block_to_squash = ctx->projections_to_build[projection_idx]->calculate(block, starting_offset, ctx->context);
 
         /// Everything is deleted by lightweight delete
         if (block_to_squash.rows() == 0)
@@ -2394,8 +2382,10 @@ private:
                 /*blocks_are_granules=*/ false);
         }
 
+        const auto & new_part_columns = ctx->new_data_part->getColumns();
+        const bool has_block_columns = new_part_columns.contains(BlockNumberColumn::name) && new_part_columns.contains(BlockOffsetColumn::name);
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
-        ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings());
+        ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings(), has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
         ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
@@ -2629,7 +2619,6 @@ private:
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
-        ctx->new_data_part->invalidated_system_columns = ctx->source_part->invalidated_system_columns;
 
         /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
         /// the inherited skp_idx.packed entry must not survive untouched into the new part's
@@ -3555,20 +3544,6 @@ bool MutateTask::prepare()
 
     String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
-
-    /// Reclaim a stale leftover temporary directory (a mutation interrupted or rolled back and retried
-    /// with the same deterministic name) BEFORE constructing the part storage. Otherwise packed storage
-    /// seeds its archive reader and snapshots the mark layout from the leftover data.packed, and
-    /// finalizeWriter later carries every logical file the new mutation did not rewrite into the new
-    /// part. The temporary-directory lock above guarantees no concurrent operation owns this name.
-    {
-        auto relative_tmp_dir = fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name;
-        if (ctx->disk->existsDirectory(relative_tmp_dir))
-        {
-            LOG_WARNING(ctx->log, "Removing old temporary directory {}", (fs::path(ctx->disk->getPath()) / relative_tmp_dir).string());
-            ctx->disk->removeRecursive(relative_tmp_dir);
-        }
-    }
 
     auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
     builder.withPartFormat(ctx->future_part->part_format);

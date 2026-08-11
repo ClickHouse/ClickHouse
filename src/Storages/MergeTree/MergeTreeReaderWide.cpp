@@ -65,8 +65,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     {
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
-            /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
-            if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
+            if (!isColumnDroppedByPendingMutation(i))
                 addStreams(columns_to_read[i], serializations[i]);
         }
     }
@@ -133,7 +132,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
     /// so if reading can be asynchronous, it will also be performed in parallel for all columns.
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
-        if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+        if (isColumnDroppedByPendingMutation(pos))
             continue;
 
         try
@@ -176,7 +175,8 @@ size_t MergeTreeReaderWide::readRows(
 
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
+            if (isColumnDroppedByPendingMutation(pos))
             {
                 res_columns[pos] = nullptr;
                 continue;
@@ -448,6 +448,13 @@ void MergeTreeReaderWide::deserializePrefix(
             if (stream_name)
                 streams.erase(*stream_name);
         };
+        deserialize_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, substream_path, ".bin",
+                data_part_info_for_read->getChecksums(), storage_settings);
+            return stream_name.has_value();
+        };
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
         deserialize_settings.has_uniform_marks_callback =
             [&](const ISerialization::SubstreamPath & substream_path,
@@ -495,7 +502,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsImpl(size_t num_columns,
         DeserializeBinaryBulkStateMap deserialize_state_map;
         for (size_t pos = 0; pos < num_columns; ++pos)
         {
-            if (isColumnDroppedByPendingMutation(pos) || isSystemColumnInvalidated(pos))
+            if (isColumnDroppedByPendingMutation(pos))
                 continue;
 
             try

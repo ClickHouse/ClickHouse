@@ -1071,6 +1071,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_orc_dictionary_as_low_cardinality", trueOrFalseSettingNoOracle},
     {"input_format_orc_filter_push_down", trueOrFalseSetting},
     {"input_format_orc_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalseSettingNoOracle},
+    {"input_format_orc_use_fast_decoder", trueOrFalseSettingNoOracle},
     {"input_format_parallel_parsing", trueOrFalseSetting},
     {"input_format_parquet_allow_geoparquet_parser", trueOrFalseSettingNoOracle},
     {"input_format_parquet_allow_missing_columns", trueOrFalseSettingNoOracle},

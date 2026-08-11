@@ -11,7 +11,7 @@ integration:
 keywords: ['estuary', '데이터 수집', 'etl', '파이프라인', '데이터 통합', 'clickpipes']
 ---
 
-import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -30,7 +30,9 @@ Estuary는 Kafka ClickPipe를 통해 ClickHouse에 연결됩니다. 이 통합�
 * ClickPipe 권한이 있는 ClickHouse Cloud 계정
 
 <Steps>
-  <Step title="Estuary 머티리얼라이즈 생성" id="1-create-an-estuary-materialization">
+  <Step>
+    ### Estuary 머티리얼라이즈 생성
+
     Estuary의 소스 컬렉션에서 ClickHouse로 데이터를 이동하려면 먼저 **머티리얼라이즈**를 생성해야 합니다.
 
     1. Estuary 대시보드에서 [Destinations](https://dashboard.estuary.dev/materializations) 페이지로 이동합니다.
@@ -54,7 +56,9 @@ Estuary는 Kafka ClickPipe를 통해 ClickHouse에 연결됩니다. 이 통합�
     Estuary는 선택한 컬렉션을 Kafka 메시지로 스트리밍하기 시작합니다. ClickHouse는 Estuary의 브로커 정보와 제공한 auth token을 사용해 Kafka ClickPipe를 통해 이 데이터에 액세스할 수 있습니다.
   </Step>
 
-  <Step title="Kafka 연결 세부 정보 입력" id="2-enter-kafka-connection-details">
+  <Step>
+    ### Kafka 연결 세부 정보 입력
+
     ClickHouse에서 새 Kafka ClickPipe를 설정하고 연결 세부 정보를 입력합니다:
 
     1. ClickHouse Cloud 대시보드에서 **Data sources**를 선택합니다.
@@ -78,7 +82,9 @@ Estuary는 Kafka ClickPipe를 통해 ClickHouse에 연결됩니다. 이 통합�
        * 시크릿은 브로커 비밀번호와 동일합니다(auth token)
   </Step>
 
-  <Step title="수신 데이터 구성" id="3-configure-incoming-data">
+  <Step>
+    ### 수신 데이터 구성
+
     1. Kafka **topics** 중 하나를 선택합니다(Estuary의 데이터 컬렉션 중 하나).
 
     2. **offset**을 선택합니다.

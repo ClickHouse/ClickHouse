@@ -82,8 +82,6 @@ std::unordered_map<String, GeoColumnMetadata> parseGeoMetadataEncoding(const std
             String type = types->getElement<std::string>(0);
             if (type == "Point")
                 result_type = GeoType::Point;
-            else if (type == "MultiPoint")
-                result_type = GeoType::MultiPoint;
             else if (type == "LineString")
                 result_type = GeoType::LineString;
             else if (type == "Polygon")
@@ -225,30 +223,6 @@ inline Polygon<CartesianPoint> parseWKTPolygon(ReadBuffer & in_buffer, bool prec
     return poly;
 }
 
-inline MultiPoint<CartesianPoint> parseWKTMultiPoint(ReadBuffer & in_buffer, bool precise_float_parsing)
-{
-    MultiPoint<CartesianPoint> result;
-    readOpenBracket(in_buffer);
-    while (true)
-    {
-        /// Both MULTIPOINT (1 1, 2 2) and MULTIPOINT ((1 1), (2 2)) are valid WKT spellings.
-        /// Reuse the shared separator/bracket helpers so this path stays as strict as readWKT:
-        /// any separator (space, tab, newline) is tolerated, and a parenthesized point must be
-        /// closed by ')' with nothing but separators in between (so "MULTIPOINT ((1 1 x))" throws).
-        skipWKTSeparators(in_buffer);
-        char ch = 0;
-        const bool parenthesized = in_buffer.peek(ch) && ch == '(';
-        if (parenthesized)
-            in_buffer.ignore();
-        result.push_back(parseWKTPoint(in_buffer, precise_float_parsing));
-        if (parenthesized)
-            readCloseBracket(in_buffer);
-        if (readItemEnding(in_buffer))
-            break;
-    }
-    return result;
-}
-
 inline MultiLineString<CartesianPoint> parseWKTMultiLineString(ReadBuffer & in_buffer, bool precise_float_parsing)
 {
     MultiLineString<CartesianPoint> result;
@@ -305,8 +279,6 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsin
         result = parseWKTLine(in_buffer, precise_float_parsing);
     else if (type == "POLYGON")
         result = parseWKTPolygon(in_buffer, precise_float_parsing);
-    else if (type == "MULTIPOINT")
-        result = parseWKTMultiPoint(in_buffer, precise_float_parsing);
     else if (type == "MULTILINESTRING")
         result = parseWKTMultiLineString(in_buffer, precise_float_parsing);
     else if (type == "MULTIPOLYGON")
@@ -328,7 +300,6 @@ DataTypePtr getGeoDataType(GeoType type)
     switch (type)
     {
         case GeoType::Point: return DataTypeFactory::instance().get("Point");
-        case GeoType::MultiPoint: return DataTypeFactory::instance().get("MultiPoint");
         case GeoType::LineString: return DataTypeFactory::instance().get("LineString");
         case GeoType::Polygon: return DataTypeFactory::instance().get("Polygon");
         case GeoType::MultiLineString: return DataTypeFactory::instance().get("MultiLineString");
@@ -343,17 +314,6 @@ static void appendPointToGeoColumn(const CartesianPoint & point, IColumn & col)
     auto & tuple = assert_cast<ColumnTuple &>(col);
     assert_cast<ColumnFloat64 &>(tuple.getColumn(0)).getData().push_back(point.x());
     assert_cast<ColumnFloat64 &>(tuple.getColumn(1)).getData().push_back(point.y());
-}
-
-static void appendMultiPointToGeoColumn(const MultiPoint<CartesianPoint> & multipoint, IColumn & col)
-{
-    auto & array = assert_cast<ColumnArray &>(col);
-
-    for (const auto & point : multipoint)
-        appendPointToGeoColumn(point, array.getData());
-
-    auto & offsets = array.getOffsets();
-    offsets.push_back(offsets.back() + multipoint.size());
 }
 
 static void appendLineStringToGeoColumn(const LineString<CartesianPoint> & line, IColumn & col)
@@ -402,14 +362,13 @@ static void appendMultiPolygonToGeoColumn(const MultiPolygon<CartesianPoint> & m
     offsets.push_back(offsets.back() + multipolygon.size());
 }
 
-/// Global discriminators for the Geometry type (fixed order, new geo types are appended):
-/// LineString=0, MultiLineString=1, MultiPolygon=2, Point=3, Polygon=4, Ring=5, MultiPoint=6
+/// Global discriminators for the Geometry type (Variant sorted alphabetically by type name):
+/// LineString=0, MultiLineString=1, MultiPolygon=2, Point=3, Polygon=4, Ring=5
 static constexpr ColumnVariant::Discriminator kLineStringDiscriminator = 0;
 static constexpr ColumnVariant::Discriminator kMultiLineStringDiscriminator = 1;
 static constexpr ColumnVariant::Discriminator kMultiPolygonDiscriminator = 2;
 static constexpr ColumnVariant::Discriminator kPointDiscriminator = 3;
 static constexpr ColumnVariant::Discriminator kPolygonDiscriminator = 4;
-static constexpr ColumnVariant::Discriminator kMultiPointDiscriminator = 6;
 
 void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColumn & col)
 {
@@ -419,11 +378,6 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
             if (!std::holds_alternative<CartesianPoint>(object))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected point");
             appendPointToGeoColumn(std::get<CartesianPoint>(object), col);
-            return;
-        case GeoType::MultiPoint:
-            if (!std::holds_alternative<MultiPoint<CartesianPoint>>(object))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Types in parquet mismatched - expected multi point");
-            appendMultiPointToGeoColumn(std::get<MultiPoint<CartesianPoint>>(object), col);
             return;
         case GeoType::LineString:
             if (!std::holds_alternative<LineString<CartesianPoint>>(object))
@@ -460,8 +414,6 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
                 global_discr = kMultiLineStringDiscriminator;
             else if (std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
                 global_discr = kMultiPolygonDiscriminator;
-            else if (std::holds_alternative<MultiPoint<CartesianPoint>>(object))
-                global_discr = kMultiPointDiscriminator;
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometry type in WKB/WKT data");
 
@@ -481,8 +433,6 @@ void appendObjectToGeoColumn(const GeometricObject & object, GeoType type, IColu
                 appendPolygonToGeoColumn(std::get<Polygon<CartesianPoint>>(object), nested_col);
             else if (std::holds_alternative<MultiLineString<CartesianPoint>>(object))
                 appendMultiLineStringToGeoColumn(std::get<MultiLineString<CartesianPoint>>(object), nested_col);
-            else if (std::holds_alternative<MultiPoint<CartesianPoint>>(object))
-                appendMultiPointToGeoColumn(std::get<MultiPoint<CartesianPoint>>(object), nested_col);
             else
                 appendMultiPolygonToGeoColumn(std::get<MultiPolygon<CartesianPoint>>(object), nested_col);
 

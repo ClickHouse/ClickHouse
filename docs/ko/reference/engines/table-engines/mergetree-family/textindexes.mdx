@@ -87,8 +87,6 @@ CREATE TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
-                                [, postprocessor = expression(str)]
-                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -123,8 +121,6 @@ ALTER TABLE table
                                             | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
-                                [, postprocessor = expression(str)]
-                                [, support_phrase_search = 0 | 1 ] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -134,7 +130,7 @@ ALTER TABLE table
 
 ```
 
-기존 테이블에 인덱스를 추가하는 경우, 기존 테이블 파트에 대해서도 인덱스를 물리화하는 것을 권장합니다(그렇지 않으면 인덱스가 없는 파트를 검색할 때 느린 브루트 포스(전체 스캔) 방식으로 폴백됩니다).
+기존 테이블에 인덱스를 추가하는 경우, 기존 테이블 파트에 대해서도 인덱스를 물리화하는 것을 권장합니다(그렇지 않으면 인덱스가 없는 파트를 검색할 때 느린 브루트 포스(전체 스캔) 방식으로 처리됩니다).
 
 ```sql title="Query"
 ALTER TABLE table MATERIALIZE INDEX text_idx SETTINGS mutations_sync = 2;
@@ -191,7 +187,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 텍스트 인덱스는 모든 언어와 문자 집합의 텍스트 데이터에 대해 생성할 수 있습니다.
 비 ASCII 텍스트에는 CJK 문자를 포함한 유니코드 단어 경계를 올바르게 처리하는 `asciiCJK` 토크나이저를 권장합니다.
 
-<a id="preprocessor-argument-optional" />**전처리기 인수(선택 사항)**. 전처리기는 토큰화 전에 입력 문자열에 적용되는 표현식을 의미합니다.
+**전처리기 인수(선택 사항)**. 전처리기는 토큰화 전에 입력 문자열에 적용되는 표현식을 의미합니다.
 
 전처리기 인수의 일반적인 사용 사례는 다음과 같습니다.
 
@@ -294,195 +290,7 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'foo');
 ```
 
-<a id="postprocessor-argument-optional" />**후처리기 인수(선택 사항)**. 후처리기는 토큰화 후 각 출력 토큰에 적용되는 표현식을 의미합니다.
-
-전처리기가 토크나이저가 전체 입력 문자열을 토큰으로 분할하기 전에 이를 변환하는 것과 달리, 후처리기는 토큰 자체에 하나씩 적용됩니다.
-따라서 본질적으로 토큰 수준에서 수행되는 변환에 적합합니다.
-
-후처리기 인수의 일반적인 사용 사례는 다음과 같습니다:
-
-1. **불용어(매우 자주 나타나는 토큰) 필터링**. &quot;the&quot;, &quot;a&quot;, &quot;is&quot;와 같은 매우 흔한 토큰은 검색 관련성이 거의 없고 인덱스를 불필요하게 키웁니다.
-   후처리기를 사용해 이를 빈 토큰으로 변환하여 버릴 수 있습니다. 빈 토큰은 무시되며, 즉 인덱스에 추가되지 않습니다.
-   예시: `if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)`
-2. **타임스탬프 제거**. 로그 줄은 종종 `2024-01-15T10:23:45`와 같은 구조화된 타임스탬프로 시작하거나 이를 포함합니다.
-   타임스탬프 토큰을 인덱싱하면 검색 관련성이 없는 문자열로 인해 인덱스가 불필요하게 커집니다.
-   타임스탬프를 무시하는 상호 보완적인 접근 방식은 두 가지입니다:
-   * **후처리기 접근 방식**: `splitByString` 토크나이저(공백 기준 분할)를 사용해 전체 타임스탬프가 하나의 토큰이 되도록 한 다음, `parseDateTimeOrNull`을 사용해 이를 감지하고 제거합니다.
-     예시: `if(isNull(parseDateTimeOrNull(str, '%Y-%m-%dT%H:%i:%S')), str, '')`
-     시간대 오프셋이나 소수 초가 포함된 타임스탬프의 경우, 명시적인 포맷 문자열 없이 `parseDateTimeBestEffortOrNull(str)`를 사용하십시오.
-   * **전처리기 접근 방식**: 토큰화 *이전*에 정규식을 사용해 전체 로그 줄에서 타임스탬프를 제거합니다.
-     예시: `replaceRegexpAll(str, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')`
-     이 방식은 모든 토크나이저와 함께 사용할 수 있으며, 타임스탬프 문자가 아예 토큰화되지 않으므로 더 효율적입니다.
-     두 접근 방식은 함께 사용할 수 있습니다. 전처리기는 타임스탬프를 제거하고, 후처리기는 남은 토큰을 정규화하거나 필터링합니다(예: 소문자화 + `ERROR` 또는 `INFO` 같은 심각도 단어 제거).
-3. **어간 추출**. 각 토큰을 해당 어간으로 매핑하면 같은 어근을 공유하는 형태 변형도 일치하게 되어 검색 재현율이 향상됩니다.
-   예를 들어 영어 어간 추출에서는 &quot;running&quot;, &quot;runs&quot;, &quot;run&quot;이 모두 &quot;run&quot;으로 어간 추출되므로, 이 변형들 중 어느 것으로 쿼리해도 모두 일치합니다.
-   ClickHouse는 여러 언어에 대해 내장된 [stem](/ko/reference/functions/regular-functions/nlp-functions#stem) 함수를 제공합니다.
-   예시: `stem(str, 'en')`
-4. **대소문자 정규화**. 대소문자를 구분하지 않는 일치를 가능하게 하도록 토큰을 소문자 또는 대문자로 변환합니다. 예: [lower](/ko/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/ko/reference/functions/regular-functions/string-functions#lowerUTF8).
-   소문자화 및 대문자화에는 후처리기보다 전처리기를 권장합니다.
-
-후처리기 표현식은 [String](/ko/reference/data-types/string) 타입의 토큰을 동일한 타입의 토큰으로 변환합니다.
-또한, 후처리기 표현식은 텍스트 인덱스가 정의된 컬럼 또는 표현식만 참조해야 합니다.
-컬럼의 타입이 `Array(String)`인 경우에도 후처리기는 개별 토큰을 일반 `String` 값으로 처리합니다.
-
-비결정적 함수는 사용할 수 없습니다.
-
-후처리기는 인덱스 빌드 중 생성된 각 토큰에 적용됩니다(`array` 토크나이저의 경우 각 배열 요소가 하나의 토큰입니다). 쿼리 시점에는 함수에 따라 동작이 달라집니다.
-
-* `hasToken`, `hasAllTokens`, `hasAnyTokens`, `hasPhrase`(지원되는 모든 토크나이저 사용 시)의 경우: 후처리기는 검색 대상(haystack)의 토큰과 검색 needle 모두에 적용되므로 완전히 정규화된 매칭(예: 대소문자를 구분하지 않는 검색)이 가능합니다. `hasPhrase`의 경우 후처리된 토큰은 빈틈없이 배치되므로, 후처리기가 제거한 토큰이 있더라도 위치상 공백이 생기지 않아 그 토큰을 건너뛰어도 구문이 계속 일치합니다. 예를 들어 `the`를 제거하는 불용어 후처리기를 사용할 때 `hasPhrase(col, 'see cat')`는 문서 `see the cat`과 일치합니다.
-* 그 밖의 모든 함수(`=`, `IN`, `has`, `hasAny`, `hasAll`, `mapContains*`)의 경우: 인덱스 힌트 조회에는 검색 needle에만 후처리기가 적용되며, 행 수준 프레디케이트는 계속 원래 컬럼 값과 비교합니다.
-
-예시:
-
-* 후처리기 표현식을 사용해 불용어를 제거합니다:
-
-```sql
-CREATE TABLE table
-(
-    str String,
-    INDEX idx(str) TYPE text(
-        tokenizer = 'splitByNonAlpha',
-        postprocessor = if(str IN ('the', 'a', 'an', 'of', 'in', 'is', 'it'), '', str)
-    )
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-```
-
-* 후처리기 표현식을 사용하여 타임스탬프를 제거합니다:
-
-```sql
--- Log lines: '2024-01-15T10:23:45 ERROR connection failed'
--- The splitByString tokenizer (default: whitespace) keeps the full timestamp as one token.
--- parseDateTimeOrNull detects and drops it; non-timestamp words are kept.
-CREATE TABLE logs
-(
-    id   UInt64,
-    line String,
-    INDEX idx(line) TYPE text(
-        tokenizer    = 'splitByString',
-        postprocessor = if(isNull(parseDateTimeOrNull(line, '%Y-%m-%dT%H:%i:%S')), line, '')
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-
--- Only message-level words are indexed; timestamp tokens are not stored.
-SELECT count() FROM logs WHERE hasAllTokens(line, ['ERROR']);       -- fast index lookup
-SELECT count() FROM logs WHERE hasAllTokens(line, ['2024-01-15T10:23:45']);  -- returns 0: token was never indexed
-```
-
-* 전처리기 표현식을 사용해 타임스탬프를 제거합니다:
-
-```sql
--- The preprocessor strips the ISO timestamp prefix before tokenization.
--- Any tokenizer can be used; timestamp characters are never seen by the tokenizer.
-CREATE TABLE logs
-(
-    id   UInt64,
-    line String,
-    INDEX idx(line) TYPE text(
-        tokenizer   = 'splitByNonAlpha',
-        preprocessor = replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-```
-
-* 전처리기와 후처리기를 결합한 표현식을 사용해 타임스탬프를 제거합니다:
-
-```sql
--- Preprocessor strips the timestamp, then lowercases the remainder.
--- Postprocessor drops the severity word (error, info, warn, debug) after tokenization.
--- Result: only substantive message words are stored in the index.
-CREATE TABLE logs
-(
-    id   UInt64,
-    line String,
-    INDEX idx(line) TYPE text(
-        tokenizer    = 'splitByNonAlpha',
-        preprocessor = lower(replaceRegexpAll(line, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')),
-        postprocessor = if(line IN ('error', 'info', 'warn', 'warning', 'debug', 'critical'), '', line)
-    )
-)
-ENGINE = MergeTree ORDER BY id;
-
--- Example log line: '2024-01-15T10:23:45 ERROR connection failed'
--- After preprocessor:  'error connection failed'
--- After tokenization:  ['error', 'connection', 'failed']
--- After postprocessor: ['connection', 'failed']   ← 'error' dropped as severity word
-SELECT count() FROM logs WHERE hasAllTokens(line, ['connection']);
-```
-
-* 후처리기 표현식을 사용해 토큰을 어간화합니다:
-
-```sql
-CREATE TABLE table
-(
-    str String,
-    INDEX idx(str) TYPE text(
-        tokenizer = 'splitByNonAlpha',
-        postprocessor = stem(str, 'en')
-    )
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
--- The query token 'running' is stemmed to 'run' before the lookup,
--- matching rows that contain 'run', 'runs', 'ran', 'running', etc.
-SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
-```
-
-**함수 지원**.
-
-텍스트 인덱스를 참조하는 프레디케이트에서는 인덱스 조회가 인덱스 빌드 시 저장된 것과 동일한 토큰을 사용하도록, granule 수준 검사 전에 검색 값에 전처리기와 후처리기를 적용합니다.
-대부분의 함수(`=`, `IN`, `startsWith`, `endsWith`, `LIKE`, `mapContains*`)에서는 텍스트 인덱스가 관련 없는 데이터 블록을 건너뛰는 데만 사용되며, ClickHouse는 남은 각 행에 대해 원본 컬럼 데이터를 기준으로 원본 프레디케이트를 사용해 계속 검증합니다.
-토큰 검색 함수(`hasToken`, `hasAllTokens`, `hasAnyTokens`)에서는 텍스트 인덱스가 기본 평가 경로입니다. ClickHouse는 인덱스 빌드 시 적용된 것과 동일한 전처리기, 토크나이저, 후처리기를 통해 needle을 정규화하고, 이 정규화된 형태를 인덱스가 있는 table part와 없는 table part 모두에 사용합니다. 후처리기가 있으면 haystack 토큰도 쿼리 시점에 정규화되므로(`array`뿐 아니라 모든 토크나이저에 적용됨), 비교 양쪽이 일관되게 변환되며 결과도 인덱스를 직접 읽는지(설정 `query_plan_direct_read_from_text_index`) 또는 특정 파트에 구체화된 인덱스가 있는지와 관계없이 동일합니다. 예를 들어 `lower` 후처리기를 사용하면 `hasAllTokens(col, ['FOO'])`에서 대소문자를 구분하지 않는 매칭을 사용할 수 있습니다.
-`support_phrase_search`가 없으면 `hasPhrase`는 인덱스를 힌트로만 사용하고, 남은 각 행은 원본 프레디케이트로 검증합니다. 또한 후처리기가 있으면 구문과 haystack 토큰 모두를 같은 방식으로 정규화하므로 결과는 읽기 경로와 무관하며, 후처리기가 제거한 토큰 때문에 구문 인접성이 깨지지 않습니다. `support_phrase_search = 1`이면 `hasPhrase`는 정확한 직접 읽기를 사용합니다(후처리기가 있으면 계속 적용됨).
-후처리기가 빈 문자열로 매핑하는 검색 토큰은 무시되며, 즉 검색 구문에 없는 것으로 처리됩니다。
-
-| 함수                                                                                                      | 전처리기 지원                      | 호환되는 토크나이저                                               | 후처리기 지원 |
-| ------------------------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------- | ------- |
-| `=`                                                                                                     | 예                            | 모두                                                       | 예       |
-| `IN`                                                                                                    | 예                            | 모두                                                       | 예       |
-| [hasToken](/ko/reference/functions/regular-functions/string-search-functions#hasToken)                     | 예                            | 모두 (`splitByNonAlpha`에 맞게 설계됨)                           | 예       |
-| [hasAnyTokens(col, str)](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 예                            | 모두                                                       | 예       |
-| [hasAllTokens(col, str)](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 예                            | 모두                                                       | 예       |
-| [hasAnyTokens(col, arr)](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens)   | 아니요 (배열 요소가 토큰으로 있는 그대로 사용됨) | 모두                                                       | 예       |
-| [hasAllTokens(col, arr)](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)   | 아니요 (배열 요소가 토큰으로 있는 그대로 사용됨) | 모두                                                       | 예       |
-| [hasPhrase](/ko/reference/functions/regular-functions/string-search-functions#hasPhrase)                   | 예                            | `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` | 예       |
-| [startsWith](/ko/reference/functions/regular-functions/string-functions#startsWith)                        | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | 예       |
-| [endsWith](/ko/reference/functions/regular-functions/string-functions#endsWith)                            | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | 예       |
-| [like](/ko/reference/functions/regular-functions/string-search-functions#like)                             | 예¹                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | 예¹      |
-| [match](/ko/reference/functions/regular-functions/string-search-functions#match)                           | 예¹                           | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹  | 예¹      |
-| [ilike](/ko/reference/functions/regular-functions/string-search-functions#like)                            | 예² (`lower`/`upper`만)        | `splitByNonAlpha`, `array`²                              | 아니요²    |
-| [mapContainsKey](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)             | 예                            | 모두                                                       | 예       |
-| [mapContainsValue](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)         | 예                            | 모두                                                       | 예       |
-| [mapContainsKeyLike](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)     | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | 예       |
-| [mapContainsValueLike](/ko/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) | 예                            | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`   | 예       |
-| [has](/ko/reference/functions/regular-functions/array-functions#has)                                       | 예                            | `array`                                                  | 예       |
-| [hasAny](/ko/reference/functions/regular-functions/array-functions#hasAny)                                 | 예                            | `array`                                                  | 예       |
-| [hasAll](/ko/reference/functions/regular-functions/array-functions#hasAll)                                 | 예                            | `array`                                                  | 예       |
-
-¹ `LIKE`와 `match`는 나열된 토크나이저에서 힌트로 직접 읽기를 사용하며, 그렇지 않으면 브루트 포스(전체 스캔) 스캔으로 폴백됩니다.
-또한 `LIKE`는 전처리기나 후처리기 없이 `splitByNonAlpha` 및 `array` 토크나이저에 대해 *직접 읽기(힌트 없이)*도 지원합니다(`use_text_index_like_evaluation_by_dictionary_scan`으로 활성화).
-
-² `ILIKE`는 *직접 읽기(힌트 없이)*를 통해서만 지원됩니다(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저).
-인덱스를 힌트로 사용하는 폴백은 지원되지 않습니다. 즉, 설정이 비활성화되어 있거나 토크나이저가 지원되는 집합에 없으면 `ILIKE`에는 인덱스가 사용되지 않습니다.
-전처리기가 있는 경우 `lower` 또는 `upper`여야 하며, 후처리기는 지원되지 않습니다.
-
-**실험적: 구문 검색 인수 지원(선택 사항)**.
-
-실험적 매개변수 `support_phrase_search`(기본값: `0`)는 인덱스가 토큰 위치를 저장할지 제어합니다.
-`1`로 설정하면 인덱스는 위치 데이터(`.pos` 파일에 저장됨)를 추가로 저장하며, 이를 통해 [`hasPhrase`](#functions-example-hasphrase) 함수에서 직접 읽기를 사용한 정확한 구문 일치가 가능해집니다.
-위치를 저장하면 인덱스의 디스크상 크기와 쓰기 비용이 증가하므로, 이 기능은 명시적으로 선택해야 합니다.
-디스크상 포맷은 아직 안정되지 않았으므로, 이 매개변수는 실험적이며 향후 릴리스에서 변경될 수 있습니다.
-따라서 `support_phrase_search = 1`로 인덱스를 생성하려면 MergeTree 설정 [`allow_experimental_text_index_phrase_search`](/ko/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search)를 활성화해야 합니다.
-포스팅 리스트만 저장하는 방식을 유지하려면 `support_phrase_search = 0`(기본값)으로 설정하십시오. 이 인수를 지정하지 않고 생성된 텍스트 인덱스에는 위치 정보가 저장되지 않습니다.
-
-<Warning>
-  이 인수는 실험적이며 테스트 용도로만 사용해야 합니다.
-  위치 저장을 활성화하려면 MergeTree 설정 [`allow_experimental_text_index_phrase_search`](/ko/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search)를 설정하십시오.
-</Warning>
+**기타 인수(선택 사항)**.
 
 <details markdown="1">
   <summary>선택 사항인 고급 매개변수</summary>
@@ -566,8 +374,8 @@ SELECT 쿼리에서 텍스트 인덱스를 사용하는 방법은 간단합니�
 
 <Note>
   텍스트 인덱스를 검색할 때는 `hasAnyTokens` 및 `hasAllTokens` 함수를 사용하는 것을 권장합니다. 자세한 내용은 [아래](#functions-example-hasanytokens-hasalltokens)를 참조하십시오.
-  이 함수는 사용 가능한 모든 토크나이저와 가능한 모든 전처리기 및 후처리기 표현식에서 작동합니다.
-  그 외의 지원 함수는 역사적으로 텍스트 인덱스보다 먼저 도입되었기 때문에, 많은 경우 기존 동작을 유지해야 했습니다(예: 전처리기 또는 후처리기 미지원).
+  이 함수는 사용 가능한 모든 토크나이저와 모든 전처리기 표현식에서 작동합니다.
+  그 외의 지원 함수는 역사적으로 텍스트 인덱스보다 먼저 도입되었기 때문에, 많은 경우 기존 동작을 유지해야 했습니다(예: 전처리기 미지원).
 </Note>
 
 <div id="functions-support">
@@ -682,7 +490,6 @@ SELECT count() FROM table WHERE multiSearchAny(comment, [' clickhouse ', ' suppo
 
 `LIKE`와 마찬가지로, [startsWith](/ko/reference/functions/regular-functions/string-functions#startsWith) 및 [endsWith](/ko/reference/functions/regular-functions/string-functions#endsWith) 함수는 검색어에서 완전한 토큰을 추출할 수 있을 때만 텍스트 인덱스를 사용할 수 있습니다.
 `ngrams` 토크나이저를 사용하는 인덱스에서는 와일드카드 사이의 검색 문자열 길이가 ngram 길이와 같거나 더 길면 이에 해당합니다.
-텍스트 인덱스가 후처리기(postprocessor)를 사용하는 경우, 추출된 힌트 토큰이 정규화 후에도 비어 있지 않으면 이러한 함수는 Hint 모드에서도 계속 인덱스를 사용할 수 있습니다. 정규화 과정에서 모든 힌트 토큰이 제거되면 해당 프레디케이트에는 인덱스가 사용되지 않습니다.
 
 `splitByNonAlpha` 토크나이저를 사용하는 텍스트 인덱스의 예시:
 
@@ -705,18 +512,16 @@ startsWith(comment, 'clickhouse supports ')`
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
 ```
 
-<div id="functions-example-hastoken">
-  #### `hasToken`
+<div id="functions-example-hastoken-hastokenornull">
+  #### `hasToken` and `hasTokenOrNull`
 </div>
 
 <Note>
-  `hasToken`은 `splitByNonAlpha`가 아닌 토크나이저 및/또는 전처리기/후처리기 표현식이 있는 텍스트 인덱스에서 조회에 사용할 때 몇 가지 주의할 점이 있습니다.
-  대신 `hasAnyTokens`와 `hasAllTokens`를 사용하는 것이 좋습니다.
-
-  대소문자를 구분하지 않는 변형인 `hasTokenCaseInsensitive`와 `hasTokenCaseInsensitiveOrNull`은 텍스트 인덱스를 인식하지 못합니다. 즉, 텍스트 인덱스가 있는 컬럼에서도 항상 전체 행 스캔으로 실행됩니다. 대소문자를 구분하지 않는 일치가 필요하다면 `lower(...)` 전처리기 또는 후처리기를 사용하고, 이를 `hasToken` / `hasAllTokens` / `hasAnyTokens`와 함께 조합하십시오.
+  함수 `hasToken`은 사용이 간단해 보이지만, 기본 토크나이저가 아닌 경우나 전처리기 표현식을 사용할 때 몇 가지 주의할 점이 있습니다.
+  대신 함수 `hasAnyTokens`와 `hasAllTokens`를 사용하는 것이 좋습니다.
 </Note>
 
-함수 [hasToken](/ko/reference/functions/regular-functions/string-search-functions#hasToken)은 주어진 단일 토큰과 일치하는지 확인합니다.
+함수 [hasToken](/ko/reference/functions/regular-functions/string-search-functions#hasToken) 및 [hasTokenOrNull](/ko/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)은 주어진 단일 토큰과 일치하는지 확인합니다.
 
 앞서 설명한 함수들과 달리, 이 함수들은 검색어를 토큰화하지 않습니다(입력이 단일 토큰이라고 가정합니다).
 
@@ -755,17 +560,16 @@ SELECT count() FROM table WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 
 모든 토큰이 어딘가에 존재하기만 하면 되는 `hasAllTokens`와 달리, `hasPhrase`는 토큰이 연속된 시퀀스로 나타나야 합니다.
 검색 구는 인덱스 컬럼에 구성된 것과 동일한 토크나이저를 사용해 토큰화됩니다.
-텍스트 인덱스가 후처리기를 사용하는 경우, 검색 구도 인덱스 lookup 전에 정규화됩니다.
 이 함수는 `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` 토크나이저 중 하나를 요구합니다.
 
 예시:
 
 ```sql
--- Matches: 'clickhouse' and 'olap' must appear consecutively in that order
+-- 일치: 'clickhouse'와 'olap'이 해당 순서대로 연속으로 나타나야 합니다
 SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 
--- Does NOT match a row containing 'olap clickhouse' (wrong order)
--- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
+-- 'olap clickhouse'를 포함하는 행과는 일치하지 않습니다 (순서 오류)
+-- 'clickhouse fast olap'을 포함하는 행과는 일치하지 않습니다 (비연속)
 ```
 
 <div id="functions-example-has">
@@ -1168,42 +972,22 @@ SELECT * FROM events WHERE data.level IN ('error', 'critical');
   ### 구문 검색
 </div>
 
-예를 들어, 일반적인 텍스트 인덱스 검색은
+텍스트 인덱스는 `hasPhrase` 함수를 통해 구문 검색을 지원합니다.
+구문에 포함된 모든 토큰은 문서에서 같은 순서로 연속해서 나타나야 합니다.
 
-```sql
-SELECT *
-FROM tab
-WHERE hasAllTokens(col, 'weather in Tokyo')
-```
-
-임의의 순서로 주어진 토큰을 모두 포함하는 모든 행과 일치합니다.
-예시에서는 `While she stayed in Tokyo, the weather was great.` 행이 필터와 일치합니다.
-
-반면 구문 검색은 주어진 순서대로 토큰이 일치하는 것을 의미합니다.
-예를 들어,
-
-```sql
-SELECT *
-FROM tab
-WHERE hasPhrase(col, 'weather in Tokyo')
-```
-
-`weather in Tokyo` 토큰 시퀀스를 포함하는 모든 행(예: `How is the weather in Tokyo?`)과 일치합니다.
-
-텍스트 인덱스는 구문에 포함된 모든 토큰의 포스팅 리스트를 교집합하여 후보 그래뉼을 식별함으로써 구문 검색을 가속합니다.
+텍스트 인덱스는 구문에 포함된 모든 토큰의 포스팅 리스트의 교집합을 구해 후보 그래뉼을 식별함으로써 구문 검색을 가속화합니다.
 그런 다음 ClickHouse는 해당 그래뉼 내에서 토큰이 정확히 인접해 있는지 확인합니다.
-이 과정은 비교적 비용이 크며 일반적인 텍스트 검색 쿼리보다 느립니다.
-구문 검색 쿼리의 속도를 높이려면 텍스트 인덱스에서 위치 저장을 활성화하십시오(위의 `Optional parameters` 참고).
 
-`hasPhrase`는 토크나이저 `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK`와 함께 사용할 수 있습니다.
-지정된 구문 문자열은 인덱스의 토크나이저를 사용해 토큰화됩니다.
-구문 내 구분자 문자는 무시됩니다. `splitByNonAlpha`를 토크나이저로 사용한다고 가정하면 `hasPhrase(text, 'quick+brown')`는 `hasPhrase(text, 'quick brown')`와 동일합니다.
+`hasPhrase`는 `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` 토크나이저에서 지원됩니다.
+
+구문 문자열은 인덱스에 구성된 토크나이저를 사용해 토큰화됩니다.
+구문 내 토크나이저 구분 문자는 무시됩니다. `splitByNonAlpha` 토크나이저에서 `hasPhrase(text, 'quick+brown')`는 `hasPhrase(text, 'quick brown')`와 동일합니다.
 
 <div id="text-index-phrase-search-example">
   #### 예시
 </div>
 
-```sql
+```sql title="Query"
 CREATE TABLE tab (
     id UInt32,
     text String,
@@ -1391,10 +1175,11 @@ LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`이고 
   ### 캐싱
 </div>
 
-메모리에서 텍스트 인덱스의 일부를 버퍼링하기 위한 서버 전역 캐시가 여러 가지 있습니다(섹션 [구현 세부 사항](#implementation) 참조).
+텍스트 인덱스의 일부를 메모리에 버퍼링할 수 있도록 여러 캐시가 제공됩니다(섹션 [구현 세부 사항](#implementation) 참조).
 현재는 I/O를 줄이기 위해 텍스트 인덱스의 역직렬화된 헤더, 토큰, 포스팅 리스트에 대한 캐시가 제공됩니다.
-쿼리가 개별 캐시를 읽고 쓰지 않도록 하려면 [use&#95;text&#95;index&#95;header&#95;cache](/ko/reference/settings/session-settings#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ko/reference/settings/session-settings#use_text_index_tokens_cache), [use&#95;text&#95;index&#95;postings&#95;cache](/ko/reference/settings/session-settings#use_text_index_postings_cache) 설정을 사용하십시오.
+이 캐시는 [use&#95;text&#95;index&#95;header&#95;cache](/ko/reference/settings/session-settings#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ko/reference/settings/session-settings#use_text_index_tokens_cache), [use&#95;text&#95;index&#95;postings&#95;cache](/ko/reference/settings/session-settings#use_text_index_postings_cache) 설정을 통해 활성화할 수 있습니다.
 
+기본적으로 모든 캐시는 비활성화되어 있습니다.
 캐시를 지우려면 [SYSTEM CLEAR TEXT INDEX CACHES](/ko/reference/statements/system#drop-text-index-caches) SQL 문을 사용하십시오.
 
 캐시를 구성하려면 다음 server settings를 참조하십시오.
@@ -1505,11 +1290,6 @@ String 프레디케이트는 텍스트 인덱스와 블룸 필터 기반 인덱�
 모든 토큰의 포스팅 리스트는 포스팅 리스트 파일에 순차적으로 배치됩니다.
 공간을 절약하면서도 빠른 교집합 및 합집합 연산을 지원하기 위해 포스팅 리스트는 [roaring bitmaps](https://roaringbitmap.org/)로 저장됩니다.
 포스팅 리스트가 `posting_list_block_size`보다 크면 여러 블록으로 분할되어 포스팅 리스트 파일에 순차적으로 저장됩니다.
-
-**위치 파일 (.pos)**
-
-선택 사항이며, 인덱스 인수 `support_phrase_search = 1`인 경우에만 생성됩니다.
-일치하는 행 내에서 토큰의 위치를 저장합니다.
 
 **텍스트 인덱스의 머지**
 

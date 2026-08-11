@@ -932,14 +932,13 @@ With the setting `output_format_binary_write_json_as_string=1`, JSON columns are
 Geo is a category of data types that represent geographical data. It includes:
 
 - `Point` - as `Tuple(Float64, Float64)`.
-- `MultiPoint` - as `Array(Point)`, or `Array(Tuple(Float64, Float64))`.
 - `Ring` - as `Array(Point)`, or `Array(Tuple(Float64, Float64))`.
 - `Polygon` - as `Array(Ring)`, or `Array(Array(Tuple(Float64, Float64)))`.
 - `MultiPolygon` - as `Array(Polygon)`, or `Array(Array(Array(Tuple(Float64, Float64))))`.
 - `LineString` - as `Array(Point)`, or `Array(Tuple(Float64, Float64))`.
 - `MultiLineString` - as `Array(LineString)`, or `Array(Array(Tuple(Float64, Float64)))`.
 
-The wire format of the Geo values is exactly the same as with Tuple and Array. `RowBinaryWithNamesAndTypes` format headers will contain the aliases for these types, e.g., `Point`, `MultiPoint`, `Ring`, `Polygon`, `MultiPolygon`, `LineString`, and `MultiLineString`.
+The wire format of the Geo values is exactly the same as with Tuple and Array. `RowBinaryWithNamesAndTypes` format headers will contain the aliases for these types, e.g., `Point`, `Ring`, `Polygon`, `MultiPolygon`, `LineString`, and `MultiLineString`.
 
 ```sql
 SELECT    (1.0, 2.0)                                       :: Point           AS point,
@@ -1026,12 +1025,11 @@ The discriminant indices for Geometry are:
 | 3 | Point |
 | 4 | Polygon |
 | 5 | Ring |
-| 6 | MultiPoint |
 
 Wire format structure:
 
 ```text
-// 1 byte discriminant (0-6)
+// 1 byte discriminant (0-5)
 // followed by the corresponding geo type data
 ```
 

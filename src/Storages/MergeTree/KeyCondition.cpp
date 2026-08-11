@@ -31,7 +31,6 @@
 #include <Common/MortonUtils.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnSet.h>
@@ -1737,6 +1736,8 @@ bool KeyCondition::hasOnlyConjunctions() const
 }
 
 
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
+
 static Field applyFunctionForField(
     const FunctionBasePtr & func,
     const DataTypePtr & arg_type,
@@ -1780,28 +1781,23 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-        /// Strip outer `LowCardinality` from the argument column and type before executing, keeping the
-        /// cached result full too. A monotonic-function chain is built against the outer-LowCardinality
-        /// stripped key type (`applyFunctionChainToColumn` strips it the same way), so a specialized
-        /// wrapper such as the UInt8->Bool `CAST` does `checkAndGetColumn<ColumnUInt8>` on the raw
-        /// column and aborts with a bad cast on a `ColumnLowCardinality` (e.g. a `LowCardinality(Bool)`
-        /// key compared with a `LowCardinality` constant). `removeLowCardinality` /
-        /// `convertToFullColumnIfLowCardinality` are no-ops for non-LC inputs.
-        if (args[0].column && args[0].column->lowCardinality())
+        /// Normalize the chain's input only: the incoming index column may still be `LowCardinality`
+        /// while the chain was built against a stripped key type. Interior links need nothing, because
+        /// each is built against the previous function's result type, which the cache below preserves.
+        if (args[0].column && args[0].column->lowCardinality() && !getArgumentTypeOfMonotonicFunction(*func)->lowCardinality())
         {
             args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
             args[0].type = removeLowCardinality(args[0].type);
         }
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, removeLowCardinality(func->getResultType()), result_name});
+        /// Invariant: every function receives the argument type it was built for, so the cached result
+        /// keeps this function's own result type and representation.
+        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
         (*columns)[result_idx].column
-            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false)
-                  ->convertToFullColumnIfLowCardinality();
+            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false);
     }
 
     return {field.columns, field.row_idx, result_idx};
 }
-
-DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
@@ -4034,6 +4030,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 func_name = String(reversed);
             }
 
+            /// What the chain actually produces, which is what any cast appended below will be fed. This
+            /// stays unstripped: only the copy used to choose the comparison supertype is stripped.
+            DataTypePtr chain_result_type
+                = chain.empty() ? recursiveRemoveLowCardinality(key_expr_type) : chain.back()->getResultType();
+
             key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
             DataTypePtr key_expr_type_not_null;
             bool key_expr_type_is_nullable = false;
@@ -4075,34 +4076,6 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                     if (!should_keep_original_string_constant)
                     {
-                        /// A `FixedString(N)` constant is stored as a `String` Field of N bytes,
-                        /// right-padded with '\0', and compared zero-padded, so it can match more than
-                        /// the single padded value while `convertFieldToType` below builds a point
-                        /// range from the padding:
-                        ///   - against a `String` key it matches the family `value` + trailing '\0'*
-                        ///     (`'abc'`, `'abc\0'`, ...), not a point;
-                        ///   - against a narrower `FixedString(M)` key (N > M) it keeps the N padded
-                        ///     bytes, which no longer map into the key domain.
-                        /// Either way the point range is unsound and prunes matching granules, so
-                        /// decline index analysis (fall back to a full scan). A wider-or-equal
-                        /// `FixedString(M)` key (M >= N) pads the constant into exactly one key value,
-                        /// so pruning stays correct and is left untouched.
-                        /// Strip `LowCardinality` and `Nullable` first: a wrapped constant such as
-                        /// `toFixedString(x, N)` with a non-literal length (`LowCardinality(FixedString(N))`)
-                        /// or `CAST(... AS LowCardinality(Nullable(FixedString(N))))` carries the same padded
-                        /// bytes and comparison semantics. `tryGetConstant` only peels an outer `Nullable`, so
-                        /// a `LowCardinality(Nullable(FixedString(N)))` constant reaches here with the inner
-                        /// `Nullable` intact; peel both wrappers so no variant slips past this guard (the key
-                        /// type is already `LowCardinality`/`Nullable`-stripped above).
-                        const auto const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
-                        if (WhichDataType(const_type_unwrapped).isFixedString() && isStringOrFixedString(key_expr_type_not_null))
-                        {
-                            const size_t const_bytes = const_value.safeGet<String>().size();
-                            const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
-                            if (!fixed_key || fixed_key->getN() < const_bytes)
-                                return false;
-                        }
-
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                         if (const_value.isNull())
                             return false;
@@ -4149,7 +4122,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                                 : common_type;
 
-                            auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
+                            /// Declared against the type this cast is actually given, not the stripped
+                            /// `key_expr_type` used to pick the supertype.
+                            auto func_cast = createInternalCast({chain_result_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
 
                             /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                             if (!single_point && !func_cast->hasInformationAboutMonotonicity())
@@ -5191,6 +5166,10 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     DataTypePtr current_type,
     bool single_point)
 {
+    /// The chain was built against a recursively `LowCardinality`-stripped key type, so seed it with the
+    /// stripped type here rather than in each caller: several of them pass the key column's raw type.
+    current_type = recursiveRemoveLowCardinality(current_type);
+
     for (const auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
@@ -5661,12 +5640,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (!element.monotonic_functions_chain.empty())
             {
                 key_range_storage = hyperrectangle[key_column];
-                /// The chain was built in `extractAtomFromTree` against an
-                /// `LowCardinality`-stripped key type; the runtime type must match.
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
                     *key_range_storage,
                     element.monotonic_functions_chain,
-                    recursiveRemoveLowCardinality(data_types[key_column]),
+                    data_types[key_column],
                     single_point
                 );
 

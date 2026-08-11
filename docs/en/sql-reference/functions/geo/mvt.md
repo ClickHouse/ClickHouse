@@ -22,7 +22,7 @@ Two helper functions, `MVTBoundingBox` and `MVTBoundingBoxMercator`, return the 
 restricted to it in the `WHERE` clause using an index.
 
 Point, line and polygon geometry are supported, including the `Geometry` type and the concrete geo types (`Point`,
-`MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
+`LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
 
 The resulting bytes are a complete tile that can be returned directly over the HTTP interface with `FORMAT RawBLOB`.
 
@@ -48,7 +48,7 @@ Polygon coordinates are bounded to a `2^30` window before validation — exactly
 `zoom` 18 and `extent` 4096 — so for realistic tiles geometry is validated but never clipped, and the bound only
 affects geometry placed at extreme `zoom` or `extent` values.
 
-The output geometry type depends on the input: a `Point` returns a `Point`; a `MultiPoint` returns a `MultiPoint`; a `LineString` or `MultiLineString` returns a
+The output geometry type depends on the input: a `Point` returns a `Point`; a `LineString` or `MultiLineString` returns a
 `MultiLineString`; a `Ring`, `Polygon` or `MultiPolygon` returns a `MultiPolygon` (clipping may split a geometry into
 several parts).
 
@@ -60,7 +60,7 @@ MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
 
 **Arguments**
 
-- `geometry` — Geometry in longitude/latitude degrees. Longitude is clamped to `[-180, 180]` and latitude to the Web Mercator range `[-85.05112878, 85.05112878]`. [`Point`](../../data-types/geo.md) / [`MultiPoint`](../../data-types/geo.md) / [`LineString`](../../data-types/geo.md) / [`MultiLineString`](../../data-types/geo.md) / [`Ring`](../../data-types/geo.md) / [`Polygon`](../../data-types/geo.md) / [`MultiPolygon`](../../data-types/geo.md) / [`Geometry`](../../data-types/geo.md).
+- `geometry` — Geometry in longitude/latitude degrees. Longitude is clamped to `[-180, 180]` and latitude to the Web Mercator range `[-85.05112878, 85.05112878]`. [`Point`](../../data-types/geo.md) / [`LineString`](../../data-types/geo.md) / [`MultiLineString`](../../data-types/geo.md) / [`Ring`](../../data-types/geo.md) / [`Polygon`](../../data-types/geo.md) / [`MultiPolygon`](../../data-types/geo.md) / [`Geometry`](../../data-types/geo.md).
 - `zoom` — Slippy-map zoom level, in the range `[0, 32]`. [`UInt8`](../../data-types/int-uint.md).
 - `tile_x` — Tile column index, in the range `[0, 2^zoom - 1]`. [`UInt32`](../../data-types/int-uint.md).
 - `tile_y` — Tile row index, in the range `[0, 2^zoom - 1]`. [`UInt32`](../../data-types/int-uint.md).

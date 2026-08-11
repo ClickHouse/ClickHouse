@@ -19,7 +19,7 @@ ClickHouse는 윈도우 및 윈도 함수에 대한 표준 SQL 문법을 지원�
 | 기능                                                                 | 지원 여부 | 비고                                                                                                                                                                                                                                                                                                                         |
 | ------------------------------------------------------------------ | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 즉석 윈도우 지정 (`count(*) OVER (PARTITION BY id ORDER BY time DESC)`)   | ✅     |                                                                                                                                                                                                                                                                                                                            |
-| 윈도 함수를 포함하는 표현식(예: `(count(*) OVER ()) / 2`)                       | ✅     |                                                                                                                                                                                                                                                                                                                            |
+| 윈도 함수를 포함하는 표현식(예: `(count(*) OVER ()) / 2`)                      | ✅     |                                                                                                                                                                                                                                                                                                                            |
 | `WINDOW` 절 (`SELECT ... FROM table WINDOW w AS (PARTITION BY id)`) | ✅     |                                                                                                                                                                                                                                                                                                                            |
 | `ROWS` 프레임                                                         | ✅     |                                                                                                                                                                                                                                                                                                                            |
 | `RANGE` 프레임                                                        | ✅     | 프레임을 명시적으로 지정하지 않으면 기본값으로 사용됩니다 (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                     |
@@ -30,7 +30,7 @@ ClickHouse는 윈도우 및 윈도 함수에 대한 표준 SQL 문법을 지원�
 | `percent_rank()`/`percentRank()`                                   | ✅     | 파티션 내에서 값의 상대적 순위를 효율적으로 계산합니다. 더 장황하고 계산 비용이 큰 수동 SQL 계산식 `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`을 대체합니다.                                                                                                                                              |
 | `cume_dist()`                                                      | ✅     | 값 그룹 내에서 값의 누적 분포를 계산합니다. 현재 행의 값보다 작거나 같은 값을 가진 행의 비율을 반환합니다.                                                                                                                                                                                                                                                             |
 | `lag/lead(value, offset)`                                          | ✅     | 다음 우회 방법 중 하나를 사용할 수도 있습니다:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)` 또는 `lead`의 경우 `PRECEDING` 대신 `FOLLOWING` 사용 <br /> 2) `lagInFrame/leadInFrame` — 동작은 유사하지만 윈도우 프레임을 따릅니다. `lag/lead`와 동일한 동작을 얻으려면 `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`을 사용하십시오. |
-| [`ntile(buckets)`](/ko/reference/functions/window-functions/ntile)    | ✅     | 예를 들어 윈도우를 `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`와 같이 지정하십시오.                                                                                                                                                                                                              |
+| `ntile(buckets)`                                                   | ✅     | 예를 들어 윈도우를 `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`와 같이 지정하십시오.                                                                                                                                                                                                              |
 
 <div id="syntax">
   ## 구문
@@ -71,10 +71,10 @@ WINDOW window_name as ([
 ```
 
 <div id="functions">
-  ## 윈도우 함수로만 사용할 수 있는 함수
+  ## 윈도 함수로만 사용할 수 있는 함수
 </div>
 
-다음 함수는 윈도우 함수로만 사용할 수 있습니다. 대부분은 표준 SQL 함수이며, `lagInFrame`, `leadInFrame`, `nonNegativeDerivative`는 ClickHouse 확장 기능입니다.
+다음 함수는 윈도 함수로만 사용할 수 있습니다. 대부분은 표준 SQL 함수이며, `lagInFrame`, `leadInFrame`, `nonNegativeDerivative`는 ClickHouse 확장 기능입니다.
 
 | 함수                                                                                                                                          | 설명                                                                              |
 | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -84,13 +84,8 @@ WINDOW window_name as ([
 | [`nth_value(x, offset)`](/ko/reference/functions/window-functions/nth_value)                                                                   | 정렬된 프레임의 n번째 행(`offset`)에서 계산된 첫 번째 non-NULL 값을 반환합니다.                          |
 | [`rank()`](/ko/reference/functions/window-functions/rank)                                                                                      | 현재 행의 순위를 해당 파티션 내에서 건너뛴 순위가 생기도록 매깁니다.                                         |
 | [`dense_rank()`](/ko/reference/functions/window-functions/dense_rank)                                                                          | 현재 행의 순위를 해당 파티션 내에서 건너뛴 순위 없이 매깁니다.                                            |
-| [`percent_rank()`](/ko/reference/functions/window-functions/percent_rank)                                                                      | 현재 행의 상대 순위를 해당 파티션 내에서 0과 1 사이의 값으로 계산합니다.                                     |
-| [`cume_dist()`](/ko/reference/functions/window-functions/cume_dist)                                                                            | 값 그룹 내에서 값의 누적 분포를 계산합니다.                                                       |
-| [`lag(x, offset)`](/ko/reference/functions/window-functions/lag)                                                                               | 파티션 내에서 현재 행보다 `offset`개 앞선 행에서 계산된 값을 반환합니다.                                   |
-| [`lead(x, offset)`](/ko/reference/functions/window-functions/lead)                                                                             | 파티션 내에서 현재 행보다 `offset`개 뒤의 행에서 계산된 값을 반환합니다.                                   |
 | [`lagInFrame(x)`](/ko/reference/functions/window-functions/lagInFrame)                                                                         | 정렬된 프레임 내에서 현재 행보다 지정한 물리적 오프셋만큼 앞선 행에서 계산된 값을 반환합니다.                           |
 | [`leadInFrame(x)`](/ko/reference/functions/window-functions/leadInFrame)                                                                       | 정렬된 프레임 내에서 현재 행보다 지정한 오프셋만큼 뒤의 행에서 계산된 값을 반환합니다.                               |
-| [`ntile(buckets)`](/ko/reference/functions/window-functions/ntile)                                                                             | 파티션 내의 정렬된 행을 지정된 개수의 버킷으로 나누고, 현재 행이 속한 버킷 번호를 반환합니다.                          |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/ko/reference/functions/window-functions/nonNegativeDerivative) | `timestamp_column`에 대해 `metric_column`의 음수가 아닌 미분값을 계산합니다. ClickHouse 전용 함수입니다. |
 
 <div id="examples">

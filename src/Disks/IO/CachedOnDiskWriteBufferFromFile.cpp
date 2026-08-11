@@ -352,22 +352,21 @@ void FileSegmentRangeWriter::appendFilesystemCacheLog(const FileSegment & file_s
 
     size_t file_segment_right_bound = file_segment_range.left + file_segment.getDownloadedSize() - 1;
 
-    cache_log->add([&](FilesystemCacheLogElement & element)
+    FilesystemCacheLogElement elem
     {
-        element = FilesystemCacheLogElement
-        {
-            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-            .query_id = query_id,
-            .source_file_path = source_path,
-            .file_segment_range = { file_segment_range.left, file_segment_right_bound },
-            .requested_range = {},
-            .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
-            .file_segment_key = {},
-            .file_segment_size = file_segment_range.size(),
-            .read_from_cache_attempted = false,
-            .read_buffer_id = {},
-        };
-    });
+        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+        .query_id = query_id,
+        .source_file_path = source_path,
+        .file_segment_range = { file_segment_range.left, file_segment_right_bound },
+        .requested_range = {},
+        .cache_type = FilesystemCacheLogElement::CacheType::WRITE_THROUGH_CACHE,
+        .file_segment_key = {},
+        .file_segment_size = file_segment_range.size(),
+        .read_from_cache_attempted = false,
+        .read_buffer_id = {},
+    };
+
+    cache_log->add(std::move(elem));
 }
 
 void FileSegmentRangeWriter::setFileFinishedForDistributedCache()

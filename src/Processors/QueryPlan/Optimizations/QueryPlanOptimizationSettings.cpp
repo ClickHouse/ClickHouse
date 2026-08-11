@@ -43,7 +43,6 @@ namespace Setting
     extern const SettingsBool query_plan_convert_any_join_to_semi_or_anti_join;
     extern const SettingsBool query_plan_convert_join_to_in;
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
-    extern const SettingsBool query_plan_short_circuit_constant_false_join;
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
@@ -73,6 +72,7 @@ namespace Setting
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_skip_indexes;
@@ -104,7 +104,6 @@ namespace Setting
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
-    extern const SettingsUInt64 join_runtime_filter_min_probe_rows;
     extern const SettingsBool join_runtime_filter_size_from_hash_table_stats;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
@@ -161,7 +160,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
-    short_circuit_constant_false_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_short_circuit_constant_false_join];
     execute_functions_after_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_execute_functions_after_sorting];
     reuse_storage_ordering_for_window_functions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_reuse_storage_ordering_for_window_functions];
     lift_up_union = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_lift_up_union];
@@ -209,6 +207,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
+    use_query_condition_cache_for_top_k = from[Setting::use_query_condition_cache_for_top_k];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
@@ -303,7 +302,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_pass_ratio_threshold_for_disabling = from[Setting::join_runtime_filter_pass_ratio_threshold_for_disabling];
     join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
     join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
-    join_runtime_filter_min_probe_rows = from[Setting::join_runtime_filter_min_probe_rows];
     join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];

@@ -21,7 +21,9 @@ Cert Manager を使用して ClickHouse Server と Keeper の TLS 証明書を�
 </div>
 
 <Steps>
-  <Step title="1. Certificate Issuer を作成する" id="1-create-a-certificate-issuer">
+  <Step>
+    ### 1. Certificate Issuer を作成する
+
     証明書認証局として使用する自己署名 `Issuer` を作成します。
 
     ```yaml
@@ -37,7 +39,9 @@ Cert Manager を使用して ClickHouse Server と Keeper の TLS 証明書を�
     > **注:** `Issuer` はネームスペース単位のリソースであり、それを参照する `Certificate` リソースと同じネームスペースに存在する必要があります。自己署名 issuer はテスト用途に適しています。本番環境では、[issuer オプションの一覧](https://cert-manager.io/docs/configuration/issuers/)を確認してください。
   </Step>
 
-  <Step title="2. Certificate リソースを作成する" id="2-create-certificate-resources">
+  <Step>
+    ### 2. Certificate リソースを作成する
+
     ClickHouse Server 用の `Certificate` リソースを作成します。
 
     ```yaml
@@ -60,8 +64,10 @@ Cert Manager を使用して ClickHouse Server と Keeper の TLS 証明書を�
     必要に応じて、Keeper 用にも適切な `dnsNames` と `secretName` を指定して同じ手順を繰り返してください。
   </Step>
 
-  <Step title="3. Cert Manager の Secret キーを使用するように Helm の values を設定する" id="3-configure-helm-values-to-use-cert-manager-secret-keys">
-    デフォルトでは、`onprem-clickhouse-cluster` Helm チャート は `ca.crt`、`server.crt`、`server.key` という名前の secret キーを想定しています。Cert Manager が生成するのは `ca.crt`、`tls.crt`、`tls.key` です。Helm の values でキー名を上書きしてください。
+  <Step>
+    ### 3. cert-manager の Secret キーを使用するように Helm の values を設定する
+
+    デフォルトでは、`onprem-clickhouse-cluster` Helm チャート は `ca.crt`、`server.crt`、`server.key` という名前の secret キーを想定しています。cert-manager が生成するのは `ca.crt`、`tls.crt`、`tls.key` です。Helm の values でキー名を上書きしてください。
 
     ```yaml
     server:

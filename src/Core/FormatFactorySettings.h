@@ -40,19 +40,15 @@ Possible values:
 - 0 — Disabled.
 )", 0) \
     DECLARE(Bool, output_format_csv_serialize_tuple_into_separate_columns, true, R"(
-If it set to true, then bare `Tuple` columns in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
-
-This flattening applies only to bare `Tuple`. A `Nullable(Tuple)` is always serialized as a single CSV field (so that NULL and non-null rows occupy the same number of fields), regardless of this setting.
+If it set to true, then Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost)
 )", 0) \
     DECLARE(Bool, output_format_csv_header_serialize_tuple_into_separate_columns, true, R"(
-When [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns) is enabled, the header rows of `CSVWithNames` and `CSVWithNamesAndTypes` flatten each bare `Tuple` column into its leaf fields (dotted names like `t.a`, `t.b`, and the leaf type names), so the header has the same number of columns as the data. A `Nullable(Tuple)` column is never flattened (its data stays a single CSV field), so its header keeps the single top-level column name and type. For `CustomSeparated*` this flattening applies only when `format_custom_escaping_rule = 'CSV'` and `format_custom_field_delimiter` is a single character equal to `format_csv_delimiter`; otherwise (for example the default tab delimiter or `format_custom_field_delimiter = '|'`) the header stays unflattened so it still matches the data. Set it to `0` to keep the previous behavior where the header keeps the single top-level Tuple name and type.
+When [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns) is enabled, the header rows of `CSVWithNames` and `CSVWithNamesAndTypes` flatten each Tuple column into its leaf fields (dotted names like `t.a`, `t.b`, and the leaf type names), so the header has the same number of columns as the data. For `CustomSeparated*` this flattening applies only when `format_custom_escaping_rule = 'CSV'` and `format_custom_field_delimiter` is a single character equal to `format_csv_delimiter`; otherwise (for example the default tab delimiter or `format_custom_field_delimiter = '|'`) the header stays unflattened so it still matches the data. Set it to `0` to keep the previous behavior where the header keeps the single top-level Tuple name and type.
 
 Note: a flattened header is not read back into a Tuple by name when `input_format_with_names_use_header = 1`. To read such data back into a Tuple, either set this setting to `0` on output, or read with `input_format_with_names_use_header = 0` (and, for the `*WithNamesAndTypes` formats `CSVWithNamesAndTypes` and `CustomSeparatedWithNamesAndTypes`, also `input_format_with_types_use_header = 0`, since the flattened types row is otherwise validated against the single top-level Tuple input field and rejected).
 )", 0) \
     DECLARE(Bool, input_format_csv_deserialize_separate_columns_into_tuple, true, R"(
 If it set to true, then separate columns written in CSV format can be deserialized to Tuple column.
-
-This applies only to bare `Tuple`. A `Nullable(Tuple)` is always written as a single CSV field (see [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns)) and is likewise read back from a single field, never from separate columns, regardless of this setting. Separate-columns parsing is not supported for `Nullable(Tuple)` because a leading `\N` field is ambiguous (it may be the outer NULL of the tuple or the NULL of its first element).
 )", 0) \
     DECLARE(Bool, output_format_csv_crlf_end_of_line, false, R"(
 If it is set true, end of line in CSV format will be \\r\\n instead of \\n.
@@ -235,6 +231,9 @@ Enabled by default.
 )", 0) \
     DECLARE(Bool, input_format_orc_allow_missing_columns, true, R"(
 Allow missing columns while reading ORC input formats
+)", 0) \
+    DECLARE(Bool, input_format_orc_use_fast_decoder, true, R"(
+Use a faster ORC decoder implementation.
 )", 0) \
     DECLARE(Bool, input_format_orc_filter_push_down, true, R"(
 When reading ORC files, skip whole stripes or row groups based on the WHERE/PREWHERE expressions, min/max statistics or bloom filter in the ORC metadata.
@@ -1298,7 +1297,7 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 Path of the file used to record errors while reading text formats (CSV, TSV).
 )", 0) \
     DECLARE(GeoJSONUnsupportedGeometryHandling, input_format_geojson_unsupported_geometry_handling, FormatSettings::UnsupportedGeometryHandling::Throw, R"(
-Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection`) must be stored in the `geometry` column while reading `GeoJSON` input.
+Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection` or `MultiPoint`) must be stored in the `geometry` column while reading `GeoJSON` input.
 
 Possible values:
 - `'throw'` (default) — throw an exception.
@@ -1642,7 +1641,7 @@ Enabling this option disables parallel parsing and makes deduplication impossibl
 Indicate which field of protobuf oneof was found by means of setting enum value in a special column
 )", 0) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
-Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
+Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
 )", 0) \
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
@@ -1669,7 +1668,6 @@ Supported modes:
     MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader_v3, true) \
-    MAKE_OBSOLETE(M, Bool, input_format_orc_use_fast_decoder, true) \
     MAKE_OBSOLETE(M, Bool, output_format_parquet_use_custom_encoder, true) \
     MAKE_OBSOLETE(M, ParquetVersion, output_format_parquet_version, "2.latest") \
     MAKE_OBSOLETE(M, Bool, output_format_parquet_compliant_nested_types, true) \

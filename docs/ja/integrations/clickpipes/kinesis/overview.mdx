@@ -38,48 +38,48 @@ Kinesis ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 4. ClickPipe の名前、説明 (任意) 、IAM ロールまたは認証情報、そのほかの接続情報を入力します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="接続情報を入力" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="接続の詳細を入力" size="lg" border />
 
-5. Kinesis Stream と開始オフセットを選択します。UI には、選択したソース (Kafka topic など) のサンプルドキュメントが表示されます。また、Kinesis streams では Enhanced Fan-out を有効にして、ClickPipe のパフォーマンスと安定性を向上させることもできます (Enhanced Fan-out の詳細は[こちら](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout)を参照してください) 。
+5. Kinesis Stream と開始 OFFSET を選択します。UI には、選択したソース (Kafka topic など) のサンプルドキュメントが表示されます。また、Kinesis streams では Enhanced Fan-out を有効にして、ClickPipe のパフォーマンスと安定性を向上させることもできます (Enhanced Fan-out の詳細は[こちら](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout)をご覧ください) 。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="データフォーマットと topic を設定" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="データフォーマットとトピックを設定" size="lg" border />
 
-6. 次のステップでは、データの取り込み先を新しい ClickHouse テーブルにするか、既存のテーブルを再利用するかを選択できます。画面の指示に従って、テーブル名、スキーマ、設定を変更してください。変更内容は、上部のサンプルテーブルでリアルタイムにプレビューできます。
+6. 次のステップでは、データを新しい ClickHouse table に取り込むか、既存のものを再利用するかを選択できます。画面の指示に従って、table 名、スキーマ、設定を変更してください。上部のサンプルテーブルで、変更内容をリアルタイムにプレビューできます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="table、スキーマ、settings を設定" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="テーブル、スキーマ、設定を行う" size="lg" border />
 
-用意されているコントロールを使って、高度な設定をカスタマイズすることもできます。
+用意されているコントロールを使って詳細設定をカスタマイズすることもできます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="高度な controls を設定" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="詳細コントロールを設定" size="lg" border />
 
-7. また、既存の ClickHouse テーブルにデータを取り込むこともできます。その場合、UI ではソースのフィールドを、選択した宛先テーブル内の ClickHouse フィールドにマッピングできます。
+7. または、既存の ClickHouse table にデータを取り込むこともできます。その場合、UI ではソースのフィールドを、選択した宛先テーブルの ClickHouse フィールドにマッピングできます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="既存の table を使用" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="既存のテーブルを使用" size="lg" border />
 
-8. 最後に、内部 ClickPipes ユーザーの権限を設定できます。
+8. 最後に、内部 ClickPipes user の権限を設定できます。
 
-**Permissions:** ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。カスタムロールまたは定義済みロールのいずれかを使って、この内部ユーザーに割り当てるロールを選択できます。
+**Permissions:** ClickPipes は、宛先テーブルにデータを書き込むための専用 user を作成します。カスタムロールまたは事前定義されたロールを使用して、この内部 user に割り当てるロールを選択できます。
 
-* `Full access`: クラスターへのフルアクセス権を持ちます。宛先テーブルで materialized view や Dictionary を使用する場合に便利です。
-  * `Only destination table`: 宛先テーブルに対する `INSERT` 権限のみを持ちます。
+* `Full access`: クラスターへのフルアクセスを付与します。宛先テーブルで materialized view や Dictionary を使用する場合に役立つことがあります。
+  * `Only destination table`: 宛先テーブルに対する `INSERT` 権限のみを付与します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="権限" border />
 
-9. &quot;Complete Setup&quot; をクリックすると、システムに ClickPipe が登録され、サマリーテーブルに表示されるようになります。
+9. &quot;Complete Setup&quot; をクリックすると、システムに ClickPipe が登録され、概要テーブルに一覧表示されます。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="成功通知" size="sm" border />
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="削除通知" size="lg" border />
 
-サマリーテーブルには、ソースまたは ClickHouse 内の宛先テーブルからサンプルデータを表示するためのコントロールがあります。
+概要テーブルには、ソースまたは ClickHouse 内の宛先テーブルのサンプルデータを表示するコントロールがあります。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="宛先を表示" size="lg" border />
 
-また、ClickPipe を削除したり、インジェストジョブの概要を表示したりするためのコントロールもあります。
+また、ClickPipe を削除したり、インジェスト job の概要を表示したりするためのコントロールもあります。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="概要を表示" size="lg" border />
 
-10. **おめでとうございます！** 最初の ClickPipe の設定は正常に完了しました。これが streaming ClickPipe の場合は継続的に動作し、リモートデータソースからデータをリアルタイムで取り込み続けます。それ以外の場合は、バッチを取り込んで完了します。
+10. **おめでとうございます！** 最初の ClickPipe のセットアップが完了しました。これが streaming ClickPipe の場合は継続的に稼働し、リモートのデータソースからデータをリアルタイムで取り込み続けます。そうでない場合は、Batch を取り込んで完了します。
 
 <div id="supported-data-formats">
   ## 対応データフォーマット
@@ -225,4 +225,4 @@ ClickPipe は自動的にコンシューマーを再起動し、メッセージ�
   ## 認証
 </div>
 
-Amazon Kinesis ストリームにアクセスするには、[IAM認証情報](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) または [IAM ロール](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) を使用できます。IAM ロール の設定方法の詳細については、ClickHouse Cloud で利用できるロールの設定手順を説明した[こちらのガイド](/ja/integrations/clickpipes/kinesis/auth)を参照してください
+Amazon Kinesis ストリームにアクセスするには、[IAM 認証情報](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) または [IAM ロール](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) を使用できます。IAM ロールの設定方法の詳細については、ClickHouse Cloud で使用できるロールの設定方法を説明した[こちらのガイド](/ja/integrations/clickpipes/kinesis/auth)を参照してください。

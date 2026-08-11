@@ -54,7 +54,6 @@ struct QueryPlanOptimizationSettings
     bool merge_filters;
     bool filter_push_down;
     bool convert_outer_join_to_inner_join;
-    bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
     bool lift_up_union;
@@ -95,6 +94,7 @@ struct QueryPlanOptimizationSettings
     bool aggregation_in_order;
     bool optimize_projection;
     bool use_query_condition_cache;
+    bool use_query_condition_cache_for_top_k;
     bool read_in_order_through_join;
     bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
@@ -187,7 +187,6 @@ struct QueryPlanOptimizationSettings
     Float64 join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
     UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
-    UInt64 join_runtime_filter_min_probe_rows = 1000;
     bool join_runtime_filter_size_from_hash_table_stats = false;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;

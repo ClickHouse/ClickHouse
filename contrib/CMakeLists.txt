@@ -52,7 +52,6 @@ add_contrib (openssl-cmake openssl)  # Needed for delta-lake
 
 if (USE_MUSL)
     add_contrib (musl-cmake musl)
-    add_contrib (libucontext-cmake libucontext)
 endif()
 add_contrib (abseil-cpp-cmake abseil-cpp)
 add_contrib (zlib-ng-cmake zlib-ng)

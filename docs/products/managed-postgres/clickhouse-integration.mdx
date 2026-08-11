@@ -7,12 +7,12 @@ keywords: ['postgres', 'clickhouse integration', 'cdc', 'replication', 'clickpip
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
-Every ClickHouse Managed Postgres instance comes with built-in CDC capabilities to any of your ClickHouse services. This allows you to move some or all of the data on your Postgres instance to ClickHouse and have changes in data on Postgres be reflected on ClickHouse continuous and nearly real-time. This is powered by [ClickPipes](/integrations/clickpipes/home) under the hood.
+Every Managed Postgres instance comes with built-in CDC capabilities to any of your ClickHouse services. This allows you to move some or all of the data on your Postgres instance to ClickHouse and have changes in data on Postgres be reflected on ClickHouse continuous and nearly real-time. This is powered by [ClickPipes](/integrations/clickpipes/home) under the hood.
 
 To access this, click on **ClickHouse Integration** in the sidebar of your Postgres instance.
 
@@ -61,7 +61,7 @@ Choose a destination database and select which tables to replicate:
 
 - **Destination database**: Select an existing ClickHouse database or create a new one
 - **Prefix default destination table names with schema name**: Adds the Postgres schema as a prefix to avoid naming conflicts
-- **Preserve NULL values from source**: Maintains NULL values instead of converting to type defaults. This setting applies to all tables in the pipe and cannot be changed after the pipe is created.
+- **Preserve NULL values from source**: Maintains NULL values instead of converting to defaults
 - **Remove deleted rows during merges**: For [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables, physically removes deleted rows during background merges
 
 Expand schemas and select individual tables to replicate. You can also customize destination table names and column settings.

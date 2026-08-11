@@ -8,7 +8,7 @@ keywords: ['clickstack', 'AI notebooks', 'investigación', 'observabilidad', 'Hy
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
@@ -71,7 +71,7 @@ En la parte inferior de un notebook, introduce un prompt que describa lo que qui
 Pulsa **Send** (o presiona Enter). El agente de IA hará lo siguiente:
 
 1. Examinará las fuentes de datos que tienes disponibles.
-2. Ejecutará consultas de búsqueda y agregación sobre tus logs, trazas y métricas.
+2. Ejecutará consultas de búsqueda y agregación sobre tus logs, traces y métricas.
 3. Generará una serie de tiles que mostrarán su razonamiento, las consultas que ejecutó, gráficos intermedios y un resumen final con sus conclusiones.
 
 Cada paso aparece como un tile en el notebook. Los tiles de **Thought process** muestran el razonamiento detrás de cada consulta, y los tiles de **Output** contienen las conclusiones del agente y gráficos opcionales. A diferencia de un chat de IA estándar, los notebooks te permiten ver exactamente con qué datos está trabajando la IA en cada paso, para que puedas verificar su razonamiento, detectar pistas interesantes que podría haber pasado por alto y [bifurcar](#branching) la investigación para orientarla en otra dirección.
@@ -106,7 +106,7 @@ Además de los tiles generados por IA, puedes añadir tus propios bloques de an�
 
 | Button       | Shortcut | Description                                                                                                                                         |
 | ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Search**   | `S`      | Una vista de búsqueda de logs/trazas, equivalente a la página de búsqueda.                                                                          |
+| **Search**   | `S`      | Una vista de búsqueda de logs/traces, equivalente a la página de búsqueda.                                                                          |
 | **Chart**    | `L`      | Un gráfico de líneas de series temporales, usando el mismo generador de visualizaciones que [Dashboards](/es/clickstack/features/dashboards/overview). |
 | **Table**    | `T`      | Una vista tabular de agregación.                                                                                                                    |
 | **Markdown** | `M`      | Texto libre para notas, hipótesis o conclusiones.                                                                                                   |

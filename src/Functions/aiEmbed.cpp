@@ -99,7 +99,6 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
-            /// `model` must be a plain (non-nullable) `String`; constness is enforced by the column validator.
             {"model", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -110,9 +109,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
-    /// Parameters accepted in the optional trailing `Map(String, String)` argument. `aiEmbed` does not
-    /// inherit `FunctionBaseAI`, so it declares its own spec (no `max_tokens`, which embeddings do not
-    /// use; no `model`, which is a required positional argument for `aiEmbed`).
+    /// Parameters accepted in the optional trailing `Map(String, String)` argument.
     static AIParamSpecs embeddingParams()
     {
         return {
@@ -211,6 +208,7 @@ public:
             AIEmbeddingRequest ai_embedding_request;
             ai_embedding_request.model = model;
             ai_embedding_request.dimensions = dimensions;
+            ai_embedding_request.function_name = getName();
             ai_embedding_request.inputs.reserve(batch_end - batch_start);
 
             for (size_t k = batch_start; k < batch_end; ++k)
@@ -317,7 +315,7 @@ from a chat one.
 
 The `model` is a required positional argument (a constant `String`). Unlike the text functions,
 `aiEmbed` does not read `model` from the named collection or the parameter map. A named collection
-that defines `model` is rejected rather than silently ignored.
+that defines `model` is rejected.
 
 The optional `dimensions` parameter, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.

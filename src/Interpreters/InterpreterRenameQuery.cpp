@@ -201,20 +201,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
             if (exchange_tables)
                 NamedCollectionFactory::instance().renameDependencies(to_table_id, from_table_id);
-
-            /// The name -> storage mapping just changed. Drop the affected names from this query's
-            /// per-query storage cache so the query's own subsequent lookups resolve to the current
-            /// tables rather than the version pinned before the swap. In particular this lets the
-            /// internal DROP in `CREATE OR REPLACE ... POPULATE` target the old table by the
-            /// temporary name after the internal EXCHANGE (see #108726). Concurrent queries keep
-            /// their own per-query caches and remain isolated from this rename, so a running SELECT
-            /// still reads the version it was planned against (see 03915_exchange_tables_race).
-            if (getContext()->hasQueryContext())
-            {
-                auto query_context = getContext()->getQueryContext();
-                query_context->dropStorageCacheEntry(from_table_id);
-                query_context->dropStorageCacheEntry(to_table_id);
-            }
         }
         catch (...)
         {

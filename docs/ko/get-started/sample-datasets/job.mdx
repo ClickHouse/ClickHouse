@@ -24,7 +24,7 @@ Join Order Benchmark (JOB)는 실제 데이터셋(IMDb의 스냅샷)을 기반�
 
 JOB 데이터셋은 21개의 테이블로 구성된 IMDb의 스냅샷입니다. 테이블 정의는 ClickHouse 리포지토리의 [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql)에서 확인할 수 있습니다.
 
-각 테이블은 프라이머리 키 컬럼 `id`를 기준으로 정렬된 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진을 사용하며, 이는 모든 테이블이 `id integer NOT NULL PRIMARY KEY`를 선언하는 원본 PostgreSQL 스키마를 반영한 것입니다. 널 허용 PostgreSQL 컬럼은 `Nullable(...)` 타입에 매핑됩니다.
+각 테이블은 프라이머리 키 컬럼 `id`를 기준으로 정렬된 [`MergeTree`](/ko/engines/table-engines/mergetree-family/mergetree) 엔진을 사용하며, 이는 모든 테이블이 `id integer NOT NULL PRIMARY KEY`를 선언하는 원본 PostgreSQL 스키마를 반영한 것입니다. 널 허용 PostgreSQL 컬럼은 `Nullable(...)` 타입에 매핑됩니다.
 
 테이블을 생성하세요:
 
