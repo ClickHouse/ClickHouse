@@ -669,8 +669,8 @@ void PaimonMetadata::scheduleBackgroundRefresh()
     if (refresh_interval_sec == 0)
         return;
 
-    auto & schedule_pool = getContext()->getSchedulePool();
-    refresh_task = schedule_pool.createTask(
+    auto schedule_pool = getContext()->getSchedulePool();
+    refresh_task = schedule_pool->createTask(
         StorageID::createEmpty(), "PaimonMetadataRefresh/" + persistent_components.table_path,
         [this]()
         {
