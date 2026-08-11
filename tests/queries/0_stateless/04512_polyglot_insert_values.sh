@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT $POLY -q "INSERT INTO b VALUES (true), (false)"
 echo "--- boolean transpile (expect: 1 2) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(flag), count() FROM b"
 
-# What the inline INSERT data must and must not leave in system.query_log — on the success path
+# What the inline INSERT data must and must not leave in the query log — on the success path
 # and on every failure path — is covered by 04843_polyglot_insert_log_redaction, kept separate so
 # that neither test exceeds the per-run time limit of the flaky check.
 
