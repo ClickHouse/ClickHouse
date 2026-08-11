@@ -731,16 +731,19 @@ struct ToDateTime64TransformFloat
         const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
         const time_t min_whole = minWholeSecondsForDateTime64(scale_multiplier);
         const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        /// Compare in the `Float64` domain: it represents every narrower floating-point value and the
+        /// whole-second bounds (below 2^53) exactly, while a copy of the bound in the source type is rounded —
+        /// e.g. `static_cast<Float32>(253402300799)` is `253402300416` — so both the throw guard and the clamp
+        /// would use an interior value (or, when the bound rounds outward, let an out-of-range value through).
+        const Float64 value = static_cast<Float64>(from);
+        if (value < static_cast<Float64>(min_whole) || value > static_cast<Float64>(max_whole)) [[unlikely]]
         {
-            /// Compare in the source floating-point domain (the explicit casts mirror the clamps below);
-            /// an implicit conversion of the `time_t` bounds to the source type would warn about inexactness.
-            if (from < static_cast<FromType>(min_whole) || from > static_cast<FromType>(max_whole)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", value);
+            /// Saturate to the exact type boundary: clamping `from` in the source type would round the bound.
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(
+                static_cast<Int64>(value < 0 ? min_whole : max_whole), 0, scale_multiplier);
         }
-
-        from = std::max(from, static_cast<FromType>(min_whole));
-        from = std::min(from, static_cast<FromType>(max_whole));
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
@@ -863,22 +866,20 @@ struct ToTime64TransformFloat
         if (!isFinite(from)) [[unlikely]]
             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
 
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        /// `Time64` is bounded by `MAX_TIME_TIMESTAMP` (999:59:59), not by the DateTime64 calendar range —
+        /// the same bounds the integer transforms use. Compare in the `Float64` domain: it represents every
+        /// narrower floating-point value and `MAX_TIME_TIMESTAMP` exactly, while a copy of the bound in the
+        /// source type may be rounded, so both the throw guard and the clamp would use a wrong boundary.
+        const Float64 value = static_cast<Float64>(from);
+        if (value < static_cast<Float64>(-1 * MAX_TIME_TIMESTAMP) || value > static_cast<Float64>(MAX_TIME_TIMESTAMP)) [[unlikely]]
         {
-            /// `Time64` is bounded by `MAX_TIME_TIMESTAMP` (999:59:59), not by the DateTime64 calendar range —
-            /// the same bounds the clamp below and the integer transforms use. Compare in the `Float64` domain:
-            /// it represents every `Float32` value and `MAX_TIME_TIMESTAMP` exactly.
-            if (static_cast<Float64>(from) < static_cast<Float64>(-1 * MAX_TIME_TIMESTAMP)
-                || static_cast<Float64>(from) > static_cast<Float64>(MAX_TIME_TIMESTAMP)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", value);
+            /// Saturate to the exact type boundary: clamping `from` in the source type would round the bound.
+            const auto scale_multiplier = DecimalUtils::scaleMultiplier<Time64::NativeType>(scale);
+            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(
+                value < 0 ? -static_cast<Int64>(MAX_TIME_TIMESTAMP) : static_cast<Int64>(MAX_TIME_TIMESTAMP), 0, scale_multiplier);
         }
-
-        /// Time64 has a much narrower representable range than DateTime64; clamping to the DateTime64
-        /// bounds would let casts pass values up to ~MAX_DATETIME64_TIMESTAMP through to the underlying
-        /// decimal, producing Time64 values that display correctly but compare as different from the
-        /// saturated maximum.
-        from = std::max(from, static_cast<FromType>(-static_cast<Int64>(MAX_TIME_TIMESTAMP)));
-        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
