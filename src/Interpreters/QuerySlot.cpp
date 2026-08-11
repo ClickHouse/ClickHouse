@@ -81,7 +81,7 @@ void QuerySlot::wait()
 
     {
         std::unique_lock lock(mutex);
-        cv.wait(lock, [this] { return state != State::Enqueued; });
+        cv.wait(lock, [this] { return state != State::Enqueued && !callback_running; });
 
         if (!wait_accounted)
         {
