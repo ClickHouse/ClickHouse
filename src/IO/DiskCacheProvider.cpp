@@ -370,6 +370,27 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
     if (!already_mine)
         seg.getOrSetDownloader();
 
+    /// Arm the release the moment we NEWLY win the role, BEFORE the (memory-tracked, throwable) reads
+    /// and pushes below. Winning the role must always pair with a reset: if anything below throws, the
+    /// FillClaim destructor runs `release` on unwind, so the segment never leaks DOWNLOADING (which
+    /// would abort the foreground holder dtor on `chassert(!is_last_holder)`) and never self-deadlocks
+    /// a later `waitAndRead` on this thread. Capture the segment ptr (a shared ref), not the writer.
+    if (!already_mine && seg.isDownloader())
+    {
+        c.release = [seg_ptr = segment, logger = log]() noexcept
+        {
+            try
+            {
+                if (seg_ptr->isDownloader())
+                    seg_ptr->completePartAndResetDownloader();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(logger, "Failed to release a claimed cache segment");
+            }
+        };
+    }
+
     /// Read the current write offset (`cwo`) after the role decision. If we hold the role, only we
     /// advance it, so the committed-prefix / tail split is exact; if another downloader holds it,
     /// `cwo` is a lower bound, so we under-report `available`, never over. `cwo` is object-local;
@@ -384,26 +405,6 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
         const size_t fetch_lo = std::max(lo, cwo_file);
         if (fetch_lo < hi)
             c.to_fetch.push_back(ByteRange{fetch_lo, hi - fetch_lo});
-
-        /// Release the role we NEWLY won even with nothing to fetch: holding it would otherwise
-        /// self-deadlock a later `waitAndRead` on this thread. Capture the segment ptr (a shared ref
-        /// into the cache), not the writer. Never throws - a failed completion must not mask the
-        /// fetch path's own error.
-        if (!already_mine)
-        {
-            c.release = [seg_ptr = segment, logger = log]() noexcept
-            {
-                try
-                {
-                    if (seg_ptr->isDownloader())
-                        seg_ptr->completePartAndResetDownloader();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(logger, "Failed to release a claimed cache segment");
-                }
-            };
-        }
     }
     return c;
 }
