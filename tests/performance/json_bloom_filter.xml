@@ -74,15 +74,15 @@
         ORDER BY id
         SETTINGS index_granularity = 8192
     </create_query>
-    <fill_query>INSERT INTO json_bf_perf_plain SELECT number, {json_row} FROM numbers(10000000)</fill_query>
-    <fill_query>INSERT INTO json_bf_perf_indexed SELECT number, {json_row} FROM numbers(10000000)</fill_query>
-    <fill_query>INSERT INTO json_bf_perf_ngrams SELECT number, {json_row} FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO json_bf_perf_plain SELECT number, {json_row} FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO json_bf_perf_indexed SELECT number, {json_row} FROM numbers(5000000)</fill_query>
+    <fill_query>INSERT INTO json_bf_perf_ngrams SELECT number, {json_row} FROM numbers(5000000)</fill_query>
 
-    <query>SELECT count() FROM {table} WHERE data.user.id = 8500000</query>
-    <query>SELECT count() FROM {table} WHERE data.user.id = 11000000</query>
-    <query>SELECT count() FROM {table} WHERE data.user.name = 'XWUz4pdxBqvshVjLulOzxA=='</query>
-    <query>SELECT count() FROM {table} WHERE has(data.tags, 'tag-8500000')</query>
-    <query>SELECT count() FROM {ngram_table} WHERE data.user.name LIKE '%4pdxBqvshVjL%'</query>
+    <query>SELECT count() FROM {table} WHERE data.user.id = 4250000</query>
+    <query>SELECT count() FROM {table} WHERE data.user.id = 6000000</query>
+    <query>SELECT count() FROM {table} WHERE data.user.name = '/FZrsPXszERO8v9EiB4YGg=='</query>
+    <query>SELECT count() FROM {table} WHERE has(data.tags, 'tag-4250000')</query>
+    <query>SELECT count() FROM {ngram_table} WHERE data.user.name LIKE '%sPXszERO8v9E%'</query>
 
     <drop_query>DROP TABLE IF EXISTS json_bf_perf_plain</drop_query>
     <drop_query>DROP TABLE IF EXISTS json_bf_perf_indexed</drop_query>
