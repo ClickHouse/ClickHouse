@@ -22,6 +22,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/DataPropertyDerivation.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -82,6 +83,9 @@ DataPropertySet completeProperties(const Block & header)
          {0, 0, header.getByPosition(0).name},
          ColumnLineageKind::Identity,
          lineageProvenance(DataPropertyTransformationKind::Identity)});
+    SortDescription sorting;
+    sorting.emplace_back(header.getByPosition(0).name);
+    properties.setSorting({std::move(sorting), SortingScope::Global});
     return properties;
 }
 
@@ -96,6 +100,27 @@ public:
     String getName() const override { return "DataPropertyTestSource"; }
     void initializePipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override { }
     QueryPlanStepPtr clone() const override { return std::make_unique<TestSourceStep>(*this); }
+};
+
+class TestUnknownStep final : public ITransformingStep
+{
+public:
+    explicit TestUnknownStep(const SharedHeader & header)
+        : ITransformingStep(
+              header,
+              header,
+              Traits{
+                  {.returns_single_stream = false, .preserves_number_of_streams = true, .preserves_sorting = false},
+                  {.preserves_number_of_rows = true}})
+    {
+    }
+
+    String getName() const override { return "DataPropertyUnknown"; }
+    void transformPipeline(QueryPipelineBuilder &, const BuildQueryPipelineSettings &) override { }
+    QueryPlanStepPtr clone() const override { return std::make_unique<TestUnknownStep>(*this); }
+
+private:
+    void updateOutputHeader() override { output_header = input_headers.front(); }
 };
 
 std::unique_ptr<AggregatingStep> makeFinalAggregationStep(const SharedHeader & input_header, const Names & keys)
@@ -266,6 +291,9 @@ TEST(DataPropertyDerivation, AliasPreservesUniqueKey)
     ExpressionStep expression(shared_header, dag.clone());
 
     auto input_properties = propertiesWithUniqueKey({{0, "id"}}, header);
+    SortDescription input_sorting;
+    input_sorting.emplace_back("id", -1, 1);
+    input_properties.setSorting({std::move(input_sorting), SortingScope::Global});
     const std::array children{input_properties};
     auto properties = deriveDataProperties(expression, children);
 
@@ -280,6 +308,38 @@ TEST(DataPropertyDerivation, AliasPreservesUniqueKey)
     ASSERT_EQ(properties.columnLineage().size(), 1u);
     EXPECT_EQ(properties.columnLineage().front().kind, ColumnLineageKind::Identity);
     EXPECT_EQ(properties.columnLineage().front().provenance, lineageProvenance(DataPropertyTransformationKind::Identity));
+    ASSERT_EQ(properties.sorting().sort_description.size(), 1u);
+    EXPECT_EQ(properties.sorting().sort_description.front().column_name, "renamed_id");
+    EXPECT_EQ(properties.sorting().sort_description.front().direction, -1);
+    EXPECT_EQ(properties.sorting().sort_scope, SortingScope::Global);
+}
+
+TEST(DataPropertyDerivation, ExpressionSortingKeepsOnlyMappedPrefix)
+{
+    auto type = std::make_shared<DataTypeUInt64>();
+    Block header;
+    addColumn(header, "first", type);
+    addColumn(header, "second", type);
+    auto shared_header = std::make_shared<const Block>(header);
+
+    ActionsDAG dag;
+    const auto & first = dag.addInput("first", type);
+    dag.addInput("second", type);
+    const auto & renamed = dag.addAlias(first, "renamed_first");
+    dag.addOrReplaceInOutputs(renamed);
+    ExpressionStep expression(shared_header, dag.clone());
+
+    DataPropertySet input;
+    SortDescription input_sorting;
+    input_sorting.emplace_back("first");
+    input_sorting.emplace_back("second", -1);
+    input.setSorting({std::move(input_sorting), SortingScope::Global});
+    const std::array children{input};
+    const auto properties = deriveDataProperties(expression, children);
+
+    ASSERT_EQ(properties.sorting().sort_description.size(), 1u);
+    EXPECT_EQ(properties.sorting().sort_description.front().column_name, "renamed_first");
+    EXPECT_EQ(properties.sorting().sort_scope, SortingScope::Global);
 }
 
 TEST(DataPropertyDerivation, DeterministicNonIdentityFunctionDoesNotPreserveUniqueKey)
@@ -579,6 +639,84 @@ TEST(DataPropertyDerivation, PlanTraversalFollowsCommonSubplanReference)
     EXPECT_TRUE(deriveDataPropertiesForPlanDAG(partial_reference).uniqueKeys().empty());
 }
 
+TEST(DataPropertyDerivation, CommonSubplanReferenceRemapsSortingAndTruncatesMissingSuffix)
+{
+    Block input_header;
+    addColumn(input_header, "id", std::make_shared<DataTypeUInt64>());
+    addColumn(input_header, "tenant", std::make_shared<DataTypeUInt32>());
+    auto shared_input_header = std::make_shared<const Block>(input_header);
+
+    QueryPlan::Node leaf;
+    leaf.step = std::make_unique<TestSourceStep>(shared_input_header);
+    SortDescription sort_description;
+    sort_description.emplace_back("id", -1, 1);
+    sort_description.emplace_back("tenant", 1, -1);
+    QueryPlan::Node sorting;
+    sorting.step = std::make_unique<SortingStep>(shared_input_header, sort_description, 0, SortingStep::Settings(65536));
+    sorting.children = {&leaf};
+    QueryPlan::Node common_subplan;
+    common_subplan.step = std::make_unique<CommonSubplanStep>(shared_input_header);
+    common_subplan.children = {&sorting};
+
+    Block reference_header;
+    reference_header.insert(input_header.getByName("tenant"));
+    reference_header.insert(input_header.getByName("id"));
+    QueryPlan::Node reference;
+    reference.step = std::make_unique<CommonSubplanReferenceStep>(
+        std::make_shared<const Block>(reference_header), &common_subplan, ColumnIdentifiers{"tenant", "id"});
+    const auto remapped = deriveDataPropertiesForPlanDAG(reference);
+    ASSERT_EQ(remapped.sorting().sort_description.size(), 2u);
+    EXPECT_EQ(remapped.sorting().sort_description[0].column_name, "id");
+    EXPECT_EQ(remapped.sorting().sort_description[1].column_name, "tenant");
+    EXPECT_EQ(remapped.sorting().sort_scope, SortingScope::Global);
+
+    Block partial_header;
+    partial_header.insert(input_header.getByName("id"));
+    QueryPlan::Node partial_reference;
+    partial_reference.step = std::make_unique<CommonSubplanReferenceStep>(
+        std::make_shared<const Block>(partial_header), &common_subplan, ColumnIdentifiers{"id"});
+    const auto partial = deriveDataPropertiesForPlanDAG(partial_reference);
+    ASSERT_EQ(partial.sorting().sort_description.size(), 1u);
+    EXPECT_EQ(partial.sorting().sort_description.front().column_name, "id");
+}
+
+TEST(DataPropertyDerivation, MultiChildUnionKeepsCommonStreamPrefix)
+{
+    Block header;
+    addColumn(header, "first", std::make_shared<DataTypeUInt64>());
+    addColumn(header, "second", std::make_shared<DataTypeUInt64>());
+    auto shared_header = std::make_shared<const Block>(header);
+    UnionStep union_step({shared_header, shared_header, shared_header});
+
+    std::array<DataPropertySet, 3> children;
+    SortDescription first_sorting;
+    first_sorting.emplace_back("first");
+    first_sorting.emplace_back("second");
+    children[0].setSorting({std::move(first_sorting), SortingScope::Global});
+    SortDescription second_sorting;
+    second_sorting.emplace_back("first");
+    children[1].setSorting({std::move(second_sorting), SortingScope::Global});
+    SortDescription third_sorting;
+    third_sorting.emplace_back("first");
+    third_sorting.emplace_back("second", -1);
+    children[2].setSorting({std::move(third_sorting), SortingScope::Stream});
+
+    const std::array child_sorting{children[0].sorting(), children[1].sorting(), children[2].sorting()};
+    const auto guaranteed = deriveSortingProperty(union_step, child_sorting);
+    EXPECT_FALSE(guaranteed.requires_union_narrowing_disabled);
+
+    const auto properties = deriveDataProperties(union_step, children);
+    ASSERT_EQ(properties.sorting().sort_description.size(), 1u);
+    EXPECT_EQ(properties.sorting().sort_description.front().column_name, "first");
+    EXPECT_EQ(properties.sorting().sort_scope, SortingScope::Stream);
+
+    UnionStep narrowable_union({shared_header, shared_header, shared_header}, 0, true);
+    const auto conditional = deriveSortingProperty(narrowable_union, child_sorting);
+    EXPECT_TRUE(conditional.requires_union_narrowing_disabled);
+    EXPECT_EQ(conditional.property, properties.sorting());
+    EXPECT_TRUE(deriveDataProperties(narrowable_union, children).sorting().empty());
+}
+
 TEST(DataPropertyDerivation, PlanTraversalRejectsCommonSubplanReferenceCycle)
 {
     Block header;
@@ -604,6 +742,10 @@ TEST(DataPropertyDerivation, SafeRowSubsetStepsPreserveFacts)
     auto shared_header = std::make_shared<const Block>(header);
 
     auto child = propertiesWithUniqueKey({{0, "id"}}, header);
+    SortDescription child_sorting;
+    child_sorting.emplace_back("id");
+    child_sorting.emplace_back("keep");
+    child.setSorting({std::move(child_sorting), SortingScope::Global});
     const std::array children{child};
 
     LimitStep limit(shared_header, 10, 0);
@@ -612,7 +754,16 @@ TEST(DataPropertyDerivation, SafeRowSubsetStepsPreserveFacts)
     SortDescription sort_description;
     sort_description.emplace_back("id");
     SortingStep sorting(shared_header, sort_description, 0, SortingStep::Settings(65536));
-    EXPECT_EQ(deriveDataProperties(sorting, children), child);
+    auto globally_sorted = child;
+    globally_sorted.setSorting({sort_description, SortingScope::Global});
+    EXPECT_EQ(deriveDataProperties(sorting, children), globally_sorted);
+
+    SortDescription partition_by;
+    partition_by.emplace_back("keep");
+    SortingStep partitioned_sorting(shared_header, sort_description, partition_by, 0, SortingStep::Settings(65536));
+    auto stream_sorted = child;
+    stream_sorted.setSorting({sort_description, SortingScope::Stream});
+    EXPECT_EQ(deriveDataProperties(partitioned_sorting, children), stream_sorted);
 
     auto fill_description = sort_description;
     fill_description.front().with_fill = true;
@@ -622,6 +773,7 @@ TEST(DataPropertyDerivation, SafeRowSubsetStepsPreserveFacts)
     EXPECT_TRUE(filled.functionalDependencies().empty());
     EXPECT_TRUE(filled.nonNullColumns().empty());
     EXPECT_TRUE(filled.columnLineage().empty());
+    EXPECT_EQ(filled.sorting(), (SortingProperty{fill_description, SortingScope::Global}));
 
     ActionsDAG filter_dag;
     const auto & id = filter_dag.addInput("id", id_type);
@@ -636,6 +788,12 @@ TEST(DataPropertyDerivation, SafeRowSubsetStepsPreserveFacts)
         filtered.uniqueKeys().front().provenance,
         DataPropertyProvenance::storageDeclaration().transformed(DataPropertyTransformationKind::FilterSubset));
     EXPECT_FALSE(isProvenStrongBagKey(filtered.uniqueKeys().front()));
+    ASSERT_EQ(filtered.sorting().sort_description.size(), 1u);
+    EXPECT_EQ(filtered.sorting().sort_description.front().column_name, "id");
+    EXPECT_EQ(filtered.sorting().sort_scope, SortingScope::Global);
+
+    TestUnknownStep unknown(shared_header);
+    EXPECT_TRUE(deriveDataProperties(unknown, children).sorting().empty());
 }
 
 TEST(DataPropertyDerivation, CompleteFactsPassThroughWithoutModifyingSafeCaller)

@@ -34,6 +34,7 @@ using QueryPlanOptimizations::ColumnLineageKind;
 using QueryPlanOptimizations::DataPropertyDependencyKind;
 using QueryPlanOptimizations::DataPropertyEqualityMode;
 using QueryPlanOptimizations::DataPropertyProvenance;
+using QueryPlanOptimizations::SortingScope;
 
 template <typename T>
 const T & checkedGet(const std::vector<T> & values, UInt32 index, std::string_view description)
@@ -81,9 +82,19 @@ const JoinOrderLineageDefinition & JoinOrderDataPropertyCatalog::lineage(JoinOrd
     return checkedGet(lineage_definitions, id.value, "lineage");
 }
 
+const JoinOrderSortingDefinition & JoinOrderDataPropertyCatalog::sorting(JoinOrderSortingId id) const
+{
+    return checkedGet(sorting_definitions, id.value, "sorting");
+}
+
 std::span<const JoinOrderColumnId> JoinOrderDataPropertyCatalog::columns(JoinOrderFactRange range) const
 {
     return checkedSpan(fact_columns, range, "fact columns");
+}
+
+std::span<const JoinOrderSortColumnDefinition> JoinOrderDataPropertyCatalog::sortColumns(JoinOrderFactRange range) const
+{
+    return checkedSpan(sort_column_definitions, range, "sort columns");
 }
 
 const String & JoinOrderDataPropertyCatalog::name(JoinOrderNameId id) const
@@ -118,6 +129,11 @@ std::span<const JoinOrderFunctionalDependencyId> JoinOrderDataPropertyCatalog::f
 std::span<const JoinOrderLineageId> JoinOrderDataPropertyCatalog::lineageForRelation(UInt32 relation) const
 {
     return checkedSpan(relation_lineage, checkedGet(relation_lineage_ranges, relation, "relation lineage range"), "relation lineage");
+}
+
+std::optional<JoinOrderSortingId> JoinOrderDataPropertyCatalog::sortingForRelation(UInt32 relation) const
+{
+    return checkedGet(relation_sorting, relation, "relation sorting");
 }
 
 bool JoinOrderDataPropertyCatalog::isIntrinsicNonNull(JoinOrderColumnId id) const
@@ -158,6 +174,20 @@ struct JoinOrderDataPropertyCatalogBuilder::Impl
         DataPropertyProvenance provenance;
     };
 
+    struct LocalSortColumn
+    {
+        UInt32 column = 0;
+        Int8 direction = 1;
+        Int8 nulls_direction = 1;
+        std::optional<String> collation_locale;
+    };
+
+    struct LocalSorting
+    {
+        std::vector<LocalSortColumn> columns;
+        SortingScope scope{SortingScope::Stream};
+    };
+
     struct Segment
     {
         std::vector<String> column_names;
@@ -166,6 +196,7 @@ struct JoinOrderDataPropertyCatalogBuilder::Impl
         std::vector<LocalKey> unique_keys;
         std::vector<LocalFunctionalDependency> functional_dependencies;
         std::vector<LocalLineage> lineage;
+        std::optional<LocalSorting> sorting;
     };
 
     std::vector<Segment> segments;
@@ -249,6 +280,42 @@ JoinOrderDataPropertyCatalogBuilder::appendLeaf(const QueryPlanOptimizations::Da
              fact.provenance});
     }
 
+    if (!properties.sorting().empty())
+    {
+        Impl::LocalSorting sorting;
+        sorting.scope = properties.sorting().sort_scope;
+        sorting.columns.reserve(properties.sorting().sort_description.size());
+        bool valid = true;
+        for (const auto & sort_column : properties.sorting().sort_description)
+        {
+            std::optional<UInt32> position;
+            for (size_t candidate = 0; candidate < segment.column_names.size(); ++candidate)
+            {
+                if (segment.column_names[candidate] != sort_column.column_name)
+                    continue;
+                if (position)
+                {
+                    valid = false;
+                    break;
+                }
+                position = checkedJoinOrderUInt32(candidate, "sorting output positions");
+            }
+            if (!valid || !position || (sort_column.direction != 1 && sort_column.direction != -1)
+                || (sort_column.nulls_direction != 1 && sort_column.nulls_direction != -1))
+            {
+                valid = false;
+                break;
+            }
+            sorting.columns.push_back(
+                {*position,
+                 static_cast<Int8>(sort_column.direction),
+                 static_cast<Int8>(sort_column.nulls_direction),
+                 sort_column.collator ? std::optional<String>(sort_column.collator->getLocale()) : std::nullopt});
+        }
+        if (valid && !sorting.columns.empty())
+            segment.sorting = std::move(sorting);
+    }
+
     impl->segments.push_back(std::move(segment));
     return *this;
 }
@@ -284,6 +351,7 @@ std::shared_ptr<const JoinOrderDataPropertyCatalog> JoinOrderDataPropertyCatalog
     catalog->relation_unique_key_ranges.reserve(catalog->relation_count);
     catalog->relation_functional_dependency_ranges.reserve(catalog->relation_count);
     catalog->relation_lineage_ranges.reserve(catalog->relation_count);
+    catalog->relation_sorting.reserve(catalog->relation_count);
 
     std::unordered_map<String, JoinOrderNameId> name_ids;
     auto intern_name = [&](const String & value)
@@ -334,6 +402,34 @@ std::shared_ptr<const JoinOrderDataPropertyCatalog> JoinOrderDataPropertyCatalog
             column_ids.push_back(id);
         }
         catalog->relation_column_ranges.push_back(column_range);
+
+        std::optional<JoinOrderSortingId> sorting_id;
+        if (segment.sorting)
+        {
+            JoinOrderFactRange sorting_columns{
+                checkedJoinOrderUInt32(catalog->sort_column_definitions.size(), "sort columns"),
+                checkedJoinOrderUInt32(segment.sorting->columns.size(), "sort columns")};
+            for (const auto & local_sort_column : segment.sorting->columns)
+            {
+                if (local_sort_column.column >= column_ids.size())
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Invalid local join-order sorting column {} (size {})",
+                        local_sort_column.column,
+                        column_ids.size());
+                std::optional<JoinOrderNameId> collation_locale;
+                if (local_sort_column.collation_locale)
+                    collation_locale = intern_name(*local_sort_column.collation_locale);
+                catalog->sort_column_definitions.push_back(
+                    {column_ids[local_sort_column.column],
+                     local_sort_column.direction,
+                     local_sort_column.nulls_direction,
+                     collation_locale});
+            }
+            sorting_id = JoinOrderSortingId{checkedJoinOrderUInt32(catalog->sorting_definitions.size(), "sorting properties")};
+            catalog->sorting_definitions.push_back({relation, sorting_columns, segment.sorting->scope});
+        }
+        catalog->relation_sorting.push_back(sorting_id);
 
         const UInt32 key_offset = checkedJoinOrderUInt32(catalog->relation_unique_keys.size(), "relation unique keys");
         for (const auto & local_key : segment.unique_keys)

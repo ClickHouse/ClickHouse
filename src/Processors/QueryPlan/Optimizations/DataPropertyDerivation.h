@@ -18,6 +18,18 @@ struct StorageInMemoryMetadata;
 namespace QueryPlanOptimizations
 {
 
+struct SortingPropertyDerivationResult
+{
+    SortingProperty property;
+    /// A narrowable `UnionStep` may concatenate sorted streams and invalidate
+    /// `property`; callers may advertise it only after disabling that narrowing.
+    bool requires_union_narrowing_disabled = false;
+};
+
+/// Pure transfer function shared by diagnostics and `applyOrder`. Conditional
+/// physical requirements are returned explicitly rather than mutating the step.
+SortingPropertyDerivationResult deriveSortingProperty(const IQueryPlanStep & step, std::span<const SortingProperty> child_properties);
+
 /// Pure helper used by storage-backed source steps and focused tests.
 DataPropertySet deriveDataPropertiesForStorageRead(const Block & output_header, const StorageInMemoryMetadata * metadata);
 

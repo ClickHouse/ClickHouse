@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Columns/Collator.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -180,9 +181,15 @@ std::pair<std::optional<UInt64>, double> optimizeTwoRelationJoin(
     graph.relation_stats
         = {{.estimated_rows = left_rows, .column_stats = {{"left_id", ColumnStats{.num_distinct_values = 1}}}, .table_name = "left"},
            {.estimated_rows = right_rows, .column_stats = {{"right_id", ColumnStats{.num_distinct_values = 1}}}, .table_name = "right"}};
-    graph.data_property_catalog = makeCatalog(
-        {{makeProperties(left_header), left_header},
-         {makeProperties(right_header, right_unique ? std::vector<size_t>{0} : std::vector<size_t>{}, right_key_evidence), right_header}});
+    auto left_properties = makeProperties(left_header);
+    SortDescription left_sorting;
+    left_sorting.emplace_back("left_id");
+    left_properties.setSorting({std::move(left_sorting), SortingScope::Stream});
+    auto right_properties = makeProperties(right_header, right_unique ? std::vector<size_t>{0} : std::vector<size_t>{}, right_key_evidence);
+    SortDescription right_sorting;
+    right_sorting.emplace_back("right_id", -1);
+    right_properties.setSorting({std::move(right_sorting), SortingScope::Global});
+    graph.data_property_catalog = makeCatalog({{std::move(left_properties), left_header}, {std::move(right_properties), right_header}});
     graph.canonical_property_region_rejection = region_rejection;
     graph.edges.push_back(predicate);
 
@@ -798,6 +805,45 @@ TEST(JoinOrderDataProperties, CatalogStoresTypedSourceQualifiedColumnsAndTrusted
     EXPECT_EQ(catalog->typeName(JoinOrderColumnId{0}), "UInt64");
     ASSERT_EQ(catalog->uniqueKeyCount(), 1u);
     EXPECT_TRUE(catalog->isTrustedUniqueKey(JoinOrderUniqueKeyId{0}));
+}
+
+TEST(JoinOrderDataProperties, CatalogStoresSortingSequenceSemanticsAndScope)
+{
+    auto header = makeHeader({"first", "second"});
+    auto properties = makeProperties(header);
+    const auto collator = std::make_shared<Collator>("en_US");
+    SortDescription sorting;
+    sorting.emplace_back("second", -1, 1, collator);
+    sorting.emplace_back("first", 1, -1);
+    properties.setSorting({std::move(sorting), SortingScope::Global});
+
+    auto catalog = makeCatalog({{properties, header}}, false);
+    ASSERT_EQ(catalog->sortingCount(), 1u);
+    const auto sorting_id = catalog->sortingForRelation(0);
+    ASSERT_TRUE(sorting_id.has_value());
+    const auto & catalog_sorting = catalog->sorting(*sorting_id);
+    EXPECT_EQ(catalog_sorting.relation, 0u);
+    EXPECT_EQ(catalog_sorting.scope, SortingScope::Global);
+    const auto columns = catalog->sortColumns(catalog_sorting.columns);
+    ASSERT_EQ(columns.size(), 2u);
+    EXPECT_EQ(columns[0].column, (JoinOrderColumnId{1}));
+    EXPECT_EQ(columns[0].direction, -1);
+    EXPECT_EQ(columns[0].nulls_direction, 1);
+    ASSERT_TRUE(columns[0].collation_locale.has_value());
+    EXPECT_EQ(catalog->name(*columns[0].collation_locale), collator->getLocale());
+    EXPECT_EQ(columns[1].column, (JoinOrderColumnId{0}));
+    EXPECT_EQ(columns[1].direction, 1);
+    EXPECT_EQ(columns[1].nulls_direction, -1);
+    EXPECT_FALSE(columns[1].collation_locale.has_value());
+
+    auto ambiguous_header = makeHeader({"id", "id"});
+    DataPropertySet ambiguous_properties;
+    SortDescription ambiguous_sorting;
+    ambiguous_sorting.emplace_back("id");
+    ambiguous_properties.setSorting({std::move(ambiguous_sorting), SortingScope::Stream});
+    auto ambiguous_catalog = makeCatalog({{ambiguous_properties, ambiguous_header}}, false);
+    EXPECT_EQ(ambiguous_catalog->sortingCount(), 0u);
+    EXPECT_FALSE(ambiguous_catalog->sortingForRelation(0).has_value());
 }
 
 TEST(JoinOrderDataProperties, StorageDeclarationIsDiagnosticOnly)

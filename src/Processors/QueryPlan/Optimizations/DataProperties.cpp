@@ -160,7 +160,8 @@ std::optional<ColumnSet> resolveColumnSetByName(std::span<const String> output_n
 
 bool DataPropertySet::empty() const
 {
-    return unique_keys.empty() && functional_dependencies.empty() && non_null_columns.empty() && lineage.empty();
+    return unique_keys.empty() && functional_dependencies.empty() && non_null_columns.empty() && lineage.empty()
+        && sorting_property.empty();
 }
 
 bool DataPropertySet::addUniqueKey(UniqueKeyFact fact)
@@ -314,6 +315,29 @@ String columnLineageKindToString(ColumnLineageKind kind)
     return "unknown";
 }
 
+String sortingPropertyToString(const SortingProperty & sorting)
+{
+    if (sorting.empty())
+        return "[]";
+
+    auto column_strings = sorting.sort_description
+        | std::views::transform(
+                              [](const auto & column)
+                              {
+                                  String result = fmt::format(
+                                      "{} {} NULLS {}",
+                                      column.column_name,
+                                      column.direction > 0 ? "ASC" : "DESC",
+                                      column.nulls_direction == column.direction ? "LAST" : "FIRST");
+                                  if (column.collator)
+                                      result += fmt::format(" COLLATE {}", column.collator->getLocale());
+                                  if (column.with_fill)
+                                      result += " WITH FILL";
+                                  return result;
+                              });
+    return fmt::format("{}:[{}]", sorting.sort_scope == SortingScope::Global ? "global" : "stream", fmt::join(column_strings, ", "));
+}
+
 String dumpColumnSet(const ColumnSet & columns)
 {
     return fmt::format(
@@ -362,11 +386,12 @@ String DataPropertySet::dump() const
                                });
 
     return fmt::format(
-        "unique_keys=[{}], fds=[{}], non_null=[{}], lineage=[{}]",
+        "unique_keys=[{}], fds=[{}], non_null=[{}], lineage=[{}], sorting={}",
         fmt::join(unique_key_strings, ", "),
         fmt::join(fd_strings, ", "),
         fmt::join(non_null_strings, ", "),
-        fmt::join(lineage_strings, ", "));
+        fmt::join(lineage_strings, ", "),
+        sortingPropertyToString(sorting_property));
 }
 
 }

@@ -32,12 +32,14 @@ struct JoinOrderColumnIdTag;
 struct JoinOrderUniqueKeyIdTag;
 struct JoinOrderFunctionalDependencyIdTag;
 struct JoinOrderLineageIdTag;
+struct JoinOrderSortingIdTag;
 struct JoinOrderNameIdTag;
 
 using JoinOrderColumnId = JoinOrderCatalogId<JoinOrderColumnIdTag>;
 using JoinOrderUniqueKeyId = JoinOrderCatalogId<JoinOrderUniqueKeyIdTag>;
 using JoinOrderFunctionalDependencyId = JoinOrderCatalogId<JoinOrderFunctionalDependencyIdTag>;
 using JoinOrderLineageId = JoinOrderCatalogId<JoinOrderLineageIdTag>;
+using JoinOrderSortingId = JoinOrderCatalogId<JoinOrderSortingIdTag>;
 using JoinOrderNameId = JoinOrderCatalogId<JoinOrderNameIdTag>;
 
 struct JoinOrderFactRange
@@ -85,6 +87,21 @@ struct JoinOrderLineageDefinition
     QueryPlanOptimizations::DataPropertyProvenance provenance;
 };
 
+struct JoinOrderSortColumnDefinition
+{
+    JoinOrderColumnId column;
+    Int8 direction = 1;
+    Int8 nulls_direction = 1;
+    std::optional<JoinOrderNameId> collation_locale;
+};
+
+struct JoinOrderSortingDefinition
+{
+    UInt32 relation = 0;
+    JoinOrderFactRange columns;
+    QueryPlanOptimizations::SortingScope scope{QueryPlanOptimizations::SortingScope::Stream};
+};
+
 class JoinOrderDataPropertyCatalog
 {
 public:
@@ -93,12 +110,15 @@ public:
     size_t uniqueKeyCount() const { return unique_key_definitions.size(); }
     size_t functionalDependencyCount() const { return functional_dependency_definitions.size(); }
     size_t lineageCount() const { return lineage_definitions.size(); }
+    size_t sortingCount() const { return sorting_definitions.size(); }
 
     const JoinOrderColumnDefinition & column(JoinOrderColumnId id) const;
     const JoinOrderUniqueKeyDefinition & uniqueKey(JoinOrderUniqueKeyId id) const;
     const JoinOrderFunctionalDependencyDefinition & functionalDependency(JoinOrderFunctionalDependencyId id) const;
     const JoinOrderLineageDefinition & lineage(JoinOrderLineageId id) const;
+    const JoinOrderSortingDefinition & sorting(JoinOrderSortingId id) const;
     std::span<const JoinOrderColumnId> columns(JoinOrderFactRange range) const;
+    std::span<const JoinOrderSortColumnDefinition> sortColumns(JoinOrderFactRange range) const;
     const String & name(JoinOrderNameId id) const;
     const String & typeName(JoinOrderColumnId id) const;
 
@@ -106,6 +126,7 @@ public:
     std::span<const JoinOrderUniqueKeyId> uniqueKeysForRelation(UInt32 relation) const;
     std::span<const JoinOrderFunctionalDependencyId> functionalDependenciesForRelation(UInt32 relation) const;
     std::span<const JoinOrderLineageId> lineageForRelation(UInt32 relation) const;
+    std::optional<JoinOrderSortingId> sortingForRelation(UInt32 relation) const;
 
     bool isIntrinsicNonNull(JoinOrderColumnId id) const;
     bool isTrustedUniqueKey(JoinOrderUniqueKeyId id) const;
@@ -119,12 +140,15 @@ private:
     std::vector<JoinOrderUniqueKeyDefinition> unique_key_definitions;
     std::vector<JoinOrderFunctionalDependencyDefinition> functional_dependency_definitions;
     std::vector<JoinOrderLineageDefinition> lineage_definitions;
+    std::vector<JoinOrderSortingDefinition> sorting_definitions;
+    std::vector<JoinOrderSortColumnDefinition> sort_column_definitions;
     std::vector<JoinOrderColumnId> fact_columns;
 
     std::vector<JoinOrderColumnId> relation_columns;
     std::vector<JoinOrderUniqueKeyId> relation_unique_keys;
     std::vector<JoinOrderFunctionalDependencyId> relation_functional_dependencies;
     std::vector<JoinOrderLineageId> relation_lineage;
+    std::vector<std::optional<JoinOrderSortingId>> relation_sorting;
     std::vector<JoinOrderFactRange> relation_column_ranges;
     std::vector<JoinOrderFactRange> relation_unique_key_ranges;
     std::vector<JoinOrderFactRange> relation_functional_dependency_ranges;

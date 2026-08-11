@@ -164,6 +164,23 @@ TEST(DataProperties, NameResolutionRejectsMissingAndAmbiguousOutputs)
     EXPECT_FALSE(resolveColumnSetByName(unique_output_names, missing_names).has_value());
 }
 
+TEST(DataProperties, SortingPropertyPreservesSequenceDirectionNullsAndScope)
+{
+    SortDescription description;
+    description.emplace_back("tenant", -1, 1);
+    description.emplace_back("id", 1, -1);
+
+    DataPropertySet properties;
+    properties.setSorting({description, SortingScope::Global});
+    EXPECT_FALSE(properties.empty());
+    EXPECT_EQ(properties.sorting(), (SortingProperty{description, SortingScope::Global}));
+    EXPECT_EQ(sortingPropertyToString(properties.sorting()), "global:[tenant DESC NULLS FIRST, id ASC NULLS FIRST]");
+
+    std::swap(description[0], description[1]);
+    EXPECT_NE(properties.sorting(), (SortingProperty{description, SortingScope::Global}));
+    EXPECT_NE(properties.sorting(), (SortingProperty{properties.sorting().sort_description, SortingScope::Stream}));
+}
+
 TEST(DataProperties, DumpIsStableAndIncludesEvidence)
 {
     DataPropertySet properties;
@@ -173,5 +190,5 @@ TEST(DataProperties, DumpIsStableAndIncludesEvidence)
     EXPECT_EQ(
         properties.dump(),
         "unique_keys=[[0:id, 1:tenant] (origin=storage-declaration, confidence=diagnostic-only, transformations=[]; "
-        "equality=non-null-ordinary)], fds=[], non_null=[0:id], lineage=[]");
+        "equality=non-null-ordinary)], fds=[], non_null=[0:id], lineage=[], sorting=[]");
 }

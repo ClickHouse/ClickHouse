@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SortDescription.h>
 #include <base/types.h>
 
 #include <cstddef>
@@ -180,6 +181,24 @@ struct ColumnLineageFact
     bool operator==(const ColumnLineageFact &) const = default;
 };
 
+enum class SortingScope : UInt8
+{
+    Stream,
+    Global,
+};
+
+/// Guaranteed physical ordering of a plan step's output. `Stream` means that
+/// every output stream is sorted independently; `Global` means all output rows
+/// share one order. A non-empty description also guarantees every prefix.
+struct SortingProperty
+{
+    SortDescription sort_description;
+    SortingScope sort_scope{SortingScope::Stream};
+
+    bool empty() const { return sort_description.empty(); }
+    bool operator==(const SortingProperty &) const = default;
+};
+
 using UniqueKeyFacts = std::vector<UniqueKeyFact>;
 using FunctionalDependencyFacts = std::vector<FunctionalDependencyFact>;
 using ColumnLineageFacts = std::vector<ColumnLineageFact>;
@@ -202,6 +221,9 @@ public:
     const ColumnSet & nonNullColumns() const { return non_null_columns; }
     const ColumnLineageFacts & columnLineage() const { return lineage; }
 
+    const SortingProperty & sorting() const { return sorting_property; }
+    void setSorting(SortingProperty value) { sorting_property = std::move(value); }
+
     String dump() const;
 
     bool operator==(const DataPropertySet &) const = default;
@@ -211,6 +233,7 @@ private:
     FunctionalDependencyFacts functional_dependencies;
     ColumnSet non_null_columns;
     ColumnLineageFacts lineage;
+    SortingProperty sorting_property;
 };
 
 bool isProvenStrongBagKey(const DataPropertyProvenance & provenance, DataPropertyEqualityMode equality_mode);
@@ -235,6 +258,7 @@ String dataPropertyConfidenceToString(DataPropertyConfidence confidence);
 String dataPropertyEqualityModeToString(DataPropertyEqualityMode mode);
 String dataPropertyProvenanceToString(const DataPropertyProvenance & provenance);
 String columnLineageKindToString(ColumnLineageKind kind);
+String sortingPropertyToString(const SortingProperty & sorting);
 String dumpColumnSet(const ColumnSet & columns);
 
 }

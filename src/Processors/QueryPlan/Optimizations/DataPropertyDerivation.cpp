@@ -6,19 +6,32 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Common/Exception.h>
 
 #include <algorithm>
 #include <unordered_map>
+
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
 
 namespace DB::QueryPlanOptimizations
 {
@@ -300,9 +313,135 @@ DataPropertySet remapCommonSubplanProperties(const CommonSubplanReferenceStep & 
             result.addNonNullColumn(*source_to_output[non_null.position]);
     }
 
+    SortDescription mapped_sort_description;
+    mapped_sort_description.reserve(source_properties.sorting().sort_description.size());
+    for (const auto & sort_column : source_properties.sorting().sort_description)
+    {
+        std::optional<size_t> source_position;
+        for (size_t position = 0; position < source_header.columns(); ++position)
+        {
+            if (source_header.getByPosition(position).name != sort_column.column_name)
+                continue;
+            if (source_position)
+            {
+                source_position.reset();
+                break;
+            }
+            source_position = position;
+        }
+        if (!source_position || !source_to_output[*source_position])
+            break;
+
+        auto mapped_column = sort_column;
+        mapped_column.column_name = source_to_output[*source_position]->name;
+        mapped_sort_description.push_back(std::move(mapped_column));
+    }
+    if (!mapped_sort_description.empty())
+        result.setSorting({std::move(mapped_sort_description), source_properties.sorting().sort_scope});
     return result;
 }
 
+}
+
+static SortingProperty deriveSortingPropertyValue(const IQueryPlanStep & step, std::span<const SortingProperty> child_properties)
+{
+    if (!step.hasOutputHeader())
+        return {};
+
+    if (const auto * read_from_merge_tree = dynamic_cast<const ReadFromMergeTree *>(&step))
+        return {read_from_merge_tree->getSortDescription(), SortingScope::Stream};
+
+    if (const auto * aggregating_step = dynamic_cast<const AggregatingStep *>(&step))
+    {
+        const auto & sort_description = aggregating_step->getSortDescription();
+        if (!sort_description.empty())
+            return {sort_description, SortingScope::Global};
+    }
+
+    if (const auto * merging_aggregated = dynamic_cast<const MergingAggregatedStep *>(&step))
+    {
+        const auto & sort_description = merging_aggregated->getSortDescription();
+        if (!sort_description.empty())
+            return {sort_description, SortingScope::Global};
+    }
+
+    if (const auto * sorting_step = dynamic_cast<const SortingStep *>(&step))
+    {
+        const auto scope = sorting_step->hasPartitions() ? SortingScope::Stream : SortingScope::Global;
+        return {sorting_step->getSortDescription(), scope};
+    }
+
+    if (dynamic_cast<const UnionStep *>(&step))
+    {
+        if (child_properties.empty())
+            return {};
+
+        SortDescription common_sort_description = child_properties.front().sort_description;
+        for (size_t index = 1; index < child_properties.size(); ++index)
+            common_sort_description = commonPrefix(common_sort_description, child_properties[index].sort_description);
+        if (common_sort_description.empty())
+            return {};
+
+        const auto scope = child_properties.size() == 1 ? child_properties.front().sort_scope : SortingScope::Stream;
+        return {std::move(common_sort_description), scope};
+    }
+
+    if (child_properties.size() != 1)
+        return {};
+
+    SortingProperty result = child_properties.front();
+    if (result.empty())
+        return {};
+
+    if (const auto * distinct_step = dynamic_cast<const DistinctStep *>(&step))
+    {
+        if (result.sort_scope == SortingScope::Global || (distinct_step->isPreliminary() && result.sort_scope == SortingScope::Stream))
+            return result;
+        return {};
+    }
+
+    if (const auto * expression_step = dynamic_cast<const ExpressionStep *>(&step))
+    {
+        applyActionsToSortDescription(result.sort_description, expression_step->getExpression());
+        return result.empty() ? SortingProperty{} : std::move(result);
+    }
+
+    if (const auto * filter_step = dynamic_cast<const FilterStep *>(&step))
+    {
+        const auto & expression = filter_step->getExpression();
+        const ActionsDAG::Node * output_to_skip = nullptr;
+        if (filter_step->removesFilterColumn())
+        {
+            output_to_skip = expression.tryFindInOutputs(filter_step->getFilterColumnName());
+            if (!output_to_skip)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
+                    filter_step->getFilterColumnName(),
+                    expression.dumpDAG());
+        }
+        applyActionsToSortDescription(result.sort_description, expression, output_to_skip);
+        return result.empty() ? SortingProperty{} : std::move(result);
+    }
+
+    if (dynamic_cast<const LimitByStep *>(&step) || dynamic_cast<const NegativeLimitByStep *>(&step))
+        return result.sort_scope == SortingScope::Global ? std::move(result) : SortingProperty{};
+
+    if (const auto * transforming = dynamic_cast<const ITransformingStep *>(&step))
+    {
+        if (transforming->getDataStreamTraits().preserves_sorting)
+            return result;
+    }
+
+    return {};
+}
+
+SortingPropertyDerivationResult deriveSortingProperty(const IQueryPlanStep & step, std::span<const SortingProperty> child_properties)
+{
+    auto property = deriveSortingPropertyValue(step, child_properties);
+    const auto * union_step = dynamic_cast<const UnionStep *>(&step);
+    const bool requires_union_narrowing_disabled = union_step && union_step->isNarrowingAllowed() && !property.empty();
+    return {std::move(property), requires_union_narrowing_disabled};
 }
 
 namespace
@@ -454,8 +593,7 @@ DataPropertySet deriveDataPropertiesForJoin(
 
 namespace
 {
-
-DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::span<DataPropertySet> child_properties)
+DataPropertySet deriveLogicalDataPropertiesForStep(const IQueryPlanStep & step, std::span<DataPropertySet> child_properties)
 {
     if (child_properties.size() > 2 || !step.hasOutputHeader())
         return {};
@@ -543,13 +681,23 @@ DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::sp
     return {};
 }
 
+DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::span<DataPropertySet> child_properties)
+{
+    std::vector<SortingProperty> child_sorting;
+    child_sorting.reserve(child_properties.size());
+    for (const auto & properties : child_properties)
+        child_sorting.push_back(properties.sorting());
+
+    auto result = deriveLogicalDataPropertiesForStep(step, child_properties);
+    auto sorting = deriveSortingProperty(step, child_sorting);
+    if (!sorting.requires_union_narrowing_disabled)
+        result.setSorting(std::move(sorting.property));
+    return result;
+}
 }
 
 DataPropertySet deriveDataProperties(const IQueryPlanStep & step, std::span<const DataPropertySet> child_properties)
 {
-    if (child_properties.size() > 2)
-        return {};
-
     /// Copy so per-step derivation may move from its inputs; child counts are tiny,
     /// so a plain vector beats maintaining a small-size special case in two places.
     std::vector<DataPropertySet> owned_child_properties(child_properties.begin(), child_properties.end());
