@@ -169,6 +169,8 @@ bool isObjectStorageNotFoundException(std::exception_ptr exception_ptr)
 #endif
     catch (...)
     {
+        /// Ok to answer "not a not-found" here: this only classifies, the caller keeps the
+        /// exception and decides what to do with it.
         return false;
     }
 }
