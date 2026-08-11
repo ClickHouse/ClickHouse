@@ -1124,6 +1124,15 @@ void DataPartStorageOnDiskBase::setProjections(Projections projections_)
     std::lock_guard lock(projections_mutex);
     owned_projections = std::move(projections_);
     owned_projections_ready = true;
+
+    /// `projection_storage_format` only controls newly written parts, so a table switched
+    /// `flat -> legacy_nested` still holds parts whose projections live as flat siblings. The flag is
+    /// per part, not per table: once this storage owns a FLAT projection, its sibling scans (size
+    /// accounting, recursive removal, rename sweeps) must stay enabled regardless of the current
+    /// setting. Monotonic: never switched off here, the builder's per-table seed is only relaxed.
+    for (const auto & [_, projection] : owned_projections)
+        if (projection.format == ProjectionStorageFormat::FLAT)
+            flat_projection_storage_in_use = true;
 }
 
 bool DataPartStorageOnDiskBase::hasProjection(const std::string & dir_name) const
@@ -1180,6 +1189,9 @@ void DataPartStorageOnDiskBase::addProjection(Projection projection_)
     std::lock_guard lock(projections_mutex);
     if (!owned_projections_ready)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot register projection {} in part {}: projections were never set", projection_.dirName(), part_dir);
+    /// See setProjections: owning a FLAT projection enables the sibling scans for this part.
+    if (projection_.format == ProjectionStorageFormat::FLAT)
+        flat_projection_storage_in_use = true;
     owned_projections[projection_.dirName()] = std::move(projection_);
 }
 
