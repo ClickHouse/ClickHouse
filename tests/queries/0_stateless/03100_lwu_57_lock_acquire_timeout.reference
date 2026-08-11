@@ -1,10 +1,10 @@
 sync 1000 failed 1 waited 1
 sync 60000 succeeded contended 1
-sync huge-timeout succeeded waited 1
+sync huge-timeout succeeded contended 1
 sync zero-timeout uncontended succeeded
 auto 1000 failed 1 waited 1
 auto 60000 succeeded contended 1
-auto huge-timeout succeeded waited 1
+auto huge-timeout succeeded contended 1
 auto zero-timeout uncontended succeeded
 churn succeeded tries_bounded 1
 cas reached true backed_off true

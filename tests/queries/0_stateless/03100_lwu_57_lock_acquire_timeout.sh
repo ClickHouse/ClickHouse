@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Tags: long, no-replicated-database, no-parallel
-# long: the failpoint holds and the ~20 s cancellation fixture put this at about 56 s.
+# long: the lock holds and the ~20 s cancellation fixture put this at about 44 s.
 # no-replicated-database - path in zookeeper differs with replicated database
-# no-parallel: the `*_lightweight_update_sleep_after_block_allocation` failpoint fires exactly
-#   once globally; a concurrent run of a sibling 03100_lwu_* test could steal the pause or
-#   disable the failpoint before this test's UPDATE reaches the injection site.
+# no-parallel: the `infinite_sleep` failpoint is server-global, so a concurrent test would park
+#   every one of its own `sleep()` calls at it or disable it while a holder here is parked.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,25 +11,17 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-failpoint_name="rmt_lightweight_update_sleep_after_block_allocation"
-storage_policy=`$CLICKHOUSE_CLIENT -q "SELECT value FROM system.merge_tree_settings WHERE name = 'storage_policy'"`
-
-if [[ "$storage_policy" == "s3_with_keeper" ]]; then
-    failpoint_name="smt_lightweight_update_sleep_after_block_allocation"
-fi
-
 function cleanup()
 {
-    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT infinite_sleep" 2>/dev/null || true
     wait || true
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_timeout_sync SYNC; DROP TABLE IF EXISTS t_lwu_timeout_auto SYNC; DROP TABLE IF EXISTS t_lwu_cas SYNC; DROP TABLE IF EXISTS t_lwu_cancel SYNC" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-# The failpoint holds the lightweight update lock for 3000 ms, so a conflicting update must wait
-# for it. In 'auto' mode a conflict requires one update to READ the column the other WRITES
+# A holder of the lightweight update lock makes a conflicting update wait for it. In 'auto' mode a
+# conflict requires one update to READ the column the other WRITES
 # (UpdateAffectedColumns::hasConflict), hence the first update writes `s` and the second reads it.
-hold_ms=3000
 
 # Blocks until an update owns the lightweight update lock on $1. Counts the CHILDREN of a node that
 # the table always has, so the count is zero until a holder takes the lock and drops back to zero
@@ -61,19 +52,63 @@ function wait_for_lock_held()
     exit 2
 }
 
-# Starts the blocking update and returns once it holds the lock.
-function start_holder()
+# Starts an update that takes the lock and then parks inside `sleep` at the `infinite_sleep`
+# failpoint, holding the lock until release_holder is called. The hold does not begin expiring before
+# the waiter starts, so how long a waiter blocks is chosen by this test rather than raced against a
+# fixed sleep.
+function start_parked_holder()
 {
     local table_name=$1
     local mode=$2
 
+    $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT infinite_sleep"
+
     $CLICKHOUSE_CLIENT --query "
         SET enable_lightweight_update = 1;
-        SYSTEM ENABLE FAILPOINT $failpoint_name;
-        UPDATE $table_name SET s = 'xx' WHERE id = 2 SETTINGS update_parallel_mode = '$mode';
+        UPDATE $table_name SET s = 'xx' WHERE id = 2 AND sleep(0.001) = 0
+        SETTINGS update_parallel_mode = '$mode';
     " &
 
+    if ! $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT infinite_sleep PAUSE"
+    then
+        echo "Failed to park a $mode holder of the lightweight update lock on $table_name" >&2
+        exit 2
+    fi
+
+    # The pause is reached after the lock is taken, so this must already hold.
     wait_for_lock_held "$table_name" "$mode"
+}
+
+# Lets the parked holder finish and release the lock. Callers wait for the background jobs they
+# started themselves, so that a waiter can be waited for separately from the holder.
+function release_holder()
+{
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT infinite_sleep"
+}
+
+# Blocks until the query tagged $1 has failed its first attempt at the lock, so it is inside the
+# wait rather than about to enter it. A count of tries is a fact about where the query got to, which
+# a slow runner cannot change, whereas the time it has spent waiting depends on the machine.
+function wait_for_blocked_on_lock()
+{
+    local query_id=$1
+
+    for _ in {0..600}
+    do
+        sleep 0.1
+        local tries
+        tries=$($CLICKHOUSE_CLIENT --query "
+            SELECT ProfileEvents['PatchesAcquireLockTries'] FROM system.processes WHERE query_id = '$query_id'
+        ")
+
+        if [[ -n "$tries" && "$tries" -gt 0 ]]
+        then
+            return 0
+        fi
+    done
+
+    echo "Query $query_id never blocked on the lightweight update lock" >&2
+    exit 2
 }
 
 # Server-side duration, lock try count, lost-CAS retry count and time spent acquiring the lock, for
@@ -113,55 +148,57 @@ function run()
         INSERT INTO $table_name VALUES (1, 'aa', 0, 0) (2, 'bb', 0, 0) (3, 'cc', 0, 0);
     "
 
-    # 1. A timeout shorter than the hold must fail with TIMEOUT_EXCEEDED, and must really have
-    #    waited about that long instead of returning at once. 2. A longer one must succeed.
-    for timeout_ms in 1000 60000
+    # A timeout that expires while the lock is still held must fail with TIMEOUT_EXCEEDED, and must
+    # have waited close to that timeout instead of returning at once. The holder is released only
+    # after this arm finishes, so the timeout is always the shorter of the two.
+    timeout_ms=1000
+    start_parked_holder "$table_name" "$mode"
+
+    tag="lwu57-$mode-$timeout_ms-$CLICKHOUSE_DATABASE"
+    error=$($CLICKHOUSE_CLIENT --query "
+        SET enable_lightweight_update = 1;
+        UPDATE $table_name SET v = 200 WHERE s = 'xx'
+        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = ${timeout_ms}e-3, log_comment = '$tag';
+    " 2>&1 >/dev/null) && error=""
+
+    read -r duration_ms tries _ _ <<< "$(query_stats "$tag")"
+
+    timed_out=0
+    if [[ "$error" == *TIMEOUT_EXCEEDED* ]]; then timed_out=1; fi
+    # The timeout is what ended the wait: it lasted about that long, and it is not a number of
+    # attempts each of which may itself wait the whole timeout.
+    echo "$mode $timeout_ms failed $timed_out waited $(( duration_ms >= timeout_ms * 9 / 10 && tries <= 5 ))"
+
+    release_holder
+
+    # A timeout longer than the hold must wait for the lock and then be granted it, for a plain and
+    # for a very large value. The waiter is confirmed to be inside the wait before the release, so a
+    # grant that took more than one attempt orders the two events without timing either. Values near
+    # INT64_MAX / 1e6 are deliberately not used: the outer table lock converts the same setting to a
+    # nanosecond deadline (RWLock.cpp) and overflows first, which is a pre-existing limitation of
+    # every lock_acquire_timeout consumer and outside the scope of this change.
+    for arm in "60000 60" "huge-timeout 1000000"
     do
-        start_holder "$table_name" "$mode"
+        read -r label timeout_s <<< "$arm"
+        start_parked_holder "$table_name" "$mode"
 
-        tag="lwu57-$mode-$timeout_ms-$CLICKHOUSE_DATABASE"
-        error=$($CLICKHOUSE_CLIENT --query "
+        tag="lwu57-$mode-$label-$CLICKHOUSE_DATABASE"
+        $CLICKHOUSE_CLIENT --query_id "$tag" --query "
             SET enable_lightweight_update = 1;
-            UPDATE $table_name SET v = 200 WHERE s = 'xx'
-            SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = ${timeout_ms}e-3, log_comment = '$tag';
-        " 2>&1 >/dev/null) && error=""
+            UPDATE $table_name SET v = 400 WHERE s = 'xx'
+            SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = $timeout_s, log_comment = '$tag';
+        " &
+        waiter_pid=$!
 
-        read -r duration_ms _ _ acquire_ms <<< "$(query_stats "$tag")"
+        wait_for_blocked_on_lock "$tag"
+        release_holder
+        wait "$waiter_pid"
 
-        if [[ -n "$error" ]]
-        then
-            # Failed: must be the lock timeout, and must have waited close to its own timeout --
-            # neither returning at once nor sitting there for the whole hold.
-            timed_out=0
-            if [[ "$error" == *TIMEOUT_EXCEEDED* ]]; then timed_out=1; fi
-            echo "$mode $timeout_ms failed $timed_out waited $(( duration_ms >= timeout_ms * 9 / 10 && duration_ms < hold_ms ))"
-        else
-            # Granted only after the holder released, so the arm really did wait for the lock rather
-            # than finding it free.
-            echo "$mode $timeout_ms succeeded contended $(( acquire_ms >= hold_ms / 2 ))"
-        fi
+        read -r _ tries _ _ <<< "$(query_stats "$tag")"
+        echo "$mode $label succeeded contended $(( tries >= 2 ))"
 
         wait
-        $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name"
     done
-
-    # A timeout far larger than the hold must still WAIT for the lock rather than give up at once.
-    # Values near INT64_MAX / 1e6 are deliberately not used: the outer table lock converts the same
-    # setting to a nanosecond deadline (RWLock.cpp) and overflows first, which is a pre-existing
-    # limitation of every lock_acquire_timeout consumer and outside the scope of this change.
-    start_holder "$table_name" "$mode"
-
-    tag="lwu57-$mode-huge-$CLICKHOUSE_DATABASE"
-    $CLICKHOUSE_CLIENT --query "
-        SET enable_lightweight_update = 1;
-        UPDATE $table_name SET v = 400 WHERE s = 'xx'
-        SETTINGS update_parallel_mode = '$mode', lock_acquire_timeout = 1000000, log_comment = '$tag';
-    "
-    read -r _ _ _ acquire_ms <<< "$(query_stats "$tag")"
-    echo "$mode huge-timeout succeeded waited $(( acquire_ms >= hold_ms / 2 ))"
-
-    wait
-    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name"
 
     # An uncontended update must still be granted with lock_acquire_timeout = 0, which is the
     # current behaviour of both Keeper modes and is intentionally left unchanged.
@@ -196,13 +233,17 @@ function run_churn()
         INSERT INTO $table_name VALUES (1, 'aa', 0, 0) (2, 'bb', 0, 0) (3, 'cc', 0, 0);
     "
 
-    start_holder "$table_name" "auto"
+    start_parked_holder "$table_name" "auto"
 
     # Churn: `w` is neither read nor written by the holder or the waiter, so these conflict with
     # nothing and only change the `in_progress` directory.
+    # Bounded as well as stoppable, so that killing the test cannot leave the loop behind updating a
+    # dropped table.
+    churn_stop="$CLICKHOUSE_TMP/lwu57_churn_stop_$CLICKHOUSE_DATABASE"
+    rm -f "$churn_stop"
     (
-        end=$((SECONDS + 8))
-        while [[ $SECONDS -lt $end ]]
+        end=$((SECONDS + 120))
+        while [[ ! -e "$churn_stop" && $SECONDS -lt $end ]]
         do
             $CLICKHOUSE_CLIENT --query "
                 SET enable_lightweight_update = 1;
@@ -213,22 +254,40 @@ function run_churn()
     churn_pid=$!
 
     tag="lwu57-churn-$CLICKHOUSE_DATABASE"
-    $CLICKHOUSE_CLIENT --query "
+    $CLICKHOUSE_CLIENT --query_id "$tag" --query "
         SET enable_lightweight_update = 1;
         UPDATE $table_name SET v = 500 WHERE s = 'xx'
         SETTINGS update_parallel_mode = 'auto', lock_acquire_timeout = 60, log_comment = '$tag';
-    "
+    " &
+    waiter_pid=$!
 
-    kill $churn_pid 2>/dev/null || true
+    wait_for_blocked_on_lock "$tag"
+
+    # A watch on the parent directory wakes once per commit anywhere under it, so the churn has to
+    # commit repeatedly while the waiter is inside the wait for the try count below to tell the two
+    # watch targets apart. `w` counts the churn's own commits, which no runner speed can change.
+    for _ in {0..600}
+    do
+        sleep 0.1
+        if [[ "$($CLICKHOUSE_CLIENT --query "SELECT w FROM $table_name WHERE id = 1")" -ge 10 ]]
+        then
+            break
+        fi
+    done
+
+    release_holder
+    wait "$waiter_pid"
+
+    touch "$churn_stop"
     wait $churn_pid 2>/dev/null || true
+    rm -f "$churn_stop"
 
     read -r _ tries _ <<< "$(query_stats "$tag")"
     # One try to find the conflict, one to acquire after it clears. A watch on the parent directory
     # instead wakes once per churn commit and needs an order of magnitude more.
-    echo "churn succeeded tries_bounded $(( tries >= 1 && tries <= 5 ))"
+    echo "churn succeeded tries_bounded $(( tries >= 2 && tries <= 5 ))"
 
     wait
-    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name"
     $CLICKHOUSE_CLIENT --query "DROP TABLE $table_name SYNC"
 }
 
