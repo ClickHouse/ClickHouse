@@ -249,7 +249,12 @@ void PostgreSQLSource<T>::onCancel() noexcept
 {
     /// A signal, not a claim on the teardown: this runs while onStart() may still be creating `tx`
     /// and `stream`, so it cannot finish the job, and taking the claim here would leave nobody to.
-    stop_requested.store(true);
+    /// If the flag is already set, there is nothing left to interrupt: either prepare() finished
+    /// the read cleanly (the executor still cancels every processor on teardown, and a cancel
+    /// request after a clean finish would pointlessly open an extra connection for `PQcancel` and
+    /// mark a healthy pooled connection broken), or an earlier onCancel() has already sent one.
+    if (stop_requested.exchange(true))
+        return;
 
     /// Outer try/catch: this function is noexcept, and locking tx_mutex may throw.
     try
