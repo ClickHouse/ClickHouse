@@ -131,7 +131,7 @@ ValueType avgResultToValueExact(const Numerator & numerator, Denominator denomin
     if constexpr (sizeof(NumeratorNativeType) <= 16)
     {
         using CompilerInt128 = __int128;
-        CompilerInt128 num;
+        CompilerInt128 num = 0;
         if constexpr (is_decimal<Numerator>)
             num = static_cast<CompilerInt128>(numerator.value);
         else
