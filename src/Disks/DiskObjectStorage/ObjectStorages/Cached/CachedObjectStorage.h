@@ -117,6 +117,7 @@ public:
         return object_storage->getWriteBufferMemoryCeiling(write_settings);
     }
 
+    bool supportsObjectGenerationComparison() const override { return object_storage->supportsObjectGenerationComparison(); }
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 

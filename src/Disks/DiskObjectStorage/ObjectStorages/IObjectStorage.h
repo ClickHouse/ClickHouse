@@ -420,6 +420,14 @@ public:
     /// upload scheduler cannot keep several detached buffers alive at once (getEffectiveMaxInflightParts).
     virtual UInt64 getWriteBufferMemoryCeiling(const WriteSettings & /*write_settings*/) const { return 0; }
 
+    /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
+    /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches
+    /// of the same path can prove the object was not overwritten in between. Web origins may
+    /// legitimately omit all of them (no `ETag`, no `Content-Length`, no `Last-Modified`), so callers
+    /// that must reread the same generation of an object (e.g. lazy materialization) have to skip
+    /// such storages instead of failing close at read time.
+    virtual bool supportsObjectGenerationComparison() const { return true; }
+
     virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
