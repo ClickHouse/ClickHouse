@@ -121,24 +121,38 @@ def setup_build_caches_env(info):
     os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
     os.environ["SCCACHE_CACHE_SIZE"] = "40G"
     os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
-    os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
-    # PR builds must not pollute the shared sccache bucket; only master/release
-    # builds (pr_number == 0) are allowed to write entries.
-    if info.pr_number > 0:
-        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
+    webdav_env_vars = (
+        "SCCACHE_WEBDAV_ENDPOINT",
+        "SCCACHE_WEBDAV_KEY_PREFIX",
+        "SCCACHE_WEBDAV_USERNAME",
+        "SCCACHE_WEBDAV_PASSWORD",
+    )
+    missing = [name for name in webdav_env_vars if name not in os.environ]
+    if missing:
+        raise RuntimeError(
+            "sccache WebDAV configuration is required; missing "
+            + ", ".join(missing)
+        )
+    for name in (
+        "SCCACHE_BUCKET",
+        "SCCACHE_ENDPOINT",
+        "SCCACHE_REGION",
+        "SCCACHE_S3_KEY_PREFIX",
+        "SCCACHE_S3_NO_CREDENTIALS",
+        "SCCACHE_S3_READ_ONLY",
+        "SCCACHE_S3_RW_MODE",
+    ):
+        os.environ.pop(name, None)
+    os.environ["SCCACHE_WEBDAV_RW_MODE"] = "READ_WRITE"
+    print(
+        "NOTE: Using sccache WebDAV remote storage: "
+        f"{os.environ['SCCACHE_WEBDAV_ENDPOINT']}"
+    )
     os.makedirs(build_dir, exist_ok=True)
 
-    if info.is_local_run:
-        if os.environ.get("SCCACHE_ENDPOINT"):
-            print(f"NOTE: Using custom sccache endpoint: {os.environ['SCCACHE_ENDPOINT']}")
-        if os.environ.get("AWS_ACCESS_KEY_ID"):
-            print("NOTE: Using custom AWS credentials for sccache")
-        else:
-            os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
-    else:
+    if not info.is_local_run:
         # Default timeout (10min), can be too low, we run this in docker
         # anyway, will be terminated once the build is finished
         os.environ["CTCACHE_LOG_LEVEL"] = "debug"
@@ -318,7 +332,8 @@ def main():
             )
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
             run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
-        # The sccache server sometimes fails to start because of issues with S3.
+        # The sccache server sometimes fails to start because of issues with the
+        # remote cache backend.
         # Start it explicitly with retries before cmake, since cmake can invoke
         # the compiler during configuration. Non-fatal: build can proceed without it.
         if not Shell.check("sccache --start-server", retries=3):
