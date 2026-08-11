@@ -77,6 +77,8 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
+    extern const char remote_query_executor_receive_packet_pause[];
+    extern const char remote_query_executor_finish_drain_pause[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -643,6 +645,15 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
             /// instead (see `finish`).
             sync_read_in_progress = true;
         }
+
+        /// Parks the reader in the window this fix is about: `was_cancelled` has just been checked
+        /// and the mutex released, so a parallel `onUpdatePorts` can cancel and drain these
+        /// connections before `receivePacket` below runs.
+        fiu_do_on(FailPoints::remote_query_executor_receive_packet_pause, {
+            in_receive_packet_window = true;
+            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::remote_query_executor_receive_packet_pause);
+            in_receive_packet_window = false;
+        });
 
         Packet packet;
         try
@@ -1300,6 +1311,11 @@ void RemoteQueryExecutor::handleDrainPacket(Packet packet)
         default:
             break;
     }
+
+    /// Reached only with this executor's own reader parked above, i.e. with its connections
+    /// cancelled and fully drained - the state that reader will observe when it wakes.
+    if (in_receive_packet_window)
+        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_pause);
 }
 
 void RemoteQueryExecutor::cancel()
