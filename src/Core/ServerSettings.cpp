@@ -2147,6 +2147,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "error_log",
         "filesystem_cache_log",
         "filesystem_read_prefetches_log",
+        "reader_executor_log",
         "s3queue_log",
         "azure_queue_log",
         "asynchronous_metric_log",
