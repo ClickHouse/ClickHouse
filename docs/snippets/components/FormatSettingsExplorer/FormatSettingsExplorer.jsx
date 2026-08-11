@@ -164,7 +164,7 @@ const FormatSettingsExplorer = () => {
                 <span aria-hidden="true" className="w-4 shrink-0" />
                 {branch(branchPrefix(childContinuations, itemIsLast))}
                 <a
-                  href={item.value.href}
+                  href={`/docs${item.value.href}`}
                   className="min-w-0 whitespace-normal no-underline hover:underline"
                   style={{ overflowWrap: "anywhere" }}
                 >
