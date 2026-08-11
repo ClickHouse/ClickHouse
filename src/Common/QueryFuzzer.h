@@ -2,6 +2,11 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <map>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 #include <pcg-random/pcg_random.hpp>
 
 #include <Core/Field.h>
@@ -243,7 +248,46 @@ private:
     ASTPtr makeFuzzedVirtualColumn();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
+    /// Fuzz every element of a type list in place. Returns true if any element changed.
+    bool fuzzDataTypes(DataTypes & types);
+    /// Rebuild an Array/Tuple/Variant with its children fuzzed; nullptr for anything else.
+    DataTypePtr fuzzContainerChildren(const DataTypePtr & type);
+    /// Wrap or replace a type without touching its children; safe for a custom-named leaf alias.
+    DataTypePtr fuzzTypeWrapping(const DataTypePtr & type);
+    /// Every registered geo alias name, read out of Geometry's Variant storage.
+    static const std::unordered_set<String> & geoAliasNames();
+    /// Interchangeable aggregate names by arity, shared with the data-type fuzzing unit.
+    static const std::map<size_t, Strings> & swapAggregateNames();
+    /// Swap an aggregate's name for a compatible candidate of the same arity.
+    bool fuzzAggregateName(String & name, size_t nargs);
+    /// Fuzz an aggregate's literal parameters in place. Returns true if changed.
+    bool fuzzAggregateParameters(Array & parameters);
     DataTypePtr getRandomType();
+    /// A random QBit with a valid element type and a dimension/stride pair satisfying the type's invariants.
+    DataTypePtr makeRandomQBit();
+    /// Mutate a JSON `SKIP` path list. Replacements stay identifier-shaped so the type still parses.
+    std::unordered_set<String> fuzzObjectPathsToSkip(std::unordered_set<String> paths_to_skip);
+    /// Mutate a JSON `SKIP REGEXP` list. Replacements are RE2-compilable, which the type requires.
+    std::vector<String> fuzzObjectPathRegexpsToSkip(std::vector<String> path_regexps_to_skip);
+    /// A JSON Object with the given typed paths / SKIP lists and randomized numeric parameters. A source
+    /// limit, when given, is what an unfired randomization keeps.
+    DataTypePtr makeRandomObject(
+        std::unordered_map<String, DataTypePtr> typed_paths = {},
+        std::unordered_set<String> paths_to_skip = {},
+        std::vector<String> path_regexps_to_skip = {},
+        std::optional<size_t> source_max_dynamic_paths = std::nullopt,
+        std::optional<size_t> source_max_dynamic_types = std::nullopt);
+    /// An (Simple)AggregateFunction re-validated via the factory; nullptr if the aggregate rejects the
+    /// arguments or the emitted name does not reparse. version is the one parsed from the source AST.
+    DataTypePtr makeAggregateFunctionType(
+        const String & name,
+        const DataTypes & argument_types,
+        const Array & parameters,
+        bool simple,
+        std::optional<size_t> version = std::nullopt);
+    /// A DateTime / DateTime64, occasionally with an explicit valid timezone.
+    DataTypePtr makeRandomDateTime();
+    DataTypePtr makeRandomDateTime64(UInt32 scale);
     void fuzzJoinType(ASTTableJoin * table_join);
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast, size_t nproj);
