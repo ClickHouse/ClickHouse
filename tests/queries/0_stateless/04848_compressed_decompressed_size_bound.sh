@@ -18,13 +18,15 @@ set -o pipefail
 # checksum-for-compressed-block prints CityHash128 of every single-bit mutation of its input, so
 # feeding it the body with bit 0 flipped yields CityHash128(body) on the line labelled "0, 0". The
 # wire order is low64 then high64, each little-endian, i.e. the reverse of the printed hex.
-frame() { # $1 = method byte (decimal), $2 = size_decompressed, $3 = payload
+# $4 overrides size_compressed, which otherwise describes the payload written.
+frame() { # $1 = method byte (decimal), $2 = size_decompressed, $3 = payload, $4 = size_compressed
     local body checksum
     body=$(python3 -c "
 import struct, sys
 payload = sys.argv[3].encode()
-sys.stdout.buffer.write(bytes([int(sys.argv[1])]) + struct.pack('<I', 9 + len(payload)) + struct.pack('<I', int(sys.argv[2])) + payload)
-" "$1" "$2" "$3" | xxd -p | tr -d '\n')
+size_compressed = int(sys.argv[4]) if sys.argv[4] else 9 + len(payload)
+sys.stdout.buffer.write(bytes([int(sys.argv[1])]) + struct.pack('<I', size_compressed) + struct.pack('<I', int(sys.argv[2])) + payload)
+" "$1" "$2" "$3" "${4:-}" | xxd -p | tr -d '\n')
     checksum=$(python3 -c "
 import sys
 b = bytearray.fromhex(sys.argv[1]); b[0] ^= 1
@@ -51,6 +53,13 @@ frame 130 1073741824 'SELECT 1' | post 2>&1 | grep -c 'Too large size_decompress
 echo '-- one byte above 1 GiB is rejected'
 frame 130 1073741825 'SELECT 1' | post 2>&1 | grep -c 'Too large size_decompressed: 1073741825'
 
+# A frame that also declares size_compressed below the 9-byte header violates two header checks at
+# once. The size_decompressed message pins that its bound is reached first, hence within the header
+# parser and before any allocation: relocating the bound past the header-size check reports the
+# other message instead.
+echo '-- the bound is reached before the header-size check, so before any allocation'
+frame 130 2147483648 'SELECT 1' 5 | post 2>&1 | grep -c 'Too large size_decompressed: 2147483648'
+
 echo '-- a codec that stores data uncompressed must not lie about the uncompressed size'
 frame 2 999 'SELECT 1' | post 2>&1 | grep -c 'does not match size_decompressed (999)'
 
@@ -70,7 +79,7 @@ over_bound() {
 # AES-CTR over zeroes is incompressible and reproducible from the key alone, so the arms that need
 # incompressible input regenerate it instead of keeping a copy on disk. Each output is removed as
 # soon as its last assertion is done: the arms below write about 1 GiB each and must not coexist.
-incompressible() { head -c "$1" /dev/zero | openssl enc -aes-256-ctr -pbkdf2 -pass pass:04848 -nosalt 2>/dev/null; }
+incompressible() { head -c "$1" /dev/zero | openssl enc -aes-256-ctr -pbkdf2 -pass pass:04848 -nosalt; }
 
 echo '-- a writer asked for a frame above the bound emits several frames within it'
 head -c 1207959552 /dev/zero | ${CLICKHOUSE_BINARY} compressor --block-size 1207959552 \

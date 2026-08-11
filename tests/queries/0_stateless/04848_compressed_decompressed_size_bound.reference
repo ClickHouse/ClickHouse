@@ -6,6 +6,8 @@
 0
 -- one byte above 1 GiB is rejected
 1
+-- the bound is reached before the header-size check, so before any allocation
+1
 -- a codec that stores data uncompressed must not lie about the uncompressed size
 1
 -- a writer asked for a frame above the bound emits several frames within it

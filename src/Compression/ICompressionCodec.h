@@ -64,7 +64,7 @@ public:
     }
 
     /// buf_size reduced so that a full frame serializes both size fields within
-    /// DBMS_MAX_COMPRESSED_SIZE. Never returns zero.
+    /// DBMS_MAX_COMPRESSED_SIZE. A nonzero buf_size is never reduced to zero.
     size_t capUncompressedFrameSize(size_t buf_size) const;
 
     /// Some codecs (LZ4, for example) require additional bytes at end of buffer
