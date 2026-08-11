@@ -20,30 +20,30 @@ export const glossaryMetadata = {
   dictionary: { learnMore: '/dictionary' },
   'distributed-table': { learnMore: '/engines/table-engines/special/distributed' },
   final: { aliases: ['still see duplicates', 'query-time merge'], code: true, learnMore: '/sql-reference/statements/select/from#final-modifier' },
-  granule: { aliases: ['micro-partition'], learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design' },
+  granule: { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design' },
   'incremental-materialized-view': { aliases: ['insert trigger'], learnMore: '/materialized-view/incremental-materialized-view' },
-  'materialized-view': { aliases: ['MV', 'stored query', 'insert trigger'], learnMore: '/materialized-views' },
+  'materialized-view': { aliases: ['MV', 'stored query', 'insert trigger', 'dynamic table', 'dynamic tables'], learnMore: '/materialized-views' },
   merge: { learnMore: '/merges' },
   mergetree: { code: true, learnMore: '/engines/table-engines/mergetree-family/mergetree' },
   mutation: { aliases: ['ALTER UPDATE', 'ALTER DELETE', 'row update', 'MERGE statement'], learnMore: '/concepts/best-practices/avoid-mutations' },
   'nullable-column': { aliases: ['NULL', 'default value'], learnMore: '/sql-reference/data-types/nullable' },
-  parts: { aliases: ['micro-partition'], learnMore: '/concepts/core-concepts/parts' },
-  partition: { aliases: ['PARTITION BY', 'partition pruning', 'micro-partition'], learnMore: '/partitions' },
+  parts: { aliases: ['micro-partition', 'micro partition'], learnMore: '/concepts/core-concepts/parts' },
+  partition: { aliases: ['PARTITION BY', 'partition pruning'], learnMore: '/partitions' },
   'partitioning-key': { learnMore: '/concepts/core-concepts/partitions' },
   'primary-key': { aliases: ['ORDER BY', 'sorting key', 'unique key', 'unique constraint'], learnMore: '/concepts/core-concepts/primary-indexes' },
   projection: { aliases: ['projection vs materialized view', 'alternate ordering'], learnMore: '/data-modeling/projections' },
-  'refreshable-materialized-view': { aliases: ['scheduled materialized view', 'refresh materialized view', 'scheduled query', 'dynamic table'], learnMore: '/materialized-view/refreshable-materialized-view' },
+  'refreshable-materialized-view': { aliases: ['scheduled materialized view', 'refresh materialized view', 'scheduled query', 'scheduled queries'], learnMore: '/materialized-view/refreshable-materialized-view' },
   replacingmergetree: { aliases: ['upsert', 'deduplication', 'still have duplicates', 'MERGE statement'], code: true, learnMore: '/guides/replacing-merge-tree' },
   'secondary-index': { learnMore: '/optimize/skipping-indexes' },
   'skipping-index': { learnMore: '/optimize/skipping-indexes' },
-  'sorting-key': { aliases: ['ORDER BY', 'primary key', 'on-disk order', 'clustering key', 'clustered table'], learnMore: '/concepts/best-practices/choosing-a-primary-key' },
+  'sorting-key': { aliases: ['ORDER BY', 'primary key', 'on-disk order', 'clustering key', 'clustering columns', 'clustered table', 'CLUSTER BY'], learnMore: '/concepts/best-practices/choosing-a-primary-key' },
   'sparse-index': { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes' },
   'table-engine': { learnMore: '/engines/table-engines' },
   transaction: { learnMore: '/guides/developer/transactional' },
   ttl: { aliases: ['expiration', 'retention', 'data retention'], code: true, learnMore: '/concepts/features/operations/delete/ttl' },
   update: { learnMore: '/updating-data/overview' },
   upsert: { aliases: ['ON CONFLICT', 'insert or update', 'MERGE statement'], learnMore: '/guides/replacing-merge-tree' },
-  warehouse: { aliases: ['compute-compute separation', 'shared storage', 'workload isolation', 'virtual warehouse'], learnMore: '/cloud/reference/warehouses' },
+  warehouse: { aliases: ['compute-compute separation', 'shared storage', 'workload isolation', 'virtual warehouse', 'virtual warehouses'], learnMore: '/cloud/reference/warehouses' },
 }
 
 <Glossary metadata={glossaryMetadata}>
@@ -102,7 +102,7 @@ A mark file in ClickHouse is a file that stores "marks", or index entries that h
 
 ## Materialized view {#materialized-view}
 
-ClickHouse has two materialized-view models. An incremental materialized view acts like an insert-time trigger that processes newly inserted blocks, while a refreshable materialized view periodically reruns its query over the full dataset. Choosing the wrong model can produce results that refresh at a different time or scope than expected.
+ClickHouse has two materialized-view models. An incremental materialized view acts like an insert-time trigger that processes newly inserted blocks, while a refreshable materialized view periodically reruns its query over the full dataset. A Snowflake dynamic table can use either incremental or full refresh, so there isn't a single equivalent ClickHouse model.
 
 ## Merge {#merge}
 
@@ -126,7 +126,7 @@ On-the-fly mutations in ClickHouse are a mechanism that allows updates or delete
 
 ## Parts {#parts}
 
-A physical file on a disk that stores a portion of the table's data. This is different from a partition, which is a logical division of a table's data that is created using a partition key.
+A data part is an immutable collection of files on storage containing a portion of a table's rows. Parts are created by inserts and combined by background merges within a partition. They are the closest ClickHouse analogue to Snowflake micro-partitions, although their formats and lifecycle differ.
 
 ## Partition {#partition}
 
@@ -146,7 +146,7 @@ A projection is an automatically maintained representation of a table's data wit
 
 ## Refreshable materialized view {#refreshable-materialized-view}
 
-A refreshable materialized view periodically reruns its query over the full dataset and replaces or appends the stored result on a schedule. Unlike an incremental materialized view, it isn't triggered by each inserted block and can use complex queries, including `JOIN` and `UNION`.
+A refreshable materialized view periodically reruns its query over the full dataset and replaces or appends the stored result on a schedule. Unlike an incremental materialized view, it isn't triggered by each inserted block and can use complex queries. It is similar to a scheduled query that materializes a `SELECT` result, but not to the broader BigQuery feature, which can also schedule DDL and DML statements.
 
 ## `ReplacingMergeTree` {#replacingmergetree}
 
@@ -170,7 +170,7 @@ Skipping indices are used to store small amounts of metadata at the level of mul
 
 ## Sorting key {#sorting-key}
 
-For a `MergeTree`-family table, the `ORDER BY` clause defines the sorting key: the physical row order within each data part. This ordering affects primary-index efficiency and compression. If no separate primary key is specified, the sorting key also becomes the primary key; the two keys are related but aren't required to be identical.
+For a `MergeTree`-family table, the `ORDER BY` clause defines the sorting key: the physical row order within each data part. It is the closest analogue to BigQuery clustering columns or a Snowflake clustering key, but ClickHouse uses it to maintain a defined lexicographic row order. If no separate primary key is specified, the sorting key also becomes the primary key; the two keys are related but aren't required to be identical.
 
 ## Sparse index {#sparse-index}
 
@@ -198,6 +198,6 @@ ClickHouse is optimized for immutable, append-heavy data rather than frequent in
 
 ## Warehouse {#warehouse}
 
-In ClickHouse Cloud, a warehouse is a set of services that share the same data but have independent compute resources and endpoints. This compute-compute separation lets workloads scale and idle separately without duplicating the underlying tables, although the services still share some background operations and warehouse-level configuration.
+In ClickHouse Cloud, a warehouse is a set of services that share the same data but have independent compute resources and endpoints. Unlike a Snowflake virtual warehouse, which is one compute cluster, a ClickHouse warehouse groups multiple compute services; an individual ClickHouse service is the closer analogue.
 
 </Glossary>
