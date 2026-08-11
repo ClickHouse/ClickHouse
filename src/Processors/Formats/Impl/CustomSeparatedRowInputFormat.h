@@ -116,6 +116,15 @@ private:
     bool allowVariableNumberOfColumns() const override { return format_settings.custom.allow_variable_number_of_columns; }
     bool readsNumericValueIntoBoolColumn() const override { return false; }
 
+    /// `CustomSeparatedFormatReader::readField` routes every field through
+    /// `deserializeFieldByEscapingRule` with the configured `format_custom_escaping_rule`, so the
+    /// value-form capabilities follow that rule: `Quoted` reads every field with the quoted-text
+    /// deserializer exactly like `MySQLDump`, and `JSON` reads typed JSON value tokens. The other
+    /// rules (`Escaped`, `CSV`, `Raw`) read the raw text of the field, matching the defaults, and
+    /// `XML` never reads a value at all (it fails before any parse error), so it keeps them too.
+    bool readsTypedJSONValueTokens() const override { return format_settings.custom.escaping_rule == FormatSettings::EscapingRule::JSON; }
+    bool readsQuotedTextValues() const override { return format_settings.custom.escaping_rule == FormatSettings::EscapingRule::Quoted; }
+
     std::optional<DataTypes> readRowAndGetDataTypesImpl() override;
 
     std::optional<std::pair<std::vector<String>, DataTypes>> readRowAndGetFieldsAndDataTypes() override;

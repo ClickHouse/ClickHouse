@@ -62,7 +62,11 @@ public:
     /// whether such a token may be read into a `String` column. It is false for the flat-text formats
     /// (`TSV`, `CSV`, `TSKV`, ...), which read every field verbatim into a `String` column regardless of
     /// those settings, and for the `-Strings` JSON variants, whose values are all strings rather than
-    /// typed tokens (see `readsStringValuesAsWholeText` below). A caller that compares an inferred schema against an expected one can use this to
+    /// typed tokens (see `readsStringValuesAsWholeText` below). The formats with a configurable
+    /// escaping rule (`CustomSeparated`, `Regexp`, `Template`) read every field through
+    /// `deserializeFieldByEscapingRule`, so this is true for them when the configured rule is `JSON`
+    /// (for `Template`, whose rule is chosen per placeholder, only when every placeholder uses it).
+    /// A caller that compares an inferred schema against an expected one can use this to
     /// know when an inferred non-`String` type going into a `String` destination follows the JSON
     /// settings and when it is unconditionally accepted.
     virtual bool readsTypedJSONValueTokens() const { return false; }
@@ -97,7 +101,10 @@ public:
     /// `Time64` read the number itself.) Note that this is about the form of the value and not about
     /// which types are read verbatim into a `String` column: a quoted value — from which inference
     /// derives a `String`, a date or a `UUID` — is accepted by a `String` destination just as in the
-    /// other flat-text formats, so `readsAnyValueIntoStringColumn` stays true for such a format. A
+    /// other flat-text formats, so `readsAnyValueIntoStringColumn` stays true for such a format.
+    /// Besides `MySQLDump`, this holds for the formats with a configurable escaping rule when that
+    /// rule is `Quoted`: `CustomSeparated` / `Regexp` (`format_custom_escaping_rule` /
+    /// `format_regexp_escaping_rule`), and `Template` when every placeholder uses it. A
     /// caller comparing an inferred schema against an expected one uses this to flag an inferred
     /// numeric type going into one of those destinations as a structure mismatch.
     virtual bool readsQuotedTextValues() const { return false; }

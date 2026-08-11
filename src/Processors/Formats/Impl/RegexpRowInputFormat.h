@@ -81,6 +81,12 @@ private:
 
     bool readsNumericValueIntoBoolColumn() const override { return false; }
 
+    /// `RegexpRowInputFormat::readField` routes every extracted field through
+    /// `deserializeFieldByEscapingRule` with the configured `format_regexp_escaping_rule`, so the
+    /// value-form capabilities follow that rule, exactly as in `CustomSeparated`.
+    bool readsTypedJSONValueTokens() const override { return format_settings.regexp.escaping_rule == FormatSettings::EscapingRule::JSON; }
+    bool readsQuotedTextValues() const override { return format_settings.regexp.escaping_rule == FormatSettings::EscapingRule::Quoted; }
+
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;
 
     using EscapingRule = FormatSettings::EscapingRule;
