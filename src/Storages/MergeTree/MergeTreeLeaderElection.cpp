@@ -460,8 +460,8 @@ bool MergeTreeLeaderElection::tryWriteLease(const String & if_match, const Strin
     catch (const Exception & e)
     {
         if ((e.code() == ErrorCodes::S3_ERROR || e.code() == ErrorCodes::AZURE_BLOB_STORAGE_ERROR)
-            && (e.message().find("PreconditionFailed") != String::npos
-                || e.message().find("ConditionNotMet") != String::npos))
+            && (e.message().contains("PreconditionFailed")
+                || e.message().contains("ConditionNotMet")))
         {
             LOG_TRACE(log, "Conditional write failed (precondition not met) for lease at '{}'", lease_path);
             ProfileEvents::increment(ProfileEvents::MergeTreeLeaderElectionLeaseConflicts);
