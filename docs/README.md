@@ -194,7 +194,7 @@ From the repository root, run:
 python3 -m ci.praktika run "Docs check (Mintlify)"
 ```
 
-Praktika pulls the configured `clickhouse/docs-builder` image and runs the locally supported docs checks in a container, so you do not need to install their dependencies. The command skips `Check changelogs` and `No direct edits to generated or read-only docs` because they require pull-request metadata available only in CI.
+Praktika pulls the configured `clickhouse/docs-builder` image and runs the locally supported docs checks in a container, so you do not need to install their dependencies.
 
 ### Run individual checks {#run-individual-docs-checks}
 
@@ -207,8 +207,3 @@ Pass a check name to `--test` to run it individually. The match is case-insensit
 | `Check internal links and anchors` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check internal links and anchors"` | Checks English documentation links and heading anchors offline. |
 | `Check redirects` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check redirects"` | Verifies that every destination in `_site/redirects.json`, including any anchor, exists. |
 | `Check external links (warnings)` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check external links (warnings)"` | Checks external HTTP links and reports failures as non-blocking warnings. |
-| `Check locale links` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check locale links"` | Checks that links in translated documentation resolve to existing files; translated heading fragments are not checked. |
-| `Check locale component links` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check locale component links"` | Validates localized links in JSX components and MDX data, and checks referenced image assets. |
-| `Check quickstarts` | `python3 -m ci.praktika run "Docs check (Mintlify)" --test "Check quickstarts"` | Validates quickstart frontmatter and markers, then checks that generated explorer data and badges are current. |
-| `Check changelogs` | CI only | Checks that generated changelog cards, content, and navigation are current. It runs when a pull request changes a changelog input, output, or checker. |
-| `No direct edits to generated or read-only docs` | CI only | Rejects direct changes to generated regions and documentation copied from another repository. It requires pull-request revisions and merge-base metadata supplied by CI. |
