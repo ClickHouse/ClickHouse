@@ -194,6 +194,15 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
     /// kqueue may report up to two native events per fd (read + write); over-allocate and coalesce below.
     std::vector<struct kevent> received(static_cast<size_t>(max_events) * 2);
 
+    /// Account the remaining time across EINTR retries from the cumulative elapsed, like the
+    /// `epoll_wait` branch above. Subtracting whole elapsed milliseconds per retry and restarting the
+    /// stopwatch truncated a sub-millisecond signal period to zero, so a periodic signal reset the
+    /// deadline every retry and the wait could never expire. On Darwin the query profiler delivers such
+    /// signals with `pthread_kill`. `kevent` takes a `timespec`, so the remaining time is carried in
+    /// microseconds here rather than rounded up to whole milliseconds as the `epoll_wait` API forces.
+    const UInt64 timeout_microseconds = timeout > 0 ? static_cast<UInt64>(timeout) * 1000 : 0;
+    UInt64 remaining_microseconds = timeout_microseconds;
+
     Stopwatch watch;
     int ready_size = 0;
     while (true)
@@ -202,8 +211,8 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
         struct timespec * ts_ptr = nullptr;
         if (timeout >= 0)
         {
-            ts.tv_sec = timeout / 1000;
-            ts.tv_nsec = static_cast<long>(timeout % 1000) * 1'000'000;
+            ts.tv_sec = static_cast<time_t>(remaining_microseconds / 1'000'000);
+            ts.tv_nsec = static_cast<long>(remaining_microseconds % 1'000'000) * 1000;
             ts_ptr = &ts;
         }
 
@@ -214,10 +223,20 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
         {
             if (errno == EINTR)
             {
-                if (timeout >= 0)
+                /// Only a positive timeout accrues against a deadline. A zero timeout is a
+                /// non-blocking readiness probe (callers use getManyReady(..., 0) to detect an
+                /// already-ready timer/socket/cancel) and a negative timeout is an infinite wait:
+                /// for both, retry the wait unchanged on EINTR. Returning early for a zero timeout
+                /// would let a signal hide an already-ready event for that iteration.
+                if (timeout > 0)
                 {
-                    timeout = std::max(0, static_cast<int>(timeout - watch.elapsedMilliseconds()));
-                    watch.restart();
+                    const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
+                    if (elapsed_microseconds >= timeout_microseconds)
+                    {
+                        ready_size = 0;
+                        break;
+                    }
+                    remaining_microseconds = timeout_microseconds - elapsed_microseconds;
                 }
                 continue;
             }
