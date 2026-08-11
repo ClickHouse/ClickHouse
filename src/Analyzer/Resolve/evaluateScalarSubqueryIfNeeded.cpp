@@ -97,13 +97,16 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     auto & context = scope.context;
 
-    /// Scalar subqueries in table function arguments are executed even in only-analyze mode.
-    /// The table function is resolved into a storage during analysis (its header is needed),
-    /// so it requires real argument values rather than type-only placeholders. Otherwise
-    /// a placeholder would be passed to the table function, e.g. an empty URL to `s3`:
+    /// Scalar subqueries in table function or parameterized view arguments are executed even in
+    /// only-analyze mode. The table function / view is resolved into a storage during analysis
+    /// (its header is needed), so it requires real argument values rather than type-only
+    /// placeholders. Otherwise a placeholder would be passed, e.g. an empty URL to `s3`:
     /// CREATE TABLE t ENGINE = MergeTree ORDER BY () AS
     /// WITH (SELECT path FROM table_with_paths) AS path SELECT * FROM s3(path, NOSIGN);
-    const bool only_analyze_subquery = only_analyze && !table_function_arguments_in_resolve_process;
+    /// or a default (empty) value substituted for a parameterized view parameter.
+    const bool only_analyze_subquery = only_analyze
+        && !table_function_arguments_in_resolve_process
+        && !parameterized_view_arguments_in_resolve_process;
 
     Block scalar_block;
 
@@ -369,9 +372,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     static const std::set<std::string_view> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
     auto * nearest_query_scope = scope.getNearestQueryScope();
 
-    /// Always convert to literals when there is no query context
+    /// Always convert to literals when there is no query context, or when resolving a
+    /// parameterized view argument (its value must fold to a literal to be matched against
+    /// the view's query parameters, see `parameterized_view_arguments_in_resolve_process`).
     if (!context->getSettingsRef()[Setting::enable_scalar_subquery_optimization] || !useless_literal_types.contains(scalar_type_name)
-        || !context->hasQueryContext() || !nearest_query_scope)
+        || !context->hasQueryContext() || !nearest_query_scope || parameterized_view_arguments_in_resolve_process)
     {
         ConstantValue constant_value{ ConstantValue::wrapToColumnConst(scalar_column_with_type.column), scalar_type };
         auto constant_node = std::make_shared<ConstantNode>(constant_value, node);

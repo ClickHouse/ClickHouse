@@ -105,7 +105,6 @@
               "pages": [
                 "concepts/features/operations/update/index",
                 "concepts/features/operations/update/overview",
-                "concepts/features/operations/update/on-fly-mutations",
                 "concepts/features/operations/update/replacing-merge-tree"
               ]
             },
@@ -114,7 +113,6 @@
               "pages": [
                 "concepts/features/operations/delete/index",
                 "concepts/features/operations/delete/overview",
-                "concepts/features/operations/delete/delete-mutations",
                 "concepts/features/operations/delete/drop-partition",
                 "concepts/features/operations/delete/lightweight-delete",
                 "concepts/features/operations/delete/truncate",

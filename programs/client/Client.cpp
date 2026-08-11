@@ -9,11 +9,14 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Access/AccessControl.h>
 
 #include <Columns/ColumnString.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/Config/getClientConfigPath.h>
 #include <Common/CurrentThread.h>
@@ -27,6 +30,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -348,6 +352,16 @@ void Client::initialize(Poco::Util::Application & self)
     /// Use <warnings/> unless --no-warnings is specified
     if (!config().has("no-warnings") && !config().getBool("warnings", true))
         config().setBool("no-warnings", true);
+
+    /// Use <echo_formatted/>, <echo_query_id/>, <enable_progress_table_toggle/> unless the
+    /// corresponding dashed CLI option is specified. Shared with `clickhouse-local`.
+    remapClientConfigurationAliases();
+
+    /// The config file is loaded after the command line is processed, so the option parser
+    /// never sees values that come only from the file. Validate them now, before any query
+    /// can start: a config typo must not fail open (e.g. run a mutating query and only then
+    /// throw from a lazy read at the use site).
+    validateClientConfiguration();
 }
 
 
@@ -607,7 +621,7 @@ void Client::connect()
     wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
     if (load_suggestions)
     {
-        suggestion_limit = config().getInt("suggestion_limit");
+        suggestion_limit = config().getInt("suggestion_limit", 10000);
     }
 
     server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
@@ -1112,7 +1126,7 @@ void Client::processConfig()
     }
 
     pager = config().getString("pager", "");
-    enable_highlight = config().getBool("highlight", true);
+    enable_highlight = ConfigHelper::getBool(config(), "highlight", true);
     multiline = config().has("multiline");
     rainbow_parentheses = config().getBool("rainbow_parentheses", true);
     print_stack_trace = config().getBool("stacktrace", false);
@@ -1371,7 +1385,7 @@ void Client::readArguments(
                 common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
             }
             else
-                common_arguments.emplace_back(arg);
+                common_arguments.emplace_back(arg); /// anything else, eg --hilite
         }
     }
     if (!prev_host_arg.empty())
@@ -1388,6 +1402,13 @@ int mainEntryClickHouseClient(int argc, char ** argv);
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
     DB::MainThreadStatus::getInstance();
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
 
     try
     {

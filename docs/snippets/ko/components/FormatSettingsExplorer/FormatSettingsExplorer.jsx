@@ -130,7 +130,7 @@ const FormatSettingsExplorer = () => {
     },
     {
       label: "input_format_*",
-      count: 126,
+      count: 125,
       settings: [
         { name: "input_format_allow_errors_num", href: "/ko/reference/settings/formats/input-format#input_format_allow_errors_num" },
         { name: "input_format_allow_errors_ratio", href: "/ko/reference/settings/formats/input-format#input_format_allow_errors_ratio" },
@@ -232,7 +232,6 @@ const FormatSettingsExplorer = () => {
           name: "input_format_orc_skip_columns_with_unsupported_types_in_schema_inference",
           href: "/ko/reference/settings/formats/input-format#input_format_orc_skip_columns_with_unsupported_types_in_schema_inference"
         },
-        { name: "input_format_orc_use_fast_decoder", href: "/ko/reference/settings/formats/input-format#input_format_orc_use_fast_decoder" },
         { name: "input_format_parallel_parsing", href: "/ko/reference/settings/formats/input-format#input_format_parallel_parsing" },
         { name: "input_format_parquet_allow_geoparquet_parser", href: "/ko/reference/settings/formats/input-format#input_format_parquet_allow_geoparquet_parser" },
         { name: "input_format_parquet_allow_missing_columns", href: "/ko/reference/settings/formats/input-format#input_format_parquet_allow_missing_columns" },
@@ -581,7 +580,6 @@ const FormatSettingsExplorer = () => {
     input_format_orc_reader_time_zone_name: "/reference/settings/formats/input-format",
     input_format_orc_row_batch_size: "/reference/settings/formats/input-format",
     input_format_orc_skip_columns_with_unsupported_types_in_schema_inference: "/reference/settings/formats/input-format",
-    input_format_orc_use_fast_decoder: "/reference/settings/formats/input-format",
     input_format_parallel_parsing: "/reference/settings/formats/input-format",
     input_format_parquet_allow_geoparquet_parser: "/reference/settings/formats/input-format",
     input_format_parquet_allow_missing_columns: "/reference/settings/formats/input-format",
@@ -900,7 +898,7 @@ const FormatSettingsExplorer = () => {
               <div key={item.value.name} className="flex min-w-max items-baseline whitespace-nowrap">
                 <span aria-hidden="true" style={{ display: "inline-block", width: "1rem" }} />
                 {branch(branchPrefix(childContinuations, itemIsLast))}
-                <a href={item.value.href} className="no-underline hover:underline">
+                <a href={`/docs${item.value.href}`} className="no-underline hover:underline">
                   {item.value.name}
                 </a>
               </div>

@@ -264,7 +264,7 @@ Quantile interpolation is then performed similarly to the PromQL [histogram_quan
 **See Also**
 
 - [median](/sql-reference/aggregate-functions/reference/median)
-- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md)
+- [quantiles](/reference/functions/aggregate-functions/quantiles)
     )";
     FunctionDocumentation::Syntax syntax_quantilePrometheusHistogram = R"(
 quantilePrometheusHistogram(level)(bucket_upper_bound, cumulative_bucket_value)
