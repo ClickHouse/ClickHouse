@@ -254,6 +254,21 @@ void StorageDictionary::removeDictionaryConfigurationFromRepository()
     remove_repository_callback.reset();
 }
 
+void StorageDictionary::restoreDictionaryConfigurationInRepository()
+{
+    /// Mirror the constructor: shutdown() reset remove_repository_callback (deregistering the
+    /// dictionary from the loader); re-add the repository so the dictionary is loadable again.
+    if (remove_repository_callback)
+        return;
+
+    auto global_context = getContext();
+    auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
+    remove_repository_callback = global_context->getExternalDictionariesLoader().addConfigRepository(std::move(repository));
+
+    if (!global_context->getServerSettings()[ServerSetting::dictionaries_lazy_load])
+        global_context->getExternalDictionariesLoader().reloadConfig(getStorageID().getInternalDictionaryName());
+}
+
 LoadablesConfigurationPtr StorageDictionary::getConfiguration() const
 {
     std::lock_guard lock(dictionary_config_mutex);

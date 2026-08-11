@@ -14,6 +14,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageDictionary.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
@@ -40,6 +41,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char drop_database_before_exclusive_ddl_lock[];
+    extern const char detach_permanently_pause_before_remove_dependencies[];
 }
 
 namespace Setting
@@ -304,7 +306,21 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             if (query.permanently)
             {
-                DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                /// The pre-shutdown check above rejects pre-existing dependents; a dependent registered
+                /// concurrently (after that check) still makes removeDependencies throw here, after
+                /// flushAndShutdown already deregistered a dictionary from the loader. Restore it so the
+                /// rejected DETACH PERMANENTLY leaves the dictionary usable.
+                FailPointInjection::pauseFailPoint(FailPoints::detach_permanently_pause_before_remove_dependencies);
+                try
+                {
+                    DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                }
+                catch (...)
+                {
+                    if (auto * dictionary = dynamic_cast<StorageDictionary *>(table.get()))
+                        dictionary->restoreDictionaryConfigurationInRepository();
+                    throw;
+                }
                 NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
