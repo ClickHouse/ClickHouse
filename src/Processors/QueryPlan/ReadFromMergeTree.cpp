@@ -5752,7 +5752,11 @@ void ReadFromMergeTree::serializeTextIndexReadTasks(Serialization & ctx) const
             condition_text->getSearchQueryForVirtualColumn(column.name)->serialize(ctx.out);
 
             const auto & virtual_column = storage_snapshot->metadata->virtuals.getDescription(column.name, VirtualsKind::All, VirtualsMaterializationPlace::All);
-            writeStringBinary(virtual_column.default_desc.expression ? virtual_column.default_desc.expression->formatWithSecretsOneLine() : "", ctx.out);
+            const auto & default_expression = virtual_column.default_desc.expression;
+
+            /// `formatWithSecretsOneLine` keeps secrets and bypasses the log masker,
+            /// so the worker parses back exactly the fallback predicate the initiator planned.
+            writeStringBinary(default_expression ? default_expression->formatWithSecretsOneLine() : "", ctx.out);
         }
     }
 }
