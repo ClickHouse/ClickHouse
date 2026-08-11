@@ -75,9 +75,6 @@ class Docker:
                 for name, value in config.build_args.items()
             )
 
-            # `--push` is shorthand for `--output type=image,push=true`; spell the
-            # exporter out so the layer compression can be set on it. Nothing is
-            # exported at all when pushing is disabled (local runs), as before.
             if disable_push:
                 push_out = ""
             else:
@@ -85,10 +82,6 @@ class Docker:
                     " --output type=image,push=true"
                     f",compression={Settings.DOCKER_LAYER_COMPRESSION}"
                     f",compression-level={Settings.DOCKER_LAYER_COMPRESSION_LEVEL}"
-                    # Without this, layers inherited from the base image keep the
-                    # compression they were pushed with, so a chained image would
-                    # be a gzip/zstd mix and its biggest layers would never
-                    # convert.
                     ",force-compression=true"
                 )
 

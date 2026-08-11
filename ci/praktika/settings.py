@@ -128,12 +128,6 @@ class _Settings:
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
-    # Layer compression for images pushed by `Docker.build`. A CI image is built
-    # once and pulled cold by every job that uses it, so the pull side is what
-    # matters: zstd is both smaller and much faster to unpack than gzip. Set to
-    # "gzip" for maximum compatibility with old docker daemons (zstd layers need
-    # docker >= 23.0). Takes effect per image the next time it is built - the
-    # image tag is a digest of its build context, not of these settings.
     DOCKER_LAYER_COMPRESSION: str = "zstd"
     DOCKER_LAYER_COMPRESSION_LEVEL: int = 3
 
