@@ -1676,6 +1676,22 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
     const auto state_snapshot = state.get();
+
+    /// Check existence first: creation may be denied to a principal that is still
+    /// allowed to use a pre-provisioned namespace.
+    const std::string check_endpoint
+        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
+    try
+    {
+        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
+        return;
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+            throw;
+    }
+
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
@@ -1694,16 +1710,16 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     {
         sendRequest(*state_snapshot, endpoint, request_body);
     }
-    catch (...)
+    catch (const DB::HTTPException & e)
     {
-        DB::tryLogCurrentException(log);
+        /// Lost the race to a concurrent creator.
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+            throw;
     }
 }
 
 void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
 {
-    createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
-
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
 
