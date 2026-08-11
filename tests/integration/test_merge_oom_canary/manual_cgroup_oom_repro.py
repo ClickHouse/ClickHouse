@@ -431,6 +431,13 @@ def main():
         # `subprocess.TimeoutExpired` - a call that timed out before anything ever succeeded is the
         # same "the reproducer is broken" signal as a non-zero exit.
         churn_failures = []
+        # Set together with each `churn_failures` append, capturing "no cycle had succeeded yet" at
+        # the moment the failure was observed. `main` aborts on this event rather than re-checking
+        # `churn_ok`: a worker already mid-cycle when `stop` was set can still finish its in-flight
+        # `INSERT` + `OPTIMIZE` and flip `churn_ok` afterwards, and that later in-flight success must
+        # not hide the recorded pre-success failure. (The `oom_after` re-check in `main` still
+        # applies - a kill that raced with the failure excuses it either way.)
+        churn_fatal = threading.Event()
         # First `Memory limit (total) exceeded` rejection observed before the OOM. The server's own
         # tracked-memory limit firing means tracked memory reached `max_server_memory_usage`, so a
         # later kernel kill would prove tracked exhaustion, not the resident > tracked drift - such a
@@ -508,6 +515,7 @@ def main():
                 except subprocess.TimeoutExpired as timeout_error:
                     if not churn_ok.is_set() and oom_kill_count() == oom_before:
                         churn_failures.append(timeout_error)
+                        churn_fatal.set()
                         stop.set()
                         return
                     continue
@@ -526,6 +534,7 @@ def main():
                     # the churn now and let `main` abort with the client's error instead of waiting
                     # out the full churn window and reporting a false negative.
                     churn_failures.append(failed)
+                    churn_fatal.set()
                     stop.set()
                     return
 
@@ -570,9 +579,12 @@ def main():
             )
         # The churn never worked and no OOM fired: the reproducer itself is broken (server refused
         # connections, the SQL failed, ...) - report that instead of a false "OOM did not fire".
-        # `oom_after` is re-checked here because the worker's own check races with the kill: if the
-        # OOM did land in between, the failure was the expected death of the workload, not a bug.
-        if churn_failures and not churn_ok.is_set() and oom_after == oom_before:
+        # `churn_fatal` captured the pre-success state at the moment the failure was recorded, so a
+        # worker that was still mid-cycle at that point and flipped `churn_ok` afterwards does not
+        # mask it. `oom_after` is re-checked here because the worker's own check races with the kill:
+        # if the OOM did land in between, the failure was the expected death of the workload, not a
+        # bug.
+        if churn_fatal.is_set() and oom_after == oom_before:
             failed = churn_failures[0]
             if isinstance(failed, subprocess.TimeoutExpired):
                 die(

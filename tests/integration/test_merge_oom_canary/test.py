@@ -69,6 +69,11 @@ WORKER_QUERY_SETTINGS = {"connect_timeout": 5, "receive_timeout": 10}
 # connections as the cgroup fills and the canary is killed.
 stop = threading.Event()
 workload_ok = threading.Event()  # set on the first fully successful worker query
+# Set together with each `workload_failures` append, capturing "no worker query had succeeded yet" at
+# the moment the failure was observed. Teardown reports on this event rather than re-checking
+# `workload_ok`: a worker already mid-query when `stop` was set can still return successfully and flip
+# `workload_ok` afterwards, and that later in-flight success must not hide the recorded failure.
+workload_fatal = threading.Event()
 workload_failures = []  # pre-success failures as (sql, error); append is atomic, only [0] is read
 
 
@@ -91,6 +96,7 @@ def run_worker_query(sql, settings=None):
         # below. After `workload_ok`, the caller re-checks `stop`.
         if not workload_ok.is_set():
             workload_failures.append((sql, f"timed out after {WORKER_QUERY_TIMEOUT}s"))
+            workload_fatal.set()
             stop.set()
         return
     if not error:
@@ -98,6 +104,7 @@ def run_worker_query(sql, settings=None):
     elif not workload_ok.is_set():
         # Fail closed: the workload is broken, not OOMed - record the real error and abort all workers.
         workload_failures.append((sql, error))
+        workload_fatal.set()
         stop.set()
 
 
@@ -227,8 +234,10 @@ def test_fuzzer_scenario_triggers_kernel_oom_and_server_survives():
                 file=sys.stderr,
             )
         # Fail closed on a workload that never got off the ground: surface the first real worker error
-        # instead of the `wait_for_log_line` timeout it would otherwise hide behind.
-        if workload_failures and not workload_ok.is_set():
+        # instead of the `wait_for_log_line` timeout it would otherwise hide behind. `workload_fatal`
+        # captured the pre-success state at the moment the failure was recorded, so a worker that was
+        # still mid-query at that point and succeeded afterwards does not mask it.
+        if workload_fatal.is_set():
             failed_sql, error = workload_failures[0]
             pytest.fail(
                 f"A worker query failed before any worker query succeeded - the workload is broken, "
