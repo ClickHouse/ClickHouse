@@ -742,6 +742,11 @@ def test_remote_host_filter(started_cluster):
     instance = started_cluster.instances["restricted_dummy"]
     format = "column1 UInt32, column2 UInt32, column3 UInt32"
 
+    query = "DESCRIBE TABLE s3('http://{}:{}/{}/test.csv', 'CSV')".format(
+        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket
+    )
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
+
     query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
         "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format
     )
@@ -3713,4 +3718,3 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
     assert hits_third == 0, f"Expected no stale cache hit after overwrite, got {hits_third}"
 
     instance.query(f"DROP TABLE {table_name}")
-
