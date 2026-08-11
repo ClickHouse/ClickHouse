@@ -309,6 +309,7 @@ namespace ErrorCodes
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_PARTITIONS;
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
@@ -3669,6 +3670,18 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
+
+    /// Unlike a regular read, a streaming read has no marks by which the number of streams could be
+    /// clamped, and every stream creates a separate source here. Reject absurd values of
+    /// `max_threads * max_streams_to_max_threads_ratio` (which the planner bounds-checks only for
+    /// representability in `size_t`), mirroring the limit on the number of threads in `MergeTreeReadPool`.
+    static constexpr size_t max_streams_for_streaming_read = 1000000;
+    if (num_streams > max_streams_for_streaming_read)
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Too many streams for a streaming read: {} (the maximum is {}). "
+            "Lower `max_streams_to_max_threads_ratio` or `max_threads`",
+            num_streams, max_streams_for_streaming_read);
+
     SharedHeader header = getOutputHeader();
 
     Pipes pipes;
