@@ -347,7 +347,6 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     }
 
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
-    metadata_object->set(Iceberg::f_last_column_id, last_column_id + 1);
 
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
@@ -355,6 +354,8 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     new_field->set(Iceberg::f_name, column_name);
     new_field->set(Iceberg::f_required, new_type.second);
     new_field->set(Iceberg::f_type, new_type.first);
+
+    metadata_object->set(Iceberg::f_last_column_id, last_column_id + 1);
 
     current_schema->getArray(Iceberg::f_fields)->add(new_field);
     current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);

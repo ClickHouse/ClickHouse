@@ -227,6 +227,43 @@ bool schemasEquivalentIgnoringId(const Poco::JSON::Object::Ptr & lhs, const Poco
     return icebergJsonObjectEquals(lhs_copy, rhs_copy);
 }
 
+void collectFieldIdsFromType(const Poco::Dynamic::Var & type_var, std::unordered_set<Int32> & ids)
+{
+    if (type_var.type() != typeid(Poco::JSON::Object::Ptr))
+        return;
+    auto obj = type_var.extract<Poco::JSON::Object::Ptr>();
+    const auto type_str = obj->optValue<String>(DB::Iceberg::f_type, "");
+    if (type_str == "struct")
+    {
+        auto fields = obj->getArray(DB::Iceberg::f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            if (field->has(DB::Iceberg::f_id))
+                ids.insert(field->getValue<Int32>(DB::Iceberg::f_id));
+            collectFieldIdsFromType(field->get(DB::Iceberg::f_type), ids);
+        }
+    }
+    else if (type_str == "list")
+    {
+        if (obj->has(DB::Iceberg::f_element_id))
+            ids.insert(obj->getValue<Int32>(DB::Iceberg::f_element_id));
+        if (obj->has(DB::Iceberg::f_element))
+            collectFieldIdsFromType(obj->get(DB::Iceberg::f_element), ids);
+    }
+    else if (type_str == "map")
+    {
+        if (obj->has(DB::Iceberg::f_key_id))
+            ids.insert(obj->getValue<Int32>(DB::Iceberg::f_key_id));
+        if (obj->has(DB::Iceberg::f_value_id))
+            ids.insert(obj->getValue<Int32>(DB::Iceberg::f_value_id));
+        if (obj->has(DB::Iceberg::f_key))
+            collectFieldIdsFromType(obj->get(DB::Iceberg::f_key), ids);
+        if (obj->has(DB::Iceberg::f_value))
+            collectFieldIdsFromType(obj->get(DB::Iceberg::f_value), ids);
+    }
+}
+
 void collectSchemaFieldIdsFromFields(const Poco::JSON::Array::Ptr & fields, std::unordered_set<Int32> & ids)
 {
     for (UInt32 i = 0; i < fields->size(); ++i)
@@ -234,6 +271,8 @@ void collectSchemaFieldIdsFromFields(const Poco::JSON::Array::Ptr & fields, std:
         auto field = fields->getObject(i);
         if (field->has(DB::Iceberg::f_id))
             ids.insert(field->getValue<Int32>(DB::Iceberg::f_id));
+        if (field->has(DB::Iceberg::f_type))
+            collectFieldIdsFromType(field->get(DB::Iceberg::f_type), ids);
     }
 }
 
@@ -287,6 +326,106 @@ bool sortOrderIncompatibleWithSchema(
     return false;
 }
 
+}
+
+Poco::JSON::Object::Ptr buildUpdateSchemaRequestBody(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr metadata,
+    Poco::JSON::Object::Ptr new_schema,
+    Int32 previous_schema_id,
+    Int32 new_last_column_id)
+{
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+        request_body->set("identifier", identifier);
+    }
+
+    if (previous_schema_id >= 0)
+    {
+        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+        requirement->set("type", "assert-current-schema-id");
+        requirement->set("current-schema-id", previous_schema_id);
+
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        requirements->add(requirement);
+        request_body->set("requirements", requirements);
+    }
+
+    Poco::JSON::Object::Ptr schema_for_rest = cloneJsonObject(new_schema);
+    if (!schema_for_rest->has("identifier-field-ids"))
+    {
+        Poco::JSON::Array::Ptr empty_identifier_field_ids = new Poco::JSON::Array;
+        schema_for_rest->set("identifier-field-ids", empty_identifier_field_ids);
+    }
+
+    std::optional<Int32> existing_equivalent_schema_id;
+    if (metadata && metadata->has(DB::Iceberg::f_schemas))
+    {
+        auto schemas = metadata->getArray(DB::Iceberg::f_schemas);
+        auto new_schema_id = new_schema->getValue<Int32>(DB::Iceberg::f_schema_id);
+        for (UInt32 i = 0; i < schemas->size(); ++i)
+        {
+            auto existing_schema = schemas->getObject(i);
+            if (existing_schema->getValue<Int32>(DB::Iceberg::f_schema_id) == new_schema_id)
+                continue;
+            if (schemasEquivalentIgnoringId(existing_schema, new_schema))
+            {
+                existing_equivalent_schema_id = existing_schema->getValue<Int32>(DB::Iceberg::f_schema_id);
+                break;
+            }
+        }
+    }
+
+    Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+    if (existing_equivalent_schema_id.has_value())
+    {
+        Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
+        set_current_schema->set("action", "set-current-schema");
+        set_current_schema->set("schema-id", *existing_equivalent_schema_id);
+        updates->add(set_current_schema);
+    }
+    else
+    {
+        {
+            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
+            add_schema->set("action", "add-schema");
+            add_schema->set("schema", schema_for_rest);
+            add_schema->set("last-column-id", new_last_column_id);
+            updates->add(add_schema);
+        }
+        {
+            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
+            set_current_schema->set("action", "set-current-schema");
+            set_current_schema->set("schema-id", -1);
+            updates->add(set_current_schema);
+        }
+    }
+
+    if (metadata && sortOrderIncompatibleWithSchema(metadata, new_schema))
+    {
+        Poco::JSON::Object::Ptr unsorted_sort_order = new Poco::JSON::Object;
+        unsorted_sort_order->set(DB::Iceberg::f_order_id, 0);
+        unsorted_sort_order->set(DB::Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+
+        Poco::JSON::Object::Ptr add_sort_order = new Poco::JSON::Object;
+        add_sort_order->set("action", "add-sort-order");
+        add_sort_order->set("sort-order", unsorted_sort_order);
+        updates->add(add_sort_order);
+
+        Poco::JSON::Object::Ptr set_default_sort_order = new Poco::JSON::Object;
+        set_default_sort_order->set("action", "set-default-sort-order");
+        set_default_sort_order->set("sort-order-id", -1);
+        updates->add(set_default_sort_order);
+    }
+
+    request_body->set("updates", updates);
+    return request_body;
 }
 
 Poco::JSON::Object::Ptr buildUpdateMetadataRequestBody(
@@ -1577,47 +1716,13 @@ bool RestCatalog::updateSchema(
     const String & /*new_metadata_path*/,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id,
-    Int32 new_last_column_id) const
+    Int32 new_last_column_id,
+    Poco::JSON::Object::Ptr metadata) const
 {
     const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 
-    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
-        request_body->set("identifier", identifier);
-    }
-
-    {
-        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-        requirement->set("type", "assert-current-schema-id");
-        requirement->set("current-schema-id", previous_schema_id);
-
-        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
-        requirements->add(requirement);
-        request_body->set("requirements", requirements);
-    }
-
-    {
-        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
-        {
-            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
-            add_schema->set("action", "add-schema");
-            add_schema->set("schema", new_schema);
-            add_schema->set("last-column-id", new_last_column_id);
-            updates->add(add_schema);
-        }
-        {
-            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
-            set_current_schema->set("action", "set-current-schema");
-            set_current_schema->set("schema-id", -1);
-            updates->add(set_current_schema);
-        }
-        request_body->set("updates", updates);
-    }
+    auto request_body = buildUpdateSchemaRequestBody(
+        namespace_name, table_name, metadata, new_schema, previous_schema_id, new_last_column_id);
 
     try
     {

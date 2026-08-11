@@ -80,7 +80,8 @@ public:
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id,
-        Int32 new_last_column_id) const override;
+        Int32 new_last_column_id,
+        Poco::JSON::Object::Ptr metadata = nullptr) const override;
 
     bool isTransactional() const override { return true; }
 
@@ -249,6 +250,16 @@ private:
 /// Returns `nullptr` when `new_snapshot` is null (nothing to commit). Throws
 /// `DB::Exception(DATALAKE_DATABASE_ERROR)` with a specific message when the metadata
 /// blob is malformed (e.g. missing `current-schema-id`, no schema object matching it).
+/// Builds the JSON body for a schema-update commit via the Iceberg REST catalog.
+/// Includes schema deduplication, sort-order incompatibility reset, and last-column-id.
+Poco::JSON::Object::Ptr buildUpdateSchemaRequestBody(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr metadata,
+    Poco::JSON::Object::Ptr new_schema,
+    Int32 previous_schema_id,
+    Int32 new_last_column_id);
+
 Poco::JSON::Object::Ptr buildUpdateMetadataRequestBody(
     const String & namespace_name,
     const String & table_name,

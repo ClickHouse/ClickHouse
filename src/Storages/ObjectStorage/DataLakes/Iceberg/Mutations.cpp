@@ -910,7 +910,7 @@ void alter(
             const auto new_last_column_id = std::max(
                 metadata->getValue<Int32>(Iceberg::f_last_column_id),
                 getHighestFieldId(new_schema));
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id, new_last_column_id))
+            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id, new_last_column_id, metadata))
             {
                 ++i;
                 continue;

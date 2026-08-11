@@ -197,7 +197,8 @@ public:
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id,
-        Int32 new_last_column_id) const;
+        Int32 new_last_column_id,
+        Poco::JSON::Object::Ptr metadata = nullptr) const;
 
     /// Drop table from catalog.
     virtual void dropTable(const String & namespace_name, const String & table_name) const;
