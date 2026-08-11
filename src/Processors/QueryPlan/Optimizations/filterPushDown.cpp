@@ -447,6 +447,11 @@ static void projectDagInputs(ActionsDAG & actions_dag)
     }
 }
 
+static bool isAnyInnerJoin(JoinKind kind, JoinStrictness strictness)
+{
+    return kind == JoinKind::Inner && (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny);
+}
+
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
@@ -608,6 +613,22 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
 
+    /** `ANY INNER` join emits at most one row per left row, taking an arbitrary match from the right side.
+      * Filtering the right stream can change which match is taken.
+      * Only the right side is blocked: the left side is preserved, so dropping some of the rows
+      * from the left side cannot change the output set of rows.
+      * Predicates over the equi-join keys are still pushed to both sides through the equivalent-columns path below.
+      */
+    if (table_join_ptr && isAnyInnerJoin(table_join_ptr->kind(), table_join_ptr->strictness()))
+    {
+        right_stream_filter_push_down_input_columns_available = false;
+    }
+
+    if (logical_join && isAnyInnerJoin(logical_join->getJoinOperator().kind, logical_join->getJoinOperator().strictness))
+    {
+        right_stream_filter_push_down_input_columns_available = false;
+    }
+
     /** We disable push down to right table in cases:
       * 1. Right side is already filled. Example: JOIN with Dictionary.
       * 2. ASOF Right join is not supported.
@@ -706,7 +727,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
-    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
+    else if (const auto * join_operator = logical_join ? &logical_join->getJoinOperator() : nullptr;
+            join_operator && ((join_operator->kind == JoinKind::Left && join_operator->strictness == JoinStrictness::Semi)
+                || isAnyInnerJoin(join_operator->kind, join_operator->strictness)))
     {
         if (!logical_join->typeChangingSides().contains(JoinTableSide::Right))
         {
@@ -714,6 +737,16 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
                 equivalent_columns_to_push_down.push_back(name);
         }
+    }
+    else if (table_join_ptr && isAnyInnerJoin(table_join_ptr->kind(), table_join_ptr->strictness()))
+    {
+        /// Same as `ANY INNER` case above for the `JoinStep` case.
+        /// The `typeChangingSides` check is not needed in this case, because
+        ///     1. `INNER` joins never widen the columns' types.
+        ///     2. On this path an `INNER` join cannot have been produced from an `OUTER` one by
+        ///        `tryConvertOuterJoinToInnerJoin` and thus it's not carrying the preserved nullability.
+        for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
+            equivalent_columns_to_push_down.push_back(name);
     }
 
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
