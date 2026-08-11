@@ -23,15 +23,18 @@ SET enable_join_runtime_filters_index_analysis = 0, use_skip_indexes_on_data_rea
 -- The asserts need the big table on the probe side: keep the join order deterministic (the
 -- CI randomization can flip the sides, which correctly falls back to ungated reading).
 SET query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false';
+-- Every table pins auto_statistics_types = '': the automatic statistics refresh scheduled
+-- right after an insert adds background merges which contend with the test's own activity
+-- on slow runners, and nothing here uses statistics.
 
 DROP TABLE IF EXISTS t_seal_probe;
 DROP TABLE IF EXISTS t_seal_build;
 
 CREATE TABLE t_seal_probe (k UInt64, v String) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8;
+    SETTINGS index_granularity = 8, auto_statistics_types = '';
 INSERT INTO t_seal_probe SELECT number, toString(number) FROM numbers(50000);
 
-CREATE TABLE t_seal_build (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_seal_build (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 -- 5 keys spread over the probe primary key range: almost all of the ~6250 marks are prunable.
 INSERT INTO t_seal_build SELECT number * 10000 FROM numbers(5);
 
@@ -81,7 +84,7 @@ SELECT /* seal_join_by_shards */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t
 -- ... and FINAL.
 DROP TABLE IF EXISTS t_seal_probe_final;
 CREATE TABLE t_seal_probe_final (k UInt64, v String) ENGINE = ReplacingMergeTree ORDER BY k
-    SETTINGS index_granularity = 8;
+    SETTINGS index_granularity = 8, auto_statistics_types = '';
 INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(20000);
 INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(20000);
 SELECT /* seal_final */ count(), sum(p.k) FROM t_seal_probe_final AS p FINAL JOIN t_seal_build AS b ON p.k = b.k;
@@ -91,7 +94,7 @@ DROP TABLE t_seal_probe_final;
 -- pruning has to keep exactly the marks containing the build keys.
 DROP TABLE IF EXISTS t_seal_probe_desc;
 CREATE TABLE t_seal_probe_desc (k UInt64, v String) ENGINE = MergeTree ORDER BY (k DESC)
-    SETTINGS index_granularity = 8;
+    SETTINGS index_granularity = 8, auto_statistics_types = '';
 INSERT INTO t_seal_probe_desc SELECT number, toString(number) FROM numbers(50000);
 SELECT /* seal_gated_reverse_key */ count(), sum(p.k) FROM t_seal_probe_desc AS p JOIN t_seal_build AS b ON p.k = b.k;
 DROP TABLE t_seal_probe_desc;
@@ -114,9 +117,9 @@ SELECT count() > 0 AS has_gated_reads_anti FROM (
 -- be gated.
 DROP TABLE IF EXISTS t_seal_probe_str;
 DROP TABLE IF EXISTS t_seal_build_str;
-CREATE TABLE t_seal_probe_str (s String) ENGINE = MergeTree ORDER BY s;
+CREATE TABLE t_seal_probe_str (s String) ENGINE = MergeTree ORDER BY s SETTINGS auto_statistics_types = '';
 INSERT INTO t_seal_probe_str SELECT toString(number) FROM numbers(10000);
-CREATE TABLE t_seal_build_str (s String) ENGINE = MergeTree ORDER BY s;
+CREATE TABLE t_seal_build_str (s String) ENGINE = MergeTree ORDER BY s SETTINGS auto_statistics_types = '';
 INSERT INTO t_seal_build_str SELECT toString(number * 1000) FROM numbers(5);
 SELECT count() FROM t_seal_probe_str AS p JOIN t_seal_build_str AS b ON p.s = b.s;
 SELECT count() > 0 AS has_gated_reads_string_key FROM (
@@ -131,9 +134,9 @@ DROP TABLE t_seal_build_str;
 DROP TABLE IF EXISTS t_seal_probe_ab;
 DROP TABLE IF EXISTS t_seal_build_ab;
 CREATE TABLE t_seal_probe_ab (a UInt64, b UInt64, v String) ENGINE = MergeTree ORDER BY (a, b)
-    SETTINGS index_granularity = 8;
+    SETTINGS index_granularity = 8, auto_statistics_types = '';
 INSERT INTO t_seal_probe_ab SELECT number % 100, intDiv(number, 100), toString(number) FROM numbers(50000);
-CREATE TABLE t_seal_build_ab (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b);
+CREATE TABLE t_seal_build_ab (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b) SETTINGS auto_statistics_types = '';
 INSERT INTO t_seal_build_ab SELECT number * 20, number * 100 FROM numbers(5);
 SELECT count() FROM t_seal_probe_ab AS p JOIN t_seal_build_ab AS q ON p.b = q.b;
 SELECT count() > 0 AS has_gated_reads_non_prefix_key FROM (
