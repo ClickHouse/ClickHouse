@@ -1096,7 +1096,8 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
     bool need_add_or_null = settings[Setting::aggregate_functions_null_for_empty] && !result_aggregate_function_name.ends_with("OrNull");
     if (need_add_or_null)
     {
-        auto properties = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name, action);
+        auto properties = AggregateFunctionFactory::instance().tryGetProperties(
+            result_aggregate_function_name, action, AggregateFunctionStateVariant::Window);
         if (!properties || !properties->returns_default_when_only_null)
             result_aggregate_function_name += "OrNull";
     }
@@ -1108,7 +1109,8 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
       */
     if (result_aggregate_function_name.ends_with("OrNull"))
     {
-        auto function_properies = AggregateFunctionFactory::instance().tryGetProperties(result_aggregate_function_name, action);
+        auto function_properies = AggregateFunctionFactory::instance().tryGetProperties(
+            result_aggregate_function_name, action, AggregateFunctionStateVariant::Window);
         if (function_properies && !function_properies->returns_default_when_only_null)
         {
             size_t function_name_size = result_aggregate_function_name.size();

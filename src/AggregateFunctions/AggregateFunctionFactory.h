@@ -42,6 +42,8 @@ struct AggregateFunctionWithProperties
     AggregateFunctionCreator window_creator;
     FunctionDocumentation documentation;
     AggregateFunctionProperties properties;
+    /// Optional properties for window_creator when the aggregate and OVER forms have different semantics.
+    std::optional<AggregateFunctionProperties> window_properties;
 
     AggregateFunctionWithProperties() = default;
     AggregateFunctionWithProperties(const AggregateFunctionWithProperties &) = default;
@@ -49,8 +51,17 @@ struct AggregateFunctionWithProperties
 
     template <typename Creator>
     requires (!std::is_same_v<Creator, AggregateFunctionWithProperties>)
-    AggregateFunctionWithProperties(Creator creator_, FunctionDocumentation documentation_, AggregateFunctionProperties properties_ = {}, AggregateFunctionCreator window_creator_ = {}) /// NOLINT
-        : creator(std::forward<Creator>(creator_)), window_creator(std::move(window_creator_)), documentation(std::move(documentation_)), properties(std::move(properties_))
+    AggregateFunctionWithProperties(
+        Creator creator_,
+        FunctionDocumentation documentation_,
+        AggregateFunctionProperties properties_ = {},
+        AggregateFunctionCreator window_creator_ = {},
+        std::optional<AggregateFunctionProperties> window_properties_ = {}) /// NOLINT
+        : creator(std::forward<Creator>(creator_))
+        , window_creator(std::move(window_creator_))
+        , documentation(std::move(documentation_))
+        , properties(std::move(properties_))
+        , window_properties(std::move(window_properties_))
     {
     }
 };
@@ -93,7 +104,10 @@ public:
         AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
 
     /// Get properties if the aggregate function exists.
-    std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
+    std::optional<AggregateFunctionProperties> tryGetProperties(
+        String name,
+        NullsAction action,
+        AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
 
     bool isAggregateFunctionName(const String & name) const;
 

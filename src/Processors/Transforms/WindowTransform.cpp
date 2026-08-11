@@ -3857,7 +3857,8 @@ FROM
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(
                 name, argument_types, parameters);
-        }});
+        },
+        properties});
 
     factory.registerFunction("exponentialTimeDecayingFloat64", {
         createAggregateFunctionExponentialTimeDecayingFloat64,
@@ -4083,7 +4084,8 @@ FROM
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedCount>(
                 name, argument_types, parameters);
-        }});
+        },
+        properties});
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 The aggregate-function form returns the average of values weighted by exponential decay relative to the greatest time argument.
@@ -4193,7 +4195,8 @@ FROM
         {
             return std::make_shared<WindowFunctionExponentialTimeDecayedAvg>(
                 name, argument_types, parameters);
-        }});
+        },
+        properties});
 
     factory.registerFunction("nonNegativeDerivative", {[](const std::string & name,
            const DataTypes & argument_types, const Array & parameters, const Settings *)

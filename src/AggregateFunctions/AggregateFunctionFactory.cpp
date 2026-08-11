@@ -102,7 +102,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
     /// they must handle the nullability themselves.
     /// Aggregate functions such as any_value_respect_nulls are considered window functions in that sense
-    auto properties = tryGetProperties(name, action);
+    auto properties = tryGetProperties(name, action, state_variant);
     bool is_window_function = properties.has_value() && properties->is_window_function;
     if (!is_window_function && std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
         [](const auto & type) { return type->isNullable(); }))
@@ -265,7 +265,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         if (opt)
             found = *opt;
 
-        out_properties = found.properties;
+        out_properties = state_variant == AggregateFunctionStateVariant::Window && found.window_properties
+            ? *found.window_properties
+            : found.properties;
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(
                 Context::QueryLogFactories::AggregateFunction, is_case_insensitive ? case_insensitive_name : name);
@@ -378,7 +380,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Unknown aggregate function {}{}", name, extra_info);
 }
 
-std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(String name, NullsAction action) const
+std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetProperties(
+    String name,
+    NullsAction action,
+    AggregateFunctionStateVariant state_variant) const
 {
     if (name.size() > MAX_AGGREGATE_FUNCTION_NAME_LENGTH)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too long name of aggregate function, maximum: {}", MAX_AGGREGATE_FUNCTION_NAME_LENGTH);
@@ -410,7 +415,10 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
         {
             auto opt = getAssociatedFunctionByNullsAction(is_case_insensitive ? lower_case_name : name, action);
             if (opt)
-                return opt->properties;
+                found = *opt;
+
+            if (state_variant == AggregateFunctionStateVariant::Window && found.window_properties)
+                return found.window_properties;
             return found.properties;
         }
 

@@ -185,7 +185,10 @@ struct CustomizeAggregateFunctionsSuffixData
         const auto & instance = AggregateFunctionFactory::instance();
         if (instance.isAggregateFunctionName(func.name) && !endsWith(func.name, customized_func_suffix) && !endsWith(func.name, customized_func_suffix + "If"))
         {
-            auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
+            auto properties = instance.tryGetProperties(
+                func.name,
+                func.getNullsAction(),
+                func.isWindowFunction() ? AggregateFunctionStateVariant::Window : AggregateFunctionStateVariant::Aggregation);
             if (properties && !properties->returns_default_when_only_null)
             {
                 func.name += customized_func_suffix;
@@ -229,7 +232,10 @@ struct CustomizeAggregateFunctionsMoveSuffixData
         {
             if (endsWith(func.name, customized_func_suffix))
             {
-                auto properties = instance.tryGetProperties(func.name, func.getNullsAction());
+                auto properties = instance.tryGetProperties(
+                    func.name,
+                    func.getNullsAction(),
+                    func.isWindowFunction() ? AggregateFunctionStateVariant::Window : AggregateFunctionStateVariant::Aggregation);
                 if (properties && !properties->returns_default_when_only_null)
                 {
                     func.name = moveSuffixAhead(func.name);
