@@ -126,7 +126,13 @@ public:
 private:
     friend class BackgroundQueriesDistributedRegistry;
 
-    BackgroundQueryHandle() = default;
+    BackgroundQueryHandle(
+        std::weak_ptr<BackgroundQueriesDistributedRegistry> registry_,
+        String entry_path_,
+        BackgroundQueriesDistributedRegistry::Entry entry_)
+        : registry(std::move(registry_)), entry_path(std::move(entry_path_)), entry(std::move(entry_))
+    {
+    }
 
     std::weak_ptr<BackgroundQueriesDistributedRegistry> registry;
     String entry_path;

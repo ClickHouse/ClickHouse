@@ -51,7 +51,7 @@ try
 
     std::cout << "create\n";
 
-    zk.create("/test", "old", false, false, {},
+    zk.create("/test", "old", false, false, /* ttl= */ 0, {},
         [&](const CreateResponse & response)
         {
             if (response.error != Coordination::Error::ZOK)

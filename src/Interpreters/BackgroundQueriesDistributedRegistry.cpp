@@ -191,12 +191,7 @@ BackgroundQueryHandlePtr BackgroundQueriesDistributedRegistry::registerQuery(con
     if (code != Coordination::Error::ZOK)
         throw zkutil::KeeperException::fromPath(code, entry_path_prefix);
 
-    BackgroundQueryHandlePtr handle(new BackgroundQueryHandle());
-    handle->registry = weak_from_this();
-    handle->entry_path = std::move(entry_path);
-    handle->entry = std::move(entry);
-
-    return handle;
+    return BackgroundQueryHandlePtr(new BackgroundQueryHandle(weak_from_this(), std::move(entry_path), std::move(entry)));
 }
 
 void BackgroundQueriesDistributedRegistry::finalizeQuery(BackgroundQueryHandle & handle, Status status, Int32 exception_code, const String & exception)
@@ -216,7 +211,7 @@ void BackgroundQueriesDistributedRegistry::threadFunction()
 
     while (true)
     {
-        EntryUpdate update;
+        EntryUpdate update{};
         if (entry_asynchronous_update_queue.tryPop(update, IDLE_TICK_PERIOD_MS))
         {
             try
@@ -233,8 +228,9 @@ void BackgroundQueriesDistributedRegistry::threadFunction()
             catch (...)
             {
                 tryLogCurrentException(log);
+                const auto query_id = update.entry.query_id;
                 if (!entry_asynchronous_update_queue.push(std::move(update)))
-                    LOG_WARNING(log, "Dropping the outcome of background query {}: the registry is shutting down", update.entry.query_id);
+                    LOG_WARNING(log, "Dropping the outcome of background query {}: the registry is shutting down", query_id);
             }
         }
 
