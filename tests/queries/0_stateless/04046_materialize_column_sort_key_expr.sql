@@ -544,3 +544,27 @@ ALTER TABLE t_mat_dep_sibling_index MODIFY COLUMN c2 UInt64 MATERIALIZED a * 10 
 ALTER TABLE t_mat_dep_sibling_index MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
 SELECT n FROM t_mat_dep_sibling_index WHERE n = 2101 SETTINGS force_data_skipping_indices = 'idx_n';
 DROP TABLE t_mat_dep_sibling_index;
+
+-- Case 45: A mixed mutation `UPDATE parent, MATERIALIZE COLUMN m` where the materialized
+-- expression reads a *subcolumn* of the updated parent (`m MATERIALIZED t.k + 1`). Without
+-- rewriting the subcolumn to `getSubcolumn` of the recomputed parent, `t.k` is registered as a
+-- separate stage input read from the source part, so `m` would be computed from the pre-update
+-- subcolumn values. Both wide and compact parts.
+DROP TABLE IF EXISTS t_mat_mixed_subcolumn_wide;
+CREATE TABLE t_mat_mixed_subcolumn_wide
+    (a UInt64, t Tuple(k UInt64, v UInt64), m UInt64 MATERIALIZED t.k + 1)
+    ENGINE = MergeTree() ORDER BY a SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_mat_mixed_subcolumn_wide (a, t) VALUES (1, (10, 100));
+SELECT t, m FROM t_mat_mixed_subcolumn_wide;
+ALTER TABLE t_mat_mixed_subcolumn_wide UPDATE t = tuple(20, 200) WHERE 1, MATERIALIZE COLUMN m SETTINGS mutations_sync = 2;
+SELECT t, m FROM t_mat_mixed_subcolumn_wide;
+DROP TABLE t_mat_mixed_subcolumn_wide;
+
+DROP TABLE IF EXISTS t_mat_mixed_subcolumn_compact;
+CREATE TABLE t_mat_mixed_subcolumn_compact
+    (a UInt64, t Tuple(k UInt64, v UInt64), m UInt64 MATERIALIZED t.k + 1)
+    ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_mixed_subcolumn_compact (a, t) VALUES (1, (10, 100));
+ALTER TABLE t_mat_mixed_subcolumn_compact UPDATE t = tuple(20, 200) WHERE 1, MATERIALIZE COLUMN m SETTINGS mutations_sync = 2;
+SELECT t, m FROM t_mat_mixed_subcolumn_compact;
+DROP TABLE t_mat_mixed_subcolumn_compact;

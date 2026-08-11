@@ -1247,8 +1247,16 @@ void MutationsInterpreter::prepare(bool dry_run)
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot materialize column `{}` because it doesn't have default expression", column.name);
 
-            auto materialized_column = makeASTFunction(
+            ASTPtr materialized_column = makeASTFunction(
                 "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
+
+            /// We need to replace all subcolumns used in the materialized expression with the
+            /// getSubcolumn function, because otherwise the subcolumn is registered as a separate
+            /// input of the stage and is read from the source part. In a mixed mutation such as
+            /// `UPDATE t = ..., MATERIALIZE COLUMN m` with `m MATERIALIZED t.k + 1`, this stage
+            /// would then compute `m` from the pre-update subcolumn values instead of the
+            /// rewritten parent column. Same as the dependent-MATERIALIZED stages below.
+            replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
 
