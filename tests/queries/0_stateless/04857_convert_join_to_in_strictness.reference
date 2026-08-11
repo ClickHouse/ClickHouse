@@ -22,4 +22,22 @@ b
 -- while ALL and ANY do not
 0
 0
+-- legacy any_join_distinct_right_table_keys rewrites ANY INNER to SEMI LEFT
+a
+a2
+b
+a
+a2
+b
+-- a JOIN row limit is enforced whether or not the join is converted
+-- and a transfer row limit does not silently truncate the result
+a
+a2
+b
+a
+a2
+b
+-- a query that sets either limit is not converted
+0
+0
 -- a Join engine table keeps its declared strictness check

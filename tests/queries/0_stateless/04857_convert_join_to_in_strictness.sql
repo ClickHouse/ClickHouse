@@ -59,6 +59,38 @@ SELECT count() > 0 FROM (
     SETTINGS query_plan_convert_join_to_in = 1
 ) WHERE explain ILIKE '%CreatingSets%';
 
+SELECT '-- legacy any_join_distinct_right_table_keys rewrites ANY INNER to SEMI LEFT';
+SELECT val FROM t_left ANY INNER JOIN t_right ON t_left.id = t_right.id
+ORDER BY val SETTINGS any_join_distinct_right_table_keys = 1, query_plan_convert_join_to_in = 0;
+
+SELECT val FROM t_left ANY INNER JOIN t_right ON t_left.id = t_right.id
+ORDER BY val SETTINGS any_join_distinct_right_table_keys = 1, query_plan_convert_join_to_in = 1;
+
+SELECT '-- a JOIN row limit is enforced whether or not the join is converted';
+SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+ORDER BY val SETTINGS query_plan_convert_join_to_in = 0, max_rows_in_join = 1; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+
+SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+ORDER BY val SETTINGS query_plan_convert_join_to_in = 1, max_rows_in_join = 1; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+
+SELECT '-- and a transfer row limit does not silently truncate the result';
+SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+ORDER BY val SETTINGS query_plan_convert_join_to_in = 0, max_rows_to_transfer = 1, transfer_overflow_mode = 'break';
+
+SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+ORDER BY val SETTINGS query_plan_convert_join_to_in = 1, max_rows_to_transfer = 1, transfer_overflow_mode = 'break';
+
+SELECT '-- a query that sets either limit is not converted';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1, max_rows_in_join = 1
+) WHERE explain ILIKE '%CreatingSets%';
+
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT val FROM t_left SEMI LEFT JOIN t_right ON t_left.id = t_right.id
+    SETTINGS query_plan_convert_join_to_in = 1, max_rows_to_transfer = 1, transfer_overflow_mode = 'break'
+) WHERE explain ILIKE '%CreatingSets%';
+
 SELECT '-- a Join engine table keeps its declared strictness check';
 DROP TABLE IF EXISTS t_join_any;
 CREATE TABLE t_join_any (id Int32, rval String) ENGINE = Join(ANY, LEFT, id);

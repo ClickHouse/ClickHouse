@@ -147,8 +147,10 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (settings.make_distributed_plan)
         return 0;
 
+    const auto & join_settings = join->getJoinSettings();
+
     /// Let's support only hash algorithm, because full sorting join may be more memory efficient than IN.
-    const auto & join_algorithms = join->getJoinSettings().join_algorithms;
+    const auto & join_algorithms = join_settings.join_algorithms;
     if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH) &&
         !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
         return 0;
@@ -164,9 +166,28 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         return 0;
 
     /// The Join engine validates the query's kind and strictness against its declared ones, and
-    /// replacing the join with IN skips that check.
-    if (auto * lookup = typeid_cast<JoinStepLogicalLookup *>(parent_node->children.back()->step.get());
-        lookup && lookup->getPreparedJoinStorage().storage_join)
+    /// replacing the join with IN skips that check. Single-child steps can sit above the source.
+    auto is_storage_join = [](const QueryPlan::Node * side_node)
+    {
+        for (const auto * node = side_node; node; )
+        {
+            if (auto * lookup = typeid_cast<JoinStepLogicalLookup *>(node->step.get()))
+                return lookup->getPreparedJoinStorage().storage_join != nullptr;
+            if (node->children.size() != 1)
+                break;
+            node = node->children.front();
+        }
+        return false;
+    };
+    if (is_storage_join(parent_node->children.back()))
+        return 0;
+
+    /// The join enforces max_rows_in_join/max_bytes_in_join while the replacement set enforces the
+    /// transfer limits, so any difference between the two regimes would change the result.
+    const auto & set_limits = settings.network_transfer_limits;
+    if (join_settings.max_rows_in_join != set_limits.max_rows
+        || join_settings.max_bytes_in_join != set_limits.max_bytes
+        || join_settings.join_overflow_mode != set_limits.overflow_mode)
         return 0;
 
     /// Do not support many condition for now.
@@ -193,7 +214,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     auto join_output_actions = join->getOutputActions();
     /// Check output columns come from one side.
-    if (!isInnerOrLeft(join_operator.kind) || std::ranges::any_of(join_output_actions, &JoinActionRef::fromRight))
+    if (std::ranges::any_of(join_output_actions, &JoinActionRef::fromRight))
         return 0;
 
     /// Check input and output type match
