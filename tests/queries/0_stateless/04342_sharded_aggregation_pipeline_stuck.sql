@@ -162,12 +162,14 @@ SETTINGS enable_sharding_aggregator = 1,
          merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 1,
          merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 1;
 
--- (b) Cap reached while NO port has an empty queue, which is the only state that reaches
---     the back-pressure return. Distinct keys spread rows over every shard, so no shard
---     queue is ever empty. This case exercises that branch and checks the aggregation is
---     still correct; it cannot assert the back-pressure itself, because the cap is a
---     memory bound with no query-visible effect (removing it only changes peak queue
---     depth, which no SQL oracle exposes).
+-- (b) Cap reached while NO port has an empty queue: distinct keys spread rows over every
+--     shard, so no shard queue is ever empty. In this state the back-pressure return that
+--     fires is the no-progress guard above the cap check, not the cap check's own PortFull
+--     arm - a queue at capacity is by definition non-empty, so that arm is unreachable and
+--     measures zero. This case therefore drives the cap and pins correctness; it cannot
+--     assert the back-pressure itself, because the cap is a memory bound with no
+--     query-visible effect (removing it only changes peak queue depth, which no SQL
+--     oracle exposes).
 DROP TABLE IF EXISTS test_106237_spread;
 CREATE TABLE test_106237_spread (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0;

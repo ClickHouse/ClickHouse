@@ -44,15 +44,8 @@ public:
 private:
     void generateOutputChunks();
 
-    /// Soft cap. Once any queue hits this length the transform stops pulling new input
-    /// until the slow consumer drains it. The soft cap can be temporarily bypassed when
-    /// a sibling output port has an empty queue and downstream demand on it - otherwise
-    /// a sequential downstream consumer (e.g. `ConcatProcessor`) would deadlock waiting
-    /// for data on the empty path while we back-pressure here. Under pathological hash
-    /// skew (all rows hashing to one shard while a sibling port is asking), the bypass
-    /// keeps growing that shard's queue until upstream is exhausted, so in that state the
-    /// bound is the applicable memory limit (the queued chunks are tracked), not this cap.
-    /// A proper bound would require spilling overflow chunks; that is a follow-up.
+    /// Pulling stops once any queue reaches this length, unless a demanded output has an empty
+    /// queue and nothing else is drainable - then a queue can exceed it, bounded only by memory.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
     size_t num_shards;
@@ -62,9 +55,7 @@ private:
     bool has_pending_input_chunk = false;
     Chunk pending_input_chunk;
 
-    /// Per-shard FIFO of chunks waiting to be pushed downstream. Soft-capped at
-    /// MAX_QUEUE_LENGTH; see that constant for when the cap is bypassed and a queue
-    /// can grow past it.
+    /// Per-shard FIFO of chunks waiting to be pushed downstream. Soft-capped at MAX_QUEUE_LENGTH.
     std::vector<std::deque<Chunk>> output_queues;
 
     /// Reused across input chunks to skip per-chunk reallocation.

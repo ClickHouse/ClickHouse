@@ -22,12 +22,8 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
     auto & input = getInputs().front();
     const bool input_finished = input.isFinished();
 
-    /// First pass over outputs: clear queues of finished outputs, and finish outputs whose
-    /// queue is empty once the input is exhausted (no chunk pending). Without finishing
-    /// empty-queue outputs eagerly here, a downstream consumer that activates inputs
-    /// sequentially (e.g. `ConcatProcessor`) waits forever on the empty path because it
-    /// never receives a finish signal, while the queued chunks on the other shards
-    /// can never drain because the consumer never advances to them.
+    /// Establishes: no active output has an empty queue once the input is exhausted and no
+    /// chunk is pending. Queues of finished outputs are released here too.
     bool all_finished = true;
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
@@ -81,33 +77,23 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
             has_pushable_queued_chunks = true;
     }
 
-    /// Input exhausted - drain remaining queues, then finish.
-    /// All empty-queue active outputs were finished in the first pass, so if we got here
-    /// then at least one queue is non-empty.
+    /// Every active output with an empty queue was finished above, so a queue is non-empty here.
     if (input_finished)
     {
         chassert(has_queued_chunks);
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
     }
 
-    /// `PortFull` is correct only when we cannot make forward progress:
-    ///  - no queued chunk is pushable right now, AND
-    ///  - no empty port is waiting for fresh data we could route to it.
-    /// Otherwise we must keep pulling input. A `ConcatProcessor` downstream activates
-    /// inputs sequentially: if we back-pressure here, the active branch (an empty-queue
-    /// port that has `canPush`) waits forever, and the queued chunks on the other
-    /// shards never get drained because `Concat` never advances to them.
+    /// There is no forward progress only when no queued chunk is pushable and no empty port
+    /// is asking; anything else means input must keep flowing.
     if (!has_pushable_queued_chunks && !has_pushable_empty_port)
     {
         if (has_queued_chunks)
             return Status::PortFull;
-        /// All active queues are empty and no downstream is asking - nothing to do until
-        /// either input arrives or downstream demand appears.
     }
 
-    /// Back-pressure on the soft cap, except when the only demand is an empty port and
-    /// nothing is drainable: a sequentially-activated consumer would then wait forever on
-    /// that port, so keep pulling input to feed it even though the cap is reached.
+    /// The cap holds back input unless the sole demand is an empty port with nothing
+    /// drainable: that port can only be fed from input, so the cap yields to it.
     if (any_queue_at_capacity && !(has_pushable_empty_port && !has_pushable_queued_chunks))
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
 
