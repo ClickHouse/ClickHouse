@@ -2287,4 +2287,27 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     return result;
 }
 
+std::vector<String> getDependentViewsForDroppedColumn(
+    const std::unordered_map<String, std::vector<String>> & dependent_views_by_column,
+    const ColumnsDescription & columns,
+    const String & dropped_name,
+    bool share_nested_offsets)
+{
+    std::vector<String> views;
+    if (auto it = dependent_views_by_column.find(dropped_name); it != dependent_views_by_column.end())
+        views = it->second;
+
+    if (share_nested_offsets && !columns.has(dropped_name))
+    {
+        for (const auto & [column, column_views] : dependent_views_by_column)
+            if (startsWith(column, dropped_name + "."))
+                views.insert(views.end(), column_views.begin(), column_views.end());
+
+        std::sort(views.begin(), views.end());
+        views.erase(std::unique(views.begin(), views.end()), views.end());
+    }
+
+    return views;
+}
+
 }

@@ -261,4 +261,13 @@ public:
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
 };
 
+/// The views that block dropping the column `dropped_name`, from the map returned by
+/// `IStorage::getDependentViewsByColumn`. A name that is not a column of the table denotes a whole
+/// Nested group, and a view that depends on any of its `dropped_name.*` columns blocks the drop too.
+std::vector<String> getDependentViewsForDroppedColumn(
+    const std::unordered_map<String, std::vector<String>> & dependent_views_by_column,
+    const ColumnsDescription & columns,
+    const String & dropped_name,
+    bool share_nested_offsets);
+
 }

@@ -43,6 +43,27 @@ ALTER TABLE test DROP COLUMN n; -- { serverError ILLEGAL_COLUMN }
 ALTER TABLE test DROP COLUMN IF EXISTS n; -- { serverError ILLEGAL_COLUMN }
 DROP TABLE test;
 
+-- Dropping the group is rejected while a materialized view reads a column of the group
+CREATE TABLE test (`n.a` UInt64, `n.b` UInt64, x UInt64) ENGINE = MergeTree ORDER BY x;
+CREATE MATERIALIZED VIEW test_mv ENGINE = Null AS SELECT `n.a` FROM test;
+ALTER TABLE test DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE test DROP COLUMN IF EXISTS n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE test_mv;
+ALTER TABLE test DROP COLUMN n;
+DROP TABLE test;
+
+-- Dropping the group is rejected while an unfinished mutation touches a column of the group
+CREATE TABLE test (`n.a` UInt64, x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO test VALUES (1, 1);
+SYSTEM STOP MERGES test;
+ALTER TABLE test UPDATE `n.a` = 2 WHERE 1 SETTINGS mutations_sync = 0;
+ALTER TABLE test DROP COLUMN n; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE test DROP COLUMN IF EXISTS n; -- { serverError BAD_ARGUMENTS }
+KILL MUTATION WHERE database = currentDatabase() AND table = 'test' SYNC FORMAT Null;
+SYSTEM START MERGES test;
+ALTER TABLE test DROP COLUMN n;
+DROP TABLE test;
+
 -- Without shared Nested offsets the name does not denote the group: it is an unknown name to drop,
 -- and a no-op under IF EXISTS
 CREATE TABLE test (`n.a` UInt64, x UInt64) ENGINE = MergeTree ORDER BY `n.a` SETTINGS share_nested_offsets = 0;
