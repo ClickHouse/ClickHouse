@@ -1144,3 +1144,51 @@ def test_select_from_s3_cancel_reports_cancellation(cluster, broken_s3):
     error = request.get_error()
     assert "QUERY_WAS_CANCELLED" in error, error
     assert "S3_ERROR" not in error, error
+
+
+def test_complete_multi_part_upload_no_such_upload_keeps_prior_object(
+    cluster, broken_s3
+):
+    node = cluster.instances["node"]
+    key = "test_complete_mpu_no_such_upload"
+    table_function = (
+        f"s3('http://resolver:8083/root/data/{key}', "
+        f"'minio', '{minio_secret_key}', 'CSV', 'tag String, filler String')"
+    )
+
+    # A one-part multipart upload: s3_max_single_part_upload_size forces the multipart path, and the
+    # large part size keeps everything in a single part. S3 exempts only the final part from the 5 MiB
+    # minimum, so splitting this payload further would be rejected with EntityTooSmall.
+    # s3_check_objects_after_upload is off here (its default) because this suite's profile enables it:
+    # it compares sizes, so it would report a different error and hide the completion result itself.
+    def insert(rows, tag):
+        return f"""
+            INSERT INTO TABLE FUNCTION {table_function}
+            SELECT '{tag}', repeat('x', 50) FROM numbers({rows})
+            SETTINGS s3_truncate_on_insert=1,
+                     s3_check_objects_after_upload=0,
+                     s3_max_single_part_upload_size=100,
+                     s3_min_upload_part_size=104857600
+            """
+
+    def read_tags():
+        return node.query(
+            f"SELECT countIf(tag = 'NEW'), countIf(tag = 'OLD') FROM {table_function}"
+        ).split()
+
+    node.query(insert(100, "OLD"))
+
+    # An upload aborted between create and complete: the server reports NoSuchUpload and the key
+    # still holds the OLD object. Overwriting it must fail rather than report a stored NEW object.
+    broken_s3.setup_at_complete_multi_part_upload(count=1, action="no_such_upload")
+
+    error = node.query_and_get_error(insert(900, "NEW"))
+    assert "Code: 499" in error, error
+    assert "NoSuchUpload" in error or "does not exist" in error, error
+    assert read_tags() == ["0", "100"]
+
+    # Control: without the injection the same INSERT replaces the object, so the fixture does write
+    # a real multipart upload and the assertion above is not vacuous.
+    broken_s3.reset()
+    node.query(insert(900, "NEW"))
+    assert read_tags() == ["900", "0"]

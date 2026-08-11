@@ -82,6 +82,28 @@ private:
     size_t counter = 0;
 };
 
+/// S3 ETags: md5 hex for a single part, md5(concat(binary part md5s)) + "-" + count for a multipart
+/// object. Both arrive quoted, and the SDK keeps the quotes.
+inline std::string quotedMD5Hex(const std::string & data)
+{
+    return "\"" + Aws::Utils::HashingUtils::HexEncode(Aws::Utils::HashingUtils::CalculateMD5(data)) + "\"";
+}
+
+inline std::string quotedMultipartETag(const std::vector<std::string> & parts)
+{
+    std::string concatenated_digests;
+    for (const auto & part : parts)
+    {
+        const auto digest = Aws::Utils::HashingUtils::CalculateMD5(part);
+        concatenated_digests.append(reinterpret_cast<const char *>(digest.GetUnderlyingData()), digest.GetLength());
+    }
+
+    return fmt::format(
+        "\"{}-{}\"",
+        Aws::Utils::HashingUtils::HexEncode(Aws::Utils::HashingUtils::CalculateMD5(concatenated_digests)),
+        parts.size());
+}
+
 class BucketMemStore
 {
 public:
@@ -94,6 +116,7 @@ public:
 
 
     std::map<Key, Data> objects;
+    std::map<Key, ETag> object_etags;
     std::map<MPU_ID, MPUPartsInProgress> multiPartUploads;
     std::vector<std::pair<MPU_ID, MPUParts>> CompletedPartUploads;
 
@@ -108,15 +131,16 @@ public:
 
     std::string UploadPart(const std::string & upload_id, const std::string & part)
     {
-        auto etag = sequencer.next_id();
+        auto etag = quotedMD5Hex(part);
         auto & parts = multiPartUploads.at(upload_id);
-        parts.emplace(etag, part);
+        parts.insert_or_assign(etag, part);
         return etag;
     }
 
     void PutObject(const std::string & key, const std::string & data)
     {
         objects[key] = data;
+        object_etags[key] = quotedMD5Hex(data);
     }
 
     void CompleteMPU(const std::string & key, const std::string & upload_id, const std::vector<std::string> & etags)
@@ -134,6 +158,7 @@ public:
             file_data << part_data;
         }
 
+        object_etags[key] = quotedMultipartETag(completedParts);
         CompletedPartUploads.emplace_back(upload_id, std::move(completedParts));
         objects[key] = file_data.str();
         multiPartUploads.erase(upload_id);
@@ -358,6 +383,7 @@ struct Client : DB::S3::Client
         Aws::S3::Model::HeadObjectOutcome outcome;
         Aws::S3::Model::HeadObjectResult result(outcome.GetResultWithOwnership());
         result.SetContentLength(obj.length());
+        result.SetETag(bStore.object_etags[request.GetKey()]);
         return result;
     }
 
@@ -558,6 +584,41 @@ struct CompleteMPUInvalidPartOnceIngection : InjectionModel
 
     size_t fail_times;
     size_t calls = 0;
+};
+
+/// Answers NoSuchUpload while letting the store apply the completion, reproducing a completion whose
+/// response was lost: the object at the key is the one this part list describes.
+struct CompleteMPUNoSuchUploadAfterCompletingIngection : InjectionModel
+{
+    explicit CompleteMPUNoSuchUploadAfterCompletingIngection(std::shared_ptr<S3MemStrore> store_) : store(std::move(store_)) {}
+
+    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
+    {
+        if (calls++ == 0)
+        {
+            std::vector<std::string> etags;
+            for (const auto & part : request.GetMultipartUpload().GetParts())
+                etags.push_back(part.GetETag());
+            store->GetBucketStore(request.GetBucket()).CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
+        }
+
+        return Aws::Client::AWSError<Aws::S3::S3Errors>(
+            Aws::S3::S3Errors::NO_SUCH_UPLOAD, "NoSuchUpload", "The specified upload does not exist.", false);
+    }
+
+    std::shared_ptr<S3MemStrore> store;
+    size_t calls = 0;
+};
+
+/// Answers NoSuchUpload without completing anything, reproducing a genuinely aborted upload. Whatever
+/// object the key already holds belongs to a different write.
+struct CompleteMPUNoSuchUploadIngection : InjectionModel
+{
+    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & /*request*/) override
+    {
+        return Aws::Client::AWSError<Aws::S3::S3Errors>(
+            Aws::S3::S3Errors::NO_SUCH_UPLOAD, "NoSuchUpload", "The specified upload does not exist.", false);
+    }
 };
 
 struct BaseSyncPolicy
@@ -957,6 +1018,55 @@ TEST_P(SyncAsync, CompleteMPURetriesInvalidPart) {
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["complete_mpu_invalid_part_retry"].size(), 1u);
+}
+
+/// A completion whose response was lost leaves the upload completed, so the retry's NoSuchUpload must
+/// still be absorbed: the object at the key carries the ETag this part list implies.
+TEST_P(SyncAsync, CompleteMPUAbsorbsNoSuchUploadForOwnObject) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadAfterCompletingIngection>(client->store));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    auto buffer = getWriteBuffer("complete_mpu_absorb_own_object");
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["complete_mpu_absorb_own_object"], "A");
+    EXPECT_EQ(client->counters.headObject, 1u);
+}
+
+/// A genuinely aborted upload also answers NoSuchUpload, but the key holds an unrelated earlier
+/// object. Acknowledging it would report a write that never stored any of its data.
+TEST_P(SyncAsync, CompleteMPUReportsNoSuchUploadForForeignObject) {
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("complete_mpu_foreign_object", "OLD");
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadIngection>());
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("complete_mpu_foreign_object");
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch(const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist."));
+            throw;
+        }
+      }, DB::S3Exception);
+
+    EXPECT_EQ(bStore.objects["complete_mpu_foreign_object"], "OLD");
 }
 
 /// The same transient MinIO `InvalidPart` on CompleteMultipartUpload must also be retried by the
