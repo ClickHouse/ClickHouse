@@ -1,6 +1,6 @@
 ---
 name: patch-release-check
-description: Check whether ClickHouse's supported versions (last 3 majors + latest LTS) have recent stable patch releases, diagnose why the scheduled AutoReleases pipeline failed, and identify which releases must be created manually. Use when asked "are the patch releases up to date", "why did autorelease fail", "which releases are missing", "did a release get skipped", during the bi-weekly release-health check, or when investigating create_release.yml / auto_releases.yml failures. Reproduces the full investigation: supported versions from SECURITY.md, per-version staleness, classification of the last N days of AutoReleases/CreateRelease failures (version-bump-PR guard vs missing release-maker runner vs other), the Slack cross-check that reveals the blocking PR, and gated remediation (close a stale robot bump PR, dispatch CreateRelease for a missing version).
+description: Check whether ClickHouse's supported versions (last 3 majors + latest LTS) have recent stable patch releases, diagnose why the scheduled AutoReleases pipeline failed, and identify which releases must be created manually. Use when asked "are the patch releases up to date", "why did autorelease fail", "which releases are missing", "did a release get skipped", during the bi-weekly release-health check, or when investigating create_release.yml / auto_releases.yml failures. Reproduces the full investigation: supported versions from SECURITY.md, per-version staleness, classification of the last N days of AutoReleases/CreateRelease failures (version-bump-PR guard vs missing driver runner vs other), the Slack cross-check that reveals the blocking PR, and gated remediation (close a stale robot bump PR, dispatch CreateRelease for a missing version).
 argument-hint: "[lookback-days, default 14]"
 disable-model-invocation: false
 allowed-tools: Bash, Read, Grep, Glob, Agent, WebFetch, AskUserQuestion
@@ -18,8 +18,11 @@ modes, and they need different fixes:
 
 - **Guard failure** — `AutoReleaseInfo` aborts before releasing anything because an
   open "version bump" PR trips a guard in `ci/jobs/auto_release_job.py`. Repo/PR side.
-- **Runner failure** — runs can't start at all because no `[self-hosted, release-maker]`
-  runner is available. Infra side, not a repo change.
+- **Runner failure** — runs can't start at all because no runner is available. Two
+  distinct pools can be at fault, and they need different escalations: the `AutoReleases`
+  driver itself runs on `[self-hosted, style-checker-aarch64]` (`config_workflow`) and
+  `[self-hosted, arm-small]` (`AutoReleaseInfo`), while the `CreateRelease` runs it
+  dispatches queue on `[self-hosted, amd-release-maker]`. Infra side, not a repo change.
 
 ## Arguments
 
@@ -125,9 +128,13 @@ result is non-empty. The guard runs before any per-branch dispatch, so a guard f
 
 **`RUNNER`** — a **completed**, `cancelled` run whose first job never got a runner
 (no `runner_name`, zero `steps`); it sat queued ~24h and was cancelled the instant the
-next day's cron fired. Means no `[self-hosted, release-maker]` runner picked it up.
+next day's cron fired. Means no runner picked up the *driver* — `style-checker-aarch64`
+for `config_workflow`, `arm-small` for `AutoReleaseInfo` (see
+`.github/workflows/auto_releases.yml`). Do not chase `amd-release-maker` here: that pool
+serves the dispatched `CreateRelease` runs, so it explains a release that starts and
+then never finishes, not a scheduler that never starts.
 This is **infra, not a repo change** — escalate in `#core-ci-info` and check the
-org/repo Actions runner settings. Note: clearing a `GUARD` blocker does nothing if
+org/repo Actions runner settings for the pool that actually stalled. Note: clearing a `GUARD` blocker does nothing if
 `RUNNER` is also failing, and vice versa — both must be healthy for a release to
 happen. A run that is still `queued`/`in_progress` (empty conclusion) is **not**
 `RUNNER` — the script prints its live status instead, since a queued daily run has no
@@ -136,7 +143,7 @@ runner/steps yet but is not an outage.
 **`OTHER`** — the run failed for some reason other than the guard or a missing runner.
 Any unexpected conclusion (`startup_failure`, `timed_out`, `action_required`, …) also
 counts here, so the tally never reads all-zeros while a run actually failed;
-`startup_failure`/`timed_out` usually point at the `release-maker` runner or a timeout.
+`startup_failure`/`timed_out` usually point at a driver-pool runner or a timeout.
 Read the failed step directly:
 
 ```bash

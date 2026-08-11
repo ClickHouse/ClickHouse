@@ -6,7 +6,7 @@
 #   2. Per-version staleness: latest patch tag, age, unreleased commits, MISSING flag
 #   3. Failure scan of the AutoReleases / CreateRelease workflows over a window,
 #      with each failure classified GUARD (version-bump-PR guard) / RUNNER
-#      (no release-maker runner) / OTHER
+#      (no runner for the AutoReleases driver) / OTHER
 #   4. Live re-check of the guard query (the set of PRs currently wedging releases)
 #
 # Usage:  bash release_health.sh [lookback_days]      # default 14
@@ -344,7 +344,7 @@ for r in json.load(sys.stdin):
     print("|".join([str(r["databaseId"]), r.get("conclusion") or "", r.get("status") or "", r.get("createdAt") or ""]))
 ')
 echo "   tally: GUARD=$n_guard  RUNNER=$n_runner  OTHER=$n_other  UNKNOWN=$n_unknown  ok=$n_ok"
-[[ "$n_other" -gt 0 ]] && echo "   note: OTHER = a non-guard failure or an unexpected conclusion (startup_failure/timed_out/action_required/...) — read its log; startup_failure/timed_out usually mean the release-maker runner never came up or the job timed out."
+[[ "$n_other" -gt 0 ]] && echo "   note: OTHER = a non-guard failure or an unexpected conclusion (startup_failure/timed_out/action_required/...) — read its log; startup_failure/timed_out usually mean a driver-pool runner (style-checker-aarch64 / arm-small) never came up or the job timed out."
 [[ "$n_unknown" -gt 0 ]] && echo "   note: UNKNOWN = required GitHub data (failed-step log or job metadata) could not be fetched — investigate manually; do not assume it is healthy / not a guard failure."
 echo
 
