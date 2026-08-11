@@ -2,6 +2,7 @@
 #include <optional>
 #include <unordered_set>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
@@ -32,6 +33,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <Processors/Sources/ConstChunkGenerator.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -100,6 +102,8 @@ namespace ErrorCodes
     extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+    extern const int TOO_MANY_ROWS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -312,7 +316,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     std::shared_ptr<IObjectIterator> file_iterator_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
-    bool need_only_count_)
+    bool need_only_count_,
+    LazyObjectStorageFileRegistryPtr lazy_row_index_registry_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , storage_id(storage_id_)
     , name(std::move(name_))
@@ -335,6 +340,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
     , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, ThreadName::READER_POOL))
+    , lazy_row_index_registry(std::move(lazy_row_index_registry_))
 {
 }
 
@@ -690,6 +696,51 @@ Chunk StorageObjectStorageSource::generate()
                     headers)->convertToFullColumnIfConst());
             }
 
+            if (lazy_row_index_registry)
+            {
+                /// Lazy materialization: append the `__global_row_index` column, which combines the
+                /// index of the file within the query with the physical row number within the file.
+                if (!current_file_index)
+                    current_file_index = lazy_row_index_registry->registerFile(object_info);
+
+                auto row_numbers_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+                if (!row_numbers_info)
+                    /// Only the Parquet reader provides physical row numbers. This is reachable for a
+                    /// mixed-format Iceberg snapshot (the table-level format is Parquet, but an individual
+                    /// data file has a different format), which is discovered only at read time because the
+                    /// file list is built dynamically. Report an actionable error instead of failing later.
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Lazy materialization requires physical row numbers from the format reader, "
+                        "but file {} (format {}) does not provide them. "
+                        "Disable the query_plan_optimize_lazy_materialization_for_object_storage setting to read such data.",
+                        object_info->getPath(), object_info->getFileFormat().value_or(configuration->format));
+
+                const auto & applied_filter = row_numbers_info->applied_filter;
+                size_t num_indices = applied_filter.has_value() ? applied_filter->size() : num_rows;
+                if (row_numbers_info->row_num_offset + num_indices > LazyObjectStorageFileRegistry::MAX_ROWS_PER_FILE)
+                    throw Exception(ErrorCodes::TOO_MANY_ROWS,
+                        "File {} has too many rows for lazy materialization. "
+                        "Disable the query_plan_optimize_lazy_materialization_for_object_storage setting",
+                        object_info->getPath());
+
+                const UInt64 file_part = *current_file_index << LazyObjectStorageFileRegistry::ROW_INDEX_BITS;
+                auto row_index_column = ColumnUInt64::create();
+                auto & row_index_data = row_index_column->getData();
+                row_index_data.reserve(num_rows);
+                for (size_t i = 0; i < num_indices; ++i)
+                {
+                    if (!applied_filter.has_value() || (*applied_filter)[i])
+                        row_index_data.push_back(file_part | (row_numbers_info->row_num_offset + i));
+                }
+
+                if (row_index_column->size() != num_rows)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Row numbers of a chunk are inconsistent with the number of rows: {} != {} (file {})",
+                        row_index_column->size(), num_rows, object_info->getPath());
+
+                chunk.addColumn(std::move(row_index_column));
+            }
+
 #if USE_PARQUET
             if (chunk_size && chunk.hasColumns())
             {
@@ -826,13 +877,16 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->hasFilter() && !hasAttachedDeletes(*reader.getObjectInfo()))
+            && !format_filter_info->hasFilter()
+            && !hasAttachedDeletes(*reader.getObjectInfo())
+            && !reader.getObjectInfo()->rows_to_read)
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
 
         chassert(reader_future.valid());
         reader = reader_future.get();
+        current_file_index.reset();
 
         if (!reader)
             break;
@@ -1165,6 +1219,21 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             stripped_row_level_filter = prepareFallbackFilter(stripped_row_level_filter, read_from_format_info.requested_columns);
         if (stripped_prewhere_info)
             stripped_prewhere_info = prepareFallbackPrewhere(stripped_prewhere_info, read_from_format_info.requested_columns);
+
+        if (object_info->rows_to_read)
+        {
+            /// Lazy materialization: read only the specified rows of this file. The set of rows
+            /// differs per file, so make a per-file copy of the (possibly shared) filter info.
+            auto filter_info_with_rows = std::make_shared<FormatFilterInfo>(
+                filter_info ? filter_info->filter_actions_dag : nullptr,
+                context_,
+                filter_info ? filter_info->column_mapper : nullptr,
+                filter_info ? filter_info->row_level_filter : nullptr,
+                filter_info ? filter_info->prewhere_info : nullptr,
+                filter_info ? filter_info->additional_columns : Block{});
+            filter_info_with_rows->rows_to_read = object_info->rows_to_read;
+            filter_info = filter_info_with_rows;
+        }
 
         /// When PREWHERE / row-level filter is stripped from `format_filter_info` (i.e. the
         /// actual file format doesn't support PREWHERE), the format reader will not produce

@@ -362,7 +362,9 @@ void ColumnDynamic::insert(const Field & x)
 
     auto & variant_col = getVariantColumn();
     auto shared_variant_discr = getSharedVariantDiscriminator();
-    auto field_data_type = applyVisitor(FieldToDataType(), x);
+    /// Use LeastSupertypeOnError::Dynamic so that arrays with incompatible element types (e.g. ["text", {"k":1}])
+    /// are typed as Array(Dynamic) rather than throwing NO_COMMON_TYPE. Dynamic can hold any element value.
+    auto field_data_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), x);
     auto field_data_type_name = field_data_type->getName();
     const bool inserted_type_requires_exact_storage = typeRequiresExactStorageMatch(*field_data_type);
     const auto & variants = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
