@@ -160,12 +160,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
-                    /// Only wrap type-conversion errors as LOGICAL_ERROR.
-                    /// Other exceptions (e.g. MEMORY_LIMIT_EXCEEDED) should propagate as-is.
-                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                        throw;
-
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -188,10 +182,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                throw;
-
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -290,10 +280,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
-                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                        throw;
-
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -319,10 +305,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             }
             catch (const Exception & e)
             {
-                if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                    && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                    throw;
-
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -342,10 +324,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                throw;
-
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -371,7 +349,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// We use an array where index is the global discriminator.
     /// Variants that don't appear in the data will have null column pointers.
     /// Index num_variants is reserved for NULL values.
-    ColumnsWithTypeAndName variants;
+    std::vector<ColumnWithTypeAndName> variants;
     variants.resize(num_variants + 1);
 
     /// Create selector using global discriminators as indexes.
@@ -471,10 +449,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
                 }
                 catch (const Exception & e)
                 {
-                    if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                        && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                        throw;
-
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -631,10 +605,6 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-                throw;
-
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot convert nested result of function {} with type {} to the expected result type {}: {}",
@@ -738,12 +708,38 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         }
     }
 
-    /// If no valid result types were found, all alternatives are incompatible
-    /// Return Nullable(Nothing) to indicate NULL result for all rows
+    /// If no valid result types were found, all Variant alternatives are incompatible with the function.
+    /// When variant_throw_on_type_mismatch is enabled (the default), throw a clear error rather than
+    /// silently returning Nullable(Nothing), which would cause WHERE clauses to return 0 rows with no
+    /// diagnostic. When the setting is disabled, fall back to Nullable(Nothing) so that executeImpl
+    /// returns NULL rows (consistent with the per-row mismatch behaviour).
     if (result_types.empty())
     {
-        return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-        return;
+        bool throw_on_mismatch = true;
+        if (CurrentThread::isInitialized())
+        {
+            if (auto query_context = CurrentThread::tryGetQueryContext())
+                throw_on_mismatch = query_context->getSettingsRef()[Setting::variant_throw_on_type_mismatch];
+        }
+
+        if (!throw_on_mismatch)
+        {
+            return_type = makeNullable(std::make_shared<DataTypeNothing>());
+            return;
+        }
+
+        String alt_names;
+        for (const auto & alt : variant_alternatives)
+        {
+            if (!alt_names.empty())
+                alt_names += ", ";
+            alt_names += alt->getName();
+        }
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "None of the Variant alternatives ({}) are compatible with function '{}'",
+            alt_names,
+            function_overload_resolver->getName());
     }
 
     /// If all result types are the same (ignoring Nullable), return Nullable(common).

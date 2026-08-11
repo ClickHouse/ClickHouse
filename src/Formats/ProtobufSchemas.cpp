@@ -41,6 +41,11 @@ public:
 
     const google::protobuf::Descriptor * import(const String & schema_path, const String & message_name)
     {
+        // Search the message type among already imported ones.
+        const auto * descriptor = importer.pool()->FindMessageTypeByName(message_name);
+        if (descriptor)
+            return descriptor;
+
         const auto * file_descriptor = importer.Import(schema_path);
         if (error)
         {
@@ -55,27 +60,27 @@ public:
                 info.message);
         }
 
-        if (!file_descriptor)
-            throw Exception(
-                ErrorCodes::CANNOT_PARSE_PROTOBUF_SCHEMA,
-                "Cannot parse '{}' file",
-                schema_path);
+        assert(file_descriptor);
 
-        if (with_envelope == WithEnvelope::Yes)
+        if (with_envelope == WithEnvelope::No)
         {
-            const auto * envelope_descriptor = file_descriptor->FindMessageTypeByName("Envelope");
-            if (envelope_descriptor)
-            {
-                const auto * message_descriptor = envelope_descriptor->FindNestedTypeByName(message_name);
-                if (message_descriptor)
-                    return message_descriptor;
-            }
+            const auto * message_descriptor = file_descriptor->FindMessageTypeByName(message_name);
+            if (!message_descriptor)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'",
+                    message_name, schema_path);
+
+            return message_descriptor;
         }
 
-        const auto * message_descriptor = file_descriptor->FindMessageTypeByName(message_name);
+        const auto * envelope_descriptor = file_descriptor->FindMessageTypeByName("Envelope");
+        if (!envelope_descriptor)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named 'Envelope' in the schema file '{}'", schema_path);
+
+        const auto * message_descriptor = envelope_descriptor->FindNestedTypeByName(
+            message_name); // silly protobuf API disallows a restricting the field type to messages
         if (!message_descriptor)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'",
-                message_name, schema_path);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Could not find a message named '{}' in the schema file '{}'", message_name, schema_path);
 
         return message_descriptor;
     }
@@ -124,12 +129,11 @@ ProtobufSchemas::getMessageTypeForFormatSchema(const FormatSchemaInfo & info, Wi
     }
 
     std::lock_guard lock(mutex);
-    auto key = ImporterKey{info.schemaDirectory(), info.schemaPath(), with_envelope};
-    auto it = importers.find(key);
+    auto it = importers.find(info.schemaDirectory());
     if (it == importers.end())
         it = importers
                  .emplace(
-                     key,
+                     info.schemaDirectory(),
                      std::make_shared<ImporterWithSourceTree>(info.schemaDirectory(), google_protos_path, with_envelope))
                  .first;
     auto * importer = it->second.get();

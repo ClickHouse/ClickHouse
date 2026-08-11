@@ -60,17 +60,17 @@ static struct InitFiu
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
+    ONCE(merge_tree_refresh_parts_throw_once) \
     ONCE(s3_read_buffer_throw_expired_token) \
+    ONCE(s3_send_request_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
-    ONCE(object_storage_queue_fail_commit_after_success) \
+    ONCE(object_storage_queue_skip_one_file_in_batch) \
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
-    REGULAR(cache_filesystem_failure) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
-    ONCE(distributed_cache_simulate_stale_connection) \
     REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \
@@ -83,16 +83,16 @@ static struct InitFiu
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    REGULAR(taskstats_counters_reset_throw) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
+    ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
     PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
-    PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
-    PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
@@ -100,9 +100,12 @@ static struct InitFiu
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
+    REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
+    ONCE(delta_kernel_force_stale_token_error) \
+    REGULAR(object_storage_force_refresh_callback_success) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
-    ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
+    REGULAR(keeper_fault_on_watch_request) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
@@ -118,7 +121,6 @@ static struct InitFiu
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
-    PAUSEABLE_ONCE(keeper_save_snapshot_pause_mid_transfer) \
     ONCE(parallel_replicas_wait_for_unused_replicas) \
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
     REGULAR(database_replicated_delay_recovery) \
@@ -149,6 +151,10 @@ static struct InitFiu
     PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
     REGULAR(mt_select_parts_to_mutate_no_free_threads) \
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
+    ONCE(mt_alter_throw_in_start_mutation) \
+    ONCE(mt_alter_throw_after_mutation_registered) \
+    ONCE(mt_throw_after_mutation_commit) \
+    ONCE(mt_alter_throw_in_durable_rollback) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \
@@ -163,17 +169,14 @@ static struct InitFiu
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
-    REGULAR(smt_part_update_duplicated_part) \
-    REGULAR(check_database_datalake_negative) \
-    REGULAR(restart_replica_fail_after_detach) \
-    REGULAR(database_replicated_force_metadata_digest_check) \
     PAUSEABLE(truncate_database_tables_pause) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     REGULAR(patch_parts_reverse_column_order) \
     REGULAR(wide_part_writer_fail_in_add_streams) \
-    REGULAR(compact_part_writer_fail_in_add_streams)
+    REGULAR(compact_part_writer_fail_in_add_streams) \
+    REGULAR(query_metric_log_delay_collect)
 
 namespace FailPoints
 {
@@ -208,10 +211,6 @@ struct FailPointChannel
     /// after a notify, waitForPause waits for pause_epoch > resume_epoch,
     /// ensuring the pause happened after the most recent resume.
     size_t pause_epoch = 0;
-
-    /// Set to true by disableFailPoint so that waitForPause can return
-    /// even when no thread has paused (pause_epoch <= resume_epoch).
-    bool disabled = false;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -254,7 +253,6 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     {
         /// Increment resume_epoch to wake up all waiting threads.
         ++iter->second->resume_epoch;
-        iter->second->disabled = true;
         iter->second->resume_cv.notify_all();
         iter->second->pause_cv.notify_all();
         fail_point_wait_channels.erase(iter);
@@ -315,7 +313,7 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     /// after NOTIFY, the task thread may not have decremented pause_count yet,
     /// so a stale pause_count > 0 could cause waitForPause to return prematurely.
     channel->pause_cv.wait(lock, [&] {
-        return channel->pause_epoch > channel->resume_epoch || channel->disabled;
+        return channel->pause_epoch > channel->resume_epoch;
     });
 }
 
@@ -339,12 +337,12 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 {
     std::vector<FailPointInfo> result;
 
-#define SUB_M(NAME, TP)                                   \
-    result.push_back(                                     \
-        FailPointInfo{                                    \
-            .name = FailPoints::NAME,                     \
-            .type = FailPointType::TP,                    \
-            .enabled = fiu_status(FailPoints::NAME) != 0, \
+#define SUB_M(NAME, TP)                                 \
+    result.push_back(                                   \
+        FailPointInfo{                                  \
+            .name = FailPoints::NAME,                   \
+            .type = FailPointType::TP,                  \
+            .enabled = fiu_fail(FailPoints::NAME) != 0, \
         });
 #define ADD_ONCE(NAME) SUB_M(NAME, Once)
 #define ADD_REGULAR(NAME) SUB_M(NAME, Regular)

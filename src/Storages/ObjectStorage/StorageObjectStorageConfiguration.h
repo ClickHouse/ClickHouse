@@ -16,7 +16,6 @@
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <optional>
 #include <Databases/DataLake/StorageCredentials.h>
 
 namespace DB
@@ -241,12 +240,12 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
     }
-    virtual void checkMutationIsPossible(const MutationCommands & /*commands*/)
+    virtual void checkMutationIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const MutationCommands & /*commands*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support mutations", getTypeName());
     }
 
-    virtual void checkAlterIsPossible(const AlterCommands & commands)
+    virtual void checkAlterIsPossible(ObjectStoragePtr /*object_storage*/, ContextPtr /*context*/, const AlterCommands & commands)
     {
         for (const auto & command : commands)
         {
@@ -256,7 +255,7 @@ public:
         }
     }
 
-    virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
+    virtual void alter(ObjectStoragePtr /*object_storage*/, const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
@@ -268,12 +267,9 @@ public:
     virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
 
 
-    virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, const StorageID & /*table_id*/) const
-    {
-        return nullptr;
-    }
+    virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
 
-    virtual bool optimize(const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
+    virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
         return false;
     }

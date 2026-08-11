@@ -6,6 +6,8 @@ if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
 endif()
 
 set(SRCS
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/common_constants.cpp"
+
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asin.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinf.cpp"
@@ -17,6 +19,7 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/cos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/exp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/exp2.cpp"
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/explogxf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/expm1.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fabs.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fabsl.cpp"
@@ -59,7 +62,6 @@ set(LLVMLIBC_DEFS_COMMON
     LIBC_MATH_HAS_NO_ERRNO=1
     LIBC_MATH_HAS_NO_EXCEPT=1
     LIBC_MATH_HAS_SKIP_ACCURATE_PASS=1
-    LIBC_ERRNO_MODE=6 # Needed to make building with -O0 work. Details in https://github.com/ClickHouse/ClickHouse/pull/100023
 )
 
 if (ARCH_AMD64)

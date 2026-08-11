@@ -39,7 +39,6 @@ namespace ErrorCodes
 
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
-    , virtuals(other.virtuals)
     , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
     , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
     , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
@@ -72,7 +71,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         return *this;
 
     columns = other.columns;
-    virtuals = other.virtuals;
     add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
     add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
     add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
@@ -163,14 +161,6 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (context->getZooKeeperMetadataTransaction())
         new_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
 
-    // parallel replicas related
-    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
-    {
-        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
-        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
-        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
-    }
-
     if (sql_security_type == SQLSecurityType::NONE)
     {
         new_context->applySettingsChanges(context->getSettingsRef().changes());
@@ -184,6 +174,14 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     new_context->applySettingsChanges(changed_settings);
     new_context->setSetting("allow_ddl", 1);
 
+    // parallel replicas related
+    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
+    {
+        new_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
+        new_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
+        new_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
+    }
+
     return new_context;
 }
 
@@ -192,11 +190,6 @@ void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
     if (columns_.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Empty list of columns passed");
     columns = std::move(columns_);
-}
-
-void StorageInMemoryMetadata::setVirtuals(VirtualColumnsDescription virtuals_)
-{
-    virtuals = std::move(virtuals_);
 }
 
 void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_indices_)
@@ -256,13 +249,6 @@ StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t met
 {
     StorageInMemoryMetadata copy(*this);
     copy.setMetadataVersion(metadata_version_);
-    return copy;
-}
-
-StorageInMemoryMetadata StorageInMemoryMetadata::withVirtuals(VirtualColumnsDescription virtual_columns_) const
-{
-    StorageInMemoryMetadata copy(*this);
-    copy.setVirtuals(std::move(virtual_columns_));
     return copy;
 }
 
@@ -485,18 +471,13 @@ Block StorageInMemoryMetadata::getSampleBlockNonMaterialized() const
     return res;
 }
 
-bool StorageInMemoryMetadata::isVirtualColumn(const String & column_name) const
-{
-    /// Virtual column may be overridden by real column
-    return !columns.has(column_name) && virtuals.has(column_name);
-}
-
-Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(VirtualsKind kind, VirtualsMaterializationPlace place) const
+Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const
 {
     auto res = getSampleBlock();
 
-    /// Virtual columns must be appended after ordinary, because user can override them.
-    for (const auto & column : virtuals.getSampleBlock(kind, place).getNamesAndTypesList())
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
+    for (const auto & column : virtuals)
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;

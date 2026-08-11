@@ -81,8 +81,6 @@ public:
     QueryProfilerReal(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
-
-    static constexpr int PAUSE_SIGNAL = SIGUSR1;
 };
 
 /// Query profiler with timer based on CPU clock
@@ -92,8 +90,6 @@ public:
     QueryProfilerCPU(UInt64 thread_id, UInt64 period); /// NOLINT
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
-
-    static constexpr int PAUSE_SIGNAL = SIGUSR2;
 };
 
 }

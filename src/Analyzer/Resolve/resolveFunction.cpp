@@ -1,5 +1,4 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <DataTypes/DataTypeString.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -29,7 +28,6 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/exists.h>
-#include <Columns/validateColumnType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
@@ -751,19 +749,49 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Mask arguments if needed
     if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
     {
-        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.count)
+        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.hasSecrets())
         {
             auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
 
-            for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
+            /// This tree is used for execution, so the value itself cannot be rewritten; only the
+            /// display mask of its constants can be set. `setMaskId` is a display flag, so it hides
+            /// the literal in projection names, `EXPLAIN QUERY TREE` and the `EXPLAIN actions = 1`
+            /// ActionsDAG (see PlannerActionsVisitor) without changing what is executed.
+            auto assign_mask = [&](ConstantNode & constant)
             {
-                if (auto * constant = argument_nodes[n]->as<ConstantNode>())
+                auto mask = scope.projection_mask_map->insert({constant.getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
+                constant.setMaskId(mask);
+                return mask;
+            };
+            /// A secret value can be an expression, not a bare literal (e.g. an `encrypt` key built as
+            /// `leftPad('...', 16, '*')`, including one inlined from a SQL UDF body). Hide every
+            /// constant inside it so no fragment of the secret leaks; returns whether any literal was
+            /// hidden. A slot that carries no literal (a plaintext like `toString(number)` or a key
+            /// held in a column) exposes nothing in the query text, so it is left as is.
+            std::function<bool(const QueryTreeNodePtr &)> mask_secret_constants = [&](const QueryTreeNodePtr & subtree)
+            {
+                if (auto * constant = subtree->as<ConstantNode>())
                 {
-                    auto mask = scope.projection_mask_map->insert({constant->getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
-                    constant->setMaskId(mask);
-                    arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask) + "]";
+                    assign_mask(*constant);
+                    return true;
                 }
-            }
+                bool masked_any = false;
+                for (const auto & child : subtree->getChildren())
+                    if (child)
+                        masked_any |= mask_secret_constants(child);
+                return masked_any;
+            };
+
+            forEachSecretArgumentNode(
+                argument_nodes,
+                secret_arguments,
+                [&](size_t n, QueryTreeNodePtr & secret_node)
+                {
+                    if (auto * constant = secret_node->as<ConstantNode>())
+                        arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(assign_mask(*constant)) + "]";
+                    else if (mask_secret_constants(secret_node))
+                        arguments_projection_names[n] = "[HIDDEN]";
+                });
         }
     }
 
@@ -1195,13 +1223,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         AggregateFunctionProperties properties;
         auto aggregate_function
-            = AggregateFunctionFactory::instance().get(
-                aggregate_function_name,
-                action,
-                argument_types,
-                parameters,
-                properties,
-                AggregateFunctionStateVariant::Window);
+            = AggregateFunctionFactory::instance().get(aggregate_function_name, action, argument_types, parameters, properties);
 
         function_node.resolveAsWindowFunction(std::move(aggregate_function));
 
@@ -1241,28 +1263,30 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
     }
 
-    ResolvedFunctionsCache * function_cache = nullptr;
+    FunctionBasePtr * function_base_cache = nullptr;
 
     if (!function)
     {
-        /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
-        /// Function randConstant() would return the same value for the same arguments (in scope).
-        /// But we need to exclude getSetting() function because SETTINGS can change its result for every scope.
+        function = FunctionFactory::instance().tryGet(function_name, scope.context);
+        can_have_parameters = false;
 
-        if (function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
+        /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
+        /// A non-deterministic function like `randConstant` returns a different value on every `build`,
+        /// so syntactically-identical calls must share the same built `FunctionBase` to fold to the same
+        /// constant. We deduplicate by tree hash to achieve that.
+        ///
+        /// Deterministic functions never need this (same arguments always produce the same result), and
+        /// `getTreeHash` walks the whole argument subtree, dominating analysis of deeply nested expressions.
+        /// So the hash and the cache are computed only for non-deterministic functions.
+        ///
+        /// `getSetting` and `rowNumberInAllBlocks` are non-deterministic but must NOT be shared: the cache
+        /// is global across scopes, and e.g. `SETTINGS` can change `getSetting`'s result for every scope.
+        if (function && !function->isDeterministic()
+            && function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
         {
             auto hash = function_node_ptr->getTreeHash();
-
-            function_cache = &functions_cache[hash];
-            if (!function_cache->resolver)
-                function_cache->resolver = FunctionFactory::instance().tryGet(function_name, scope.context);
-
-            function = function_cache->resolver;
+            function_base_cache = &functions_cache[hash];
         }
-        else
-            function = FunctionFactory::instance().tryGet(function_name, scope.context);
-
-        can_have_parameters = false;
     }
 
     if (function)
@@ -1503,9 +1527,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           * so the same AST structure with different resolved lambda types
           * would incorrectly share the cached function base.
           */
-        if (function_cache && !has_lambda_arguments)
+        if (function_base_cache && !has_lambda_arguments)
         {
-            auto & cached_function = function_cache->function_base;
+            auto & cached_function = *function_base_cache;
             if (!cached_function)
                 cached_function = function->build(argument_columns);
 
@@ -1559,13 +1583,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column = function_base->getConstantResultForNonConstArguments(argument_columns, result_type);
             }
 
-            if (column && !columnMatchesType(*column, *result_type))
+            if (column && column->getDataType() != result_type->getColumnType())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Unexpected return type from {}. Expected {}. Got {}",
                     function->getName(),
-                    result_type->getName(),
-                    column->getName());
+                    result_type->getColumnType(),
+                    column->getDataType());
 
             const bool is_deterministic = all_arguments_are_deterministic && function->isDeterministic();
 

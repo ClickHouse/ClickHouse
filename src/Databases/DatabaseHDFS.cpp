@@ -262,11 +262,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
-    factory.registerDatabase("HDFS", create_fn, {
-        .supports_arguments = true,
-        .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::HDFS,
-    });
+    factory.registerDatabase("HDFS", create_fn, {.supports_arguments = true});
 }
 } // DB
 

@@ -8,7 +8,7 @@
 namespace DB
 {
     struct ColumnWithTypeAndName;
-    using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+    using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 }
 
 

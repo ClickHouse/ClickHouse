@@ -399,7 +399,7 @@ struct BackupsWorker::BackupStarter
 
         /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
         /// It should not be allowed for an initial query explicitly specified by a user.
-        if (is_internal_backup && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+        if (is_internal_backup && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
@@ -791,6 +791,13 @@ void BackupsWorker::writeBackupEntries(
         size_t index = !writing_order.empty() ? writing_order[i] : i;
 
         auto & entry = backup_entries[index].second;
+
+        if (entry->isFromRemoteFile())
+        {
+            backup->setOriginalEndpointAndNamespaceIfEmpty(entry->getEndpointURI(), entry->getNamespace());
+            continue;
+        }
+
         const auto & file_info = file_infos[index];
 
         /// Using references here is fine as the variables reference objects either belonging to `this` or passed as references in the
@@ -875,7 +882,7 @@ struct BackupsWorker::RestoreStarter
 
         /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
         /// It should not be allowed for an initial query explicitly specified by a user.
-        if (is_internal_restore && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+        if (is_internal_restore && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
         /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).

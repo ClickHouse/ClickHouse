@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
-#include <Columns/validateColumnType.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
@@ -305,7 +304,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     return addNode(std::move(node));
 }
 
-const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant)
+const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant, bool is_masked_secret)
 {
     if (!column.column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add column {} because it is nullptr", column.name);
@@ -316,6 +315,7 @@ const ActionsDAG::Node & ActionsDAG::addColumn(ColumnWithTypeAndName column, boo
     node.result_name = std::move(column.name);
     node.column = std::move(column.column);
     node.is_deterministic_constant = is_deterministic_constant;
+    node.is_masked_secret = is_masked_secret;
 
     return addNode(std::move(node));
 }
@@ -448,19 +448,18 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
         {
             size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
             column = node.function->execute(arguments, node.result_type, num_rows, true);
+            if (column->getDataType() != node.result_type->getColumnType())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected return type from {}. Expected {}. Got {}",
+                    node.function->getName(),
+                    node.result_type->getColumnType(),
+                    column->getDataType());
         }
         else
         {
             column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
         }
-
-        if (column && !columnMatchesType(*column, *node.result_type))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Unexpected return type from {}. Expected {}. Got {}",
-                node.function->getName(),
-                node.result_type->getName(),
-                column->getName());
 
         /// If the result is not a constant, just in case, we will consider the result as unknown.
         if (column && isColumnConst(*column))
@@ -813,6 +812,35 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
 }
 
 
+size_t ActionsDAG::removeNodes(const std::unordered_set<const Node *> & to_remove)
+{
+    if (to_remove.empty())
+        return 0;
+
+    std::unordered_set<const Node *> required;
+    std::stack<const Node *> stack;
+    for (const auto * out : outputs)
+        if (required.insert(out).second)
+            stack.push(out);
+    while (!stack.empty())
+    {
+        const auto * cur = stack.top();
+        stack.pop();
+        for (const auto * child : cur->children)
+            if (required.insert(child).second)
+                stack.push(child);
+    }
+
+    size_t removed = std::erase_if(nodes, [&](const Node & n)
+    {
+        return to_remove.contains(&n) && !required.contains(&n);
+    });
+    if (removed > 0)
+        removeUnusedActions(/*allow_remove_inputs=*/false);
+    return removed;
+}
+
+
 void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 {
     const auto & filter_node = findInOutputs(filter_name);
@@ -921,14 +949,6 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                     res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
                 else
                     res_column.column = node->function_base->getConstantResultForNonConstArguments(arguments, res_column.type);
-
-                if (res_column.column && !columnMatchesType(*res_column.column, *res_column.type))
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected return type from {}. Expected {}. Got {}",
-                        node->function->getName(),
-                        res_column.type->getName(),
-                        res_column.column->getName());
             }
             catch (Exception & e)
             {
@@ -1766,8 +1786,17 @@ void ActionsDAG::removeTrivialWrappers()
                 child = child->children[0];
 
     for (auto *& output : outputs)
-        while (is_trivial_wrapper(output))
-            output = output->children[0];
+    {
+        if (is_trivial_wrapper(output))
+        {
+            auto original_name = output->result_name;
+            while (is_trivial_wrapper(output))
+                output = output->children[0];
+
+            if (output->result_name != original_name)
+                output = &addAlias(*output, original_name);
+        }
+    }
 
     removeUnusedActions();
 }
@@ -1940,11 +1969,6 @@ ActionsDAG ActionsDAG::makeAddingColumnActions(ColumnWithTypeAndName column)
 
     adding_column_action.outputs.push_back(&alias_node);
     return adding_column_action;
-}
-
-ActionsDAG ActionsDAG::makeAddingConstantColumnActions(const std::string & name, const DataTypePtr & type, const Field & value)
-{
-    return makeAddingColumnActions(ColumnWithTypeAndName{type->createColumnConst(0, value), type, name});
 }
 
 ActionsDAG ActionsDAG::merge(ActionsDAG && first, ActionsDAG && second)

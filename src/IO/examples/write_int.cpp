@@ -13,7 +13,7 @@ static void NO_INLINE write(WriteBuffer & out, size_t size)
 }
 
 
-int mainEntryExampleWriteInt(int, char **)
+int main(int, char **)
 {
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
     write(out, 80);

@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/range.h>
 

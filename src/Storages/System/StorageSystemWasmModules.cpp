@@ -141,9 +141,7 @@ static std::optional<String> getModuleNameToDeleteFromAst(const MutationCommands
         return {};
 
     const auto & args = func->arguments->children;
-
-    const auto * ident = args[0]->as<ASTIdentifier>();
-    if (!ident || ident->full_name != "name")
+    if (args[0]->as<ASTIdentifier>()->full_name != "name")
         return {};
 
     const auto * literal = args[1]->as<ASTLiteral>();

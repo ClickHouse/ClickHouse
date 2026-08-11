@@ -39,7 +39,6 @@ LimitTransform::LimitTransform(
     for (auto & input : inputs)
     {
         ports_data[cur_stream].input_port = &input;
-        input_port_to_data[&input] = cur_stream;
         ++cur_stream;
     }
 
@@ -47,7 +46,6 @@ LimitTransform::LimitTransform(
     for (auto & output : outputs)
     {
         ports_data[cur_stream].output_port = &output;
-        output_port_to_data[&output] = cur_stream;
         ++cur_stream;
     }
 
@@ -70,22 +68,22 @@ Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) 
 
 
 IProcessor::Status LimitTransform::prepare(
-        const UpdatedInputPorts & updated_input_ports,
-        const UpdatedOutputPorts & updated_output_ports)
+        const PortNumbers & updated_input_ports,
+        const PortNumbers & updated_output_ports)
 {
     bool has_full_port = false;
 
-    auto process_pair = [&](PortsData & data)
+    auto process_pair = [&](size_t pos)
     {
-        auto status = preparePair(data);
+        auto status = preparePair(ports_data[pos]);
 
         switch (status)
         {
             case IProcessor::Status::Finished:
             {
-                if (!data.is_finished)
+                if (!ports_data[pos].is_finished)
                 {
-                    data.is_finished = true;
+                    ports_data[pos].is_finished = true;
                     ++num_finished_port_pairs;
                 }
 
@@ -104,11 +102,11 @@ IProcessor::Status LimitTransform::prepare(
         }
     };
 
-    for (const auto * port : updated_input_ports)
-        process_pair(ports_data[input_port_to_data.at(port)]);
+    for (auto pos : updated_input_ports)
+        process_pair(pos);
 
-    for (const auto * port : updated_output_ports)
-        process_pair(ports_data[output_port_to_data.at(port)]);
+    for (auto pos : updated_output_ports)
+        process_pair(pos);
 
     /// All ports are finished. It may happen even before we reached the limit (has less data then limit).
     if (num_finished_port_pairs == ports_data.size())
@@ -141,7 +139,7 @@ LimitTransform::Status LimitTransform::prepare()
     if (ports_data.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "prepare without arguments is not supported for multi-port LimitTransform");
 
-    return prepare({ports_data.front().input_port}, {ports_data.front().output_port});
+    return prepare({0}, {0});
 }
 
 LimitTransform::Status LimitTransform::preparePair(PortsData & data)

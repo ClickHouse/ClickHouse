@@ -5,7 +5,6 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
-#include <Common/BlobStorageLogWriter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
@@ -49,6 +48,7 @@ namespace S3RequestSetting
 namespace FailPoints
 {
     extern const char s3_read_buffer_throw_expired_token[];
+    extern const char s3_send_request_throw_expired_token[];
 }
 
 namespace ErrorCodes
@@ -74,8 +74,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     size_t read_until_position_,
     bool restricted_seek_,
     std::optional<size_t> file_size_,
-    const S3CredentialsRefreshCallback & credentials_refresh_callback_,
-    BlobStorageLogWriterPtr blob_storage_log_)
+    const S3CredentialsRefreshCallback & credentials_refresh_callback_)
     : ReadBufferFromFileBase()
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -88,7 +87,6 @@ ReadBufferFromS3::ReadBufferFromS3(
     , use_external_buffer(use_external_buffer_)
     , restricted_seek(restricted_seek_)
     , credentials_refresh_callback(credentials_refresh_callback_)
-    , blob_storage_log(std::move(blob_storage_log_))
 {
     file_size = file_size_;
 }
@@ -260,8 +258,8 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             if (metrics_observed)
                 return;
             metrics_observed = true;
-            HistogramMetrics::S3ReadRequestDuration.observe(static_cast<double>(request_watch.elapsedMicroseconds()));
-            HistogramMetrics::S3ReadRequestBytes.observe(static_cast<double>(bytes_copied));
+            HistogramMetrics::S3ReadRequestDuration.observe(static_cast<HistogramMetrics::Value>(request_watch.elapsedMicroseconds()));
+            HistogramMetrics::S3ReadRequestBytes.observe(static_cast<HistogramMetrics::Value>(bytes_copied));
         };
 
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3Microseconds);
@@ -536,44 +534,30 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     if (client_ptr->isClientForDisk())
         ProfileEvents::increment(ProfileEvents::DiskS3GetObject);
 
+    /// Simulate a real `ExpiredToken` error returned from S3, used by integration tests for
+    /// the credentials refresh callback path in `processException`. Unlike
+    /// `s3_read_buffer_throw_expired_token` (which is gated by `if (impl)` in `nextImpl` and
+    /// therefore only fires on multi-fill streaming reads), this failpoint fires inside
+    /// `sendRequest` itself, so it covers both `nextImpl`-driven reads and the
+    /// `readBigAt` range-read path used by Parquet column-chunk reads.
+    fiu_do_on(FailPoints::s3_send_request_throw_expired_token,
+    {
+        throw S3Exception(
+            Aws::S3::S3Errors::UNKNOWN,
+            "Unable to parse ExceptionName: ExpiredToken Message: The provided token has expired.");
+    });
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ReadBufferFromS3InitMicroseconds);
 
     // We do not know in advance how many bytes we are going to consume, to avoid blocking estimated it from below
     CurrentThread::IOSchedulingScope io_scope(read_settings.io_scheduling);
     CurrentThread::ReadThrottlingScope read_throttling_scope(read_settings.remote_throttler);
-
-    /// Measures time-to-first-byte: just the GetObject API call, not data transfer.
-    /// Each sendRequest call is logged individually, unlike HDFS/Local which aggregate.
-    Stopwatch blob_log_watch;
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
     if (outcome.IsSuccess())
-    {
-        auto result = outcome.GetResultWithOwnership();
-        if (blob_storage_log)
-        {
-            size_t data_size = static_cast<size_t>(result.GetContentLength());
-            blob_storage_log->addEvent(
-                BlobStorageLogElement::EventType::Read,
-                bucket, key, /* local_path */ {},
-                data_size,
-                blob_log_watch.elapsedMicroseconds(),
-                /* error_code */ 0, /* error_message */ {});
-        }
-        return result;
-    }
+        return outcome.GetResultWithOwnership();
 
     const auto & error = outcome.GetError();
-    if (blob_storage_log)
-    {
-        size_t data_size = range_end_incl ? (*range_end_incl - range_begin + 1) : 0;
-        blob_storage_log->addEvent(
-            BlobStorageLogElement::EventType::Read,
-            bucket, key, /* local_path */ {},
-            data_size,
-            blob_log_watch.elapsedMicroseconds(),
-            static_cast<Int32>(error.GetErrorType()), error.GetMessage());
-    }
     throw S3Exception(error.GetMessage(), error.GetErrorType());
 }
 

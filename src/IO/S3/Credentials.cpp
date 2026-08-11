@@ -2,11 +2,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
-#include <IO/S3/getAvailabilityZone.h>
 #include <Common/Exception.h>
-#include <base/EnumReflection.h>
-#include <boost/algorithm/string/join.hpp>
-#include <Server/CloudPlacementInfo.h>
 
 namespace DB
 {
@@ -18,11 +14,11 @@ namespace ErrorCodes
 
 namespace S3
 {
-    std::string tryGetRunningAvailabilityZone(AZFacilities az_facility)
+    std::string tryGetRunningAvailabilityZone()
     {
         try
         {
-            return getRunningAvailabilityZone(az_facility);
+            return getRunningAvailabilityZone();
         }
         catch (...)
         {
@@ -31,7 +27,6 @@ namespace S3
         }
     }
 }
-
 }
 
 #if USE_AWS_S3
@@ -390,52 +385,16 @@ std::shared_ptr<AWSEC2MetadataClient> createEC2MetadataClient(const Aws::Client:
     return std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
 }
 
-namespace
+String AWSEC2MetadataClient::getAvailabilityZoneOrException()
 {
-
-String getAvailabilityZoneOrException(bool is_zone_id)
-{
-    auto logger = getLogger("AWSEC2MetadataClient");
-    String token_str;
-    static std::mutex t_mutex;
-
-    /// IMDSv2
-    {
-        /// Let's serialize token retrieval as we do in AWSEC2MetadataClient::getEC2MetadataToken
-        std::lock_guard<std::mutex> lock(t_mutex);
-
-        Poco::URI token_uri(getAWSMetadataEndpoint() + AWSEC2MetadataClient::EC2_IMDS_TOKEN_RESOURCE);
-        Poco::Net::HTTPClientSession token_session(token_uri.getHost(), token_uri.getPort());
-        token_session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
-
-        Poco::Net::HTTPRequest token_request(Poco::Net::HTTPRequest::HTTP_PUT, token_uri.getPath(), Poco::Net::HTTPMessage::HTTP_1_1);
-        token_request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_HEADER, AWSEC2MetadataClient::EC2_IMDS_TOKEN_TTL_DEFAULT_VALUE);
-        token_request.setContentLength(0);
-
-        token_session.sendRequest(token_request);
-
-        Poco::Net::HTTPResponse token_response;
-        std::istream & token_rs = token_session.receiveResponse(token_response);
-        if (token_response.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
-            Poco::StreamCopier::copyToString(token_rs, token_str);
-        else
-            LOG_WARNING(
-                logger,
-                "Failed to get AWS availability zone token. HTTP response code: {}. Falling back to token-less flow IMDSv1",
-                token_response.getStatus());
-    }
-
-    Poco::URI uri(getAWSMetadataEndpoint() + (is_zone_id ? AWSEC2MetadataClient::EC2_AVAILABILITY_ZONE_ID_RESOURCE : AWSEC2MetadataClient::EC2_AVAILABILITY_ZONE_RESOURCE));
+    Poco::URI uri(getAWSMetadataEndpoint() + EC2_AVAILABILITY_ZONE_RESOURCE);
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
     session.setTimeout(Poco::Timespan(AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS, 0));
 
+    Poco::Net::HTTPResponse response;
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, uri.getPath());
-
-    if (!token_str.empty())
-        request.set(AWSEC2MetadataClient::EC2_IMDS_TOKEN_HEADER, token_str);
     session.sendRequest(request);
 
-    Poco::Net::HTTPResponse response;
     std::istream & rs = session.receiveResponse(response);
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
@@ -443,19 +402,6 @@ String getAvailabilityZoneOrException(bool is_zone_id)
     Poco::StreamCopier::copyToString(rs, response_data);
     return response_data;
 }
-}
-
-
-String AWSEC2MetadataClient::getAWSZoneID()
-{
-    return getAvailabilityZoneOrException(true);
-}
-
-String AWSEC2MetadataClient::getAWSZoneName()
-{
-    return getAvailabilityZoneOrException(false);
-}
-
 
 String getGCPAvailabilityZoneOrException()
 {
@@ -481,58 +427,25 @@ String getGCPAvailabilityZoneOrException()
     return zone_info[3];
 }
 
-
-String getRunningAvailabilityZone(AZFacilities az_facility)
+String getRunningAvailabilityZone()
 {
     LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
-
-    using AZGetter = std::function<String()>;
-
-    std::vector<std::pair<bool /* used if AWS_ZONE_NAME_THEN_GCP_ZONE */, AZGetter>> az_getters =
+    try
     {
-        /// mimics original behavior Placement logic relies on
-        ///   skip AWS_ZONE_ID (in favour of AWS_ZONE_NAME) and CLICKHOUSE
-        {false, [](){return AWSEC2MetadataClient::getAWSZoneID();}},                          /// AWS_ZONE_ID
-        {true,  [](){return AWSEC2MetadataClient::getAWSZoneName();}},                        /// AWS_ZONE_NAME
-        {true,  getGCPAvailabilityZoneOrException},                                           /// GCP_ZONE
-        {false, [](){return PlacementInfo::PlacementInfo::instance().getAvailabilityZone();}} /// CLICKHOUSE
-    };
-
-    if (az_facility == AZFacilities::AWS_ZONE_NAME_THEN_GCP_ZONE)
-    {
-        std::vector<std::string> ex_msgs;
-
-        /// it is expected that some facilities do not work, we are prepared for exceptions
-        for (auto & getter : az_getters)
-        {
-            try
-            {
-                if (getter.first)
-                    return getter.second();
-            }
-            catch (...)
-            {
-                auto ex_msg = getExceptionMessage(std::current_exception(), false);
-                LOG_INFO(getLogger("Application"), "Trying to detect the availability zone via {}. Error: {}",
-                    magic_enum::enum_name(az_facility), ex_msg);
-                ex_msgs.push_back(ex_msg);
-            }
-        }
-        throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Failed to find the availability zone. Errors: {}", boost::algorithm::join(ex_msgs, ", "));
+        return AWSEC2MetadataClient::getAvailabilityZoneOrException();
     }
-    else
+    catch (...)
     {
+        auto aws_ex_msg = getExceptionMessage(std::current_exception(), false);
         try
         {
-            auto getter_index = magic_enum::enum_integer(az_facility) - 1;
-            return az_getters[getter_index].second();
+            return getGCPAvailabilityZoneOrException();
         }
         catch (...)
         {
-            auto ex_msg = getExceptionMessage(std::current_exception(), false);
+            auto gcp_ex_msg = getExceptionMessage(std::current_exception(), false);
             throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Failed to find the availability zone via {}. Error: {}", magic_enum::enum_name(az_facility), ex_msg);
+                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex_msg, gcp_ex_msg);
         }
     }
 }
@@ -1098,8 +1011,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     AddProvider(std::make_shared<Aws::Auth::ProfileConfigFileAWSCredentialsProvider>());
 }
 
-AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_)
-    : role_arn(std::move(role_arn_)), role_session_name(std::move(role_session_name_))
+AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_)
+    : role_arn(std::move(role_arn_)), role_session_name(std::move(role_session_name_)), external_id(std::move(external_id_))
 {
 }
 
@@ -1112,6 +1025,8 @@ void AssumeRoleRequest::AddQueryStringParameters(Aws::Http::URI & uri) const
 {
     uri.AddQueryStringParameter("RoleArn", role_arn);
     uri.AddQueryStringParameter("RoleSessionName", role_session_name);
+    if (!external_id.empty())
+        uri.AddQueryStringParameter("ExternalId", external_id);
 }
 
 AssumeRoleResult::AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result)
@@ -1199,6 +1114,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey::updateHash(SipHash & has
 {
     hash.update(role_arn);
     hash.update(session_name);
+    hash.update(external_id);
     hash.update(endpoint);
     hash.update(credentials.GetAWSAccessKeyId());
     hash.update(credentials.GetAWSSecretKey());
@@ -1208,6 +1124,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey::updateHash(SipHash & has
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentialsProvider::create(
     std::string role_arn_,
     std::string session_name_,
+    std::string external_id_,
     uint64_t expiration_window_seconds_,
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
     const DB::S3::PocoHTTPClientConfiguration & client_configuration,
@@ -1217,21 +1134,23 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     auto session_name = session_name_.empty() ? "ClickHouseSession" : std::move(session_name_);
     return CredentialsProviderCache::instance().getOrSet(
         AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey{
-            role_arn_, session_name, client->getEndpoint().GetURL(), credentials_provider->GetAWSCredentials()},
+            role_arn_, session_name, external_id_, client->getEndpoint().GetURL(), credentials_provider->GetAWSCredentials()},
         [&]
         {
             return std::make_shared<AwsAuthSTSAssumeRoleCredentialsProvider>(
-                std::move(role_arn_), std::move(session_name), expiration_window_seconds_, std::move(client));
+                std::move(role_arn_), std::move(session_name), std::move(external_id_), expiration_window_seconds_, std::move(client));
         });
 }
 
 AwsAuthSTSAssumeRoleCredentialsProvider::AwsAuthSTSAssumeRoleCredentialsProvider(
     std::string role_arn_,
     std::string session_name_,
+    std::string external_id_,
     uint64_t expiration_window_seconds_,
     std::shared_ptr<AWSAssumeRoleClient> client_)
     : role_arn(std::move(role_arn_))
     , session_name(session_name_.empty() ? "ClickHouseSession" : std::move(session_name_))
+    , external_id(std::move(external_id_))
     , expiration_window_seconds(expiration_window_seconds_)
     , client(std::move(client_))
     , logger(getLogger("AwsAuthSTSAssumeRoleCredentialsProvider"))
@@ -1239,12 +1158,16 @@ AwsAuthSTSAssumeRoleCredentialsProvider::AwsAuthSTSAssumeRoleCredentialsProvider
 
 Aws::Auth::AWSCredentials AwsAuthSTSAssumeRoleCredentialsProvider::GetAWSCredentials()
 {
+    /// Honor `SetNeedRefresh()` like sibling providers (Web-Identity, SSO) do.
+    /// Without this, external callers (e.g. `S3::Client` on auth retries, or the
+    /// delta-kernel `ExpiredToken` retry path) can't force a re-AssumeRole even
+    /// after explicitly signalling the cached token is stale.
     Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
-    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
+    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds))
         return credentials;
 
     guard.UpgradeToWriterLock();
-    if (!areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
+    if (!IsSetNeedRefresh() && !areCredentialsEmptyOrExpired(credentials, expiration_window_seconds)) // double-checked lock to avoid refreshing twice
         return credentials;
 
     Reload();
@@ -1255,10 +1178,11 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
 {
     LOG_INFO(logger, "Credentials are empty or expired, attempting to renew with AssumeRole");
 
-    AssumeRoleRequest request(role_arn, session_name);
+    AssumeRoleRequest request(role_arn, session_name, external_id);
     auto outcome = client->assumeRole(request);
     if (!outcome.IsSuccess())
     {
+        /// Keep `m_needsRefresh` and cached `credentials` so the next call retries STS.
         LOG_WARNING(logger, "Failed to get credentials using AssumeRule. Error: {}", outcome.GetError().GetMessage());
         return;
     }
@@ -1268,6 +1192,9 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     credentials.SetAWSSecretKey(result.getSecretAccessKey());
     credentials.SetSessionToken(result.getSessionToken());
     credentials.SetExpiration(result.getExpiration());
+
+    /// Clear `m_needsRefresh` so an external `SetNeedRefresh()` isn't latched.
+    AWSCredentialsProvider::Reload();
 
     LOG_TRACE(logger, "Successfully retrieved credentials");
 }
@@ -1293,6 +1220,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
         credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
             credentials_configuration.role_arn,
             credentials_configuration.role_session_name,
+            credentials_configuration.external_id,
             credentials_configuration.expiration_window_seconds,
             std::move(credentials_provider),
             configuration,
@@ -1314,11 +1242,8 @@ namespace DB
 namespace S3
 {
 
-std::string getRunningAvailabilityZone(AZFacilities az_facility)
+std::string getRunningAvailabilityZone()
 {
-    if (az_facility == AZFacilities::CLICKHOUSE)
-        return PlacementInfo::PlacementInfo::instance().getAvailabilityZone();
-
     throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD, "Does not support availability zone detection for non-cloud environment");
 }
 

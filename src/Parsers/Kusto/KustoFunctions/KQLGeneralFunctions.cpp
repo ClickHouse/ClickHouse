@@ -56,7 +56,7 @@ bool Bin::convertImpl(String & out, IParser::Pos & pos)
     try
     {
         size_t pos_end = 0;
-        (void)std::stod(value_no_spaces, &pos_end);
+        std::stod(value_no_spaces, &pos_end);
         if (pos_end != value_no_spaces.size())
             throw std::invalid_argument("not a number");
     }

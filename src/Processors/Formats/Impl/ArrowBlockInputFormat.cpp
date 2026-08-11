@@ -93,6 +93,11 @@ Chunk ArrowBlockInputFormat::read()
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while reading batch of Arrow data: {}", batch_result.status().ToString());
 
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(**batch_result);
+
     auto table_result = arrow::Table::FromRecordBatches({*batch_result});
     if (!table_result.ok())
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
@@ -103,7 +108,8 @@ Chunk ArrowBlockInputFormat::read()
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     BlockMissingValues * block_missing_values_ptr = format_settings.defaults_for_omitted_fields ? &block_missing_values : nullptr;
-    res = arrow_column_to_ch_column->arrowTableToCHChunk(*table_result, (*table_result)->num_rows(), file_reader ? file_reader->metadata() : nullptr, block_missing_values_ptr);
+    auto schema_metadata = stream ? stream_reader->schema()->metadata() : file_reader->schema()->metadata();
+    res = arrow_column_to_ch_column->arrowTableToCHChunk(*table_result, (*table_result)->num_rows(), schema_metadata, block_missing_values_ptr);
 
     /// There is no easy way to get original record batch size from Arrow metadata.
     /// Let's just use the number of bytes read from read buffer.
@@ -259,7 +265,7 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
 
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         *schema,
-        file_reader ? file_reader->metadata() : nullptr,
+        schema->metadata(),
         stream ? "ArrowStream" : "Arrow",
         format_settings,
         format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,

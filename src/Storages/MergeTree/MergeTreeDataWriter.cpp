@@ -70,7 +70,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool finalize_projection_parts_synchronously;
     extern const SettingsBool materialize_skip_indexes_on_insert;
     extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
@@ -346,7 +345,7 @@ void updateTTL(
     }
 
     if (update_part_min_max_ttls)
-        ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+        ttl_infos.updatePartMinMaxTTL(ttl_info);
 }
 
 void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
@@ -418,8 +417,13 @@ void MergeTreeTemporaryPart::prewarmCaches()
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, IColumn::Selector * out_selector)
 {
+    /// out_selector is left empty when the block is not split (a single resulting partition);
+    /// the caller then knows every row belongs to the only partition.
+    if (out_selector)
+        out_selector->clear();
+
     BlocksWithPartition result;
     if (block.empty() || !block.rows())
     {
@@ -481,13 +485,17 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (size_t col = 0; col < block.columns(); ++col)
     {
-        auto scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+        MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
         for (size_t i = 0; i < partitions_count; ++i)
             result[i].block->getByPosition(col).column = std::move(scattered[i]);
     }
 
     for (auto & item : result)
         item.partition_id = item.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
+
+    /// Hand the row -> partition-index mapping to the caller (deduplication uses it).
+    if (out_selector)
+        *out_selector = std::move(selector);
 
     return result;
 }
@@ -898,10 +906,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         indices,
         compression_codec,
         std::move(index_granularity_ptr),
-        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::NonTransactionalTID,
+        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
         block.bytes(),
-        /*reset_columns=*/false,
-        /*blocks_are_granules_size=*/false,
+        /*reset_columns=*/ false,
+        /*blocks_are_granules_size=*/ false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr));
 
@@ -909,11 +917,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     for (const auto & projection : metadata_snapshot->getProjections())
     {
-        /// Commit-order projections use `_block_number` which is only finalized at commit time.
-        /// Skip during insert; they will be built correctly during the first merge.
-        if (projection.with_block_number)
-            continue;
-
         Block projection_block;
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
@@ -927,23 +930,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             auto proj_temp_part
                 = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
-
-            if (global_settings[Setting::finalize_projection_parts_synchronously])
-            {
-                /// Finish each projection stream's finalizer immediately to release
-                /// output stream memory (writer buffers, S3 write buffers, etc.).
-                /// We cannot call proj_temp_part->finalize() here because the part
-                /// has already been moved to new_data_part above. The projection
-                /// part's precommitTransaction() will be handled later by the main
-                /// temp_part->finalize() which iterates part->getProjectionParts().
-                for (auto & stream : proj_temp_part->streams)
-                    stream.finalizer.finish();
-            }
-            else
-            {
-                for (auto & stream : proj_temp_part->streams)
-                    temp_part->streams.emplace_back(std::move(stream));
-            }
+            for (auto & stream : proj_temp_part->streams)
+                temp_part->streams.emplace_back(std::move(stream));
         }
     }
 
@@ -1093,7 +1081,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         MergeTreeIndices{},
         compression_codec,
         std::move(index_granularity_ptr),
-        Tx::NonTransactionalTID,
+        Tx::PrehistoricTID,
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,

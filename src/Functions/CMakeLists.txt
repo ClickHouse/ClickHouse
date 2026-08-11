@@ -2,7 +2,6 @@ add_subdirectory(divide)
 
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(clickhouse_functions .)
-add_headers_and_sources(clickhouse_functions AI)
 
 # These files are moved from clickhouse_functions into dbms to make dbms self-contained (not depend on clickhouse_functions)
 # This allows less dependency and linker work (specially important when building many example executables)
@@ -195,6 +194,8 @@ if (USE_GPERF)
             && clang-format -i HTMLCharacterReference.generated.cpp
             # for clang-tidy, since string.h is deprecated
             && sed -i 's/\#include <string.h>/\#include <cstring>/g' HTMLCharacterReference.generated.cpp
+            # the table must be constexpr for the compile-time entity-expansion static_assert in the .gperf
+            && sed -i 's/static const struct NameAndGlyph wordlist/static constexpr struct NameAndGlyph wordlist/g' HTMLCharacterReference.generated.cpp
             SOURCES HTMLCharacterReference.gperf
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             )

@@ -22,6 +22,8 @@ INSERT INTO t_trivial_count_filter SELECT number FROM numbers(100);
 
 SET enable_analyzer = 1;
 SET optimize_trivial_count_query = 1;
+-- Avoid extra Resize steps
+SET max_threads = 1;
 
 -- Baseline: no filter at all, trivial-count fires.
 SELECT 'baseline';

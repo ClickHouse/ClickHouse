@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeCustom.h>
 
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {

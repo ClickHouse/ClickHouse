@@ -3,7 +3,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <iostream>
 
-int mainEntryExampleQuantileTDigest(int, char **)
+int main(int, char **)
 {
     using namespace DB;
 

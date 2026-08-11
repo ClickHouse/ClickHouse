@@ -3,6 +3,8 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 #include <Interpreters/ExpressionActions.h>
@@ -558,8 +560,30 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             atom_node_ptr->type == ActionsDAG::ActionType::FUNCTION ||
             (atom_node_ptr->type == ActionsDAG::ActionType::COLUMN && !WhichDataType(atom_node_ptr->result_type).isSet()))
         {
-            auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
-            result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
+            /// `__bitWrapperFunc` is defined only for integer arguments. If the atom result type
+            /// is not integer (e.g. `Float`, `BFloat16`), wrapping it would throw the internal
+            /// "It's a bug!" exception from `__bitWrapperFunc` at execution time. Fall back to
+            /// `UNKNOWN_FIELD` so that the index does not prune granules and the query goes
+            /// through the regular filter path.
+            const auto & atom_result_type = atom_node_ptr->result_type;
+            const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
+                ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()
+                : WhichDataType(removeNullable(atom_result_type)).isInteger();
+            if (is_integer_atom)
+            {
+                auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
+                result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
+            }
+            else
+            {
+                ColumnWithTypeAndName unknown_field_column_with_type;
+
+                unknown_field_column_with_type.name = calculateConstantActionNodeName(UNKNOWN_FIELD);
+                unknown_field_column_with_type.type = std::make_shared<DataTypeUInt8>();
+                unknown_field_column_with_type.column = unknown_field_column_with_type.type->createColumnConst(1, UNKNOWN_FIELD);
+
+                result_node = &result_dag.addColumn(unknown_field_column_with_type);
+            }
         }
     }
     else

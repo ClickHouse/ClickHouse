@@ -8,7 +8,6 @@
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <base/scope_guard.h>
-#include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -43,6 +42,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -120,10 +120,6 @@ public:
 
     virtual void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
 
-    /// When true, `handleRequest` parses `application/x-www-form-urlencoded` (and multipart) bodies for POST/PUT.
-    /// Must stay false for RemoteWrite/RemoteRead so the raw body stream stays available for protobuf.
-    virtual bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const { return false; }
-
 protected:
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
@@ -134,12 +130,7 @@ protected:
             params.reset();
         });
 
-        const auto & method = request.getMethod();
-        if (shouldParseFormFromRequestBody(request)
-            && (method == Poco::Net::HTTPRequest::HTTP_POST || method == Poco::Net::HTTPRequest::HTTP_PUT))
-            params = std::make_unique<HTMLForm>(default_settings, request, *request.getStream());
-        else
-            params = std::make_unique<HTMLForm>(default_settings, request);
+        params = std::make_unique<HTMLForm>(default_settings, request);
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
         if (!authenticateUserAndMakeContext(request, response))
@@ -331,7 +322,8 @@ public:
         response.set("Content-Encoding", "snappy");
 
         ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{std::make_unique<SnappyWriteBuffer>(getOutputStream(response))};
-        read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
+        if (!read_response.SerializeToZeroCopyStream(&zero_copy_output_stream))
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Failed to serialize the Prometheus ReadResponse");
         zero_copy_output_stream.finalize();
 
 #else
@@ -345,8 +337,6 @@ class PrometheusRequestHandler::QueryAPIImpl : public ImplWithContext
 {
 public:
     using ImplWithContext::ImplWithContext;
-
-    bool shouldParseFormFromRequestBody(const HTTPServerRequest & /* request */) const override { return true; }
 
     void beforeHandlingRequest(HTTPServerRequest & request) override
     {

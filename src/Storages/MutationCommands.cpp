@@ -149,24 +149,13 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     if (parse_alter_commands && command.type == ASTAlterCommand::MODIFY_COLUMN && command.remove_property.empty()
         && nullptr == command.settings_changes && nullptr == command.settings_resets)
     {
+        res.type = MutationCommand::Type::READ_COLUMN;
         const auto & ast_col_decl = command.col_decl->as<ASTColumnDeclaration &>();
-
-        if (ast_col_decl.getType() != nullptr)
-        {
-            res.type = MutationCommand::Type::READ_COLUMN;
-            res.column_name = ast_col_decl.name;
-            res.data_type = DataTypeFactory::instance().get(ast_col_decl.getType());
-            return res;
-        }
-
-        const bool metadata_only_modification
-            = ast_col_decl.getDefaultExpression() != nullptr
-            || ast_col_decl.getComment() != nullptr
-            || ast_col_decl.getCodec() != nullptr
-            || ast_col_decl.getTTL() != nullptr;
-
-        if (!metadata_only_modification)
+        if (nullptr == ast_col_decl.getType())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY COLUMN mutation command doesn't specify type: {}", command.formatForErrorMessage());
+        res.column_name = ast_col_decl.name;
+        res.data_type = DataTypeFactory::instance().get(ast_col_decl.getType());
+        return res;
     }
     if (parse_alter_commands && command.type == ASTAlterCommand::DROP_COLUMN)
     {
@@ -249,9 +238,40 @@ boost::intrusive_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_met
 }
 
 
+namespace
+{
+
+ASTPtr parseMutationCommandsList(const String & commands_str)
+{
+    ParserAlterCommandList p_alter_commands;
+    return parseQuery(
+        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+}
+
+}
+
 void MutationCommands::writeText(WriteBuffer & out, bool with_pure_metadata_commands) const
 {
-    writeEscapedString(ast(with_pure_metadata_commands)->formatWithSecretsOneLine(), out);
+    String commands_str = ast(with_pure_metadata_commands)->formatWithSecretsOneLine();
+
+    /// Check that the serialized commands can be parsed back the same way `readText` will parse
+    /// them. If they cannot (i.e. some AST is formatted in a way the parser does not accept),
+    /// it is much better to fail the query that creates the mutation than to persist an entry
+    /// that would fail to load - and prevent the whole table from loading - on every server
+    /// that reads it.
+    try
+    {
+        parseMutationCommandsList(commands_str);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(
+            "Serialized mutation commands cannot be parsed back (this indicates a mismatch between the AST formatter "
+            "and the parser; it's a bug); refusing to write them out: {}", commands_str);
+        throw;
+    }
+
+    writeEscapedString(commands_str, out);
 }
 
 void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_commands)
@@ -259,9 +279,7 @@ void MutationCommands::readText(ReadBuffer & in, bool with_pure_metadata_command
     String commands_str;
     readEscapedString(commands_str, in);
 
-    ParserAlterCommandList p_alter_commands;
-    auto commands_ast = parseQuery(
-        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto commands_ast = parseMutationCommandsList(commands_str);
 
     for (const auto & child : commands_ast->children)
     {

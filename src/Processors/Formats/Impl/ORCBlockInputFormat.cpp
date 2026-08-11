@@ -59,6 +59,11 @@ Chunk ORCBlockInputFormat::read()
     if (!batch)
         return {};
 
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*batch);
+
     auto table_result = arrow::Table::FromRecordBatches({batch});
     if (!table_result.ok())
         throw Exception(

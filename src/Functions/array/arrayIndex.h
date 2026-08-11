@@ -17,6 +17,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/FieldAccurateComparison.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
@@ -91,12 +92,12 @@ private:
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsign-compare"
 
-    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
+    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i) noexcept
     {
         return left == right[i];
     }
 
-    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
         if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
         {
@@ -113,7 +114,7 @@ private:
     }
 
     static constexpr bool compare(
-            const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j)
+            const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j) noexcept
     {
         if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
         {
@@ -146,7 +147,7 @@ private:
         return accurateEquals(arr[pos], rhs);
     }
 
-    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
+    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
     {
         if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
         {
@@ -915,6 +916,15 @@ private:
         arguments_copy[0].type = std::move(array_type);
         arguments_copy[0].name = arguments[0].name;
 
+        /// executeImpl strips LowCardinality before executeArrayImpl, but the Map path bypasses it.
+        /// Strip here too so executeArrayImpl sees a ColumnNullable lookup column and fills null_map_item,
+        /// keeping null-needle semantics identical to the plain array path.
+        for (auto & argument : arguments_copy)
+        {
+            argument.column = recursiveRemoveLowCardinality(argument.column);
+            argument.type = recursiveRemoveLowCardinality(argument.type);
+        }
+
         return executeArrayImpl(arguments_copy, result_type);
     }
 
@@ -1188,11 +1198,7 @@ private:
             const auto & value = (*item_arg)[0];
             if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
-                if (isColumnNullableOrLowCardinalityNullable(
-                        assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
-                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
-                else
-                    current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
+                current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
             }
             else
             {

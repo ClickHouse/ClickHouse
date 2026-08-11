@@ -20,6 +20,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Base64.h>
 #include <Common/checkStackSize.h>
+#include <Common/HTTPHeaderFilter.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
@@ -43,7 +44,6 @@
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
-#include <Common/FailPoint.h>
 
 
 namespace DB::ErrorCodes
@@ -51,12 +51,6 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int FAULT_INJECTED;
-}
-
-namespace DB::FailPoints
-{
-    extern const char check_database_datalake_negative[];
 }
 
 namespace DataLake
@@ -162,6 +156,14 @@ RestCatalog::RestCatalog(
     else if (!auth_header_.empty())
     {
         auth_header = parseAuthHeader(auth_header_);
+        /// `registerDatabaseDataLake` validates `auth_header` on CREATE only, so that a database
+        /// persisted with a forbidden or malformed header does not block server startup on ATTACH.
+        /// The catalog is built lazily on first use instead; this is where the user-provided
+        /// `auth_header` first becomes a header sent to the catalog, so enforce `http_forbid_headers`
+        /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
+        /// validated and the original parsed header is kept.
+        DB::HTTPHeaderEntries header_to_check{auth_header.value()};
+        getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
     }
     config = loadConfig();
 }
@@ -224,11 +226,6 @@ void RestCatalog::parseCatalogConfigurationSettings(const Poco::JSON::Object::Pt
 
 DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
 {
-    fiu_do_on(DB::FailPoints::check_database_datalake_negative,
-    {
-        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database");
-    });
-
     /// Option 1: user specified auth header manually.
     /// Header has format: 'Authorization: <scheme> <token>'.
     if (auth_header.has_value())
@@ -937,9 +934,6 @@ bool RestCatalog::getTableMetadataImpl(
         }
     }
 
-    if (metadata_object->has("table-uuid"))
-        result.setTableUUID(metadata_object->get("table-uuid").extract<String>());
-
     return true;
 }
 
@@ -986,7 +980,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
 
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
-    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT).generic_string();
+    const std::string endpoint = fmt::format("{}/namespaces", base_url);
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -1014,7 +1008,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 {
     createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
 
-    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
+    const std::string endpoint = fmt::format("{}/namespaces/{}/tables", base_url, namespace_name);
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
@@ -1051,7 +1045,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
-    const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}", base_url, namespace_name, table_name);
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -1136,18 +1130,10 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
     {
         case StorageType::S3:
         {
-            static constexpr auto gcs_token_str = "gcs.oauth2.token";
             static constexpr auto access_key_id_str = "s3.access-key-id";
             static constexpr auto secret_access_key_str = "s3.secret-access-key";
             static constexpr auto session_token_str = "s3.session-token";
             static constexpr auto storage_endpoint_str = "s3.endpoint";
-
-            if (object->has(gcs_token_str))
-            {
-                auto gcs_token = object->get(gcs_token_str).extract<String>();
-                LOG_DEBUG(log, "Using GCS OAuth2 token for location {}", location);
-                return {std::make_shared<GCSCredentials>(gcs_token), ""};
-            }
 
             std::string access_key_id;
             std::string secret_access_key;

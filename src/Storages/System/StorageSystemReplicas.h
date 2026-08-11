@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -14,7 +14,7 @@ class StorageReplicatedMergeTree;
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.
   */
-class StorageSystemReplicas final : public StorageWithCommonVirtualColumns
+class StorageSystemReplicas final : public IStorage
 {
 public:
     using TPools = StatusRequestsPools<StorageReplicatedMergeTree>;
@@ -24,9 +24,7 @@ public:
 
     std::string getName() const override { return "SystemReplicas"; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

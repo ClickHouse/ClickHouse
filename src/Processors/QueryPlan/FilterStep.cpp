@@ -1,6 +1,5 @@
 #include <Processors/QueryPlan/FilterStep.h>
 
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -60,7 +59,10 @@ struct ActionsAndName
 
 static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::Node * filter_node)
 {
-    auto split_result = dag.split({filter_node}, true);
+    /// avoid_duplicate_inputs: the split promotes the atom into an input of the remainder DAG, copying its
+    /// name verbatim. Duplicate names are legal inside a DAG but break the `Block` invariant, so a colliding
+    /// input has to be renamed (`split` adds an `ALIAS` so the original name stays resolvable).
+    auto split_result = dag.split({filter_node}, true, true);
     dag = std::move(split_result.second);
 
     const auto * split_filter_node = split_result.split_nodes_mapping[filter_node];
@@ -200,7 +202,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
     auto cloned_dag = actions_dag.clone();
 
     std::vector<ActionsAndName> and_atoms;
-    if (!settings.pretty && !actions_dag.hasStatefulFunctions())
+    if (!actions_dag.hasStatefulFunctions())
         and_atoms = splitAndChainIntoMultipleFilters(cloned_dag, filter_column_name);
 
     for (auto & and_atom : and_atoms)
@@ -213,10 +215,9 @@ void FilterStep::describeActions(FormatSettings & settings) const
         }
     }
 
-    settings.out << prefix << "Filter column: "
-        << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
+    settings.out << prefix << "Filter column: " << filter_column_name;
 
-    if (!settings.pretty && remove_filter_column)
+    if (remove_filter_column)
         settings.out << " (removed)";
     settings.out << '\n';
 

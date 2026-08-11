@@ -10,7 +10,7 @@
 #include <IO/ReadHelpers.h>
 
 
-int mainEntryExampleCompressedBuffer(int, char **)
+int main(int, char **)
 {
     try
     {

@@ -25,8 +25,6 @@ struct Base32EncodeTraits
 
 struct Base32DecodeTraits
 {
-    static constexpr bool has_size_optimization = false;
-
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
     {

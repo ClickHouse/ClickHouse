@@ -406,7 +406,6 @@ DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateTimeOverflowBehavior)
-DECLARE_SETTING_ENUM_WITH_RENAME(InputFormatColumnMatchingCaseSensitivity, FormatSettings::InputFormatColumnMatchingCaseSensitivity)
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
 
@@ -554,14 +553,4 @@ enum class JemallocProfileFormat : uint8_t
 };
 
 DECLARE_SETTING_ENUM(JemallocProfileFormat)
-
-enum class S3UriStyle : uint8_t
-{
-    AUTO,
-    PATH,
-    VIRTUAL_HOSTED,
-};
-
-DECLARE_SETTING_ENUM(S3UriStyle)
-
 }

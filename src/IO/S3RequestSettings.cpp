@@ -103,6 +103,27 @@ REQUEST_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 namespace S3
 {
 
+namespace
+{
+bool setValueFromConfig(
+    const Poco::Util::AbstractConfiguration & config, const std::string & path, typename S3RequestSettingsImpl::SettingFieldRef & field)
+{
+    if (!config.has(path))
+        return false;
+
+    auto which = field.getValue().getType();
+    if (isInt64OrUInt64FieldType(which))
+        field.setValue(config.getUInt64(path));
+    else if (which == Field::Types::String)
+        field.setValue(config.getString(path));
+    else if (which == Field::Types::Bool)
+        field.setValue(config.getBool(path));
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type: {}", field.getTypeName());
+
+    return true;
+}
+}
 
 S3RequestSettings::S3RequestSettings() : impl(std::make_unique<S3RequestSettingsImpl>())
 {
@@ -134,7 +155,7 @@ S3RequestSettings::S3RequestSettings(
     {
         auto path = fmt::format("{}.{}{}", config_prefix, setting_name_prefix, field.getName());
 
-        bool updated = S3::setValueFromConfig(config, path, field);
+        bool updated = setValueFromConfig(config, path, field);
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
@@ -246,11 +267,12 @@ void S3RequestSettings::validateUploadSettings()
                             impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size.value));
     }
 
-    std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+    std::unordered_set<String> storage_class_names
+        {"STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER_IR", "EXPRESS_ONEZONE"};
     if (!impl->storage_class_name.value.empty() && !storage_class_names.contains(impl->storage_class_name))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
+            "Setting storage_class has invalid value {}: this storage class is not supported for ClickHouse S3 disks",
             impl->storage_class_name.value);
 
     /// TODO: it's possible to set too small limits.

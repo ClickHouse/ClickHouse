@@ -12,7 +12,7 @@ bool DataTypeDate32::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeDate32::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return SerializationDate32::create();
+    return std::make_shared<SerializationDate32>();
 }
 
 Field DataTypeDate32::getDefault() const

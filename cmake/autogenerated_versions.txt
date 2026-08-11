@@ -1,12 +1,12 @@
-# This variables autochanged by tests/ci/version_helper.py:
+# This variables autochanged by ci/jobs/scripts/create_release.py:
 
 # NOTE: VERSION_REVISION has nothing common with DBMS_TCP_PROTOCOL_VERSION,
 # only DBMS_TCP_PROTOCOL_VERSION should be incremented on protocol changes.
-SET(VERSION_REVISION 54510)
+SET(VERSION_REVISION 54525)
 SET(VERSION_MAJOR 26)
-SET(VERSION_MINOR 5)
-SET(VERSION_PATCH 1)
-SET(VERSION_GITHASH a7b13e00eb1092407cbfbbe6206feca36ccee863)
-SET(VERSION_DESCRIBE v26.5.1.1-testing)
-SET(VERSION_STRING 26.5.1.1)
+SET(VERSION_MINOR 3)
+SET(VERSION_PATCH 18)
+SET(VERSION_GITHASH 59141459d999fabdcf3d1dd88cdd5ed6f10136ee)
+SET(VERSION_DESCRIBE v26.3.18.1-lts)
+SET(VERSION_STRING 26.3.18.1)
 # end of autochange

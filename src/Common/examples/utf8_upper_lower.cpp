@@ -19,7 +19,7 @@ std::string utf8_to_upper(const std::string & input)
     return output;
 }
 
-int mainEntryExampleUtf8UpperLower(int, char **)
+int main()
 {
     std::string input = "ır";
     std::cout << "upper:" << utf8_to_upper(input) << std::endl;

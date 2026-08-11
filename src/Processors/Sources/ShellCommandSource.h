@@ -9,6 +9,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <IO/ReadHelpers.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ISource.h>
 #include <Processors/Formats/IInputFormat.h>

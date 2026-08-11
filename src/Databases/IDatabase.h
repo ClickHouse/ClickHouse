@@ -180,14 +180,18 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// External database (i.e. PostgreSQL/Datalake/...) does not support any of ClickHouse internal tables:
-    /// - *MergeTree
-    /// - Distributed
-    /// - RocksDB
+    /// External database (i.e. `PostgreSQL`/Datalake/...) does not support any of ClickHouse internal tables:
+    /// - `*MergeTree`
+    /// - `Distributed`
+    /// - `RocksDB`
     /// - ...
     virtual bool isExternal() const { return true; }
 
     virtual bool isDatalakeCatalog() const { return false; }
+
+    /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
+    /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.
+    virtual bool isRemoteDatabase() const { return false; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
@@ -402,11 +406,6 @@ public:
     {
         std::lock_guard lock{mutex};
         return database_name;
-    }
-
-    virtual void checkDatabase() const
-    {
-        //No-op
     }
 
     // Alter comment of database.
