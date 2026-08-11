@@ -1,4 +1,4 @@
--- Regression test: runningConcurrency() must report itself as non-deterministic in the scope of
+-- Regression test: `runningConcurrency` must report itself as non-deterministic in the scope of
 -- a query, otherwise optimizer passes that rely on that predicate move it across a JOIN-kind
 -- rewrite and it observes a different row set, returning wrong results.
 
@@ -40,10 +40,18 @@ FROM (SELECT a FROM events_04872 LEFT JOIN keys_04872 ON events_04872.a = keys_0
       WHERE runningConcurrency(s, e) = 2 AND keys_04872.b > 1)
 SETTINGS query_plan_convert_outer_join_to_inner_join = 0;
 
--- The other conversion this guard protects: ANY strictness becomes SEMI/ANTI.
+-- The other conversion this guard protects: ANY strictness becomes SEMI/ANTI. Pinned at 1 and 0
+-- for the same reason as the rows above: the setting is randomized off on some runs, and an
+-- unpinned row would silently stop exercising the pass.
 SELECT 'carrier any', count()
 FROM (SELECT a FROM events_04872 ANY LEFT JOIN keys_04872 ON events_04872.a = keys_04872.b
-      WHERE runningConcurrency(s, e) = 2 AND keys_04872.b > 1);
+      WHERE runningConcurrency(s, e) = 2 AND keys_04872.b > 1)
+SETTINGS query_plan_convert_any_join_to_semi_or_anti_join = 1;
+
+SELECT 'carrier any convert=0', count()
+FROM (SELECT a FROM events_04872 ANY LEFT JOIN keys_04872 ON events_04872.a = keys_04872.b
+      WHERE runningConcurrency(s, e) = 2 AND keys_04872.b > 1)
+SETTINGS query_plan_convert_any_join_to_semi_or_anti_join = 0;
 
 -- The remaining two accepted argument types, which take separate execution paths.
 CREATE TABLE events_date_04872 (a UInt64, s Date, e Date) ENGINE = Memory;
@@ -72,8 +80,8 @@ SELECT 'control sibling', count()
 FROM (SELECT a FROM events_04872 LEFT JOIN keys_04872 ON events_04872.a = keys_04872.b
       WHERE rowNumberInAllBlocks() = 1 AND keys_04872.b > 1);
 
--- The declaration as reported to users. This column reflects isDeterministic(), which must be 0
--- for a running function alongside isDeterministicInScopeOfQuery().
+-- The declaration as reported to users. This column reflects `isDeterministic`, which must be 0
+-- for a running function alongside `isDeterministicInScopeOfQuery`.
 SELECT name, deterministic FROM system.functions
 WHERE name IN ('runningConcurrency', 'rowNumberInAllBlocks') ORDER BY name;
 
