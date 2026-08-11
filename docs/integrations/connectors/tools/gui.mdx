@@ -43,13 +43,13 @@ Features:
 
 ### CHOps {#chops}
 
-[CHOps](https://ch-ops.io) is a free, open-source, self-hosted web dashboard for administering and monitoring ClickHouse clusters. It wraps ClickHouse's HTTP interface in a browser UI for running SQL, inspecting slow queries, configuring alerts, managing backups, and controlling access. CHOps works against any ClickHouse server reachable over HTTP, whether self-managed on bare metal or VMs, or running on Kubernetes.
+[CHOps](https://ch-ops.io) is a free, open-source, self-hosted web dashboard for administering and monitoring ClickHouse clusters. It wraps ClickHouse's HTTP interface in a browser UI for running SQL, inspecting slow queries, configuring alerts, managing backups, and controlling access. It connects over the HTTP interface, so it works with self-managed deployments on bare metal, VMs, or Kubernetes. CHOps currently supports ClickHouse 26.3 LTS; other recent versions work, though there may be minor feature gaps.
 
 Features:
 
-- SQL editor with autocomplete, EXPLAIN types, export results in multiple formats, query profiler and a query metrics timeline.
+- SQL editor with autocomplete, EXPLAIN types, export results in 22 formats, query profiler and a query metrics timeline.
 - Cluster overview: live query monitor with kill controls, query analytics and log, table and parts inspection, merges and mutations, distributed DDL queue.
-- Custom dashboards with a chart builder, 12+ chart types, and configurable grid layouts.
+- Custom dashboards with a chart builder, 10+ chart types, and configurable grid layouts.
 - Monitoring with DVR-style playback for replaying historical metrics frame by frame.
 - SQL-based alert rules with threshold evaluation and email notifications.
 - Access control: ClickHouse user and role management, grant visualization, and settings-profile editing.
@@ -58,7 +58,7 @@ Features:
 - Crash, error, and text log viewers with calendar heatmaps and filtered search.
 - Deploys as a single self-contained binary, via Docker, or from source.
 
-[CHOps Source Code](https://github.com/Quantrail-Data/CH-Ops)
+[CHOps Source Code](https://github.com/Quantrail-Data/CH-Ops).
 
 ### DataStoria {#datastoria}
 
