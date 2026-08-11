@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Client/AI/MarkdownFormatter.h>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -60,16 +62,18 @@ public:
     }
 
     /// The model's commentary. Intermediate thoughts (between tool calls) are dimmed;
-    /// the final answer is printed normally.
+    /// the final answer is rendered as Markdown (the format the model writes in) when the
+    /// output is a terminal, and printed raw otherwise.
     void showAssistantText(const std::string & text, bool final)
     {
         if (text.empty())
             return;
-        if (use_colors)
-            output_stream << (final ? "" : "\033[2m");
-        output_stream << text;
-        if (use_colors && !final)
-            output_stream << "\033[0m";
+        if (!use_colors)
+            output_stream << text;
+        else if (final)
+            output_stream << renderMarkdownToANSI(text);
+        else
+            output_stream << "\033[2m" << text << "\033[0m";
         output_stream << "\n" << std::flush;
     }
 
