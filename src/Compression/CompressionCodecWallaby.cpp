@@ -963,7 +963,28 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 }
                 if (estimated_w < bits_delta_full && estimated_cost + 64 < best_packing->payload_size)
                 {
-                    const Packing capped = evaluate_delta(estimated_w);
+                    /// The histogram only proposes a cap, in both directions: it double-counts a
+                    /// spike (the jump and the return are two wide adjacent deltas, but exiling
+                    /// the spike costs one exception, after which the chain re-synchronizes on the
+                    /// return), and conversely an exiled delta re-widens the next lane (its delta
+                    /// now spans from further back), which can cascade. So the exact chain walk
+                    /// can prefer a neighbouring width; climb from the proposal in each direction
+                    /// while the walk keeps improving.
+                    Packing capped = evaluate_delta(estimated_w);
+                    for (Int32 w = estimated_w + 1; w < bits_delta_full; ++w)
+                    {
+                        const Packing wider = evaluate_delta(static_cast<UInt8>(w));
+                        if (wider.payload_size >= capped.payload_size)
+                            break;
+                        capped = wider;
+                    }
+                    for (Int32 w = static_cast<Int32>(estimated_w) - 1; w >= 0; --w)
+                    {
+                        const Packing narrower = evaluate_delta(static_cast<UInt8>(w));
+                        if (narrower.payload_size >= capped.payload_size)
+                            break;
+                        capped = narrower;
+                    }
                     if (capped.payload_size < best_packing->payload_size)
                         best_packing = capped;
                 }

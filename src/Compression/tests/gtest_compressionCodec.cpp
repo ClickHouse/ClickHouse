@@ -3469,4 +3469,24 @@ TEST_F(WallabyTest, RecoversTheWinningScaleFromABudgetAbortedScan)
     EXPECT_LT(wallabyCompressedSize(values), 800u);
 }
 
+TEST_F(WallabyTest, FindsTheDeltaCapBehindAnExiledSpike)
+{
+    /// The adjacent-delta histogram double-counts a spike: the jump and the return are two wide
+    /// deltas, but exiling the spike costs one exception, after which the chain re-synchronizes
+    /// with an in-lane delta of +6. On a 3-per-step ramp with a spike every 16th position the
+    /// histogram therefore proposes a 3-bit cap, whose exact chain walk explodes (the +6
+    /// post-spike deltas do not fit either), while the actual winner is the 4-bit cap: 63 exiled
+    /// spikes next to 4-bit lanes (~1.3 KiB against ~2.2 KiB for both capped Frame-of-Reference
+    /// and the uncapped 18-bit delta lanes, and ~1.4 KiB for the XOR lower bound). An encoder
+    /// revision that verified only the single proposed width missed it; the walk now climbs from
+    /// the proposal while the measured payload keeps improving.
+    std::vector<Float64> values(1024);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<Float64>(3 * i);
+    for (size_t i = 16; i < values.size(); i += 16)
+        values[i] = static_cast<Float64>(100000 + 3 * i);
+
+    EXPECT_LT(wallabyCompressedSize(values), 1400u);
+}
+
 }
