@@ -46,8 +46,10 @@ public:
 
     /// Attach an error message to the open entry. When there is no open entry (e.g. the query
     /// failed to parse and was never started), a standalone finished entry is created from
-    /// `fallback_query`. The first recorded error wins; later calls for the same entry are ignored.
-    void recordError(const String & fallback_query, const String & message);
+    /// `fallback_query`, marked with `from_ai` (whether the failed query was initiated by the
+    /// AI agent rather than typed by the user; ignored when an open entry exists - it already
+    /// carries the flag). The first recorded error wins; later calls for the same entry are ignored.
+    void recordError(const String & fallback_query, const String & message, bool from_ai);
 
     /// Close the open entry.
     void finishQuery(double elapsed_seconds, bool cancelled);

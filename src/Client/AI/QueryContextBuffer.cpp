@@ -98,7 +98,7 @@ void QueryContextBuffer::addBlock(const Block & block)
     entry->result_rows += rows;
 }
 
-void QueryContextBuffer::recordError(const String & fallback_query, const String & message)
+void QueryContextBuffer::recordError(const String & fallback_query, const String & message, bool from_ai)
 {
     if (Entry * entry = openEntry())
     {
@@ -109,7 +109,7 @@ void QueryContextBuffer::recordError(const String & fallback_query, const String
 
     /// The query failed before it was started (e.g. it could not be parsed):
     /// record it as a standalone, already finished entry.
-    startQuery(fallback_query, /*from_ai=*/ false);
+    startQuery(fallback_query, from_ai);
     Entry & entry = entries.back();
     entry.error = truncateForContext(message, max_error_bytes);
     entry.finished = true;

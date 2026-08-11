@@ -542,9 +542,6 @@ protected:
     std::unique_ptr<AIAgent> ai_agent;
     /// Recent queries with truncated results and errors: the context of the AI agent
     std::shared_ptr<QueryContextBuffer> ai_query_context;
-    /// Whether the initialization of the AI agent was already attempted (it is lazy:
-    /// detecting the server-side aiGenerate fallback needs an established connection)
-    bool ai_agent_initialized = false;
     /// Whether the user has acknowledged AI provider usage
     bool ai_provider_acknowledged = false;
     /// Whether the AI API key was inferred from environment

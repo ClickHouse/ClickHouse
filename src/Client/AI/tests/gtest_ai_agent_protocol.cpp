@@ -114,6 +114,22 @@ TEST(AIAgentProtocol, RenderConversationRoundTrip)
     EXPECT_TRUE(rendered.ends_with("Assistant:\n"));
 }
 
+TEST(AIAgentProtocol, RenderConversationKeepsTextMixedIntoToolResults)
+{
+    /// A user message normally carries either tool results or text; if both end up in one
+    /// message, the text must not be silently dropped from the transcript.
+    ai::Messages messages;
+    ai::Message mixed = ai::Message::tool_results({ai::ToolResultContentPart{
+        "call_1", ai::JsonValue{{"success", true}, {"result", "t1"}}, false}});
+    mixed.content.emplace_back(ai::TextContentPart{"and my next question"});
+    messages.push_back(std::move(mixed));
+
+    String rendered = AIServerFunctionTransport::renderConversation(messages);
+
+    EXPECT_NE(rendered.find("Tool result [call_1]:\nt1"), String::npos);
+    EXPECT_NE(rendered.find("User:\nand my next question"), String::npos);
+}
+
 TEST(AIAgentProtocol, RenderSystemPromptListsTools)
 {
     ai::ToolSet tools;

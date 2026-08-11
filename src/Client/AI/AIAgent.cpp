@@ -3,6 +3,7 @@
 #include <Client/AI/AIPrompts.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <base/scope_guard.h>
 
 #include <fmt/format.h>
 
@@ -94,13 +95,21 @@ String AIAgent::systemPrompt() const
 
 void AIAgent::pushUserMessage(const String & text)
 {
-    /// After a failed step the history may already end with a user message (e.g. tool results
-    /// that never got a model response). Providers require alternating roles, so append
-    /// to that message instead of pushing a second user message in a row.
+    /// After a failed step the history may already end with a user message. Providers require
+    /// alternating roles, so a plain text message is extended in place. But free-form text must
+    /// not be mixed into a tool-results message (the server-function transport serializes such
+    /// a message as tool results only, dropping the text): close the dangling tool-result turn
+    /// with a synthetic assistant message and start a fresh user turn after it.
     if (!messages.empty() && messages.back().role == ai::kMessageRoleUser)
-        messages.back().content.emplace_back(ai::TextContentPart{text});
-    else
-        messages.push_back(ai::Message::user(text));
+    {
+        if (!messages.back().has_tool_results())
+        {
+            messages.back().content.emplace_back(ai::TextContentPart{text});
+            return;
+        }
+        messages.push_back(ai::Message::assistant("(the model call failed after these tool results)"));
+    }
+    messages.push_back(ai::Message::user(text));
 }
 
 void AIAgent::chat(const String & user_text)
@@ -122,9 +131,14 @@ void AIAgent::chat(const String & user_text)
 
     for (size_t step_index = 0; step_index < config.max_steps; ++step_index)
     {
-        display.startThinking();
-        AIAgentStep step = transport->step(system_prompt, messages, tools);
-        display.stopThinking();
+        AIAgentStep step;
+        {
+            /// The transports report failures as `step.error`, but if one ever throws, the
+            /// thinking animation thread must not be left repainting the terminal.
+            display.startThinking();
+            SCOPE_EXIT(display.stopThinking());
+            step = transport->step(system_prompt, messages, tools);
+        }
 
         if (!step.ok())
         {
@@ -215,10 +229,10 @@ void AIAgent::trimHistory()
 void AIAgent::reset()
 {
     messages.clear();
-    /// Baseline to the latest recorded query so a subsequent `chat` starts from a clean slate.
-    /// Rewinding to `0` would re-prepend the whole buffered recent-query history (with its
-    /// results and errors) right after telling the user the conversation was cleared.
-    last_seen_seqno = query_context ? query_context->latestSeqno() : 0;
+    /// Baseline to the present: the buffered recent-query history was part of the conversation
+    /// being cleared, so it must not be replayed into the first turn of the next one.
+    if (query_context)
+        last_seen_seqno = query_context->latestSeqno();
 }
 
 String AIAgent::status() const

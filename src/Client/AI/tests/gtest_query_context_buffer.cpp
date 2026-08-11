@@ -63,11 +63,11 @@ TEST(QueryContextBuffer, ErrorsAndStandaloneErrors)
     QueryContextBuffer buffer;
 
     buffer.startQuery("SELECT bad", false);
-    buffer.recordError("SELECT bad", "Missing columns: 'bad'");
+    buffer.recordError("SELECT bad", "Missing columns: 'bad'", false);
     buffer.finishQuery(0.1, false);
 
     /// A query that failed before start (e.g. a parse error).
-    buffer.recordError("SELEC 1", "Syntax error");
+    buffer.recordError("SELEC 1", "Syntax error", false);
 
     String text = buffer.format(0, false);
     EXPECT_NE(text.find("Error: Missing columns: 'bad'"), String::npos);
@@ -76,12 +76,25 @@ TEST(QueryContextBuffer, ErrorsAndStandaloneErrors)
 
     /// The first recorded error wins.
     buffer.startQuery("SELECT worse", false);
-    buffer.recordError("SELECT worse", "first");
-    buffer.recordError("SELECT worse", "second");
+    buffer.recordError("SELECT worse", "first", false);
+    buffer.recordError("SELECT worse", "second", false);
     buffer.finishQuery(0.1, false);
     text = buffer.format(0, false);
     EXPECT_NE(text.find("Error: first"), String::npos);
     EXPECT_EQ(text.find("Error: second"), String::npos);
+}
+
+TEST(QueryContextBuffer, StandaloneAIErrorsAreHiddenFromTheConversation)
+{
+    QueryContextBuffer buffer;
+
+    /// A query of the AI agent that failed before an entry was opened (e.g. a parse error)
+    /// must keep the AI-initiated flag: the model already saw the error as the tool result,
+    /// and it must not be replayed into the conversation as if the user had typed it.
+    buffer.recordError("SELEC 1", "Syntax error", /*from_ai=*/ true);
+
+    EXPECT_EQ(buffer.format(0, /*skip_ai_initiated=*/ true), "");
+    EXPECT_NE(buffer.format(0, /*skip_ai_initiated=*/ false).find("Query: SELEC 1"), String::npos);
 }
 
 TEST(QueryContextBuffer, SeqnoFilteringAndAISkipping)
