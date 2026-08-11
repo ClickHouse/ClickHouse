@@ -65,7 +65,8 @@ do
     query="SELECT count(), sum(k) FROM $source"
 
     # All the replicas are up to date: reading is coordinated across them, as usual.
-    query_id="04812_${CLICKHOUSE_DATABASE}_fresh_$RANDOM"
+    # $$ keeps the query ids unique across the reruns of a flaky check: they reuse the database, `query_log` outlives a run, and $RANDOM alone collides between runs.
+    query_id="04812_${CLICKHOUSE_DATABASE}_fresh_$$_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query SETTINGS $FRESH_SETTINGS"
     replicas_used "$query_id"
 
@@ -74,7 +75,7 @@ do
     # still correct.
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT tables_status_report_replicated_tables_stale"
 
-    query_id="04812_${CLICKHOUSE_DATABASE}_stale_$RANDOM"
+    query_id="04812_${CLICKHOUSE_DATABASE}_stale_$$_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query SETTINGS $PR_SETTINGS"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT tables_status_report_replicated_tables_stale"
@@ -86,7 +87,7 @@ done
 # replicas - the exclusion above comes from the replicated table, not from the failpoint as such.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT tables_status_report_replicated_tables_stale"
 
-query_id="04812_${CLICKHOUSE_DATABASE}_control_$RANDOM"
+query_id="04812_${CLICKHOUSE_DATABASE}_control_$$_$RANDOM"
 $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
     SELECT count(), sum(k) FROM merge(currentDatabase(), '^t_pr_mrgv_') SETTINGS $FRESH_SETTINGS"
 

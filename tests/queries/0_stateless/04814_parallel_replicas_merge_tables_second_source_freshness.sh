@@ -56,7 +56,8 @@ do
     query="SELECT count(), sum(l.v + r.v) FROM $join_order ON l.k = r.k SETTINGS $PR_SETTINGS"
 
     # All the replicas are up to date: reading is coordinated across them, as usual.
-    query_id="04814_${CLICKHOUSE_DATABASE}_fresh_$RANDOM"
+    # $$ keeps the query ids unique across the reruns of a flaky check: they reuse the database, `query_log` outlives a run, and $RANDOM alone collides between runs.
+    query_id="04814_${CLICKHOUSE_DATABASE}_fresh_$$_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query"
     replicas_used "$query_id"
 
@@ -64,7 +65,7 @@ do
     # none of them may read, and the initiator reads everything itself, so the result is still correct.
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT tables_status_report_replicated_tables_stale"
 
-    query_id="04814_${CLICKHOUSE_DATABASE}_stale_$RANDOM"
+    query_id="04814_${CLICKHOUSE_DATABASE}_stale_$$_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT tables_status_report_replicated_tables_stale"

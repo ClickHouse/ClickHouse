@@ -54,7 +54,8 @@ function replicas_used()
 for source in "t_pr_merge_stale" "merge(currentDatabase(), '^t_pr_merge_stale_')"
 do
     # All the replicas are up to date: reading is coordinated across them, as usual.
-    query_id="04667_${CLICKHOUSE_DATABASE}_fresh_$RANDOM"
+    # $$ keeps the query ids unique across the reruns of a flaky check: they reuse the database, `query_log` outlives a run, and $RANDOM alone collides between runs.
+    query_id="04667_${CLICKHOUSE_DATABASE}_fresh_$$_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT count(), sum(k) FROM $source SETTINGS $FRESH_SETTINGS"
     replicas_used "$query_id"
 
@@ -62,7 +63,7 @@ do
     # initiator reads everything itself, so the result is still correct.
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
 
-    query_id="04667_${CLICKHOUSE_DATABASE}_stale_$RANDOM"
+    query_id="04667_${CLICKHOUSE_DATABASE}_stale_$$_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT count(), sum(k) FROM $source SETTINGS $PR_SETTINGS"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
@@ -76,13 +77,13 @@ for source in "t_pr_merge_stale" "merge(currentDatabase(), '^t_pr_merge_stale_')
 do
     query="SELECT count(), sum(m.k) FROM $source AS m INNER JOIN t_pr_dim_stale AS d ON m.k = d.k"
 
-    query_id="04667_${CLICKHOUSE_DATABASE}_join_fresh_$RANDOM"
+    query_id="04667_${CLICKHOUSE_DATABASE}_join_fresh_$$_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query SETTINGS $FRESH_SETTINGS"
     replicas_used "$query_id"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
 
-    query_id="04667_${CLICKHOUSE_DATABASE}_join_stale_$RANDOM"
+    query_id="04667_${CLICKHOUSE_DATABASE}_join_stale_$$_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query SETTINGS $PR_SETTINGS"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
@@ -105,12 +106,12 @@ PLAIN_SETTINGS="$PR_SETTINGS, parallel_replicas_for_non_replicated_merge_tree = 
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
 
-query_id="04667_${CLICKHOUSE_DATABASE}_control_$RANDOM"
+query_id="04667_${CLICKHOUSE_DATABASE}_control_$$_$RANDOM"
 $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
     SELECT count(), sum(k) FROM merge(currentDatabase(), '^t_pr_merge_plain_')
     SETTINGS $PLAIN_SETTINGS, parallel_replicas_prefer_local_replica = 0"
 
-query_id_join="04667_${CLICKHOUSE_DATABASE}_joined_dim_stale_$RANDOM"
+query_id_join="04667_${CLICKHOUSE_DATABASE}_joined_dim_stale_$$_$RANDOM"
 $CLICKHOUSE_CLIENT --query_id "$query_id_join" --query "
     SELECT count(), sum(m.k) FROM merge(currentDatabase(), '^t_pr_merge_plain_') AS m
     INNER JOIN t_pr_dim_stale AS d ON m.k = d.k SETTINGS $PLAIN_SETTINGS"

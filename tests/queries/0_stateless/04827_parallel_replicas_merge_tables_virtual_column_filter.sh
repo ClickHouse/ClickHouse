@@ -65,7 +65,8 @@ function replicas_used()
 # the `_table` filter prunes it before reading: the result is correct, but not coordinated.
 for source in "t_pr_merge_vcf" "merge(currentDatabase(), '^t_pr_merge_vcf_')"
 do
-    query_id="04827_${CLICKHOUSE_DATABASE}_pruned_log_$RANDOM"
+    # $$ keeps the query ids unique across the reruns of a flaky check: they reuse the database, `query_log` outlives a run, and $RANDOM alone collides between runs.
+    query_id="04827_${CLICKHOUSE_DATABASE}_pruned_log_$$_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
         SELECT count(), sum(k) FROM $source WHERE _table = 't_pr_merge_vcf_good'
         SETTINGS $FRESH_SETTINGS"
@@ -78,7 +79,7 @@ for settings in "$FRESH_SETTINGS" "$FRESH_SETTINGS, max_replica_delay_for_distri
 do
     for source in "t_pr_merge_vcf_repl" "merge(currentDatabase(), '^t_pr_merge_vcf_repl_')"
     do
-        query_id="04827_${CLICKHOUSE_DATABASE}_filtered_$RANDOM"
+        query_id="04827_${CLICKHOUSE_DATABASE}_filtered_$$_$RANDOM"
         $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
             SELECT count(), sum(k) FROM $source WHERE _table = 't_pr_merge_vcf_repl_1'
             SETTINGS $settings"
@@ -93,7 +94,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT replicated_merge_tree_all_re
 
 for source in "t_pr_merge_vcf_repl" "merge(currentDatabase(), '^t_pr_merge_vcf_repl_')"
 do
-    query_id="04827_${CLICKHOUSE_DATABASE}_stale_$RANDOM"
+    query_id="04827_${CLICKHOUSE_DATABASE}_stale_$$_$RANDOM"
     $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
         SELECT count(), sum(k) FROM $source WHERE _table = 't_pr_merge_vcf_repl_1'
         SETTINGS $STALE_GATE_SETTINGS"
