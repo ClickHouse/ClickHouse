@@ -141,6 +141,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorSpatialBbox::getGranuleAndReset
         granule->has_data = true;
     }
     acc = {};
+    rows_seen = 0;
     return granule;
 }
 
@@ -157,6 +158,7 @@ void MergeTreeIndexAggregatorSpatialBbox::update(const Block & block, size_t * p
     for (size_t i = 0; i < rows_read; ++i)
         addFromGeoColumn(acc, col, *pos + i);
 
+    rows_seen += rows_read;
     *pos += rows_read;
 }
 

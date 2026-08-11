@@ -30,13 +30,18 @@ struct MergeTreeIndexAggregatorSpatialBbox final : public IMergeTreeIndexAggrega
 {
     MergeTreeIndexAggregatorSpatialBbox(const String & index_name_, const String & column_name_);
 
-    bool empty() const override { return !acc.found; }
+    /// `acc.found` tracks whether a usable point was ever added, not whether any rows were seen --
+    /// a granule made up only of empty geometries (or only non-finite ones) leaves `acc.found == false`
+    /// even though rows were processed. `empty()` must reflect "no rows seen" so the writer still flushes
+    /// a (non-prunable) granule placeholder for such rows instead of dropping them from the index entirely.
+    bool empty() const override { return rows_seen == 0; }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     String index_name;
     String column_name;
     BboxAccumulator acc;
+    size_t rows_seen = 0;
 };
 
 
