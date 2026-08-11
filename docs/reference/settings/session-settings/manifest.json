@@ -1,5 +1,5 @@
 {
-  "settings": 1279,
+  "settings": 1281,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -647,6 +647,7 @@
     "materialize_statistics_on_insert": "/reference/settings/session-settings/materialize",
     "materialize_ttl_after_modify": "/reference/settings/session-settings/materialize",
     "materialized_views_ignore_errors": "/reference/settings/session-settings/materialized-views",
+    "materialized_views_populate_atomically": "/reference/settings/session-settings/materialized-views",
     "materialized_views_squash_parallel_inserts": "/reference/settings/session-settings/materialized-views",
     "max_analyze_depth": "/reference/settings/session-settings/max",
     "max_ast_depth": "/reference/settings/session-settings/max-ast",
@@ -1027,6 +1028,7 @@
     "query_plan_optimize_join_order_randomize": "/reference/settings/session-settings/query-plan",
     "query_plan_optimize_lazy_final": "/reference/settings/session-settings/query-plan",
     "query_plan_optimize_lazy_materialization": "/reference/settings/session-settings/query-plan",
+    "query_plan_optimize_lazy_materialization_for_object_storage": "/reference/settings/session-settings/query-plan",
     "query_plan_optimize_prewhere": "/reference/settings/session-settings/query-plan",
     "query_plan_push_down_limit": "/reference/settings/session-settings/query-plan",
     "query_plan_push_limit_by_into_sort": "/reference/settings/session-settings/query-plan",
