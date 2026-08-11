@@ -6,6 +6,9 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <ranges>
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -53,6 +56,30 @@ static void checkVirtualRowBoundary(const SortCursorImpl & cursor, Columns & vir
 
     virtual_row_boundary.clear();
 }
+
+/// A virtual row announces the boundary of its source's next output,
+/// but only for the sort columns present in its pk block.
+/// Comparing those would make the merge trust a fictional boundary,
+/// so the first merge that sees a virtual row must
+/// have a sort description the row covers completely.
+static void checkVirtualRowCoversSortDescription(const Block & pk_block, const SortDescription & description)
+{
+    for (const auto & column_description : description)
+    {
+        if (!pk_block.has(column_description.column_name))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Virtual row does not cover sort column '{}'."
+                "Virtual row columns: {}, sort description [{}]",
+                column_description.column_name, pk_block.dumpNames(),
+                fmt::join(description | std::views::transform([](const auto & d) { return d.column_name; }), ", "));
+    }
+}
+
+#ifndef NDEBUG
+constexpr static bool do_debug_checks = true;
+#else
+constexpr static bool do_debug_checks = false;
+#endif
 
 
 MergingSortedAlgorithm::MergingSortedAlgorithm(
@@ -121,7 +148,9 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
             continue;
 
         input_is_virtual_row[i] = 1;
-        setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
+        auto pk_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
+        if constexpr (do_debug_checks)
+            checkVirtualRowCoversSortDescription(pk_block, description);
         input.skip_last_row = true;
     }
 
@@ -140,13 +169,14 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
     }
 
-#ifndef NDEBUG
-    for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
+    if constexpr (do_debug_checks)
     {
-        if (current_inputs[source_num].skip_last_row && !has_collation)
-            rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
+        for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
+        {
+            if (current_inputs[source_num].skip_last_row && !has_collation)
+                rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
+        }
     }
-#endif
 
     if (sorting_queue_strategy == SortingQueueStrategy::Default)
     {
@@ -264,7 +294,9 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     bool is_virtual_row = isVirtualRow(input.chunk);
     if (is_virtual_row)
     {
-        setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
+        auto pk_block = setVirtualRow(input.chunk, *header, apply_virtual_row_conversions);
+        if constexpr (do_debug_checks)
+            checkVirtualRowCoversSortDescription(pk_block, description);
         input.skip_last_row = true;
     }
 
@@ -280,16 +312,14 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
             last_source_with_real_data = static_cast<ssize_t>(source_num);
     }
 
-#ifndef NDEBUG
-    /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
-    if (is_virtual_row && !has_collation)
-        rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
-    else
-        checkVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num], description, source_num);
-#else
-    UNUSED(rememberVirtualRowBoundary);
-    UNUSED(checkVirtualRowBoundary);
-#endif
+    if constexpr (do_debug_checks)
+    {
+        /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
+        if (is_virtual_row && !has_collation)
+            rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
+        else
+            checkVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num], description, source_num);
+    }
 
     if (sorting_queue_strategy == SortingQueueStrategy::Default)
     {
