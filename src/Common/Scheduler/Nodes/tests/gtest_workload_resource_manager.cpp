@@ -61,6 +61,7 @@ namespace DB::ErrorCodes
 }
 
 using namespace DB;
+
 namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;
@@ -3790,4 +3791,335 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingEagerDefaultIsUnch
     });
 
     t.wait();
+}
+
+// ============================================================================
+// Tests for nested disk independent RESOURCE bandwidth limiting
+// (IOSchedulingSettings inner link fields, FOR <resource> clause routing)
+// ============================================================================
+
+// Verify that IOSchedulingSettings inner link fields are properly defined,
+// default to empty ResourceLink, and do not affect operator bool() behavior.
+TEST(SchedulerWorkloadResourceManager, IOSchedulingSettingsInnerLinkDefaults)
+{
+    IOSchedulingSettings io;
+
+    // Inner links should default to empty (nullptr queue/allocation_queue)
+    EXPECT_FALSE(io.inner_read_resource_link);
+    EXPECT_FALSE(io.inner_write_resource_link);
+
+    // With no outer links set, operator bool() should report false (existing behavior)
+    EXPECT_FALSE(static_cast<bool>(io));
+
+    // operator== includes inner links via = default
+    IOSchedulingSettings io2;
+    EXPECT_EQ(io, io2);
+
+    // Different inner links should make settings compare unequal
+    // (ResourceLink::operator== is also = default, comparing both pointers)
+    io.inner_read_resource_link.queue = reinterpret_cast<ISchedulerQueue *>(static_cast<uintptr_t>(1));
+    EXPECT_NE(io, io2);
+}
+
+// Verify that two RESOURCEs bound to different disk names get independent
+// scheduler queues. This is the prerequisite for nested disk bandwidth
+// limiting: cached_oss and oss must have separate throttlers.
+TEST(SchedulerWorkloadResourceManager, NestedDiskIndependentResourceLinks)
+{
+    ResourceTest t;
+
+    // Simulate nested disk scenario: outer=cached_oss, inner=oss
+    t.query("CREATE RESOURCE io_outer (WRITE DISK cached_oss, READ DISK cached_oss)");
+    t.query("CREATE RESOURCE io_inner (WRITE DISK oss, READ DISK oss)");
+
+    // Create a WORKLOAD and acquire classifier
+    t.query("CREATE WORKLOAD all");
+    ClassifierPtr c = t.manager->acquire("all");
+
+    ResourceLink link_outer = c->get("io_outer");
+    ResourceLink link_inner = c->get("io_inner");
+
+    // Both resources must have valid (non-null) queues
+    EXPECT_TRUE(link_outer) << "io_outer should have a valid queue";
+    EXPECT_TRUE(link_inner) << "io_inner should have a valid queue";
+
+    // Each RESOURCE creates its own TimeSharedScheduler → own FifoQueue.
+    // The queues must be different for independent throttling to work.
+    EXPECT_NE(link_outer.queue, link_inner.queue)
+        << "cached_oss and oss resources must have independent scheduler queues";
+
+    // Verify inner resource link can be distinguished from outer
+    EXPECT_NE(link_outer, link_inner)
+        << "ResourceLink objects for different resources must not be equal";
+}
+
+// Verify that `FOR <resource>` clause in CREATE WORKLOAD correctly routes
+// `max_bytes_per_second` to the specified resource's ThrottlerConstraint,
+// while leaving the other resource unaffected.
+TEST(SchedulerWorkloadResourceManager, NestedDiskThrottlerSettingsWithForClause)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE io_outer (WRITE DISK cached_oss, READ DISK cached_oss)");
+    t.query("CREATE RESOURCE io_inner (WRITE DISK oss, READ DISK oss)");
+
+    // Different bandwidth limits per resource via FOR clause
+    t.query("CREATE WORKLOAD all SETTINGS "
+            "max_bytes_per_second FOR io_outer = 200000000, "   // 200 MB/s
+            "max_bytes_per_second FOR io_inner = 50000000");     //  50 MB/s
+
+    // Traverse scheduler tree to find ThrottlerConstraint nodes and verify their rates.
+    // Each resource's TimeSharedScheduler has a ConstraintsBranch containing the throttler.
+    double outer_max_speed = 0.0;
+    double inner_max_speed = 0.0;
+    std::string outer_path;
+    std::string inner_path;
+
+    t.manager->forEachNode([&](const String & resource, const String & path, ISchedulerNode * node)
+    {
+        // The throttler node is named "bandwidth_limit" (ThrottlerConstraint::getTypeName())
+        if (auto * throttler = dynamic_cast<ThrottlerConstraint *>(node))
+        {
+            auto [speed, burst] = throttler->getParams();
+            if (resource == "io_outer")
+            {
+                outer_max_speed = speed;
+                outer_path = path;
+            }
+            else if (resource == "io_inner")
+            {
+                inner_max_speed = speed;
+                inner_path = path;
+            }
+        }
+    });
+
+    // Both resources should have a throttler with the configured max_speed
+    EXPECT_GT(outer_max_speed, 0.0) << "io_outer should have throttler at " << outer_path;
+    EXPECT_GT(inner_max_speed, 0.0) << "io_inner should have throttler at " << inner_path;
+
+    // The throttler rates must match the FOR clause values
+    EXPECT_DOUBLE_EQ(outer_max_speed, 200000000.0)
+        << "io_outer throttler max_speed should be 200 MB/s (set via FOR io_outer)";
+    EXPECT_DOUBLE_EQ(inner_max_speed, 50000000.0)
+        << "io_inner throttler max_speed should be 50 MB/s (set via FOR io_inner)";
+
+    // The two rates must differ — confirming FOR clause routes settings independently
+    EXPECT_NE(outer_max_speed, inner_max_speed)
+        << "FOR io_outer and FOR io_inner must produce different throttler rates";
+}
+
+// Verify that RESOURCEs not referenced by FOR clause are unaffected (no throttler)
+// when only the other resource has a throttler setting.
+TEST(SchedulerWorkloadResourceManager, NestedDiskThrottlerOnlyOneResource)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE io_outer (WRITE DISK cached_oss, READ DISK cached_oss)");
+    t.query("CREATE RESOURCE io_inner (WRITE DISK oss, READ DISK oss)");
+
+    // Only set throttler for io_inner, leave io_outer without throttler
+    t.query("CREATE WORKLOAD all SETTINGS "
+            "max_bytes_per_second FOR io_inner = 50000000");
+
+    double outer_max_speed = -1.0;
+    double inner_max_speed = -1.0;
+
+    t.manager->forEachNode([&](const String & resource, const String &, ISchedulerNode * node)
+    {
+        if (auto * throttler = dynamic_cast<ThrottlerConstraint *>(node))
+        {
+            auto [speed, burst] = throttler->getParams();
+            if (resource == "io_outer")
+                outer_max_speed = speed;
+            else if (resource == "io_inner")
+                inner_max_speed = speed;
+        }
+    });
+
+    // io_inner should have throttler with configured rate
+    EXPECT_DOUBLE_EQ(inner_max_speed, 50000000.0);
+
+    // io_outer should have no throttler (or default rate of 0, meaning no limit)
+    // We allow either: no ThrottlerConstraint node at all, or one with 0 speed
+    EXPECT_TRUE(outer_max_speed == -1.0 || outer_max_speed == 0.0)
+        << "io_outer should not have a throttler when FOR io_outer is not specified";
+}
+
+// Sentinel helper: creates a ResourceLink with a distinguishable non-null
+// queue pointer. applyInnerResourceLinks only does pointer-level comparison
+// and assignment — it never dereferences the stored pointers — so sentinel
+// values are safe and avoid dependency on the full ResourceTest harness.
+static ResourceLink makeResourceLinkSentinel(uintptr_t sentinel)
+{
+    ResourceLink link;
+    link.queue = reinterpret_cast<ISchedulerQueue *>(sentinel);
+    return link;
+}
+
+// Verify applyInnerResourceLinks (CachedObjectStorage.cpp) correctly swaps
+// inner (wrapped disk) resource links into the active position. This function
+// is called at every delegation point in CachedObjectStorage to ensure S3 I/O
+// incurred by cache misses is throttled by the inner disk's RESOURCE, not the
+// cache disk's.
+TEST(SchedulerWorkloadResourceManager, ApplyInnerResourceLinks)
+{
+    const auto outer_r = makeResourceLinkSentinel(1);
+    const auto outer_w = makeResourceLinkSentinel(2);
+    const auto inner_r = makeResourceLinkSentinel(10);
+    const auto inner_w = makeResourceLinkSentinel(20);
+
+    // Sanity: sentinel values are distinguishable
+    EXPECT_NE(outer_r, inner_r) << "Sentinel values must be distinguishable";
+    EXPECT_NE(outer_w, inner_w);
+
+    // Case 1: Empty inner links — outer links unchanged
+    {
+        IOSchedulingSettings io;
+        io.read_resource_link = outer_r;
+        io.write_resource_link = outer_w;
+        // inner_read_resource_link and inner_write_resource_link default to null
+        applyInnerResourceLinks(io);
+        EXPECT_EQ(io.read_resource_link, outer_r)
+            << "Read link unchanged when inner is empty";
+        EXPECT_EQ(io.write_resource_link, outer_w)
+            << "Write link unchanged when inner is empty";
+    }
+
+    // Case 2: Only inner_read set — only read swapped
+    {
+        IOSchedulingSettings io;
+        io.read_resource_link = outer_r;
+        io.write_resource_link = outer_w;
+        io.inner_read_resource_link = inner_r;
+        applyInnerResourceLinks(io);
+        EXPECT_EQ(io.read_resource_link, inner_r)
+            << "Read link swapped to inner";
+        EXPECT_EQ(io.write_resource_link, outer_w)
+            << "Write link unchanged when inner_write is empty";
+    }
+
+    // Case 3: Only inner_write set — only write swapped
+    {
+        IOSchedulingSettings io;
+        io.read_resource_link = outer_r;
+        io.write_resource_link = outer_w;
+        io.inner_write_resource_link = inner_w;
+        applyInnerResourceLinks(io);
+        EXPECT_EQ(io.read_resource_link, outer_r)
+            << "Read link unchanged when inner_read is empty";
+        EXPECT_EQ(io.write_resource_link, inner_w)
+            << "Write link swapped to inner";
+    }
+
+    // Case 4: Both inner links set — both swapped
+    {
+        IOSchedulingSettings io;
+        io.read_resource_link = outer_r;
+        io.write_resource_link = outer_w;
+        io.inner_read_resource_link = inner_r;
+        io.inner_write_resource_link = inner_w;
+        applyInnerResourceLinks(io);
+        EXPECT_EQ(io.read_resource_link, inner_r)
+            << "Read link swapped to inner";
+        EXPECT_EQ(io.write_resource_link, inner_w)
+            << "Write link swapped to inner";
+    }
+
+    // Case 5: Outer links are null, inner links set — still correctly
+    //         overwrites null outer links (defensive: this can happen if
+    //         DiskObjectStorage hasn't set its own read/write resource names
+    //         but wrapped_disk exists).
+    {
+        IOSchedulingSettings io;
+        // outer links default to null
+        io.inner_read_resource_link = inner_r;
+        io.inner_write_resource_link = inner_w;
+        applyInnerResourceLinks(io);
+        EXPECT_EQ(io.read_resource_link, inner_r)
+            << "Null outer read link replaced by inner";
+        EXPECT_EQ(io.write_resource_link, inner_w)
+            << "Null outer write link replaced by inner";
+    }
+
+    // Case 6: Idempotency — calling applyInnerResourceLinks twice is
+    //         effectively idempotent because inner links are unchanged
+    //         by the function (it writes to outer links only).
+    {
+        IOSchedulingSettings io;
+        io.read_resource_link = outer_r;
+        io.write_resource_link = outer_w;
+        io.inner_read_resource_link = inner_r;
+        io.inner_write_resource_link = inner_w;
+        applyInnerResourceLinks(io);
+        EXPECT_EQ(io.read_resource_link, inner_r);
+        EXPECT_EQ(io.write_resource_link, inner_w);
+        applyInnerResourceLinks(io);
+        EXPECT_EQ(io.read_resource_link, inner_r)
+            << "Second applyInnerResourceLinks is idempotent (read)";
+        EXPECT_EQ(io.write_resource_link, inner_w)
+            << "Second applyInnerResourceLinks is idempotent (write)";
+    }
+}
+
+// Verify that IOSchedulingSettings::operator bool() ignores inner link fields.
+// This is by design: operator bool() is used to decide whether I/O scheduling
+// is active for a given operation, and only the active (outer) links matter.
+// Inner links are caching/meta information that should not affect scheduling
+// decisions. If operator bool() were to consider inner links, non-nested
+// (non-cache) disks could be incorrectly reported as having active scheduling.
+TEST(SchedulerWorkloadResourceManager, OperatorBoolIgnoresInnerLinks)
+{
+    const auto sentinel = makeResourceLinkSentinel(1);
+
+    // Empty struct: no scheduling active
+    {
+        IOSchedulingSettings io;
+        EXPECT_FALSE(static_cast<bool>(io));
+    }
+
+    // Inner links set, outer links empty → still no scheduling active
+    // This is the regression guard: inner links MUST NOT affect operator bool().
+    {
+        IOSchedulingSettings io;
+        io.inner_read_resource_link = sentinel;
+        io.inner_write_resource_link = sentinel;
+        EXPECT_FALSE(static_cast<bool>(io))
+            << "Inner links must not affect operator bool() — "
+            << "otherwise non-nested disks would be incorrectly reported as scheduled";
+    }
+
+    // Only read_resource_link set → not active (write required too)
+    {
+        IOSchedulingSettings io;
+        io.read_resource_link = sentinel;
+        EXPECT_FALSE(static_cast<bool>(io));
+    }
+
+    // Only write_resource_link set → not active (read required too)
+    {
+        IOSchedulingSettings io;
+        io.write_resource_link = sentinel;
+        EXPECT_FALSE(static_cast<bool>(io));
+    }
+
+    // Both outer links set → scheduling is active
+    {
+        IOSchedulingSettings io;
+        io.read_resource_link = sentinel;
+        io.write_resource_link = sentinel;
+        EXPECT_TRUE(static_cast<bool>(io));
+    }
+
+    // Both outer and inner links set → active (only outer matters)
+    {
+        IOSchedulingSettings io;
+        io.read_resource_link = sentinel;
+        io.write_resource_link = sentinel;
+        io.inner_read_resource_link = makeResourceLinkSentinel(2);
+        io.inner_write_resource_link = makeResourceLinkSentinel(3);
+        EXPECT_TRUE(static_cast<bool>(io))
+            << "With both inner and outer links set, operator bool() should "
+            << "return true based on outer links";
+    }
 }

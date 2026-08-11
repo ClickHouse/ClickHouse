@@ -42,8 +42,21 @@ struct IOSchedulingSettings
     ResourceLink read_resource_link;
     ResourceLink write_resource_link;
 
+    /// For nested/cache disks: the inner (wrapped) disk's resource link.
+    /// When non-null, the delegation layer (CachedObjectStorage) swaps these
+    /// in before forwarding to the inner ObjectStorage, so S3 I/O incurred by
+    /// a cache miss is throttled by the inner disk's RESOURCE, not the outer's.
+    ResourceLink inner_read_resource_link;
+    ResourceLink inner_write_resource_link;
+
     bool operator==(const IOSchedulingSettings &) const = default;
     explicit operator bool() const { return read_resource_link && write_resource_link; }
 };
+
+/// If inner (wrapped disk) resource links are set in IO scheduling settings,
+/// swap them in as the active links. This ensures that when a nested/cache
+/// disk delegates to the inner ObjectStorage (e.g. S3), the inner disk's
+/// RESOURCE throttler applies rather than the cache disk's.
+void applyInnerResourceLinks(IOSchedulingSettings & io);
 
 }

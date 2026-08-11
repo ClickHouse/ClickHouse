@@ -1226,3 +1226,231 @@ def test_config_based_workloads_and_resources():
 
     # Make sure it's possible to clean the config without "Logical error: 'Removing workload 'all' with children"
     node.query("DROP WORKLOAD development")
+
+
+def test_multi_resource_for_clause_independent_throttling():
+    """
+    Test that two RESOURCEs bound to different S3 disks can have independent
+    throttler rates set via the `FOR <resource>` clause in CREATE WORKLOAD.
+
+    This is the integration-level counterpart to the gtest
+    `NestedDiskThrottlerSettingsWithForClause`: it verifies that the independent
+    throttlers created by FOR clause are reflected in `system.scheduler` and
+    that actual I/O operations are scheduled through the workload IO scheduler
+    (evidenced by `SchedulerIOWriteRequests` and `SchedulerIOWriteBytes`
+    ProfileEvents).
+
+    The nested disk bandwidth limiting feature relies on this mechanism to give
+    the cache disk (outer) and the object storage disk (inner) different
+    bandwidth limits — preventing cache miss I/O from saturating a single
+    throttler meant for cache hit I/O.
+    """
+    import uuid
+
+    # Create two independent RESOURCEs, each bound to a different S3 disk
+    node.query(
+        """
+        create resource io_fast (write disk s3_no_fake_tx, read disk s3_no_fake_tx);
+        create resource io_slow (write disk s3_no_fake_tx_2, read disk s3_no_fake_tx_2);
+        create workload all settings
+            max_bytes_per_second for io_fast = 200000000,
+            max_bytes_per_second for io_slow = 50000000;
+        create workload admin in all settings priority = 0;
+    """
+    )
+
+    # Verify scheduler nodes: each resource should have a bandwidth_limit node
+    # with the correct max_speed
+    fast_speed = int(
+        node.query(
+            "select cast(max_speed, 'Int64') from system.scheduler"
+            " where resource = 'io_fast' and type = 'bandwidth_limit'"
+        ).strip()
+    )
+    slow_speed = int(
+        node.query(
+            "select cast(max_speed, 'Int64') from system.scheduler"
+            " where resource = 'io_slow' and type = 'bandwidth_limit'"
+        ).strip()
+    )
+
+    assert fast_speed == 200000000, (
+        f"Expected io_fast throttler max_speed 200000000, got {fast_speed}"
+    )
+    assert slow_speed == 50000000, (
+        f"Expected io_slow throttler max_speed 50000000, got {slow_speed}"
+    )
+
+    # Actual I/O: write through the fast (s3_no_fake_tx) path and verify
+    # that IO scheduling profile events are recorded.
+    node.query(
+        """
+        drop table if exists data_fast;
+        create table data_fast (key UInt64 CODEC(NONE), value String CODEC(NONE))
+            engine=MergeTree() order by key
+            settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_fake_tx';
+        """
+    )
+
+    total_bytes = 50000000  # ~50 MB
+    query_id = str(uuid.uuid4())
+    node.query(
+        "insert into data_fast select number, randomString(10000000) from numbers(5)"
+        " SETTINGS workload='admin'",
+        query_id=query_id,
+    )
+
+    node.query("system flush logs")
+
+    write_requests = int(
+        node.query(
+            f"select ProfileEvents['SchedulerIOWriteRequests'] from system.query_log"
+            f" where query_id='{query_id}' and type='QueryFinish'"
+        ).strip()
+    )
+    write_bytes = int(
+        node.query(
+            f"select ProfileEvents['SchedulerIOWriteBytes'] from system.query_log"
+            f" where query_id='{query_id}' and type='QueryFinish'"
+        ).strip()
+    )
+
+    assert write_requests > 0, (
+        "No write requests scheduled through the workload IO scheduler"
+        " (FOR clause throttler path)"
+    )
+    assert write_bytes > total_bytes, (
+        f"Expected at least {total_bytes} bytes to be scheduled, got {write_bytes}"
+    )
+
+    node.query("drop table data_fast")
+
+
+def test_multi_resource_for_clause_update_throttler():
+    """
+    Test that `CREATE OR REPLACE WORKLOAD` correctly updates the throttler rate
+    for individual resources specified via `FOR <resource>` clause.
+
+    The nested disk feature requires this because operators may need to adjust
+    bandwidth limits for the cache disk and the object storage disk independently,
+    without recreating all workload entities.
+    """
+    node.query(
+        """
+        create resource io_a (write disk s3_no_fake_tx, read disk s3_no_fake_tx);
+        create resource io_b (write disk s3_no_fake_tx_2, read disk s3_no_fake_tx_2);
+        create workload all settings
+            max_bytes_per_second for io_a = 100000000,
+            max_bytes_per_second for io_b = 30000000;
+        create workload admin in all settings priority = 0;
+    """
+    )
+
+    # Verify initial throttler rates
+    initial_a = int(
+        node.query(
+            "select cast(max_speed, 'Int64') from system.scheduler"
+            " where resource = 'io_a' and type = 'bandwidth_limit'"
+        ).strip()
+    )
+    initial_b = int(
+        node.query(
+            "select cast(max_speed, 'Int64') from system.scheduler"
+            " where resource = 'io_b' and type = 'bandwidth_limit'"
+        ).strip()
+    )
+    assert initial_a == 100000000
+    assert initial_b == 30000000
+
+    # Update only io_a's throttler: increase rate, remove io_b's throttler
+    node.query(
+        """
+        create or replace workload all settings
+            max_bytes_per_second for io_a = 500000000,
+            max_burst_bytes for io_a = 1000000000;
+    """
+    )
+
+    updated_a = int(
+        node.query(
+            "select cast(max_speed, 'Int64') from system.scheduler"
+            " where resource = 'io_a' and type = 'bandwidth_limit'"
+        ).strip()
+    )
+    assert updated_a == 500000000, (
+        f"Expected io_a max_speed updated to 500000000, got {updated_a}"
+    )
+
+    # io_b's throttler should have been removed (no FOR io_b clause)
+    b_throttler_count = int(
+        node.query(
+            "select count() from system.scheduler"
+            " where resource = 'io_b' and type = 'bandwidth_limit'"
+        ).strip()
+    )
+    assert b_throttler_count == 0, (
+        f"Expected io_b throttler to be removed, but found {b_throttler_count}"
+    )
+
+
+def test_for_clause_one_resource_only_no_side_effect():
+    """
+    Test that setting `max_bytes_per_second FOR <resource_a>` creates a
+    throttler only for resource_a — resource_b (which is bound to a different
+    disk) remains unaffected.
+
+    This is critical for the nested disk scenario: an operator can add a
+    throttler to the inner (S3) disk without accidentally throttling the outer
+    (cache) disk, and vice versa.
+    """
+    node.query(
+        """
+        create resource io_throttled (write disk s3_no_fake_tx, read disk s3_no_fake_tx);
+        create resource io_free (write disk s3_no_fake_tx_2, read disk s3_no_fake_tx_2);
+        create workload all settings
+            max_bytes_per_second for io_throttled = 100000000;
+        create workload admin in all settings priority = 0;
+    """
+    )
+
+    # io_throttled should have a bandwidth_limit node
+    throttled_count = int(
+        node.query(
+            "select count() from system.scheduler"
+            " where resource = 'io_throttled' and type = 'bandwidth_limit'"
+        ).strip()
+    )
+    assert throttled_count == 1, (
+        f"Expected io_throttled to have a bandwidth_limit node, got {throttled_count}"
+    )
+
+    throttled_speed = int(
+        node.query(
+            "select cast(max_speed, 'Int64') from system.scheduler"
+            " where resource = 'io_throttled' and type = 'bandwidth_limit'"
+        ).strip()
+    )
+    assert throttled_speed == 100000000
+
+    # io_free should NOT have a bandwidth_limit node
+    free_count = int(
+        node.query(
+            "select count() from system.scheduler"
+            " where resource = 'io_free' and type = 'bandwidth_limit'"
+        ).strip()
+    )
+    assert free_count == 0, (
+        f"Expected io_free to have NO bandwidth_limit node, got {free_count}"
+        " — FOR clause side-effect violates resource independence"
+    )
+
+    # Verify that io_free IS still registered (its FIFO queue exists)
+    free_fifo_count = int(
+        node.query(
+            "select count() from system.scheduler"
+            " where resource = 'io_free' and type = 'fifo'"
+        ).strip()
+    )
+    assert free_fifo_count > 0, (
+        "io_free should still have FIFO queues even without a throttler"
+    )
