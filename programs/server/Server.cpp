@@ -2931,6 +2931,8 @@ try
 
     }
 
+    global_context->startSwarmMode();
+
     {
         std::lock_guard lock(servers_lock);
         /// We should start interserver communications before (and more important shutdown after) tables.
@@ -3447,6 +3449,8 @@ try
             stop_acme_instance();
 
             is_cancelled = true;
+
+            global_context->stopSwarmMode();
 
             LOG_DEBUG(log, "Waiting for current connections to close.");
 
