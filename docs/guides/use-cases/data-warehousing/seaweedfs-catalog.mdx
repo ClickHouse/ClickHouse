@@ -18,8 +18,8 @@ Integration with the SeaweedFS catalog works with Iceberg tables only.
 
 ClickHouse supports integration with multiple catalogs (Unity, Glue, REST, Polaris, etc.). This guide will walk you through the steps to query your data using ClickHouse and the [SeaweedFS](https://github.com/seaweedfs/seaweedfs) catalog.
 
-SeaweedFS is an open-source distributed file and object store with an S3-compatible gateway. Its S3 Table Buckets embed an Iceberg REST catalog directly in the S3 gateway:
-- **Single service** - the catalog and the object storage backing it run in one process, with no separate metadata database
+SeaweedFS is an open-source distributed file and object store with an S3-compatible gateway. Its S3 Table Buckets provide both halves of an Iceberg deployment: the embedded Iceberg REST catalog serves the table metadata, and the table bucket stores the table data as Parquet files behind the same S3 endpoint:
+- **Single service** - catalog metadata and Parquet data are served by one process, with no separate metadata database
 - **REST API** compliance with the Iceberg REST catalog specification
 - **Server-side maintenance** - automatic Parquet compaction and snapshot expiration, with no external maintenance service
 
