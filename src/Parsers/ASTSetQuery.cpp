@@ -12,11 +12,10 @@
 #include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
 #include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
-#include <Poco/Exception.h>
-#include <Poco/URI.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
+#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 
 static constexpr std::string_view format_avro_schema_registry_url = "format_avro_schema_registry_url";
@@ -27,21 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-}
-
-namespace
-{
-std::optional<Poco::URI> tryParseURI(const String & uri)
-{
-    try
-    {
-        return Poco::URI (uri);
-    }
-    catch (const Poco::SyntaxException &)
-    {
-        return std::nullopt;
-    }
-}
 }
 
 class FieldVisitorToSetting : public StaticVisitor<String>
@@ -95,6 +79,7 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
     {
         hash_state.update(change.name.size());
         hash_state.update(change.name);
+        hash_state.update(change.shorthand);
         applyVisitor(FieldVisitorHash(hash_state), change.value);
     }
 }
@@ -115,6 +100,17 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
         formatSettingName(change.name, ostr);
 
+        /// The valueless form has to survive a format/parse round trip: written back as
+        /// `name = true` it would be accepted for a setting of any type, which is exactly what the
+        /// shorthand check exists to prevent. The value is Bool `true` and never secret.
+        ///
+        /// Only elide the value when it really is `true`. The AST JSON dialect can pair the
+        /// shorthand flag with any other value, and such a change is rejected by
+        /// `BaseSettings::checkShorthandChange` - but that happens after the query is logged, so the
+        /// formatter must not print a bare name for a change that carries something else.
+        if (change.shorthand && change.value == Field(true))
+            continue;
+
         auto format_if_secret = [&]() -> bool
         {
             CustomType custom;
@@ -126,15 +122,12 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
             if (change.name == format_avro_schema_registry_url)
             {
-                auto uri_string = change.value.safeGet<String>();
-                const auto maybe_uri = tryParseURI(uri_string);
-                if (!maybe_uri || maybe_uri->getUserInfo().empty())
+                /// Matches `hasSecretParts`: a non-String value cannot embed a URI password, and the
+                /// AST JSON path can carry any `Field` type here.
+                String uri_string;
+                if (!change.value.tryGet<String>(uri_string) || !maskURIPassword(&uri_string))
                     return false;
 
-                const auto & user_info = maybe_uri->getUserInfo();
-                const auto user_name = user_info.substr(0, user_info.find(':'));
-                const auto new_user_info = user_name + ":[HIDDEN]";
-                uri_string.replace(uri_string.find(user_info),user_info.size(), new_user_info);
                 ostr << " = '" << uri_string << "'";
                 return true;
             }
@@ -246,6 +239,12 @@ void ASTSetQuery::writeJSON(WriteBuffer & out) const
             if (i > 0) o << ',';
             o << "{\"name\":";
             writeJSONString(changes[i].name, o, fs);
+            /// The valueless form has to survive the JSON round trip for the same reason it has to
+            /// survive the SQL one (see `formatImpl`): reconstructed as an explicit `name = true` it
+            /// would be accepted for a setting of any type, which is what the shorthand check exists
+            /// to prevent. The value is Bool `true`, so it carries no information beyond the flag.
+            if (changes[i].shorthand)
+                o << ",\"shorthand\":true";
             /// Write "value" key and the field as a JSON object via writeFieldValue.
             /// We use a trick: writeFieldValue writes, "key":{field_json},
             /// but since we just wrote {"name":"..." the comma is exactly what we need.
@@ -309,10 +308,19 @@ void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
             /// `BAD_ARGUMENTS` instead of being coerced (e.g. a number stringified into a setting name).
             JSONObjectReader change_reader(*change_obj);
             change.name = change_reader.getString("name");
+            /// Restore the valueless form so `checkShorthandChange` still rejects a non-`Bool`
+            /// setting written without a value; otherwise the JSON dialect is a way around it.
+            change.shorthand = change_reader.getBool("shorthand");
             auto value_obj = change_obj->getObject("value");
             if (!value_obj)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
             change.value = JSONObjectReader::readFieldFromObject(*value_obj);
+            /// A payload may pair the flag with a value the parser would never produce. That is not
+            /// rejected here: deserialization runs before `executeQueryImpl` has an AST to mask with,
+            /// so throwing would send the raw JSON text - the value included - down the unmasked
+            /// `wipeSensitiveDataAndCutToLength` logging path. The value is kept instead, so
+            /// `hasSecretParts` can still see it and `formatImpl` can still hide it, and
+            /// `checkShorthandChange` then rejects the setting itself once logging is safe.
             changes.push_back(std::move(change));
         }
     }
@@ -366,8 +374,13 @@ bool ASTSetQuery::hasSecretParts() const
 
         if (change.name == format_avro_schema_registry_url)
         {
-            const auto maybe_uri = tryParseURI(change.value.safeGet<String>());
-            if (maybe_uri && !maybe_uri->getUserInfo().empty())
+            /// Secret only if there is actually a password embedded in it. The value need not be a
+            /// String: a valueless `SETTINGS format_avro_schema_registry_url` carries Bool `true`,
+            /// and the AST JSON path can carry any `Field` type. This runs before any settings
+            /// validation - `executeQueryImpl` masks the query for logging first - so demanding a
+            /// String here would report `BAD_GET` instead of the setting's own `TYPE_MISMATCH`.
+            String uri_string;
+            if (change.value.tryGet<String>(uri_string) && maskURIPassword(&uri_string))
                 return true;
         }
     }
