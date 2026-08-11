@@ -34,6 +34,10 @@ def main():
         print("NOTE: Not an upstream PR run - skip PR description update")
         return
 
+    if has_block(info.pr_body or ""):
+        print("NOTE: CI links already present - skip PR description update")
+        return
+
     workflow_line = (
         f"Workflow [[{info.workflow_name}]({info.get_report_url(latest=True)})]"
     )
@@ -45,12 +49,7 @@ def main():
         print("WARNING: Failed to fetch PR data - skip PR description update")
         return
 
-    body = body or ""
-    if has_block(body):
-        print("NOTE: CI links already present - skip PR description update")
-        return
-
-    new_body = append_block(body, block)
+    new_body = append_block(body or "", block)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", encoding="utf-8") as f:
         f.write(new_body)
