@@ -25,6 +25,7 @@ public:
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
 
     String getNameForLogs() const override { return "CMSketch"; }
+
 private:
     using Sketch = datasketches::count_min_sketch<UInt64>;
     Sketch sketch;

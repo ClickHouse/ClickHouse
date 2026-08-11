@@ -7,9 +7,9 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Common/FieldVisitorToString.h>
 
 
@@ -18,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -46,10 +46,7 @@ const NullMap * tryGetNullMap(const IColumn & column)
 /// (the null map lives on the inner `Nullable`, not the outer LC).
 UInt64 sumNonNullStringBytes(const ColumnPtr & column)
 {
-    auto full = column
-        ->convertToFullColumnIfConst()
-        ->convertToFullColumnIfSparse()
-        ->convertToFullColumnIfLowCardinality();
+    auto full = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
     const NullMap * null_map = tryGetNullMap(*full);
 
     ColumnPtr values = full;
@@ -200,9 +197,7 @@ std::optional<Float64> StatisticsBasic::estimateLess(const Field & val) const
     /// Total non-NULL rows known to the part: the linear-interpolation domain. Only subtract the
     /// default count when it counts NULLs (Nullable column); for a non-Nullable column the defaults
     /// are ordinary values that belong to the interpolation domain.
-    const UInt64 non_null = (is_nullable && has_default_count && default_count <= row_count)
-        ? (row_count - default_count)
-        : row_count;
+    const UInt64 non_null = (is_nullable && has_default_count && default_count <= row_count) ? (row_count - default_count) : row_count;
     if (non_null == 0)
         return 0.0;
 
@@ -269,9 +264,7 @@ Int64 StatisticsBasic::getStringLengthAvg() const
 {
     /// Denominator = number of non-NULL rows we summed bytes over. When the column is Nullable the
     /// default count is the NULL count, so subtract it; otherwise every processed row contributed.
-    const UInt64 non_null = (is_nullable && has_default_count && default_count <= row_count)
-        ? (row_count - default_count)
-        : row_count;
+    const UInt64 non_null = (is_nullable && has_default_count && default_count <= row_count) ? (row_count - default_count) : row_count;
     if (non_null == 0)
         return 0;
     return static_cast<Int64>(string_total_bytes / non_null);
@@ -282,8 +275,7 @@ bool StatisticsBasic::isCompatibleWith(const IStatistics & other) const
     const auto * other_basic = typeid_cast<const StatisticsBasic *>(&other);
     if (!other_basic)
         return false;
-    return tracks_numeric == other_basic->tracks_numeric
-        && tracks_string == other_basic->tracks_string
+    return tracks_numeric == other_basic->tracks_numeric && tracks_string == other_basic->tracks_string
         && has_default_count == other_basic->has_default_count;
 }
 

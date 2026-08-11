@@ -1,10 +1,10 @@
-#include <Storages/Statistics/StatisticsMinMax.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Storages/Statistics/StatisticsMinMax.h>
 #include <Common/FieldVisitorToString.h>
 
 

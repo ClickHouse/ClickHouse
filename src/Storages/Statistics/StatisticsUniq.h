@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/Arena.h>
-#include <Storages/Statistics/Statistics.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Storages/Statistics/Statistics.h>
+#include <Common/Arena.h>
 
 namespace DB
 {
@@ -23,11 +23,11 @@ public:
     bool isCompatibleWith(const IStatistics & other) const override;
 
     String getNameForLogs() const override { return "Uniq : " + std::to_string(estimateCardinality()); }
+
 private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;
     AggregateDataPtr data;
-
 };
 
 bool uniqStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);

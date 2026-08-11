@@ -1,18 +1,18 @@
-#include <Storages/Statistics/StatisticsUniqV2.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/Statistics/StatisticsUniqV2.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_STATISTICS;
+extern const int ILLEGAL_STATISTICS;
 }
 
 /// Use uniqCombined64 with K=12: Small(16 exact) → HashSet(up to 256) → HLL(~3 KB).
@@ -92,7 +92,8 @@ void StatisticsUniqV2::deserialize(ReadBuffer & buf, StatisticsFileVersion /*ver
             ErrorCodes::ILLEGAL_STATISTICS,
             "uniq_v2 statistics nullability ({}) does not match the current column type ({}); "
             "rebuild with ALTER TABLE ... MATERIALIZE STATISTICS.",
-            is_null, collector_is_nullable);
+            is_null,
+            collector_is_nullable);
 
     collector->deserialize(data, buf);
 }

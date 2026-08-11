@@ -44,19 +44,36 @@ class ConditionSelectivityEstimator : public WithContext
         Float64 true_sel;
         Float64 null_sel;
 
-        Selectivity() : true_sel(0), null_sel(0) {}
-        explicit Selectivity(Float64 true_sel_) : true_sel(true_sel_), null_sel(0) {}
-        Selectivity(Float64 true_sel_, Float64 null_sel_) : true_sel(true_sel_), null_sel(null_sel_) {}
+        Selectivity()
+            : true_sel(0)
+            , null_sel(0)
+        {
+        }
+        explicit Selectivity(Float64 true_sel_)
+            : true_sel(true_sel_)
+            , null_sel(0)
+        {
+        }
+        Selectivity(Float64 true_sel_, Float64 null_sel_)
+            : true_sel(true_sel_)
+            , null_sel(null_sel_)
+        {
+        }
         Selectivity applyNot() const;
         Selectivity applyOr(const Selectivity & other) const;
         Selectivity applyAnd(const Selectivity & other) const;
     };
 
     friend class ConditionSelectivityEstimatorBuilder;
-public:
-    explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
 
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
+public:
+    explicit ConditionSelectivityEstimator(ContextPtr context_)
+        : WithContext(context_)
+    {
+    }
+
+    RelationProfile
+    estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
@@ -99,8 +116,9 @@ public:
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
         void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);
     };
-    using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
+    using AtomMap = std::unordered_map<std::string, void (*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
+
 private:
     friend class ColumnStatistics;
 

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Common/Arena.h>
-#include <Storages/Statistics/Statistics.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Storages/Statistics/Statistics.h>
+#include <Common/Arena.h>
 
 namespace DB
 {

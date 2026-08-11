@@ -1,9 +1,9 @@
-#include <Storages/Statistics/StatisticsCountMinSketch.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Storages/Statistics/StatisticsCountMinSketch.h>
 
 #if USE_DATASKETCHES
 
@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 /// Constants chosen based on rolling dices.

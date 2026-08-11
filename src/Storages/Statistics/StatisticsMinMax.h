@@ -26,6 +26,7 @@ public:
 
     std::optional<Float64> estimateLess(const Field & val) const override;
     String getNameForLogs() const override;
+
 private:
     Field min; /// null Field means "not initialized"
     Field max; /// null Field means "not initialized"

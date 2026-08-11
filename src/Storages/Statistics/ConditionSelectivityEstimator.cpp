@@ -1,29 +1,30 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
-#include <stack>
 #include <cmath>
+#include <stack>
 
-#include <Common/logger_useful.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/misc.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Formats/ParseError.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/MergeTree/RPNBuilder.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/misc.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Formats/ParseError.h>
+#include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
 {
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
+    const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
     if (filter == nullptr && prewhere == nullptr)
     {
@@ -37,14 +38,18 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     {
         return estimateRelationProfile(metadata, filter);
     }
-    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
-    {
-        return extractAtomFromTree(metadata, node_, out);
-    }).extractRPN();
-    std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
-    {
-        return extractAtomFromTree(metadata, node_, out);
-    }).extractRPN();
+    std::vector<RPNElement> rpn
+        = RPNBuilder<RPNElement>(
+              filter,
+              getContext(),
+              [&](const RPNBuilderTreeNode & node_, RPNElement & out) { return extractAtomFromTree(metadata, node_, out); })
+              .extractRPN();
+    std::vector<RPNElement> prewhere_rpn
+        = RPNBuilder<RPNElement>(
+              prewhere,
+              getContext(),
+              [&](const RPNBuilderTreeNode & node_, RPNElement & out) { return extractAtomFromTree(metadata, node_, out); })
+              .extractRPN();
     rpn.insert(rpn.end(), prewhere_rpn.begin(), prewhere_rpn.end());
     RPNElement last_rpn;
     last_rpn.function = RPNElement::FUNCTION_AND;
@@ -52,18 +57,18 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     return estimateRelationProfileImpl(rpn, metadata);
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const
+RelationProfile
+ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const
 {
-    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(node, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
-    {
-        return extractAtomFromTree(metadata, node_, out);
-    }).extractRPN();
+    std::vector<RPNElement> rpn
+        = RPNBuilder<RPNElement>(
+              node, [&](const RPNBuilderTreeNode & node_, RPNElement & out) { return extractAtomFromTree(metadata, node_, out); })
+              .extractRPN();
     return estimateRelationProfileImpl(rpn, metadata);
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
-    const StorageMetadataPtr & metadata,
-    const std::vector<RPNBuilderTreeNode> & nodes) const
+    const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const
 {
     if (nodes.empty())
         return estimateRelationProfile();
@@ -77,10 +82,10 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     std::vector<RPNElement> combined_rpn;
     for (size_t i = 0; i < nodes.size(); ++i)
     {
-        auto rpn = RPNBuilder<RPNElement>(nodes[i], [&](const RPNBuilderTreeNode & node_, RPNElement & out)
-        {
-            return extractAtomFromTree(metadata, node_, out);
-        }).extractRPN();
+        auto rpn
+            = RPNBuilder<RPNElement>(
+                  nodes[i], [&](const RPNBuilderTreeNode & node_, RPNElement & out) { return extractAtomFromTree(metadata, node_, out); })
+                  .extractRPN();
         combined_rpn.insert(combined_rpn.end(), rpn.begin(), rpn.end());
         if (i > 0)
         {
@@ -106,7 +111,8 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     return column->type->equals(*stats->getDataType());
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
+RelationProfile
+ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
 {
     /// walk through the tree and calculate selectivity for every rpn node.
     std::stack<RPNElement *> rpn_stack;
@@ -123,11 +129,10 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             /// 3. if we cannot merge the expressions, we mark the expression as 'finalized' and materialize the selectivity.
             /// 4. we don't merge ranges for finalized expression.
             case RPNElement::FUNCTION_AND:
-            case RPNElement::FUNCTION_OR:
-            {
-                auto* right_element = rpn_stack.top();
+            case RPNElement::FUNCTION_OR: {
+                auto * right_element = rpn_stack.top();
                 rpn_stack.pop();
-                auto* left_element = rpn_stack.top();
+                auto * left_element = rpn_stack.top();
                 rpn_stack.pop();
                 if (right_element->function == RPNElement::ALWAYS_TRUE || left_element->function == RPNElement::ALWAYS_FALSE)
                     rpn_stack.push(element.function == RPNElement::FUNCTION_AND ? left_element : right_element);
@@ -150,9 +155,8 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                 }
                 break;
             }
-            case RPNElement::FUNCTION_NOT:
-            {
-                auto* last_element = rpn_stack.top();
+            case RPNElement::FUNCTION_NOT: {
+                auto * last_element = rpn_stack.top();
                 if (last_element->finalized)
                     last_element->selectivity = last_element->selectivity.applyNot();
                 else
@@ -161,19 +165,18 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                     std::swap(last_element->null_check_columns, last_element->not_null_check_columns);
                     switch (last_element->function)
                     {
-                        case RPNElement::FUNCTION_AND:        last_element->function = RPNElement::FUNCTION_OR;       break;
-                        case RPNElement::FUNCTION_OR:         last_element->function = RPNElement::FUNCTION_AND;      break;
-                        case RPNElement::FUNCTION_IS_NULL:    last_element->function = RPNElement::FUNCTION_IS_NOT_NULL; break;
-                        case RPNElement::FUNCTION_IS_NOT_NULL:last_element->function = RPNElement::FUNCTION_IS_NULL;  break;
-                        case RPNElement::ALWAYS_FALSE:        last_element->function = RPNElement::ALWAYS_TRUE;       break;
-                        case RPNElement::ALWAYS_TRUE:         last_element->function = RPNElement::ALWAYS_FALSE;      break;
+                        case RPNElement::FUNCTION_AND: last_element->function = RPNElement::FUNCTION_OR; break;
+                        case RPNElement::FUNCTION_OR: last_element->function = RPNElement::FUNCTION_AND; break;
+                        case RPNElement::FUNCTION_IS_NULL: last_element->function = RPNElement::FUNCTION_IS_NOT_NULL; break;
+                        case RPNElement::FUNCTION_IS_NOT_NULL: last_element->function = RPNElement::FUNCTION_IS_NULL; break;
+                        case RPNElement::ALWAYS_FALSE: last_element->function = RPNElement::ALWAYS_TRUE; break;
+                        case RPNElement::ALWAYS_TRUE: last_element->function = RPNElement::ALWAYS_FALSE; break;
                         default: break;
                     }
                 }
                 break;
             }
-            default:
-                rpn_stack.push(&element);
+            default: rpn_stack.push(&element);
         }
     }
     auto * final_element = rpn_stack.top();
@@ -209,7 +212,8 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
+RelationProfile
+ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
 {
     RPNBuilderTreeContext tree_context(getContext());
     return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
@@ -228,7 +232,8 @@ bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & dat
     return false;
 }
 
-bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
+bool ConditionSelectivityEstimator::extractAtomFromTree(
+    const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
     if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
@@ -364,9 +369,8 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 }
             }
             /// In some cases we need to cast the type of const
-            bool cast_not_needed = !column_type || !const_type ||
-                ((isNativeInteger(column_type) || isDateTime(column_type))
-                && (isNativeInteger(const_type) || isDateTime(const_type)));
+            bool cast_not_needed = !column_type || !const_type
+                || ((isNativeInteger(column_type) || isDateTime(column_type)) && (isNativeInteger(const_type) || isDateTime(const_type)));
 
             if (!cast_not_needed && !column_type->equals(*const_type))
             {
@@ -384,7 +388,8 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                         /// The string value is not valid for the column type (e.g. unknown enum element).
                         /// For equality, the condition can never match, so selectivity is 0.
                         /// For other operators, fall back to default unknown selectivity.
-                        LOG_DEBUG(getLogger("ConditionSelectivityEstimator"),
+                        LOG_DEBUG(
+                            getLogger("ConditionSelectivityEstimator"),
                             "Cannot convert value to column type, skipping statistics estimation. The exception is : {}",
                             getCurrentExceptionMessage(false));
                         if (func_name == "equals")
@@ -576,116 +581,93 @@ UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() con
     return stats->estimateCardinality();
 }
 
-const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom_map
-{
-        {
-            "notEquals",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_not_ranges.emplace(column, Range(value));
-            }
-        },
-        {
-            "equals",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_ranges.emplace(column, Range(value));
-            }
-        },
-        {
-            "in",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                Ranges ranges;
-                for (const Field & field : value.safeGet<Tuple>())
-                {
-                    ranges.emplace_back(field);
-                }
-                out.column_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
-            }
-        },
-        {
-            "notIn",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                Ranges ranges;
-                for (const Field & field : value.safeGet<Tuple>())
-                {
-                    ranges.emplace_back(field);
-                }
-                out.column_not_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
-            }
-        },
-        {
-            "less",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_ranges.emplace(column, Range::createRightBounded(value, false));
-            }
-        },
-        {
-            "greater",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_ranges.emplace(column, Range::createLeftBounded(value, false));
-            }
-        },
-        {
-            "lessOrEquals",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_ranges.emplace(column, Range::createRightBounded(value, true));
-            }
-        },
-        {
-            "greaterOrEquals",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_ranges.emplace(column, Range::createLeftBounded(value, true));
-            }
-        },
-        {
-            "isNull",
-            [] (RPNElement & out, const String & column, const Field &)
-            {
-                out.function = RPNElement::FUNCTION_IS_NULL;
-                out.null_check_columns.insert(column);
-            }
-        },
-        {
-            "isNotNull",
-            [] (RPNElement & out, const String & column, const Field &)
-            {
-                out.function = RPNElement::FUNCTION_IS_NOT_NULL;
-                out.not_null_check_columns.insert(column);
-            }
-        }
-};
+const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom_map{
+    {"notEquals",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_not_ranges.emplace(column, Range(value));
+     }},
+    {"equals",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_ranges.emplace(column, Range(value));
+     }},
+    {"in",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         Ranges ranges;
+         for (const Field & field : value.safeGet<Tuple>())
+         {
+             ranges.emplace_back(field);
+         }
+         out.column_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
+     }},
+    {"notIn",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         Ranges ranges;
+         for (const Field & field : value.safeGet<Tuple>())
+         {
+             ranges.emplace_back(field);
+         }
+         out.column_not_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
+     }},
+    {"less",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_ranges.emplace(column, Range::createRightBounded(value, false));
+     }},
+    {"greater",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_ranges.emplace(column, Range::createLeftBounded(value, false));
+     }},
+    {"lessOrEquals",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_ranges.emplace(column, Range::createRightBounded(value, true));
+     }},
+    {"greaterOrEquals",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_ranges.emplace(column, Range::createLeftBounded(value, true));
+     }},
+    {"isNull",
+     [](RPNElement & out, const String & column, const Field &)
+     {
+         out.function = RPNElement::FUNCTION_IS_NULL;
+         out.null_check_columns.insert(column);
+     }},
+    {"isNotNull",
+     [](RPNElement & out, const String & column, const Field &)
+     {
+         out.function = RPNElement::FUNCTION_IS_NOT_NULL;
+         out.not_null_check_columns.insert(column);
+     }}};
 
 /// merge CNF or DNF
 bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & lhs, RPNElement & rhs)
 {
     auto can_merge_with = [](const RPNElement & e, Function function_to_merge)
     {
-        return (e.function == FUNCTION_IN_RANGE
-                || e.function == FUNCTION_IS_NULL
+        return (e.function == FUNCTION_IN_RANGE || e.function == FUNCTION_IS_NULL
                 || e.function == FUNCTION_IS_NOT_NULL
                 /// if the sub-clause is also cnf/dnf, it's good to merge
                 || e.function == function_to_merge
                 /// if the sub-clause is different, but has only one column, it also works, e.g
                 /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10)
-                || (e.column_ranges.size() + e.column_not_ranges.size()
-                    + e.null_check_columns.size() + e.not_null_check_columns.size()) == 1
+                || (e.column_ranges.size() + e.column_not_ranges.size() + e.null_check_columns.size() + e.not_null_check_columns.size())
+                    == 1
                 || e.function == FUNCTION_UNKNOWN)
-                && !e.finalized;
+            && !e.finalized;
     };
     /// we will merge normal expression and not expression separately.
     auto merge_column_ranges = [this](ColumnRanges & result_ranges, ColumnRanges & l_ranges, ColumnRanges & r_ranges, bool is_not)

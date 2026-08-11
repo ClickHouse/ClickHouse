@@ -13,9 +13,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_QUERY;
-    extern const int ILLEGAL_STATISTICS;
-    extern const int LOGICAL_ERROR;
+extern const int INCORRECT_QUERY;
+extern const int ILLEGAL_STATISTICS;
+extern const int LOGICAL_ERROR;
 };
 
 SingleStatisticsDescription & SingleStatisticsDescription::operator=(const SingleStatisticsDescription & other)
@@ -60,27 +60,28 @@ StatisticsType stringToStatisticsType(String type)
     if (type == "uniq_v2")
         return StatisticsType::UniqV2;
 
-    throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
+    throw Exception(
+        ErrorCodes::INCORRECT_QUERY,
+        "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'",
+        type);
 }
 
 String statisticsTypeToString(StatisticsType type)
 {
     switch (type)
     {
-        case StatisticsType::TDigest:
-            return "TDigest";
-        case StatisticsType::Uniq:
-            return "Uniq";
-        case StatisticsType::CountMinSketch:
-            return "countmin";
-        case StatisticsType::MinMax:
-            return "minmax";
-        case StatisticsType::Basic:
-            return "basic";
-        case StatisticsType::UniqV2:
-            return "uniq_v2";
+        case StatisticsType::TDigest: return "TDigest";
+        case StatisticsType::Uniq: return "Uniq";
+        case StatisticsType::CountMinSketch: return "countmin";
+        case StatisticsType::MinMax: return "minmax";
+        case StatisticsType::Basic: return "basic";
+        case StatisticsType::UniqV2: return "uniq_v2";
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and 'uniq_v2'", type);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unknown statistics type: {}. Supported statistics types are 'basic', 'countmin', 'minmax', 'tdigest', 'uniq' and "
+                "'uniq_v2'",
+                type);
     }
 }
 
@@ -90,8 +91,11 @@ String SingleStatisticsDescription::getTypeName() const
 }
 
 SingleStatisticsDescription::SingleStatisticsDescription(StatisticsType type_, ASTPtr ast_, bool is_implicit_)
-    : type(type_), ast(ast_), is_implicit(is_implicit_)
-{}
+    : type(type_)
+    , ast(ast_)
+    , is_implicit(is_implicit_)
+{
+}
 
 bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription & other) const
 {
@@ -124,17 +128,19 @@ bool ColumnStatisticsDescription::contains(const String & stat_type) const
     return types_to_desc.contains(stringToStatisticsType(stat_type));
 }
 
-void ColumnStatisticsDescription::merge(const ColumnStatisticsDescription & other, const String & merging_column_name, DataTypePtr merging_column_type, bool if_not_exists)
+void ColumnStatisticsDescription::merge(
+    const ColumnStatisticsDescription & other, const String & merging_column_name, DataTypePtr merging_column_type, bool if_not_exists)
 {
     chassert(merging_column_type);
 
     data_type = merging_column_type;
 
-    for (const auto & [stats_type, stats_desc]: other.types_to_desc)
+    for (const auto & [stats_type, stats_desc] : other.types_to_desc)
     {
         if (!if_not_exists && types_to_desc.contains(stats_type))
         {
-            throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics type name {} has existed in column {}", stats_type, merging_column_name);
+            throw Exception(
+                ErrorCodes::ILLEGAL_STATISTICS, "Statistics type name {} has existed in column {}", stats_type, merging_column_name);
         }
         if (!types_to_desc.contains(stats_type))
             types_to_desc.emplace(stats_type, stats_desc);
@@ -152,7 +158,8 @@ void ColumnStatisticsDescription::clear()
     types_to_desc.clear();
 }
 
-std::vector<std::pair<String, ColumnStatisticsDescription>> ColumnStatisticsDescription::fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns)
+std::vector<std::pair<String, ColumnStatisticsDescription>>
+ColumnStatisticsDescription::fromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns)
 {
     const auto * stat_definition_ast = definition_ast->as<ASTStatisticsDeclaration>();
     if (!stat_definition_ast)
@@ -193,7 +200,8 @@ std::vector<std::pair<String, ColumnStatisticsDescription>> ColumnStatisticsDesc
     return result;
 }
 
-ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type)
+ColumnStatisticsDescription
+ColumnStatisticsDescription::fromStatisticsDescriptionAST(const ASTPtr & statistics_desc, const String & column_name, DataTypePtr data_type)
 {
     const auto & stat_type_list_ast = statistics_desc->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.empty())

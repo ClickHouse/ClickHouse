@@ -71,7 +71,7 @@ private:
     Field column_default_field;
     bool tracks_numeric = false;
     bool tracks_string = false;
-    bool is_nullable = false;    /// column's type default is NULL (Nullable, LowCardinality(Nullable), Variant, Dynamic, ...)
+    bool is_nullable = false; /// column's type default is NULL (Nullable, LowCardinality(Nullable), Variant, Dynamic, ...)
     bool has_default_count = true; /// true unless deserialized from older code that did not write a default-value count
 };
 
