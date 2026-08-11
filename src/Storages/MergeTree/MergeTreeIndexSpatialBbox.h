@@ -60,7 +60,7 @@ public:
 private:
     struct QueryBbox
     {
-        double xmin, ymin, xmax, ymax;
+        double xmin = 0, ymin = 0, xmax = 0, ymax = 0;
     };
 
     /// Try to find a spatial predicate in the DAG node tree that filters the indexed column
@@ -77,7 +77,7 @@ private:
 class MergeTreeIndexSpatialBbox final : public IMergeTreeIndex
 {
 public:
-    explicit MergeTreeIndexSpatialBbox(const IndexDescription & index_);
+    MergeTreeIndexSpatialBbox(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_);
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
@@ -91,13 +91,7 @@ public:
     }
 
     MergeTreeIndexFormat getDeserializedFormat(
-        const MergeTreeDataPartChecksums & checksums,
-        const std::string & relative_path_prefix,
-        const IDataPartStorage * storage) const override;
+        const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
 };
-
-
-MergeTreeIndexPtr spatialBboxIndexCreator(const IndexDescription & index);
-void spatialBboxIndexValidator(const IndexDescription & index, bool attach);
 
 }

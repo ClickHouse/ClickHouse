@@ -376,8 +376,8 @@ private:
 MergeTreeIndexPtr minmaxIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-MergeTreeIndexPtr spatialBboxIndexCreator(const IndexDescription & index);
-void spatialBboxIndexValidator(const IndexDescription & index, bool attach);
+MergeTreeIndexPtr spatialBboxIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
+void spatialBboxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void setIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);

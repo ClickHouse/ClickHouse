@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexSpatialBbox.h>
 
 #include <Columns/ColumnArray.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -249,8 +250,8 @@ std::string MergeTreeIndexConditionSpatialBbox::getDescription() const
 
 // ─── Index ───────────────────────────────────────────────────────────────────
 
-MergeTreeIndexSpatialBbox::MergeTreeIndexSpatialBbox(const IndexDescription & index_)
-    : IMergeTreeIndex(index_)
+MergeTreeIndexSpatialBbox::MergeTreeIndexSpatialBbox(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_)
+    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
 {}
 
 MergeTreeIndexGranulePtr MergeTreeIndexSpatialBbox::createIndexGranule() const
@@ -273,11 +274,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexSpatialBbox::createIndexCondition(
 
 
 MergeTreeIndexFormat MergeTreeIndexSpatialBbox::getDeserializedFormat(
-    const MergeTreeDataPartChecksums & checksums,
-    const std::string & relative_path_prefix,
-    const IDataPartStorage * storage) const
+    const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
+    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
+        if (part.isSystemColumnInvalidated(column))
+            return {0 /* unknown */, {}};
+
+    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx2", &part.getDataPartStorage()))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
     return {0 /* unknown */, {}};
 }
@@ -285,12 +288,13 @@ MergeTreeIndexFormat MergeTreeIndexSpatialBbox::getDeserializedFormat(
 
 // ─── Creator & Validator ─────────────────────────────────────────────────────
 
-MergeTreeIndexPtr spatialBboxIndexCreator(const IndexDescription & index)
+MergeTreeIndexPtr spatialBboxIndexCreator(
+    StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
-    return std::make_shared<MergeTreeIndexSpatialBbox>(index);
+    return std::make_shared<MergeTreeIndexSpatialBbox>(std::move(metadata_snapshot), index);
 }
 
-void spatialBboxIndexValidator(const IndexDescription & index, bool /*attach*/)
+void spatialBboxIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
 {
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
