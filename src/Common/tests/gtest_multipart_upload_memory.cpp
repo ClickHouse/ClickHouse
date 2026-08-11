@@ -142,6 +142,43 @@ TEST(MultipartUploadMemory, ExponentialPolicyFirstBufferFollowsMinUploadPartSize
     EXPECT_GE(memory.ceiling, liveBuffersUpperBound(settings, 1, 2000));
 }
 
+TEST(MultipartUploadMemory, MaxSinglePartUploadSizeDoesNotInflateTheCeiling)
+{
+    /// max_single_part_upload_size above max_upload_part_size is a supported configuration
+    /// (S3RequestSettings::validateUploadSettings never constrains it), but the policy clamps the first
+    /// buffer down to max_size and never hands out anything larger, so the ceiling must not price the
+    /// buffers at max_single_size - that would reject wide remote merges for memory the writer can never
+    /// allocate.
+    BufferAllocationPolicy::Settings settings;
+    settings.max_single_size = 256 * 1024 * 1024;
+    settings.min_size = 16 * 1024 * 1024;
+    settings.max_size = 64ULL * 1024 * 1024;
+
+    const auto memory = getMultipartUploadMemory(settings, 20);
+
+    EXPECT_EQ(firstPolicyBufferSize(settings), 64ULL * 1024 * 1024);
+    EXPECT_EQ(memory.ceiling, 21 * 64ULL * 1024 * 1024);
+    EXPECT_GE(memory.ceiling, liveBuffersUpperBound(settings, 20, 2000));
+}
+
+TEST(MultipartUploadMemory, MinUploadPartSizeAboveMaxStillPricesTheMinSizeBuffers)
+{
+    /// min_size above max_size is accepted for Azure (there is no validateUploadSettings there at all), and
+    /// ExpBufferAllocationPolicy hands out min_size unclamped as the second buffer, so the ceiling must keep
+    /// pricing the buffers at min_size - dropping to max_size alone would under-report the writer 4x here,
+    /// and an admission gate that under-reserves admits merges that then exceed their reservation. The policy
+    /// itself is not replayed here: its first-buffer std::clamp has the lo > hi precondition violated by this
+    /// configuration, which is exactly why the ceiling must stay conservative about it.
+    BufferAllocationPolicy::Settings settings;
+    settings.max_single_size = 32 * 1024 * 1024;
+    settings.min_size = 256 * 1024 * 1024;
+    settings.max_size = 64ULL * 1024 * 1024;
+
+    const auto memory = getMultipartUploadMemory(settings, 1);
+
+    EXPECT_EQ(memory.ceiling, 2 * 256ULL * 1024 * 1024);
+}
+
 TEST(MultipartUploadMemory, StrictUploadPartSizeUsesTheFixedSizePolicy)
 {
     /// A non-zero strict_size switches BufferAllocationPolicy::create to FixedSizeBufferAllocationPolicy, so
