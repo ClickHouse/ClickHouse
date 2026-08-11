@@ -69,7 +69,9 @@ inline String toString(AuthenticationType type_)
 }
 
 /// Whether a credential for this authentication type is verified purely locally, with no external side effects.
-/// `LDAP`/`KERBEROS`/`HTTP`/`JWT` contact an external system to verify a credential.
+/// `LDAP`/`KERBEROS`/`HTTP` contact an external system to verify a credential. `JWT` validation may also
+/// contact an external system: while a token itself is self-contained, verifying it may require fetching
+/// the signing keys (JWKS) or delegating the check to an external validator.
 bool authenticationTypeIsVerifiedLocally(AuthenticationType type_);
 
 }
