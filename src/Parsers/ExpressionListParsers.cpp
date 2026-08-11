@@ -955,6 +955,11 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!literal || literal->value.getType() != Field::Types::String)
         return;
 
+    /// Only literals actually tokenized from the query carry valid token info; a synthesized
+    /// literal may have inherited a stale map entry from a freed literal that reused its address.
+    if (!literal->hasTokenInfo())
+        return;
+
     /// Look up token position from the map stored in Expected
     if (!expected.literal_token_map)
         return;
