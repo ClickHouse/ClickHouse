@@ -550,7 +550,7 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
-            /// Allocation accounting is already committed, so failures in optional logging are ignored.
+            /// Ok to ignore: allocation accounting is already committed, and this is optional logging.
         }
     }
 
