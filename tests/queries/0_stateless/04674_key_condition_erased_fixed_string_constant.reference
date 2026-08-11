@@ -7,7 +7,7 @@ String key, Dynamic(max_types = 0)	1
 String key, Variant(FixedString(2)) filled exactly	1
 LowCardinality(String) key, Variant(FixedString(3))	1
 Nullable(String) key, Variant(FixedString(3))	1
--- A2: notEquals agrees with the oracle at default optimize_use_implicit_projections
+-- A2: notEquals agrees with the oracle (exact-count projection pinned on)
 String key, Variant(FixedString(3))	1
 String key, Dynamic holding FixedString(3)	1
 -- Keys that already pruned correctly are untouched

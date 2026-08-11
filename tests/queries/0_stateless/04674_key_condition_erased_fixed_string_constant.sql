@@ -71,15 +71,19 @@ SELECT 'Nullable(String) key, Variant(FixedString(3))',
     (SELECT count() FROM oracle WHERE s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)))
         = (SELECT count() FROM pk_nullable WHERE s = CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)));
 
-SELECT '-- A2: notEquals agrees with the oracle at default optimize_use_implicit_projections';
+SELECT '-- A2: notEquals agrees with the oracle (exact-count projection pinned on)';
 
+-- Both settings are pinned because only `_exact_count_projection` derives the count from the key
+-- ranges; with either one off the plan filters rows and the comparison holds even for a wrong range.
 SELECT 'String key, Variant(FixedString(3))',
     (SELECT count() FROM oracle WHERE s != CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)))
-        = (SELECT count() FROM pk_string WHERE s != CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)));
+        = (SELECT count() FROM pk_string WHERE s != CAST(toFixedString('V0', 3) AS Variant(FixedString(3), UInt64)))
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
 SELECT 'String key, Dynamic holding FixedString(3)',
     (SELECT count() FROM oracle WHERE s != CAST(toFixedString('V0', 3) AS Dynamic))
-        = (SELECT count() FROM pk_string WHERE s != CAST(toFixedString('V0', 3) AS Dynamic));
+        = (SELECT count() FROM pk_string WHERE s != CAST(toFixedString('V0', 3) AS Dynamic))
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
 SELECT '-- Keys that already pruned correctly are untouched';
 
