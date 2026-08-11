@@ -434,6 +434,36 @@ def enable_mutation_delay_failpoint() -> None:
     logging.info("Mutation-delay failpoint active: %s", MUTATION_DELAY_FAILPOINT)
 
 
+def disable_mutation_delay_failpoint() -> None:
+    """Disable `mutate_task_random_sleep_in_prepare` before the hung check, so the
+    mutations still pending drain at full speed. Fail-close, mirroring
+    `enable_mutation_delay_failpoint`: verify through `system.fail_points` that the
+    failpoint is really off instead of trusting best-effort `call_with_retry`. Binaries
+    that do not register the failpoint at all (e.g. the old binary in upgrade check,
+    where `SYSTEM DISABLE FAILPOINT` would throw on the unknown name) are skipped."""
+    probe_query = make_query_command(
+        f"SELECT enabled FROM system.fail_points WHERE name = '{MUTATION_DELAY_FAILPOINT}'"
+    )
+    registered = check_output(probe_query, shell=True, timeout=30, text=True).strip()
+    if not registered:
+        logging.info(
+            "Failpoint %s is not registered by this binary, nothing to disable",
+            MUTATION_DELAY_FAILPOINT,
+        )
+        return
+    call_with_retry(
+        make_query_command(f"SYSTEM DISABLE FAILPOINT {MUTATION_DELAY_FAILPOINT}")
+    )
+    enabled = check_output(probe_query, shell=True, timeout=30, text=True).strip()
+    if enabled != "0":
+        raise RuntimeError(
+            f"Failpoint {MUTATION_DELAY_FAILPOINT} is still enabled after "
+            f"SYSTEM DISABLE FAILPOINT: system.fail_points.enabled is {enabled!r}; "
+            "the hung check would run with mutations still delayed"
+        )
+    logging.info("Mutation-delay failpoint disabled: %s", MUTATION_DELAY_FAILPOINT)
+
+
 def run_func_test(
     cmd: str,
     output_prefix: Path,
@@ -632,11 +662,10 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
     call_with_retry(make_query_command("SYSTEM STOP THREAD FUZZER"))
-    # Stop delaying mutations, so the ones still pending drain at full speed. Disabling a
-    # registered failpoint that was never enabled (e.g. in upgrade check) is a no-op.
-    call_with_retry(
-        make_query_command(f"SYSTEM DISABLE FAILPOINT {MUTATION_DELAY_FAILPOINT}")
-    )
+    # Stop delaying mutations, so the ones still pending drain at full speed. Fail-close:
+    # the hung check must not run with the delay still armed, and a binary that does not
+    # register the failpoint (e.g. the old binary in upgrade check) is skipped.
+    disable_mutation_delay_failpoint()
     # Some tests execute SYSTEM STOP MERGES or similar queries.
     # It may cause some ALTERs to hang.
     # Possibly we should fix tests and forbid to use such queries without specifying table.
