@@ -70,6 +70,15 @@ def start_cluster():
     try:
         cluster.start()
         node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+        node.query(
+            "CREATE TABLE prometheus_seconds "
+            "(time_series Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
+        )
+        node.query(
+            "INSERT INTO prometheus_seconds (metric_name, tags, time_series) VALUES"
+            " ('foo_seconds_old', {'shape': 'circle'}, [(toDateTime64(150, 0), 16)]),"
+            " ('foo_seconds_exact', {'shape': 'circle'}, [(toDateTime64(151, 0), 17)])"
+        )
         send_test_data()
         yield cluster
     finally:
@@ -117,6 +126,66 @@ def test_range_query_post_urlencoded():
     )
     post_data = extract_data_from_http_api_response(post_resp)
     assert get_data == post_data
+
+
+def test_query_lookback_delta():
+    query = 'foo{shape="circle"}'
+    timestamp = 151
+
+    expected = '{"resultType": "vector", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "value": [151, "16"]}]}'
+    assert execute_query_via_http_api(node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp) == expected
+
+    assert (
+        execute_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+            params={"lookback_delta": "500ms"},
+        )
+        == '{"resultType": "vector", "result": []}'
+    )
+
+    for lookback_delta in ("0", "-1"):
+        assert (
+            execute_query_via_http_api(
+                node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+                params={"lookback_delta": lookback_delta},
+            )
+            == expected
+        )
+
+    error = execute_query_via_http_api(
+        node.ip_address, 9093, "/api/v1/query", query, timestamp=timestamp,
+        params={"lookback_delta": "banana"}, expect_error=True,
+    )
+    assert "Cannot parse duration" in error
+
+
+def test_query_lookback_delta_low_timestamp_precision():
+    old_sample = execute_query_via_http_api(
+        node.ip_address, 9093, "/dynamic_table/api/v1/query",
+        'foo_seconds_old{shape="circle"}', timestamp=151,
+        params={"table": "prometheus_seconds", "lookback_delta": "500ms"},
+    )
+    assert old_sample == '{"resultType": "vector", "result": []}'
+
+    exact_sample = execute_query_via_http_api(
+        node.ip_address, 9093, "/dynamic_table/api/v1/query",
+        'foo_seconds_exact{shape="circle"}', timestamp=151,
+        params={"table": "prometheus_seconds", "lookback_delta": "500ms"},
+    )
+    assert exact_sample == '{"resultType": "vector", "result": [{"metric": {"__name__": "foo_seconds_exact", "shape": "circle"}, "value": [151, "17"]}]}'
+
+
+def test_range_query_lookback_delta():
+    query = 'foo{shape="circle"}'
+
+    expected = '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[150, "16"]]}]}'
+    assert (
+        execute_range_query_via_http_api(
+            node.ip_address, 9093, "/api/v1/query_range", query, 150, 151, 1,
+            params={"lookback_delta": "0.5"},
+        )
+        == expected
+    )
 
 
 # Malformed PromQL is rejected at parse time.

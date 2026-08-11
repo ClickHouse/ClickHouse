@@ -229,6 +229,32 @@ def test_custom_id_algorithm():
     ) == TSV([["FixedString(16)", ""]])
 
 
+# Checks that a multi-component identifier `Tuple(F, S)` can be used.
+def test_multi_component_id():
+    # Case 1: the identifier expression is specified as a DEFAULT expression of the `id` column.
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "TAGS INNER COLUMNS (id Tuple(UInt64, UInt64) DEFAULT tuple(xxHash64(metric_name), xxHash64(all_tags)))"
+    )
+    check()
+
+    assert re.search(r"\bid\s+Tuple\(UInt64, UInt64\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
+    assert re.search(r"\bid\s+Tuple\(UInt64, UInt64\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+
+    drop_prometheus_table()
+
+    # Case 2: the identifier expression is specified in the `id_generator` setting.
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SETTINGS id_generator = 'tuple(xxHash64(metric_name), xxHash64(all_tags))' "
+        "TAGS INNER COLUMNS (id Tuple(UInt64, UInt64))"
+    )
+    check()
+
+    assert re.search(r"\bid\s+Tuple\(UInt64, UInt64\)", node.query("DESCRIBE timeSeriesTags(prometheus)"))
+    assert re.search(r"\bid\s+Tuple\(UInt64, UInt64\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
+
+
 # Checks that timestamps can be stored with microsecond precision (`DateTime64(6)`).
 def test_microsecond_precision():
     node.query("CREATE TABLE prometheus (time_series Array(Tuple(DateTime64(6), Float64))) ENGINE=TimeSeries")
@@ -312,6 +338,41 @@ def test_inner_engines():
         "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
     )
     check()
+
+
+# Checks that the `samples_index_granularity` and `tags_index_granularity` settings
+# set `index_granularity` of the samples and tags inner tables.
+def test_index_granularity():
+    # The default value of `samples_index_granularity` is 32768,
+    # the default value of `tags_index_granularity` is 8192.
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+    check()
+
+    assert "index_granularity = 32768" in node.query(
+        "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
+        "AND name = (SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1)"
+    )
+    assert "index_granularity = 8192" in node.query(
+        "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
+        "AND name = (SELECT _table FROM timeSeriesTags(prometheus) LIMIT 1)"
+    )
+
+    drop_prometheus_table()
+
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SETTINGS samples_index_granularity = 16384, tags_index_granularity = 4096"
+    )
+    check()
+
+    assert "index_granularity = 16384" in node.query(
+        "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
+        "AND name = (SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1)"
+    )
+    assert "index_granularity = 4096" in node.query(
+        "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
+        "AND name = (SELECT _table FROM timeSeriesTags(prometheus) LIMIT 1)"
+    )
 
 
 # Checks that a TimeSeries table can be used to access pre-existing external tables

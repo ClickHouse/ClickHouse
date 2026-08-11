@@ -56,6 +56,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
@@ -522,7 +523,8 @@ public:
             /// all bytes buffered in `snappy_out`; compression happens in `snappy_out.finalize()`
             /// below, after the object tree has been released.
             ProtobufZeroCopyOutputStreamFromWriteBuffer zero_copy_output_stream{snappy_out};
-            read_response.SerializeToZeroCopyStream(&zero_copy_output_stream);
+            if (!read_response.SerializeToZeroCopyStream(&zero_copy_output_stream))
+                throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Failed to serialize the Prometheus ReadResponse");
         }
         snappy_out.finalize();
 
@@ -556,7 +558,7 @@ public:
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
         /// Settings class.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "database", "table"};
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "lookback_delta", "database", "table"};
         return !reserved_param_names.contains(name);
     }
 
@@ -591,11 +593,11 @@ public:
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 String step = params->get("step", "");
+                String lookback_delta = params->get("lookback_delta", "");
 
                 /// TODO: Support the following **optional** query parameters:
                 /// - timeout=<duration>: Evaluation timeout
                 /// - limit=<number>: Maximum number of returned series
-                /// - lookback_delta=<number>: Override for the lookback period for this query.
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -605,6 +607,7 @@ public:
                     .start_param = start,
                     .end_param = end,
                     .step_param = step,
+                    .lookback_delta_param = lookback_delta,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -613,6 +616,7 @@ public:
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
+                String lookback_delta = params->get("lookback_delta", "");
 
                 /// TODO: Support optional parameters same as for the range query.
 
@@ -624,6 +628,7 @@ public:
                     .start_param = "",
                     .end_param = "",
                     .step_param = "",
+                    .lookback_delta_param = lookback_delta,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);

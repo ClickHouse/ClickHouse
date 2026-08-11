@@ -49,6 +49,12 @@ TEST_CONFIGS = [
         "18-node Keeper+S3 cluster; concurrent --dist=each copies OOM the ASAN runner",
         dist_each_sequential=True,
     ),
+    TC(
+        "test_wasm_parser/",
+        True,
+        "two full-LTO builds of the parser; saturates the runner and would slow every "
+        "co-scheduled test down",
+    ),
     TC("test_storage_kafka/", False, "each cluster has its own Kafka container and Docker network"),
     TC("test_storage_rabbitmq/", False, "each cluster has its own RabbitMQ container; tests use unique exchange/db names"),
     TC("test_storage_kerberized_kafka/", False, "each cluster has its own Kafka container and Docker network"),
@@ -133,6 +139,7 @@ IMAGES_ENV = {
     "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
     "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
     "clickhouse/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",
+    "clickhouse/wasm-builder": "DOCKER_WASM_BUILDER_TAG",
     "clickhouse/arrowflight-server-test": "DOCKER_ARROWFLIGHT_SERVER_TAG",
     "clickhouse/mysql-php-client": "DOCKER_MYSQL_PHP_CLIENT_TAG",
     "clickhouse/nginx-dav": "DOCKER_NGINX_DAV_TAG",

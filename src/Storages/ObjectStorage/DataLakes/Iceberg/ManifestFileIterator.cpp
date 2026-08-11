@@ -18,6 +18,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
@@ -160,24 +161,43 @@ bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesSortedBySor
     return true;
 }
 
-std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
+bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const
 {
-    Int64 result = 0;
+    /// Equality deletes force reading all physical columns of the data files they apply to
+    /// (see IcebergMetadata::getInitialSchemaByPath), so the pruned main read is impossible.
+    if (!equality_delete_files->empty())
+        return false;
+
+    for (const auto & file : *data_files)
+    {
+        /// Only the Parquet reader provides physical row numbers (ChunkInfoRowNumbers)
+        /// for the main read and positional re-reads (FormatFilterInfo::rows_to_read)
+        /// for the lazy read.
+        if (Poco::toUpper(file->parsed_entry->file_format) != "PARQUET")
+            return false;
+
+        /// Schema evolution forces reading all physical columns as well.
+        if (file->resolved_schema_id != table_schema_id)
+            return false;
+    }
+    return true;
+}
+
+std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
+{
+    UInt64 result = 0;
+    /// `record_count` is a required file-level field in all format versions, so the sum is
+    /// exact: no fallback to optional per-column statistics is needed. The field is parsed
+    /// as a raw Int64 though, so a corrupted manifest file may carry a negative value; it
+    /// is reported as "count unavailable" rather than summed (a negative contribution would
+    /// silently produce a wrong -- or, after the conversion to size_t, absurdly huge --
+    /// count) and rather than rejected (the count is only an optimization, a malformed
+    /// value must not make the table unreadable).
     for (const auto & file : getFilesWithoutDeleted(content))
     {
-        /// Have at least one column with rows count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.rows_count.has_value())
-            {
-                result += *column_info.rows_count;
-                found = true;
-                break;
-            }
-        }
-        if (!found)
+        if (file->parsed_entry->record_count < 0)
             return std::nullopt;
+        result += static_cast<UInt64>(file->parsed_entry->record_count);
     }
     return result;
 }
@@ -253,10 +273,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             throw Exception(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
-
-    if (manifest_format_version > 1 && !manifest_file_deserializer_->hasPath(f_sequence_number))
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
 
     Poco::JSON::Parser parser;
 

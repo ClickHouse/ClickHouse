@@ -237,6 +237,13 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         for (const auto * table_name : always_accessible_tables)
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
 
+        /// `system.user_query_log` shows each user only their own query log records, so SELECT on it is
+        /// granted implicitly to everyone - but only while the feature is enabled and the name is actually
+        /// backed by `StorageSystemUserQueryLog`. When it is disabled, the name can back a regular table
+        /// (or the raw query log via `query_log.table = user_query_log`), which must not become world-readable.
+        if (access_control.isUserQueryLogEnabled())
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "user_query_log");
+
         if (max_flags.contains(AccessType::SHOW_USERS))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "users");
 
@@ -1087,10 +1094,10 @@ void ContextAccess::checkGranteesAreAllowed(const std::vector<UUID> & grantee_id
     }
 }
 
-void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
+bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
 {
     if (isGranted(context, flags, parameter))
-        return;
+        return true;
 
     if (!to_check_by_filter.empty())
     {
@@ -1099,10 +1106,19 @@ void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const Acce
         for (const auto & filter : filters)
         {
             if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
-                return;
+                return true;
         }
     }
 
+    return false;
+}
+
+void ContextAccess::checkAccessWithFilter(const ContextPtr & context, const AccessFlags & flags, std::string_view parameter, std::string_view to_check_by_filter) const
+{
+    if (isGrantedWithFilter(context, flags, parameter, to_check_by_filter))
+        return;
+
+    /// Not granted: let the regular check produce the exception with a proper message.
     checkAccess(context, flags, parameter);
 }
 

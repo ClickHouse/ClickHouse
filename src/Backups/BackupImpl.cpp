@@ -726,21 +726,9 @@ void BackupImpl::readBackupMetadata()
             info.encrypted_by_disk = get_bool("encrypted_by_disk", false);
         }
 
-        file_names.emplace(info.file_name, std::pair{info.size, info.checksum});
-        if (!info.object_key.empty())
-        {
-            if (original_endpoint.empty() || original_namespace.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
+        const auto size_and_checksum = std::pair{info.size, info.checksum};
 
-            if (open_mode == OpenMode::READ)
-                lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
-
-            file_object_keys.emplace(info.file_name, info.object_key);
-            lightweight_snapshot_file_infos.try_emplace(info.object_key, info);
-        }
-        else if (info.size)
-            file_infos.try_emplace(std::pair{info.size, info.checksum}, info);
-
+        /// Update counters before `info` is moved below.
         ++num_files;
         total_size += info.size;
         bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
@@ -748,6 +736,32 @@ void BackupImpl::readBackupMetadata()
         {
             ++num_entries;
             size_of_entries += info.size - info.base_size;
+        }
+
+        if (!info.object_key.empty())
+        {
+            if (original_endpoint.empty() || original_namespace.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "In lightweight snapshot backup, the endpoint or namespace should be not empty. We cannot restore this file.");
+
+            /// UNLOCK only reads table metadata to remove the snapshot's locks, never the data parts
+            /// (`object_key` entries). Skipping their bookkeeping avoids holding one `BackupFileInfo` per
+            /// part, which OOMs the server for snapshots with millions of parts.
+            if (open_mode != OpenMode::UNLOCK)
+            {
+                if (open_mode == OpenMode::READ)
+                    lightweight_snapshot_reader = lightweight_snapshot_reader_creator(original_endpoint, original_namespace);
+
+                file_names.emplace(info.file_name, size_and_checksum);
+                file_object_keys.emplace(info.file_name, info.object_key);
+                /// The key is copied from `info.object_key` before `info` is moved into the value.
+                lightweight_snapshot_file_infos.try_emplace(info.object_key, std::move(info));
+            }
+        }
+        else
+        {
+            file_names.emplace(info.file_name, size_and_checksum);
+            if (info.size)
+                file_infos.try_emplace(size_and_checksum, std::move(info));
         }
     };
 
@@ -821,14 +835,28 @@ void BackupImpl::createLockFile()
 
 bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
-    if (!lock_file_name.empty() && uuid)
+    try
     {
-        LOG_TRACE(log, "Checking lock file {}", lock_file_name);
-        ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
-        String actual_file_contents;
-        if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
-            return true;
-        LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
+        if (!lock_file_name.empty() && uuid)
+        {
+            LOG_TRACE(log, "Checking lock file {}", lock_file_name);
+            ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
+            String actual_file_contents;
+            if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
+                return true;
+            LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
+        }
+    }
+    catch (...)
+    {
+        if (throw_if_failed)
+        {
+            throw;
+        }
+
+        tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not verify lock file {} for backup {}",
+            lock_file_name, backup_name_for_logging));
+        return false;
     }
 
     if (throw_if_failed)
@@ -1191,15 +1219,6 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (entry->isReference())
         return;
 
-    if (entry->isFromRemoteFile())
-    {
-        LOG_TRACE(log, "Writing backup for file {} : skipped because of lightweight snapshot", info.data_file_name);
-        std::lock_guard lock{mutex};
-        original_endpoint = entry->getEndpointURI();
-        original_namespace = entry->getNamespace();
-        return;
-    }
-
     if (open_mode == OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
@@ -1321,6 +1340,16 @@ void BackupImpl::setCompressedSize()
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
     else
         compressed_size = uncompressed_size;
+}
+
+
+void BackupImpl::setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept
+{
+    if (original_endpoint.empty())
+    {
+        original_endpoint = endpoint_;
+        original_namespace = namespace_;
+    }
 }
 
 
