@@ -6,11 +6,13 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -202,6 +204,78 @@ TEST(RuntimeDataflowStatisticsStateSampling, MixedWrapperSamplesNonStatePayloadC
     }
 
     /// The sibling compresses to almost nothing, so the whole column's compressed size is the states'.
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact.compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact.compressed_bytes * 2);
+}
+
+/// A state leaf can also sit inside a `ColumnVariant` - `Variant` allows `AggregateFunction` alternatives,
+/// so e.g. `if(cond, groupArrayState(x), CAST(s, 'Variant(...)'))` emits a `ColumnVariant` whose
+/// alternatives are a state leaf and a plain string. The walk that samples the non-state payload of a
+/// state-bearing carrier must recurse through the variant like it does through tuples/arrays/maps: falling
+/// back to "count the carrier's own payload as incompressible" applies a compression ratio of 1 to the
+/// discriminators, offsets and the string alternative, so a compressible alternative that dominates the
+/// column uncompressed overstates `output_bytes` by its real compression ratio.
+TEST(RuntimeDataflowStatisticsStateSampling, VariantWithStateAlternativeSamplesNonStatePayloadCompression)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 512;
+    constexpr size_t state_rows = 256;
+    constexpr size_t giant_state_row = 255;
+    constexpr size_t elements_in_giant_state = 50000;
+    /// The string alternative's rows dwarf the states uncompressed and vanish compressed.
+    constexpr size_t string_size = 10240;
+
+    auto states_arena = std::make_shared<Arena>();
+    AggregateFunctionPtr function;
+    auto column = createSkewedGroupArrayColumn(state_rows, giant_state_row, elements_in_giant_state, function, states_arena.get());
+    column->addArena(states_arena);
+
+    const auto exact = column->sampledStateSizes(state_rows);
+    ASSERT_EQ(exact.bytes, exact.sample_bytes);
+    ASSERT_GT(exact.compressed_bytes, elements_in_giant_state * sizeof(UInt64) / 2);
+
+    auto string_column = ColumnString::create();
+    const std::string value(string_size, 'a');
+    for (size_t row = 0; row < rows - state_rows; ++row)
+        string_column->insertData(value.data(), value.size());
+    /// Uncompressed the string alternative dominates the states by far more than the 2x margin asserted
+    /// below, so an estimate that counts it as incompressible lands several-fold above the upper bound.
+    ASSERT_GT(string_column->byteSize(), exact.compressed_bytes * 4);
+
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+
+    /// The first `state_rows` rows hold the states, the rest the strings.
+    auto discriminators = ColumnVariant::ColumnDiscriminators::create();
+    auto offsets = ColumnVariant::ColumnOffsets::create();
+    for (size_t row = 0; row < rows; ++row)
+    {
+        discriminators->insertValue(row < state_rows ? 0 : 1);
+        offsets->insertValue(row < state_rows ? row : row - state_rows);
+    }
+
+    const size_t cache_key = 0x111985 + 4;
+
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
+
+        Block header;
+        header.insert(ColumnWithTypeAndName{
+            nullptr,
+            std::make_shared<DataTypeVariant>(DataTypes{state_type, std::make_shared<DataTypeString>()}),
+            "variant_state_or_string"});
+
+        Columns variant_alternatives;
+        variant_alternatives.emplace_back(std::move(column));
+        variant_alternatives.emplace_back(std::move(string_column));
+        Chunk chunk(Columns{ColumnVariant::create(std::move(discriminators), std::move(offsets), variant_alternatives)}, rows);
+        updater.recordOutputChunk(chunk, header);
+    }
+
+    /// The string alternative compresses to almost nothing, so the whole column's compressed size is the
+    /// states'.
     const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
     ASSERT_TRUE(stats.has_value());
     EXPECT_GE(stats->output_bytes, exact.compressed_bytes / 2);

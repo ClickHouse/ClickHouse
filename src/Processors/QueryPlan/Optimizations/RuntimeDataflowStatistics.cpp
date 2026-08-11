@@ -9,10 +9,12 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/typeid_cast.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -235,6 +237,30 @@ static void sampleNonStatePartsCompression(
         {
             sampleNonStatePartsCompression(
                 map_column->getNestedColumnPtr(), map_type->getNestedType(), repetitions, sample_bytes, compressed_bytes);
+            return;
+        }
+    }
+    else if (const auto * variant_column = typeid_cast<const ColumnVariant *>(column.get()))
+    {
+        /// `Variant` allows `AggregateFunction` alternatives, so a state leaf can sit next to plain ones -
+        /// e.g. `if(cond, groupArrayState(x), CAST(s, 'Variant(...)'))`. The discriminators, offsets and
+        /// the state-free alternatives are plain payload; sample each, and recurse into the state-bearing
+        /// alternatives. The alternatives are visited by their global discriminators, which is the order
+        /// `DataTypeVariant::getVariants` lists the types in.
+        if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get());
+            variant_type && variant_type->getVariants().size() == variant_column->getNumVariants())
+        {
+            sampleNonStatePartsCompression(
+                variant_column->getLocalDiscriminatorsPtr(), std::make_shared<DataTypeUInt8>(), repetitions, sample_bytes, compressed_bytes);
+            sampleNonStatePartsCompression(
+                variant_column->getOffsetsPtr(), std::make_shared<DataTypeUInt64>(), repetitions, sample_bytes, compressed_bytes);
+            for (size_t i = 0; i < variant_column->getNumVariants(); ++i)
+                sampleNonStatePartsCompression(
+                    variant_column->getVariantPtrByGlobalDiscriminator(i),
+                    variant_type->getVariants()[i],
+                    repetitions,
+                    sample_bytes,
+                    compressed_bytes);
             return;
         }
     }
