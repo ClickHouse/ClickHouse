@@ -10,6 +10,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 
 #include <exception>
@@ -30,6 +31,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INSERT_WAS_DEDUPLICATED;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_sink_fail_part_commit_after_dedup[];
 }
 
 namespace Setting
@@ -382,9 +389,10 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         auto lock = storage.lockParts();
         auto block_holder = storage.fillNewPartName(part, lock);
 
+        MergeTreeDeduplicationLog * deduplication_log = nullptr;
         if (!deduplication_hashes.empty())
         {
-            auto * deduplication_log = storage.getDeduplicationLog();
+            deduplication_log = storage.getDeduplicationLog();
             chassert(deduplication_log);
             auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
             auto result = deduplication_log->addPart(block_ids, part->info);
@@ -400,18 +408,53 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
                 return conflict_block_ids;
         }
 
-        /// FIXME: renames for MergeTree should be done under the same lock
-        /// to avoid removing extra covered parts after merge.
-        ///
-        /// Image the following:
-        /// - T1: all_2_2_0 is in renameParts()
-        /// - T2: merge assigned for [all_1_1_0, all_3_3_0]
-        /// - T1: renameParts() finished, part had been added as Active
-        /// - T2: merge finished, covered parts removed, and it will include all_2_2_0!
-        ///
-        /// Hence, for now rename_in_transaction is false.
-        storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
-        transaction.commit(lock);
+        try
+        {
+            fiu_do_on(FailPoints::merge_tree_sink_fail_part_commit_after_dedup,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure of the part commit after the deduplication log publication");
+            });
+
+            /// FIXME: renames for MergeTree should be done under the same lock
+            /// to avoid removing extra covered parts after merge.
+            ///
+            /// Image the following:
+            /// - T1: all_2_2_0 is in renameParts()
+            /// - T2: merge assigned for [all_1_1_0, all_3_3_0]
+            /// - T1: renameParts() finished, part had been added as Active
+            /// - T2: merge finished, covered parts removed, and it will include all_2_2_0!
+            ///
+            /// Hence, for now rename_in_transaction is false.
+            storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
+            transaction.commit(lock);
+        }
+        catch (...)
+        {
+            /// The block IDs were published into the deduplication log by addPart above, but the
+            /// part failed to become active (the transaction's destructor rolls back whatever
+            /// renameTempPartAndAdd precommitted). Left published, they would silently deduplicate -
+            /// and drop - a client retry of the same insert against a part that never existed, both
+            /// in this process and, because the ADD records are already durable, after a restart.
+            /// Unpublish them (dropPart writes compensating DROP records and erases the block IDs
+            /// from the in-memory map, all-or-nothing). Best effort: if the drop itself fails - e.g.
+            /// the same broken disk that failed the commit - the block IDs stay published, which is
+            /// no worse than before; do not let it mask the original error.
+            if (deduplication_log)
+            {
+                try
+                {
+                    deduplication_log->dropPart(part->info);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        storage.log,
+                        "Cannot roll back the deduplication log publication of a part that failed to commit; "
+                        "a retry of this insert may be wrongly deduplicated");
+                }
+            }
+            throw;
+        }
     }
 
     return {};
