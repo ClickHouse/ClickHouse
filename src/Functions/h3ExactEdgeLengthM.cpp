@@ -108,11 +108,11 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
     FunctionDocumentation::Examples examples = {
         {
             "Get exact edge length in meters",
-            "SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM",
+            "SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM",
             R"(
-┌──exactEdgeLengthM─┐
-│ 195449.6316340728 │
-└───────────────────┘
+┌─exactEdgeLengthM─┐
+│    195449.631634 │
+└──────────────────┘
             )"
         }
     };
