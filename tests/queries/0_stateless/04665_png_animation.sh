@@ -179,6 +179,15 @@ png_http "${DIMS}&output_format_image_time_multiplier_seconds=100000" "
 " > "${OUT}/reduced_scale.png"
 python3 "${PARSER}" "${OUT}/reduced_scale.png"
 
+# `fcTL` stores the actual frame delay, not the base unit, so a unit whose reduced denominator is over
+# the 16-bit limit is still fine when the observed gaps of `t` reduce it further (microsecond units with
+# coarser frame steps): a step of 2 units of 1/100000 s is exactly 1/50000 s.
+echo "--- time scale 1/100000, step of 2 reduces to 1/50000 ---"
+png_http "${DIMS}&output_format_image_time_divisor_seconds=100000" "
+    SELECT number * 2 AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
+" > "${OUT}/reduced_delay.png"
+python3 "${PARSER}" "${OUT}/reduced_delay.png"
+
 # Each frame is an independent image: a pixel painted in one frame is not carried into the next.
 echo "--- frames are independent ---"
 png_http "output_format_image_width=2&output_format_image_height=2" "
@@ -280,8 +289,8 @@ png_http "${DIMS}&output_format_image_time_divisor_seconds=0" "
     SELECT toUInt8(number) AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
 " | grep -oE "BAD_ARGUMENTS" | head -1
 
-# The reduced denominator of the time scale must fit into the 16-bit part of the frame delay,
-# and 1/100000 does not reduce.
+# The reduced denominator of each actual frame delay must fit into the 16-bit part of the frame delay,
+# and a step of 1 unit of 1/100000 s does not reduce.
 png_http "${DIMS}&output_format_image_time_divisor_seconds=100000" "
     SELECT toUInt8(number) AS t, toUInt8(number) AS v FROM numbers(2) FORMAT PNG
 " | grep -oE "BAD_ARGUMENTS" | head -1
