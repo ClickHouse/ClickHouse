@@ -102,8 +102,7 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
 {
     NullWriteBuffer null_buf;
     CompressedWriteBuffer compressed_buf(null_buf);
-    auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(
-        DBMS_TCP_PROTOCOL_VERSION, column, DBMS_TCP_PROTOCOL_VERSION >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION);
+    auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
     // To avoid spending too much time on serialization, we limit the number of rows to serialize.
     const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
     NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
