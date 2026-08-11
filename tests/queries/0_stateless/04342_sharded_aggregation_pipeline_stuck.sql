@@ -93,17 +93,18 @@ SELECT (
 );
 
 -- Cover the soft-cap paths in `BufferedShardByHashTransform::prepare`. The two queries
--- above keep every shard queue at 3 chunks or fewer, so `MAX_QUEUE_LENGTH` is never
--- reached and neither cap branch runs. A smaller `max_block_size` over a larger table
--- makes one sharding transform accumulate enough chunks to reach both.
+-- above keep every shard queue far below `MAX_QUEUE_LENGTH`, so the cap is never reached
+-- and neither cap case below is exercised. A smaller `max_block_size` over a larger
+-- table makes one sharding transform accumulate enough chunks for both cases to exceed
+-- the cap.
 --
 -- `max_block_size` is 1000 rather than a smaller value on purpose. Queue depth scales
 -- with the number of chunks, but it only has to clear `MAX_QUEUE_LENGTH`, whereas the
 -- per-chunk hashing and scattering cost scales with the chunk count too. Measured peak
--- depth here is 99 for (a) and 12-70 for (b) against a cap of 10, so both branches run
--- with a wide margin, while a tenfold smaller `max_block_size` only buys more depth at
--- roughly 2-3x the CPU. `max_threads = 16` is load-bearing and must not be lowered:
--- with fewer shards the consumer keeps up and peak depth never exceeds 1.
+-- depth here is 83 for (a) and 20-34 for (b) against a cap of 10, so both cases clear
+-- the cap with a wide margin, while a tenfold smaller `max_block_size` only buys more
+-- depth at roughly 2-3x the CPU. `max_threads = 16` is load-bearing and must not be
+-- lowered: with fewer shards the consumer keeps up and peak depth never exceeds 1.
 
 -- (a) Cap reached while a sibling port has an empty queue and downstream demand:
 --     the bypass keeps pulling input instead of back-pressuring, which is what the
@@ -113,8 +114,8 @@ SELECT (
 -- cases pin what the fan-out depends on: `index_granularity` and `min_bytes_for_wide_part`
 -- on the table, plus the four `merge_tree_*_for_concurrent_read` settings per query. The
 -- randomized values shrink either the read-stream count or the shard queue depth below the
--- cap. Over the randomized grid the pins keep both branches firing in every cell; dropping
--- them silently stops at least one branch in 11 of 18 cells, so the preconditions below
+-- cap. Over the randomized grid the pins keep both cases reaching the cap in every cell;
+-- dropping them silently loses cap coverage in 11 of 18 cells, so the preconditions below
 -- assert presence only and cannot replace the pins.
 DROP TABLE IF EXISTS test_106237_cap;
 CREATE TABLE test_106237_cap (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple()
