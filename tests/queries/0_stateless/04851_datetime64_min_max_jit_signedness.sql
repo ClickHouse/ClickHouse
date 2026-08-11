@@ -18,8 +18,9 @@ SELECT 'scale 9', min(dt9), max(dt9) FROM t_jit_dt64 GROUP BY k ORDER BY k;
 SELECT 'nullable', min(ndt), max(ndt) FROM (SELECT k, toNullable(dt3) AS ndt FROM t_jit_dt64) GROUP BY k ORDER BY k;
 SELECT 'minIf', minIf(dt3, k = 1), maxIf(dt3, k = 1) FROM t_jit_dt64 GROUP BY k ORDER BY k;
 
--- The state-merge path emits its own comparison, so cover it too: many groups over two-level
--- hash tables force cross-thread merging of partial states.
+-- Many groups over two-level hash tables, spanning the epoch. Whether a given run also merges
+-- partial states across threads depends on how the reader splits the part, so this asserts the
+-- result, not the path.
 DROP TABLE IF EXISTS t_jit_dt64_merge;
 CREATE TABLE t_jit_dt64_merge (k Int64, dt DateTime64(3)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_jit_dt64_merge
