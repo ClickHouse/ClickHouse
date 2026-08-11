@@ -393,18 +393,23 @@ def test_failed_file_ttl_ordered_mode_no_cleanup(started_cluster):
 
     create_mv(node, table_name, dst_table_name)
 
-    # Wait for file to fail
-    time.sleep(3)
-
     def get_failed_count():
         return int(node.query(
             f"SELECT count() FROM system.s3queue_metadata_cache "
             f"WHERE zookeeper_path = '{keeper_path}' AND status = 'Failed'"
         ).strip())
 
-    # File should be marked as failed
+    # Wait for file to fail (up to 60 seconds)
+    for _ in range(60):
+        if get_failed_count() > 0:
+            break
+        time.sleep(1)
+
+    # Assert file is marked as failed
     failed_count = get_failed_count()
-    if failed_count > 0:
+    assert failed_count > 0, "Invalid file should be marked as Failed"
+
+    if True:  # Always run the TTL check now that we confirmed failure
         # Wait past the TTL period
         time.sleep(5)
 
@@ -412,8 +417,6 @@ def test_failed_file_ttl_ordered_mode_no_cleanup(started_cluster):
         failed_count_after = get_failed_count()
         assert failed_count_after == failed_count, \
             "Failed files should NOT be cleaned up in ordered mode (cleanup_failed_files is disabled)"
-    else:
-        logging.info("No failed files detected - ordered mode may handle failures differently")
 
     # Cleanup
     node.query(f"DROP TABLE {table_name}")
