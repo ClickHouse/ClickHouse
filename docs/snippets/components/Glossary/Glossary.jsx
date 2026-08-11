@@ -48,11 +48,27 @@ export const Glossary = ({ children, metadata = {} }) => {
   }, []);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleEntries = entries.filter(entry => {
-    if (!normalizedQuery) return true;
-    const searchableText = `${entry.term} ${(entry.aliases || []).join(' ')} ${nodeText(entry.content)}`.toLocaleLowerCase();
-    return searchableText.includes(normalizedQuery);
-  });
+  const visibleEntries = normalizedQuery
+    ? entries
+        .map((entry, index) => {
+          const term = entry.term.toLocaleLowerCase();
+          const aliases = (entry.aliases || []).map(alias => alias.toLocaleLowerCase());
+          const description = nodeText(entry.content).toLocaleLowerCase();
+          let rank;
+
+          if (term === normalizedQuery) rank = 0;
+          else if (term.includes(normalizedQuery)) rank = 1;
+          else if (aliases.some(alias => alias === normalizedQuery)) rank = 2;
+          else if (aliases.some(alias => alias.includes(normalizedQuery))) rank = 3;
+          else if (description.includes(normalizedQuery)) rank = 4;
+          else return null;
+
+          return { entry, index, rank };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.rank - b.rank || a.index - b.index)
+        .map(result => result.entry)
+    : entries;
 
   return (
     <div className="not-prose glossary-browser">
