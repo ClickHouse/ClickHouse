@@ -26,6 +26,7 @@
 
 #include <QueryPipeline/SizeLimits.h>
 
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -413,6 +414,118 @@ ParallelReplicasEngagement mayEngageParallelReplicasForWrappedStorage(const Stor
 /// self-referential branch would be rejected because of a sibling branch that reads a
 /// `MergeTree` table. Nodes that share `scope_context` are the ones whose settings
 /// really are the ones being examined, so only those are walked.
+/// Mirror of `should_disable_parallel_replicas` in `buildJoinTreeQueryPlan`
+/// (`PlannerJoinTree.cpp`): for several join-tree shapes the planner *silently* sets
+/// `enable_parallel_replicas = 0` before planning the reads — even under the forcing
+/// mode — instead of throwing:
+///   - an n-way join where a `LEFT`/`INNER`/`RIGHT` join precedes the last `RIGHT`
+///     join (the left side of that `RIGHT` join cannot be parallelized),
+///   - an n-way join involving a `FULL`, `GLOBAL` or `CROSS` join,
+///   - a `RIGHT` join whose right side is a remote table (it gets wrapped into a
+///     subquery, and parallel replicas would incorrectly pick the left table).
+/// A query whose join tree matches one of these shapes never engages parallel
+/// replicas in the planner, so the forced-mode rejection must not fire for it
+/// either: the plain planner runs the equivalent non-recursive query without them,
+/// and the recursive step has to run plainly too — the disable it falls through to
+/// is exactly the planner's own silent disable. The remote check matches the
+/// planner's, which reads `TableExpressionData::isRemote` — set from
+/// `IStorage::isRemote` for table and table-function expressions and left `false`
+/// for any other right side (e.g. a subquery).
+bool plannerDisablesParallelReplicasForJoinTreeShape(const QueryTreeNodePtr & join_tree_node)
+{
+    /// Post-order like `buildTableExpressionsStack`, but tolerant of unresolved
+    /// trees: the engagement walk also inspects view inner queries built by
+    /// `QueryTreeBuilder` without analysis, whose table expressions are still
+    /// `IDENTIFIER` nodes (`buildTableExpressionsStack` would throw on them) —
+    /// any node that is not a join is a plain leaf table expression here.
+    QueryTreeNodes table_expressions_stack;
+    std::function<void(const QueryTreeNodePtr &)> collect_table_expressions = [&](const QueryTreeNodePtr & node)
+    {
+        switch (node->getNodeType())
+        {
+            case QueryTreeNodeType::ARRAY_JOIN:
+                collect_table_expressions(node->as<ArrayJoinNode &>().getTableExpressionNode());
+                break;
+            case QueryTreeNodeType::CROSS_JOIN:
+                for (const auto & expr : node->as<CrossJoinNode &>().getTableExpressions())
+                    collect_table_expressions(expr);
+                break;
+            case QueryTreeNodeType::JOIN:
+            {
+                auto & join = node->as<JoinNode &>();
+                collect_table_expressions(join.getLeftTableExpressionNode());
+                collect_table_expressions(join.getRightTableExpressionNode());
+                break;
+            }
+            default:
+                break;
+        }
+        table_expressions_stack.push_back(node);
+    };
+    collect_table_expressions(join_tree_node);
+
+    size_t joins_count = 0;
+    bool is_full_join = false;
+    bool is_global_join = false;
+    bool is_cross_join = false;
+    bool is_right_join_with_remote_table = false;
+    int first_join_pos = -1;
+    int last_right_join_pos = -1;
+
+    for (size_t i = 0; i < table_expressions_stack.size(); ++i)
+    {
+        const auto & table_expression = table_expressions_stack[i];
+        const auto node_type = table_expression->getNodeType();
+
+        if (node_type == QueryTreeNodeType::CROSS_JOIN)
+        {
+            joins_count += table_expression->as<const CrossJoinNode &>().getTableExpressions().size() - 1;
+            is_cross_join = true;
+            continue;
+        }
+
+        if (node_type != QueryTreeNodeType::JOIN)
+            continue;
+
+        ++joins_count;
+        const auto & join_node = table_expression->as<const JoinNode &>();
+        const auto join_kind = join_node.getKind();
+
+        if (join_kind == JoinKind::Full)
+            is_full_join = true;
+
+        if (join_node.getLocality() == JoinLocality::Global)
+            is_global_join = true;
+
+        if (first_join_pos < 0 && (join_kind == JoinKind::Left || join_kind == JoinKind::Inner || join_kind == JoinKind::Right))
+            first_join_pos = static_cast<int>(i);
+
+        if (join_kind == JoinKind::Right)
+        {
+            last_right_join_pos = static_cast<int>(i);
+
+            const auto & right_table_expression = join_node.getRightTableExpressionNode();
+            StoragePtr right_storage;
+            if (const auto * right_table_node = right_table_expression->as<TableNode>())
+                right_storage = right_table_node->getStorage();
+            else if (const auto * right_table_function_node = right_table_expression->as<TableFunctionNode>())
+                right_storage = right_table_function_node->getStorage();
+            is_right_join_with_remote_table = right_storage && right_storage->isRemote();
+        }
+    }
+
+    /// n-way join like LEFT/INNER/RIGHT ... RIGHT ...
+    if (first_join_pos >= 0 && last_right_join_pos >= 0 && first_join_pos < last_right_join_pos)
+        return true;
+
+    /// n-way join with FULL JOIN or GLOBAL JOIN or CROSS JOIN
+    if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
+        return true;
+
+    /// RIGHT JOIN with a remote table on the right side
+    return is_right_join_with_remote_table;
+}
+
 ParallelReplicasEngagement mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_context)
 {
     ParallelReplicasEngagement engagement;
@@ -435,6 +548,25 @@ ParallelReplicasEngagement mayEngageParallelReplicas(IQueryTreeNode * root, cons
 
             if (node_context && node_context != scope_context.get())
                 continue;
+        }
+
+        /// A `QueryNode` whose own join tree matches a shape the planner silently
+        /// disables parallel replicas for (see
+        /// `plannerDisablesParallelReplicasForJoinTreeShape`) contributes no
+        /// engagement from that join tree: none of the reads planned for it can
+        /// engage them, whatever tables it contains. Its other children (the
+        /// projection, `WHERE`, ...) are still walked — subqueries there are
+        /// planned separately and are not covered by the join-tree disable.
+        if (const auto * query_node = subtree_node->as<QueryNode>())
+        {
+            const auto & join_tree = query_node->getJoinTreeNode();
+            if (join_tree && plannerDisablesParallelReplicasForJoinTreeShape(join_tree))
+            {
+                for (auto & child : subtree_node->getChildren())
+                    if (child && child != join_tree)
+                        nodes_to_process.push_back(child.get());
+                continue;
+            }
         }
 
         if (const auto * table_node = subtree_node->as<TableNode>())
@@ -1088,7 +1220,13 @@ public:
             /// because the profile enables the forcing mode would be a backwards-incompatible
             /// change unrelated to the stale `GLOBAL JOIN` cache hazard guarded here. The
             /// property is per context rather than per query, so that a branch-local
-            /// `SETTINGS` clause is not rejected because of a sibling branch.
+            /// `SETTINGS` clause is not rejected because of a sibling branch. The
+            /// engagement walk also mirrors the planner's *silent* join-shape disable
+            /// (`should_disable_parallel_replicas` in `PlannerJoinTree.cpp`, e.g. a
+            /// `RIGHT` join with a remote right side): a join tree the planner would
+            /// disable parallel replicas for anyway — even under the forcing mode —
+            /// contributes no engagement, so such a step runs plainly instead of being
+            /// rejected (see `plannerDisablesParallelReplicasForJoinTreeShape`).
             auto may_engage_it = context_may_engage_parallel_replicas.find(ctx.get());
             const ParallelReplicasEngagement engagement = may_engage_it != context_may_engage_parallel_replicas.end()
                 ? may_engage_it->second

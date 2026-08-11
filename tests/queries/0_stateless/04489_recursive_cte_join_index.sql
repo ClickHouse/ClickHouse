@@ -1230,6 +1230,54 @@ DROP TABLE edges_merge_view_mixed;
 DROP VIEW edges_view_mixed_dist;
 DROP VIEW edges_view_mixed_local;
 
+-- The planner *silently* disables parallel replicas — even under the forcing mode —
+-- for several join-tree shapes (`should_disable_parallel_replicas` in
+-- `PlannerJoinTree.cpp`), so the equivalent non-recursive query runs plainly under
+-- mode 2 and the recursive step must run plainly too instead of failing closed.
+-- Shape 1: a `RIGHT JOIN` with a remote table on the right side. Unmatched rows
+-- from the preserved right side get default values (`n = 0`, no `join_use_nulls`),
+-- so the `n > 0` guard keeps the walk identical to the `INNER` variant.
+WITH RECURSIVE right_join_remote_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM right_join_remote_pr AS t RIGHT JOIN edges_dist_replicas AS e ON e.from_id = t.n
+    WHERE n > 0 AND n < 10
+)
+SELECT sum(n) FROM right_join_remote_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+-- Shape 2: an n-way join where a `LEFT`/`INNER`/`RIGHT` join precedes the last
+-- `RIGHT` join — here over purely local `MergeTree` tables, which are otherwise
+-- eligible and would fail closed (as the converse below shows).
+WITH RECURSIVE inner_then_right_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM inner_then_right_pr AS t
+        INNER JOIN edges AS e ON e.from_id = t.n
+        RIGHT JOIN edges AS e2 ON e2.from_id = e.from_id
+    WHERE n > 0 AND n < 10
+)
+SELECT sum(n) FROM inner_then_right_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+-- Converse: a single `RIGHT JOIN` with a *local* right side matches none of the
+-- disabled shapes — the planner would engage parallel replicas for it — so the
+-- forcing mode must still fail closed.
+WITH RECURSIVE right_join_local_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM right_join_local_pr_throw AS t RIGHT JOIN edges AS e ON e.from_id = t.n
+    WHERE n > 0 AND n < 10
+)
+SELECT sum(n) FROM right_join_local_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE edges_dist_replicas;
 
 DROP TABLE edges;
