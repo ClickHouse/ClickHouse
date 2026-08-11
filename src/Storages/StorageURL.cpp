@@ -433,8 +433,12 @@ StorageURLSource::StorageURLSource(
         std::optional<size_t> num_rows_from_cache = std::nullopt;
         /// Cached row counts are keyed only by URI/format/settings and are valid only for unfiltered
         /// scans. A filtered read must not reuse a cached unfiltered count (mirrors the write-side guard).
+        /// Also skip the cache when `_headers` is requested: the cached path never performs the HTTP
+        /// request (`getFirstAvailableURIAndReadBuffer` delays initialization for a single URL), so
+        /// `getResponseHeaders` would return an empty map instead of the actual response headers.
         if (need_only_count && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()))
+            && (!format_filter_info || !format_filter_info->hasFilter())
+            && !need_headers_virtual_column)
             num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), current_file_last_modified);
 
         if (num_rows_from_cache)
