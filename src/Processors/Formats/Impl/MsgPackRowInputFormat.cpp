@@ -226,12 +226,20 @@ static void insertString(IColumn & column, DataTypePtr type, const char * value,
     {
         ReadBufferFromMemory buf(value, size);
         UUID uuid;
+        if (bin && isUUID2(type))
+        {
+            /// UUID2's binary interchange representation is the canonical big-endian bytes, as in RowBinary
+            /// and Native - reading them big-endian yields the stored value directly.
+            readBinaryBigEndian(uuid, buf);
+            assert_cast<ColumnUUID &>(column).insertValue(uuid);
+            return;
+        }
         if (bin)
             readBinary(uuid, buf);
         else
             readUUIDText(uuid, buf);
 
-        /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+        /// The text form is the logical UUID value; UUID2 stores the two 64-bit halves swapped relative to it.
         if (isUUID2(type))
             uuid = UUIDHelpers::swapHalves(uuid);
         assert_cast<ColumnUUID &>(column).insertValue(uuid);

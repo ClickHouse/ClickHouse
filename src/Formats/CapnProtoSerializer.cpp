@@ -6,6 +6,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/CapnProtoSchema.h>
 #include <Core/UUID.h>
+#include <Common/transformEndianness.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -724,9 +725,11 @@ namespace
         DataTypePtr data_type;
     };
 
-    /// Serializes a ColumnUUID holding a UUID2 value as raw 16 bytes, exactly like the raw serializer for UUID,
-    /// but converting to/from the logical UUID layout via UUIDHelpers::swapHalves at the column boundary, so that
-    /// the same textual value produces the same CapnProto bytes for UUID and UUID2.
+    /// Serializes a ColumnUUID holding a UUID2 value as the canonical big-endian 16 bytes - UUID2's binary
+    /// interchange representation, the same bytes RowBinary and Native write - so external CapnProto
+    /// producers and consumers exchanging standard UUID payloads are compatible. The stored value is a
+    /// big-endian integer of those bytes, so the conversion is a whole-value endianness transform (unlike
+    /// UUID, whose serializer copies its raw storage layout).
     class CapnProtoUUID2Serializer : public ICapnProtoSerializer
     {
     public:
@@ -738,13 +741,15 @@ namespace
 
         void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicStruct::Builder & parent_struct_builder, UInt32 slot_offset, size_t row_num) override
         {
-            value = UUIDHelpers::swapHalves(assert_cast<const ColumnVector<UUID> &>(*column).getElement(row_num));
+            value = assert_cast<const ColumnVector<UUID> &>(*column).getElement(row_num);
+            transformEndianness<std::endian::big>(value);
             parent_struct_builder.getBuilderImpl().getPointerField(slot_offset).setBlob<capnp::Data>(getData());
         }
 
         void writeRow(const ColumnPtr & column, std::unique_ptr<FieldBuilder> &, capnp::DynamicList::Builder & parent_struct_builder, UInt32 array_index, size_t row_num) override
         {
-            value = UUIDHelpers::swapHalves(assert_cast<const ColumnVector<UUID> &>(*column).getElement(row_num));
+            value = assert_cast<const ColumnVector<UUID> &>(*column).getElement(row_num);
+            transformEndianness<std::endian::big>(value);
             parent_struct_builder.getBuilderImpl().getPointerElement(array_index).setBlob<capnp::Data>(getData());
         }
 
@@ -769,13 +774,14 @@ namespace
             if (data.size() != sizeof(UUID))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of {} value: {}", data_type->getName(), data.size());
 
-            UUID logical;
-            memcpy(&logical, data.begin(), sizeof(UUID));
-            assert_cast<ColumnVector<UUID> &>(column).insertValue(UUIDHelpers::swapHalves(logical));
+            UUID stored;
+            memcpy(&stored, data.begin(), sizeof(UUID));
+            transformEndianness<std::endian::native, std::endian::big>(stored);
+            assert_cast<ColumnVector<UUID> &>(column).insertValue(stored);
         }
 
         DataTypePtr data_type;
-        /// Holds the swapped value between computing it and setBlob copying it into the message.
+        /// Holds the canonical-byte-order value between computing it and setBlob copying it into the message.
         UUID value{};
     };
 

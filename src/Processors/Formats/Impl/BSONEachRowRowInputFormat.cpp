@@ -359,10 +359,13 @@ static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_t
             sizeof(UUID));
 
     UUID value;
-    readBinaryLittleEndian(value, in);
-    /// UUID2 stores the two 64-bit halves swapped relative to the logical UUID value.
+    /// UUID2's binary interchange representation is the canonical big-endian bytes, as in RowBinary and
+    /// Native - reading them big-endian yields the stored value directly. UUID keeps its historical raw
+    /// storage layout.
     if (is_uuid2)
-        value = UUIDHelpers::swapHalves(value);
+        readBinaryBigEndian(value, in);
+    else
+        readBinaryLittleEndian(value, in);
     assert_cast<ColumnUUID &>(column).insertValue(value);
 }
 

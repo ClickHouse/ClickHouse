@@ -261,7 +261,13 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
                 case FormatSettings::MsgPackUUIDRepresentation::BIN:
                 {
                     WriteBufferFromOwnString buf;
-                    writeBinary(value, buf);
+                    /// UUID2's binary interchange representation is the canonical big-endian bytes, as in
+                    /// RowBinary and Native - that is the stored value written big-endian, not the raw UUID
+                    /// storage layout that writeBinary dumps for UUID.
+                    if (data_type->getTypeId() == TypeIndex::UUID2)
+                        writeBinaryBigEndian(uuid_column.getElement(row_num), buf);
+                    else
+                        writeBinary(value, buf);
                     std::string_view uuid_bin = buf.stringView();
                     packer.pack_bin(static_cast<unsigned>(uuid_bin.size()));
                     packer.pack_bin_body(uuid_bin.data(), static_cast<unsigned>(uuid_bin.size()));
