@@ -340,8 +340,12 @@ public:
     /// StorageMergeTree::movePartitionToTable to avoid lock ordering issues between two tables.
     OperationDataPartsLock lockOperationsWithParts() const { return OperationDataPartsLock(operation_with_data_parts_mutex); }
 
-    MergeTreeDataPartFormat
-    choosePartFormat(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const;
+    MergeTreeDataPartFormat choosePartFormat(
+        size_t bytes_uncompressed,
+        size_t rows_count,
+        UInt32 part_level,
+        ProjectionDescriptionRawPtr projection,
+        const String & partition_id = {}) const;
 
     MergeTreeDataPartFormat choosePartFormatOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
@@ -765,8 +769,6 @@ public:
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
-    /// The caller must hold either the exclusive or shared data-parts lock.
-    bool hasAtLeastActivePartsInPartition(const String & partition_id, UInt64 min_count, const DataPartsAnyLock & acquired_lock) const;
 
     /// Returns the number of data mutations suitable for applying on the fly.
     virtual MutationCounters getMutationCounters() const = 0;

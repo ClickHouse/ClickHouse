@@ -294,6 +294,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_delay_to_insert;
     extern const MergeTreeSettingsUInt64 max_delay_to_mutate_ms;
     extern const MergeTreeSettingsUInt64 max_file_name_length;
+    extern const MergeTreeSettingsUInt64 max_number_of_parts_in_partition_for_full_part_storage_on_insert;
     extern const MergeTreeSettingsUInt64 max_parts_in_total;
     extern const MergeTreeSettingsUInt64 max_projections;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
@@ -5808,7 +5809,11 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
 }
 
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
-    size_t bytes_uncompressed, size_t rows_count, UInt32 part_level, ProjectionDescriptionRawPtr projection) const
+    size_t bytes_uncompressed,
+    size_t rows_count,
+    UInt32 part_level,
+    ProjectionDescriptionRawPtr projection,
+    const String & partition_id) const
 {
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
@@ -5855,6 +5860,32 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
                 storage_type = PartStorageType::Full;
                 break;
             }
+        }
+    }
+
+    if (storage_type == PartStorageType::Full && !partition_id.empty())
+    {
+        const UInt64 max_parts_for_full_storage
+            = (*settings)[MergeTreeSetting::max_number_of_parts_in_partition_for_full_part_storage_on_insert];
+        if (max_parts_for_full_storage)
+        {
+            auto parts_lock = readLockParts();
+            DataPartStateAndPartitionID active_parts{DataPartState::Active, partition_id};
+            auto it = data_parts_by_state_and_info.lower_bound(active_parts);
+            const auto end = data_parts_by_state_and_info.upper_bound(active_parts);
+
+            /// Only committed `Active` parts are counted. Parts from this or concurrent inserts that have not become
+            /// `Active` yet are deliberately excluded: this heuristic describes the partition state visible at format selection time.
+            /// Stop at the threshold to keep the scan bounded regardless of the total number of parts in the partition.
+            UInt64 parts_count = 0;
+            while (it != end && parts_count < max_parts_for_full_storage)
+            {
+                ++it;
+                ++parts_count;
+            }
+
+            if (parts_count >= max_parts_for_full_storage)
+                storage_type = PartStorageType::Packed;
         }
     }
 
@@ -7339,24 +7370,6 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForIn
         res.insert(res.end(), data_parts_by_state_and_info.lower_bound(state_with_partition), data_parts_by_state_and_info.upper_bound(state_with_partition));
     }
     return res;
-}
-
-bool MergeTreeData::hasAtLeastActivePartsInPartition(
-    const String & partition_id, UInt64 min_count, const DataPartsAnyLock & /* acquired_lock */) const
-{
-    DataPartStateAndPartitionID active_parts{DataPartState::Active, partition_id};
-    auto it = data_parts_by_state_and_info.lower_bound(active_parts);
-    const auto end = data_parts_by_state_and_info.upper_bound(active_parts);
-
-    /// Stop at the threshold to keep the scan bounded by O(min_count), regardless of the total number of parts in the partition.
-    UInt64 parts_count = 0;
-    while (it != end && parts_count < min_count)
-    {
-        ++it;
-        ++parts_count;
-    }
-
-    return parts_count >= min_count;
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitionForInternalUsage(

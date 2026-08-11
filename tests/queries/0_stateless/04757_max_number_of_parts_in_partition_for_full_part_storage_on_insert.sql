@@ -1,5 +1,3 @@
-SET optimize_on_insert = 0;
-
 CREATE TABLE t_level_0 (p UInt8, id UInt64)
 ENGINE = MergeTree
 PARTITION BY p
@@ -82,8 +80,32 @@ FROM system.parts
 WHERE database = currentDatabase() AND table = 't_mv_target' AND active
 ORDER BY partition, min_block_number;
 
+CREATE TABLE t_non_polymorphic (p UInt8, id UInt64)
+ENGINE = MergeTree
+PARTITION BY p
+ORDER BY id
+SETTINGS
+    index_granularity_bytes = 0,
+    min_bytes_for_wide_part = 0,
+    min_rows_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0,
+    min_rows_for_full_part_storage = 0,
+    min_level_for_full_part_storage = 0,
+    max_number_of_parts_in_partition_for_full_part_storage_on_insert = 1;
+
+SYSTEM STOP MERGES t_non_polymorphic;
+
+INSERT INTO t_non_polymorphic VALUES (0, 0);
+INSERT INTO t_non_polymorphic VALUES (0, 1);
+
+SELECT partition, level, part_storage_type
+FROM system.parts
+WHERE database = currentDatabase() AND table = 't_non_polymorphic' AND active
+ORDER BY partition, min_block_number;
+
 DROP VIEW t_mv;
 DROP TABLE t_mv_source;
 DROP TABLE t_mv_target;
 DROP TABLE t_level_0;
 DROP TABLE t_level_1;
+DROP TABLE t_non_polymorphic;

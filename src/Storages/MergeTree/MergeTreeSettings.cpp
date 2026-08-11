@@ -239,7 +239,7 @@ bytes) with some gap to avoid filesystem errors.
     DECLARE(UInt64, max_number_of_parts_in_partition_for_full_part_storage_on_insert, 0, R"(
 A newly inserted part uses `Packed` storage when its partition already contains this many active parts or more.
 `0` disables this limit. The setting applies to parts created by every insert source and at any level,
-including level 1 parts produced by `optimize_on_insert`, and to patch parts created by lightweight updates.
+including level 1 parts produced by `optimize_on_insert`.
 Projection parts use the same storage type as their parent part.
     )", 0) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
