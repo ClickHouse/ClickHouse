@@ -268,6 +268,28 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
     return False
 
 
+def attach_post_verdict_artifacts(
+    test_result: Result, artifacts: list, preserve_verdict: bool
+) -> None:
+    """Attach artifact-collection rows without letting them decide the status.
+
+    `extend_sub_results` re-derives the parent status from its children, so rows
+    appended once the run is over overwrite whatever the parent said. With
+    `preserve_verdict` the parent's own status wins instead, while the rows stay
+    visible in the report: on a bugfix-validation job that status is the
+    validation verdict, which `new_tests_check.py` reads with strict
+    `is_success` to decide whether any arch validated the bug.
+
+    The captured status is restored rather than forced to `OK`, so every verdict
+    the inverter can set survives: reproduction `OK`, no-repro `SKIPPED`,
+    inconclusive `ERROR`.
+    """
+    verdict = test_result.status
+    test_result.extend_sub_results(artifacts)
+    if preserve_verdict:
+        test_result.set_status(verdict)
+
+
 def reconcile_bugfix_crash_repro(result: Result, fatals: list) -> bool:
     """Fold a build type's fatal-log rows into its per-test result for bugfix
     validation, treating a master-HEAD server crash as a reproduction.
@@ -1346,7 +1368,11 @@ def main():
             )
         )
         if test_result and CH.extra_tests_results:
-            test_result.extend_sub_results(CH.extra_tests_results)
+            attach_post_verdict_artifacts(
+                test_result,
+                CH.extra_tests_results,
+                preserve_verdict=is_labeled_bugfix_validation,
+            )
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
