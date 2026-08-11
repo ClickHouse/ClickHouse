@@ -56,28 +56,29 @@ namespace
 
         /// Restore the legacy invariant that the first argument must not have an explicit
         /// timezone. The DSL has no way to express "DateTime/DateTime64 without explicit tz",
-        /// so enforce it here before delegating to the DSL. Route the types-only path through
-        /// the same guard, so the base `IFunction::getReturnTypeImpl(DataTypes)` cannot bypass it.
+        /// so enforce it here before delegating to the DSL, on both resolution entry points.
+        /// Each entry point then delegates to its own base overload: the types-only path must
+        /// not be routed through the column-aware one, because the latter applies the signature
+        /// with the constness check enabled and would wrongly reject the `const String` position.
+        void checkFirstArgumentHasNoExplicitTimeZone(const IDataType * first_argument_type) const
+        {
+            if (const auto * mixin = dynamic_cast<const TimezoneMixin *>(first_argument_type))
+            {
+                if (mixin->hasExplicitTimeZone())
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Function {}'s 1st argument should not have explicit time zone.", function_name);
+            }
+        }
+
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
-            ColumnsWithTypeAndName columns;
-            columns.reserve(arguments.size());
-            for (const auto & type : arguments)
-                columns.emplace_back(nullptr, type, String{});
-            return getReturnTypeImpl(columns);
+            checkFirstArgumentHasNoExplicitTimeZone(arguments.empty() ? nullptr : arguments[0].get());
+            return IFunction::getReturnTypeImpl(arguments);
         }
 
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
-            if (!arguments.empty())
-            {
-                if (const auto * mixin = dynamic_cast<const TimezoneMixin *>(arguments[0].type.get()))
-                {
-                    if (mixin->hasExplicitTimeZone())
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Function {}'s 1st argument should not have explicit time zone.", function_name);
-                }
-            }
+            checkFirstArgumentHasNoExplicitTimeZone(arguments.empty() ? nullptr : arguments[0].type.get());
             return IFunction::getReturnTypeImpl(arguments);
         }
 
