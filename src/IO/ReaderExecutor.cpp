@@ -357,7 +357,7 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
     {
         ChainedBuffers piece = readObjectSlice(
             object_range.object, object_range.object_offset, object_range.size, file_pos);
-        const size_t got = piece.empty() ? 0 : piece.range().size;
+        const size_t got = piece.range().size;
         chain.append(std::move(piece));
         file_pos += got;
         /// A short read leaves a hole; stop and let the caller advance and re-call.
@@ -371,7 +371,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
 {
     chassert(!cache_chain.empty());
     /// Resolve the whole window across tiers (front = fastest) and act on the run covering the head:
-    /// a hit serves one block from cache, an all-miss fetches the covering cell(s) and populates.
+    /// a hit serves one block from cache, an all-miss fetches the covering range(s) and populates.
     /// Coarse fetch, fine serve.
     const auto start_piece = offset_map.map(ByteRange{window_offset, 1});
     chassert(!start_piece.empty());
@@ -382,7 +382,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - window_offset}); };
 
     /// A populating miss carries its own open writer; a bypass tier's miss is writer-less.
-    struct MissTier { CacheWriterPtr writer; ByteRange cell; };
+    struct MissTier { CacheWriterPtr writer; ByteRange range; };
     VectorWithMemoryTracking<MissTier> miss_tiers;
     for (auto & cache : cache_chain)
     {
@@ -402,33 +402,33 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         }
     }
 
-    /// Every tier missed. Claim the start cell of each writing tier BEFORE the fetch. The claim is held
+    /// Every tier missed. Claim the start range of each writing tier BEFORE the fetch. The claim is held
     /// only for its downloader role: it keeps the role open across the fetch+write, so concurrent
     /// executors dedup to one download, and completes+releases it on destruction. Its `available` /
     /// `to_fetch` split is unused here.
-    struct Claimed { CacheWriterPtr writer; ByteRange cell; CacheWriter::FillClaim claim; };
+    struct Claimed { CacheWriterPtr writer; ByteRange range; CacheWriter::FillClaim claim; };
     VectorWithMemoryTracking<Claimed> claimed;
     for (auto & m : miss_tiers)
     {
         if (!m.writer)
             continue;  /// a bypass tier populates nothing
-        auto claim = m.writer->claim(m.cell);
-        claimed.push_back(Claimed{std::move(m.writer), m.cell, std::move(claim)});
+        auto claim = m.writer->claim(m.range);
+        claimed.push_back(Claimed{std::move(m.writer), m.range, std::move(claim)});
     }
 
-    /// A cell another thread is already downloading is fetched through below (its `write` lands 0).
+    /// A range another thread is already downloading is fetched through below (its `write` lands 0).
 
-    /// No writing tier (all bypass): read from source and serve only up to the miss cell, so the next
-    /// window re-probes at the cell boundary (a bypass tier still gets every cell checked).
+    /// No writing tier (all bypass): read from source and serve only up to the miss range, so the next
+    /// window re-probes at the range boundary (a bypass tier still gets every range checked).
     if (claimed.empty())
     {
         size_t miss_end = window_offset + max_serve;
         for (const auto & m : miss_tiers)
-            miss_end = std::min(miss_end, m.cell.end());
+            miss_end = std::min(miss_end, m.range.end());
         return readSource(window_offset, serve_len(miss_end));
     }
 
-    /// Fetch the whole start cells (across the objects they span), populate each, serve one block.
+    /// Fetch the whole start ranges (across the objects they span), populate each, serve one block.
     /// Coarse by design: with stacked filesystem caches a slower tier may already hold part of this
     /// range, which is re-fetched from source here rather than promoted up. The thin executor does not
     /// subtract slower-tier hits. The following development can improve this.
@@ -436,8 +436,8 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     size_t fetch_hi = window_offset;
     for (const auto & c : claimed)
     {
-        fetch_lo = std::min(fetch_lo, c.cell.offset);
-        fetch_hi = std::max(fetch_hi, c.cell.end());
+        fetch_lo = std::min(fetch_lo, c.range.offset);
+        fetch_hi = std::max(fetch_hi, c.range.end());
     }
     fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
 
@@ -446,8 +446,8 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
 
     for (const auto & c : claimed)
     {
-        const size_t lo = std::max(c.cell.offset, fetch_lo);
-        const size_t hi = std::min(c.cell.end(), fetched_end);
+        const size_t lo = std::max(c.range.offset, fetch_lo);
+        const size_t hi = std::min(c.range.end(), fetched_end);
         if (lo >= hi)
             continue;
         /// From the whole file-level fetch, so a block straddling objects is covered.

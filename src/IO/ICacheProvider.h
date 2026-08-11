@@ -37,7 +37,7 @@ public:
     virtual ByteRange range() const = 0;
 
     /// Read `subrange` (inside `range()`) as a `ChainedBuffers` of file-level nodes. Record `subrange`
-    /// so the view can bump its LRU recency later. A reader serves only the committed prefix; the
+    /// so the view can bump its cache priority later. A reader serves only the committed prefix; the
     /// writer tracks any later growth (`CacheWriter::committed`).
     virtual ChainedBuffers read(ByteRange subrange) = 0;
 };

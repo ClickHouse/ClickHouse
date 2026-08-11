@@ -187,7 +187,7 @@ private:
     /// known-size short read is truncation and throws.
     ChainedBuffers readSource(size_t file_offset, size_t want);
     /// Serve the window through the cache chain: serve the cached prefix, then claim and fetch the
-    /// miss segments and populate them. A segment another thread is already downloading is fetched
+    /// miss ranges and populate them. A range another thread is already downloading is fetched
     /// through from source. Precondition: `!cache_chain.empty()`.
     ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve);
     void dropLongConnection();

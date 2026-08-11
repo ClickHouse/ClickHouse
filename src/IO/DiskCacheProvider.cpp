@@ -200,7 +200,7 @@ ChainedBuffers DiskCacheReader::read(ByteRange subrange)
         subrange = ByteRange{lo, hi - lo};
     }
 
-    /// Record what we serve so the destructor can bump its LRU priority. Record before the pread, so a
+    /// Record what we serve so the destructor can bump its cache priority. Record before the pread, so a
     /// throwing read still leaves a coherent record.
     hits_to_touch.push_back(subrange);
 
@@ -243,14 +243,11 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
     const size_t miss_obj_off = aligned_range.offset - object_file_offset;
     const size_t miss_obj_end = miss_obj_off + aligned_range.size;
 
-    /// Append append-only at our one segment's live `cwo`, never completing it here (kept
-    /// appendable across windows; the claim's release / the destructor finalize it). NEVER throws
-    /// on the soft skips (detached / unclaimed / no-op).
+    /// Append append-only at our one segment's live current write offset (`cwo`), never completing it
+    /// here (kept appendable across windows; the claim's release / the destructor finalize it). NEVER
+    /// throws on the soft skips (unclaimed / no-op).
     FileSegment & seg = *segment;
     const auto & seg_range = seg.range();
-
-    if (seg.isDetached())
-        return 0;
 
     /// Only a segment this thread claimed accepts bytes; a role another thread freed is picked up by
     /// the NEXT claim, not here.
@@ -360,7 +357,7 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 
     const size_t lo = std::max(window.offset, seg_file_lo);
     const size_t hi = std::min(window.end(), seg_file_hi);
-    if (lo >= hi || seg.isDetached())
+    if (lo >= hi)
         return c;
 
     if (seg.state() == FileSegmentState::DOWNLOADED)
@@ -373,9 +370,10 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
     if (!already_mine)
         seg.getOrSetDownloader();
 
-    /// Read `cwo` after the role decision. If we hold the role, only we advance it, so the
-    /// committed-prefix / tail split is exact; if another downloader holds it, `cwo` is a lower
-    /// bound, so we under-report `available`, never over. `cwo` is object-local; shift to file space.
+    /// Read the current write offset (`cwo`) after the role decision. If we hold the role, only we
+    /// advance it, so the committed-prefix / tail split is exact; if another downloader holds it,
+    /// `cwo` is a lower bound, so we under-report `available`, never over. `cwo` is object-local;
+    /// shift to file space.
     const size_t cwo_file = seg.getCurrentWriteOffset() + object_file_offset;
     const size_t avail_hi = std::min(hi, cwo_file);
     if (avail_hi > lo)
@@ -397,7 +395,7 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
             {
                 try
                 {
-                    if (!seg_ptr->isDetached() && seg_ptr->isDownloader())
+                    if (seg_ptr->isDownloader())
                         seg_ptr->completePartAndResetDownloader();
                 }
                 catch (...)
@@ -488,7 +486,7 @@ DiskCacheReader::~DiskCacheReader()
 
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
 
-    /// Deferred LRU bump: if we served any bytes, raise the segment's priority so a hit next to
+    /// Deferred priority bump: if we served any bytes, raise the segment's priority so a hit next to
     /// fresh inserts isn't aged below them. Bump directly on the pinned segment (no re-`cache->get`,
     /// which would re-hash the key and re-take the per-key lock). A segment still DOWNLOADING
     /// (another thread fills its tail) is skipped; the fill itself gives it insert priority.
@@ -505,7 +503,7 @@ DiskCacheReader::~DiskCacheReader()
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Deferred LRU priority bump failed", LogsLevel::debug);
+        tryLogCurrentException(log, "Deferred priority bump failed", LogsLevel::debug);
     }
 
     /// Complete our segment. A read-only DOWNLOADED hit is a no-op; a partial segment shared with the
@@ -569,7 +567,7 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
 
     /// READ-ONLY / bypass (`cache->get`): existing segments only - hits at their committed extent,
     /// gaps and uncommitted tails as writer-less misses over their EXACT (unrounded) extent within
-    /// the ask. The bypass side never fills, so a miss carries no fill-cell geometry - it only tells
+    /// the ask. The bypass side never fills, so a miss carries no fill geometry - it only tells
     /// the executor which bytes to read from source. Nothing created/reserved/evicted, so a bypass
     /// read (a merge) never perturbs the cache.
     if (!populatesOnMiss())
@@ -661,7 +659,7 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
         {
             ICacheProvider::Resolution miss;
             miss.kind = ICacheProvider::Resolution::Kind::Miss;
-            /// The miss cell is the WHOLE segment (the writer appends from the live committed
+            /// The miss covers the WHOLE segment (the writer appends from the live committed
             /// frontier; the prefix hit above serves the committed part). A partial segment's reader
             /// and writer share the same `FileSegmentPtr` copy.
             miss.range = ByteRange{seg_left + object_file_offset, seg_end - seg_left};

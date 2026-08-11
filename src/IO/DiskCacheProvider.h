@@ -42,7 +42,7 @@ private:
     size_t object_file_offset;
     ThrottlerPtr local_throttler;
     ReaderAnchorCache * anchors = nullptr;
-    /// File-level sub-ranges this reader served; the destructor bumps their LRU priority.
+    /// File-level sub-ranges this reader served; the destructor bumps their cache priority.
     VectorWithMemoryTracking<ByteRange> hits_to_touch;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
