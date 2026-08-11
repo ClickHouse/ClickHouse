@@ -56,7 +56,17 @@ namespace
 
         /// Restore the legacy invariant that the first argument must not have an explicit
         /// timezone. The DSL has no way to express "DateTime/DateTime64 without explicit tz",
-        /// so enforce it here before delegating to the DSL.
+        /// so enforce it here before delegating to the DSL. Route the types-only path through
+        /// the same guard, so the base `IFunction::getReturnTypeImpl(DataTypes)` cannot bypass it.
+        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        {
+            ColumnsWithTypeAndName columns;
+            columns.reserve(arguments.size());
+            for (const auto & type : arguments)
+                columns.emplace_back(nullptr, type, String{});
+            return getReturnTypeImpl(columns);
+        }
+
         DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             if (!arguments.empty())
