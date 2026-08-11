@@ -851,14 +851,22 @@ void alter(
                 metadata_json_generator.generateDropColumnMetadata(params[0].column_name);
                 break;
             case AlterCommand::Type::MODIFY_COLUMN:
-                metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type);
+            {
+                if (!metadata_json_generator.generateModifyColumnMetadata(params[0].column_name, params[0].data_type))
+                {
+                    succeeded = true;
+                }
                 break;
+            }
             case AlterCommand::Type::RENAME_COLUMN:
                 metadata_json_generator.generateRenameColumnMetadata(params[0].column_name, params[0].rename_to);
                 break;
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type of alter {}", params[0].type);
         }
+
+        if (succeeded)
+            break;
 
         const auto new_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
         Poco::JSON::Object::Ptr new_schema;

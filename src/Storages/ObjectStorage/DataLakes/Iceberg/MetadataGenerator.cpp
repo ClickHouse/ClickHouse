@@ -75,7 +75,7 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
             };
             auto [old_precision, old_scale] = parse(old_str);
             auto [new_precision, new_scale] = parse(new_str);
-            if (old_precision <= new_precision && old_scale <= new_scale)
+            if (old_precision <= new_precision && old_scale == new_scale)
                 return true;
         }
     }
@@ -87,7 +87,7 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
 
         if (old_complex_type && new_complex_type && old_complex_type->has("precision") && new_complex_type->has("precision") &&
             (old_complex_type->getValue<Int32>("precision") <= new_complex_type->getValue<Int32>("precision") &&
-             old_complex_type->getValue<Int32>("scale") <= new_complex_type->getValue<Int32>("scale")))
+             old_complex_type->getValue<Int32>("scale") == new_complex_type->getValue<Int32>("scale")))
         {
             return true;
         }
@@ -408,6 +408,7 @@ bool MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
             metadata_object->set(Iceberg::f_current_schema_id, current_schema_id + 1);
             current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
             metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
+            metadata_object->set(Iceberg::f_last_column_id, last_column_id);
             return true;
         }
     }

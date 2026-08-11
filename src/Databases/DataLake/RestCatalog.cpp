@@ -1545,8 +1545,8 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
     if (!new_snapshot)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
             "REST catalog does not support metadata-only updates without a snapshot "
             "(required for EXPIRE SNAPSHOTS)");
 
