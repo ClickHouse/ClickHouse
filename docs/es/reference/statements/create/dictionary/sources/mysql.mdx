@@ -78,14 +78,14 @@ Campos de configuración:
 | `ssl_ca_pem`                    | Contenido del certificado de CA con el que se verifica el certificado del servidor MySQL. Opcional.                                                                                                                                                                                                                                                                                     |
 | `ssl_cert_pem`                  | Contenido del certificado de cliente para la autenticación basada en certificados. Opcional.                                                                                                                                                                                                                                                                                            |
 | `ssl_key_pem`                   | Contenido de la clave privada correspondiente a `ssl_cert_pem`. Opcional.                                                                                                                                                                                                                                                                                                               |
-| `ssl_ca`, `ssl_cert`, `ssl_key` | Las mismas credenciales como rutas a archivos en el servidor. Solo se permiten para un diccionario definido en un archivo de configuración del servidor; consulta más abajo. Opcional.                                                                                                                                                                                                  |
+| `ssl_ca`, `ssl_cert`, `ssl_key` | Las mismas credenciales como rutas a archivos en el servidor. Solo se permiten para un diccionario definido en un archivo de configuración del servidor o mediante una colección con nombre definida allí; consulta más abajo. Opcional.                                                                                                                                                |
 
 <Note>
   Los campos `table` o `where` no pueden usarse junto con el campo `query`. Además, debe declararse uno de los campos `table` o `query`.
 </Note>
 
 <Note>
-  `ssl_ca`, `ssl_cert` y `ssl_key` son nombres de archivos que el servidor abre con sus propios privilegios, por lo que solo se aceptan para un diccionario definido en un archivo de configuración del servidor. Un diccionario creado con una consulta `CREATE DICTIONARY` debe proporcionar el contenido en su lugar, en `ssl_ca_pem`, `ssl_cert_pem` y `ssl_key_pem`. Esos valores se ocultan en los logs y en las consultas `SHOW`, del mismo modo que las contraseñas.
+  `ssl_ca`, `ssl_cert` y `ssl_key` son nombres de archivos que el servidor abre con sus propios privilegios, por lo que solo se aceptan para un diccionario definido en un archivo de configuración del servidor o mediante una colección con nombre definida allí. Una consulta `CREATE DICTIONARY` que especifica directamente las credenciales TLS debe proporcionar su contenido en su lugar, en `ssl_ca_pem`, `ssl_cert_pem` y `ssl_key_pem`. Esos valores se ocultan en los logs y en las consultas `SHOW`, del mismo modo que las contraseñas.
 </Note>
 
 <Note>

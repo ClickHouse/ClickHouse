@@ -78,14 +78,14 @@ doc_type: 'reference'
 | `ssl_ca_pem`                    | MySQL サーバー証明書の検証に使用する CA certificate の内容です。省略可能です。                                                                                                                   |
 | `ssl_cert_pem`                  | 証明書ベース認証用のクライアント証明書の内容です。省略可能です。                                                                                                                                     |
 | `ssl_key_pem`                   | `ssl_cert_pem` に対応する秘密鍵の内容です。省略可能です。                                                                                                                                 |
-| `ssl_ca`, `ssl_cert`, `ssl_key` | 同じ認証情報をサーバー上のファイルへのパスとして指定します。サーバー設定ファイルで定義された Dictionary でのみ使用できます。以下を参照してください。省略可能です。                                                                              |
+| `ssl_ca`, `ssl_cert`, `ssl_key` | 同じ認証情報をサーバー上のファイルへのパスとして指定します。サーバー設定ファイルで定義された Dictionary、またはそこで定義された 名前付きコレクション を通じてのみ使用できます。以下を参照してください。省略可能です。                                              |
 
 <Note>
   `table` フィールドまたは `where` フィールドは、`query` フィールドと併用できません。また、`table` フィールドまたは `query` フィールドのいずれか一方は必ず指定する必要があります。
 </Note>
 
 <Note>
-  `ssl_ca`、`ssl_cert`、`ssl_key`は、サーバーが自身の権限で開くファイル名を指定するため、サーバー設定ファイルで定義されたDictionaryでのみ使用できます。`CREATE DICTIONARY`クエリで作成されたDictionaryでは、代わりに`ssl_ca_pem`、`ssl_cert_pem`、`ssl_key_pem`で内容を渡す必要があります。これらの値は、パスワードと同様にログおよび`SHOW`クエリでマスクされます。
+  `ssl_ca`、`ssl_cert`、`ssl_key`は、サーバーが自身の権限で開くファイル名を指定するため、サーバー設定ファイルで定義されたDictionary、またはそこで定義された名前付きコレクションを介してのみ使用できます。TLS認証情報を直接指定する`CREATE DICTIONARY`クエリでは、代わりに`ssl_ca_pem`、`ssl_cert_pem`、`ssl_key_pem`でその内容を渡す必要があります。これらの値は、パスワードと同様にログおよび`SHOW`クエリでマスクされます。
 </Note>
 
 <Note>

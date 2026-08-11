@@ -78,14 +78,14 @@ doc_type: 'reference'
 | `ssl_ca_pem`                    | 用于验证 MySQL 服务器证书的 CA 证书内容。可选。                                                                                  |
 | `ssl_cert_pem`                  | 用于基于证书的身份验证的客户端证书内容。可选。                                                                                        |
 | `ssl_key_pem`                   | 属于 `ssl_cert_pem` 的私钥内容。可选。                                                                                    |
-| `ssl_ca`, `ssl_cert`, `ssl_key` | 与上述相同的凭据，但以服务器上文件的路径形式指定。仅允许用于在服务器配置文件中定义的字典，见下文。可选。                                                           |
+| `ssl_ca`, `ssl_cert`, `ssl_key` | 与上述相同的凭据，但以服务器上文件的路径形式指定。仅允许用于在服务器配置文件中定义的字典，或通过其中定义的命名集合定义的字典，见下文。可选。                                         |
 
 <Note>
   `table` 或 `where` 字段不能与 `query` 字段同时使用。此外，必须声明 `table` 或 `query` 其中之一。
 </Note>
 
 <Note>
-  `ssl_ca`、`ssl_cert` 和 `ssl_key` 指定由服务器以自身权限打开的文件名，因此仅适用于在服务器配置文件中定义的字典。使用 `CREATE DICTIONARY` 查询创建的字典则必须通过 `ssl_ca_pem`、`ssl_cert_pem` 和 `ssl_key_pem` 传递文件内容。这些值会像密码一样，在日志和 `SHOW` 查询中被掩码处理。
+  `ssl_ca`、`ssl_cert` 和 `ssl_key` 指定由服务器以自身权限打开的文件名，因此仅适用于在服务器配置文件中定义的字典，或通过其中定义的命名集合使用。直接指定 TLS 凭据的 `CREATE DICTIONARY` 查询则必须通过 `ssl_ca_pem`、`ssl_cert_pem` 和 `ssl_key_pem` 传递文件内容。这些值会像密码一样，在日志和 `SHOW` 查询中被掩码处理。
 </Note>
 
 <Note>

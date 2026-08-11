@@ -78,14 +78,14 @@ doc_type: 'reference'
 | `ssl_ca_pem`                    | MySQL 서버 인증서를 검증하는 데 사용하는 CA 인증서의 내용입니다. 선택 사항입니다.                                                                                                                   |
 | `ssl_cert_pem`                  | 인증서 기반 인증에 사용하는 클라이언트 인증서의 내용입니다. 선택 사항입니다.                                                                                                                          |
 | `ssl_key_pem`                   | `ssl_cert_pem`에 해당하는 private key의 내용입니다. 선택 사항입니다.                                                                                                                   |
-| `ssl_ca`, `ssl_cert`, `ssl_key` | 동일한 자격 증명을 서버의 파일 경로로 지정합니다. 서버 설정 파일에 정의된 딕셔너리에만 허용되며, 아래를 참조하십시오. 선택 사항입니다.                                                                                        |
+| `ssl_ca`, `ssl_cert`, `ssl_key` | 동일한 자격 증명을 서버의 파일 경로로 지정합니다. 서버 설정 파일에 정의된 딕셔너리 또는 այնտեղ 정의된 명명된 컬렉션을 통해서만 허용되며, 아래를 참조하십시오. 선택 사항입니다.                                                              |
 
 <Note>
   The `table` 또는 `where` 필드는 `query` 필드와 함께 사용할 수 없습니다. 또한 `table` 또는 `query` 필드 중 하나는 반드시 선언해야 합니다.
 </Note>
 
 <Note>
-  `ssl_ca`, `ssl_cert`, `ssl_key`는 서버가 자체 권한으로 여는 파일을 지정하므로 서버 설정 파일에 정의된 딕셔너리에 대해서만 허용됩니다. `CREATE DICTIONARY` 쿼리로 생성된 딕셔너리는 대신 `ssl_ca_pem`, `ssl_cert_pem`, `ssl_key_pem`에 내용을 전달해야 합니다. 이러한 값은 비밀번호와 마찬가지로 로그와 `SHOW` 쿼리에서 마스킹됩니다.
+  `ssl_ca`, `ssl_cert`, `ssl_key`는 서버가 자체 권한으로 여는 파일을 지정하므로 서버 설정 파일에 정의된 딕셔너리 또는 해당 파일에 정의된 명명된 컬렉션을 통해서만 허용됩니다. TLS 자격 증명을 직접 지정하는 `CREATE DICTIONARY` 쿼리는 대신 `ssl_ca_pem`, `ssl_cert_pem`, `ssl_key_pem`에 내용을 전달해야 합니다. 이러한 값은 비밀번호와 마찬가지로 로그와 `SHOW` 쿼리에서 마스킹됩니다.
 </Note>
 
 <Note>
