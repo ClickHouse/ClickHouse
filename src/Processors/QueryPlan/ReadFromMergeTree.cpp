@@ -2175,7 +2175,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         mutations_snapshot,
         vector_search_parameters,
         top_k_filter_info,
-        storage_snapshot->metadata,
+        storage_snapshot,
         query_info,
         context,
         requested_num_streams,
@@ -2202,7 +2202,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         mutations_snapshot,
         vector_search_parameters,
         top_k_filter_info,
-        storage_snapshot->metadata,
+        storage_snapshot,
         query_info,
         context,
         requested_num_streams,
@@ -2744,7 +2744,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info_,
     ContextPtr context_,
     size_t num_streams,
@@ -2761,6 +2761,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
+    const auto & metadata_snapshot = storage_snapshot->metadata;
     AnalysisResult result;
     RangesInDataParts res_parts;
     const auto & settings = context_->getSettingsRef();
@@ -2881,7 +2882,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         && query_info_.prewhere_info->prewhere_actions.isSuitableForConstantFolding())
     {
         auto header = query_info_.prewhere_info->prewhere_actions.updateHeader(
-            StorageSnapshot(data, metadata_snapshot).getSampleBlockForColumns(
+            storage_snapshot->getSampleBlockForColumns(
                 query_info_.prewhere_info->prewhere_actions.getRequiredColumnsNames()));
         const auto & filter_column = header.getByName(query_info_.prewhere_info->prewhere_column_name).column;
         if (filter_column && ConstantFilterDescription(*filter_column).always_false)
