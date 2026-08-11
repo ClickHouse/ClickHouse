@@ -12,7 +12,6 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Disks/IO/WriteBufferInlineOrBlob.h>
-#include <Disks/IO/WriteBufferWithFinalizeCallback.h>
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
 
@@ -297,83 +296,66 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     if (mode == WriteMode::Append && !metadata_storage->supportWritingWithAppend())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support WriteMode::Append");
 
-    /// Defer the inline-vs-blob decision until the size is known (see `WriteBufferInlineOrBlob`).
-    /// The spill path re-enters this method with the threshold cleared.
-    if (mode == WriteMode::Rewrite && settings.inline_file_max_bytes > 0 && metadata_storage->supportsInlineData())
-    {
-        auto create_underlying = [disk_tx = shared_from_this(), autocommit, path, buf_size, mode, settings]
-        {
-            WriteSettings spilled_settings = settings;
-            spilled_settings.inline_file_max_bytes = 0;
-            return disk_tx->writeFileImpl(autocommit, path, buf_size, mode, spilled_settings);
-        };
-        auto commit_inline = [disk_tx = shared_from_this(), autocommit, path](String content)
-        {
-            disk_tx->addOperation([path, inline_data = std::move(content)](MetadataTransactionPtr tx)
-            {
-                tx->writeInlineDataToFile(path, inline_data);
-            });
-            if (autocommit)
-                disk_tx->commit();
-        };
-        return std::make_unique<WriteBufferInlineOrBlob>(
-            path, settings.inline_file_max_bytes, std::move(create_underlying), std::move(commit_inline), buf_size);
-    }
-
     StoredObject object(metadata_transaction->generateObjectKeyForPath(path).serialize(), path);
-    ForkWriteBuffer::WriteBufferPtrs writers;
     auto enabled_locations = cluster->getEnabledLocations();
-    for (const auto & location : enabled_locations)
-    {
-        size_t use_buffer_size = buf_size;
-        std::unique_ptr<WriteBufferFromFileBase> writer;
-
-        if (location == cluster->getLocalLocation())
-        {
-            ObjectStoragePtr object_storage = object_storages->takePointingTo(location);
-
-            #if ENABLE_DISTRIBUTED_CACHE
-                bool use_distributed_cache = DistributedCache::canUseDistributedCacheForWrite(enriched_settings, *object_storage);
-
-                if (use_distributed_cache && enriched_settings.distributed_cache_settings.write_through_cache_buffer_size)
-                    use_buffer_size = enriched_settings.distributed_cache_settings.write_through_cache_buffer_size;
-            #endif
-
-            writer = object_storage->writeObject(
-                object,
-                /// We always use mode Rewrite because we simulate append using metadata and different files
-                WriteMode::Rewrite,
-                /*attributes=*/std::nullopt,
-                use_buffer_size,
-                enriched_settings);
-
-            #if ENABLE_DISTRIBUTED_CACHE
-                if (use_distributed_cache)
-                    writer = DistributedCache::writeWithDistributedCache(path, object, enriched_settings, *object_storage, std::move(writer));
-            #endif
-        }
-        else
-        {
-            writer = object_storages->takePointingTo(location)->writeObject(
-                object,
-                /// We always use mode Rewrite because we simulate append using metadata and different files
-                WriteMode::Rewrite,
-                /*attributes=*/std::nullopt,
-                use_buffer_size,
-                enriched_settings);
-        }
-
-        writers.push_back(std::move(writer));
-        written_blobs[location].push_back(object);
-    }
-
-    auto buffer_to_enabled_locations = std::make_unique<ForkWriteBuffer>(std::move(writers));
 
     /// Does metadata_storage support empty files without actual blobs in the object_storage?
     const bool create_blob_if_empty = !metadata_storage->supportsEmptyFilesWithoutBlobs();
 
+    /// Builds the blob write stack; deferred so a fully inline write never touches the object storage.
+    auto create_blob_buffer = [disk_tx = shared_from_this(), path, object, buf_size, enriched_settings, enabled_locations]() mutable -> std::unique_ptr<WriteBuffer>
+    {
+        ForkWriteBuffer::WriteBufferPtrs writers;
+        for (const auto & location : enabled_locations)
+        {
+            size_t use_buffer_size = buf_size;
+            std::unique_ptr<WriteBufferFromFileBase> writer;
+
+            if (location == disk_tx->cluster->getLocalLocation())
+            {
+                ObjectStoragePtr object_storage = disk_tx->object_storages->takePointingTo(location);
+
+                #if ENABLE_DISTRIBUTED_CACHE
+                    bool use_distributed_cache = DistributedCache::canUseDistributedCacheForWrite(enriched_settings, *object_storage);
+
+                    if (use_distributed_cache && enriched_settings.distributed_cache_settings.write_through_cache_buffer_size)
+                        use_buffer_size = enriched_settings.distributed_cache_settings.write_through_cache_buffer_size;
+                #endif
+
+                writer = object_storage->writeObject(
+                    object,
+                    /// We always use mode Rewrite because we simulate append using metadata and different files
+                    WriteMode::Rewrite,
+                    /*attributes=*/std::nullopt,
+                    use_buffer_size,
+                    enriched_settings);
+
+                #if ENABLE_DISTRIBUTED_CACHE
+                    if (use_distributed_cache)
+                        writer = DistributedCache::writeWithDistributedCache(path, object, enriched_settings, *object_storage, std::move(writer));
+                #endif
+            }
+            else
+            {
+                writer = disk_tx->object_storages->takePointingTo(location)->writeObject(
+                    object,
+                    /// We always use mode Rewrite because we simulate append using metadata and different files
+                    WriteMode::Rewrite,
+                    /*attributes=*/std::nullopt,
+                    use_buffer_size,
+                    enriched_settings);
+            }
+
+            writers.push_back(std::move(writer));
+            disk_tx->written_blobs[location].push_back(object);
+        }
+
+        return std::make_unique<ForkWriteBuffer>(std::move(writers));
+    };
+
     /// This callback called in WriteBuffer finalize method -- only there we actually know
-    /// how many bytes were written. We don't control when this finalize method will be called
+    /// how many bytes were written (or, for a small enough file, the content to store inline).
+    /// We don't control when this finalize method will be called
     /// so here we just modify operation itself, but don't execute anything (and don't modify metadata transaction).
     /// Otherwise it's possible to get reorder of operations, like:
     /// tx->createDirectory(xxx) -- will add metadata operation in execute
@@ -382,9 +364,22 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     /// ...
     /// buf1->finalize() // shouldn't do anything with metadata operations, just memorize what to do
     /// tx->commit()
-    const auto create_metadata_callback = [disk_tx = shared_from_this(), replicated_locations = std::move(enabled_locations), mode, object, autocommit, create_blob_if_empty](size_t count) mutable
+    auto create_metadata_callback = [disk_tx = shared_from_this(), path, replicated_locations = enabled_locations, mode, object, autocommit, create_blob_if_empty](FinalizeResult result) mutable
     {
-        object.bytes_size = count;
+        if (auto * inline_data = std::get_if<InlineData>(&result))
+        {
+            /// Inline content lives in the metadata itself: no blob, nothing to replicate.
+            disk_tx->addOperation([path, data = std::move(inline_data->data)](MetadataTransactionPtr tx)
+            {
+                tx->writeInlineDataToFile(path, data);
+            });
+
+            if (autocommit)
+                disk_tx->commit();
+            return;
+        }
+
+        object.bytes_size = std::get<WrittenBlob>(result).bytes_count;
 
         /// Locations to which blobs were not originally copied should be marked as missing.
         auto missing_locations = disk_tx->cluster->findComplement(replicated_locations);
@@ -418,7 +413,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             disk_tx->commit();
     };
 
-    return std::make_unique<WriteBufferWithFinalizeCallback>(std::move(buffer_to_enabled_locations), std::move(create_metadata_callback), object.remote_path, create_blob_if_empty);
+    /// Defer the inline-vs-blob decision until the size is known (see `WriteBufferInlineOrBlob`).
+    const size_t max_inline_bytes
+        = (mode == WriteMode::Rewrite && metadata_storage->supportsInlineData()) ? settings.inline_file_max_bytes : 0;
+    return std::make_unique<WriteBufferInlineOrBlob>(
+        path, max_inline_bytes, create_blob_if_empty, std::move(create_blob_buffer), std::move(create_metadata_callback), buf_size);
 }
 
 void DiskObjectStorageTransaction::recordBlobReplication(const StoredObject & object, const Locations & missing_locations)

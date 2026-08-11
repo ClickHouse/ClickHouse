@@ -6,14 +6,16 @@ namespace DB
 WriteBufferInlineOrBlob::WriteBufferInlineOrBlob(
     String file_name_,
     size_t max_inline_bytes_,
+    bool create_blob_if_empty_,
     CreateUnderlying create_underlying_,
-    CommitInline commit_inline_,
+    FinalizeCallback finalize_callback_,
     size_t buf_size)
     : WriteBufferFromFileBase(buf_size, nullptr, /*alignment=*/0)
     , file_name(std::move(file_name_))
     , max_inline_bytes(max_inline_bytes_)
+    , create_blob_if_empty(create_blob_if_empty_)
     , create_underlying(std::move(create_underlying_))
-    , commit_inline(std::move(commit_inline_))
+    , finalize_callback(std::move(finalize_callback_))
 {
 }
 
@@ -47,10 +49,22 @@ void WriteBufferInlineOrBlob::preFinalize()
 void WriteBufferInlineOrBlob::finalizeImpl()
 {
     next();
+
+    if (!underlying && max_inline_bytes > 0)
+    {
+        finalize_callback(InlineData{std::move(accumulated)});
+        return;
+    }
+
+    /// Inlining is disabled and nothing was written: upload the empty blob only when the
+    /// metadata cannot represent an empty file without one.
+    if (!underlying && create_blob_if_empty)
+        spill();
+
+    const size_t bytes_written = count();
     if (underlying)
         underlying->finalize();
-    else
-        commit_inline(std::move(accumulated));
+    finalize_callback(WrittenBlob{bytes_written});
 }
 
 void WriteBufferInlineOrBlob::cancelImpl() noexcept

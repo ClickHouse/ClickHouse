@@ -48,18 +48,26 @@ struct InlineBufferHarness
     bool blob_finalized = false;
     size_t underlying_created = 0;
     std::optional<String> inline_content;
+    std::optional<size_t> blob_bytes;
 
-    std::unique_ptr<WriteBufferInlineOrBlob> makeBuffer(size_t max_inline_bytes, size_t buf_size = 16)
+    std::unique_ptr<WriteBufferInlineOrBlob> makeBuffer(size_t max_inline_bytes, size_t buf_size = 16, bool create_blob_if_empty = true)
     {
         return std::make_unique<WriteBufferInlineOrBlob>(
             "test_file",
             max_inline_bytes,
-            [this]() -> std::unique_ptr<WriteBufferFromFileBase>
+            create_blob_if_empty,
+            [this]() -> std::unique_ptr<WriteBuffer>
             {
                 ++underlying_created;
                 return std::make_unique<WriteBufferToSharedString>(blob_content, blob_finalized);
             },
-            [this](String content) { inline_content = std::move(content); },
+            [this](FinalizeResult result)
+            {
+                if (auto * inline_data = std::get_if<InlineData>(&result))
+                    inline_content = std::move(inline_data->data);
+                else
+                    blob_bytes = std::get<WrittenBlob>(result).bytes_count;
+            },
             buf_size);
     }
 };
@@ -112,6 +120,7 @@ TEST(WriteBufferInlineOrBlob, OneBytePastThresholdSpills)
     EXPECT_EQ(harness.underlying_created, 1u);
     EXPECT_EQ(harness.blob_content, "123456");
     EXPECT_TRUE(harness.blob_finalized);
+    EXPECT_EQ(harness.blob_bytes, 6u);
 }
 
 TEST(WriteBufferInlineOrBlob, SpillMidStreamPreservesAllContent)
@@ -142,7 +151,45 @@ TEST(WriteBufferInlineOrBlob, CancelCommitsNothing)
     buf->cancel();
 
     EXPECT_FALSE(harness.inline_content.has_value());
+    EXPECT_FALSE(harness.blob_bytes.has_value());
     EXPECT_EQ(harness.underlying_created, 0u);
+}
+
+TEST(WriteBufferInlineOrBlob, ZeroThresholdWritesBlob)
+{
+    InlineBufferHarness harness;
+    auto buf = harness.makeBuffer(/*max_inline_bytes=*/0);
+    buf->write("hello", 5);
+    buf->finalize();
+
+    EXPECT_FALSE(harness.inline_content.has_value());
+    EXPECT_EQ(harness.underlying_created, 1u);
+    EXPECT_EQ(harness.blob_content, "hello");
+    EXPECT_TRUE(harness.blob_finalized);
+    EXPECT_EQ(harness.blob_bytes, 5u);
+}
+
+TEST(WriteBufferInlineOrBlob, ZeroThresholdEmptyCreatesBlobWhenRequired)
+{
+    InlineBufferHarness harness;
+    auto buf = harness.makeBuffer(/*max_inline_bytes=*/0, /*buf_size=*/16, /*create_blob_if_empty=*/true);
+    buf->finalize();
+
+    EXPECT_FALSE(harness.inline_content.has_value());
+    EXPECT_EQ(harness.underlying_created, 1u);
+    EXPECT_TRUE(harness.blob_finalized);
+    EXPECT_EQ(harness.blob_bytes, 0u);
+}
+
+TEST(WriteBufferInlineOrBlob, ZeroThresholdEmptySkipsBlobWhenNotRequired)
+{
+    InlineBufferHarness harness;
+    auto buf = harness.makeBuffer(/*max_inline_bytes=*/0, /*buf_size=*/16, /*create_blob_if_empty=*/false);
+    buf->finalize();
+
+    EXPECT_FALSE(harness.inline_content.has_value());
+    EXPECT_EQ(harness.underlying_created, 0u);
+    EXPECT_EQ(harness.blob_bytes, 0u);
 }
 
 TEST(WriteBufferInlineOrBlob, PreFinalizeThenFinalizeInline)
