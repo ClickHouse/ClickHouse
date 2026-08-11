@@ -429,6 +429,24 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             }
         }
 
+        /// If the row policy reads the vector column (rare situation), skip the optimization as well. The policy
+        /// filter runs inside the reader on the read columns, and `replaceVectorColumnWithDistanceColumn` would
+        /// remove the physical vector column from the read list, leaving the policy without its input.
+        if (optimize_plan)
+        {
+            if (const auto row_level_filter = read_from_mergetree_step->getRowLevelFilter())
+            {
+                for (const auto * input : row_level_filter->actions.getInputs())
+                {
+                    if (input->result_name == search_column)
+                    {
+                        optimize_plan = false;
+                        break;
+                    }
+                }
+            }
+        }
+
         if (optimize_plan)
         {
             auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();

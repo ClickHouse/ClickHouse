@@ -45,4 +45,19 @@ SELECT count() > 0 FROM (
 WHERE explain LIKE '%vector_similarity%';
 
 DROP ROW POLICY rp_04814 ON t_04814;
+
+-- A row policy that reads the vector column itself. The non-rescoring rewrite removes the physical vector
+-- column from the read list, but the policy filter runs inside the reader and needs it, so the rewrite must
+-- be skipped for this case (same treatment as a `SELECT` clause containing the vector column).
+CREATE ROW POLICY rp_04814 ON t_04814 FOR SELECT USING length(vec) > 0 TO ALL;
+
+SELECT 'policy on the vector column, no rescoring: correct result';
+SELECT id FROM t_04814 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
+    SETTINGS vector_search_with_rescoring = 0;
+
+SELECT 'policy on the vector column, rescoring: correct result';
+SELECT id FROM t_04814 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
+    SETTINGS vector_search_with_rescoring = 1;
+
+DROP ROW POLICY rp_04814 ON t_04814;
 DROP TABLE t_04814;

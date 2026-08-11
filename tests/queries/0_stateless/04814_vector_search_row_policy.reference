@@ -4,3 +4,7 @@ policy, prefilter: exact search
 0
 policy, postfilter: uses the index
 1
+policy on the vector column, no rescoring: correct result
+0
+policy on the vector column, rescoring: correct result
+0
