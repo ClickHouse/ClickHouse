@@ -10,3 +10,5 @@ control pure	1
 control sibling	1
 rowNumberInAllBlocks	0
 runningConcurrency	0
+legacy sorting key attach and unrelated alter ok
+legacy partition key attach and unrelated alter ok
