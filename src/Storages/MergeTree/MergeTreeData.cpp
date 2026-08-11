@@ -9195,6 +9195,60 @@ void MergeTreeData::rewritePartitionScopeToIds(MutationCommands & commands, Cont
     }
 }
 
+void MergeTreeData::pinPartitionScopeOfLegacyCommands(
+    MutationCommands & commands, const std::map<String, Int64> & block_numbers, ContextPtr query_context) const
+{
+    /// Entries created before the partition scope was pinned at creation (see
+    /// `rewritePartitionScopeToIds`) still carry the original `IN PARTITION <value>`
+    /// literal, which has to be decoded through the partition key. Partition ids and
+    /// `ALL` are decoded without the key, so they need no pinning.
+    std::vector<MutationCommand *> legacy_commands;
+    for (auto & command : commands)
+    {
+        auto alter = command.ast();
+        if (!alter || !alter->partition || command.resolved_partition_id)
+            continue;
+        const auto & partition_ast = alter->partition->as<const ASTPartition &>();
+        if (!partition_ast.value)
+            continue;
+        legacy_commands.push_back(&command);
+    }
+
+    if (legacy_commands.empty())
+        return;
+
+    /// The block numbers of the entry were allocated at creation exactly in the partitions
+    /// the commands resolved to back then. So for a mutation whose commands are all
+    /// partition-scoped and resolved to a single partition, that partition id is recovered
+    /// from the block numbers without decoding the literals through the current partition
+    /// key at all -- this stays correct even after a partition key type change.
+    if (block_numbers.size() == 1 && legacy_commands.size() == commands.size())
+    {
+        const String & partition_id = block_numbers.begin()->first;
+        for (auto * command : legacy_commands)
+            command->resolved_partition_id = partition_id;
+        return;
+    }
+
+    /// Several partitions are involved, so the per-command scope can only be recovered by
+    /// decoding each literal through the current partition key. After a partition key type
+    /// change this can throw; the commands are then left unpinned, which is exactly the
+    /// state such an entry was in before this migration existed (its execution fails with
+    /// the same error, and the mutation has to be killed).
+    try
+    {
+        for (auto * command : legacy_commands)
+            command->resolved_partition_id = getPartitionIDFromQuery(ASTPtr(command->ast()->partition), query_context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format(
+            "Cannot pin the partition scope of a legacy partition-scoped mutation entry ({} commands); "
+            "if its execution fails after a partition key change, it has to be killed",
+            legacy_commands.size()));
+    }
+}
+
 PartitionIds MergeTreeData::getAllPartitionIds() const
 {
     auto lock = readLockParts();

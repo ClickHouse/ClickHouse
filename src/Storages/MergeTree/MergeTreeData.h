@@ -1200,6 +1200,16 @@ public:
     /// in their serialized text form (see `resolved_partition_id` for the non-replicated path).
     void rewritePartitionScopeToIds(MutationCommands & commands, ContextPtr query_context) const;
 
+    /// Pins `MutationCommand::resolved_partition_id` for partition-scoped commands of a legacy
+    /// `ReplicatedMergeTree` mutation entry, i.e. one whose znode was written before
+    /// `rewritePartitionScopeToIds` existed and therefore still carries `IN PARTITION <value>`
+    /// literals. When the entry is scoped to a single partition, the id is recovered from the
+    /// block numbers allocated at the creation of the entry, without decoding the literals
+    /// through the current partition key; otherwise the literals are decoded through it (and
+    /// the commands are left unpinned if that fails, e.g. after a partition key type change).
+    void pinPartitionScopeOfLegacyCommands(
+        MutationCommands & commands, const std::map<String, Int64> & block_numbers, ContextPtr query_context) const;
+
     /// Returns set of partition_ids of all Active parts
     PartitionIds getAllPartitionIds() const;
 

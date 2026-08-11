@@ -1233,8 +1233,18 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
                 LOG_WARNING(log, "Cannot get mutation node {} ({}), probably it was concurrently removed", entries_to_load[i], maybe_response.error);
                 continue;
             }
-            new_mutations.push_back(std::make_shared<ReplicatedMergeTreeMutationEntry>(
-                ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i])));
+            auto new_entry = std::make_shared<ReplicatedMergeTreeMutationEntry>(
+                ReplicatedMergeTreeMutationEntry::parse(maybe_response.data, entries_to_load[i]));
+
+            /// An entry written by an older server version still scopes its commands with the
+            /// original `IN PARTITION <value>` literals (new entries are rewritten to the
+            /// `IN PARTITION ID` form at creation). Pin the resolved scope once at load, so
+            /// that executing the commands does not have to decode the literals through the
+            /// current partition key, which can throw after a key-safe partition key type
+            /// change (e.g. `Enum8 -> Int8`).
+            storage.pinPartitionScopeOfLegacyCommands(new_entry->commands, new_entry->block_numbers, storage.getContext());
+
+            new_mutations.push_back(std::move(new_entry));
         }
 
         bool some_mutations_are_probably_done = false;
