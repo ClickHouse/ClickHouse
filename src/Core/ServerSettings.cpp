@@ -2036,6 +2036,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "tcp_with_proxy_port",
         "tcp_ssh_port",
         "arrowflight_port",
+        "mongo_port",
 
         /// Cluster and replication
         "remote_servers",
