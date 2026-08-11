@@ -214,6 +214,11 @@ protected:
     /// Returns a text summary of the outcome for the model.
     String runQueryForAI(const String & query, bool readonly);
 
+    /// Syntax-check a query the AI agent wants to run, parsing it as ClickHouse SQL (the dialect
+    /// the agent always emits). Returns the parse error message when the query is malformed, or
+    /// nullopt when it parses. Used to reject a malformed query before running or confirming it.
+    std::optional<String> checkAIQuerySyntax(const String & query);
+
     /// Record an error of the current or just-failed query into the AI context buffer.
     void recordErrorForAIContext(std::string_view query_or_input);
 #endif

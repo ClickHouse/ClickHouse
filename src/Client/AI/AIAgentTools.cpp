@@ -195,6 +195,12 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                 [&]
                 {
                     auto query = args.at("query").get<std::string>();
+                    /// Syntax-check the generated query before confirming or running it: a
+                    /// malformed query is reported back for correction instead of bothering the
+                    /// user with a confirmation for a query that cannot run.
+                    if (hooks->check_syntax)
+                        if (auto error = hooks->check_syntax(query))
+                            return errorResult("The query has a syntax error and was not run: " + *error);
                     if (!hooks->confirm_query(query))
                         return errorResult("The user declined to run this query. Ask them how to proceed if unsure.");
                     return successResult(hooks->run_visible(query, /*readonly=*/ false));

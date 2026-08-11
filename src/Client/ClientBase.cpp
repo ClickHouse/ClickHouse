@@ -3802,6 +3802,7 @@ void ClientBase::initAIAgent()
         echoQueryForAI(query);
         return ask("Run this query? [Y/n] ", *std_in, *std_out, /*default_yes=*/ true);
     };
+    hooks.check_syntax = [this](const String & query) { return checkAIQuerySyntax(query); };
 
     std::unique_ptr<IAIAgentTransport> transport;
 
@@ -4045,6 +4046,58 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
     if (summary.empty())
         summary = "The query finished, but no outcome was recorded.";
     return summary;
+}
+
+std::optional<String> ClientBase::checkAIQuerySyntax(const String & query)
+{
+    /// Parse with `ParserQuery` directly (the ClickHouse SQL parser), so the check matches the
+    /// dialect the agent's queries are executed under (pinned to ClickHouse in `runQueryForAI`),
+    /// regardless of the session dialect. `allow_multi_statements` lets `run_query` contain
+    /// several statements; each is parsed in turn.
+    const Settings & settings = client_context->getSettingsRef();
+    const auto max_parser_depth = static_cast<unsigned>(settings[Setting::max_parser_depth]);
+    const auto max_parser_backtracks = static_cast<unsigned>(settings[Setting::max_parser_backtracks]);
+    const char * pos = query.data();
+    const char * const end = pos + query.size();
+
+    try
+    {
+        while (pos < end)
+        {
+            /// Skip whitespace and statement separators between statements.
+            while (pos < end && (isWhitespaceASCII(*pos) || *pos == ';'))
+                ++pos;
+            if (pos >= end)
+                break;
+
+            /// If only comments remain, there is nothing more to parse (the parser expects a
+            /// query and would otherwise report a false syntax error on a trailing comment).
+            Tokens tokens(pos, end);
+            IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+            if (!token_iterator.isValid())
+                break;
+
+            const char * const before = pos;
+            ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
+            ASTPtr ast = parseQueryAndMovePosition(
+                parser, pos, end, "", /*allow_multi_statements=*/ true,
+                settings[Setting::max_query_size], max_parser_depth, max_parser_backtracks);
+
+            if (!ast || pos == before)
+                break;
+
+            /// An INSERT with inline data: everything after the statement is format-specific data,
+            /// not SQL, so stop the syntax check here (the statement itself parsed).
+            if (const auto * insert = ast->as<ASTInsertQuery>(); insert && insert->data)
+                break;
+        }
+    }
+    catch (const Exception & e)
+    {
+        return e.message();
+    }
+
+    return std::nullopt;
 }
 
 void ClientBase::recordErrorForAIContext(std::string_view query_or_input)

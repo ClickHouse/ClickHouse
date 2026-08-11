@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <Client/AI/AIAgentTransport.h>
 #include <ai/tools.h>
 
@@ -26,6 +27,10 @@ struct AIAgentHooks
 
     /// Ask the user to confirm running a query. Returns false when declined.
     std::function<bool(const String & query)> confirm_query;
+
+    /// Syntax-check a query before running it. Returns the parse error message when the query is
+    /// malformed, or an empty optional when it parses.
+    std::function<std::optional<String>(const String & query)> check_syntax;
 };
 
 /// Builds the tool set of the client AI agent:
