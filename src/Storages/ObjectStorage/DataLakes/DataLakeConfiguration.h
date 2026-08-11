@@ -410,8 +410,7 @@ public:
 
     bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
     {
-        assertInitialized();
-        return current_metadata->supportsLazyMaterialization(storage_metadata_snapshot, context);
+        return getMetadata()->supportsLazyMaterialization(storage_metadata_snapshot, context);
     }
 
     /// Data lakes never overwrite an existing data file in place: a new snapshot references new
