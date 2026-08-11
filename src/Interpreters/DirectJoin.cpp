@@ -91,6 +91,11 @@ DirectKeyValueJoin::DirectKeyValueJoin(std::shared_ptr<TableJoin> table_join_,
             table_join->strictness(), table_join->kind());
     }
 
+    /// This join looks rows up by the equality key only, so a mixed `ON` condition reaching here
+    /// would be dropped instead of applied.
+    if (table_join->getMixedJoinExpression())
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Direct JOIN cannot evaluate a mixed JOIN ON condition");
+
     LOG_TRACE(log, "Using direct join");
 }
 

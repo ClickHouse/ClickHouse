@@ -19,10 +19,10 @@ Steps:
 
 The check definitions are declared once here and shared with the Praktika job
 (``ci/jobs/docs_job_mintlify.py``), which imports them. The aggregator job runs
-the full set (``DEFAULT_CHECKS`` plus, when a locale tree changed,
-``LOCALE_CHECKS``); this client driver runs only ``CLIENT_CHECKS`` -- the checks
-a consuming repo can act on for the slice it owns (validation, including the
-snippet-import policy in scoped mode, and internal links).
+the full set (``DEFAULT_CHECKS`` plus checks gated by their relevant changed
+files); this client driver runs only ``CLIENT_CHECKS`` -- the checks a consuming
+repo can act on for the slice it owns (validation, including the snippet-import
+policy in scoped mode, and internal links).
 Redirects, external links, and the locale checks are aggregator-global and are
 left to the aggregator job. With ``--scoped``, ``mint validate`` is replaced by
 ``scoped_validate.mjs`` over the replaced folders plus every out-of-scope file
@@ -71,7 +71,6 @@ CHANGELOGS_CHECK = (
 )
 DEFAULT_CHECKS = [
     SNIPPET_IMPORTS_CHECK,
-    CHANGELOGS_CHECK,
     VALIDATE_CHECK,
     INTERNAL_LINKS_CHECK,
     REDIRECTS_CHECK,
