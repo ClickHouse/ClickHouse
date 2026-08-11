@@ -11,6 +11,7 @@
 #endif
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Disks/IO/WriteBufferInlineOrBlob.h>
 #include <Disks/IO/WriteBufferWithFinalizeCallback.h>
 #include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
@@ -108,9 +109,17 @@ MultipleDisksObjectStorageTransaction::MultipleDisksObjectStorageTransaction(
 {
 }
 
+void DiskObjectStorageTransaction::addOperation(std::function<void(MetadataTransactionPtr tx)> op)
+{
+    if (metadata_storage->appliesOperationsEagerly())
+        op(metadata_transaction);
+    else
+        operations_to_execute.push_back(std::move(op));
+}
+
 void DiskObjectStorageTransaction::createDirectory(const std::string & path)
 {
-    operations_to_execute.push_back([path](MetadataTransactionPtr tx)
+    addOperation([path](MetadataTransactionPtr tx)
     {
         tx->createDirectory(path);
     });
@@ -118,7 +127,7 @@ void DiskObjectStorageTransaction::createDirectory(const std::string & path)
 
 void DiskObjectStorageTransaction::createDirectories(const std::string & path)
 {
-    operations_to_execute.push_back([path](MetadataTransactionPtr tx)
+    addOperation([path](MetadataTransactionPtr tx)
     {
         tx->createDirectoryRecursive(path);
     });
@@ -126,7 +135,7 @@ void DiskObjectStorageTransaction::createDirectories(const std::string & path)
 
 void DiskObjectStorageTransaction::moveDirectory(const std::string & from_path, const std::string & to_path)
 {
-    operations_to_execute.push_back([from_path, to_path](MetadataTransactionPtr tx)
+    addOperation([from_path, to_path](MetadataTransactionPtr tx)
     {
         tx->moveDirectory(from_path, to_path);
     });
@@ -134,7 +143,7 @@ void DiskObjectStorageTransaction::moveDirectory(const std::string & from_path, 
 
 void DiskObjectStorageTransaction::moveFile(const String & from_path, const String & to_path)
 {
-    operations_to_execute.push_back([from_path, to_path](MetadataTransactionPtr tx)
+    addOperation([from_path, to_path](MetadataTransactionPtr tx)
     {
         tx->moveFile(from_path, to_path);
     });
@@ -142,15 +151,31 @@ void DiskObjectStorageTransaction::moveFile(const String & from_path, const Stri
 
 void DiskObjectStorageTransaction::truncateFile(const String & path, size_t size)
 {
-    operations_to_execute.push_back([path, size](MetadataTransactionPtr tx)
+    addOperation([path, size](MetadataTransactionPtr tx)
     {
         tx->truncateFile(path, size);
     });
 }
 
+void DiskObjectStorageTransaction::incrementBlobRefCount(const std::string & blob)
+{
+    addOperation([blob](MetadataTransactionPtr tx)
+    {
+        tx->incrementBlobRefCount(blob);
+    });
+}
+
+void DiskObjectStorageTransaction::decrementBlobRefCount(const std::string & blob)
+{
+    addOperation([blob](MetadataTransactionPtr tx)
+    {
+        tx->decrementBlobRefCount(blob);
+    });
+}
+
 void DiskObjectStorageTransaction::replaceFile(const std::string & from_path, const std::string & to_path)
 {
-    operations_to_execute.push_back([from_path, to_path](MetadataTransactionPtr tx)
+    addOperation([from_path, to_path](MetadataTransactionPtr tx)
     {
         tx->replaceFile(from_path, to_path);
     });
@@ -158,7 +183,7 @@ void DiskObjectStorageTransaction::replaceFile(const std::string & from_path, co
 
 void DiskObjectStorageTransaction::removeFile(const std::string & path)
 {
-    operations_to_execute.push_back([path](MetadataTransactionPtr tx)
+    addOperation([path](MetadataTransactionPtr tx)
     {
         tx->unlinkFile(path, /*if_exists=*/false, /*should_remove_objects=*/true);
     });
@@ -166,7 +191,7 @@ void DiskObjectStorageTransaction::removeFile(const std::string & path)
 
 void DiskObjectStorageTransaction::removeSharedFile(const std::string & path, bool keep_shared_data)
 {
-    operations_to_execute.push_back([path, keep_shared_data](MetadataTransactionPtr tx)
+    addOperation([path, keep_shared_data](MetadataTransactionPtr tx)
     {
         tx->unlinkFile(path, /*if_exists=*/false, /*should_remove_objects=*/!keep_shared_data);
     });
@@ -177,14 +202,14 @@ void DiskObjectStorageTransaction::removeSharedRecursive(
 {
     if (!keep_all_shared_data && file_names_remove_metadata_only.empty())
     {
-        operations_to_execute.push_back([path](MetadataTransactionPtr tx)
+        addOperation([path](MetadataTransactionPtr tx)
         {
             tx->removeRecursive(path, /*should_remove_objects=*/nullptr);
         });
     }
     else
     {
-        operations_to_execute.push_back([path, keep_all_shared_data, file_names_remove_metadata_only](MetadataTransactionPtr tx)
+        addOperation([path, keep_all_shared_data, file_names_remove_metadata_only](MetadataTransactionPtr tx)
         {
             tx->removeRecursive(path, /*should_remove_objects=*/[keep_all_shared_data, file_names_remove_metadata_only](const std::string & relative_path)
             {
@@ -196,7 +221,7 @@ void DiskObjectStorageTransaction::removeSharedRecursive(
 
 void DiskObjectStorageTransaction::removeSharedFileIfExists(const std::string & path, bool keep_shared_data)
 {
-    operations_to_execute.push_back([path, keep_shared_data](MetadataTransactionPtr tx)
+    addOperation([path, keep_shared_data](MetadataTransactionPtr tx)
     {
         tx->unlinkFile(path, /*if_exists=*/true, /*should_remove_objects=*/!keep_shared_data);
     });
@@ -204,7 +229,7 @@ void DiskObjectStorageTransaction::removeSharedFileIfExists(const std::string & 
 
 void DiskObjectStorageTransaction::removeDirectory(const std::string & path)
 {
-    operations_to_execute.push_back([path](MetadataTransactionPtr tx)
+    addOperation([path](MetadataTransactionPtr tx)
     {
         tx->removeDirectory(path);
     });
@@ -212,7 +237,7 @@ void DiskObjectStorageTransaction::removeDirectory(const std::string & path)
 
 void DiskObjectStorageTransaction::removeRecursive(const std::string & path)
 {
-    operations_to_execute.push_back([path](MetadataTransactionPtr tx)
+    addOperation([path](MetadataTransactionPtr tx)
     {
         tx->removeRecursive(path, /*should_remove_objects=*/nullptr);
     });
@@ -220,7 +245,7 @@ void DiskObjectStorageTransaction::removeRecursive(const std::string & path)
 
 void DiskObjectStorageTransaction::removeFileIfExists(const std::string & path)
 {
-    operations_to_execute.push_back([path](MetadataTransactionPtr tx)
+    addOperation([path](MetadataTransactionPtr tx)
     {
         tx->unlinkFile(path, /*if_exists=*/true, /*should_remove_objects*/true);
     });
@@ -231,7 +256,7 @@ void DiskObjectStorageTransaction::removeSharedFiles(const RemoveBatchRequest & 
     for (const auto & [path, if_exists] : files)
     {
         const bool should_remove_objects = !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename());
-        operations_to_execute.push_back([path, if_exists, should_remove_objects](MetadataTransactionPtr tx)
+        addOperation([path, if_exists, should_remove_objects](MetadataTransactionPtr tx)
         {
             tx->unlinkFile(path, if_exists, should_remove_objects);
         });
@@ -271,6 +296,29 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     ///       undo of disk tx will actually remove existing data.
     if (mode == WriteMode::Append && !metadata_storage->supportWritingWithAppend())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support WriteMode::Append");
+
+    /// Defer the inline-vs-blob decision until the size is known (see `WriteBufferInlineOrBlob`).
+    /// The spill path re-enters this method with the threshold cleared.
+    if (mode == WriteMode::Rewrite && settings.inline_file_max_bytes > 0 && metadata_storage->supportsInlineData())
+    {
+        auto create_underlying = [disk_tx = shared_from_this(), autocommit, path, buf_size, mode, settings]
+        {
+            WriteSettings spilled_settings = settings;
+            spilled_settings.inline_file_max_bytes = 0;
+            return disk_tx->writeFileImpl(autocommit, path, buf_size, mode, spilled_settings);
+        };
+        auto commit_inline = [disk_tx = shared_from_this(), autocommit, path](String content)
+        {
+            disk_tx->addOperation([path, inline_data = std::move(content)](MetadataTransactionPtr tx)
+            {
+                tx->writeInlineDataToFile(path, inline_data);
+            });
+            if (autocommit)
+                disk_tx->commit();
+        };
+        return std::make_unique<WriteBufferInlineOrBlob>(
+            path, settings.inline_file_max_bytes, std::move(create_underlying), std::move(commit_inline), buf_size);
+    }
 
     StoredObject object(metadata_transaction->generateObjectKeyForPath(path).serialize(), path);
     ForkWriteBuffer::WriteBufferPtrs writers;
@@ -340,7 +388,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
 
         /// Locations to which blobs were not originally copied should be marked as missing.
         auto missing_locations = disk_tx->cluster->findComplement(replicated_locations);
-        disk_tx->operations_to_execute.push_back([object, mode, create_blob_if_empty, blob_replication = std::move(missing_locations)](MetadataTransactionPtr tx)
+        disk_tx->addOperation([object, mode, create_blob_if_empty, blob_replication = std::move(missing_locations)](MetadataTransactionPtr tx)
         {
             if (mode == WriteMode::Rewrite)
             {
@@ -373,6 +421,22 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     return std::make_unique<WriteBufferWithFinalizeCallback>(std::move(buffer_to_enabled_locations), std::move(create_metadata_callback), object.remote_path, create_blob_if_empty);
 }
 
+void DiskObjectStorageTransaction::recordBlobReplication(const StoredObject & object, const Locations & missing_locations)
+{
+    addOperation([object, missing_locations](MetadataTransactionPtr tx)
+    {
+        tx->recordBlobsReplication(object, missing_locations);
+    });
+}
+
+void DiskObjectStorageTransaction::submitBlobForRemoval(const std::string & remote_path)
+{
+    addOperation([remote_path](MetadataTransactionPtr tx)
+    {
+        tx->submitBlobForRemoval(remote_path);
+    });
+}
+
 /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
 /// TODO: This function is incorrect for multiple object storages, we need to remove it and use everywhere regular writeFile
 void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
@@ -395,7 +459,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     /// We always use mode Rewrite because we simulate append using metadata and different files
     object.bytes_size = std::move(write_blob_function)(blob_path, WriteMode::Rewrite, /*object_attributes=*/std::nullopt);
 
-    operations_to_execute.push_back([object, mode](MetadataTransactionPtr tx)
+    addOperation([object, mode](MetadataTransactionPtr tx)
     {
         if (mode == WriteMode::Rewrite)
         {
@@ -413,7 +477,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
 
 void DiskObjectStorageTransaction::createHardLink(const std::string & src_path, const std::string & dst_path)
 {
-    operations_to_execute.push_back([src_path, dst_path](MetadataTransactionPtr tx)
+    addOperation([src_path, dst_path](MetadataTransactionPtr tx)
     {
         tx->createHardLink(src_path, dst_path);
     });
@@ -421,7 +485,7 @@ void DiskObjectStorageTransaction::createHardLink(const std::string & src_path, 
 
 void DiskObjectStorageTransaction::setReadOnly(const std::string & path)
 {
-    operations_to_execute.push_back([path](MetadataTransactionPtr tx)
+    addOperation([path](MetadataTransactionPtr tx)
     {
         tx->setReadOnly(path);
     });
@@ -429,7 +493,7 @@ void DiskObjectStorageTransaction::setReadOnly(const std::string & path)
 
 void DiskObjectStorageTransaction::setLastModified(const std::string & path, const Poco::Timestamp & timestamp)
 {
-    operations_to_execute.push_back([path, timestamp](MetadataTransactionPtr tx)
+    addOperation([path, timestamp](MetadataTransactionPtr tx)
     {
         tx->setLastModified(path, timestamp);
     });
@@ -437,7 +501,7 @@ void DiskObjectStorageTransaction::setLastModified(const std::string & path, con
 
 void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
 {
-    operations_to_execute.push_back([path, mode](MetadataTransactionPtr tx)
+    addOperation([path, mode](MetadataTransactionPtr tx)
     {
         tx->chmod(path, mode);
     });
@@ -447,7 +511,7 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
     if (metadata_storage->supportsEmptyFilesWithoutBlobs())
     {
-        operations_to_execute.push_back([path](MetadataTransactionPtr tx)
+        addOperation([path](MetadataTransactionPtr tx)
         {
             tx->createMetadataFile(path, /*objects=*/{});
         });
@@ -516,7 +580,7 @@ void DiskObjectStorageTransaction::copyFileImpl(
         return;
     }
 
-    operations_to_execute.push_back([blobs_to_create, missing_locations, to_file_path](MetadataTransactionPtr tx)
+    addOperation([blobs_to_create, missing_locations, to_file_path](MetadataTransactionPtr tx)
     {
         for (const auto & blob : blobs_to_create)
             tx->recordBlobsReplication(blob, missing_locations);
@@ -538,6 +602,7 @@ void MultipleDisksObjectStorageTransaction::copyFile(const std::string & from_fi
 void DiskObjectStorageTransaction::commit()
 {
     auto component_guard = Coordination::setCurrentComponent("DiskObjectStorageTransaction::commit");
+    chassert(operations_to_execute.empty() || !metadata_storage->appliesOperationsEagerly());
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {
         try
@@ -581,6 +646,7 @@ void DiskObjectStorageTransaction::commit()
 
 TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const TransactionCommitOptionsVariant & options)
 {
+    chassert(operations_to_execute.empty() || !metadata_storage->appliesOperationsEagerly());
     for (size_t i = 0; i < operations_to_execute.size(); ++i)
     {
         try

@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/IOSchedulingSettings.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageFromMemory.h>
 #include <Common/CurrentThread.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -17,6 +18,7 @@
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 #include <Interpreters/FileCache/FileCache.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
@@ -83,6 +85,39 @@ ObjectStoragePtr DiskObjectStorage::getObjectStorage()
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransaction()
 {
     return std::make_shared<DiskObjectStorageTransaction>(cluster, metadata_storage, object_storages, blob_killer, copy_object_pool, wait_blob_removal, getReadResourceName(), getWriteResourceName());
+}
+
+DiskObjectStorage::DiskObjectStorage(const DiskObjectStorage & base, MetadataStoragePtr metadata_storage_)
+    : IDisk(base.name)
+    , wrapped_disk(base.wrapped_disk)
+    , log(getLogger("DiskObjectStorage(" + base.name + ", memory metadata)"))
+    , cluster(base.cluster)
+    , metadata_storage(std::move(metadata_storage_))
+    , object_storages(base.object_storages)
+    , data_source_description(base.data_source_description)
+    , blob_killer(base.blob_killer)
+    , blob_copier(base.blob_copier)
+    , copy_object_pool(base.copy_object_pool)
+    , enable_distributed_cache(base.enable_distributed_cache.load())
+    , wait_blob_removal(base.wait_blob_removal.load())
+    , remove_shared_recursive_file_limit(base.remove_shared_recursive_file_limit)
+{
+    data_source_description.metadata_type = metadata_storage->getType();
+
+    std::lock_guard lock(base.resource_mutex);
+    read_resource_name_from_config = base.read_resource_name_from_config;
+    write_resource_name_from_config = base.write_resource_name_from_config;
+    read_resource_name_from_sql = base.read_resource_name_from_sql;
+    write_resource_name_from_sql = base.write_resource_name_from_sql;
+    read_resource_name_from_sql_any = base.read_resource_name_from_sql_any;
+    write_resource_name_from_sql_any = base.write_resource_name_from_sql_any;
+}
+
+DiskObjectStoragePtr DiskObjectStorage::wrapWithMemoryMetadata()
+{
+    auto memory_metadata = std::make_shared<MetadataStorageFromMemory>(
+        "/" /* compatible_key_prefix */, metadata_storage->getKeyGenerator());
+    return std::shared_ptr<DiskObjectStorage>(new DiskObjectStorage(*this, std::move(memory_metadata)));
 }
 
 DiskTransactionPtr DiskObjectStorage::createObjectStorageTransactionToAnotherDisk(DiskObjectStorage & to_disk)
@@ -789,7 +824,23 @@ void DiskObjectStorage::prepareRead(
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    const auto storage_objects = metadata_storage->getStorageObjects(path);
+    /// A small file may be stored inline in its metadata; serve the content directly.
+    if (metadata_storage->supportsInlineData())
+    {
+        if (String inline_data = metadata_storage->readInlineDataToString(path); !inline_data.empty())
+        {
+            ReadPipeline::BufferCreator creator =
+                [content = std::move(inline_data), path]
+                (const StoredObject &, const ReadSettings &, bool, bool) -> std::unique_ptr<ReadBufferFromFileBase>
+            {
+                return std::make_unique<ReadBufferFromOwnMemoryFile>(path, content);
+            };
+            pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
+            return;
+        }
+    }
+
+    const StoredObjects storage_objects = metadata_storage->getStorageObjects(path);
 
     auto read_settings = updateIOSchedulingSettings(settings, getReadResourceName(), getWriteResourceName());
     auto global_context = Context::getGlobalContextInstance();
