@@ -60,11 +60,7 @@ public:
     /// Add columns from ordered_names that are not present in the block.
     /// Missing columns are added in the order specified by ordered_names.
     /// num_rows is needed in case if all res_columns are nullptr.
-    /// `previous_step_columns` names columns produced by earlier reader-chain steps; a subcolumn
-    /// whose parent is among them is deferred to evaluateMissingDefaults instead of default-filled.
-    void fillMissingColumns(
-        Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
-        const NameSet & previous_step_columns = {}) const;
+    void fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const;
     /// Evaluate defaulted columns if necessary.
     void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
 
@@ -98,30 +94,7 @@ public:
 
     virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
 
-    StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
-
-    /// Read hints (currently vector-search results) are per-reader state: they are set once after the
-    /// reader is created and consumed later by `MergeTreeRangeReader`. They live on the reader rather
-    /// than on the shared `data_part_info_for_read`, which is one object per part and would otherwise
-    /// be mutated concurrently when several tasks read the same part from different threads.
-    void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns)
-    {
-        if (read_columns.contains("_distance") || read_hints_.use_vector_search_result_filter)
-            read_hints = read_hints_;
-    }
-
-    const RangesInDataPartReadHints & getReadHints() const { return read_hints; }
-
 protected:
-    /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
-    /// propagated. Used when compiling default or virtual-column expressions at read time.
-    ContextPtr createContextForDefaultExpressions() const;
-
-    /// Builds a ColumnsDescription that includes both the storage metadata columns and any virtual
-    /// columns that carry a default expression. Required by evaluateMissingDefaults so that it can
-    /// resolve default expressions for virtual columns.
-    ColumnsDescription buildCombinedColumnsForDefaultExpressions() const;
-
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
@@ -154,9 +127,6 @@ protected:
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
 
-    /// Per-reader read hints (see setReadHints/getReadHints above).
-    RangesInDataPartReadHints read_hints;
-
     /// Column, serialization and level (of nesting) of column
     /// which is used for reading offsets for missing nested column.
     struct ColumnForOffsets
@@ -180,9 +150,6 @@ protected:
     /// by a pending mutation that hasn't been applied to this part yet.
     /// Such columns should not be read from the part; defaults should be used instead.
     bool isColumnDroppedByPendingMutation(size_t pos) const;
-
-    /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
-    bool isSystemColumnInvalidated(size_t pos) const;
 
 private:
     friend class MergeTreeReaderIndex;
@@ -228,5 +195,5 @@ MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
     const MergeTreeIndexWithCondition & index,
     const NamesAndTypesList & columns_to_read,
-    const IndexGranulesMap & index_granules);
+    bool can_skip_mark);
 }

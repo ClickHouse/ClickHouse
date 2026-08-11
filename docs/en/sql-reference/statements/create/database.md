@@ -7,6 +7,8 @@ title: 'CREATE DATABASE'
 doc_type: 'reference'
 ---
 
+# CREATE DATABASE
+
 Creates a new database.
 
 ```sql
@@ -44,12 +46,16 @@ CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
 SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─name───────┬─comment────────────────┐
 │ db_comment │ The temporary database │
 └────────────┴────────────────────────┘

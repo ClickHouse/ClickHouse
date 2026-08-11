@@ -7,6 +7,8 @@ title: 'Keeper HTTP API and Dashboard'
 doc_type: 'reference'
 ---
 
+# Keeper HTTP API and Dashboard
+
 ClickHouse Keeper provides an HTTP API and embedded web dashboard for monitoring, health checks, and storage management. 
 This interface allows operators to inspect cluster status, execute commands, and manage Keeper storage through a web browser or HTTP clients.
 
@@ -47,17 +49,6 @@ The dashboard provides:
 - Node monitoring (role, latency, connections)
 - Storage browser
 - Command execution interface
-
-#### Cluster tab {#dashboard-cluster-tab}
-
-The **Cluster** tab renders the Raft membership as a topology graph and a table. Each member is shown with a health color:
-
-- **Green** — alive and in sync with the leader
-- **Yellow** — alive but lagging behind the leader by more than `stale_log_gap` log entries
-- **Red** — unreachable (no successful Raft response within the heartbeat expiry window)
-- **Gray** — unknown (peer health is only visible from the leader; followers see their peers as unknown)
-
-The table also shows each member's role (leader, follower, or observer), Raft priority, last log index, replication lag relative to the leader, and the time since the last successful Raft response. When the current node is not the leader, the tab offers a deep-link that opens the leader's dashboard, where full peer health is available. The tab can be opened directly with `/dashboard?tab=cluster`.
 
 ### Readiness Probe {#readiness-probe}
 

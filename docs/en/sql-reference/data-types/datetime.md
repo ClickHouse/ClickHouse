@@ -8,6 +8,8 @@ title: 'DateTime'
 doc_type: 'reference'
 ---
 
+# DateTime
+
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day.
 
 Syntax:
@@ -36,7 +38,7 @@ A list of supported time zones can be found in the [IANA Time Zone Database](htt
 
 You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn't set, ClickHouse uses the value of the [timezone](../../operations/server-configuration-parameters/settings.md#timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
-The [clickhouse-client](../../interfaces/client.md) applies the server time zone by default if a time zone isn't explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
+The [clickhouse-client](../../interfaces/cli.md) applies the server time zone by default if a time zone isn't explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
 ClickHouse outputs values depending on the value of the [date_time_output_format](../../operations/settings/settings-formats.md#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatDateTime) function.
 
@@ -57,8 +59,8 @@ ENGINE = TinyLog;
 
 ```sql
 -- Parse DateTime
--- - from a string,
--- - from a number interpreted as the number of seconds since 1970-01-01 (a fractional part is truncated to whole seconds).
+-- - from string,
+-- - from integer interpreted as number of seconds since 1970-01-01.
 INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
 
 SELECT * FROM dt;
@@ -71,11 +73,7 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
-- When inserting datetime as a number, it is treated as a Unix Timestamp (UTC) in seconds. `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`. A number with a fractional or exponent part (for example `1546300800.5` or `1.5463008e9`) is accepted as well and truncated to whole seconds, consistent with `CAST`, `toDateTime` and the `Values` format.
-
-  :::note Backward incompatible change
-  In versions before 26.8, an unquoted number for `DateTime` in the `JSON` and `Values`/`Quoted` input paths (the latter covering every format that parses fields with the `Quoted` escaping rule: `Values`, `MySQLDump`, and `Template`/`CustomSeparated`/`Regexp` configured with `Quoted` field escaping) was read as a whole number of seconds only; a number with a fractional or exponent part was not accepted by the streaming parser (in the `Values` format itself such a literal still worked through the SQL-expression fallback, which reads it as a number of seconds; that fallback is unchanged and applies in compatibility mode as well). It is now parsed the same way as for [DateTime64](../../sql-reference/data-types/datetime64.md), so fractional and exponent forms are accepted and truncated to whole seconds. Quoted strings and ClickHouse's own (always quoted) output are unaffected. To restore the previous behavior in these paths, set `input_format_read_datetime_number_as_raw_value = 1` (or `SET compatibility = '26.7'`); this also affects the `JSONExtract` function and the `JSON` data type. Note that `JSONExtract` and the `JSON` data type parse a fractional number through `Float64`, so a value close to a whole-second boundary can round up to the next second (for example `1703363853.9999999` is read as `1703363854` rather than `1703363853`), while the row input formats truncate the original text exactly. The tab-separated, CSV and other escaped text input formats are not governed by this setting and keep their existing interpretation of an unquoted number.
-  :::
+- When inserting datetime as an integer, it is treated as Unix Timestamp (UTC). `1546300800` represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Asia/Istanbul` (UTC+3) timezone specified, when outputting as string the value will be shown as `'2019-01-01 03:00:00'`
 - When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Asia/Istanbul` timezone and saved as `1546290000`.
 
 **2.** Filtering on `DateTime` values

@@ -72,7 +72,6 @@ const char * toString(JoinAlgorithm join_algorithm)
         case JoinAlgorithm::PARALLEL_HASH: return "PARALLEL_HASH";
         case JoinAlgorithm::DIRECT: return "DIRECT";
         case JoinAlgorithm::FULL_SORTING_MERGE: return "FULL_SORTING_MERGE";
-        case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE: return "PARALLEL_FULL_SORTING_MERGE";
         case JoinAlgorithm::GRACE_HASH: return "GRACE_HASH";
     }
 }
@@ -83,8 +82,6 @@ const char * toString(JoinOrderAlgorithm join_order_algorithm)
     {
         case JoinOrderAlgorithm::GREEDY: return "GREEDY";
         case JoinOrderAlgorithm::DPSIZE: return "DPSIZE";
-        case JoinOrderAlgorithm::DPSUB: return "DPSUB";
-        case JoinOrderAlgorithm::DPHYP:  return "DPHYP";
     }
 }
 
@@ -115,7 +112,7 @@ void serializeJoinKind(JoinKind kind, WriteBuffer & out)
 
 JoinKind deserializeJoinKind(ReadBuffer & in)
 {
-    uint8_t val = 0;
+    uint8_t val;
     readIntBinary(val, in);
 
     if (val > JoinKindMax)
@@ -133,7 +130,7 @@ void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out)
 
 JoinStrictness deserializeJoinStrictness(ReadBuffer & in)
 {
-    uint8_t val = 0;
+    uint8_t val;
     readIntBinary(val, in);
 
     if (val > JoinStrictnessMax)
@@ -150,7 +147,7 @@ void serializeJoinLocality(JoinLocality locality, WriteBuffer & out)
 }
 JoinLocality deserializeJoinLocality(ReadBuffer & in)
 {
-    uint8_t val = 0;
+    uint8_t val;
     readIntBinary(val, in);
 
     if (val > JoinLocalityMax)

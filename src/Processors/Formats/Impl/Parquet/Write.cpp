@@ -19,7 +19,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Libdeflate.h>
 #include <Common/WKB.h>
 #include <Common/config_version.h>
 #include <base/arithmeticOverflow.h>
@@ -453,50 +452,6 @@ struct ConverterEnumAsString
     }
 };
 
-struct ConverterUUID
-{
-    /// Use ...Copy, not ...Ref: each batch reuses `swapped_buf` storage which can be reallocated
-    /// between successive `getBatch` calls (when `data_count` exceeds the current capacity, e.g.
-    /// after a low-density null run). Statistics that hold raw pointers into `swapped_buf` would
-    /// then dereference freed memory when merging the next page's stats — a heap-use-after-free.
-    /// `StatisticsFixedStringCopy` keeps min/max as inline 16-byte arrays, so no dangling refs.
-    using Statistics = StatisticsFixedStringCopy<sizeof(UUID), /*SIGNED=*/ false>;
-
-    const ColumnVector<UUID> & column;
-    PODArray<parquet::FixedLenByteArray> buf;
-    PODArray<UUID> swapped_buf;
-
-    explicit ConverterUUID(const ColumnPtr & c) : column(assert_cast<const ColumnVector<UUID> &>(*c)) {}
-
-    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
-    {
-        buf.resize(count);
-        swapped_buf.resize(count);
-
-        for (size_t i = 0; i < count; ++i)
-        {
-            UUID res = column.getData()[offset + i];
-            auto * bytes = reinterpret_cast<uint8_t *>(&res);
-
-            if constexpr (std::endian::native == std::endian::little)
-            {
-                std::reverse(bytes, bytes + 8);
-                std::reverse(bytes + 8, bytes + 16);
-            }
-            else
-            {
-                std::swap_ranges(bytes, bytes + 8, bytes + 8);
-            }
-
-            swapped_buf[i] = res;
-            buf[i].ptr = reinterpret_cast<const uint8_t *>(&swapped_buf[i]);
-        }
-        return buf.data();
-    }
-
-    size_t fixedStringSize() { return 16; }
-};
-
 struct ConverterFixedString
 {
     using Statistics = StatisticsFixedStringRef;
@@ -631,19 +586,6 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 {
     /// We could use wrapWriteBufferWithCompressionMethod() for everything, but I worry about the
     /// overhead of creating a bunch of WriteBuffers on each page (thousands of values).
-#if USE_LIBDEFLATE
-    /// One-shot libdeflate for gzip: the page is already fully in memory, and libdeflate is faster
-    /// and compresses better than the streaming zlib path. Levels outside libdeflate's [1, 12]
-    /// range (e.g. level 0 = store) keep using the streaming path below.
-    if (method == CompressionMethod::Gzip && level >= 1 && level <= 12)
-    {
-        scratch.resize(Libdeflate::compressBound(method, level, source.size()));
-        size_t compressed_size = Libdeflate::compress(method, level, source.data(), source.size(), scratch.data(), scratch.size());
-        scratch.resize(compressed_size);
-        return scratch;
-    }
-#endif
-
     switch (method)
     {
         case CompressionMethod::None:
@@ -683,7 +625,7 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 
             scratch.resize(max_dest_size);
 
-            size_t compressed_size = 0;
+            size_t compressed_size;
             snappy::RawCompress(source.data(), source.size(), scratch.data(), &compressed_size);
 
             scratch.resize(compressed_size);
@@ -699,9 +641,6 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 method,
                 level,
                 /*zstd_window_log*/ 0,
-                /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
-                /// this dispatch never sees it, so the snappy mode here is irrelevant.
-                SnappyMode::Basic,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());
@@ -743,38 +682,6 @@ void addToEncodingsUsed(ColumnChunkWriteState & s, parq::Encoding::type e)
         s.column_chunk.meta_data.encodings.push_back(e);
 }
 
-/// Maintain PageEncodingStats as we write pages. Readers use it to tell whether a column chunk is
-/// fully dictionary-encoded (so the dictionary holds the complete set of values), which enables
-/// dictionary-based row group filtering.
-void addToEncodingStats(ColumnChunkWriteState & s, const parq::PageHeader & header)
-{
-    parq::Encoding::type encoding{};
-    if (header.__isset.dictionary_page_header)
-        encoding = header.dictionary_page_header.encoding;
-    else if (header.__isset.data_page_header)
-        encoding = header.data_page_header.encoding;
-    else if (header.__isset.data_page_header_v2)
-        encoding = header.data_page_header_v2.encoding;
-    else
-        return;
-
-    auto & stats = s.column_chunk.meta_data.encoding_stats;
-    for (parq::PageEncodingStats & st : stats)
-    {
-        if (st.page_type == header.type && st.encoding == encoding)
-        {
-            st.__set_count(st.count + 1);
-            return;
-        }
-    }
-    parq::PageEncodingStats st;
-    st.__set_page_type(header.type);
-    st.__set_encoding(encoding);
-    st.__set_count(1);
-    stats.push_back(std::move(st));
-    s.column_chunk.meta_data.__isset.encoding_stats = true;
-}
-
 void writePage(const parq::PageHeader & header, const PODArray<char> & compressed, ColumnChunkWriteState & s, bool add_to_offset_index, size_t first_row_index, WriteBuffer & out)
 {
     size_t header_size = serializeThriftStruct(header, out);
@@ -799,8 +706,6 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
 
     s.column_chunk.meta_data.total_uncompressed_size += header.uncompressed_page_size + header_size;
     s.column_chunk.meta_data.total_compressed_size += compressed_page_size;
-
-    addToEncodingStats(s, header);
 }
 
 void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkIndexes & indexes, const WriteOptions & options)
@@ -1118,7 +1023,7 @@ void writeColumnImpl(
             {
                 for (size_t i = 0; i < data_count; ++i)
                 {
-                    UInt64 h = 0;
+                    UInt64 h;
                     constexpr UInt64 seed = 0;
                     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
                         h = XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
@@ -1225,8 +1130,6 @@ void writeColumnChunkBody(
 
     /// We'll be updating these as we go.
     s.column_chunk.meta_data.__set_encodings({});
-    s.column_chunk.meta_data.encoding_stats.clear();
-    s.column_chunk.meta_data.__isset.encoding_stats = false;
     s.column_chunk.meta_data.__set_total_compressed_size(0);
     s.column_chunk.meta_data.__set_total_uncompressed_size(0);
     s.column_chunk.meta_data.__set_data_page_offset(-1);
@@ -1338,14 +1241,8 @@ void writeColumnChunkBody(
         case TypeIndex::Int128:  F(Int128); break;
         case TypeIndex::Int256:  F(Int256); break;
         case TypeIndex::IPv6:    F(IPv6); break;
+        case TypeIndex::UUID:    F(UUID); break;
         #undef F
-
-        case TypeIndex::UUID:
-            writeColumnImpl<parquet::FLBAType>(s,
-                options,
-                out,
-                ConverterUUID(s.primitive_column));
-        break;
 
         #define D(source_type) \
             writeColumnImpl<parquet::FLBAType>( \
@@ -1536,7 +1433,6 @@ void writeFileFooter(FileWriteState & file,
         {
             if (type->getCustomName() &&
                 (type->getCustomName()->getName() == WKBPointTransform::name ||
-                type->getCustomName()->getName() == WKBMultiPointTransform::name ||
                 type->getCustomName()->getName() == WKBLineStringTransform::name ||
                 type->getCustomName()->getName() == WKBPolygonTransform::name ||
                 type->getCustomName()->getName() == WKBMultiLineStringTransform::name ||

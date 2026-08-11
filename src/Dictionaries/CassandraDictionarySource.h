@@ -28,7 +28,7 @@ public:
         String table;
         String query;
 
-        CassConsistency consistency{};
+        CassConsistency consistency;
         bool allow_filtering;
         /// TODO get information about key from the driver
         size_t partition_key_prefix;

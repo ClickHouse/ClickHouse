@@ -62,10 +62,17 @@ struct SelectQueryOptions
     std::optional<UInt32> shard_count;
 
     bool build_logical_plan = false;
-    bool is_local_shard_plan = false;
     bool ignore_rename_columns = false;
 
     size_t max_step_description_length = 0;
+
+    /** During read from MergeTree parts will be removed from snapshot after they are not needed.
+      * This optimization will break subsequent execution of the same query tree, because table node
+      * will no more have valid snapshot.
+      *
+      * TODO: Implement this functionality in safer way
+      */
+    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
 
     bool force_materialize_cte = false;
 
@@ -87,7 +94,6 @@ struct SelectQueryOptions
     {
         SelectQueryOptions out = *this;
         out.to_stage = QueryProcessingStage::Complete;
-        out.is_local_shard_plan = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;

@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDateTime.h>
 
 #include <Columns/ColumnVector.h>
@@ -17,24 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
-}
-
-UInt128 SerializationDateTime::getHash(const TimezoneMixin & time_zone_)
-{
-    SipHash hash;
-    hash.update("DateTime");
-    auto tz = time_zone_.getTimeZone().getTimeZone();
-    hash.update(tz.size());
-    hash.update(tz);
-    hash.update(time_zone_.hasExplicitTimeZone());
-    return hash.get128();
-}
-
-UInt128 SerializationTime::getHash(const DataTypeTime & /*time_type*/)
-{
-    SipHash hash;
-    hash.update("Time");
-    return hash.get128();
 }
 
 namespace
@@ -56,13 +37,19 @@ readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const D
             break;
     }
 
-    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+    x = std::max<time_t>(0, x);
+}
+
+inline void readAsIntText(time_t & x, ReadBuffer & istr)
+{
+    readIntText(x, istr);
+    x = std::max<time_t>(0, x);
 }
 
 inline bool tryReadText(
     time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
-    bool res = false;
+    bool res;
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
@@ -76,8 +63,16 @@ inline bool tryReadText(
             break;
     }
 
-    x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
+    x = std::max<time_t>(0, x);
     return res;
+}
+
+inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
+{
+    if (!tryReadIntText(x, istr))
+        return false;
+    x = std::max<time_t>(0, x);
+    return true;
 }
 
 }
@@ -85,16 +80,6 @@ inline bool tryReadText(
 SerializationDateTime::SerializationDateTime(const TimezoneMixin & time_zone_)
     : TimezoneMixin(time_zone_)
 {
-}
-
-SerializationPtr SerializationDateTime::create(const TimezoneMixin & time_zone_)
-{
-    return ISerialization::pooled(getHash(time_zone_), [&] { return new SerializationDateTime(time_zone_); });
-}
-
-SerializationPtr SerializationTime::create(const DataTypeTime & time_type)
-{
-    return ISerialization::pooled(getHash(time_type), [&] { return new SerializationTime(time_type); });
 }
 
 void SerializationDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -169,13 +154,9 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
         readText(x, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
+    else /// Just 1504193808 or 01504193808
     {
-        readDateTimeAsRawValue(x, istr);
-    }
-    else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
-    {
-        readDateTimeAsNumber(x, istr);
+        readAsIntText(x, istr);
     }
 
     /// It's important to do this at the end - for exception safety.
@@ -190,14 +171,9 @@ bool SerializationDateTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffe
         if (!tryReadText(x, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
             return false;
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
+    else /// Just 1504193808 or 01504193808
     {
-        if (!tryReadDateTimeAsRawValue(x, istr))
-            return false;
-    }
-    else /// Just 1504193808 or 1703363853.5 (a Unix timestamp, possibly with a sub-second part)
-    {
-        if (!tryReadDateTimeAsNumber(x, istr))
+        if (!tryReadAsIntText(x, istr))
             return false;
     }
 
@@ -222,13 +198,9 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
         readText(x, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
-    {
-        readDateTimeAsRawValue(x, istr);
-    }
     else
     {
-        readDateTimeAsNumber(x, istr);
+        readAsIntText(x, istr);
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
@@ -242,14 +214,9 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
         if (!tryReadText(x, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
             return false;
     }
-    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw value (seconds).
-    {
-        if (!tryReadDateTimeAsRawValue(x, istr))
-            return false;
-    }
     else
     {
-        if (!tryReadDateTimeAsNumber(x, istr))
+        if (!tryReadIntText(x, istr))
             return false;
     }
 

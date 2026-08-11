@@ -43,13 +43,9 @@ private:
 class FunctionBaseVariantAdaptor final : public IFunctionBase
 {
 public:
-    /// variant_argument_index_ is the argument the adaptor executes per alternative. The resolver
-    /// picks it, because a function may handle some `Variant` arguments itself (see
-    /// `IFunctionOverloadResolver::useDefaultImplementationForVariantWithCustomName`).
     FunctionBaseVariantAdaptor(
         std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
-        ColumnsWithTypeAndName arguments_with_type_,
-        size_t variant_argument_index_);
+        ColumnsWithTypeAndName arguments_with_type_);
 
     String getName() const override { return function_overload_resolver->getName(); }
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/defines.h>
 #include <base/extended_types.h>
 
 #define FOR_INTEGER_TYPES(M) \
@@ -22,8 +21,7 @@
 #define INSTANTIATION(T) char * itoa(T i, char * p);
 FOR_INTEGER_TYPES(INSTANTIATION)
 
-/// `long` is not covered by the list above where it is a distinct type.
-#if defined(LONG_IS_A_DISTINCT_TYPE)
+#if defined(OS_DARWIN)
 INSTANTIATION(unsigned long)
 INSTANTIATION(long)
 #endif

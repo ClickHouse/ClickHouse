@@ -285,13 +285,6 @@ CREATE DATABASE db_04510_expr ENGINE = Backup('', S3('url_dbexpr', 'ak', 'SEKRIT
 CREATE DATABASE db_04510_s3pos ENGINE = S3('url_dbs3pos', 'ak', 'SEKRIT_SAK',
                  'SEKRIT_S3DBTOK'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
--- A valid non-secret named override (use_environment_credentials) must stay visible while
--- secret_access_key is hidden. This CREATE succeeds (the S3 database is lazy), so use a unique
--- database name to avoid collisions across parallel runs, and drop it after.
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = S3('url_dbenv', 'ak', 'SEKRIT_SAK', use_environment_credentials = 1);
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-
 -- The query-tree surface (EXPLAIN QUERY TREE) must hide the same carriers as the logged query text:
 -- a credential-bearing url (masked whole, since a tree dump cannot represent partial masking), the
 -- positional secrets, and the values of headers(...) / extra_credentials(...).
