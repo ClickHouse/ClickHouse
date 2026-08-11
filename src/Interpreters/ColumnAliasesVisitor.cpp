@@ -88,7 +88,12 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
             /// to table columns. Raw AST substitution inside a lambda cannot express that: a name
             /// matching a parameter of an enclosing lambda would be captured and change meaning.
             /// Throw instead of computing wrong values.
-            if (!data.private_aliases.empty())
+            ///
+            /// `IndexAnalysis` is exempt: skip index expressions accepted such definitions before,
+            /// so `ATTACH` of an existing table must keep working, and the capture stays
+            /// self-consistent there - the index is both built and analyzed over the same
+            /// substituted expression.
+            if (data.replacement_mode == ColumnAliasReplacementMode::QueryAnalysis && !data.private_aliases.empty())
                 validateAliasExpansionNotCapturedByLambda(*column_name, alias_expr, data.private_aliases);
 
             if (data.replacement_mode == ColumnAliasReplacementMode::QueryAnalysis)
