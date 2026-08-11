@@ -24,13 +24,16 @@ SELECT countIf(explain LIKE '%Clauses: [(__table1.k, %') FROM (
     WHERE toUInt8(l.a % 4) = r.b
     SETTINGS explain_query_plan_default = 'legacy');
 
--- `runningConcurrency` is stateful while reporting itself deterministic, so the determinism flag alone
--- would still promote it. The correct answer is empty.
+-- `runningConcurrency` is stateful while reporting itself deterministic. Its value also depends on
+-- the physical join, so assert the plan, which is what the guard decides.
 CREATE TABLE lc (k UInt32, s DateTime, e DateTime) ENGINE = Memory;
 CREATE TABLE rc (k UInt32, b UInt8) ENGINE = Memory;
 INSERT INTO lc SELECT 1, toDateTime(1700000000 + intDiv(number, 4)), toDateTime(1700000000 + intDiv(number, 4) + 3000) FROM numbers(2000);
 INSERT INTO rc SELECT 1, number % 16 FROM numbers(16);
-SELECT count() FROM lc JOIN rc ON lc.k = rc.k WHERE toUInt8(runningConcurrency(lc.s, lc.e) % 16) = rc.b;
+SELECT countIf(explain LIKE '%Clauses: [(__table1.k, %') FROM (
+    EXPLAIN PLAN actions = 1 SELECT rc.b FROM lc JOIN rc ON lc.k = rc.k
+    WHERE toUInt8(runningConcurrency(lc.s, lc.e) % 16) = rc.b
+    SETTINGS explain_query_plan_default = 'legacy');
 
 -- `byteSize` reads the physical representation: on the sparse right column it reports 19, while the
 -- value the JOIN produces is the dense 11, which is what the predicate means.
@@ -47,6 +50,29 @@ INSERT INTO jt SELECT number, number % 4 FROM numbers(100);
 SELECT countIf(explain LIKE '%Clauses: [(__table1.k, %') FROM (
     EXPLAIN PLAN actions = 1 SELECT r.b FROM l JOIN r ON l.k = r.k
     WHERE toUInt8(joinGet(currentDatabase() || '.jt', 'v', toUInt32(l.a)) % 4) = r.b
+    SETTINGS explain_query_plan_default = 'legacy');
+
+-- The name the plan holds follows the storage's `join_use_nulls`, so this is a second spelling to refuse.
+CREATE TABLE jtn (k UInt32, v UInt8) ENGINE = Join(ANY, LEFT, k) SETTINGS join_use_nulls = 1;
+INSERT INTO jtn SELECT number, number % 4 FROM numbers(100);
+SELECT countIf(explain LIKE '%Clauses: [(__table1.k, %') FROM (
+    EXPLAIN PLAN actions = 1 SELECT r.b FROM l JOIN r ON l.k = r.k
+    WHERE toUInt8(assumeNotNull(joinGet(currentDatabase() || '.jtn', 'v', toUInt32(l.a))) % 4) = r.b
+    SETTINGS explain_query_plan_default = 'legacy');
+
+-- The hierarchy lookups also carry their non-determinism only on the resolver, and they read the
+-- dictionary at execution time rather than caching it.
+CREATE TABLE hsrc (id UInt64, parent_id UInt64) ENGINE = Memory;
+INSERT INTO hsrc VALUES (1, 0), (2, 1), (3, 1), (4, 2);
+CREATE DICTIONARY hdict (id UInt64, parent_id UInt64 HIERARCHICAL)
+PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hsrc')) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 1);
+SELECT countIf(explain LIKE '%Clauses: [(__table1.k, %') FROM (
+    EXPLAIN PLAN actions = 1 SELECT r.b FROM l JOIN r ON l.k = r.k
+    WHERE toUInt8(length(dictGetDescendants(currentDatabase() || '.hdict', toUInt64(l.a % 4 + 1))) % 4) = r.b
+    SETTINGS explain_query_plan_default = 'legacy');
+SELECT countIf(explain LIKE '%Clauses: [(__table1.k, %') FROM (
+    EXPLAIN PLAN actions = 1 SELECT r.b FROM l JOIN r ON l.k = r.k
+    WHERE toUInt8(length(dictGetChildren(currentDatabase() || '.hdict', toUInt64(l.a % 4 + 1))) % 4) = r.b
     SETTINGS explain_query_plan_default = 'legacy');
 
 -- `arrayJoin` is a node type rather than a function, so it needs its own refusal.
@@ -74,6 +100,9 @@ SELECT count() FROM (
 WHERE x != la;
 
 DROP TABLE jt;
+DROP TABLE jtn;
+DROP DICTIONARY hdict;
+DROP TABLE hsrc;
 DROP TABLE lb;
 DROP TABLE rb;
 DROP TABLE lc;

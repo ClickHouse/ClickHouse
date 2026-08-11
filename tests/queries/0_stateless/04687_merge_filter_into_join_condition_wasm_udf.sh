@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tests that a WebAssembly UDF declared without DETERMINISTIC is not merged into a JOIN condition,
-# while its DETERMINISTIC twin still is.
+# while its DETERMINISTIC twin still is, and that `showCertificate` is not merged either.
 
 # Tags: no-fasttest, no-msan
-# no-fasttest: the fast build has no WebAssembly engine.
+# no-fasttest: the fast build has no WebAssembly engine, and no SSL for `showCertificate`.
 # no-msan: WebAssembly UDFs are not run under MSan, like every other wasm test.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -52,6 +52,11 @@ SELECT countIf(explain LIKE '%Clauses: [(__table1.k, %') FROM (
 SELECT countIf(explain LIKE '%Clauses: [(__table1.k, %') FROM (
     EXPLAIN PLAN actions = 1 SELECT rw.b FROM lw JOIN rw ON lw.k = rw.k
     WHERE toUInt8(${FN_D}(toUInt32(lw.a)) % 4) = rw.b);
+
+-- The certificate is captured per node, so the value is not stable across the two evaluation sites.
+SELECT countIf(explain LIKE '%Clauses: [(__table1.k, %') FROM (
+    EXPLAIN PLAN actions = 1 SELECT rw.b FROM lw JOIN rw ON lw.k = rw.k
+    WHERE toUInt8((length(showCertificate()) + lw.a) % 4) = rw.b);
 
 DROP TABLE lw;
 DROP TABLE rw;

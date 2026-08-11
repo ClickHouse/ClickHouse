@@ -125,14 +125,12 @@ ExpressionSide getExpressionSide(
     return ExpressionSide::UNKNOWN;
 }
 
-/// These report `isDeterministic() == true` yet are not stable across the two evaluation sites:
-/// `byteSize` reads the physical representation, `showCertificate` is captured per node, and `joinGet`
-/// carries its metadata on the overload resolver rather than on the function the DAG stores, reporting
-/// whichever name `join_use_nulls` selects.
+/// Report `isDeterministic() == true` yet can yield different values at the two evaluation sites.
 bool reportsValueTheJoinCanChange(const String & function_name)
 {
     return function_name == "byteSize" || function_name == "joinGet" || function_name == "joinGetOrNull"
-        || function_name == "showCertificate";
+        || function_name == "showCertificate" || function_name == "dictGetDescendants"
+        || function_name == "dictGetChildren";
 }
 
 /// The two wrappers that hold a lambda body share only this accessor, not a common base.
@@ -169,11 +167,9 @@ const ActionsDAG * getLambdaBody(const ActionsDAG::Node & node)
     return nullptr;
 }
 
-/// Whether a subgraph yields the same value at every point in the plan, which a JOIN key must, since
-/// the key and the conjunct it replaces are two separate evaluations.
-///
-/// `arrayJoin` is matched on node type because `addArrayJoin` leaves `function_base` unset. A lambda
-/// body is not a child of its wrapper, so it is enqueued separately.
+/// Whether a subgraph yields the same value at every point in the plan, which a JOIN key must.
+/// `arrayJoin` is matched on node type because `addArrayJoin` leaves `function_base` unset, and a
+/// lambda body is enqueued separately because it is not a child of its wrapper.
 bool isSafeToUseAsJoinKey(const ActionsDAG::Node * node)
 {
     std::unordered_set<const ActionsDAG::Node *> visited;
