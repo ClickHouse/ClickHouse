@@ -380,6 +380,12 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     void reset();
 
+    /// Relinquish the held segments WITHOUT completing them (calls no `FileSegment::complete`,
+    /// unlike `reset`): the caller has copied out the `FileSegmentPtr`s and owns completing each
+    /// itself. Only balances the hold metric. Used by the ReaderExecutor cache, which hands one
+    /// segment to each reader/writer and lets that buffer complete it on destruction.
+    void release();
+
 private:
     FileSegments file_segments{};
 

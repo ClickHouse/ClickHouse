@@ -10,9 +10,18 @@
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/CurrentMetrics.h>
 #include <algorithm>
 #include <cstring>
 #include <vector>
+
+namespace CurrentMetrics
+{
+    /// A segment held (unreleasable) by a DiskCacheReader/DiskCacheWriter after `resolve`
+    /// handed it out and `release`d the holder. Kept in step with the buffer's lifetime so
+    /// the gauge still reflects the reader-executor's holds.
+    extern const Metric FilesystemCacheHoldFileSegments;
+}
 
 namespace DB
 {
@@ -179,74 +188,71 @@ size_t segmentCommittedEnd(const FileSegment & segment)
         : segment.getCurrentWriteOffset();
 }
 
-/// Append every committed sub-range of `holder` overlapping `sub_in_object`
-/// (object-local) to `result`, in segment order, via `preadSegmentNode`. Shared by
-/// the read buffer and the write buffer's served-prefix read; they differ only in
-/// whether a streaming-reader slot / anchors / throttler are supplied.
-void readOverlappingSegments(
+/// Read the part of `sub_in_object` (object-local) that `segment` holds committed, into
+/// `result`, via `preadSegmentNode`. Shared by the read buffer and the write buffer's
+/// served-prefix read; they differ only in whether a streaming-reader slot / anchors /
+/// throttler are supplied. The buffer owns exactly one segment - no loop over a holder.
+void readSegmentInto(
     ChainedBuffers & result,
-    FileSegmentsHolder & holder,
+    FileSegment & segment,
     ByteRange sub_in_object,
     size_t object_file_offset,
     const ThrottlerPtr & local_throttler,
     ReaderAnchorCache * anchors,
     StreamingReaderSlot * stream_slot)
 {
-    for (const auto & segment : holder)
-    {
-        const auto state = segment->state();
-        if (state != FileSegmentState::DOWNLOADED
-            && state != FileSegmentState::PARTIALLY_DOWNLOADED
-            && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
-            && state != FileSegmentState::DOWNLOADING)
-            continue;
+    const auto state = segment.state();
+    if (state != FileSegmentState::DOWNLOADED
+        && state != FileSegmentState::PARTIALLY_DOWNLOADED
+        && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+        && state != FileSegmentState::DOWNLOADING)
+        return;
 
-        const auto & seg_range = segment->range();
-        const size_t seg_left = seg_range.left;
-        const size_t downloaded_end = segmentCommittedEnd(*segment);
+    const auto & seg_range = segment.range();
+    const size_t seg_left = seg_range.left;
+    const size_t downloaded_end = segmentCommittedEnd(segment);
 
-        if (downloaded_end <= sub_in_object.offset || seg_left >= sub_in_object.end())
-            continue;
+    if (downloaded_end <= sub_in_object.offset || seg_left >= sub_in_object.end())
+        return;
 
-        const size_t overlap_start = std::max<size_t>(seg_left, sub_in_object.offset);
-        const size_t overlap_end = std::min(downloaded_end, sub_in_object.end());
-        if (overlap_end <= overlap_start)
-            continue;
+    const size_t overlap_start = std::max<size_t>(seg_left, sub_in_object.offset);
+    const size_t overlap_end = std::min(downloaded_end, sub_in_object.end());
+    if (overlap_end <= overlap_start)
+        return;
 
-        preadSegmentNode(
-            result, *segment, overlap_start, overlap_end - overlap_start,
-            object_file_offset, local_throttler, anchors, stream_slot);
-    }
+    preadSegmentNode(
+        result, segment, overlap_start, overlap_end - overlap_start,
+        object_file_offset, local_throttler, anchors, stream_slot);
 }
 
 }
 
 DiskCacheReader::DiskCacheReader(
-    std::shared_ptr<FileSegmentsHolder> holder_,
+    FileSegmentPtr segment_,
     ByteRange range_in_file,
     size_t object_file_offset_,
     ThrottlerPtr local_throttler_,
     ReaderAnchorCache * anchors_,
     StreamingReaderSlot * stream_slot_)
-    : holder(std::move(holder_))
+    : segment(std::move(segment_))
     , hit_range(range_in_file)
     , object_file_offset(object_file_offset_)
     , local_throttler(std::move(local_throttler_))
     , anchors(anchors_)
     , stream_slot(stream_slot_)
 {
+    if (segment)
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheHoldFileSegments);
 }
 
 ChainedBuffers DiskCacheReader::read(ByteRange sub)
 {
     ChainedBuffers result;
-    if (!holder)
+    if (!segment)
         return result;
 
-    /// Clamp to THIS buffer's hit range: every hit buffer of a view shares one
-    /// holder spanning all hit segments, so a `read` for a `sub` outside `hit_range`
-    /// would serve a neighbouring hit's bytes from the shared holder. The contract is
-    /// `sub` within `range()`; clamp defensively to the committed sub-ranges.
+    /// Clamp to THIS buffer's hit range - the committed prefix of its one segment.
+    /// A `sub` outside `hit_range` is out of contract; clamp defensively.
     {
         const size_t lo = std::max(sub.offset, hit_range.offset);
         const size_t hi = std::min(sub.end(), hit_range.end());
@@ -256,13 +262,13 @@ ChainedBuffers DiskCacheReader::read(ByteRange sub)
     }
 
     /// Record before reading: a throwing pread still leaves a coherent entry
-    /// that the d-tor bump re-checks and no-ops for gone segments.
+    /// that the d-tor bump re-checks and no-ops for a gone segment.
     touched.push_back(sub);
 
     chassert(sub.offset >= object_file_offset);
     ByteRange sub_in_object{sub.offset - object_file_offset, sub.size};
 
-    readOverlappingSegments(result, *holder, sub_in_object, object_file_offset,
+    readSegmentInto(result, *segment, sub_in_object, object_file_offset,
         local_throttler, anchors, stream_slot);
     return result;
 }
@@ -271,21 +277,23 @@ DiskCacheWriter::DiskCacheWriter(
     FileCachePtr cache_,
     size_t object_file_offset_,
     const FilesystemCacheSettings & cache_settings_,
-    std::shared_ptr<FileSegmentsHolder> holder_,
+    FileSegmentPtr segment_,
     ByteRange aligned_range_in_file)
     : cache(std::move(cache_))
     , object_file_offset(object_file_offset_)
     , cache_settings(cache_settings_)
-    , holder(std::move(holder_))
+    , segment(std::move(segment_))
     , aligned_range(aligned_range_in_file)
 {
+    if (segment)
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheHoldFileSegments);
 }
 
 size_t DiskCacheWriter::write(ChainedBuffers data)
 {
     if (cache_settings.read_if_exists_otherwise_bypass)
         return 0;
-    if (!holder)
+    if (!segment)
         return 0;
 
     /// `FileSegment::range()` is object-local; shift `data` so `ChainedBuffers::copyTo`
@@ -296,113 +304,104 @@ size_t DiskCacheWriter::write(ChainedBuffers data)
     const size_t miss_obj_off = aligned_range.offset - object_file_offset;
     const size_t miss_obj_end = miss_obj_off + aligned_range.size;
 
-    /// Iterate the HELD holder's segments overlapping the still-uncommitted part,
-    /// appending append-only at each segment's live `cwo`, but never popping the
-    /// segment from the holder (this buffer must keep it appendable across
-    /// windows). NEVER throws on the soft skips (detached / unclaimed / no-op).
-    size_t bytes_written = 0;
-    for (const auto & segment_ptr : *holder)
+    /// Append-only at our one segment's live `cwo`; never pop it (this buffer keeps it
+    /// appendable across windows). NEVER throws on the soft skips (out-of-range /
+    /// detached / unclaimed / no-op).
+    FileSegment & seg = *segment;
+    const auto & seg_range = seg.range();
+
+    if (seg_range.right + 1 <= miss_obj_off || seg_range.left >= miss_obj_end)
+        return 0;
+    if (seg.isDetached())
+        return 0;
+
+    /// `claim` is the sole role-acquisition site: only a segment this thread claimed
+    /// accepts bytes. A role a sibling freed mid-window is NOT adopted here - the next
+    /// claim takes it - so the roles this thread holds always equal its open claims'
+    /// won sets, and the claims' destructors are the complete release story.
+    if (!seg.isDownloader())
     {
-        FileSegment & segment = *segment_ptr;
-        const auto & seg_range = segment.range();
-
-        if (seg_range.right + 1 <= miss_obj_off)
-            continue;
-        if (seg_range.left >= miss_obj_end)
-            break;
-
-        if (segment.isDetached())
-            continue;
-
-        /// `claim` is the sole role-acquisition site: only segments this thread claimed
-        /// accept bytes. A role a sibling freed mid-window is NOT adopted here - the next
-        /// claim takes it - so the roles this thread holds always equal its open claims'
-        /// won sets, and the claims' destructors are the complete release story.
-        if (!segment.isDownloader())
-        {
-            LOG_TRACE(log, "DiskCacheWriter::write: segment [{}, {}] not claimed by this thread, skipping",
-                seg_range.left, seg_range.right);
-            continue;
-        }
-
-        /// Append-only: start at the live `cwo`.
-        const size_t write_offset = segment.getCurrentWriteOffset();
-        const size_t seg_end = seg_range.right + 1;
-        const size_t write_end_max = std::min<size_t>(seg_end, miss_obj_end);
-        if (write_offset >= write_end_max || write_offset < miss_obj_off)
-            continue;
-
-        /// A gap inside `data` caps the write; the segment stays claimed (partial) for
-        /// continuation in a later call under the same claim.
-        const ByteRange target{write_offset, write_end_max - write_offset};
-        size_t contiguous = target.size;
-        if (auto data_gaps = data.gaps(target); !data_gaps.empty())
-        {
-            const size_t first_gap_offset = data_gaps.front().offset;
-            contiguous = (first_gap_offset > write_offset) ? (first_gap_offset - write_offset) : 0;
-        }
-        if (contiguous == 0)
-            continue;
-
-        /// Validate + flatten before `reserve`: an exception after `reserve`
-        /// (which sets `queue_iterator`) trips the framework's
-        /// `EMPTY ⇒ !queue_iterator` invariant during holder cleanup.
-        const ByteRange write_range{write_offset, contiguous};
-        if (!data.covers(write_range))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "DiskCacheWriter::write: data does not contiguously cover the range being written: "
-                "write_range=[{}, {}), data intervals={}",
-                write_range.offset, write_range.end(), data.getIntervals().size());
-
-        VectorWithMemoryTracking<char> flat_buf(contiguous);
-        data.copyTo(flat_buf.data(), write_range);
-
-        std::string failure_reason;
-        const bool reserved = segment.reserve(
-            contiguous,
-            cache_settings.reserve_space_wait_lock_timeout_milliseconds,
-            failure_reason);
-        if (!reserved)
-        {
-            LOG_TRACE(log, "DiskCacheWriter::write: reserve failed for [{}, {}]: {}",
-                seg_range.left, seg_range.right, failure_reason);
-            continue;
-        }
-
-        const bool written_ok = tryWriteToSegment(segment, flat_buf.data(), contiguous, write_offset);
-        /// NEVER completeAndPopFront: keep the segment in our holder, appendable next call.
-        /// The downloader role stays with the open claim (its destructor finalizes); only
-        /// wake the readers waiting on the committed prefix.
-        segment.notifyDownloadProgress();
-
-        if (!written_ok)
-            continue;
-
-        /// File-level committed interval.
-        {
-            std::lock_guard lock(committed_mutex);
-            committed_ranges.add(ByteRange{write_offset + object_file_offset, contiguous});
-        }
-        bytes_written += contiguous;
-
-        LOG_TRACE(log, "DiskCacheWriter::write: wrote {} bytes to [{}, {}] at offset {}",
-            contiguous, seg_range.left, seg_range.right, write_offset);
+        LOG_TRACE(log, "DiskCacheWriter::write: segment [{}, {}] not claimed by this thread, skipping",
+            seg_range.left, seg_range.right);
+        return 0;
     }
-    return bytes_written;
+
+    /// Append-only: start at the live `cwo`.
+    const size_t write_offset = seg.getCurrentWriteOffset();
+    const size_t seg_end = seg_range.right + 1;
+    const size_t write_end_max = std::min<size_t>(seg_end, miss_obj_end);
+    if (write_offset >= write_end_max || write_offset < miss_obj_off)
+        return 0;
+
+    /// A gap inside `data` caps the write; the segment stays claimed (partial) for
+    /// continuation in a later call under the same claim.
+    const ByteRange target{write_offset, write_end_max - write_offset};
+    size_t contiguous = target.size;
+    if (auto data_gaps = data.gaps(target); !data_gaps.empty())
+    {
+        const size_t first_gap_offset = data_gaps.front().offset;
+        contiguous = (first_gap_offset > write_offset) ? (first_gap_offset - write_offset) : 0;
+    }
+    if (contiguous == 0)
+        return 0;
+
+    /// Validate + flatten before `reserve`: an exception after `reserve`
+    /// (which sets `queue_iterator`) trips the framework's
+    /// `EMPTY ⇒ !queue_iterator` invariant during holder cleanup.
+    const ByteRange write_range{write_offset, contiguous};
+    if (!data.covers(write_range))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "DiskCacheWriter::write: data does not contiguously cover the range being written: "
+            "write_range=[{}, {}), data intervals={}",
+            write_range.offset, write_range.end(), data.getIntervals().size());
+
+    VectorWithMemoryTracking<char> flat_buf(contiguous);
+    data.copyTo(flat_buf.data(), write_range);
+
+    std::string failure_reason;
+    const bool reserved = seg.reserve(
+        contiguous,
+        cache_settings.reserve_space_wait_lock_timeout_milliseconds,
+        failure_reason);
+    if (!reserved)
+    {
+        LOG_TRACE(log, "DiskCacheWriter::write: reserve failed for [{}, {}]: {}",
+            seg_range.left, seg_range.right, failure_reason);
+        return 0;
+    }
+
+    const bool written_ok = tryWriteToSegment(seg, flat_buf.data(), contiguous, write_offset);
+    /// NEVER completeAndPopFront: keep the segment appendable for the next call. The
+    /// downloader role stays with the open claim (its release finalizes); only wake the
+    /// readers waiting on the committed prefix.
+    seg.notifyDownloadProgress();
+
+    if (!written_ok)
+        return 0;
+
+    /// File-level committed interval.
+    {
+        std::lock_guard lock(committed_mutex);
+        committed_ranges.add(ByteRange{write_offset + object_file_offset, contiguous});
+    }
+
+    LOG_TRACE(log, "DiskCacheWriter::write: wrote {} bytes to [{}, {}] at offset {}",
+        contiguous, seg_range.left, seg_range.right, write_offset);
+    return contiguous;
 }
 
 ChainedBuffers DiskCacheWriter::read(ByteRange sub)
 {
     ChainedBuffers result;
-    if (!holder)
+    if (!segment)
         return result;
 
     chassert(sub.offset >= object_file_offset);
     ByteRange sub_in_object{sub.offset - object_file_offset, sub.size};
 
-    /// Serve an already-committed prefix from this buffer's own held holder,
+    /// Serve an already-committed prefix from this buffer's own segment,
     /// downloader-independent (a fresh pread reader, no `StreamingReaderSlot`).
-    readOverlappingSegments(result, *holder, sub_in_object, object_file_offset,
+    readSegmentInto(result, *segment, sub_in_object, object_file_offset,
         /*local_throttler=*/nullptr, /*anchors=*/nullptr, /*stream_slot=*/nullptr);
     return result;
 }
@@ -422,115 +421,98 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
     /// a foreign (this worker's) downloader, aborting the holder dtor on
     /// `chassert(!is_last_holder)`.
     FillClaim c;
-    if (!holder)
+    if (!segment)
     {
         c.to_fetch.push_back(window);
         return c;
     }
 
-    auto won = std::make_shared<VectorWithMemoryTracking<FileSegmentPtr>>();
-    for (const auto & segment_ptr : *holder)
+    FileSegment & seg = *segment;
+    const auto & seg_range = seg.range();
+    const size_t seg_file_lo = seg_range.left + object_file_offset;
+    const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
+
+    const size_t lo = std::max(window.offset, seg_file_lo);
+    const size_t hi = std::min(window.end(), seg_file_hi);
+    if (lo >= hi || seg.isDetached())
+        return c;
+
+    if (seg.state() == FileSegmentState::DOWNLOADED)
     {
-        FileSegment & segment = *segment_ptr;
-        const auto & seg_range = segment.range();
-        const size_t seg_file_lo = seg_range.left + object_file_offset;
-        const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
-
-        const size_t lo = std::max(window.offset, seg_file_lo);
-        const size_t hi = std::min(window.end(), seg_file_hi);
-        if (lo >= hi)
-            continue;
-        if (segment.isDetached())
-            continue;
-
-        if (segment.state() == FileSegmentState::DOWNLOADED)
-        {
-            /// Fully cached: the whole overlap is readable now.
-            c.available.push_back(ByteRange{lo, hi - lo});
-            continue;
-        }
-
-        const bool already_mine = segment.isDownloader();
-        if (!already_mine)
-            segment.getOrSetDownloader();
-
-        /// Read `cwo` AFTER the role decision: if we hold the role only WE advance it, so the
-        /// committed prefix `[lo, cwo)` / tail `[cwo, hi)` split is exact; if a sibling holds it,
-        /// `cwo` is a monotone lower bound - we under-report `available`, never over. `cwo` is
-        /// object-local; shift to file space. The committed prefix is readable now regardless of
-        /// who holds the role, so it is always `available` (an EMPTY segment has `cwo` at its
-        /// start, so `available` is empty - the whole overlap is the tail).
-        const size_t cwo_file = segment.getCurrentWriteOffset() + object_file_offset;
-        const size_t avail_hi = std::min(hi, cwo_file);
-        if (avail_hi > lo)
-            c.available.push_back(ByteRange{lo, avail_hi - lo});
-        const size_t fetch_lo = std::max(lo, cwo_file);
-
-        /// If we hold the role, RECORD IT FOR RELEASE unconditionally - even when the committed
-        /// prefix already covers the overlap (`fetch_lo >= hi`, nothing to fetch), winning the
-        /// role still leaves us holding it, and a leaked role self-deadlocks a later
-        /// `waitAndReadSiblingLed` (a thread cannot wait on a segment it downloads). The
-        /// uncommitted tail is `to_fetch`; a tail a sibling leads is CONTENDED - left unlisted
-        /// (the caller derives it and neither fetches nor waits on it here).
-        if (segment.isDownloader())
-        {
-            if (fetch_lo < hi)
-                c.to_fetch.push_back(ByteRange{fetch_lo, hi - fetch_lo});
-            if (!already_mine)
-                won->push_back(segment_ptr);
-        }
+        /// Fully cached: the whole overlap is readable now.
+        c.available.push_back(ByteRange{lo, hi - lo});
+        return c;
     }
 
-    if (!won->empty())
+    const bool already_mine = seg.isDownloader();
+    if (!already_mine)
+        seg.getOrSetDownloader();
+
+    /// Read `cwo` AFTER the role decision: if we hold the role only WE advance it, so the
+    /// committed prefix `[lo, cwo)` / tail `[cwo, hi)` split is exact; if a sibling holds it,
+    /// `cwo` is a monotone lower bound - we under-report `available`, never over. `cwo` is
+    /// object-local; shift to file space. The committed prefix is readable now regardless of
+    /// who holds the role, so it is always `available` (an EMPTY segment has `cwo` at its
+    /// start, so `available` is empty - the whole overlap is the tail).
+    const size_t cwo_file = seg.getCurrentWriteOffset() + object_file_offset;
+    const size_t avail_hi = std::min(hi, cwo_file);
+    if (avail_hi > lo)
+        c.available.push_back(ByteRange{lo, avail_hi - lo});
+    const size_t fetch_lo = std::max(lo, cwo_file);
+
+    /// If we hold the role, RECORD IT FOR RELEASE unconditionally - even when the committed
+    /// prefix already covers the overlap (`fetch_lo >= hi`, nothing to fetch), winning the
+    /// role still leaves us holding it, and a leaked role self-deadlocks a later
+    /// `waitAndReadSiblingLed` (a thread cannot wait on a segment it downloads). The
+    /// uncommitted tail is `to_fetch`; a tail a sibling leads is CONTENDED - left unlisted
+    /// (the caller derives it and neither fetches nor waits on it here).
+    if (seg.isDownloader())
     {
-        /// Captures the segments (shared refs into the cache), not the writer: the release
-        /// stays valid however long the claim is held. Never throws - a failed completion
-        /// must not mask the fetch path's own error.
-        c.release = [won, logger = log]() noexcept
+        if (fetch_lo < hi)
+            c.to_fetch.push_back(ByteRange{fetch_lo, hi - fetch_lo});
+        if (!already_mine)
         {
-            for (const auto & segment_ptr : *won)
+            /// Captures the segment (a shared ref into the cache), not the writer: the release
+            /// stays valid however long the claim is held. Never throws - a failed completion
+            /// must not mask the fetch path's own error.
+            c.release = [seg_ptr = segment, logger = log]() noexcept
             {
                 try
                 {
-                    if (!segment_ptr->isDetached() && segment_ptr->isDownloader())
-                        segment_ptr->completePartAndResetDownloader();
+                    if (!seg_ptr->isDetached() && seg_ptr->isDownloader())
+                        seg_ptr->completePartAndResetDownloader();
                 }
                 catch (...)
                 {
                     tryLogCurrentException(logger, "Failed to release a claimed cache segment");
                 }
-            }
-        };
+            };
+        }
     }
     return c;
 }
 
 ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
 {
-    /// `sub` is FILE-space. Wait until each held segment overlapping it has committed
-    /// through the overlap end, then serve the bytes from our own held segments. The caller
-    /// orders this AFTER its own led writes, so a cross-thread wait cannot deadlock.
-    if (holder)
+    /// `sub` is FILE-space. Wait until our one held segment has committed through the overlap
+    /// end, then serve the bytes from it. The caller orders this AFTER its own led writes, so a
+    /// cross-thread wait cannot deadlock.
+    if (segment)
     {
-        for (const auto & segment_ptr : *holder)
+        FileSegment & seg = *segment;
+        const auto & seg_range = seg.range();
+        const size_t seg_file_lo = seg_range.left + object_file_offset;
+        const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
+
+        const size_t lo = std::max(sub.offset, seg_file_lo);
+        const size_t hi = std::min(sub.end(), seg_file_hi);
+        const auto st = seg.state();
+        const bool servable = st == FileSegmentState::DOWNLOADED
+            || st == FileSegmentState::PARTIALLY_DOWNLOADED
+            || st == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
+            || st == FileSegmentState::DOWNLOADING;
+        if (lo < hi && servable)
         {
-            FileSegment & segment = *segment_ptr;
-            const auto & seg_range = segment.range();
-            const size_t seg_file_lo = seg_range.left + object_file_offset;
-            const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
-
-            const size_t lo = std::max(sub.offset, seg_file_lo);
-            const size_t hi = std::min(sub.end(), seg_file_hi);
-            if (lo >= hi)
-                continue;
-
-            const auto st = segment.state();
-            if (st != FileSegmentState::DOWNLOADED
-                && st != FileSegmentState::PARTIALLY_DOWNLOADED
-                && st != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION
-                && st != FileSegmentState::DOWNLOADING)
-                continue;
-
             /// `wait(offset, timeout_ms)` blocks until `offset < getCurrentWriteOffset()`
             /// (the segment has committed strictly past `offset`) or the timeout elapses.
             /// We need bytes through `hi` (object-local `want_obj_end`), so wait on
@@ -538,7 +520,7 @@ ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
             chassert(hi >= object_file_offset);
             const size_t want_obj_end = hi - object_file_offset;
             if (want_obj_end > 0)
-                segment.wait(want_obj_end - 1, cache_settings.wait_for_concurrent_download_timeout_milliseconds);
+                seg.wait(want_obj_end - 1, cache_settings.wait_for_concurrent_download_timeout_milliseconds);
         }
     }
 
@@ -547,43 +529,39 @@ ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
 
 bool DiskCacheWriter::frontierInPartial(size_t frontier) const
 {
-    /// True if `frontier` lands inside a held segment still being filled - PARTIAL with some
+    /// True if `frontier` lands inside our held segment still being filled - PARTIAL with some
     /// committed bytes. `frontier` is file-level; shift to object-local. Diagnostic only: the
-    /// holder keeps such a segment non-releasable, so it survives eviction / a cache drop; this
+    /// buffer keeps such a segment non-releasable, so it survives eviction / a cache drop; this
     /// just gates the read-ahead pause failpoint.
-    if (!holder || frontier < object_file_offset)
+    if (!segment || frontier < object_file_offset)
         return false;
     const size_t frontier_obj = frontier - object_file_offset;
 
-    for (const auto & segment : *holder)
-    {
-        const auto & seg_range = segment->range();
-        if (!seg_range.contains(frontier_obj))
-            continue;
-        const auto state = segment->state();
-        const bool partial = state == FileSegmentState::DOWNLOADING
-                          || state == FileSegmentState::PARTIALLY_DOWNLOADED
-                          || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
-        return partial && segment->getCurrentWriteOffset() > seg_range.left && !segment->isDetached();
-    }
-    return false;
+    const auto & seg_range = segment->range();
+    if (!seg_range.contains(frontier_obj))
+        return false;
+    const auto state = segment->state();
+    const bool partial = state == FileSegmentState::DOWNLOADING
+                      || state == FileSegmentState::PARTIALLY_DOWNLOADED
+                      || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+    return partial && segment->getCurrentWriteOffset() > seg_range.left && !segment->isDetached();
 }
 
-bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size_t size, size_t offset)
+bool DiskCacheWriter::tryWriteToSegment(FileSegment & file_segment, char * data, size_t size, size_t offset)
 {
     /// `FileSegment::write` leaves the segment in
     /// `PARTIALLY_DOWNLOADED_NO_CONTINUATION` on `ErrnoException`. Disk-full /
     /// quota are fail-open; other errors honour `skipCacheOnDiskFailure`.
     try
     {
-        segment.write(data, size, offset);
+        file_segment.write(data, size, offset);
         return true;
     }
     catch (ErrnoException & e)
     {
         const int code = e.getErrno();
         const bool is_no_space_left = code == 28 || code == 122;
-        chassert(segment.state() == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
+        chassert(file_segment.state() == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         if (is_no_space_left)
         {
             LOG_INFO(log, "DiskCacheWriter::write: insert into cache skipped due to insufficient disk space: {}",
@@ -605,44 +583,39 @@ bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size
     }
 }
 
+DiskCacheWriter::~DiskCacheWriter()
+{
+    /// Complete our one segment - replaces what the shared holder's destructor did per segment.
+    /// A partial segment shared with the reader is finalized once, by whichever drops last; the
+    /// downloader role was already reset per-window by each `claim`'s release.
+    if (segment)
+    {
+        CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
+        FileSegment::complete(std::move(segment), /*allow_background_download=*/true, /*force_shrink_to_downloaded_size=*/false);
+    }
+}
+
 DiskCacheReader::~DiskCacheReader()
 {
-    /// Deferred LRU bump: raise the priority of each segment this reader
-    /// actually read, so a hit next to fresh inserts isn't aged below them.
-    /// Bump directly on the held `holder` - it pins the segments the reader
-    /// read from, so there is no need to re-`cache->get` them (which would
-    /// re-take the per-key metadata lock and re-hash the key). A sequential run
-    /// records many contiguous sub-ranges over the same few segments; sorting
-    /// the records lets the linear sweep below bump each touched segment exactly
-    /// once. A segment still `DOWNLOADING` (a sibling writer fills its tail) is
-    /// skipped; the fill itself gives it insert priority.
-    if (touched.empty() || !holder)
+    if (!segment)
         return;
 
-    std::sort(touched.begin(), touched.end(),
-        [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
+    CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
 
+    /// LRU bump: if we actually read any bytes from our segment, raise its priority so a hit
+    /// next to fresh inserts isn't aged below them. Bump directly on the pinned segment (no
+    /// re-`cache->get`, which would re-hash the key + re-take the per-key metadata lock). Every
+    /// `touched` range came from `read`, clamped to `hit_range` inside this segment, so a
+    /// non-empty `touched` means the segment was read. A segment still `DOWNLOADING` (a sibling
+    /// writer fills its tail) is skipped; the fill itself gives it insert priority.
     try
     {
-        size_t ti = 0;
-        for (const auto & segment : *holder)
+        if (!touched.empty())
         {
             const auto state = segment->state();
-            if (state != FileSegmentState::DOWNLOADED
-                && state != FileSegmentState::PARTIALLY_DOWNLOADED
-                && state != FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
-                continue;
-
-            /// `segment->range()` is object-local; the recorded ranges are file-space.
-            const auto & seg_range = segment->range();
-            const size_t seg_start = seg_range.left + object_file_offset;
-            const size_t seg_end = seg_range.right + 1 + object_file_offset;
-
-            /// Drop records lying entirely before this segment.
-            while (ti < touched.size() && touched[ti].end() <= seg_start)
-                ++ti;
-            /// Bump once if the next record overlaps the segment.
-            if (ti < touched.size() && touched[ti].offset < seg_end)
+            if (state == FileSegmentState::DOWNLOADED
+                || state == FileSegmentState::PARTIALLY_DOWNLOADED
+                || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
                 segment->increasePriority();
         }
     }
@@ -650,6 +623,11 @@ DiskCacheReader::~DiskCacheReader()
     {
         tryLogCurrentException(log, "Deferred LRU priority bump failed", LogsLevel::debug);
     }
+
+    /// Complete our segment - replaces the holder's per-segment completion. A read-only
+    /// DOWNLOADED hit is a no-op (`isCompleted` early-return); a partial segment shared with the
+    /// writer is finalized once, by whichever of us drops last (`is_last_holder`).
+    FileSegment::complete(std::move(segment), /*allow_background_download=*/true, /*force_shrink_to_downloaded_size=*/false);
 }
 
 DiskCacheProvider::DiskCacheProvider(
@@ -763,7 +741,7 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
                 hit.kind = ICacheProvider::Resolution::Kind::Hit;
                 hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
                 hit.reader = std::make_unique<DiskCacheReader>(
-                    holder, hit.range, object_file_offset,
+                    segment_ptr, hit.range, object_file_offset,
                     local_throttler, &reader_anchors, &streaming_slot);
                 out.push_back(std::move(hit));
             }
@@ -773,6 +751,9 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
         }
         if (walk < ask_end)
             emit_miss(walk, ask_end);
+        /// The hit readers copied out their FileSegmentPtrs; drop the holder without completing
+        /// (each reader completes its own segment on destruction).
+        holder->release();
         return out;
     }
 
@@ -804,7 +785,7 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
             hit.kind = ICacheProvider::Resolution::Kind::Hit;
             hit.range = ByteRange{seg_left + object_file_offset, committed_end - seg_left};
             hit.reader = std::make_unique<DiskCacheReader>(
-                shared_holder, hit.range, object_file_offset,
+                segment_ptr, hit.range, object_file_offset,
                 local_throttler, &reader_anchors, &streaming_slot);
             out.push_back(std::move(hit));
         }
@@ -817,10 +798,14 @@ VectorWithMemoryTracking<ICacheProvider::Resolution> DiskCacheProvider::resolve(
             miss.range = ByteRange{seg_left + object_file_offset, seg_end - seg_left};
             miss.writer = std::make_unique<DiskCacheWriter>(
                 cache, object_file_offset, cache_settings,
-                shared_holder, miss.range);
+                segment_ptr, miss.range);
             out.push_back(std::move(miss));
         }
     }
+    /// The hit readers / miss writers copied out their FileSegmentPtrs (a partial segment's
+    /// reader and writer share the same one); drop the holder without completing - each buffer
+    /// completes its own segment on destruction.
+    shared_holder->release();
     return out;
 }
 
