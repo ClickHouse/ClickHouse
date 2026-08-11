@@ -1417,6 +1417,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::execute()
     if (global_ctx->task_finished)
     {
         chassert(global_ctx->new_data_part == nullptr);
+        if (global_ctx->parent_part == nullptr)
+        {
+            ProfileEvents::increment(ProfileEvents::MergeExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+            ProfileEvents::increment(ProfileEvents::MergeHorizontalStageExecuteMilliseconds, ctx->elapsed_execute_ns / 1000000UL);
+        }
         return false;
     }
 
@@ -2707,6 +2712,16 @@ try
     if (global_ctx->task_finished)
     {
         chassert(global_ctx->new_data_part == nullptr);
+
+        const UInt64 current_elapsed_ms = global_ctx->merge_list_element_ptr->watch.elapsedMilliseconds();
+        const UInt64 stage_elapsed_ms = current_elapsed_ms - global_ctx->prev_elapsed_ms;
+        global_ctx->prev_elapsed_ms = current_elapsed_ms;
+
+        if (global_ctx->parent_part == nullptr)
+        {
+            ProfileEvents::increment(current_stage->getTotalTimeProfileEvent(), stage_elapsed_ms);
+            ProfileEvents::increment(ProfileEvents::MergeTotalMilliseconds, stage_elapsed_ms);
+        }
         return false;
     }
 
