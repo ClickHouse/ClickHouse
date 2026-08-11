@@ -1,4 +1,4 @@
-#include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/HypotheticalObjectStore.h>
 
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
@@ -11,12 +11,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-bool HypotheticalIndexStore::sameTable(const StorageID & a, const StorageID & b)
+bool HypotheticalObjectStore::sameTable(const StorageID & a, const StorageID & b)
 {
     return a.uuid != UUIDHelpers::Nil && a.uuid == b.uuid;
 }
 
-bool HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescription & index, bool if_not_exists)
+bool HypotheticalObjectStore::add(const StorageID & table_id, const IndexDescription & index, bool if_not_exists)
 {
     std::lock_guard lock(mutex);
     for (const auto & entry : entries)
@@ -53,7 +53,7 @@ bool HypotheticalIndexStore::add(const StorageID & table_id, const IndexDescript
     return true;
 }
 
-bool HypotheticalIndexStore::remove(const StorageID & table_id, const String & index_name, bool if_exists)
+bool HypotheticalObjectStore::remove(const StorageID & table_id, const String & index_name, bool if_exists)
 {
     std::lock_guard lock(mutex);
 
@@ -96,13 +96,13 @@ bool HypotheticalIndexStore::remove(const StorageID & table_id, const String & i
     return true;
 }
 
-void HypotheticalIndexStore::clear()
+void HypotheticalObjectStore::clear()
 {
     std::lock_guard lock(mutex);
     entries.clear();
 }
 
-std::vector<IndexDescription> HypotheticalIndexStore::getForTable(const StorageID & table_id) const
+std::vector<IndexDescription> HypotheticalObjectStore::getForTable(const StorageID & table_id) const
 {
     std::lock_guard lock(mutex);
     std::vector<IndexDescription> result;
@@ -114,7 +114,7 @@ std::vector<IndexDescription> HypotheticalIndexStore::getForTable(const StorageI
     return result;
 }
 
-std::vector<HypotheticalIndexStore::Entry> HypotheticalIndexStore::getAll() const
+std::vector<HypotheticalObjectStore::Entry> HypotheticalObjectStore::getAll() const
 {
     std::lock_guard lock(mutex);
     return entries;

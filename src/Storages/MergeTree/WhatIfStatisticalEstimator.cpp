@@ -7,7 +7,7 @@ namespace DB
 {
 
 bool tryEstimateWithStatistics(
-    WhatIfIndexEstimator::IndexResult & result,
+    WhatIfCandidateResult & result,
     const MergeTreeIndexPtr & index_helper,
     ReadFromMergeTree * read_step,
     const ReadFromMergeTree::AnalysisResult & analysis,

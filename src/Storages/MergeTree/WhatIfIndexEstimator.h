@@ -1,11 +1,8 @@
 #pragma once
 
-#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-
-#include <string>
-#include <vector>
+#include <Storages/MergeTree/WhatIfResult.h>
 
 namespace DB
 {
@@ -15,45 +12,7 @@ namespace DB
 class WhatIfIndexEstimator
 {
 public:
-    struct IndexResult
-    {
-        String index_name;
-        String index_type;
-
-        enum Status { Applicable, NotApplicable };
-        Status status = NotApplicable;
-        String not_applicable_reason;
-
-        /// Meaningful only when status == Applicable
-        UInt64 estimated_marks = 0;
-        double skip_ratio = 0.0;
-
-        enum EmpiricalStatus { Ok, Unsupported, Disabled };
-        EmpiricalStatus empirical_status = Disabled;
-        String estimate_source; /// "empirical", "statistical", "applicability_only"
-
-        UInt64 sampled_parts = 0;
-        UInt64 total_parts = 0;
-        UInt64 sampled_marks = 0;
-        UInt64 total_marks = 0;
-        UInt64 elapsed_us = 0;
-    };
-
-    struct Result
-    {
-        /// Baseline after PK + partition + existing indexes
-        UInt64 baseline_parts = 0;
-        UInt64 baseline_marks = 0;
-        UInt64 baseline_est_bytes = 0;
-        String database;
-        String table;
-
-        std::vector<IndexResult> index_results;
-
-        void format(WriteBuffer & out) const;
-    };
-
-    static Result run(const ASTPtr & select_query, ContextPtr context, const ASTPtr & explain_settings);
+    static WhatIfResult run(const ASTPtr & select_query, ContextPtr context, const ASTPtr & explain_settings);
 };
 
 }

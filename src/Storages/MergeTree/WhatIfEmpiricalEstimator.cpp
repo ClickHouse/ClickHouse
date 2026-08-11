@@ -63,7 +63,7 @@ MarkRanges skipIndexWindowsOverlapping(const MarkRanges & baseline, size_t granu
 }
 
 bool tryEstimateEmpirical(
-    WhatIfIndexEstimator::IndexResult & result,
+    WhatIfCandidateResult & result,
     const MergeTreeIndexPtr & index_helper,
     const MergeTreeIndexConditionPtr & condition,
     ReadFromMergeTree * read_step,
@@ -277,7 +277,7 @@ bool tryEstimateEmpirical(
     result.skip_ratio = static_cast<double>(skipped_data_granules) / static_cast<double>(total_data_granules);
     result.estimated_marks = total_data_granules - skipped_data_granules;
     result.estimate_source = "empirical";
-    result.empirical_status = WhatIfIndexEstimator::IndexResult::Ok;
+    result.empirical_status = WhatIfCandidateResult::Ok;
     result.sampled_parts = analysis.selected_parts;
     result.sampled_marks = analysis.selected_marks;
     result.elapsed_us = watch.elapsedMicroseconds();
