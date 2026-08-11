@@ -204,17 +204,15 @@ struct PostingsSerialization
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
-    /// Returns the codec for postings marked IsCompressed, resolving pre-WithCodec parts to Bitpacking.
-    const IPostingListCodec & resolveCompressedCodec();
-    /// Deserializes a posting list stored as a serialized roaring bitmap.
-    PostingList deserializeRoaring(ReadBuffer & istr);
+    /// Returns the codec that matches the posting list format described by `header`,
+    /// resolving postings marked IsCompressed in pre-WithCodec parts to Bitpacking.
+    const IPostingListCodec & resolveCodec(UInt64 header);
 
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 
-    /// Reusable buffers to avoid repeated heap allocations during deserialization.
+    /// Reusable buffer to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
-    std::vector<char> deserialization_buffer;
 };
 
 /// Closed range of rows.

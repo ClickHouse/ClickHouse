@@ -41,7 +41,7 @@ public:
     /// Appends a per-block Index Section after each segment for lazy cursor support.
     virtual void encode(const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
 
-    /// Reads an encoded posting list, decodes it, and returns a posting list.
+    /// Reads an encoded posting list block and decodes it into `postings`, which must be empty.
     virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;
 
     /// Reads an encoded posting list and appends the decoded row ids to the plain array.
