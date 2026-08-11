@@ -117,6 +117,13 @@ public:
         insert_context->makeQueryContext();
         addInterpreterContext(insert_context);
 
+        /// This sink is one branch of the outer query's `max_insert_threads` fan-out (or its only
+        /// stream). Keep the nested INSERT single-stream: with the outer fan-out already in place,
+        /// letting every branch fan out again would multiply the number of real sink branches (part
+        /// writers, squashing and compression buffers) up to `max_insert_threads^2`, exceeding the
+        /// budget the user allowed for this INSERT.
+        insert_context->setSetting("max_insert_threads", 1);
+
         /// Thread the outer async-insert flag into the nested target pipeline so INSERT through
         /// Alias matches a direct insert: async batches select async dedup settings and skip the
         /// strict block-limit squashing that would slice their multi-token DeduplicationInfo and
