@@ -1,4 +1,6 @@
 -- A total-offset predicate written as IN must still prune marks.
+-- `max_rows_to_read` counts rows per reading node, so parallel replicas must stay off for the
+-- bound to measure this server's pruning.
 
 DROP TABLE IF EXISTS test_offset_qf;
 
@@ -18,12 +20,12 @@ WHERE (_part_starting_offset + _part_offset) IN (
     WHERE user_id = 2
 )
 ORDER BY value
-SETTINGS parallel_replicas_local_plan = 0, max_rows_to_read = 2;
+SETTINGS parallel_replicas_local_plan = 0, max_rows_to_read = 2, enable_parallel_replicas = 0;
 
 SELECT user_id, value
 FROM test_offset_qf
 WHERE (_part_starting_offset + _part_offset) IN (0, 2)
 ORDER BY user_id
-SETTINGS parallel_replicas_local_plan = 0, max_rows_to_read = 2;
+SETTINGS parallel_replicas_local_plan = 0, max_rows_to_read = 2, enable_parallel_replicas = 0;
 
 DROP TABLE test_offset_qf;

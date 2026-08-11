@@ -5,8 +5,9 @@
 -- failed because the LowCardinality wrapper is not nullable-able, so the accuracy probe in
 -- applyDeterministicDagToColumn rejected the String -> LowCardinality(FixedString) cast and the
 -- partition condition degraded to "true" (scan all partitions). The test asserts the
--- optimization is PRESERVED: a real partition condition is built and prunes. Correct-result
--- checks alone cannot catch this regression.
+-- optimization is PRESERVED: a real partition condition is built and prunes, and that it is
+-- still abandoned for a literal that does not fit the key column. Correct-result checks alone
+-- cannot catch this regression.
 
 SET allow_suspicious_low_cardinality_types = 1;
 

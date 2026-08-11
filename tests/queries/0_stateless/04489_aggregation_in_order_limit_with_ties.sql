@@ -12,20 +12,25 @@ INSERT INTO t_agg_in_order_limit_with_ties SELECT number % 10 AS a, number AS b 
 
 -- The single-stream path is what enforces the limit row-exactly; the multi-stream one can
 -- overshoot into the whole tie group on its own, so pin the pipeline before asserting counts.
+-- Parallel replicas rewrite the local AggregatingStep into partial aggregation plus merging,
+-- so the shape and the row-exact counts only hold with them off.
 SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0
    AND countIf(explain LIKE '%FinishAggregatingInOrderTransform%') = 0
 FROM (
     EXPLAIN PIPELINE
     SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3 WITH TIES
-    SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1, max_threads = 1
+    SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1, max_threads = 1,
+             enable_parallel_replicas = 0
 );
 
 SELECT count() FROM (
     SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3 WITH TIES
-) SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1, max_threads = 1;
+) SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1, max_threads = 1,
+           enable_parallel_replicas = 0;
 
 SELECT count() FROM (
     SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3 WITH TIES
-) SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0, max_threads = 1;
+) SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0, max_threads = 1,
+           enable_parallel_replicas = 0;
 
 DROP TABLE t_agg_in_order_limit_with_ties;
