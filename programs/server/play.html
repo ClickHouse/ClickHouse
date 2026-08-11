@@ -4301,6 +4301,138 @@ class QueryResultElement extends HTMLElement
         };
     }
 
+    /// How much of an ISO 8601 timestamp, `2026-08-11T12:34:56.789`, a chart shows: the date alone,
+    /// the time of day up to minutes, up to seconds, or up to milliseconds. The values are the
+    /// lengths of the corresponding prefixes, which is how `_formatChartTime` cuts them.
+    static _CHART_TIME_DATE = 10;
+    static _CHART_TIME_MINUTE = 16;
+    static _CHART_TIME_SECOND = 19;
+    static _CHART_TIME_SUBSECOND = 23;
+
+    /// The `JSONCompactColumns` spelling of `Date`, `Date32`, `DateTime` and `DateTime64`:
+    /// `2026-08-11`, `2026-08-11 12:34:56` and `2026-08-11 12:34:56.789`, as well as the
+    /// `date_time_output_format = 'iso'` variants, which use `T` and add a `Z` or a `+03:00` offset.
+    static _CHART_DATE_TIME_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+    /// Convert one such string to a Unix timestamp in seconds (fractional for `DateTime64`), which
+    /// is what uPlot's time scale plots. Returns null for anything that is not a date or a time.
+    ///
+    /// A value carrying no offset is taken as is, and, because charts are drawn in UTC, it is shown
+    /// back on the axis and in the balloon exactly as the server returned it - the timezone of a
+    /// `DateTime` is a property of the column that the JSON does not spell out. An explicit offset
+    /// (`date_time_output_format = 'iso'`) denotes an instant, and is converted to UTC.
+    static _parseChartDateTime(value)
+    {
+        if (typeof value != 'string') { return null; }
+
+        const match = QueryResultElement._CHART_DATE_TIME_RE.exec(value);
+        if (!match) { return null; }
+        const [, year, month, day, hour, minute, second, fraction, zone] = match;
+
+        const offset = zone === undefined || zone == 'Z'
+            ? 0
+            : (zone[0] == '-' ? -1 : 1) * (+zone.slice(1, 3) * 60 + +zone.slice(-2));
+
+        /// Set the fields instead of passing them to `Date.UTC`, which maps the years 0 to 99 into
+        /// the 20th century - wrong for a `Date32` such as `0001-01-01`. Subtracting the offset from
+        /// the minutes lets `Date` carry the overflow over to the hour, the day and the year.
+        const date = new Date(0);
+        date.setUTCFullYear(+year, +month - 1, +day);
+        date.setUTCHours(+(hour ?? 0), +(minute ?? 0) - offset, +(second ?? 0), 0);
+
+        return date.getTime() / 1000 + (fraction === undefined ? 0 : +fraction);
+    }
+
+    /// Convert a column of `Date`/`DateTime` strings to Unix timestamps in seconds, along with the
+    /// format to show them in. Returns null when this is not such a column: when it has no values
+    /// at all, or at least one non-null value that is not a date or a time, so that a `String`
+    /// column which merely happens to start with a date is left alone. Nulls are kept as is -
+    /// uPlot draws them as gaps.
+    static _convertChartDateTimeColumn(column)
+    {
+        const values = [];
+        let seen_value = false;
+        let has_time = false;
+        let has_subsecond = false;
+
+        for (const value of column)
+        {
+            if (value === null)
+            {
+                values.push(null);
+                continue;
+            }
+            const seconds = QueryResultElement._parseChartDateTime(value);
+            if (seconds === null) { return null; }
+            values.push(seconds);
+            seen_value = true;
+            /// The value has matched the pattern already, so a `:` means it carries a time of day,
+            /// and a `.` means it carries subseconds.
+            has_time = has_time || value.includes(':');
+            has_subsecond = has_subsecond || value.includes('.');
+        }
+
+        if (!seen_value) { return null; }
+
+        /// uPlot's own balloon format stops at whole minutes, which cannot tell apart the
+        /// neighbouring points of a per-second or a `DateTime64` chart, so show as much as the data
+        /// carries and no more: a `Date` needs no time of day.
+        const precision = !has_time
+            ? QueryResultElement._CHART_TIME_DATE
+            : has_subsecond
+                ? QueryResultElement._CHART_TIME_SUBSECOND
+                : QueryResultElement._CHART_TIME_SECOND;
+
+        return { values, precision };
+    }
+
+    /// Render a Unix timestamp in ISO 8601, in UTC, as the rest of the interface does. `separator`
+    /// replaces the `T` between the date and the time of day: a space reads better, and a newline
+    /// makes uPlot put the time of day on a second line under the date.
+    static _formatChartTime(seconds, precision, separator = ' ')
+    {
+        return new Date(seconds * 1000).toISOString().slice(0, precision).replace('T', separator);
+    }
+
+    /// Tick labels for a time axis: the date, and under it the time of day, as precise as the
+    /// spacing of the ticks (`found_incr`, in seconds) requires. The date is repeated only where it
+    /// changes, so that a chart of a single day is not a wall of identical dates.
+    static _chartTimeAxisValues(u, ticks, axis_idx, found_space, found_incr)
+    {
+        const precision = found_incr >= 86400
+            ? QueryResultElement._CHART_TIME_DATE
+            : found_incr >= 60
+                ? QueryResultElement._CHART_TIME_MINUTE
+                : found_incr >= 1
+                    ? QueryResultElement._CHART_TIME_SECOND
+                    : QueryResultElement._CHART_TIME_SUBSECOND;
+
+        return ticks.map((tick, i) =>
+        {
+            const label = QueryResultElement._formatChartTime(tick, precision, '\n');
+            const same_date = i > 0 && label.slice(0, QueryResultElement._CHART_TIME_DATE) ==
+                QueryResultElement._formatChartTime(ticks[i - 1], QueryResultElement._CHART_TIME_DATE);
+            /// `+ 1` skips the newline; a date-only label has nothing to cut in the first place.
+            return same_date && precision > QueryResultElement._CHART_TIME_DATE
+                ? label.slice(QueryResultElement._CHART_TIME_DATE + 1)
+                : label;
+        });
+    }
+
+    /// Tick labels for a quantity axis: a metric suffix instead of the long chain of zeroes, the
+    /// same way `dashboard.html` renders them.
+    static _formatChartQuantity(value)
+    {
+        const magnitude = Math.abs(value);
+        if (magnitude >= 1e15) { return (value / 1e15) + 'P'; }
+        if (magnitude >= 1e12) { return (value / 1e12) + 'T'; }
+        if (magnitude >= 1e9) { return (value / 1e9) + 'G'; }
+        if (magnitude >= 1e6) { return (value / 1e6) + 'M'; }
+        if (magnitude >= 1e3) { return (value / 1e3) + 'K'; }
+        if (magnitude > 0 && magnitude < 1e-3) { return (value * 1e6) + 'μ'; }
+        return value;
+    }
+
     /// Compare two x values of a chart. They are numbers most of the time, but 64-bit integers and
     /// decimals arrive as strings in `JSONCompactColumns`, hence the numeric comparison of anything
     /// that looks like a number, with a lexicographic comparison as the last resort.
@@ -4312,26 +4444,57 @@ class QueryResultElement extends HTMLElement
         return a < b ? -1 : a > b ? 1 : 0;
     }
 
+    /// Order the data by the x column and drop the rows whose x is null.
+    ///
     /// uPlot requires the x values to be sorted in ascending order: it derives the x scale range
     /// from the first and the last value and locates the point under the cursor with a binary
     /// search over them. A descending result (`ORDER BY ... DESC`, a common way to write a query)
     /// still draws a plausible-looking line, but every hover balloon then shows a mirrored point.
     /// The order of the result is the user's business, so reorder the data here instead.
-    /// Returns the argument as is in the common (already sorted) case.
-    static _sortChartDataByX(json)
+    ///
+    /// A null x leaves the scale range null and the whole chart unusable, and a point without an x
+    /// has nowhere to go on the axis anyway; a null y, in contrast, is kept and drawn as a gap.
+    ///
+    /// Returns the argument as is in the common case of an already ordered result.
+    static _orderChartDataByX(json)
     {
         const x = json[0];
-        for (let i = 1; i < x.length; ++i)
+        let ordered = true;
+        for (let i = 0; i < x.length; ++i)
         {
-            if (QueryResultElement._compareChartX(x[i - 1], x[i]) > 0)
+            if (x[i] === null || (i > 0 && QueryResultElement._compareChartX(x[i - 1], x[i]) > 0))
             {
-                /// The index is the tie-breaker, so that equal x values keep their relative order.
-                const order = Array.from(x.keys()).sort(
-                    (a, b) => QueryResultElement._compareChartX(x[a], x[b]) || a - b);
-                return json.map((column) => order.map((idx) => column[idx]));
+                ordered = false;
+                break;
             }
         }
-        return json;
+        if (ordered) { return json; }
+
+        /// The index is the tie-breaker, so that equal x values keep their relative order.
+        const order = Array.from(x.keys())
+            .filter((i) => x[i] !== null)
+            .sort((a, b) => QueryResultElement._compareChartX(x[a], x[b]) || a - b);
+        return json.map((column) => order.map((i) => column[i]));
+    }
+
+    /// Turn a `JSONCompactColumns` result into what `_drawChart` plots: the columns uPlot can chew
+    /// on, plus how to format the x axis. Kept apart from the drawing so that a redraw (a theme
+    /// switch) does not have to derive the format a second time - by then the dates are already
+    /// timestamps, and nothing would be left to tell them apart from plain numbers.
+    static _prepareChartData(json)
+    {
+        /// Date and time columns arrive as strings, which uPlot can neither scale nor plot, so
+        /// convert them to Unix timestamps and give the x axis a time scale when x is one of them.
+        /// Plain integer timestamps have no type information to go by, hence the range heuristic,
+        /// and no precision of their own to show, hence the seconds.
+        const time_columns = json.map((column) => QueryResultElement._convertChartDateTimeColumn(column));
+        const data = QueryResultElement._orderChartDataByX(json.map((column, i) => time_columns[i]?.values ?? column));
+
+        return {
+            data,
+            x_is_time: time_columns[0] !== null || (data[0][0] > 1000000000 && data[0][0] < 2000000000),
+            x_precision: time_columns[0]?.precision ?? QueryResultElement._CHART_TIME_SECOND,
+        };
     }
 
     /// `isValid` (optional) is checked right after the async uPlot load and before any DOM
@@ -4342,7 +4505,14 @@ class QueryResultElement extends HTMLElement
         await this._loadUplot();
         if (isValid && !isValid()) return;
 
-        json = QueryResultElement._sortChartDataByX(json);
+        this._chart_data = QueryResultElement._prepareChartData(json);
+        this._drawChart();
+    }
+
+    /// Draw the chart prepared by the last `renderChart`, in the colours of the current theme.
+    _drawChart()
+    {
+        const { data, x_is_time, x_precision } = this._chart_data;
 
         if (this._uplot)
         {
@@ -4353,29 +4523,43 @@ class QueryResultElement extends HTMLElement
         let chart = this._chart;
         chart.style.display = 'block';
 
-        let paths = json[0].length < chart.clientWidth / 5 ? uPlot.paths.bars() : uPlot.paths.linear();
+        let paths = data[0].length < chart.clientWidth / 5 ? uPlot.paths.bars() : uPlot.paths.linear();
 
         const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
             ? ["rgba(255, 0, 200, 100%)", "rgba(255, 128, 200, 50%)", "#CCC", "#444"]
             : ["rgba(255, 255, 0, 100%)", "rgba(255, 255, 100, 50%)", "#444", "#CCC"];
 
+        /// A quantity axis gets metric suffixes, a time axis gets ISO 8601 dates. Both keep the tick
+        /// labels short, so the left padding only has to cover the leftmost label of the x axis.
+        const quantity_values = (self, ticks) => ticks.map(QueryResultElement._formatChartQuantity);
+        const x_axis_values = x_is_time ? QueryResultElement._chartTimeAxisValues : quantity_values;
+        const x_series_value = x_is_time
+            ? (self, value) => QueryResultElement._formatChartTime(value, x_precision)
+            : undefined;
+
         const opts = {
             width: chart.clientWidth,
             height: chart.clientHeight,
-            scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
+            scales: { x: { time: x_is_time } },
+            /// Align the ticks of a time axis with UTC days and months, matching their ISO labels.
+            tzDate: (timestamp) => uPlot.tzDate(new Date(timestamp * 1000), 'Etc/UTC'),
             axes: [ { stroke: axes_color,
                         grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                        ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+                        ticks: { width: 1 / devicePixelRatio, stroke: grid_color },
+                        values: x_axis_values,
+                        /// A date over a time of day needs more room than a bare number.
+                        space: x_is_time ? 80 : 50 },
                     { stroke: axes_color,
                         grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                        ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
-            series: [ { label: "x" },
+                        ticks: { width: 1 / devicePixelRatio, stroke: grid_color },
+                        values: quantity_values } ],
+            series: [ { label: "x", value: x_series_value },
                         { label: "y", stroke: line_color, fill: fill_color, paths, points: { show: false } } ],
-            padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
+            padding: [ null, null, null, 3 ],
             plugins: [ this._legendAsTooltipPlugin() ],
         };
 
-        this._uplot = new uPlot(opts, json, chart);
+        this._uplot = new uPlot(opts, data, chart);
     }
 
     _resizeChart()
@@ -4391,7 +4575,7 @@ class QueryResultElement extends HTMLElement
     {
         if (this._uplot && this._chart.style.display == 'block')
         {
-            this.renderChart(this._uplot.data);
+            this._drawChart();
         }
     }
 }
