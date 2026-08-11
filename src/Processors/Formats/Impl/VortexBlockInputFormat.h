@@ -5,6 +5,7 @@
 #if USE_VORTEX
 
 #include <Core/BlockMissingValues.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -29,7 +30,11 @@ struct VortexReadContext;
 class VortexBlockInputFormat final : public IInputFormat
 {
 public:
-    VortexBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_);
+    VortexBlockInputFormat(
+        ReadBuffer & in_,
+        SharedHeader header_,
+        const FormatSettings & format_settings_,
+        FormatFilterInfoPtr format_filter_info_);
     ~VortexBlockInputFormat() override;
 
     String getName() const override { return "VortexBlockInputFormat"; }
@@ -69,6 +74,7 @@ private:
     size_t previous_approx_bytes_read = 0;
 
     const FormatSettings format_settings;
+    FormatFilterInfoPtr format_filter_info;
 
     std::atomic<int> is_stopped{0};
 };

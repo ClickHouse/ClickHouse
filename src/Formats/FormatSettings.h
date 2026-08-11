@@ -557,6 +557,11 @@ struct FormatSettings
         UInt64 output_compression_block_size = 256 * 1024; /// 256 KiB
     } orc{};
 
+    struct
+    {
+        bool filter_push_down = true;
+    } vortex{};
+
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.
     enum class CapnProtoEnumComparingMode : uint8_t

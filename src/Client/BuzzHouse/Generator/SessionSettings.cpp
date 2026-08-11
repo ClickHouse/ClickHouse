@@ -1154,6 +1154,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_tsv_skip_trailing_empty_lines", trueOrFalseSettingNoOracle},
     {"input_format_tsv_use_best_effort_in_schema_inference", trueOrFalseSettingNoOracle},
     {"input_format_values_accurate_types_of_literals", trueOrFalseSettingNoOracle},
+    {"input_format_vortex_filter_push_down", trueOrFalseSetting},
     {"input_format_values_deduce_templates_of_expressions", trueOrFalseSettingNoOracle},
     {"insert_allow_materialized_columns", trueOrFalseSettingNoOracle},
     {"insert_deduplicate", trueOrFalseSettingNoOracle},

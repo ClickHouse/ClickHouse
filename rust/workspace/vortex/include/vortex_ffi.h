@@ -68,6 +68,35 @@ using VortexFFIWriteCallback = int32_t (*)(void * context, const uint8_t * data,
 struct VortexFFIReader;
 struct VortexFFIScanner;
 struct VortexFFIWriter;
+struct VortexFFIExpression;
+
+/// The primitive type of a literal built through `vortex_ffi_expr_literal_*`. Must match the
+/// exact type of the file column it is compared with: Vortex comparisons require both sides to
+/// have the same type.
+enum class VortexFFIPType : int32_t
+{
+    I8 = 0,
+    I16 = 1,
+    I32 = 2,
+    I64 = 3,
+    U8 = 4,
+    U16 = 5,
+    U32 = 6,
+    U64 = 7,
+    F32 = 8,
+    F64 = 9,
+};
+
+/// A comparison operator for `vortex_ffi_expr_compare`.
+enum class VortexFFIComparison : int32_t
+{
+    Eq = 0,
+    NotEq = 1,
+    Lt = 2,
+    Lte = 3,
+    Gt = 4,
+    Gte = 5,
+};
 
 /// Opens a Vortex file for reading. The file is accessed through `read` with the given opaque
 /// `context`; `file_size` must be the exact file size in bytes. Returns nullptr on error.
@@ -81,10 +110,16 @@ uint64_t vortex_ffi_reader_row_count(const VortexFFIReader * reader);
 int32_t vortex_ffi_reader_schema(const VortexFFIReader * reader, struct ArrowSchema * out_schema, char ** error);
 
 /// Creates a scanner over the file. If `columns` is not nullptr, only the `num_columns` columns
-/// with the given names are read, in the given order. The reader must stay alive for the whole
-/// lifetime of the scanner. Returns nullptr on error.
+/// with the given names are read, in the given order. If `filter` is not nullptr, only the rows
+/// matching the filter expression are returned; the file may use it to prune whole segments by
+/// statistics and to decode only the matching rows. The reader must stay alive for the whole
+/// lifetime of the scanner; `filter` is not consumed. Returns nullptr on error.
 VortexFFIScanner * vortex_ffi_scanner_create(
-    const VortexFFIReader * reader, const char * const * columns, uint64_t num_columns, char ** error);
+    const VortexFFIReader * reader,
+    const char * const * columns,
+    uint64_t num_columns,
+    const VortexFFIExpression * filter,
+    char ** error);
 
 /// Reads the next batch of rows into `out_array` + `out_schema`. Returns 1 if a batch was
 /// produced, 0 at the end of the file, -1 on error.
@@ -94,6 +129,49 @@ int32_t vortex_ffi_scanner_next(
 void vortex_ffi_scanner_free(VortexFFIScanner * scanner);
 
 void vortex_ffi_reader_free(VortexFFIReader * reader);
+
+/// Filter expression builders. All of them return nullptr on invalid input (an unrepresentable
+/// literal value, invalid UTF-8, or a nullptr argument), and none of them consume their
+/// arguments: every returned handle must be freed with `vortex_ffi_expr_free`.
+
+/// Creates an expression referencing the top-level column `name`.
+VortexFFIExpression * vortex_ffi_expr_column(const char * name);
+
+/// Creates a signed integer literal of the given type. Returns nullptr if the value does not fit.
+VortexFFIExpression * vortex_ffi_expr_literal_int(VortexFFIPType ptype, int64_t value);
+
+/// Creates an unsigned integer literal of the given type. Returns nullptr if the value does not fit.
+VortexFFIExpression * vortex_ffi_expr_literal_uint(VortexFFIPType ptype, uint64_t value);
+
+/// Creates a floating-point literal of the given type. For `F32` the value must be exactly
+/// representable as `float`, otherwise nullptr is returned.
+VortexFFIExpression * vortex_ffi_expr_literal_float(VortexFFIPType ptype, double value);
+
+/// Creates a boolean literal.
+VortexFFIExpression * vortex_ffi_expr_literal_bool(bool value);
+
+/// Creates a string literal: `Utf8` if `is_utf8` is true (the bytes must be valid UTF-8,
+/// otherwise nullptr is returned), `Binary` otherwise.
+VortexFFIExpression * vortex_ffi_expr_literal_string(const uint8_t * data, uint64_t length, bool is_utf8);
+
+/// Creates a comparison `lhs op rhs`. A comparison with a null value yields null, which the
+/// scan treats as "row does not match".
+VortexFFIExpression * vortex_ffi_expr_compare(
+    VortexFFIComparison comparison, const VortexFFIExpression * lhs, const VortexFFIExpression * rhs);
+
+/// Creates a Kleene (three-valued) AND of two boolean expressions.
+VortexFFIExpression * vortex_ffi_expr_and(const VortexFFIExpression * lhs, const VortexFFIExpression * rhs);
+
+/// Creates a Kleene (three-valued) OR of two boolean expressions.
+VortexFFIExpression * vortex_ffi_expr_or(const VortexFFIExpression * lhs, const VortexFFIExpression * rhs);
+
+/// Creates a logical NOT of a boolean expression (NOT of null is null).
+VortexFFIExpression * vortex_ffi_expr_not(const VortexFFIExpression * child);
+
+/// Creates an expression that is true where the child expression is null.
+VortexFFIExpression * vortex_ffi_expr_is_null(const VortexFFIExpression * child);
+
+void vortex_ffi_expr_free(VortexFFIExpression * expr);
 
 /// Creates a writer producing a Vortex file with the given schema (consumed). The bytes of the
 /// file are sent to `write` with the given opaque `context`. Returns nullptr on error.

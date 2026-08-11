@@ -1,0 +1,57 @@
+Point predicate:
+5	5
+5	5
+Range predicate:
+9	9991	9999
+9	9991	9999
+Bounded range:
+4
+4
+String equality:
+1
+1
+IN set:
+3
+3
+IS NULL:
+5000
+5000
+Equality on a nullable column:
+100
+100
+Inequality on a nullable column:
+4900
+4900
+NOT:
+5
+5
+NOT over AND with an untranslatable conjunct:
+5005
+5005
+OR across columns:
+4
+4
+Float64 range:
+2
+2
+Float32 with an exactly representable bound:
+1250
+1250
+Float32 with a non-representable bound (not pushed down):
+8750
+8750
+LowCardinality column:
+2000
+2000
+AND of two pushed-down predicates:
+1979
+1979
+Predicate on a column missing in the file:
+10000
+10000
+Predicate on a column read with a different type:
+1
+1
+LowCardinality target type:
+LowCardinality(String)	4
+LowCardinality(String)	4
