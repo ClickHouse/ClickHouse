@@ -133,7 +133,7 @@ TEST(MergedDataHasEnoughRows, DynamicColumnsUseDestinationSizeForBatching)
     source->insert(Field(Int64(2)));
 
     IMergingAlgorithm::Inputs inputs(1);
-    inputs[0].chunk.setColumns({source->getPtr()}, 2);
+    inputs[0].chunk.setColumns(MutableColumns{source->getPtr()}, 2);
 
     MergedData merged_data(false, MAX_BLOCK_SIZE, 32, 254);
     merged_data.initialize(header, inputs);
