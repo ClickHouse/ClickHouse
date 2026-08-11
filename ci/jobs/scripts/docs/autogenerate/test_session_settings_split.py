@@ -396,6 +396,7 @@ def main():
         assert "text-gray-500 dark:text-gray-400" in explorer
         assert 'gridTemplateColumns: "44ch max-content"' in explorer
         assert 'style={{ overflowWrap: "anywhere" }}' in explorer
+        assert 'href={`/docs${item.value.href}`}' in explorer
         assert 'item.value.name.split("_")' in explorer
         assert "<wbr />" in explorer
         assert "settingNameColumnWidth" not in explorer
