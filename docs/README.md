@@ -181,9 +181,22 @@ Guidelines:
 
 ## Run docs CI locally {#run-docs-ci-locally}
 
-The docs CI checks run in Docker through Praktika. Install Python 3 and Docker, start Docker, and run the checks relevant to your change from the repository root. Praktika pulls the configured `clickhouse/docs-builder` image and runs each check in the container, so you do not need to install the check dependencies locally.
+### Prerequisites {#docs-ci-prerequisites}
 
-The complete `Docs check (Mintlify)` job cannot run outside CI. The table below lists the checks that can run locally. `Check changelogs` and `No direct edits to generated or read-only docs` need pull-request metadata supplied by the CI workflow and therefore run only in CI.
+- Python 3
+- Docker, with the Docker service running
+
+### Run the docs checks {#run-docs-checks}
+
+From the repository root, run:
+
+```shell
+python3 -m ci.praktika run "Docs check (Mintlify)"
+```
+
+Praktika pulls the configured `clickhouse/docs-builder` image and runs the locally supported docs checks in a container, so you do not need to install their dependencies. The command skips `Check changelogs` and `No direct edits to generated or read-only docs` because they require pull-request metadata available only in CI.
+
+### Run individual checks {#run-individual-docs-checks}
 
 Pass a check name to `--test` to run it individually. The match is case-insensitive and accepts partial names, but using the full names below avoids selecting the wrong check.
 

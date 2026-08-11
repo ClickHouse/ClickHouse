@@ -116,6 +116,10 @@ def _is_trusted_clickhouse_connect_sync(info):
     )
 
 
+def _protected_docs_guard_should_run():
+    return not Info().is_local_run
+
+
 def _protected_docs_guard():
     # Fail direct edits both to generated regions and to docs folders whose
     # canonical source lives in another repo. This is aggregator-only, so it is
@@ -222,14 +226,22 @@ if __name__ == "__main__":
                 )
             )
 
-    # These guards run from the repo root (not the docs root), so keep them out
-    # of the docs_dir loop above.
-    if selected("No direct edits to generated or read-only docs"):
-        results.append(
-            Result.from_commands_run(
-                name="No direct edits to generated or read-only docs",
-                command=_protected_docs_guard,
+    # This guard runs from the repo root (not the docs root), so keep it out of
+    # the docs_dir loop above. Local runs do not have the PR revisions and merge
+    # base that the guard needs, so it is enforced only in CI.
+    protected_docs_guard_name = "No direct edits to generated or read-only docs"
+    if selected(protected_docs_guard_name):
+        if _protected_docs_guard_should_run():
+            results.append(
+                Result.from_commands_run(
+                    name=protected_docs_guard_name,
+                    command=_protected_docs_guard,
+                )
             )
-        )
+        else:
+            print(
+                f"Skipping [{protected_docs_guard_name}] in a local run: "
+                "pull-request revisions and merge-base metadata are unavailable."
+            )
 
     Result.create_from(results=results).complete_job()
