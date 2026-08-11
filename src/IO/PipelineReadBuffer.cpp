@@ -21,7 +21,7 @@ PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_
     , hold_consumed(hold_consumed_)
     , read_position(executor->getPosition())
 {
-    LOG_DEBUG(log, "Created, total_size={}, read_position={}", executor->totalSize(), read_position);
+    LOG_TRACE(log, "Created, total_size={}, read_position={}", executor->totalSize(), read_position);
 }
 
 String PipelineReadBuffer::getFileName() const
@@ -301,14 +301,14 @@ bool PipelineReadBuffer::nextImpl()
 
     if (chain.atEnd())
     {
-        LOG_TRACE(log, "nextImpl: chain exhausted, requesting next window at position {}", read_position);
+        LOG_TEST(log, "nextImpl: chain exhausted, requesting next window at position {}", read_position);
         chain = executor->readNextWindow();
         if (chain.atEnd())
         {
             LOG_TRACE(log, "nextImpl: EOF");
             return false;
         }
-        LOG_TRACE(log, "nextImpl: got window [{}, {}), {} nodes",
+        LOG_TEST(log, "nextImpl: got window [{}, {}), {} nodes",
             chain.range().offset, chain.range().end(), chain.getNodes().size());
     }
 
@@ -337,7 +337,7 @@ bool PipelineReadBuffer::nextImpl()
     working_buffer = internal_buffer;
     pos = working_buffer.begin();
     read_position = span.offset + span.size;
-    LOG_TRACE(log, "nextImpl: serving {} bytes at offset {}, read_position advanced to {}",
+    LOG_TEST(log, "nextImpl: serving {} bytes at offset {}, read_position advanced to {}",
         span.size, span.offset, read_position);
     return true;
 }

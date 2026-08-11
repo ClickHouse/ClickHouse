@@ -151,7 +151,7 @@ ReaderExecutor::ReaderExecutor(
 
     offset_map.build(stored_objects);
     creator_query_id = String(CurrentThread::getQueryId());
-    LOG_DEBUG(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, block_size={}, {} caches",
+    LOG_TRACE(log, "Created: {} objects, total_size={}, window_size={}, min_bytes_for_seek={}, block_size={}, {} caches",
         objects.size(), offset_map.totalSize(), window_size, min_bytes_for_seek, block_size, caches.size());
 
     /// Keep the estimator's continuity gap in lockstep with the executor's seek
@@ -1146,7 +1146,7 @@ ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, 
     size_t file_pos = physical_window.offset;
     for (const auto & pr : physical_ranges)
     {
-        LOG_TRACE(log, "fetchWindowFromSource: source read object={}, offset={}, size={}",
+        LOG_TEST(log, "fetchWindowFromSource: source read object={}, offset={}, size={}",
             pr.object.remote_path, pr.object_offset, pr.size);
 
         /// The IN-FETCH opener: at each OBJECT-piece start, open a long connection
