@@ -20,10 +20,6 @@ SELECT toString(toDateTime(1636264799, 'America/New_York')), toString(toDateTime
 SELECT count() FROM t_dst WHERE toString(x) >= '2021-11-07 01:59:00';
 SELECT toString(x) FROM t_dst ORDER BY toString(x) SETTINGS optimize_read_in_order = 1;
 
--- A fixed-offset time zone preserves order, and `toString` is strict there, so `y` stays in the prefix.
-DROP TABLE IF EXISTS t_utc;
-CREATE TABLE t_utc (x DateTime('UTC'), y UInt32) ENGINE = MergeTree ORDER BY (x, y);
-INSERT INTO t_utc SELECT toDateTime(1636264798 + intDiv(number, 4), 'UTC'), number % 4 FROM numbers(20);
 
 SELECT count() FROM t_utc WHERE toString(x) >= '2021-11-07 06:00:00';
 SELECT trimLeft(explain) FROM (
