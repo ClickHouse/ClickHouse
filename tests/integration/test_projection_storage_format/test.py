@@ -3189,3 +3189,84 @@ def test_os_mutation_carries_unprojected_column(storage_kind, disk):
         proj_query("t_os_carry", extra_settings="force_optimize_projection = 1") == "100\t4950"
     )
     assert check_table("t_os_carry") == "1"
+
+
+# ==============================================================================
+# R. Reload keeps per-part layout truth (AI review blockers)
+# ==============================================================================
+
+# This test checks that a part written in the 'flat' layout keeps its sibling-aware cleanup after
+# the table is switched back to 'legacy_nested' and the server restarts: projection_storage_format
+# only controls newly written parts, so the reloaded old part must still treat the flat sibling as
+# its own (the per-part flag is derived from the owned projections, not from the current setting).
+# Scenario:
+# - create a 'flat' table, insert one part (flat sibling exists)
+# - ALTER ... MODIFY SETTING projection_storage_format = 'legacy_nested', restart
+# - the reloaded part still serves the projection from its sibling
+# - DROP PART removes the sibling together with the part dir (not leaving it to the orphan reaper)
+def test_reload_downgraded_table_flat_part_cleanup(storage_kind):
+    setup_table(
+        "t_downgrade", with_storage("projection_storage_format = 'flat'", storage_kind)
+    )
+    baseline = proj_query("t_downgrade", extra_settings="force_optimize_projection = 1")
+    p = part_dir("t_downgrade")
+    assert path_exists(f"{p}.p.proj")
+
+    node.query(
+        "ALTER TABLE t_downgrade MODIFY SETTING projection_storage_format = 'legacy_nested'"
+    )
+    node.restart_clickhouse()
+    block_until_tables_loaded("t_downgrade")
+
+    # the reloaded part still owns its flat sibling
+    assert broken_projection_parts("t_downgrade") == "0"
+    assert (
+        proj_query("t_downgrade", extra_settings="force_optimize_projection = 1")
+        == baseline
+    )
+
+    # DROP PART must remove the sibling in the same removal as the part dir: when the parent dir is
+    # gone the sibling must already be gone too (the aged-orphan reaper must not be needed)
+    node.query(f"ALTER TABLE t_downgrade DROP PART '{part_name('t_downgrade')}'")
+    wait_for(lambda: not path_exists(p))
+    assert not path_exists(f"{p}.p.proj")
+
+
+# This test checks that restart does not promote an undeclared flat sibling into the part's owned
+# projection set: checksums.txt is the ownership boundary, metadata-declared names alone must not
+# adopt a same-named foreign directory.
+# Scenario:
+# - 'flat' table with materialize_projections_on_insert = 0 -> the part's checksums has no p.proj
+# - plant a foreign <part>.p.proj sibling next to the LIVE part, restart
+# - after reload nothing serves a projection, and MOVE PART does not carry the foreign dir
+def test_reload_foreign_sibling_not_owned():
+    node.query("DROP TABLE IF EXISTS t_foreign SYNC")
+    node.query("SYSTEM STOP MERGES")
+    node.query(
+        """CREATE TABLE t_foreign (key UInt64, id UInt64, value String,
+           PROJECTION p (SELECT key, id, value ORDER BY id))
+           ENGINE = MergeTree ORDER BY key
+           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat',
+               materialize_projections_on_insert = 0, storage_policy = 'default_and_s3'"""
+    )
+    node.query(
+        "INSERT INTO t_foreign SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+    src = part_dir("t_foreign")
+    assert not path_exists(f"{src}.p.proj")
+
+    # plant a foreign sibling next to the live part, then restart: reload must not adopt it
+    plant_stale_live_sibling(f"{src}.p.proj")
+    node.restart_clickhouse()
+    block_until_tables_loaded("t_foreign")
+    assert active_projection_parts("t_foreign") == "0"
+
+    # a lifecycle operation must not carry the unowned dir to the new location
+    node.query(f"ALTER TABLE t_foreign MOVE PART '{part_name('t_foreign')}' TO DISK 's3'")
+    dst = part_dir("t_foreign")
+    assert dst != src  # the part really moved
+    assert not path_exists(f"{dst}.p.proj")
+    assert not path_exists(f"{dst}/p.proj")
+    assert active_projection_parts("t_foreign") == "0"
+    assert node.query("SELECT count() FROM t_foreign").strip() == "1000"
+    assert check_table("t_foreign") == "1"
