@@ -95,19 +95,19 @@ String AIAgent::systemPrompt() const
 
 void AIAgent::pushUserMessage(const String & text)
 {
-    /// After a failed step the history may already end with a user message. Providers require
-    /// alternating roles, so a plain text message is extended in place. But free-form text must
-    /// not be mixed into a tool-results message (the server-function transport serializes such
-    /// a message as tool results only, dropping the text): close the dangling tool-result turn
-    /// with a synthetic assistant message and start a fresh user turn after it.
+    /// After a failed step (a transport error, an empty response, or an exception) the history
+    /// may already end with a user message. Providers require alternating roles, and merging
+    /// the new question into the stale unanswered message would corrupt the turn boundaries,
+    /// so the dangling turn is closed with a synthetic assistant message and a fresh user turn
+    /// starts after it. For a trailing tool-results message this is also required for another
+    /// reason: free-form text must not be mixed into it (the server-function transport
+    /// serializes such a message as tool results only, dropping the text).
     if (!messages.empty() && messages.back().role == ai::kMessageRoleUser)
     {
-        if (!messages.back().has_tool_results())
-        {
-            messages.back().content.emplace_back(ai::TextContentPart{text});
-            return;
-        }
-        messages.push_back(ai::Message::assistant("(the model call failed after these tool results)"));
+        if (messages.back().has_tool_results())
+            messages.push_back(ai::Message::assistant("(the model call failed after these tool results)"));
+        else
+            messages.push_back(ai::Message::assistant("(no response was produced for this message)"));
     }
     messages.push_back(ai::Message::user(text));
 }

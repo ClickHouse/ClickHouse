@@ -1,0 +1,2286 @@
+import os
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+
+# Negative case: an entirely unknown top-level key must be rejected.
+cluster_bad = ClickHouseCluster(__file__, name="bad")
+node_bad = cluster_bad.add_instance(
+    "node_bad",
+    main_configs=["configs/config.d/unknown_option.xml"],
+)
+caught_exception = ""
+
+# Negative case: a config with several unknown top-level keys must report ALL of
+# them in a single exception, not just the first one, so the user can fix the whole
+# config in one iteration instead of one key per restart.
+cluster_multi_bad = ClickHouseCluster(__file__, name="multi_bad")
+node_multi_bad = cluster_multi_bad.add_instance(
+    "node_multi_bad",
+    main_configs=["configs/config.d/multiple_unknown_options.xml"],
+)
+caught_multi_exception = ""
+
+# Negative case: a typo of a real `users_*` key (e.g. `<users_cnfig>` instead of
+# `<users_config>`) must NOT pass through a blanket `users_*` prefix allowlist.
+cluster_users_typo = ClickHouseCluster(__file__, name="users_typo")
+node_users_typo = cluster_users_typo.add_instance(
+    "node_users_typo",
+    main_configs=["configs/config.d/users_typo.xml"],
+)
+caught_users_typo_exception = ""
+
+# Positive case: a custom top-level key referenced via config:// from an
+# HTTP handler must be accepted without setting skip_check_for_incorrect_settings.
+cluster_ok = ClickHouseCluster(__file__, name="ok")
+node_static_config_ref = cluster_ok.add_instance(
+    "node_static_config_ref",
+    main_configs=["configs/config.d/static_handler_config_ref.xml"],
+)
+
+# Positive case: a `config://` reference can carry Poco's bracket-index path
+# syntax (e.g. `my_indexed_payload[1]` to address the second instance of a
+# repeated top-level key). The validator must normalize the recorded key by
+# stripping the bracket suffix so the corresponding `top_level_keys` (which
+# Poco yields with `[N]` suffixes) match.
+cluster_indexed_ref = ClickHouseCluster(__file__, name="indexed_ref")
+node_static_config_ref_indexed = cluster_indexed_ref.add_instance(
+    "node_static_config_ref_indexed",
+    main_configs=["configs/config.d/static_handler_config_ref_indexed.xml"],
+)
+
+# Positive case: a `config://` reference can address a top-level key whose tag name contains a
+# literal dot (escaped by Poco as `\.` in the key path, see `gtest_config_dot.cpp`). The validator
+# must normalize the recorded key by respecting that escape, not by splitting on every raw `.`.
+cluster_dotted_key_ref = ClickHouseCluster(__file__, name="dotted_key_ref")
+node_static_config_ref_dotted_key = cluster_dotted_key_ref.add_instance(
+    "node_static_config_ref_dotted_key",
+    main_configs=["configs/config.d/static_handler_config_ref_dotted_key.xml"],
+)
+
+# Positive case: a custom top-level handlers section referenced via
+# <protocols>...<handlers>NAME</handlers>...</protocols> must be accepted.
+cluster_protocols = ClickHouseCluster(__file__, name="protocols")
+node_protocols_custom_handlers = cluster_protocols.add_instance(
+    "node_protocols_custom_handlers",
+    main_configs=["configs/config.d/protocols_custom_handlers.xml"],
+)
+
+# Positive case: when the `include_from` source file lives under `config.d/`,
+# `ConfigProcessor` merges its top-level tags into the main config. Those tags
+# are pure substitution sources (referenced via `<elem incl="name"/>`) and must
+# not be rejected by the unknown-key check.
+cluster_include_from_in_configd = ClickHouseCluster(__file__, name="include_from_in_configd")
+node_include_from_in_configd = cluster_include_from_in_configd.add_instance(
+    "node_include_from_in_configd",
+    main_configs=[
+        "configs/config.d/include_from_main.xml",
+        "configs/config.d/include_from_source.xml",
+    ],
+)
+
+# Positive case: top-level keys that are consumed outside `ServerSettings`
+# (read directly from the server config by `TCPHandler`, `HTTPHandler`,
+# `TablesLoader`, bridges, etc.) must be accepted. Regression coverage so that
+# future allowlist edits don't reject configs that were valid before.
+cluster_existing_keys = ClickHouseCluster(__file__, name="existing_keys")
+node_existing_keys = cluster_existing_keys.add_instance(
+    "node_existing_keys",
+    main_configs=["configs/config.d/existing_keys.xml"],
+)
+
+# Reload regression: the unknown-key check also runs on `SYSTEM RELOAD CONFIG`,
+# not only at startup. Use a separate cluster that starts with a minimal
+# placeholder config (no `<http_handlers>`) so that the test can later inject
+# `<http_handlers>` via a `config.d/` file without colliding with merged rules
+# from another file.
+cluster_reload = ClickHouseCluster(__file__, name="reload")
+node_reload = cluster_reload.add_instance(
+    "node_reload",
+    main_configs=["configs/config.d/reload_initial.xml"],
+    stay_alive=True,
+)
+
+# Escape-hatch case: `skip_check_for_incorrect_settings` must disable the new
+# unknown-key check from every supported source, including the command line.
+# This node carries the very same unknown top-level key that makes `node_bad`
+# fail to start, but is launched with `--skip_check_for_incorrect_settings=1`
+# on the command line. It must start (and survive `SYSTEM RELOAD CONFIG`)
+# exactly the way the command-line flag already disables the pre-existing
+# top-level user-setting check. `stay_alive` so the reload step can run.
+cluster_cli_skip = ClickHouseCluster(__file__, name="cli_skip")
+node_cli_skip = cluster_cli_skip.add_instance(
+    "node_cli_skip",
+    main_configs=["configs/config.d/unknown_option.xml"],
+    extra_args="--skip_check_for_incorrect_settings=1",
+    stay_alive=True,
+)
+
+# Compatibility case: a `GraphiteMergeTree` rollup config section can have an
+# arbitrary name (taken from the table definition, e.g. `GraphiteMergeTree('retention_5m')`),
+# not necessarily one starting with `graphite_rollup`. Such a section was valid before this
+# check existed, so it must still be accepted (recognized by its rollup structure) and usable.
+cluster_graphite = ClickHouseCluster(__file__, name="graphite")
+node_graphite = cluster_graphite.add_instance(
+    "node_graphite",
+    main_configs=["configs/config.d/graphite_arbitrary_name.xml"],
+)
+
+# Negative case: an unknown top-level key must NOT be accepted merely because an external
+# `<include_from>` substitution source (one that is NOT merged into the config, i.e. lives
+# outside `config.d/`) happens to define a tag of the same name. Such a source is only a
+# lookup table for `incl` references and contributes no top-level key to the merged config.
+cluster_include_from_external = ClickHouseCluster(__file__, name="include_from_external")
+node_include_from_external = cluster_include_from_external.add_instance(
+    "node_include_from_external",
+    main_configs=["configs/config.d/include_from_external_initial.xml"],
+    stay_alive=True,
+)
+
+# Compatibility case: a top-level `<include from_env="VAR"/>` is expanded by `ConfigProcessor` by
+# wrapping the environment variable's value as `<from_env>VALUE</from_env>` and importing its
+# children into the root, so the imported tag becomes a real top-level key. `from_env` is fully
+# resolvable at config-validation time (the value lives in the environment), so the validator must
+# resolve it the same way and exempt the imported key; otherwise a previously valid config that
+# imports a custom top-level section from the environment fails to start.
+cluster_include_from_env = ClickHouseCluster(__file__, name="include_from_env_top_level")
+node_include_from_env = cluster_include_from_env.add_instance(
+    "node_include_from_env",
+    main_configs=["configs/config.d/include_from_env_top_level.xml"],
+    env_variables={
+        "UNKNOWN_CONFIG_ENV_ROOT": "<my_env_imported_section>env value</my_env_imported_section>"
+    },
+)
+
+# Compatibility case: a top-level `<include from_zk="/path"/>` imports the children of a ZooKeeper
+# node into the root, so they become top-level keys. Resolving them requires a ZooKeeper connection
+# that is unavailable at config-validation time (it runs before `<zookeeper>` is validated), so the
+# validator cannot enumerate the imported keys. To avoid falsely rejecting a previously valid
+# config, the whole unknown-config check is skipped when such an element is present.
+cluster_include_from_zk = ClickHouseCluster(__file__, name="include_from_zk_top_level")
+node_include_from_zk = cluster_include_from_zk.add_instance(
+    "node_include_from_zk",
+    main_configs=["configs/config.d/include_from_zk_initial.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+)
+
+# Compatibility case: the *users* config may declare `<include_from from_zk="/path"/>`
+# (`ConfigProcessor::processConfig` runs `doIncludesRecursive` on the `<include_from>` node itself, so
+# the substitution source path can come from ZooKeeper). That path cannot be resolved at
+# config-validation time, so the top-level tags the source legitimately contributes are unknown to the
+# validator and the whole check is skipped rather than rejecting a previously valid config.
+cluster_users_include_from_zk = ClickHouseCluster(
+    __file__, name="users_include_from_zk"
+)
+node_users_include_from_zk = cluster_users_include_from_zk.add_instance(
+    "node_users_include_from_zk",
+    main_configs=["configs/config.d/include_from_zk_initial.xml"],
+    with_zookeeper=True,
+    stay_alive=True,
+)
+
+# Compatibility case: `<user_directories>` adds further active users config files (the stock
+# `programs/server/config.xml` uses exactly this mechanism), each loaded by its own `ConfigProcessor`
+# invocation that honors that file's own `<include_from>`. When such a source file lives under
+# `config.d`, it is also merged into the server config, so its top-level tags are legitimate top-level
+# keys and must be exempted - the validator has to scan the `<user_directories>` users files too, not
+# only the top-level `<users_config>`.
+cluster_user_directories_include_from = ClickHouseCluster(
+    __file__, name="user_directories_include_from"
+)
+node_user_directories_include_from = cluster_user_directories_include_from.add_instance(
+    "node_user_directories_include_from",
+    main_configs=["configs/config.d/user_directories_include_from_initial.xml"],
+    stay_alive=True,
+)
+
+# Regression case: a non-regular *users* config must not disable the unknown-option check for the
+# whole server config. `ConfigProcessor::parseConfig` accepts a non-regular config path (e.g. a pipe
+# such as `/dev/fd/N`), and the scan cannot re-read such a file — but the users config is a separate
+# tree that contributes no top-level key to the validated server config, so an unrelated typo in the
+# main config must still be reported.
+cluster_non_regular_users_config = ClickHouseCluster(
+    __file__, name="non_regular_users_config"
+)
+node_non_regular_users_config = cluster_non_regular_users_config.add_instance(
+    "node_non_regular_users_config",
+    main_configs=["configs/config.d/non_regular_users_config_initial.xml"],
+    stay_alive=True,
+)
+
+# Regression case: the validator's scan parses every active users config with its own DOM parser,
+# and a users config may contain thousands of users - far more unique element names than the
+# default Poco XML name pool holds. The scan must use the same enlarged name pool as
+# `ConfigProcessor` (see `test_config_hide_in_preprocessed`, which pins the processor side), so a
+# users config that the server itself loads fine does not abort the scan mid-parse.
+cluster_many_user_names = ClickHouseCluster(__file__, name="many_user_names")
+node_many_user_names = cluster_many_user_names.add_instance(
+    "node_many_user_names",
+    user_configs=["configs/users_many_unique_names.xml"],
+)
+
+# Regression case: the validator must follow each active users config's *effective*
+# `<include_from>` (the single merged value its own `ConfigProcessor` invocation reads after
+# `replace`/`remove` across the `users.d` fragment chain), not the union of raw pre-merge
+# declarations. Here a `users.d` fragment sets `<include_from>` to a source under `config.d`
+# (whose top-level tags would then be exempted) and a later fragment `remove`s it - the stale
+# source must no longer exempt its unknown top-level key, so startup must fail.
+cluster_users_include_from_removed = ClickHouseCluster(
+    __file__, name="users_include_from_removed"
+)
+node_users_include_from_removed = cluster_users_include_from_removed.add_instance(
+    "node_users_include_from_removed",
+    main_configs=["configs/config.d/users_stale_include_source.xml"],
+    user_configs=[
+        "configs/users.d/a_set_stale_include_from.xml",
+        "configs/users.d/z_remove_include_from.xml",
+    ],
+)
+caught_users_include_from_removed_exception = ""
+
+# Regression case: same, but the later fragment `replace`s the users-side `<include_from>` with a
+# different source. Only the new source's top-level tags may be exempted; the stale source's
+# unknown key must be rejected.
+cluster_users_include_from_replaced = ClickHouseCluster(
+    __file__, name="users_include_from_replaced"
+)
+node_users_include_from_replaced = cluster_users_include_from_replaced.add_instance(
+    "node_users_include_from_replaced",
+    main_configs=[
+        "configs/config.d/users_stale_include_source.xml",
+        "configs/config.d/users_new_include_source.xml",
+    ],
+    user_configs=[
+        "configs/users.d/a_set_stale_include_from.xml",
+        "configs/users.d/z_replace_include_from.xml",
+    ],
+)
+caught_users_include_from_replaced_exception = ""
+
+# Regression case: a removed users-side `<include_from from_zk=.../>` must not stay latched as
+# "unresolvable" - that would silently skip the whole validator. After the `remove`, the check
+# must run and reject an unrelated unknown key.
+cluster_users_zk_include_from_removed = ClickHouseCluster(
+    __file__, name="users_zk_include_from_removed"
+)
+node_users_zk_include_from_removed = cluster_users_zk_include_from_removed.add_instance(
+    "node_users_zk_include_from_removed",
+    main_configs=["configs/config.d/users_zk_latch_probe.xml"],
+    user_configs=[
+        "configs/users.d/a_set_zk_include_from.xml",
+        "configs/users.d/z_remove_include_from.xml",
+    ],
+)
+caught_users_zk_include_from_removed_exception = ""
+
+# Regression case: a single `users.d` fragment may carry several `<include_from>` siblings.
+# `mergeRecursive` walks them in document order, so `<include_from remove="remove"/>` followed by a
+# plain `<include_from>` drops the old node and appends the new one, which becomes the first - and
+# hence effective - node `processConfig` reads. The validator must replay every sibling, not just
+# the first one per file: the appended source lives under `config.d`, so losing it would reject its
+# top-level tag as unknown and fail a previously valid startup.
+cluster_users_include_from_remove_then_set = ClickHouseCluster(
+    __file__, name="users_include_from_remove_then_set"
+)
+node_users_include_from_remove_then_set = (
+    cluster_users_include_from_remove_then_set.add_instance(
+        "node_users_include_from_remove_then_set",
+        main_configs=["configs/config.d/users_new_include_source.xml"],
+        user_configs=[
+            "configs/users.d/a_set_stale_include_from.xml",
+            "configs/users.d/z_remove_then_set_include_from.xml",
+        ],
+    )
+)
+
+# Regression case: the reverse sibling order must NOT drop the source. `mergeRecursive` indexes the
+# tree's nodes once, at the start of each fragment, so an `<include_from remove="remove"/>` sibling
+# cannot pair with the `<include_from>` node its own fragment just appended - the `remove` is
+# dropped and the source stays effective. The validator must mirror that, keeping the source's
+# top-level tag exempted so startup still succeeds.
+cluster_users_include_from_set_then_remove = ClickHouseCluster(
+    __file__, name="users_include_from_set_then_remove"
+)
+node_users_include_from_set_then_remove = (
+    cluster_users_include_from_set_then_remove.add_instance(
+        "node_users_include_from_set_then_remove",
+        main_configs=["configs/config.d/users_stale_include_source.xml"],
+        user_configs=["configs/users.d/set_then_remove_include_from.xml"],
+    )
+)
+
+# Regression case: removing the first `<include_from>` node must reveal a later sibling. An
+# earlier fragment appends TWO `<include_from>` siblings (the first one is effective), and a later
+# fragment's `<include_from remove=.../>` pairs with the first tree node only - after the removal
+# the second sibling becomes the first, and hence effective, node. The validator must keep that
+# revealed source's top-level tag (under `config.d`) exempted, so startup must succeed.
+cluster_users_include_from_remove_reveals_sibling = ClickHouseCluster(
+    __file__, name="users_include_from_remove_reveals_sibling"
+)
+node_users_include_from_remove_reveals_sibling = (
+    cluster_users_include_from_remove_reveals_sibling.add_instance(
+        "node_users_include_from_remove_reveals_sibling",
+        main_configs=["configs/config.d/users_new_include_source.xml"],
+        user_configs=[
+            "configs/users.d/a_two_include_from_siblings.xml",
+            "configs/users.d/z_remove_include_from.xml",
+        ],
+    )
+)
+
+# Negative case: a non-static handler (e.g. `redirect`) ignores `response_content`. Only a
+# `static` handler consumes a `config://` reference, so the validator must NOT exempt a top-level
+# key referenced from `response_content` on a non-static handler — doing so would let a genuinely
+# unknown section pass validation (a false negative).
+cluster_non_static_ref = ClickHouseCluster(__file__, name="non_static_ref")
+node_non_static_ref = cluster_non_static_ref.add_instance(
+    "node_non_static_ref",
+    main_configs=["configs/config.d/non_static_handler_config_ref.xml"],
+)
+caught_non_static_ref_exception = ""
+
+# Negative case: `StaticRequestHandler` reads its `config://` payload only from `response_content`,
+# never from `response_expression`. A `config://` reference in the unused `response_expression`
+# field is ignored by the server, so the validator must NOT exempt the referenced top-level key.
+cluster_static_wrong_field = ClickHouseCluster(__file__, name="static_wrong_field")
+node_static_wrong_field = cluster_static_wrong_field.add_instance(
+    "node_static_wrong_field",
+    main_configs=["configs/config.d/static_handler_response_expression.xml"],
+)
+caught_static_wrong_field_exception = ""
+
+# Positive case: an HTTP protocol endpoint whose `<handlers>` value is a *nested* config prefix
+# (`custom_nested.handlers`), not a top-level section. The validator must exempt the top-level
+# component (`custom_nested`) AND scan the full nested prefix for `config://` references so the
+# referenced top-level key (`nested_payload`) is exempted too.
+cluster_protocols_nested = ClickHouseCluster(__file__, name="protocols_nested")
+node_protocols_nested = cluster_protocols_nested.add_instance(
+    "node_protocols_nested",
+    main_configs=["configs/config.d/protocols_nested_handlers.xml"],
+)
+
+# Compatibility case: a `GraphiteMergeTree` rollup section may override only the column names and
+# define no `<pattern>`/`<default>` rollup rules. `setGraphitePatternsFromConfig` accepts that, so
+# the validator must too (recognizing the section by its column-name overrides).
+cluster_graphite_columns = ClickHouseCluster(__file__, name="graphite_columns")
+node_graphite_columns = cluster_graphite_columns.add_instance(
+    "node_graphite_columns",
+    main_configs=["configs/config.d/graphite_columns_only.xml"],
+)
+
+# Compatibility case: a present-but-empty `GraphiteMergeTree` rollup section (no patterns and no
+# column-name overrides). `setGraphitePatternsFromConfig` only throws when the section is *missing*;
+# an existing empty section is accepted, so the validator must exempt it too instead of rejecting it
+# as an unknown top-level key.
+cluster_graphite_empty = ClickHouseCluster(__file__, name="graphite_empty")
+node_graphite_empty = cluster_graphite_empty.add_instance(
+    "node_graphite_empty",
+    main_configs=["configs/config.d/graphite_empty_section.xml"],
+)
+
+# Compatibility case: a valid `GraphiteMergeTree` rollup section whose `<pattern>` uses
+# `<rule_type>tag_list</rule_type>` together with a non-empty `<regexp>`. `appendGraphitePattern`
+# rewrites this into the dispatchable `tagged` type via `buildTaggedRegex`, so the parser accepts it.
+# The `tag_list`-without-`<regexp>` tightening must only reject the invalid shape, so this valid
+# section must still be accepted (guards against a false-positive server-won't-start).
+cluster_graphite_tag_list_accepted = ClickHouseCluster(
+    __file__, name="graphite_tag_list_accepted"
+)
+node_graphite_tag_list_accepted = cluster_graphite_tag_list_accepted.add_instance(
+    "node_graphite_tag_list_accepted",
+    main_configs=["configs/config.d/graphite_tag_list_accepted.xml"],
+)
+
+# Negative case: a section shaped like a `GraphiteMergeTree` rollup (it carries a real `<pattern>`
+# rule) but that also contains a foreign child must be rejected. `setGraphitePatternsFromConfig`
+# throws `UNKNOWN_ELEMENT_IN_CONFIG` on any unrecognized child, so the validator must require EVERY
+# child to be a recognized graphite key — accepting the section just because one child looks like a
+# rollup rule would let a typo'd top-level section sneak through (a false negative).
+cluster_graphite_foreign = ClickHouseCluster(__file__, name="graphite_foreign")
+node_graphite_foreign = cluster_graphite_foreign.add_instance(
+    "node_graphite_foreign",
+    main_configs=["configs/config.d/graphite_foreign_child.xml"],
+)
+caught_graphite_foreign_exception = ""
+
+# Negative case: a `config://` payload section that happens to contain handler-shaped children must
+# NOT be re-scanned as a handler group. The unrelated top-level key referenced from those nested
+# children (`secret_unknown_section`) must still be rejected.
+cluster_payload_handler_shape = ClickHouseCluster(__file__, name="payload_handler_shape")
+node_payload_handler_shape = cluster_payload_handler_shape.add_instance(
+    "node_payload_handler_shape",
+    main_configs=["configs/config.d/config_payload_handler_shape.xml"],
+)
+caught_payload_handler_shape_exception = ""
+
+# Invariant case: a *failed* reload must leave the live layered config unchanged. The node starts
+# serving a known `config://` HTTP response; a bad reload (which changes that response AND adds an
+# unknown key) must be rejected, and the original response must still be served afterwards.
+cluster_reload_invariant = ClickHouseCluster(__file__, name="reload_invariant")
+node_reload_invariant = cluster_reload_invariant.add_instance(
+    "node_reload_invariant",
+    main_configs=["configs/config.d/reload_invariant_initial.xml"],
+    stay_alive=True,
+)
+
+# Reload regression: a `<skip_check_for_incorrect_settings>` flag supplied by a *previously loaded*
+# config file must not leak into a later reload decision. Starting with the flag set in a file, a
+# reload that removes the flag while adding an unknown top-level key must be rejected (matching a
+# fresh startup with the same file).
+cluster_reload_skip_state = ClickHouseCluster(__file__, name="reload_skip_state")
+node_reload_skip_state = cluster_reload_skip_state.add_instance(
+    "node_reload_skip_state",
+    main_configs=["configs/config.d/reload_skip_state_initial.xml"],
+    stay_alive=True,
+)
+
+# Negative case: `StaticRequestHandler` reads `response_content` with `getRawString`, so a Poco
+# `${...}` reference is served verbatim, not expanded. The validator must read it the same way: if it
+# used `getString` it would expand the reference to `config://expansion_only_payload` and wrongly
+# exempt that unknown top-level key, even though no server code reads it (a false negative).
+cluster_response_content_expansion = ClickHouseCluster(
+    __file__, name="response_content_expansion"
+)
+node_response_content_expansion = cluster_response_content_expansion.add_instance(
+    "node_response_content_expansion",
+    main_configs=["configs/config.d/static_handler_response_content_expansion.xml"],
+)
+caught_response_content_expansion_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose immediate children are all recognized
+# (a `<default>` rule) but whose rule contains a foreign NESTED child that `appendGraphitePattern`
+# rejects. The validator must recurse into each `<pattern>`/`<default>` rule, not just check the
+# section's immediate children, otherwise a typo'd section with a nested foreign key sneaks through.
+cluster_graphite_nested_foreign = ClickHouseCluster(
+    __file__, name="graphite_nested_foreign"
+)
+node_graphite_nested_foreign = cluster_graphite_nested_foreign.add_instance(
+    "node_graphite_nested_foreign",
+    main_configs=["configs/config.d/graphite_nested_foreign_child.xml"],
+)
+caught_graphite_nested_foreign_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` has only a `<regexp>` and
+# neither a `<function>` nor a `<retention>`. `appendGraphitePattern` rejects such a rule with
+# `NO_ELEMENTS_IN_CONFIG`, so the validator must require each `<pattern>`/`<default>` rule to carry at
+# least one `<function>`/`<retention*>`, otherwise a typo'd section with only recognized child names
+# sneaks through.
+cluster_graphite_no_aggregation = ClickHouseCluster(
+    __file__, name="graphite_no_aggregation"
+)
+node_graphite_no_aggregation = cluster_graphite_no_aggregation.add_instance(
+    "node_graphite_no_aggregation",
+    main_configs=["configs/config.d/graphite_rule_no_aggregation.xml"],
+)
+caught_graphite_no_aggregation_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<default>` rule sets a non-`all`
+# `<rule_type>`. `appendGraphitePattern` rejects a default whose `rule_type` is not `all` with
+# `BAD_ARGUMENTS`, so the validator must mirror that and reject the whole section.
+cluster_graphite_default_rule_type = ClickHouseCluster(
+    __file__, name="graphite_default_rule_type"
+)
+node_graphite_default_rule_type = cluster_graphite_default_rule_type.add_instance(
+    "node_graphite_default_rule_type",
+    main_configs=["configs/config.d/graphite_default_rule_type_not_all.xml"],
+)
+caught_graphite_default_rule_type_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` carries an unrecognized
+# `<rule_type>` value. `ruleType` (called by `appendGraphitePattern`) throws `BAD_ARGUMENTS` for any
+# value other than `all`/`plain`/`tagged`/`tag_list`, so the validator must mirror that and reject the
+# whole section.
+cluster_graphite_invalid_rule_type = ClickHouseCluster(
+    __file__, name="graphite_invalid_rule_type"
+)
+node_graphite_invalid_rule_type = cluster_graphite_invalid_rule_type.add_instance(
+    "node_graphite_invalid_rule_type",
+    main_configs=["configs/config.d/graphite_invalid_rule_type.xml"],
+)
+caught_graphite_invalid_rule_type_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` carries a
+# `<rule_type>tag_list</rule_type>` and a `<function>` but no non-empty `<regexp>`.
+# `appendGraphitePattern` only rewrites a `tag_list` rule into the dispatchable `tagged` type when its
+# `<regexp>` is non-empty; without one the pattern keeps the internal `RuleTypeTagList`, which
+# `setGraphitePatternsFromConfig`'s final dispatch rejects with `Unhandled rule_type in config`. The
+# validator must mirror that and reject the whole section as an unknown top-level key.
+cluster_graphite_tag_list_without_regexp = ClickHouseCluster(
+    __file__, name="graphite_tag_list_without_regexp"
+)
+node_graphite_tag_list_without_regexp = (
+    cluster_graphite_tag_list_without_regexp.add_instance(
+        "node_graphite_tag_list_without_regexp",
+        main_configs=["configs/config.d/graphite_tag_list_without_regexp.xml"],
+    )
+)
+caught_graphite_tag_list_without_regexp_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` carries a `<retention>` block
+# with a `<precision>` but no `<age>`. `appendGraphitePattern` materializes the block by reading both
+# `.age` and `.precision` with `getUInt`, so the missing `<age>` makes the parser throw. The validator
+# must mirror that retention validation (not merely accept a child named `retention`) and reject the
+# whole section as an unknown top-level key.
+cluster_graphite_retention_missing_age = ClickHouseCluster(
+    __file__, name="graphite_retention_missing_age"
+)
+node_graphite_retention_missing_age = (
+    cluster_graphite_retention_missing_age.add_instance(
+        "node_graphite_retention_missing_age",
+        main_configs=["configs/config.d/graphite_retention_missing_age.xml"],
+    )
+)
+caught_graphite_retention_missing_age_exception = ""
+
+# Negative case: a `GraphiteMergeTree`-shaped section whose `<pattern>` carries two `<retention>`
+# blocks whose `age` and `precision` do not grow together (age ascends while precision descends).
+# Every child is well-formed, but `appendGraphitePattern` finishes by sorting the retentions with
+# `compareRetentions`, which throws `BAD_ARGUMENTS` for such a rule, so the section would never load.
+# The validator must mirror that ordering check and reject the whole section as an unknown top-level
+# key.
+cluster_graphite_retention_bad_ordering = ClickHouseCluster(
+    __file__, name="graphite_retention_bad_ordering"
+)
+node_graphite_retention_bad_ordering = (
+    cluster_graphite_retention_bad_ordering.add_instance(
+        "node_graphite_retention_bad_ordering",
+        main_configs=["configs/config.d/graphite_retention_bad_ordering.xml"],
+    )
+)
+caught_graphite_retention_bad_ordering_exception = ""
+
+# Negative case: a `<protocols>...<handlers>NAME</handlers>` reference whose handler prefix does
+# NOT exist. `createHTTPHandlerFactory` falls back to the default `http_handlers` when
+# `!config.has(NAME)` and never reads the named section, so the validator must NOT exempt the
+# top-level component of a missing handler prefix. Here `<handlers>custom_missing.handlers</handlers>`
+# points at a prefix that is absent (the section has a mistyped `<handlerss>` child), so the
+# top-level `<custom_missing>` is a genuine unknown key and must be rejected.
+cluster_protocols_missing = ClickHouseCluster(__file__, name="protocols_missing")
+node_protocols_missing = cluster_protocols_missing.add_instance(
+    "node_protocols_missing",
+    main_configs=["configs/config.d/protocols_missing_handler_prefix.xml"],
+)
+caught_protocols_missing_exception = ""
+
+# Negative case: a static handler `config://missing_payload.suffix` whose full referenced path
+# does NOT exist. `StaticRequestHandler` reads it with `getRawString("missing_payload.suffix",
+# "Ok.\n")`, so a missing path falls back to the default response and never consumes the top-level
+# `<missing_payload>` section. The validator must therefore NOT exempt `<missing_payload>` just
+# because a `config://` value names it: the unread section is a genuine unknown key.
+cluster_static_missing_path = ClickHouseCluster(__file__, name="static_missing_path")
+node_static_missing_path = cluster_static_missing_path.add_instance(
+    "node_static_missing_path",
+    main_configs=["configs/config.d/static_handler_config_ref_missing_path.xml"],
+)
+caught_static_missing_path_exception = ""
+
+# Negative case: a `config://` payload referenced only from a *dead* `http_handlers_alt` group.
+# `createHTTPHandlerFactory` reads only the default `http_handlers` group and the group named by an
+# HTTP protocol's `<handlers>`; a stray `http_handlers_alt` section that no protocol references is
+# never consumed, so the validator must NOT exempt the top-level key it references via `config://`.
+# The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` for `<secret_dead_handler_payload>`.
+cluster_dead_handler_group = ClickHouseCluster(__file__, name="dead_handler_group")
+node_dead_handler_group = cluster_dead_handler_group.add_instance(
+    "node_dead_handler_group",
+    main_configs=["configs/config.d/dead_http_handlers_group_config_ref.xml"],
+)
+caught_dead_handler_group_exception = ""
+
+
+# The fixtures below are deliberately function-scoped (not module-scoped): almost every cluster here
+# is used by a single test, and a module-scoped fixture keeps its server container alive until the very
+# end of the module. With several dozen clusters in this module that means several dozen servers running
+# at once, which exhausts the memory of the test runner - especially in the flaky check, which runs the
+# whole module several times in parallel on one machine. Function scope shuts every cluster down right
+# after its test without changing the number of server startups. The two fixtures that are shared by
+# more than one test stay module-scoped.
+@pytest.fixture
+def start_bad_cluster():
+    global caught_exception
+    try:
+        cluster_bad.start()
+    except Exception as e:
+        caught_exception = str(e)
+        # The error message goes to the error log file, not to container stdout.
+        # Read it from the host-mounted logs directory.
+        err_log = os.path.join(node_bad.logs_dir, "clickhouse-server.err.log")
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_exception += "\n" + f.read()
+    yield
+    cluster_bad.shutdown()
+
+
+@pytest.fixture
+def start_multi_bad_cluster():
+    global caught_multi_exception
+    try:
+        cluster_multi_bad.start()
+    except Exception as e:
+        caught_multi_exception = str(e)
+        err_log = os.path.join(node_multi_bad.logs_dir, "clickhouse-server.err.log")
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_multi_exception += "\n" + f.read()
+    yield
+    cluster_multi_bad.shutdown()
+
+
+@pytest.fixture
+def start_users_typo_cluster():
+    global caught_users_typo_exception
+    try:
+        cluster_users_typo.start()
+    except Exception as e:
+        caught_users_typo_exception = str(e)
+        err_log = os.path.join(node_users_typo.logs_dir, "clickhouse-server.err.log")
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_users_typo_exception += "\n" + f.read()
+    yield
+    cluster_users_typo.shutdown()
+
+
+@pytest.fixture
+def start_ok_cluster():
+    cluster_ok.start()
+    yield
+    cluster_ok.shutdown()
+
+
+@pytest.fixture
+def start_indexed_ref_cluster():
+    cluster_indexed_ref.start()
+    yield
+    cluster_indexed_ref.shutdown()
+
+
+@pytest.fixture
+def start_dotted_key_ref_cluster():
+    cluster_dotted_key_ref.start()
+    yield
+    cluster_dotted_key_ref.shutdown()
+
+
+@pytest.fixture
+def start_protocols_cluster():
+    cluster_protocols.start()
+    yield
+    cluster_protocols.shutdown()
+
+
+@pytest.fixture
+def start_include_from_in_configd_cluster():
+    cluster_include_from_in_configd.start()
+    yield
+    cluster_include_from_in_configd.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_removed_cluster():
+    global caught_users_include_from_removed_exception
+    try:
+        cluster_users_include_from_removed.start()
+    except Exception as e:
+        caught_users_include_from_removed_exception = str(e)
+        err_log = os.path.join(
+            node_users_include_from_removed.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_users_include_from_removed_exception += "\n" + f.read()
+    yield
+    cluster_users_include_from_removed.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_replaced_cluster():
+    global caught_users_include_from_replaced_exception
+    try:
+        cluster_users_include_from_replaced.start()
+    except Exception as e:
+        caught_users_include_from_replaced_exception = str(e)
+        err_log = os.path.join(
+            node_users_include_from_replaced.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_users_include_from_replaced_exception += "\n" + f.read()
+    yield
+    cluster_users_include_from_replaced.shutdown()
+
+
+@pytest.fixture
+def start_users_zk_include_from_removed_cluster():
+    global caught_users_zk_include_from_removed_exception
+    try:
+        cluster_users_zk_include_from_removed.start()
+    except Exception as e:
+        caught_users_zk_include_from_removed_exception = str(e)
+        err_log = os.path.join(
+            node_users_zk_include_from_removed.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_users_zk_include_from_removed_exception += "\n" + f.read()
+    yield
+    cluster_users_zk_include_from_removed.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_remove_then_set_cluster():
+    cluster_users_include_from_remove_then_set.start()
+    yield
+    cluster_users_include_from_remove_then_set.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_set_then_remove_cluster():
+    cluster_users_include_from_set_then_remove.start()
+    yield
+    cluster_users_include_from_set_then_remove.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_remove_reveals_sibling_cluster():
+    cluster_users_include_from_remove_reveals_sibling.start()
+    yield
+    cluster_users_include_from_remove_reveals_sibling.shutdown()
+
+
+@pytest.fixture
+def start_many_user_names_cluster():
+    cluster_many_user_names.start()
+    yield
+    cluster_many_user_names.shutdown()
+
+
+@pytest.fixture
+def start_existing_keys_cluster():
+    cluster_existing_keys.start()
+    yield
+    cluster_existing_keys.shutdown()
+
+
+@pytest.fixture
+def start_reload_cluster():
+    cluster_reload.start()
+    yield
+    cluster_reload.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_cli_skip_cluster():
+    cluster_cli_skip.start()
+    yield
+    cluster_cli_skip.shutdown()
+
+
+@pytest.fixture
+def start_graphite_cluster():
+    cluster_graphite.start()
+    yield
+    cluster_graphite.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_include_from_external_cluster():
+    cluster_include_from_external.start()
+    yield
+    cluster_include_from_external.shutdown()
+
+
+@pytest.fixture
+def start_include_from_env_cluster():
+    cluster_include_from_env.start()
+    yield
+    cluster_include_from_env.shutdown()
+
+
+@pytest.fixture
+def start_include_from_zk_cluster():
+    cluster_include_from_zk.start()
+    yield
+    cluster_include_from_zk.shutdown()
+
+
+@pytest.fixture
+def start_users_include_from_zk_cluster():
+    cluster_users_include_from_zk.start()
+    yield
+    cluster_users_include_from_zk.shutdown()
+
+
+@pytest.fixture
+def start_non_regular_users_config_cluster():
+    cluster_non_regular_users_config.start()
+    yield
+    cluster_non_regular_users_config.shutdown()
+
+
+@pytest.fixture
+def start_non_static_ref_cluster():
+    global caught_non_static_ref_exception
+    try:
+        cluster_non_static_ref.start()
+    except Exception as e:
+        caught_non_static_ref_exception = str(e)
+        err_log = os.path.join(node_non_static_ref.logs_dir, "clickhouse-server.err.log")
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_non_static_ref_exception += "\n" + f.read()
+    yield
+    cluster_non_static_ref.shutdown()
+
+
+@pytest.fixture
+def start_static_wrong_field_cluster():
+    global caught_static_wrong_field_exception
+    try:
+        cluster_static_wrong_field.start()
+    except Exception as e:
+        caught_static_wrong_field_exception = str(e)
+        err_log = os.path.join(
+            node_static_wrong_field.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_static_wrong_field_exception += "\n" + f.read()
+    yield
+    cluster_static_wrong_field.shutdown()
+
+
+@pytest.fixture
+def start_protocols_nested_cluster():
+    cluster_protocols_nested.start()
+    yield
+    cluster_protocols_nested.shutdown()
+
+
+@pytest.fixture
+def start_graphite_columns_cluster():
+    cluster_graphite_columns.start()
+    yield
+    cluster_graphite_columns.shutdown()
+
+
+@pytest.fixture
+def start_graphite_empty_cluster():
+    cluster_graphite_empty.start()
+    yield
+    cluster_graphite_empty.shutdown()
+
+
+@pytest.fixture
+def start_graphite_tag_list_accepted_cluster():
+    cluster_graphite_tag_list_accepted.start()
+    yield
+    cluster_graphite_tag_list_accepted.shutdown()
+
+
+@pytest.fixture
+def start_graphite_foreign_cluster():
+    global caught_graphite_foreign_exception
+    try:
+        cluster_graphite_foreign.start()
+    except Exception as e:
+        caught_graphite_foreign_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_foreign.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_foreign_exception += "\n" + f.read()
+    yield
+    cluster_graphite_foreign.shutdown()
+
+
+@pytest.fixture
+def start_payload_handler_shape_cluster():
+    global caught_payload_handler_shape_exception
+    try:
+        cluster_payload_handler_shape.start()
+    except Exception as e:
+        caught_payload_handler_shape_exception = str(e)
+        err_log = os.path.join(
+            node_payload_handler_shape.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_payload_handler_shape_exception += "\n" + f.read()
+    yield
+    cluster_payload_handler_shape.shutdown()
+
+
+@pytest.fixture
+def start_reload_invariant_cluster():
+    cluster_reload_invariant.start()
+    yield
+    cluster_reload_invariant.shutdown()
+
+
+@pytest.fixture
+def start_reload_skip_state_cluster():
+    cluster_reload_skip_state.start()
+    yield
+    cluster_reload_skip_state.shutdown()
+
+
+@pytest.fixture
+def start_response_content_expansion_cluster():
+    global caught_response_content_expansion_exception
+    try:
+        cluster_response_content_expansion.start()
+    except Exception as e:
+        caught_response_content_expansion_exception = str(e)
+        err_log = os.path.join(
+            node_response_content_expansion.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_response_content_expansion_exception += "\n" + f.read()
+    yield
+    cluster_response_content_expansion.shutdown()
+
+
+@pytest.fixture
+def start_graphite_nested_foreign_cluster():
+    global caught_graphite_nested_foreign_exception
+    try:
+        cluster_graphite_nested_foreign.start()
+    except Exception as e:
+        caught_graphite_nested_foreign_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_nested_foreign.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_nested_foreign_exception += "\n" + f.read()
+    yield
+    cluster_graphite_nested_foreign.shutdown()
+
+
+@pytest.fixture
+def start_graphite_no_aggregation_cluster():
+    global caught_graphite_no_aggregation_exception
+    try:
+        cluster_graphite_no_aggregation.start()
+    except Exception as e:
+        caught_graphite_no_aggregation_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_no_aggregation.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_no_aggregation_exception += "\n" + f.read()
+    yield
+    cluster_graphite_no_aggregation.shutdown()
+
+
+@pytest.fixture
+def start_graphite_default_rule_type_cluster():
+    global caught_graphite_default_rule_type_exception
+    try:
+        cluster_graphite_default_rule_type.start()
+    except Exception as e:
+        caught_graphite_default_rule_type_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_default_rule_type.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_default_rule_type_exception += "\n" + f.read()
+    yield
+    cluster_graphite_default_rule_type.shutdown()
+
+
+@pytest.fixture
+def start_graphite_invalid_rule_type_cluster():
+    global caught_graphite_invalid_rule_type_exception
+    try:
+        cluster_graphite_invalid_rule_type.start()
+    except Exception as e:
+        caught_graphite_invalid_rule_type_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_invalid_rule_type.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_invalid_rule_type_exception += "\n" + f.read()
+    yield
+    cluster_graphite_invalid_rule_type.shutdown()
+
+
+@pytest.fixture
+def start_graphite_tag_list_without_regexp_cluster():
+    global caught_graphite_tag_list_without_regexp_exception
+    try:
+        cluster_graphite_tag_list_without_regexp.start()
+    except Exception as e:
+        caught_graphite_tag_list_without_regexp_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_tag_list_without_regexp.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_tag_list_without_regexp_exception += "\n" + f.read()
+    yield
+    cluster_graphite_tag_list_without_regexp.shutdown()
+
+
+@pytest.fixture
+def start_graphite_retention_missing_age_cluster():
+    global caught_graphite_retention_missing_age_exception
+    try:
+        cluster_graphite_retention_missing_age.start()
+    except Exception as e:
+        caught_graphite_retention_missing_age_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_retention_missing_age.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_retention_missing_age_exception += "\n" + f.read()
+    yield
+    cluster_graphite_retention_missing_age.shutdown()
+
+
+@pytest.fixture
+def start_graphite_retention_bad_ordering_cluster():
+    global caught_graphite_retention_bad_ordering_exception
+    try:
+        cluster_graphite_retention_bad_ordering.start()
+    except Exception as e:
+        caught_graphite_retention_bad_ordering_exception = str(e)
+        err_log = os.path.join(
+            node_graphite_retention_bad_ordering.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_graphite_retention_bad_ordering_exception += "\n" + f.read()
+    yield
+    cluster_graphite_retention_bad_ordering.shutdown()
+
+
+@pytest.fixture
+def start_protocols_missing_cluster():
+    global caught_protocols_missing_exception
+    try:
+        cluster_protocols_missing.start()
+    except Exception as e:
+        caught_protocols_missing_exception = str(e)
+        err_log = os.path.join(
+            node_protocols_missing.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_protocols_missing_exception += "\n" + f.read()
+    yield
+    cluster_protocols_missing.shutdown()
+
+
+@pytest.fixture
+def start_static_missing_path_cluster():
+    global caught_static_missing_path_exception
+    try:
+        cluster_static_missing_path.start()
+    except Exception as e:
+        caught_static_missing_path_exception = str(e)
+        err_log = os.path.join(
+            node_static_missing_path.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_static_missing_path_exception += "\n" + f.read()
+    yield
+    cluster_static_missing_path.shutdown()
+
+
+@pytest.fixture
+def start_user_directories_include_from_cluster():
+    cluster_user_directories_include_from.start()
+    yield
+    cluster_user_directories_include_from.shutdown()
+
+
+@pytest.fixture
+def start_dead_handler_group_cluster():
+    global caught_dead_handler_group_exception
+    try:
+        cluster_dead_handler_group.start()
+    except Exception as e:
+        caught_dead_handler_group_exception = str(e)
+        err_log = os.path.join(
+            node_dead_handler_group.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_dead_handler_group_exception += "\n" + f.read()
+    yield
+    cluster_dead_handler_group.shutdown()
+
+
+def test_unknown_config_option_rejected(start_bad_cluster):
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_exception
+    assert "some_completely_unknown_option" in caught_exception
+
+
+def test_multiple_unknown_config_options_all_reported(start_multi_bad_cluster):
+    # Both unknown keys must appear in the same exception message.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_multi_exception
+    assert "first_completely_unknown_option" in caught_multi_exception
+    assert "second_completely_unknown_option" in caught_multi_exception
+
+
+def test_users_prefix_typo_rejected(start_users_typo_cluster):
+    # A typo of `users_config` (e.g. `users_cnfig`) must be rejected: the
+    # validator must not blanket-accept any `users_*` top-level key.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_users_typo_exception
+    assert "users_cnfig" in caught_users_typo_exception
+
+
+def test_config_ref_in_http_handler_accepted(start_ok_cluster):
+    # If the unknown-key validator rejected `my_static_response_payload`,
+    # the node would have failed to start and the HTTP handler would not respond.
+    response = node_static_config_ref.http_request("my_static_response", method="GET")
+    assert response.status_code == 200
+    assert response.text == "Hello from config://"
+
+
+def test_non_static_handler_config_ref_not_exempted(start_non_static_ref_cluster):
+    # A `redirect` handler ignores `response_content`, so `config://redirect_ignored_payload`
+    # is never consumed by any server code. The unknown top-level key must still be rejected
+    # (only a `static` handler may exempt a `config://`-referenced key).
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_non_static_ref_exception
+    assert "redirect_ignored_payload" in caught_non_static_ref_exception
+
+
+def test_static_handler_response_expression_field_not_exempted(
+    start_static_wrong_field_cluster,
+):
+    # `StaticRequestHandler` reads `response_content`, not `response_expression`; a `config://`
+    # reference in the unused field must not exempt the unknown top-level key.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_static_wrong_field_exception
+    assert "static_response_expression_payload" in caught_static_wrong_field_exception
+
+
+def test_config_ref_with_bracket_index_accepted(start_indexed_ref_cluster):
+    # If the unknown-key validator failed to normalize `my_indexed_payload[1]`
+    # to `my_indexed_payload` before recording it as referenced, the node
+    # would have refused to start (the repeated top-level key is yielded by
+    # Poco as `my_indexed_payload` and `my_indexed_payload[1]`, both of which
+    # must be matched against the normalized reference).
+    response = node_static_config_ref_indexed.http_request(
+        "my_indexed_response", method="GET"
+    )
+    assert response.status_code == 200
+    assert response.text == "Second payload"
+
+
+def test_config_ref_with_dotted_key_accepted(start_dotted_key_ref_cluster):
+    # If the unknown-key validator's `top_level_component` helper split on the escaped dot in
+    # `my_dotted\.payload` instead of recognizing the backslash escape, it would record the
+    # exemption as `my_dotted\` while the actual top-level key (as yielded by
+    # `config.keys("")`) is `my_dotted\.payload` — a mismatch that would reject the node's
+    # startup with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    response = node_static_config_ref_dotted_key.http_request(
+        "my_dotted_response", method="GET"
+    )
+    assert response.status_code == 200
+    assert response.text == "Hello from a dotted key"
+
+
+def test_protocols_custom_handlers_accepted(start_protocols_cluster):
+    # If the unknown-key validator rejected `my_custom_handlers` (the section
+    # referenced by <protocols><alt_http><handlers>my_custom_handlers</handlers>...),
+    # the node would have failed to start.
+    assert (
+        node_protocols_custom_handlers.query("SELECT 1").strip() == "1"
+    )
+
+
+def test_include_from_source_in_configd_accepted(
+    start_include_from_in_configd_cluster,
+):
+    # If the unknown-key validator rejected `my_incl_payload` (which is the
+    # top-level tag in the `include_from` source file placed under `config.d/`,
+    # and thus auto-merged into the main config by `ConfigProcessor`), the node
+    # would have failed to start. The fix is to parse the `include_from` source
+    # separately and treat its top-level tag names as referenced (i.e. exempt).
+    assert (
+        node_include_from_in_configd.query("SELECT 1").strip() == "1"
+    )
+
+
+def test_existing_keys_outside_server_settings_accepted(start_existing_keys_cluster):
+    # If the unknown-key validator rejected any of the keys in
+    # `existing_keys.xml` (all of which are read by C++ code outside
+    # `ServerSettings`), the node would have failed to start.
+    assert node_existing_keys.query("SELECT 1").strip() == "1"
+
+
+def test_users_config_with_many_unique_names_accepted(start_many_user_names_cluster):
+    # The users config has 600+ users with distinct names - more unique element
+    # names than the default Poco XML name pool holds. If the validator's scan
+    # used a default-sized name pool, parsing this file would abort mid-parse
+    # (and, with the vendored expat 2.8.2, leak the whole parser), even though
+    # `ConfigProcessor` itself loads the file fine with its enlarged pool.
+    assert node_many_user_names.query("SELECT 1").strip() == "1"
+    assert (
+        node_many_user_names.query(
+            "SELECT count() FROM system.users WHERE name LIKE 'scan_pool_user_%'"
+        ).strip()
+        == "600"
+    )
+
+
+def test_users_include_from_removed_source_not_exempted(
+    start_users_include_from_removed_cluster,
+):
+    # A `users.d` fragment `remove`s the users-side `<include_from>`, so the active users
+    # config no longer consults the stale source under `config.d` - its unknown top-level
+    # key must be rejected instead of staying exempted by the raw pre-merge union.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_users_include_from_removed_exception
+    assert "my_stale_users_exempt" in caught_users_include_from_removed_exception
+
+
+def test_users_include_from_replaced_source_not_exempted(
+    start_users_include_from_replaced_cluster,
+):
+    # A `users.d` fragment `replace`s the users-side `<include_from>` with a new source.
+    # Only the new source's top-level tags may be exempted: the stale source's unknown key
+    # must be rejected, while the new source's key must NOT appear among the unknown keys.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_users_include_from_replaced_exception
+    assert "my_stale_users_exempt" in caught_users_include_from_replaced_exception
+    assert "my_new_users_exempt" not in caught_users_include_from_replaced_exception
+
+
+def test_users_zk_include_from_removed_does_not_skip_check(
+    start_users_zk_include_from_removed_cluster,
+):
+    # A removed users-side `<include_from from_zk=.../>` must not stay latched as
+    # unresolvable: the validator must still run and reject an unrelated unknown key.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_users_zk_include_from_removed_exception
+    assert "my_zk_latch_probe" in caught_users_zk_include_from_removed_exception
+
+
+def test_users_include_from_remove_then_set_source_exempted(
+    start_users_include_from_remove_then_set_cluster,
+):
+    # A `users.d` fragment removes the users-side `<include_from>` and re-declares it in a
+    # later sibling of the same fragment. The merger appends the new node after dropping the
+    # old one, so the new source is the effective one; the validator must replay every
+    # sibling (not just the first per file) and exempt the new source's top-level tag, or
+    # this previously valid startup fails with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    assert (
+        node_users_include_from_remove_then_set.query("SELECT 1").strip() == "1"
+    )
+
+
+def test_users_include_from_set_then_remove_source_still_exempted(
+    start_users_include_from_set_then_remove_cluster,
+):
+    # The reverse sibling order: a fragment declares the source and a later sibling of the
+    # SAME fragment carries `remove`. `mergeRecursive` indexes the tree once per fragment,
+    # so the `remove` cannot pair with the node its own fragment just appended - it is
+    # dropped and the source stays effective. The validator must mirror that and keep the
+    # source's top-level tag exempted, or this valid startup fails.
+    assert (
+        node_users_include_from_set_then_remove.query("SELECT 1").strip() == "1"
+    )
+
+
+def test_users_include_from_remove_reveals_later_sibling(
+    start_users_include_from_remove_reveals_sibling_cluster,
+):
+    # An earlier fragment appends two `<include_from>` siblings; a later fragment's `remove`
+    # pairs with the first tree node only, so the second sibling becomes the effective source.
+    # The validator must keep the revealed source's top-level tag exempted, or this valid
+    # startup fails with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    assert (
+        node_users_include_from_remove_reveals_sibling.query("SELECT 1").strip() == "1"
+    )
+
+
+def test_reload_rejects_unknown_then_accepts_config_ref(start_reload_cluster):
+    # The node started with a valid config; the validator must also run on
+    # `SYSTEM RELOAD CONFIG`, not only at startup.
+    assert node_reload.query("SELECT 1").strip() == "1"
+
+    bad_config_path = "/etc/clickhouse-server/config.d/reload_unknown.xml"
+    bad_config = (
+        "<clickhouse>"
+        "<some_other_unknown_option>1</some_other_unknown_option>"
+        "</clickhouse>"
+    )
+    good_config_path = "/etc/clickhouse-server/config.d/reload_payload.xml"
+    good_config = (
+        "<clickhouse>"
+        "<my_reload_payload>Hello after reload</my_reload_payload>"
+        "<http_handlers>"
+        "<rule>"
+        "<methods>GET</methods>"
+        "<url>/my_reload_response</url>"
+        "<handler>"
+        "<type>static</type>"
+        "<response_content>config://my_reload_payload</response_content>"
+        "</handler>"
+        "</rule>"
+        "<defaults/>"
+        "</http_handlers>"
+        "</clickhouse>"
+    )
+
+    try:
+        # Step 1: write an unknown top-level key into config.d and reload.
+        # `SYSTEM RELOAD CONFIG` must surface `UNKNOWN_ELEMENT_IN_CONFIG`.
+        node_reload.replace_config(bad_config_path, bad_config)
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in node_reload.query_and_get_error(
+            "SYSTEM RELOAD CONFIG"
+        )
+
+        # Step 2: replace the bad file with a valid `config://`-referenced key
+        # and reload again. The validator must accept the new top-level key.
+        node_reload.exec_in_container(
+            ["bash", "-c", f"rm -f {bad_config_path}"]
+        )
+        node_reload.replace_config(good_config_path, good_config)
+        node_reload.query("SYSTEM RELOAD CONFIG")
+        response = node_reload.http_request("my_reload_response", method="GET")
+        assert response.status_code == 200
+        assert response.text == "Hello after reload"
+    finally:
+        node_reload.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {bad_config_path} {good_config_path}",
+            ]
+        )
+
+
+def test_cli_skip_flag_disables_check(start_cli_skip_cluster):
+    # Startup coverage: `node_cli_skip` carries the same `some_completely_unknown_option`
+    # top-level key that makes `node_bad` fail to start, but it is launched with
+    # `--skip_check_for_incorrect_settings=1`. The command-line escape hatch (resolved
+    # from the layered config) must disable the unknown-key check, so the node starts.
+    assert node_cli_skip.query("SELECT 1").strip() == "1"
+
+    # Reload coverage: the command-line flag persists in the layered config across
+    # `SYSTEM RELOAD CONFIG`, so injecting another unknown top-level key and reloading
+    # must NOT raise `UNKNOWN_ELEMENT_IN_CONFIG`.
+    extra_unknown_path = "/etc/clickhouse-server/config.d/cli_skip_unknown.xml"
+    extra_unknown = (
+        "<clickhouse>"
+        "<another_completely_unknown_option>1</another_completely_unknown_option>"
+        "</clickhouse>"
+    )
+    try:
+        node_cli_skip.replace_config(extra_unknown_path, extra_unknown)
+        # `query` raises on error; a clean return proves the reload was accepted.
+        node_cli_skip.query("SYSTEM RELOAD CONFIG")
+        assert node_cli_skip.query("SELECT 1").strip() == "1"
+    finally:
+        node_cli_skip.exec_in_container(["bash", "-c", f"rm -f {extra_unknown_path}"])
+
+
+def test_cli_skip_flag_disables_user_setting_check_on_reload(start_cli_skip_cluster):
+    # Regression for the command-line escape hatch on `SYSTEM RELOAD CONFIG` for the
+    # *pre-existing* top-level user-setting check (`Settings::checkNoSettingNamesAtTopLevel`),
+    # not only for the new unknown-server-key check. On reload that helper validates the
+    # file-only config (so a failed reload does not mutate the layered config), which does not
+    # carry command-line options; the escape hatch must therefore be resolved from the layered
+    # config. Injecting a top-level user setting such as `<max_memory_usage>` and reloading must
+    # NOT raise `UNKNOWN_ELEMENT_IN_CONFIG`, exactly as the command-line flag suppresses that
+    # same check at startup.
+    user_setting_path = "/etc/clickhouse-server/config.d/cli_skip_user_setting.xml"
+    user_setting = (
+        "<clickhouse>"
+        "<max_memory_usage>1</max_memory_usage>"
+        "</clickhouse>"
+    )
+    try:
+        node_cli_skip.replace_config(user_setting_path, user_setting)
+        # `query` raises on error; a clean return proves the reload was accepted.
+        node_cli_skip.query("SYSTEM RELOAD CONFIG")
+        assert node_cli_skip.query("SELECT 1").strip() == "1"
+    finally:
+        node_cli_skip.exec_in_container(["bash", "-c", f"rm -f {user_setting_path}"])
+
+
+def test_graphite_rollup_arbitrary_section_name_accepted(start_graphite_cluster):
+    # A `GraphiteMergeTree` rollup section can have an arbitrary name (taken from the table
+    # definition, here `retention_5m`), not necessarily one starting with `graphite_rollup`.
+    # If the unknown-key validator rejected `<retention_5m>`, the node would have failed to
+    # start. The section must also remain usable: a `GraphiteMergeTree('retention_5m')` table
+    # is created, populated, and rolled up.
+    node_graphite.query("DROP TABLE IF EXISTS test_graphite SYNC")
+    node_graphite.query(
+        """
+        CREATE TABLE test_graphite
+            (metric String, value Float64, timestamp UInt32, date Date, updated UInt32)
+            ENGINE = GraphiteMergeTree('retention_5m')
+            PARTITION BY toYYYYMM(date)
+            ORDER BY (metric, timestamp)
+        """
+    )
+    node_graphite.query(
+        "INSERT INTO test_graphite VALUES ('metric1', 1.0, 1, toDate('2020-01-01'), 1)"
+    )
+    node_graphite.query("OPTIMIZE TABLE test_graphite FINAL")
+    assert node_graphite.query("SELECT count() FROM test_graphite").strip() == "1"
+    node_graphite.query("DROP TABLE test_graphite SYNC")
+
+
+def test_external_include_from_source_does_not_exempt_unknown_key(
+    start_include_from_external_cluster,
+):
+    # An external `<include_from>` source that lives OUTSIDE `config.d/` is used by
+    # `ConfigProcessor` only as a lookup table for `incl` references; it does not contribute
+    # any top-level key to the merged config. Therefore an unknown top-level key must still be
+    # rejected even when the external source happens to define a tag of the same name.
+    # (Before the fix, the validator exempted every top-level tag of every `include_from`
+    # source unconditionally, masking exactly this typo/misplaced-section class.)
+    external_source_path = "/etc/clickhouse-server/external_incl_source.xml"
+    external_source = (
+        "<clickhouse>"
+        "<my_external_only_payload>lookup value</my_external_only_payload>"
+        "</clickhouse>"
+    )
+    # The unknown top-level key shares its name with the external source's tag, so it would be
+    # wrongly exempted by the old code. It is paired with the `<include_from>` directive that
+    # points at the external (non-merged) source.
+    bad_config_path = "/etc/clickhouse-server/config.d/external_include_from.xml"
+    bad_config = (
+        "<clickhouse>"
+        f"<include_from>{external_source_path}</include_from>"
+        "<my_external_only_payload>1</my_external_only_payload>"
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(external_source_path, external_source)
+        node_include_from_external.replace_config(bad_config_path, bad_config)
+        error = node_include_from_external.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+        assert "my_external_only_payload" in error
+    finally:
+        node_include_from_external.exec_in_container(
+            ["bash", "-c", f"rm -f {bad_config_path} {external_source_path}"]
+        )
+
+
+def test_users_config_include_from_source_does_not_exempt_server_key(
+    start_include_from_external_cluster,
+):
+    # `ConfigProcessor` resolves a top-level server `<include incl="X"/>` only against the *server*
+    # config's own `<include_from>` source, never against the users config's. So a top-level server
+    # key must still be rejected even when the *users* config declares its own `<include_from>` whose
+    # source happens to define the referenced node `<X>` with a child of that key's name. (Before the
+    # fix, the validator resolved server include refs against every discovered `include_from` source,
+    # including the users-config source, so it wrongly whitelisted a server key the server config
+    # never imports.)
+    #
+    # Layout mirrors the reported repro: the server config has its own `<include_from>` (a source that
+    # does NOT define `shared_root`), a `<include incl="shared_root"/>`, and an otherwise unknown
+    # `<my_users_only_payload>`; the users config has its own `<include_from>` whose source defines
+    # `<shared_root><my_users_only_payload/></shared_root>`.
+    server_source_path = "/etc/clickhouse-server/server_incl_source.xml"
+    server_source = (
+        "<clickhouse>"
+        "<unrelated_server_lookup>server value</unrelated_server_lookup>"
+        "</clickhouse>"
+    )
+    users_source_path = "/etc/clickhouse-server/users_incl_source.xml"
+    users_source = (
+        "<clickhouse>"
+        "<shared_root>"
+        "<my_users_only_payload>imported from users source</my_users_only_payload>"
+        "</shared_root>"
+        "</clickhouse>"
+    )
+    server_config_path = "/etc/clickhouse-server/config.d/server_include_users_leak.xml"
+    server_config = (
+        "<clickhouse>"
+        f"<include_from>{server_source_path}</include_from>"
+        '<include incl="shared_root"/>'
+        "<my_users_only_payload>1</my_users_only_payload>"
+        "</clickhouse>"
+    )
+    users_config_path = "/etc/clickhouse-server/users.d/users_include_from_leak.xml"
+    users_config = (
+        "<clickhouse>"
+        f"<include_from>{users_source_path}</include_from>"
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(server_source_path, server_source)
+        node_include_from_external.replace_config(users_source_path, users_source)
+        node_include_from_external.replace_config(users_config_path, users_config)
+        node_include_from_external.replace_config(server_config_path, server_config)
+        error = node_include_from_external.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+        assert "my_users_only_payload" in error
+    finally:
+        node_include_from_external.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {server_config_path} {users_config_path} "
+                f"{server_source_path} {users_source_path}",
+            ]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
+def test_top_level_include_from_external_source_accepted(
+    start_include_from_external_cluster,
+):
+    # A *top-level* `<include incl="X"/>` element is expanded by `ConfigProcessor` by inserting the
+    # *children* of node `X` (resolved from the external `<include_from>` source) into the root, so
+    # those child tags become real top-level keys of the merged config. This is the one way an
+    # external (non-merged) `<include_from>` source legitimately contributes a top-level key. The
+    # validator must exempt exactly those imported children — otherwise a configuration that was
+    # valid before this check existed now fails to start with `UNKNOWN_ELEMENT_IN_CONFIG`. This is
+    # the positive counterpart to `test_external_include_from_source_does_not_exempt_unknown_key`:
+    # a plain `incl` lookup is still rejected, but a top-level `<include>` substitution is accepted.
+    external_source_path = "/etc/clickhouse-server/external_include_source.xml"
+    external_source = (
+        "<clickhouse>"
+        "<imported_group>"
+        "<my_included_section>imported value</my_included_section>"
+        "</imported_group>"
+        "</clickhouse>"
+    )
+    # The top-level `<include incl="imported_group"/>` imports `<my_included_section>` into the root.
+    include_config_path = "/etc/clickhouse-server/config.d/top_level_include.xml"
+    include_config = (
+        "<clickhouse>"
+        f"<include_from>{external_source_path}</include_from>"
+        '<include incl="imported_group"/>'
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(external_source_path, external_source)
+        node_include_from_external.replace_config(include_config_path, include_config)
+        # Reload must succeed: `my_included_section` is exempted as an imported `<include>` child.
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+        assert node_include_from_external.query("SELECT 1").strip() == "1"
+    finally:
+        node_include_from_external.exec_in_container(
+            ["bash", "-c", f"rm -f {include_config_path} {external_source_path}"]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
+def test_top_level_include_dotted_imported_key_accepted(
+    start_include_from_external_cluster,
+):
+    # Regression for a top-level `<include incl="X"/>` that imports a child whose tag name contains a
+    # literal dot (`<my.dotted.section>`). `ConfigProcessor` inserts that child into the root, so it
+    # becomes a real top-level key of the merged config, but `AbstractConfiguration::keys("")` reports
+    # such a key with the dot escaped (`my\.dotted\.section`, see `gtest_config_dot.cpp`). The validator
+    # must record the imported exemption with the same escaping — otherwise it stores the raw
+    # `my.dotted.section`, the escaped key never matches it, and this valid, in-use configuration fails
+    # to start with `UNKNOWN_ELEMENT_IN_CONFIG`. This is the imported-tag counterpart to
+    # `test_config_ref_with_dotted_key_accepted`, which covers a `config://` reference to a dotted key.
+    external_source_path = "/etc/clickhouse-server/external_dotted_include_source.xml"
+    external_source = (
+        "<clickhouse>"
+        "<imported_group>"
+        "<my.dotted.section>imported dotted value</my.dotted.section>"
+        "</imported_group>"
+        "</clickhouse>"
+    )
+    # The top-level `<include incl="imported_group"/>` imports `<my.dotted.section>` into the root.
+    include_config_path = "/etc/clickhouse-server/config.d/top_level_include_dotted.xml"
+    include_config = (
+        "<clickhouse>"
+        f"<include_from>{external_source_path}</include_from>"
+        '<include incl="imported_group"/>'
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(external_source_path, external_source)
+        node_include_from_external.replace_config(include_config_path, include_config)
+        # Reload must succeed: the imported dotted key is exempted, matched against the escaped
+        # top-level key `my\.dotted\.section` the validator actually sees.
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+        assert node_include_from_external.query("SELECT 1").strip() == "1"
+    finally:
+        node_include_from_external.exec_in_container(
+            ["bash", "-c", f"rm -f {include_config_path} {external_source_path}"]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
+def test_metrika_default_include_source_top_level_include_accepted(
+    start_include_from_external_cluster,
+):
+    # When the server config declares no explicit `<include_from>`, `ConfigProcessor` falls back to
+    # the default substitution source `/etc/metrika.xml` if it exists. A top-level `<include
+    # incl="X"/>` then imports `<X>`'s children from that default source into the root, so they
+    # become top-level keys. The validator must seed the same default and exempt those imported keys
+    # — otherwise a configuration that was valid before this check existed (relying on the metrika
+    # default) now fails to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    metrika_path = "/etc/metrika.xml"
+    metrika_source = (
+        "<clickhouse>"
+        "<metrika_imported_group>"
+        "<my_metrika_section>metrika value</my_metrika_section>"
+        "</metrika_imported_group>"
+        "</clickhouse>"
+    )
+    # Deliberately NO `<include_from>` here: the metrika default must be used to resolve the `incl`
+    # reference and to exempt the imported `<my_metrika_section>`.
+    include_config_path = "/etc/clickhouse-server/config.d/metrika_default_include.xml"
+    include_config = (
+        "<clickhouse>"
+        '<include incl="metrika_imported_group"/>'
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(metrika_path, metrika_source)
+        node_include_from_external.replace_config(include_config_path, include_config)
+        # Reload must succeed: `my_metrika_section` is exempted as a child imported from the default
+        # `/etc/metrika.xml` source by the top-level `<include incl="metrika_imported_group"/>`.
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+        assert node_include_from_external.query("SELECT 1").strip() == "1"
+    finally:
+        node_include_from_external.exec_in_container(
+            ["bash", "-c", f"rm -f {include_config_path} {metrika_path}"]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
+def test_top_level_include_with_nested_include_accepted(
+    start_include_from_external_cluster,
+):
+    # Regression for the "recursive top-level `<include>`" concern: a top-level `<include incl="X"/>`
+    # imports the *children* of `<X>` into the root, and one of those children is itself a nested
+    # `<include incl="nested_group"/>`. `ConfigProcessor::doIncludesRecursive` does NOT expand that
+    # nested `<include>` within the same pass: for an element named `include` it splices the imported
+    # children into the *parent* and leaves `included_something` false, and the imported siblings are
+    # inserted *before* the current node, so the sibling-pointer traversal never revisits them. The
+    # nested `<include>` therefore survives in the merged config as a literal top-level `include`
+    # element (which is exempt via `known_complex_sections`), while `<nested_group>`'s own children
+    # (`<deeply_nested_section>`) are NOT imported and never become top-level keys. Consequently the
+    # validator has nothing to falsely reject here, and this previously valid configuration must keep
+    # starting. (Verified end-to-end against `ConfigProcessor::processConfig`: the merged top-level
+    # keys are exactly `include_from`, the directly-imported `my_included_section`, and the literal
+    # `include`; `deeply_nested_section` is absent.)
+    external_source_path = "/etc/clickhouse-server/external_nested_include_source.xml"
+    external_source = (
+        "<clickhouse>"
+        "<imported_group>"
+        "<my_included_section>imported value</my_included_section>"
+        '<include incl="nested_group"/>'
+        "</imported_group>"
+        "<nested_group>"
+        "<deeply_nested_section>nested value</deeply_nested_section>"
+        "</nested_group>"
+        "</clickhouse>"
+    )
+    # The top-level `<include incl="imported_group"/>` imports `<my_included_section>` and the nested
+    # `<include incl="nested_group"/>` into the root.
+    include_config_path = "/etc/clickhouse-server/config.d/top_level_include_nested.xml"
+    include_config = (
+        "<clickhouse>"
+        f"<include_from>{external_source_path}</include_from>"
+        '<include incl="imported_group"/>'
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(external_source_path, external_source)
+        node_include_from_external.replace_config(include_config_path, include_config)
+        # Reload must succeed: the directly-imported `my_included_section` is exempted, the surviving
+        # literal `include` is a known section, and the nested group's children never enter the config.
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+        assert node_include_from_external.query("SELECT 1").strip() == "1"
+    finally:
+        node_include_from_external.exec_in_container(
+            ["bash", "-c", f"rm -f {include_config_path} {external_source_path}"]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
+def test_overridden_include_from_source_does_not_exempt_unknown_key(
+    start_include_from_external_cluster,
+):
+    # `ConfigProcessor` resolves a top-level server `<include incl="X"/>` against the *single merged*
+    # `<include_from>` node (the value that survives merging all `config.d` fragments), not against
+    # the union of every pre-merge `<include_from>` it ever saw. So when a later `config.d` fragment
+    # `replace`s the main config's `<include_from>`, only the replacement source is consulted at
+    # runtime. A top-level key that would be imported only from the now-overridden (stale) source must
+    # therefore still be rejected. (Before the fix, the validator collected `include_from` sources
+    # from the raw pre-merge fragments and kept the stale source in `server_include_from_paths`, so it
+    # resolved the `incl` reference against the stale source too and wrongly exempted the unknown key.)
+    #
+    # Both sources define `<shared_root>`, so the `<include incl="shared_root"/>` is always resolvable
+    # (no unresolved-include error regardless of `throw_on_bad_incl`); only the *children* differ. The
+    # active source's `shared_root` does NOT contain `my_overridden_payload`, so that top-level key
+    # stays unknown once the stale source is out of the picture.
+    stale_source_path = "/etc/clickhouse-server/stale_incl_source.xml"
+    stale_source = (
+        "<clickhouse>"
+        "<shared_root>"
+        "<my_overridden_payload>imported from the stale source</my_overridden_payload>"
+        "</shared_root>"
+        "</clickhouse>"
+    )
+    active_source_path = "/etc/clickhouse-server/active_incl_source.xml"
+    active_source = (
+        "<clickhouse>"
+        "<shared_root>"
+        "<my_active_child>imported from the active source</my_active_child>"
+        "</shared_root>"
+        "</clickhouse>"
+    )
+    # Fragment 1 (merged first): points `<include_from>` at the stale source, references `shared_root`,
+    # and carries the otherwise unknown top-level key.
+    base_config_path = "/etc/clickhouse-server/config.d/override_include_from_1_base.xml"
+    base_config = (
+        "<clickhouse>"
+        f"<include_from>{stale_source_path}</include_from>"
+        '<include incl="shared_root"/>'
+        "<my_overridden_payload>1</my_overridden_payload>"
+        "</clickhouse>"
+    )
+    # Fragment 2 (merged after fragment 1): `replace`s `<include_from>` with the active source, exactly
+    # as a later `config.d` override would. The merged config's single `<include_from>` is the active
+    # one, so `my_overridden_payload` is never imported and must be rejected as unknown.
+    replace_config_path = "/etc/clickhouse-server/config.d/override_include_from_2_replace.xml"
+    replace_config = (
+        "<clickhouse>"
+        f'<include_from replace="replace">{active_source_path}</include_from>'
+        "</clickhouse>"
+    )
+    try:
+        node_include_from_external.replace_config(stale_source_path, stale_source)
+        node_include_from_external.replace_config(active_source_path, active_source)
+        node_include_from_external.replace_config(base_config_path, base_config)
+        node_include_from_external.replace_config(replace_config_path, replace_config)
+        error = node_include_from_external.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+        assert "my_overridden_payload" in error
+    finally:
+        node_include_from_external.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {base_config_path} {replace_config_path} "
+                f"{stale_source_path} {active_source_path}",
+            ]
+        )
+        node_include_from_external.query("SYSTEM RELOAD CONFIG")
+
+
+def test_top_level_include_from_env_accepted(start_include_from_env_cluster):
+    # A top-level `<include from_env="UNKNOWN_CONFIG_ENV_ROOT"/>` is expanded by `ConfigProcessor` by
+    # wrapping the environment variable's value (`<my_env_imported_section>...</my_env_imported_section>`)
+    # as `<from_env>...</from_env>` and importing its children into the root, so
+    # `<my_env_imported_section>` becomes a top-level key. The validator resolves `from_env` exactly
+    # as the processor does and exempts the imported key, so the node must start. If the imported key
+    # were rejected as unknown, the instance would have failed to start.
+    assert node_include_from_env.query("SELECT 1").strip() == "1"
+
+
+def test_top_level_include_from_zk_accepted(start_include_from_zk_cluster):
+    # A top-level `<include from_zk="/unknown_config_zk_root"/>` imports the children of the ZooKeeper
+    # node (`<my_zk_imported_section>`) into the root, so it becomes a top-level key. Resolving the ZK
+    # node requires a connection that is unavailable at config-validation time, so the validator
+    # cannot enumerate the imported keys; it skips the unknown-config check when such an element is
+    # present rather than falsely rejecting the imported key. Reload must therefore succeed for this
+    # previously valid configuration.
+    zk = cluster_include_from_zk.get_kazoo_client("zoo1")
+    include_config_path = "/etc/clickhouse-server/config.d/top_level_include_from_zk.xml"
+    include_config = (
+        "<clickhouse>"
+        '<include from_zk="/unknown_config_zk_root"/>'
+        "</clickhouse>"
+    )
+    try:
+        zk.create(
+            path="/unknown_config_zk_root",
+            value=b"<my_zk_imported_section>zk value</my_zk_imported_section>",
+            makepath=True,
+        )
+        node_include_from_zk.replace_config(include_config_path, include_config)
+        node_include_from_zk.query("SYSTEM RELOAD CONFIG")
+        assert node_include_from_zk.query("SELECT 1").strip() == "1"
+    finally:
+        node_include_from_zk.exec_in_container(
+            ["bash", "-c", f"rm -f {include_config_path}"]
+        )
+        try:
+            zk.delete(path="/unknown_config_zk_root")
+        except Exception:
+            pass
+        node_include_from_zk.query("SYSTEM RELOAD CONFIG")
+
+
+def test_protocols_nested_handler_prefix_accepted(start_protocols_nested_cluster):
+    # The endpoint references the *nested* handler prefix `custom_nested.handlers`. The validator
+    # must exempt the top-level component `custom_nested` (otherwise the node rejects `<custom_nested>`)
+    # and must scan the full nested prefix for `config://` references (otherwise the node rejects the
+    # `<nested_payload>` referenced from the nested static handler). If either failed, the node would
+    # not have started.
+    assert node_protocols_nested.query("SELECT 1").strip() == "1"
+
+
+def test_graphite_columns_only_section_accepted(start_graphite_columns_cluster):
+    # A `GraphiteMergeTree` rollup section that only overrides column names (no `<pattern>`/`<default>`)
+    # is a valid config accepted by `setGraphitePatternsFromConfig`. If the validator rejected
+    # `<retention_columns_only>` for lacking a rollup rule, the node would have failed to start.
+    assert node_graphite_columns.query("SELECT 1").strip() == "1"
+
+
+def test_graphite_empty_section_accepted(start_graphite_empty_cluster):
+    # A present-but-empty `GraphiteMergeTree` rollup section (`<retention_empty/>`) is a valid config:
+    # `setGraphitePatternsFromConfig` only throws `NO_ELEMENTS_IN_CONFIG` when the section is missing,
+    # not when it is present and empty. If the validator rejected the empty section as an unknown
+    # top-level key, the node would have failed to start.
+    assert node_graphite_empty.query("SELECT 1").strip() == "1"
+
+
+def test_graphite_tag_list_with_regexp_accepted(
+    start_graphite_tag_list_accepted_cluster,
+):
+    # A valid `GraphiteMergeTree` rollup section whose `<pattern>` uses
+    # `<rule_type>tag_list</rule_type>` together with a non-empty `<regexp>`. `appendGraphitePattern`
+    # rewrites it into the dispatchable `tagged` type via `buildTaggedRegex`, so the parser accepts
+    # it. If the `tag_list`-without-`<regexp>` tightening wrongly rejected this valid shape, the node
+    # would have failed to start.
+    assert node_graphite_tag_list_accepted.query("SELECT 1").strip() == "1"
+
+
+def test_graphite_shaped_section_with_foreign_child_rejected(
+    start_graphite_foreign_cluster,
+):
+    # `<graphite_with_foreign_child>` carries a real `<pattern>` rollup rule (so it *looks* like a
+    # `GraphiteMergeTree` section) but also has a `<not_a_graphite_key>` child that
+    # `setGraphitePatternsFromConfig` would reject. The validator must mirror that parser and reject
+    # the whole section as an unknown top-level key, instead of accepting it because one child looks
+    # like a rollup rule. The reported unknown element is the top-level section name.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_foreign_exception
+    assert "graphite_with_foreign_child" in caught_graphite_foreign_exception
+
+
+def test_payload_with_handler_shape_does_not_exempt_unknown_key(
+    start_payload_handler_shape_cluster,
+):
+    # `<config_payload>` is exempt because `<http_handlers>` references it via `config://`, but it is
+    # only a static-response payload, not a handler group. The validator must not re-scan it as a
+    # handler group, so the unrelated top-level `<secret_unknown_section>` referenced from its nested
+    # children must still be rejected. The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG`.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_payload_handler_shape_exception
+    assert "secret_unknown_section" in caught_payload_handler_shape_exception
+
+
+def test_failed_reload_leaves_live_config_unchanged(start_reload_invariant_cluster):
+    # A failed reload must be rejected BEFORE the new config is installed, so the live config is
+    # left untouched. The node serves a known `config://` response; a bad reload changes that
+    # response and adds an unknown key. After the rejected reload, the ORIGINAL response must still
+    # be served (proving the failed reload did not mutate the live layered config).
+    response = node_reload_invariant.http_request("reload_invariant", method="GET")
+    assert response.status_code == 200
+    assert response.text == "original payload"
+
+    initial_config_path = (
+        "/etc/clickhouse-server/config.d/reload_invariant_initial.xml"
+    )
+    original_config = (
+        "<clickhouse>"
+        "<reload_invariant_payload>original payload</reload_invariant_payload>"
+        "<http_handlers>"
+        "<rule>"
+        "<methods>GET</methods>"
+        "<url>/reload_invariant</url>"
+        "<handler>"
+        "<type>static</type>"
+        "<response_content>config://reload_invariant_payload</response_content>"
+        "</handler>"
+        "</rule>"
+        "<defaults/>"
+        "</http_handlers>"
+        "</clickhouse>"
+    )
+    # The bad reload changes the served payload AND adds an unknown top-level key, so the reload
+    # must be rejected; the changed payload must NOT take effect.
+    bad_config = (
+        "<clickhouse>"
+        "<reload_invariant_payload>changed payload</reload_invariant_payload>"
+        "<reload_invariant_unknown_option>1</reload_invariant_unknown_option>"
+        "<http_handlers>"
+        "<rule>"
+        "<methods>GET</methods>"
+        "<url>/reload_invariant</url>"
+        "<handler>"
+        "<type>static</type>"
+        "<response_content>config://reload_invariant_payload</response_content>"
+        "</handler>"
+        "</rule>"
+        "<defaults/>"
+        "</http_handlers>"
+        "</clickhouse>"
+    )
+    try:
+        node_reload_invariant.replace_config(initial_config_path, bad_config)
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in node_reload_invariant.query_and_get_error(
+            "SYSTEM RELOAD CONFIG"
+        )
+        # The live config must be unchanged: the original response is still served.
+        response = node_reload_invariant.http_request("reload_invariant", method="GET")
+        assert response.status_code == 200
+        assert response.text == "original payload"
+    finally:
+        node_reload_invariant.replace_config(initial_config_path, original_config)
+        node_reload_invariant.query("SYSTEM RELOAD CONFIG")
+
+
+def test_reload_does_not_inherit_stale_skip_flag(start_reload_skip_state_cluster):
+    # The node starts with `<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>`
+    # supplied by a config file (not the command line). A reload that REMOVES that flag while adding
+    # an unknown top-level key must be rejected: the previously loaded file's `skip` value must not
+    # leak into the reload decision. Before the fix, the reload read the stale layered `skip=1` and
+    # wrongly accepted the invalid config.
+    assert node_reload_skip_state.query("SELECT 1").strip() == "1"
+
+    initial_config_path = (
+        "/etc/clickhouse-server/config.d/reload_skip_state_initial.xml"
+    )
+    original_config = (
+        "<clickhouse>"
+        "<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
+        "</clickhouse>"
+    )
+    # The flag is gone and an unknown key is present, so the reload must be rejected.
+    bad_config = (
+        "<clickhouse>"
+        "<stale_skip_unknown_option>1</stale_skip_unknown_option>"
+        "</clickhouse>"
+    )
+    try:
+        node_reload_skip_state.replace_config(initial_config_path, bad_config)
+        error = node_reload_skip_state.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+        assert "stale_skip_unknown_option" in error
+    finally:
+        node_reload_skip_state.replace_config(initial_config_path, original_config)
+        node_reload_skip_state.query("SYSTEM RELOAD CONFIG")
+
+
+def test_response_content_expansion_does_not_exempt_unknown_key(
+    start_response_content_expansion_cluster,
+):
+    # `StaticRequestHandler` reads `response_content` with `getRawString`, so the `${...}` reference
+    # is served raw and never expanded; the key it would expand to (`expansion_only_payload`) is never
+    # read by the server. The validator must read the field with `getRawString` too — if it expanded
+    # the reference (via `getString`) it would wrongly exempt the unknown top-level key. The node must
+    # therefore fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming that key.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_response_content_expansion_exception
+    assert "expansion_only_payload" in caught_response_content_expansion_exception
+
+
+def test_graphite_nested_foreign_child_rejected(start_graphite_nested_foreign_cluster):
+    # `<graphite_nested_foreign>` has a single recognized immediate child (`<default>`), but the
+    # `<default>` rule contains a foreign nested child (`<not_a_graphite_key>`) that
+    # `appendGraphitePattern` rejects. Checking only the section's immediate children would accept it;
+    # the validator must recurse into the rule and reject the whole section as an unknown top-level
+    # key. The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_nested_foreign_exception
+    assert "graphite_nested_foreign" in caught_graphite_nested_foreign_exception
+
+
+def test_graphite_rule_without_aggregation_rejected(
+    start_graphite_no_aggregation_cluster,
+):
+    # `<graphite_rule_no_aggregation>` carries a `<pattern>` whose only child is `<regexp>`: every child
+    # name is a recognized rollup key, but `appendGraphitePattern` rejects a rule with neither a
+    # `<function>` nor a `<retention>` (`NO_ELEMENTS_IN_CONFIG`). The validator must mirror that and
+    # reject the whole section as an unknown top-level key, otherwise such a typo sneaks through. The
+    # node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_no_aggregation_exception
+    assert "graphite_rule_no_aggregation" in caught_graphite_no_aggregation_exception
+
+
+def test_graphite_default_rule_type_not_all_rejected(
+    start_graphite_default_rule_type_cluster,
+):
+    # `<graphite_default_rule_type_not_all>` carries a valid-looking `<default>` rule (function +
+    # retention) but sets `<rule_type>plain</rule_type>`. `appendGraphitePattern` rejects a `<default>`
+    # whose `rule_type` is not `all` (`BAD_ARGUMENTS`), so the validator must mirror that and reject the
+    # whole section. The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_default_rule_type_exception
+    assert (
+        "graphite_default_rule_type_not_all"
+        in caught_graphite_default_rule_type_exception
+    )
+
+
+def test_graphite_invalid_rule_type_rejected(
+    start_graphite_invalid_rule_type_cluster,
+):
+    # `<graphite_invalid_rule_type>` carries a `<pattern>` with function + regexp but an unrecognized
+    # `<rule_type>not_a_rule_type</rule_type>`. `ruleType` (called by `appendGraphitePattern`) throws
+    # `BAD_ARGUMENTS` for any value other than `all`/`plain`/`tagged`/`tag_list`, so the validator must
+    # mirror that and reject the whole section. The node must fail to start with
+    # `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_invalid_rule_type_exception
+    assert "graphite_invalid_rule_type" in caught_graphite_invalid_rule_type_exception
+
+
+def test_graphite_tag_list_without_regexp_rejected(
+    start_graphite_tag_list_without_regexp_cluster,
+):
+    # `<graphite_tag_list_without_regexp>` carries a `<pattern>` with a `<function>` and
+    # `<rule_type>tag_list</rule_type>` but no non-empty `<regexp>`. `appendGraphitePattern` only
+    # rewrites a `tag_list` rule into the dispatchable `tagged` type when its `<regexp>` is non-empty,
+    # so without one the pattern reaches `setGraphitePatternsFromConfig`'s final dispatch as the
+    # internal `RuleTypeTagList` and is rejected with `Unhandled rule_type in config`. A name-only
+    # check would exempt the section (every child is recognized and a `<function>` is present), so the
+    # validator must mirror this and reject the whole section. The node must fail to start with
+    # `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert (
+        "UNKNOWN_ELEMENT_IN_CONFIG" in caught_graphite_tag_list_without_regexp_exception
+    )
+    assert (
+        "graphite_tag_list_without_regexp"
+        in caught_graphite_tag_list_without_regexp_exception
+    )
+
+
+def test_graphite_retention_missing_age_rejected(
+    start_graphite_retention_missing_age_cluster,
+):
+    # `<graphite_retention_missing_age>` carries a `<pattern>` whose `<retention>` block has a
+    # `<precision>` but no `<age>`. Every child name is a recognized rollup key, but
+    # `appendGraphitePattern` materializes the block by reading both `.age` and `.precision` with
+    # `getUInt`, so the missing `<age>` makes the parser throw. The validator must mirror that retention
+    # validation (not merely accept a child named `retention`) and reject the whole section. The node
+    # must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert (
+        "UNKNOWN_ELEMENT_IN_CONFIG"
+        in caught_graphite_retention_missing_age_exception
+    )
+    assert (
+        "graphite_retention_missing_age"
+        in caught_graphite_retention_missing_age_exception
+    )
+
+
+def test_graphite_retention_bad_ordering_rejected(
+    start_graphite_retention_bad_ordering_cluster,
+):
+    # `<graphite_retention_bad_ordering>` carries a `<pattern>` with two `<retention>` blocks whose
+    # `age` ascends (0 -> 86400) while `precision` descends (60 -> 10). Every child is well-formed,
+    # but `appendGraphitePattern` finishes by sorting the retentions with `compareRetentions`, which
+    # throws `BAD_ARGUMENTS` ("Age and precision should only grow up") for such a rule, so the section
+    # would never load. The validator must mirror that ordering check (not merely accept two
+    # well-formed `<retention>` blocks) and reject the whole section. The node must fail to start with
+    # `UNKNOWN_ELEMENT_IN_CONFIG` naming the section.
+    assert (
+        "UNKNOWN_ELEMENT_IN_CONFIG"
+        in caught_graphite_retention_bad_ordering_exception
+    )
+    assert (
+        "graphite_retention_bad_ordering"
+        in caught_graphite_retention_bad_ordering_exception
+    )
+
+
+def test_protocols_missing_handler_prefix_not_exempted(start_protocols_missing_cluster):
+    # The endpoint references the handler prefix `custom_missing.handlers`, but the section has a
+    # mistyped `<handlerss>` child, so `custom_missing.handlers` does not exist. `createHTTPHandlerFactory`
+    # sees `!config.has("custom_missing.handlers")` and falls back to the default `http_handlers`,
+    # never reading `<custom_missing>`. The validator must therefore NOT exempt the top-level
+    # `<custom_missing>` section: it is a genuine unknown key, so the node must fail to start.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_protocols_missing_exception
+    assert "custom_missing" in caught_protocols_missing_exception
+
+
+def test_config_ref_missing_path_does_not_exempt_unknown_key(
+    start_static_missing_path_cluster,
+):
+    # The static handler references `config://missing_payload.suffix`, but `<missing_payload>` has no
+    # `<suffix>` child, so the full path does not exist. `StaticRequestHandler` reads it with
+    # `getRawString("missing_payload.suffix", "Ok.\n")`, serving the default and never consuming
+    # `<missing_payload>`. The validator must NOT exempt the top-level `<missing_payload>` just because
+    # a `config://` value names it: the unread section is a genuine unknown key, so the node must fail.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_static_missing_path_exception
+    assert "missing_payload" in caught_static_missing_path_exception
+
+
+def test_dead_handler_group_config_ref_not_exempted(start_dead_handler_group_cluster):
+    # A `config://secret_dead_handler_payload` reference lives inside a top-level `<http_handlers_alt>`
+    # group that is neither the default `http_handlers` group nor named by any HTTP protocol's
+    # `<handlers>`, so `createHTTPHandlerFactory` never consults it. The validator must scan only the
+    # handler groups the server actually reads (mirroring the consumer), so it must NOT exempt the
+    # top-level `<secret_dead_handler_payload>` on behalf of a dead handler group. Exempting it would
+    # be a false negative that lets a genuinely unknown top-level key pass, so the node must fail to
+    # start with `UNKNOWN_ELEMENT_IN_CONFIG`. (`<http_handlers_alt>` itself stays exempt via the
+    # `http_handlers` prefix, so the payload section is the only key that triggers the rejection.)
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_dead_handler_group_exception
+    assert "secret_dead_handler_payload" in caught_dead_handler_group_exception
+
+
+def test_users_config_include_from_from_zk_accepted(start_users_include_from_zk_cluster):
+    # The active users config declares `<include_from from_zk="/unknown_users_include_from_source"/>`:
+    # `ConfigProcessor::processConfig` runs `doIncludesRecursive` on the `<include_from>` node itself
+    # before reading its value, so the substitution source *path* comes from ZooKeeper. Resolving it
+    # needs a connection unavailable at config-validation time, so the validator cannot parse the
+    # source and cannot know which top-level tags it legitimately contributes. Since the source file
+    # here lives under `config.d/` (so its `<my_users_substitution_root>` tag really is merged into the
+    # server config as a top-level key), enumerating the exemptions is required to accept it — the
+    # validator therefore skips the whole check instead of rejecting a previously valid config, and the
+    # reload must succeed.
+    zk = cluster_users_include_from_zk.get_kazoo_client("zoo1")
+    source_path = "/etc/clickhouse-server/config.d/users_zk_include_source.xml"
+    source = (
+        "<clickhouse>"
+        "<my_users_substitution_root>"
+        "<users_1>::1</users_1>"
+        "</my_users_substitution_root>"
+        "</clickhouse>"
+    )
+    users_config_path = "/etc/clickhouse-server/users.d/users_include_from_zk.xml"
+    users_config = (
+        "<clickhouse>"
+        '<include_from from_zk="/unknown_users_include_from_source"/>'
+        "</clickhouse>"
+    )
+    try:
+        zk.create(
+            path="/unknown_users_include_from_source",
+            value=source_path.encode(),
+            makepath=True,
+        )
+        node_users_include_from_zk.replace_config(source_path, source)
+        node_users_include_from_zk.replace_config(users_config_path, users_config)
+        node_users_include_from_zk.query("SYSTEM RELOAD CONFIG")
+        assert node_users_include_from_zk.query("SELECT 1").strip() == "1"
+    finally:
+        node_users_include_from_zk.exec_in_container(
+            ["bash", "-c", f"rm -f {users_config_path} {source_path}"]
+        )
+        try:
+            zk.delete(path="/unknown_users_include_from_source")
+        except Exception:
+            pass
+        node_users_include_from_zk.query("SYSTEM RELOAD CONFIG")
+
+
+def test_non_regular_users_config_still_checks_server_config(
+    start_non_regular_users_config_cluster,
+):
+    # `<users_config>` points at a FIFO — a supported delivery path, since
+    # `ConfigProcessor::parseConfig` has an explicit carve-out for a non-regular config file ("Suppose
+    # non regular file parsed as XML, such as pipe: /dev/fd/X"). The scan cannot re-read such a file,
+    # so the users config's `<include_from>` directives stay invisible; but the users config is a
+    # separate `ConfigProcessor` tree that contributes no top-level key to the *server* config, so this
+    # must NOT disable the unknown-option check for the whole server config. An unrelated typo in the
+    # main config (`<max_thred_pool_size>`) must therefore still be rejected.
+    node = node_non_regular_users_config
+    pipe_path = "/etc/clickhouse-server/users_pipe.xml"
+    users_config_path = "/etc/clickhouse-server/config.d/users_config_pipe.xml"
+    typo_config_path = "/etc/clickhouse-server/config.d/typo_with_pipe_users_config.xml"
+    writer_pid_path = "/tmp/users_pipe_writer.pid"
+    try:
+        # Serve a copy of the active users config through the FIFO, and merge the very same
+        # `users.d` fragments into it (`getConfigMergeFiles` derives the directory from the config
+        # file name, so `users_pipe.d` must point at `users.d`), so the effective users config is
+        # unchanged and access control keeps working.
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /etc/clickhouse-server/users.xml /etc/clickhouse-server/users_pipe_source.xml && "
+                "ln -sfn /etc/clickhouse-server/users.d /etc/clickhouse-server/users_pipe.d && "
+                f"mkfifo {pipe_path}",
+            ]
+        )
+        # A FIFO yields EOF once every writer closes, so keep refilling it for each read.
+        # Record the refill loop's pid: cleanup must not match it by command line, because
+        # `pkill -f` would also match the cleanup command's own `bash -c` line and kill itself.
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"setsid bash -c 'echo $$ > {writer_pid_path}; while true; do "
+                f"cat /etc/clickhouse-server/users_pipe_source.xml > {pipe_path}; "
+                "done' >/dev/null 2>&1 &",
+            ],
+            detach=True,
+        )
+        node.replace_config(
+            users_config_path,
+            f"<clickhouse><users_config>{pipe_path}</users_config></clickhouse>",
+        )
+        # The non-regular users config alone must not break a valid config.
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query("SELECT 1").strip() == "1"
+
+        node.replace_config(
+            typo_config_path,
+            "<clickhouse><max_thred_pool_size>100</max_thred_pool_size></clickhouse>",
+        )
+        error = node.query_and_get_error("SYSTEM RELOAD CONFIG")
+        assert "UNKNOWN_ELEMENT_IN_CONFIG" in error
+        assert "max_thred_pool_size" in error
+    finally:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"writer=$(cat {writer_pid_path} 2>/dev/null); "
+                'if [ -n "$writer" ]; then kill -- "-$writer" || true; fi; '
+                f"rm -f {typo_config_path} {users_config_path} {pipe_path} "
+                "/etc/clickhouse-server/users_pipe.d "
+                f"/etc/clickhouse-server/users_pipe_source.xml {writer_pid_path}",
+            ]
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+
+def test_user_directories_users_config_include_from_accepted(
+    start_user_directories_include_from_cluster,
+):
+    # `AccessControl::addStoragesFromMainConfig` does not stop at the top-level `<users_config>`: when
+    # `<user_directories>` is present it also loads every `users_xml` / `users.xml` / `users_config`
+    # entry from it, each with its own `ConfigProcessor` invocation that honors that file's own
+    # `<include_from>`. Here the extra users config declares an `<include_from>` source that lives under
+    # `config.d/`, so `ConfigProcessor` merges the source into the *server* config as well and its
+    # `<my_user_dir_substitution_root>` tag really is a top-level key of the merged config. The validator
+    # must therefore scan the `<user_directories>` users configs too, otherwise it rejects this
+    # previously valid config with `UNKNOWN_ELEMENT_IN_CONFIG`, so the reload must succeed.
+    node = node_user_directories_include_from
+    source_path = "/etc/clickhouse-server/config.d/user_dir_include_source.xml"
+    extra_users_path = "/etc/clickhouse-server/extra_users_for_user_directories.xml"
+    entry_path = "/etc/clickhouse-server/config.d/user_dir_entry.xml"
+    try:
+        node.replace_config(
+            source_path,
+            "<clickhouse>"
+            "<my_user_dir_substitution_root>"
+            "<users_dir_networks>::1</users_dir_networks>"
+            "</my_user_dir_substitution_root>"
+            "</clickhouse>",
+        )
+        node.replace_config(
+            extra_users_path,
+            f"<clickhouse><include_from>{source_path}</include_from></clickhouse>",
+        )
+        node.replace_config(
+            entry_path,
+            "<clickhouse><user_directories><users_xml>"
+            "<name>extra_users_xml</name>"
+            f"<path>{extra_users_path}</path>"
+            "</users_xml></user_directories></clickhouse>",
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+        assert node.query("SELECT 1").strip() == "1"
+    finally:
+        node.exec_in_container(
+            ["bash", "-c", f"rm -f {entry_path} {extra_users_path} {source_path}"]
+        )
+        node.query("SYSTEM RELOAD CONFIG")

@@ -4006,15 +4006,37 @@ String ClientBase::runQueryForAI(const String & query, bool readonly)
         echoQueryForAI(query);
     }
 
-    /// Temporarily adjust the session settings for the query of the agent; restored on exit.
-    std::optional<Settings> saved_settings(client_context->getSettingsRef());
-    SCOPE_EXIT_SAFE({ client_context->setSettings(*saved_settings); });
+    /// Temporarily adjust the session settings for the query of the agent.
+    ///
+    /// For the read-only tool the whole `Settings` object is restored on exit: the sandbox
+    /// tweaks below must not leak into the session, and a validated read-only statement
+    /// cannot change the session state itself. For the confirmed run_query tool nothing is
+    /// saved: the query must execute exactly as if the user had typed it, so a confirmed
+    /// `SET` must persist in the session (only the dialect pin below is undone).
+    std::optional<Settings> saved_settings;
+    if (readonly)
+        saved_settings.emplace(client_context->getSettingsRef());
+    SCOPE_EXIT_SAFE({
+        if (saved_settings)
+            client_context->setSettings(*saved_settings);
+    });
 
     /// The agent always emits ClickHouse SQL, so its queries are pinned to the ClickHouse
     /// dialect even when the session was switched to another one (`SET dialect = 'prql'`,
     /// `'kusto'`, ...) - the validation above also parsed the query as ClickHouse SQL.
-    if ((*saved_settings)[Setting::dialect] != Dialect::clickhouse)
+    /// For run_query the pin is undone afterwards unless the confirmed query changed the
+    /// dialect itself (then the current dialect is no longer the pinned one and is kept).
+    std::optional<Field> dialect_to_restore;
+    if (client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
+    {
+        if (!readonly)
+            dialect_to_restore = client_context->getSettingsRef().get("dialect");
         client_context->setSetting("dialect", String("clickhouse"));
+    }
+    SCOPE_EXIT_SAFE({
+        if (dialect_to_restore && client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse)
+            client_context->setSetting("dialect", *dialect_to_restore);
+    });
 
     /// Enforce the sandbox settings of the read-only tool. The query is unable to override
     /// them: the validation above rejects SETTINGS clauses that touch them. The limits are
@@ -4917,8 +4939,9 @@ void ClientBase::runInteractive()
         /// agent, not SQL - route it directly, bypassing the SQL conveniences below.
         if (lr->inAIMode())
         {
+            /// `last_input` is not updated: it feeds the `.` / `/` repeat aliases of the SQL
+            /// mode, which must keep repeating the last SQL query, not an AI question.
             processAIChat(input);
-            last_input = input;
             continue;
         }
 #endif

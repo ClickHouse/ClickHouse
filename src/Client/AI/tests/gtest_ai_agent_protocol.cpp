@@ -63,6 +63,32 @@ TEST(AIAgentProtocol, ParseArgumentsAsEncodedString)
     EXPECT_EQ(step.tool_calls[0].arguments.at("q").get<std::string>(), "SELECT 1");
 }
 
+TEST(AIAgentProtocol, ParseCloseTagInsideJsonString)
+{
+    /// The close tag inside a JSON string literal (e.g. a query selecting that very text)
+    /// must not terminate the block early.
+    size_t counter = 1;
+    auto step = AIServerFunctionTransport::parseResponse(
+        R"(<tool_call>{"name": "run_query", "arguments": {"query": "SELECT '</tool_call>'"}}</tool_call> done)",
+        counter);
+
+    ASSERT_EQ(step.tool_calls.size(), 1u);
+    EXPECT_EQ(step.tool_calls[0].tool_name, "run_query");
+    EXPECT_EQ(step.tool_calls[0].arguments.at("query").get<std::string>(), "SELECT '</tool_call>'");
+    EXPECT_EQ(step.text, "done");
+}
+
+TEST(AIAgentProtocol, ParseEscapedQuotesInsideJsonString)
+{
+    size_t counter = 1;
+    auto step = AIServerFunctionTransport::parseResponse(
+        R"(<tool_call>{"name": "t", "arguments": {"q": "a \"</tool_call>\" b"}}</tool_call>)", counter);
+
+    ASSERT_EQ(step.tool_calls.size(), 1u);
+    EXPECT_EQ(step.tool_calls[0].tool_name, "t");
+    EXPECT_EQ(step.tool_calls[0].arguments.at("q").get<std::string>(), "a \"</tool_call>\" b");
+}
+
 TEST(AIAgentProtocol, ParseMalformedToolCall)
 {
     size_t counter = 1;

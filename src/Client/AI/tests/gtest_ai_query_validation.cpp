@@ -5,6 +5,7 @@
 
 #include <Client/AI/AIQueryValidation.h>
 #include <Common/Exception.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -15,6 +16,11 @@ namespace
 
 ASTPtr parse(const String & query)
 {
+    /// The validation distinguishes builtin functions from (server-side) user-defined ones
+    /// through the factories, which the client populates on startup.
+    tryRegisterFunctions();
+    tryRegisterAggregateFunctions();
+
     const char * begin = query.data();
     const char * end = begin + query.size();
     ParserQuery parser(end, false, false);
@@ -84,8 +90,17 @@ TEST(AIQueryValidation, RejectsSandboxSettingOverrides)
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS max_memory_usage_for_user = 0"));
     EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS max_threads = 1, readonly = 2"));
 
+    /// `SETTINGS name = DEFAULT` resets a limit through `default_settings`, not `changes`.
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS max_execution_time = DEFAULT"));
+
+    /// `profile` and `compatibility` expand into changes of many other settings on the server,
+    /// so they could redefine the protected ones indirectly.
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS profile = 'default'"));
+    EXPECT_FALSE(isAllowed("SELECT 1 SETTINGS compatibility = '20.3'"));
+
     /// Harmless settings are allowed.
     EXPECT_TRUE(isAllowed("SELECT 1 SETTINGS max_threads = 1"));
+    EXPECT_TRUE(isAllowed("SELECT 1 SETTINGS max_threads = DEFAULT"));
 }
 
 TEST(AIQueryValidation, RejectsExternalAccess)
@@ -126,6 +141,24 @@ TEST(AIQueryValidation, RejectsExternalAccess)
     EXPECT_TRUE(isAllowed("SELECT 1 IN (1, 2, 3)"));
     EXPECT_TRUE(isAllowed("SELECT 1 IN (SELECT 1)"));
     EXPECT_TRUE(isAllowed("SELECT number IN numbers(3) FROM numbers(5)"));
+}
+
+TEST(AIQueryValidation, RejectsUnknownFunctions)
+{
+    /// The validation sees the raw AST before the server expands SQL user-defined functions,
+    /// so a UDF like `CREATE FUNCTION read_secret AS path -> file(path)` could hide an external
+    /// table function. Functions the client does not know are conservatively rejected.
+    EXPECT_FALSE(isAllowed("SELECT read_secret('/etc/passwd')"));
+    EXPECT_FALSE(isAllowed("SELECT * FROM numbers(10) WHERE read_secret('x') = ''"));
+
+    /// Builtins, including aggregate/window functions, combinators and AST-level constructs.
+    EXPECT_TRUE(isAllowed("SELECT count(), sum(number), sumIf(number, number > 0) FROM numbers(10)"));
+    EXPECT_TRUE(isAllowed("SELECT row_number() OVER () FROM numbers(3)"));
+    EXPECT_TRUE(isAllowed("SELECT arrayMap(x -> x + 1, [1, 2])"));
+    EXPECT_TRUE(isAllowed("SELECT EXISTS(SELECT 1)"));
+    EXPECT_TRUE(isAllowed("SELECT number, grouping(number) FROM numbers(2) GROUP BY GROUPING SETS ((number))"));
+    EXPECT_TRUE(isAllowed("SELECT untuple((1, 2))"));
+    EXPECT_TRUE(isAllowed("SELECT CAST(1 AS String), toString(42), if(1, 2, 3)"));
 }
 
 #endif

@@ -1,6 +1,8 @@
 #include <Client/AI/AIQueryValidation.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Exception.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTCheckDatabaseQuery.h>
 #include <Parsers/ASTCheckQuery.h>
@@ -48,27 +50,40 @@ bool isAnyOf(const IAST & ast)
 
 /// The settings that enforce the sandbox of the read-only tool. They are applied by the
 /// client before sending the query, so a SETTINGS clause of the query itself could
-/// override them and must be rejected.
+/// override them and must be rejected. `profile` and `compatibility` are special settings
+/// that expand into changes of many other settings on the server, so they could redefine
+/// the protected ones indirectly.
 bool isProtectedSetting(const String & name)
 {
     return name == "readonly"
         || name == "max_execution_time"
         || name == "max_execution_time_leaf"
         || name == "max_memory_usage"
-        || name == "max_memory_usage_for_user";
+        || name == "max_memory_usage_for_user"
+        || name == "profile"
+        || name == "compatibility";
 }
 
 void checkNoProtectedSettingChanges(const IAST & ast)
 {
     if (const auto * set_query = ast.as<ASTSetQuery>())
     {
+        const auto reject = [](const String & name)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The query changes the setting `{}` that affects the limits of the read-only tool. "
+                "Remove it from the SETTINGS clause, or use the run_query tool",
+                name);
+        };
         for (const auto & change : set_query->changes)
             if (isProtectedSetting(change.name))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The query changes the setting `{}` that enforces the limits of the read-only tool. "
-                    "Remove it from the SETTINGS clause, or use the run_query tool",
-                    change.name);
+                reject(change.name);
+        /// `SETTINGS max_execution_time = DEFAULT` lands in `default_settings`, not `changes`,
+        /// and resets the limit after the sandbox has tightened it.
+        for (const auto & name : set_query->default_settings)
+            if (isProtectedSetting(name))
+                reject(name);
     }
 
     for (const auto & child : ast.children)
@@ -107,6 +122,30 @@ bool isDeniedScalarFunction(const String & name)
     return lower == "file" || lower == "catboostevaluate";
 }
 
+/// Whether the function is a builtin known to the client. This validation runs on the raw
+/// parsed AST, before the server expands SQL user-defined functions, so a UDF wrapping an
+/// external table function (e.g. `CREATE FUNCTION f AS path -> file(path)`) would slip
+/// through the checks above. UDFs only exist on the server, so any function the client does
+/// not recognize is conservatively rejected (a false positive sends the query through
+/// run_query, which is fine; so does a builtin of a newer server that this client predates).
+bool isKnownBuiltinFunction(const String & name)
+{
+    /// Constructs that are represented as functions in the AST but are resolved specially
+    /// and are not registered in the factories.
+    static const std::unordered_set<String> ast_level_constructs
+    {
+        "lambda",
+        "exists",
+        "grouping",
+        "untuple",
+    };
+    if (ast_level_constructs.contains(name))
+        return true;
+
+    return FunctionFactory::instance().hasNameOrAlias(name)
+        || AggregateFunctionFactory::instance().isAggregateFunctionName(name);
+}
+
 void checkNoExternalAccess(const IAST & ast)
 {
     if (const auto * table_expression = ast.as<ASTTableExpression>())
@@ -129,6 +168,17 @@ void checkNoExternalAccess(const IAST & ast)
                 ErrorCodes::BAD_ARGUMENTS,
                 "The function `{}` reads external resources, so it is not allowed for the read-only tool. "
                 "Use the run_query tool for this query",
+                function->name);
+
+        /// The allowed table functions are registered in the table-function factory, not the
+        /// scalar ones, and the traversal also visits them here (as children of the table
+        /// expression or of an IN operator).
+        if (!isKnownBuiltinFunction(function->name) && !isAllowedTableFunction(function->name))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The function `{}` is not a builtin known to the client: it may be a user-defined function "
+                "reaching resources outside of the tables of the current server, which cannot be verified "
+                "before execution. Use the run_query tool for this query",
                 function->name);
 
         /// The right-hand side of an IN operator can be a table function: `x IN remote(...)`.
