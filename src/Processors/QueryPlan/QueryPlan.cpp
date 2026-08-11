@@ -875,10 +875,15 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         QueryPlanOptimizations::convertLogicalJoinsForLocalExecution(*root, nodes, optimization_settings);
         /// `optimize` deferred set/CTE expansion for distributed planning; without it the plan
         /// still carries `DelayedCreatingSets` placeholders, which cannot build a pipeline.
-        if (optimization_settings.build_sets)
-            QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
-        if (optimization_settings.materialize_ctes)
-            QueryPlanOptimizations::resolveMaterializingCTEs(optimization_settings, *this, *root, nodes);
+        /// The expansion must use local settings: the set build plans execute in this process,
+        /// and with `make_distributed_plan` kept on, their own optimization would try to
+        /// distribute them again.
+        QueryPlanOptimizationSettings local_settings = optimization_settings;
+        local_settings.make_distributed_plan = false;
+        if (local_settings.build_sets)
+            QueryPlanOptimizations::addStepsToBuildSets(local_settings, *this, *root, nodes);
+        if (local_settings.materialize_ctes)
+            QueryPlanOptimizations::resolveMaterializingCTEs(local_settings, *this, *root, nodes);
         return;
     }
 
