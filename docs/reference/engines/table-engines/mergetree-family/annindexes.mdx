@@ -130,7 +130,7 @@ We recommend changing the index granularity only for advanced users who understa
 
 Vector similarity indexes are generic in the sense that they can accommodate different approximate search method.
 The actually used method is specified by parameter `<type>`.
-As of now, the only available method is HNSW ([academic paper](https://arxiv.org/abs/1603.09320)), a popular and state-of-the-art technique for approximate vector search based on hierarchical proximity graphs.
+The available methods are HNSW ([academic paper](https://arxiv.org/abs/1603.09320)), a popular technique for approximate vector search based on hierarchical proximity graphs, and the experimental [ScaNN](#scann) backend.
 If HNSW is used as type, users may optionally specify further HNSW-specific parameters:
 
 ```sql
@@ -179,8 +179,10 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 
 The vector similarity index must be fully loaded from disk into main memory to perform searches.
 Similarly, the vector index is also constructed fully in memory and then saved to disk.
+The memory layout depends on the selected approximate search method.
+The following estimate applies specifically to HNSW indexes.
 
-Memory consumption required to load a vector index:
+Memory consumption required to load an HNSW vector index:
 
 ```text
 Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
@@ -198,7 +200,7 @@ Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
 Memory consumption = 3072 + 512 = 3584 MB
 ```
 
-Above formula does not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
+The HNSW-specific formula above does not account for additional memory required to allocate runtime data structures like pre-allocated buffers and caches.
 
 #### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
@@ -836,6 +838,9 @@ The ScaNN backend is experimental. Enable setting `allow_experimental_scann_inde
 ```sql
 SET allow_experimental_scann_index = 1;
 ```
+
+On x86-64, the ScaNN backend requires SSE4.1 and AVX support.
+ClickHouse returns a `SUPPORT_IS_DISABLED` exception when a ScaNN index is created or used on a CPU without either instruction set.
 </Note>
 
 A ScaNN index accepts either three or five arguments. The optional `<precision>` and `<num_leaves>` arguments must be specified together:
@@ -853,6 +858,10 @@ ORDER BY [...]
 
 The current ClickHouse ScaNN integration supports distance functions `L2Distance`, `cosineDistance`, and `dotProduct` on columns of type `Array(Float32)` or `Array(Float64)`.
 Support for `Array(BFloat16)` input columns has not been implemented yet.
+
+The HNSW memory estimate described above does not apply to ScaNN because ScaNN does not maintain an in-memory HNSW graph.
+Its memory consumption instead consists primarily of IVF partitioning data, asymmetric-hashing codes, and the exact-reordering vectors stored using the selected precision.
+It also depends on the number and size of index granules, the vector dimensions, and the number of IVF leaves.
 
 The ScaNN-specific build arguments are:
 
