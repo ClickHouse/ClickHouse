@@ -668,7 +668,7 @@ private:
         /// Keep the Int128 path for extreme ranges where subtracting the timestamps would overflow Int64.
         const Int64 timestamp_64 = static_cast<Int64>(timestamp);
         const Int64 start_timestamp_64 = static_cast<Int64>(start_timestamp);
-        Int64 offset_64;
+        Int64 offset_64 = 0;
         const bool offset_overflow = common::subOverflow(timestamp_64, start_timestamp_64, offset_64);
         const Int128 offset = offset_overflow
             ? static_cast<Int128>(timestamp_64) - static_cast<Int128>(start_timestamp_64)
