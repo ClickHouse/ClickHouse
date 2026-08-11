@@ -3,6 +3,7 @@
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ASTToJSON.h>
 #include <Parsers/IAST.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 
@@ -32,6 +33,44 @@ IASTHash hashOfJSONRoundTrip(const std::string & query)
     return restored->getTreeHash(/*ignore_aliases=*/ false);
 }
 
+}
+
+TEST(TreeHashCompleteness, ColumnDeclarationMembersAreSignificant)
+{
+    /// `default_specifier`, `null_modifier`, `primary_key_specifier` and the role each child plays
+    /// live outside `children`.
+    EXPECT_NE(hashOf("CREATE TABLE t (x UInt8 DEFAULT 1) ENGINE = Memory"),
+              hashOf("CREATE TABLE t (x UInt8 MATERIALIZED 1) ENGINE = Memory"));
+    EXPECT_NE(hashOf("CREATE TABLE t (x UInt8 DEFAULT 1) ENGINE = Memory"),
+              hashOf("CREATE TABLE t (x UInt8 ALIAS 1) ENGINE = Memory"));
+
+    EXPECT_NE(hashOf("CREATE TABLE t (x UInt8 NULL) ENGINE = Memory"),
+              hashOf("CREATE TABLE t (x UInt8 NOT NULL) ENGINE = Memory"));
+    EXPECT_NE(hashOf("CREATE TABLE t (x UInt8) ENGINE = Memory"),
+              hashOf("CREATE TABLE t (x UInt8 NULL) ENGINE = Memory"));
+
+    EXPECT_NE(hashOf("CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x"),
+              hashOf("CREATE TABLE t (x UInt64 PRIMARY KEY) ENGINE = MergeTree"));
+
+    /// The same literal as the only child besides the type, in a different role.
+    EXPECT_NE(hashOf("CREATE TABLE t (x String COMMENT 'a') ENGINE = MergeTree ORDER BY x"),
+              hashOf("CREATE TABLE t (x String TTL 'a') ENGINE = MergeTree ORDER BY x"));
+}
+
+TEST(TreeHashCompleteness, ColumnDeclarationCloneAndJSONRoundTripHashEqual)
+{
+    /// The parser inserts the column `SETTINGS` child right after the codec, before the TTL and the
+    /// collation; `clone` and `readJSON` must reproduce that order, otherwise the copy has a
+    /// different shape - and a different hash.
+    const std::string column = "x String TTL now() + INTERVAL 1 DAY SETTINGS (max_compress_block_size = 1)";
+    ParserColumnDeclaration column_parser(/*require_type_=*/ true, /*allow_null_modifiers_=*/ true);
+    ASTPtr ast = parseQuery(column_parser, column, 0, 0, 0);
+    const auto hash = ast->getTreeHash(/*ignore_aliases=*/ false);
+
+    EXPECT_EQ(ast->clone()->getTreeHash(/*ignore_aliases=*/ false), hash);
+
+    auto restored = IAST::createFromJSON(serializeASTToJSON(*ast), /*max_depth=*/ 1000, /*max_elements=*/ 100000);
+    EXPECT_EQ(restored->getTreeHash(/*ignore_aliases=*/ false), hash);
 }
 
 TEST(TreeHashCompleteness, ColumnCollationIsSignificant)
