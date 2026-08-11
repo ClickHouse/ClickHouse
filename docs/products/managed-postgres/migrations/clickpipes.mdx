@@ -12,7 +12,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
-ClickHouse Cloud now offers ClickPipes to migrate your external PostgreSQL database into a ClickHouse Managed Postgres service. This built-in integration provides a streamlined experience to connect to your source database, export the schema, import it into ClickHouse Managed Postgres, and set up continuous replication.
+ClickHouse Cloud now offers ClickPipes to migrate your external PostgreSQL database into a Managed Postgres service. This built-in integration provides a streamlined experience to connect to your source database, export the schema, import it into Managed Postgres, and set up continuous replication.
 
 ## Prerequisites {#prerequisites}
 
@@ -34,19 +34,18 @@ ClickHouse Cloud now offers ClickPipes to migrate your external PostgreSQL datab
 - **DDL propagation**: continuous replication (CDC) captures DML operations and `ADD COLUMN`. Other DDL changes such as `DROP COLUMN` and `ALTER COLUMN` aren't propagated and must be applied manually on the target.
 
 <Note>
-If you run into issues during migration, check the [ClickHouse Managed Postgres Migrations FAQ](/products/managed-postgres/migrations/faq) for common errors and solutions.
+If you run into issues during migration, check the [Managed Postgres Migrations FAQ](/cloud/managed-postgres/migrations/faq) for common errors and solutions.
 </Note>
 
-<Steps>
-<Step title="Connect to your source database" id="step-1-connect">
+## Step 1: Connect to your source database {#step-1-connect}
 
-Open the [ClickHouse Cloud console](https://clickhouse.cloud) and select your ClickHouse Managed Postgres service.
+Open the [ClickHouse Cloud console](https://clickhouse.cloud) and select your Managed Postgres service.
 
-<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Managed Postgres service card in the ClickHouse Cloud services list" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Managed Postgres service card in the ClickHouse Cloud services list" size="lg" border />
 
 In the left sidebar, click **Data sources**.
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Data sources entry in the ClickHouse Managed Postgres service sidebar" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Data sources entry in the Managed Postgres service sidebar" size="lg" border />
 
 Click **Start import**.
 
@@ -66,8 +65,30 @@ Choose an ingestion method:
 
 Click **Next**.
 
-</Step>
-<Step title="Export your database schema" id="step-2-export-schema">
+## Automated schema migration {#automated-schema-migration}
+
+<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="Step 2: Automated schema migration with destination database selector" size="lg" border />
+
+When this option is opted for, the ClickPipe will automatically pull the schema of your source database and apply it to your Managed Postgres service, during the [Setup phase](/integrations/clickpipes/postgres/lifecycle#setup) of the ClickPipe after it is created.
+
+This feature assumes an **empty target database**, as it pulls every database object from the source database regardless of what tables you select later in the wizard. If you already have existing data in your target database, or are aiming for a more customized setup, you must opt for the [**Manual**](#manual-schema-migration) mode instead.
+
+Select the destination database from the dropdown, or click **Create a new database** to provision one.
+
+<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="Create a new Postgres database dialog" size="lg" border />
+
+### Monitoring {#monitoring}
+You can track the progress of the schema migration in the ClickPipes detail view. The **Logs** will indicate the status of the schema migration, and any errors encountered will be displayed there as well.
+
+This mode has the following limitations:
+- Pipes using SSH tunneling cannot use automated schema migration. The schema must be [exported and imported manually](#manual-schema-migration).
+
+## Manual schema migration {#manual-schema-migration}
+For cases where you already have existing data in your target database, or are aiming for a more customized setup versus the clean slate which the automated mode expects, you can opt for the **Manual** mode here.
+
+<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="Step 2: Manual schema migration with pg_dump export command" size="lg" border />
+
+### Export your database schema {#step-2-export-schema}
 
 The wizard displays a `pg_dump` command pre-filled with your source connection details. Run it in a terminal:
 
@@ -88,12 +109,11 @@ This creates `pg.sql` in your current directory.
 
 Click **Next**.
 
-</Step>
-<Step title="Import the schema into your ClickHouse Managed Postgres service" id="step-3-import-schema">
+### Import the schema into your Managed Postgres service {#step-3-import-schema}
 
 Select the destination database from the dropdown, or click **Create a new database** to provision one.
 
-The wizard displays a `psql` command to apply the schema dump to your ClickHouse Managed Postgres service. Run it in a terminal:
+The wizard displays a `psql` command to apply the schema dump to your Managed Postgres service. Run it in a terminal:
 
 <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Step 3: psql command for schema import" size="lg" border />
 
@@ -110,8 +130,7 @@ psql \
 
 Click **Next**.
 
-</Step>
-<Step title="Configure ingestion settings" id="step-4-ingestion-settings">
+## Step 4: Configure ingestion settings {#step-4-ingestion-settings}
 
 Specify the publication to use for logical replication. If you leave this blank, a publication is created automatically.
 
@@ -129,17 +148,13 @@ Expand **Advanced replication settings** to tune throughput:
 
 Click **Next**.
 
-</Step>
-<Step title="Select tables" id="step-5-select-tables">
+## Step 5: Select tables {#step-5-select-tables}
 
 Select the tables you want to replicate. Tables are grouped by schema. Select individual tables or expand a schema to pick all of them.
 
 <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Step 5: table picker grouped by schema with Create migration button" size="lg" border />
 
 Click **Create migration**.
-
-</Step>
-</Steps>
 
 ## Monitor the migration {#monitor}
 
@@ -204,7 +219,7 @@ BEGIN
 END $$;
 ```
 
-**Cut over application traffic.** Point reads and writes to your ClickHouse Managed Postgres service and monitor for errors, constraint violations, and replication health.
+**Cut over application traffic.** Point reads and writes to your Managed Postgres service and monitor for errors, constraint violations, and replication health.
 
 **Clean up.**  Once you've cut over and confirmed the new service is healthy, delete the migration from **Data sources**. If you used CDC, drop the replication slot from the source to free resources:
 
@@ -214,6 +229,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
 
 ## Next steps {#next-steps}
 
-- [ClickHouse Managed Postgres quickstart](/products/managed-postgres/quickstart)
-- [ClickHouse Managed Postgres connection details](/products/managed-postgres/connection)
+- [Managed Postgres quickstart](/products/managed-postgres/quickstart)
+- [Managed Postgres connection details](/products/managed-postgres/connection)
 - [ClickPipes Postgres FAQ](/integrations/clickpipes/postgres/faq)
