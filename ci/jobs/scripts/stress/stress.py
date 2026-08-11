@@ -391,14 +391,20 @@ def install_thread_pool_fault_injection() -> None:
 
     logging.info("Installing thread-pool fault-injection config: %s -> %s", src, dst)
     subprocess.run(["ln", "-sf", src, dst], check=True)
-    call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5)
+    if not call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5):
+        # Fail-close before the verify query: a stale non-zero probability left
+        # over from an earlier reload would otherwise mask the reload failure.
+        raise RuntimeError(
+            "SYSTEM RELOAD CONFIG failed after all retries; "
+            "cannot activate thread-pool fault injection"
+        )
 
-    # Fail-close: `call_with_retry` is silent on persistent failure, so verify
-    # the injector probability is actually non-zero after reload. The verify query
-    # gets the same retry treatment as the reload itself: right after
-    # `SYSTEM RELOAD CONFIG` a debug server under ThreadFuzzer can be slow enough
-    # to exceed the client's 15 s `receive_timeout`, and a single timeout here
-    # must not kill the whole stress job.
+    # The reload succeeded, but still verify the injector probability is
+    # actually non-zero. The verify query gets the same retry treatment as the
+    # reload itself: right after `SYSTEM RELOAD CONFIG` a debug server under
+    # ThreadFuzzer can be slow enough to exceed the client's 15 s
+    # `receive_timeout`, and a single timeout here must not kill the whole
+    # stress job.
     verify_query = make_query_command(
         "SELECT value FROM system.server_settings "
         "WHERE name = 'cannot_allocate_thread_fault_injection_probability'"
@@ -539,7 +545,10 @@ def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
 
 def call_with_retry(
     query: str, timeout: int | float = 30, retry_count: int = 5
-) -> None:
+) -> bool:
+    """Return whether the command eventually succeeded, so that callers which
+    must not proceed after a persistent failure can fail close instead of
+    silently continuing."""
     logging.info("Running command: %s", str(query))
     for i in range(retry_count):
         try:
@@ -552,7 +561,8 @@ def call_with_retry(
             logging.info("Command returned %s, retrying", str(code))
             time.sleep(i)
         else:
-            break
+            return True
+    return False
 
 
 def execute_bash(full_command, timeout=120):

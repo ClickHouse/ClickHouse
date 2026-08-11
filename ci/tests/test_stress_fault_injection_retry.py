@@ -17,7 +17,10 @@ The contract this pins down:
   - persistent failure still raises - fail-close, no silent skip of the
     fault injection;
   - a zero/empty probability after a successful reload still raises, so an
-    inactive injector is never mistaken for a working one.
+    inactive injector is never mistaken for a working one;
+  - a `SYSTEM RELOAD CONFIG` that fails all its retries raises before the
+    verify query even runs, so a stale non-zero probability left over from
+    an earlier reload cannot mask the reload failure.
 
 See https://github.com/ClickHouse/ClickHouse/pull/114063
 """
@@ -44,7 +47,7 @@ def harness(monkeypatch):
     succeed, and retry backoff does not actually sleep."""
     monkeypatch.setattr(stress.os.path, "exists", lambda path: True)
     monkeypatch.setattr(stress.subprocess, "run", lambda *args, **kwargs: subprocess.CompletedProcess(args, 0))
-    monkeypatch.setattr(stress, "call_with_retry", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stress, "call_with_retry", lambda *args, **kwargs: True)
     monkeypatch.setattr(stress.time, "sleep", lambda seconds: None)
     return monkeypatch
 
@@ -136,3 +139,44 @@ def test_missing_source_config_raises(harness):
 
     with pytest.raises(RuntimeError, match="fault-injection source config not found"):
         stress.install_thread_pool_fault_injection()
+
+
+def test_reload_exhaustion_raises_before_the_verify_query(harness):
+    harness.setattr(stress, "call_with_retry", lambda *args, **kwargs: False)
+    fake = FakeCheckOutput([])
+    harness.setattr(stress, "check_output", fake)
+
+    with pytest.raises(RuntimeError, match="SYSTEM RELOAD CONFIG failed"):
+        stress.install_thread_pool_fault_injection()
+
+    # The verify query must not run at all: a stale non-zero probability from
+    # an earlier reload would otherwise mask the reload failure.
+    assert fake.calls == 0
+
+
+def test_call_with_retry_reports_success(monkeypatch):
+    monkeypatch.setattr(stress.time, "sleep", lambda seconds: None)
+    codes = iter([1, 0])
+    monkeypatch.setattr(stress, "call", lambda *args, **kwargs: next(codes))
+
+    assert stress.call_with_retry("true", retry_count=5) is True
+
+
+def test_call_with_retry_reports_exhaustion(monkeypatch):
+    monkeypatch.setattr(stress.time, "sleep", lambda seconds: None)
+    calls = []
+    monkeypatch.setattr(stress, "call", lambda *args, **kwargs: calls.append(1) or 1)
+
+    assert stress.call_with_retry("false", retry_count=5) is False
+    assert len(calls) == 5
+
+
+def test_call_with_retry_reports_exhaustion_on_timeouts(monkeypatch):
+    monkeypatch.setattr(stress.time, "sleep", lambda seconds: None)
+
+    def raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="clickhouse client", timeout=30)
+
+    monkeypatch.setattr(stress, "call", raise_timeout)
+
+    assert stress.call_with_retry("true", retry_count=5) is False
