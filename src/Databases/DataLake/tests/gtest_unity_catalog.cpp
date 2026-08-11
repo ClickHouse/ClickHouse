@@ -64,7 +64,7 @@ public:
     {
         if (request.getURI() == "/api/2.1/unity-catalog/tables/warehouse.namespace.table")
         {
-            const auto location = credential_type == CredentialType::GCS ? "gs://bucket/table" : "s3://bucket/table";
+            const char * const location = credential_type == CredentialType::GCS ? "gs://bucket/table" : "s3://bucket/table";
             writeJSON(
                 response,
                 fmt::format(
