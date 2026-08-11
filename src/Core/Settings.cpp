@@ -5081,6 +5081,13 @@ Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tab
     DECLARE(Bool, materialized_views_squash_parallel_inserts, true, R"(Squash inserts to materialized views destination table of a single INSERT query from parallel inserts to reduce amount of generated parts.
 If set to false and `parallel_view_processing` is enabled, INSERT query will generate part in the destination table for each `max_insert_thread`.
 )", 0) \
+    DECLARE(Bool, materialized_views_populate_atomically, true, R"(
+Make `CREATE MATERIALIZED VIEW ... POPULATE` atomic: the view is subscribed to new inserts of the source table and a snapshot of the existing data is taken together, under a brief exclusive lock on the source table, so that every row inserted concurrently with the population is delivered to the view exactly once (neither missed nor duplicated). The (possibly long-running) population then reads the pinned snapshot without holding any lock.
+
+This is local insert-path atomicity: the exclusive lock only serializes with inserts that acquire this source table's storage lock on the same server, so the exactly-once guarantee covers inserts arriving through this server. It is not a cluster-wide guarantee - rows inserted on another replica of a `ReplicatedMergeTree` source, or through a distributed write path (for example, into a `Distributed` table or via `ON CLUSTER`), concurrently with the population can still be missed or duplicated.
+
+This requires the source table to support reading a pinned point-in-time snapshot (the `MergeTree` family and `Memory`). For any other source (a view, `Distributed`, `Merge`, the `Log` family, or a table not in an `Atomic` database) the population falls back to the legacy, non-atomic behavior (recorded in the server log): existing data is read with a separate, non-coordinated snapshot, so rows inserted during the population can be missed or duplicated. Set this setting to `false` to force the legacy behavior for all sources. Applies to plain `CREATE MATERIALIZED VIEW` only; `CREATE OR REPLACE` / `REPLACE` always use the legacy non-atomic population, and so does a view created in a `Replicated` database (where `POPULATE` requires `database_replicated_allow_heavy_create`), because a failed population could not be rolled back consistently on all replicas there.
+)", 0) \
     DECLARE(Bool, use_compact_format_in_distributed_parts_names, true, R"(
 Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
 
@@ -6614,6 +6621,9 @@ Enable multithreading after evaluating window functions to allow parallel stream
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
 Use query plan for lazy materialization optimization.
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_materialization_for_object_storage, true, R"(
+Use lazy materialization optimization for reading Parquet files from object storage (including Iceberg tables): for `ORDER BY ... LIMIT n` queries, the columns that are not needed for sorting and filtering are read only for the `n` rows that survive the `LIMIT`. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
+)", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
@@ -6875,6 +6885,9 @@ Cloud default value: `1`.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
+)", 0) \
+    DECLARE(Bool, filesystem_cache_verbose_logging, false, R"(
+Emit `TEST`-level log messages for every filesystem cache buffer refill (state of the read, remaining size to read, bytes read). Only for debugging: the messages are formatted once per read, so enabling it on a query that does many small cached reads adds a large amount of logging overhead. The messages are only visible when the log level is `test` anyway (see `send_logs_level`).
 )", 0) \
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
@@ -8597,7 +8610,6 @@ Make distributed query plan.
 
 Enabling it automatically adjusts settings that control features not supported by distributed query plans yet:
 - `enable_parallel_replicas = 0` and `automatic_parallel_replicas_mode = 0` — the distributed plan does its own work distribution;
-- `rewrite_in_to_join = 1` — rewrites `IN (subquery)` to a `JOIN` so that it can be distributed (only when `allow_experimental_correlated_subqueries` is enabled);
 - `correlated_subqueries_use_in_memory_buffer = 0`;
 - `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
@@ -8767,7 +8779,7 @@ This limit is only enforced for providers that report a `usage` object in their 
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
 Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of output tokens, since the number of output tokens of a call are not known in advance. Set to 0 to disable.
 
-This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to embedding functions (notably aiEmbed), which never produce output tokens.
+This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_api_calls_per_query, 1000, R"(
 Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
@@ -8776,13 +8788,13 @@ Maximum number of HTTP requests that AI functions may dispatch per query. Set to
 If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
-Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
+Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
 Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_embedding_default_credentials, "", R"(
-Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. `aiEmbed` takes `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
+Name of the named collection used by the embedding functions (`aiEmbed`, `aiSimilarity`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. These functions take `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
 )", EXPERIMENTAL) \
     DECLARE(Bool, ai_function_allow_insecure_endpoint, false, R"(
 If false (default), AI functions refuse to use a named-collection `endpoint` that would send prompts and API keys over an unencrypted connection to a remote host: any non-HTTPS endpoint whose host is not loopback is rejected with an exception. Loopback endpoints (e.g. a local `http://localhost` model server) are always allowed. Set to true to permit plaintext `http://` endpoints on remote hosts.
