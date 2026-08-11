@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_set>
 #include <chrono>
 #include <cerrno>
@@ -428,7 +429,14 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.set_indent_multiline(false);
 
     if (highlighter)
-        rx.set_highlighter_callback(highlighter);
+        rx.set_highlighter_callback([this](const std::string & input, replxx::Replxx::colors_t & colors, int pos)
+        {
+            /// In AI-chat mode the input is a natural-language question, not SQL - leave it
+            /// uncolored instead of running it through the SQL highlighter.
+            if (ai_mode)
+                return;
+            highlighter(input, colors, pos);
+        });
 
     /// As-you-type autocompletion: show the matching suggestions as inline "ghost" hints, with
     /// the same priority ordering as Tab completion. replxx renders a single hint inline after
@@ -511,8 +519,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     /// By default C-p/C-n bound to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
-    rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
-    rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+    rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_NEXT, code); });
+    rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_PREVIOUS, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
     if (options.ignore_shell_suspend)
@@ -581,7 +589,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 hint_selection = next;
                 return result;
             }
-            return rx.invoke(Replxx::ACTION::LINE_NEXT, code);
+            return historyNavigate(Replxx::ACTION::LINE_NEXT, code);
         };
         /// Up navigates the hints only once a hint is selected; before that it keeps recalling
         /// command history, so the hints do not shadow it.
@@ -594,7 +602,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 hint_selection = next;
                 return result;
             }
-            return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
+            return historyNavigate(Replxx::ACTION::LINE_PREVIOUS, code);
         };
         rx.bind_key(Replxx::KEY::DOWN, hint_next);
         rx.bind_key(Replxx::KEY::UP, hint_previous);
@@ -609,7 +617,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 hint_selection = next;
                 return result;
             }
-            return rx.invoke(Replxx::ACTION::LINE_PREVIOUS, code);
+            return historyNavigate(Replxx::ACTION::LINE_PREVIOUS, code);
         });
 
         /// Right accepts the chosen hint (the single one shown, or the one selected by navigating);
@@ -620,6 +628,13 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                 return rx.invoke(Replxx::ACTION::COMPLETE_LINE, code);
             return rx.invoke(Replxx::ACTION::MOVE_CURSOR_RIGHT, code);
         });
+    }
+    else
+    {
+        /// Without the hint machinery, Up/Down keep their default history navigation, but still
+        /// switch AI-chat mode to match the recalled entry.
+        rx.bind_key(Replxx::KEY::UP, [this](char32_t code) { return historyNavigate(Replxx::ACTION::LINE_PREVIOUS, code); });
+        rx.bind_key(Replxx::KEY::DOWN, [this](char32_t code) { return historyNavigate(Replxx::ACTION::LINE_NEXT, code); });
     }
 
     /// We don't want to allow opening EDITOR in the embedded mode.
@@ -795,7 +810,62 @@ ReplxxLineReader::~ReplxxLineReader()
 std::string ReplxxLineReader::aiModePrompt() const
 {
     /// Colors are enabled together with highlighting; without them, show a plain `:?`.
-    return highlighter ? "\033[1;35m:?\033[0m " : ":? ";
+    const std::string question = highlighter ? "\033[1;35m:?\033[0m " : ":? ";
+
+    /// Keep the display-name part of the SQL prompt in its normal color, and swap only its
+    /// trailing `:) ` smiley for the magenta `:?`. `sql_prompt` is the SQL prompt captured in
+    /// readOneLine (e.g. "myhost :) "); custom prompts without the smiley just get `:?` appended.
+    static constexpr std::string_view smiley = ":) ";
+    if (sql_prompt.ends_with(smiley))
+        return sql_prompt.substr(0, sql_prompt.size() - smiley.size()) + question;
+    return sql_prompt + question;
+}
+
+void ReplxxLineReader::restoreHistoryPrefix()
+{
+    /// Before a history move, put the current AI-mode line back into its stored `? `-prefixed
+    /// form, so replxx saves the scratch of the current entry with the prefix and a later revisit
+    /// still recognizes it as an AI entry (replxx saves the edit buffer as the entry's scratch on
+    /// move). No-op in SQL mode or when the prefix is already present.
+    if (!ai_mode)
+        return;
+    const std::string text = rx.get_state().text();
+    if (text.starts_with("? "))
+        return;
+    const std::string prefixed = "? " + text;
+    rx.set_state(replxx::Replxx::State(prefixed.c_str(), static_cast<int>(prefixed.size())));
+}
+
+void ReplxxLineReader::syncModeFromHistory()
+{
+    const std::string text = rx.get_state().text();
+    /// AI questions are stored in history with a `? ` prefix (see addToHistory).
+    const bool is_ai_entry = text.starts_with("? ");
+
+    if (is_ai_entry)
+    {
+        if (!ai_mode)
+        {
+            ai_mode = true;
+            rx.set_prompt(aiModePrompt());
+        }
+        /// Show the question itself (without the storage prefix) as the editable line.
+        const std::string stripped = text.substr(2);
+        rx.set_state(replxx::Replxx::State(stripped.c_str(), static_cast<int>(stripped.size())));
+    }
+    else if (ai_mode)
+    {
+        ai_mode = false;
+        rx.set_prompt(sql_prompt);
+    }
+}
+
+replxx::Replxx::ACTION_RESULT ReplxxLineReader::historyNavigate(replxx::Replxx::ACTION action, char32_t code)
+{
+    restoreHistoryPrefix();
+    auto result = rx.invoke(action, code);
+    syncModeFromHistory();
+    return result;
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
@@ -830,11 +900,15 @@ void ReplxxLineReader::addToHistory(const String & line)
     else
         locked = true;
 
-    rx.history_add(line);
+    /// In AI-chat mode, store the entry with a `? ` prefix so it is distinguishable in the
+    /// history file and recalled back into AI mode by syncModeFromHistory.
+    rx.history_add(ai_mode ? ("? " + line) : line);
 
     /// Remember identifiers from the committed query so they are prioritized in later
-    /// completions/hints this session (the "previously used" tier).
-    suggest.addUsedWords(extractIdentifiers(line.c_str()));
+    /// completions/hints this session (the "previously used" tier). AI questions are natural
+    /// language, not SQL, so they are not added.
+    if (!ai_mode)
+        suggest.addUsedWords(extractIdentifiers(line.c_str()));
 
     // flush changes to the disk
     if (history_file_fd >= 0 && !rx.history_save(history_file_path))
