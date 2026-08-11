@@ -1,0 +1,19 @@
+counts towards max_query_size
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+INCORRECT_QUERY
+--- query_log omits the inline INSERT data (expect: 1) ---
+1
+--- oversized query in multiquery mode is rejected on the client, without a server round trip (expect: 0) ---
+0
+--- exception-before-start log omits the inline INSERT data (expect: 1) ---
+1
+--- exception-before-start log omits the data of a CTE-wrapped INSERT (expect: 1) ---
+1
+--- exception-before-start log omits a letters-only FORMAT payload (expect: 1) ---
+1
+--- the log of an EXPLAIN INSERT omits its inline data (expect: 1) ---
+1
+--- nothing was inserted by the failed statements (expect: 123 1) ---
+123	1

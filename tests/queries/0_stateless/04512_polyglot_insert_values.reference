@@ -4,8 +4,6 @@
 100	5
 --- boolean transpile (expect: 1 2) ---
 1	2
---- query_log omits the inline INSERT data (expect: 1) ---
-1
 SYNTAX_ERROR
 SYNTAX_ERROR
 --- no partial insert after rejected multi-statement (expect: 100 5) ---
@@ -24,9 +22,6 @@ SYNTAX_ERROR
 counts towards max_query_size
 --- no insert when payload exceeds max_query_size (expect: 100 5) ---
 100	5
-counts towards max_query_size
---- oversized query in multiquery mode is rejected on the client, without a server round trip (expect: 0) ---
-0
 --- HTTP polyglot inline INSERT with an empty body (expect: 107 6) ---
 107	6
 NOT_IMPLEMENTED
@@ -39,18 +34,6 @@ NOT_IMPLEMENTED
 NO_DATA_TO_INSERT
 --- no insert from an input() query without data (expect: 112 7) ---
 112	7
-SYNTAX_ERROR
---- exception-before-start log omits the inline INSERT data (expect: 1) ---
-1
-SYNTAX_ERROR
---- exception-before-start log omits the data of a CTE-wrapped INSERT (expect: 1) ---
-1
-SYNTAX_ERROR
---- exception-before-start log omits a letters-only FORMAT payload (expect: 1) ---
-1
-INCORRECT_QUERY
---- the log of an EXPLAIN INSERT omits its inline data (expect: 1) ---
-1
 SYNTAX_ERROR
 --- no insert from a polyglot EXPLAIN INSERT (expect: 112 7) ---
 112	7

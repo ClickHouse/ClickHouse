@@ -30,25 +30,9 @@ $CLICKHOUSE_CLIENT $POLY -q "INSERT INTO b VALUES (true), (false)"
 echo "--- boolean transpile (expect: 1 2) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(flag), count() FROM b"
 
-# The inline INSERT data must never reach system.query_log/processlist: the "INSERT logs omit
-# inserted data" contract applies to the polyglot dialect too. The logged query is the INSERT
-# header (target and, if any, column list) without the row values. 123 is a sentinel that only
-# appears in the data section, so it must be absent from the logged query.
-query_id="${CLICKHOUSE_DATABASE}_04512_log"
-$CLICKHOUSE_CLIENT $POLY --query_id="$query_id" -q "INSERT INTO b VALUES (123)"
-
-# A query_log entry can be written after the client has already received the response, so retry
-# the flush until the entry shows up instead of assuming a single flush is enough.
-data_leak_check=""
-for _ in {1..100}
-do
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-    data_leak_check=$($CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%123%' AND query ILIKE 'INSERT INTO%' FROM system.query_log WHERE query_id = '$query_id' AND type = 'QueryStart' AND current_database = currentDatabase()")
-    [ -n "$data_leak_check" ] && break
-    sleep 0.3
-done
-echo "--- query_log omits the inline INSERT data (expect: 1) ---"
-echo "$data_leak_check"
+# What the inline INSERT data must and must not leave in system.query_log — on the success path
+# and on every failure path — is covered by 04843_polyglot_insert_log_redaction, kept separate so
+# that neither test exceeds the per-run time limit of the flaky check.
 
 # Multi-statement input is still rejected in polyglot dialect.
 $CLICKHOUSE_CLIENT $POLY -q "SELECT 1; SELECT 2" 2>&1 | grep -om1 "SYNTAX_ERROR"
@@ -105,26 +89,9 @@ $CLICKHOUSE_CLIENT $POLY --max_query_size 100 -q "INSERT INTO t VALUES $big_valu
 echo "--- no insert when payload exceeds max_query_size (expect: 100 5) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
-# The size guard must also hold in --multiquery / script mode, where the client parses with
-# allow_multi_statements enabled (which disables the generic per-query length limit): the client
-# itself rejects the oversized statement before transpiling or sending anything. If the rejection
-# came from the server instead, query_log would record the query_id as ExceptionBeforeStart.
-oversized_id="${CLICKHOUSE_DATABASE}_04512_oversized"
-$CLICKHOUSE_CLIENT $POLY --multiquery --max_query_size 100 --query_id="$oversized_id" -q "INSERT INTO t VALUES $big_values" 2>&1 | grep -om1 "counts towards max_query_size"
-
-# This assertion is about the ABSENCE of a log entry, so a single flush could pass spuriously
-# while the entry is still in flight. Run a marker query afterwards and wait until the marker is
-# in query_log: by then the server has certainly logged anything it received before it.
-marker_id="${CLICKHOUSE_DATABASE}_04512_marker"
-$CLICKHOUSE_CLIENT --query_id="$marker_id" -q "SELECT 1" > /dev/null
-for _ in {1..100}
-do
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE query_id = '$marker_id'")" != "0" ] && break
-    sleep 0.3
-done
-echo "--- oversized query in multiquery mode is rejected on the client, without a server round trip (expect: 0) ---"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE query_id = '$oversized_id'"
+# The same guard in --multiquery / script mode (where the client itself must reject the oversized
+# statement before transpiling or sending anything) is covered by
+# 04843_polyglot_insert_log_redaction, which proves the absence of a server round trip via query_log.
 
 # Over the HTTP interface a streaming INSERT (`input_format_connection_handling` +
 # `input_format_max_block_wait_ms`) keeps the request
@@ -164,76 +131,11 @@ $CLICKHOUSE_CLIENT $POLY_CH -q "INSERT INTO t SELECT * FROM input('x Int32') FOR
 echo "--- no insert from an input() query without data (expect: 112 7) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
-# A polyglot INSERT that the server rejects before parsing (the bundled dialects cannot transpile
-# INSERT ... FORMAT) must not leak its inline data into the logs either. On the exception-before-start
-# path no AST exists to tell the INSERT header apart from the data, so the server logs only the prefix
-# that cannot contain a literal value. 987654321 is a sentinel that only appears in the data section,
-# so it must be absent from the query recorded for the ExceptionBeforeStart entry.
-leak_id="${CLICKHOUSE_DATABASE}_04512_exc_leak"
-${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query_id=${leak_id}" -d 'INSERT INTO t FORMAT CSV
-987654321' 2>&1 | grep -om1 "SYNTAX_ERROR"
-exc_leak_check=""
-for _ in {1..100}
-do
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-    exc_leak_check=$($CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%987654321%' AND query ILIKE 'INSERT INTO%' FROM system.query_log WHERE query_id = '$leak_id' AND type = 'ExceptionBeforeStart' AND current_database = currentDatabase()")
-    [ -n "$exc_leak_check" ] && break
-    sleep 0.3
-done
-echo "--- exception-before-start log omits the inline INSERT data (expect: 1) ---"
-echo "$exc_leak_check"
+# What a rejected polyglot INSERT leaves in the logs (the exception-before-start redaction, incl.
+# CTE-wrapped and EXPLAIN-wrapped forms and raw FORMAT payloads) is covered by
+# 04843_polyglot_insert_log_redaction.
 
-# The INSERT keyword does not have to come first: a CTE-wrapped `WITH ... INSERT` carries inline
-# data too, so a failed one must be redacted the same way instead of being logged verbatim.
-# 987654322 is the sentinel that only appears in the data section.
-cte_leak_id="${CLICKHOUSE_DATABASE}_04512_cte_exc_leak"
-${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query_id=${cte_leak_id}" -d 'WITH s AS (SELECT 1) INSERT INTO t FORMAT CSV
-987654322' 2>&1 | grep -om1 "SYNTAX_ERROR"
-cte_leak_check=""
-for _ in {1..100}
-do
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-    cte_leak_check=$($CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%987654322%' AND query ILIKE 'WITH%' FROM system.query_log WHERE query_id = '$cte_leak_id' AND type = 'ExceptionBeforeStart' AND current_database = currentDatabase()")
-    [ -n "$cte_leak_check" ] && break
-    sleep 0.3
-done
-echo "--- exception-before-start log omits the data of a CTE-wrapped INSERT (expect: 1) ---"
-echo "$cte_leak_check"
-
-# A raw FORMAT payload can start with anything, not only a VALUES-style literal: a CSV body made of
-# letters has no parenthesis, quote, or digit for the redaction to cut at, so the text must be cut
-# right after the `FORMAT <name>` header instead. The letters-only sentinel must not be logged.
-fmt_leak_id="${CLICKHOUSE_DATABASE}_04512_fmt_exc_leak"
-${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query_id=${fmt_leak_id}" -d 'INSERT INTO t FORMAT CSV
-secretleakvalue' 2>&1 | grep -om1 "SYNTAX_ERROR"
-fmt_leak_check=""
-for _ in {1..100}
-do
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-    fmt_leak_check=$($CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%secretleakvalue%' AND query ILIKE 'INSERT INTO%' FROM system.query_log WHERE query_id = '$fmt_leak_id' AND type = 'ExceptionBeforeStart' AND current_database = currentDatabase()")
-    [ -n "$fmt_leak_check" ] && break
-    sleep 0.3
-done
-echo "--- exception-before-start log omits a letters-only FORMAT payload (expect: 1) ---"
-echo "$fmt_leak_check"
-
-# `EXPLAIN INSERT ... VALUES` is an inline-data carrier too: the data belongs to the nested INSERT.
-# All the places that locate the data boundary use `getInsertAST`, so the logged query text is cut
-# at the data for this form as well. 987654323 only appears in the data section.
-explain_leak_id="${CLICKHOUSE_DATABASE}_04512_explain_leak"
-$CLICKHOUSE_CLIENT --query_id "$explain_leak_id" -q "EXPLAIN INSERT INTO t VALUES (987654323)" 2>&1 | grep -om1 "INCORRECT_QUERY"
-explain_leak_check=""
-for _ in {1..100}
-do
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-    explain_leak_check=$($CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%987654323%' AND query ILIKE 'EXPLAIN INSERT INTO%' FROM system.query_log WHERE query_id = '$explain_leak_id' AND type = 'ExceptionBeforeStart' AND current_database = currentDatabase()")
-    [ -n "$explain_leak_check" ] && break
-    sleep 0.3
-done
-echo "--- the log of an EXPLAIN INSERT omits its inline data (expect: 1) ---"
-echo "$explain_leak_check"
-
-# The same form in a foreign dialect is not transpilable: the bundled dialects reject `EXPLAIN` in
+# `EXPLAIN INSERT` in a foreign dialect is not transpilable: the bundled dialects reject `EXPLAIN` in
 # front of an `INSERT`, and the `clickhouse` source dialect rewrites `EXPLAIN` into `DESCRIBE`, which
 # ClickHouse does not accept in front of an `INSERT`. It must fail cleanly, without inserting.
 $CLICKHOUSE_CLIENT $POLY -q "EXPLAIN INSERT INTO t VALUES (987654324)" 2>&1 | grep -om1 "SYNTAX_ERROR"
