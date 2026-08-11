@@ -2,12 +2,16 @@
 -- `allow_calculating_subcolumns_sizes_for_merge_tree_reading` is enabled. When it is
 -- disabled, the subcolumn is costed by its whole top-level column size instead.
 --
--- The table has a Tuple where the `small` element is tiny and the `big` element is huge,
--- plus a `medium` column. With the setting on, `tup.small`'s exact size is smaller than
--- `medium`, so it goes first in PREWHERE. With the setting off, `tup.small` is costed by
--- the whole `tup` size (dominated by `big`), which is larger than `medium`, so `medium`
--- goes first. Both conditions use equality so both are "good"; statistics are disabled so
--- that only column sizes drive the ordering.
+-- The table has a Tuple where the `small` element is tiny and the `big` element is large,
+-- plus a `medium` column sized in between. With the setting on, `tup.small`'s exact size is
+-- smaller than `medium`, so it goes first in PREWHERE. With the setting off, `tup.small` is
+-- costed by the whole `tup` size (dominated by `big`), which is larger than `medium`, so
+-- `medium` goes first. Both conditions use equality so both are "good"; statistics are
+-- disabled so that only column sizes drive the ordering.
+--
+-- The data is incompressible random strings so that the size ordering
+-- exact(tup.small) < medium < size(tup) holds regardless of the compression and granularity
+-- settings randomized by the flaky check.
 --
 -- The analyzer path and the legacy InterpreterSelectQuery path are both covered; `tup.small`
 -- stays a subcolumn in both.
@@ -22,8 +26,8 @@ CREATE TABLE t_prewhere_subcolumn_size (id UInt64, medium String, tup Tuple(smal
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO t_prewhere_subcolumn_size
-SELECT number, repeat('m', 50), (repeat('s', 1), repeat('b', 500))
-FROM numbers(200000);
+SELECT number, randomString(30), (randomString(1), randomString(300))
+FROM numbers(100000);
 OPTIMIZE TABLE t_prewhere_subcolumn_size FINAL;
 
 SET enable_analyzer = 1;
