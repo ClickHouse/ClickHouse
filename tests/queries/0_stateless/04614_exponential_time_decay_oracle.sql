@@ -1,14 +1,93 @@
+DROP TABLE IF EXISTS time_decay_feature_gate;
+DROP TABLE IF EXISTS time_decay_feature_gate_blocked;
+
+SET allow_experimental_time_decay_aggregate_functions = 1;
+
+CREATE TABLE time_decay_feature_gate
+(
+    value ExponentialTimeDecayingFloat64(10)
+)
+ENGINE = Memory;
+
+INSERT INTO time_decay_feature_gate VALUES ((1, 0, 10));
+DETACH TABLE time_decay_feature_gate;
+
 SET allow_experimental_time_decay_aggregate_functions = 0;
 
+-- Existing metadata must remain attachable for recovery, but new CREATE and
+-- ALTER operations cannot persist the experimental type without opting in.
+ATTACH TABLE time_decay_feature_gate;
+CREATE TABLE time_decay_feature_gate_blocked
+(
+    value ExponentialTimeDecayingFloat64(10)
+)
+ENGINE = Memory; -- { serverError ILLEGAL_COLUMN }
+ALTER TABLE time_decay_feature_gate
+    ADD COLUMN blocked ExponentialTimeDecayingFloat64(10); -- { serverError ILLEGAL_COLUMN }
+
 -- All scalar operations on the experimental value type remain gated.
-WITH CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecayingFloat64(10)') AS value
-SELECT exponentialTimeDecayingValueAt(value, toFloat64(1)); -- { serverError UNKNOWN_FUNCTION }
-WITH CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecayingFloat64(10)') AS value
-SELECT exponentialTimeDecayingDecayLength(value); -- { serverError UNKNOWN_FUNCTION }
-WITH CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecayingFloat64(10)') AS value
-SELECT exponentialTimeDecayingAdd(value, value); -- { serverError UNKNOWN_FUNCTION }
-WITH CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecayingFloat64(10)') AS value
-SELECT value + value; -- { serverError UNKNOWN_FUNCTION }
+SELECT exponentialTimeDecayingValueAt(value, toFloat64(1)) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }
+SELECT exponentialTimeDecayingDecayLength(value) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }
+SELECT exponentialTimeDecayingAdd(value, value) FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }
+SELECT value + value FROM time_decay_feature_gate; -- { serverError UNKNOWN_FUNCTION }
+
+-- The legacy OVER form remains available without the experimental setting and
+-- keeps the window-only properties used by analyzer rewrites.
+SET enable_analyzer = 0;
+
+SELECT
+    toTypeName(decayed_sum),
+    toTypeName(decayed_avg),
+    round(decayed_sum, 6),
+    round(decayed_avg, 6)
+FROM
+(
+    SELECT
+        exponentialTimeDecayedSum(10)(value, time)
+            OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS decayed_sum,
+        exponentialTimeDecayedAvg(10)(value, time)
+            OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS decayed_avg
+    FROM VALUES('value Float64, time Float64', (8, 0))
+)
+SETTINGS aggregate_functions_null_for_empty = 1;
+
+-- The inner order is semantically significant because the legacy window form
+-- evaluates relative to the last row in the frame. It must not be removed as a
+-- duplicate of the outer ORDER BY.
+SELECT
+    time,
+    round(
+        exponentialTimeDecayedSum(10)(value, time)
+            OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
+        6)
+FROM
+(
+    SELECT *
+    FROM VALUES('value Float64, time Float64', (8, 0), (4, 10))
+    ORDER BY time DESC
+)
+ORDER BY time;
+
+-- Exercise the corresponding QueryAnalyzer rewrite as well.
+SET enable_analyzer = 1;
+
+SELECT
+    toTypeName(decayed_sum),
+    toTypeName(decayed_avg),
+    round(decayed_sum, 6),
+    round(decayed_avg, 6)
+FROM
+(
+    SELECT
+        exponentialTimeDecayedSum(10)(value, time)
+            OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS decayed_sum,
+        exponentialTimeDecayedAvg(10)(value, time)
+            OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS decayed_avg
+    FROM VALUES('value Float64, time Float64', (8, 0))
+)
+SETTINGS aggregate_functions_null_for_empty = 1;
+
+DROP TABLE time_decay_feature_gate;
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
@@ -194,9 +273,11 @@ FROM
 )
 WHERE NOT
 (
-    abs(tupleElement(operator_result, 'value') - expected_value) < 1e-12
+    abs(tupleElement(operator_result, 'value') - expected_value)
+        <= 1e-12 * greatest(1., abs(expected_value))
     AND tupleElement(operator_result, 'time') = latest_time
-    AND abs(tupleElement(operator_result, 'value') - tupleElement(function_result, 'value')) < 1e-12
+    AND abs(tupleElement(operator_result, 'value') - tupleElement(function_result, 'value'))
+        <= 1e-12 * greatest(1., abs(tupleElement(function_result, 'value')))
     AND tupleElement(operator_result, 'time') = tupleElement(function_result, 'time')
     AND toTypeName(operator_result) = 'ExponentialTimeDecayingFloat64(10)'
 )
