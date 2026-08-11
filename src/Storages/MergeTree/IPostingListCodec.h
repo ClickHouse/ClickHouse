@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Common/assert_cast.h>
 #include <Common/PODArray_fwd.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
@@ -42,11 +42,12 @@ public:
     virtual void encode(const PostingList & postings, size_t posting_list_block_size, TokenPostingsInfo & info, WriteBuffer & out) const = 0;
 
     /// Reads an encoded posting list block and decodes it into `postings`, which must be empty.
-    virtual void decode(ReadBuffer & in, PostingList & postings) const = 0;
+    /// `buffer` is a caller-owned scratch buffer, reused across calls.
+    virtual void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const = 0;
 
-    /// Reads an encoded posting list and appends the decoded row ids to the plain array.
+    /// The same, but appends the decoded row ids to a plain array.
     /// Used in merges of text indexes to avoid materializing a roaring bitmap.
-    virtual void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids) const = 0;
+    virtual void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const = 0;
 private:
     Type type{};
 };

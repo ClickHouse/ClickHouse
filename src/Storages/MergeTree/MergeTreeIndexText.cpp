@@ -292,8 +292,21 @@ const IPostingListCodec & PostingsSerialization::resolveCodec(UInt64 header)
     return *posting_list_codec;
 }
 
+/// Raw posting lists are never compressed, so the flags are mutually exclusive. Both overloads of
+/// `deserialize` check `RawPostings` first, so a header with both bits set would be parsed as raw
+/// row ids, returning bogus matches and leaving the stream misaligned for the following posting lists.
+static void checkPostingListFlags(UInt64 header)
+{
+    using Flags = PostingsSerialization::Flags;
+
+    if ((header & Flags::RawPostings) && (header & Flags::IsCompressed))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Posting list header marks the data as both raw and compressed");
+}
+
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
 {
+    checkPostingListFlags(header);
+
     /// Small posting lists are stored as raw VarUInt-encoded row ids.
     if (header & RawPostings)
     {
@@ -308,14 +321,15 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
         return postings;
     }
 
-    /// All other posting lists (including the uncompressed None format) are decoded by the codec.
     auto postings = std::make_shared<PostingList>();
-    resolveCodec(header).decode(istr, *postings);
+    resolveCodec(header).decode(istr, *postings, deserialization_buffer);
     return postings;
 }
 
 void PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PaddedPODArray<UInt32> & row_ids)
 {
+    checkPostingListFlags(header);
+
     if (header & RawPostings)
     {
         size_t old_size = row_ids.size();
@@ -327,7 +341,7 @@ void PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64
         return;
     }
 
-    resolveCodec(header).decode(istr, row_ids);
+    resolveCodec(header).decode(istr, row_ids, deserialization_buffer);
 }
 
 

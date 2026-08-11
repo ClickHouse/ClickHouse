@@ -9,6 +9,22 @@
 namespace DB
 {
 
+/// Returns `num_bytes` contiguous bytes read from `in` and advances it past them.
+/// Points into the buffer of `in` if the data is already there, into `buffer` otherwise.
+static const char * readContiguousBytes(ReadBuffer & in, size_t num_bytes, PaddedPODArray<char> & buffer)
+{
+    if (in.position() && static_cast<size_t>(in.buffer().end() - in.position()) >= num_bytes)
+    {
+        const char * data = in.position();
+        in.position() += num_bytes;
+        return data;
+    }
+
+    buffer.resize(num_bytes);
+    in.readStrict(buffer.data(), num_bytes);
+    return buffer.data();
+}
+
 /// Normalize the requested block size to a multiple of BLOCK_SIZE.
 /// We encode/decode posting lists in fixed-size blocks, and the SIMD bit-packing
 /// implementation expects block-aligned sizes for efficient processing.
@@ -78,61 +94,59 @@ void SegmentedPostingListCodec::insert(std::span<uint32_t> row_ids)
         flushCurrentSegment();
 }
 
-SegmentedPostingListCodec::Header SegmentedPostingListCodec::readSegment(ReadBuffer & in)
+SegmentedPostingListCodec::Segment SegmentedPostingListCodec::readSegment(ReadBuffer & in, PaddedPODArray<char> & buffer)
 {
-    Header header;
-    header.read(in);
+    Segment segment;
+    segment.header.read(in);
 
     /// The segment header is self-describing: create the block codec it was written with.
-    block_codec = createPostingListBlockCodec(header.codec_type);
+    block_codec = createPostingListBlockCodec(segment.header.codec_type);
 
-    prev_row_id = header.first_row_id;
-    compressed_data.resize(header.payload_bytes);
+    prev_row_id = segment.header.first_row_id;
 
-    in.readStrict(compressed_data.data(), header.payload_bytes);
-    return header;
+    const char * payload_data = readContiguousBytes(in, segment.header.payload_bytes, buffer);
+    segment.payload = std::span(reinterpret_cast<const std::byte *>(payload_data), segment.header.payload_bytes);
+    return segment;
 }
 
-void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings)
+void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer)
 {
-    auto header = readSegment(in);
+    auto segment = readSegment(in, buffer);
 
-    const size_t num_blocks = header.cardinality / BLOCK_SIZE;
-    const size_t tail_size = header.cardinality % BLOCK_SIZE;
+    const size_t num_blocks = segment.header.cardinality / BLOCK_SIZE;
+    const size_t tail_size = segment.header.cardinality % BLOCK_SIZE;
 
     current_segment.resize(BLOCK_SIZE);
 
-    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte*>(compressed_data.data()), compressed_data.size());
     for (size_t i = 0; i < num_blocks; i++)
     {
-        decodeBlock(compressed_data_span, std::span(current_segment.data(), BLOCK_SIZE));
+        decodeBlock(segment.payload, std::span(current_segment.data(), BLOCK_SIZE));
         postings.addMany(BLOCK_SIZE, current_segment.data());
     }
     if (tail_size)
     {
-        decodeBlock(compressed_data_span, std::span(current_segment.data(), tail_size));
+        decodeBlock(segment.payload, std::span(current_segment.data(), tail_size));
         postings.addMany(tail_size, current_segment.data());
     }
 }
 
-void SegmentedPostingListCodec::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids)
+void SegmentedPostingListCodec::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer)
 {
-    auto header = readSegment(in);
+    auto segment = readSegment(in, buffer);
 
-    const size_t num_blocks = header.cardinality / BLOCK_SIZE;
-    const size_t tail_size = header.cardinality % BLOCK_SIZE;
+    const size_t num_blocks = segment.header.cardinality / BLOCK_SIZE;
+    const size_t tail_size = segment.header.cardinality % BLOCK_SIZE;
 
     size_t out_pos = row_ids.size();
-    row_ids.resize(out_pos + header.cardinality);
+    row_ids.resize(out_pos + segment.header.cardinality);
 
-    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte*>(compressed_data.data()), compressed_data.size());
     for (size_t i = 0; i < num_blocks; i++)
     {
-        decodeBlock(compressed_data_span, std::span(row_ids.data() + out_pos, BLOCK_SIZE));
+        decodeBlock(segment.payload, std::span(row_ids.data() + out_pos, BLOCK_SIZE));
         out_pos += BLOCK_SIZE;
     }
     if (tail_size)
-        decodeBlock(compressed_data_span, std::span(row_ids.data() + out_pos, tail_size));
+        decodeBlock(segment.payload, std::span(row_ids.data() + out_pos, tail_size));
 }
 
 void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const
@@ -236,46 +250,34 @@ void encodePostingsInBlocks(
 
 }
 
-void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings) const
-{
-    SegmentedPostingListCodec impl;
-    impl.decode(in, postings);
-}
-
-void PostingListCodecBitpacking::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids) const
-{
-    SegmentedPostingListCodec impl;
-    impl.decode(in, row_ids);
-}
-
-void PostingListCodecBitpacking::encode(
-        const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
+void PostingListCodecBitpacking::encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
 {
     encodePostingsInBlocks(postings, max_rowids_in_segment, IPostingListCodec::Type::Bitpacking, info, out);
 }
 
-void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings) const
+void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const
+{
+    SegmentedPostingListCodec impl;
+    impl.decode(in, postings, buffer);
+}
+
+void PostingListCodecBitpacking::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
+{
+    SegmentedPostingListCodec impl;
+    impl.decode(in, row_ids, buffer);
+}
+
+void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const
 {
     size_t num_bytes = 0;
     readVarUInt(num_bytes, in);
-
-    /// If the posting list is completely in the buffer, avoid copying.
-    if (in.position() && in.position() + num_bytes <= in.buffer().end())
-    {
-        postings = PostingList::read(in.position());
-        in.position() += num_bytes;
-        return;
-    }
-
-    PaddedPODArray<char> buffer(num_bytes);
-    in.readStrict(buffer.data(), num_bytes);
-    postings = PostingList::read(buffer.data());
+    postings = PostingList::read(readContiguousBytes(in, num_bytes, buffer));
 }
 
-void PostingListCodecNone::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids) const
+void PostingListCodecNone::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
 {
     PostingList postings;
-    decode(in, postings);
+    decode(in, postings, buffer);
 
     size_t old_size = row_ids.size();
     row_ids.resize(old_size + postings.cardinality());
