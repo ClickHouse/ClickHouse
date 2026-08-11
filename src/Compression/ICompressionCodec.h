@@ -63,6 +63,10 @@ public:
         return getHeaderSize() + getMaxCompressedDataSize(uncompressed_size);
     }
 
+    /// buf_size reduced so that a full frame serializes both size fields within
+    /// DBMS_MAX_COMPRESSED_SIZE. Never returns zero.
+    size_t capUncompressedFrameSize(size_t buf_size) const;
+
     /// Some codecs (LZ4, for example) require additional bytes at end of buffer
     virtual UInt32 getAdditionalSizeAtTheEndOfBuffer() const { return 0; }
 

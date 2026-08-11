@@ -964,9 +964,6 @@ bool isWidePart(const MergeTreeDataPartPtr & data_part);
 inline String getIndexExtension(bool is_compressed_primary_key) { return is_compressed_primary_key ? ".cidx" : ".idx"; }
 bool isCompressedFromIndexExtension(const String & index_extension);
 
-/// True if a part file of this name holds compressed frames (compressed marks or primary index).
-bool isCompressedFromFileName(const String & file_name);
-
 using MergeTreeDataPartsVector = std::vector<MergeTreeDataPartPtr>;
 
 Strings getPartsNames(const MergeTreeDataPartsVector & parts);

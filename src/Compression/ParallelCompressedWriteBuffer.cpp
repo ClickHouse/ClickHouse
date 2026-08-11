@@ -1,7 +1,5 @@
 #include <city.h>
 
-#include <algorithm>
-
 #include <base/types.h>
 #include <base/defines.h>
 
@@ -34,7 +32,7 @@ ParallelCompressedWriteBuffer::ParallelCompressedWriteBuffer(
     : WriteBuffer(nullptr, 0)
     , out(out_)
     , codec(codec_)
-    , buf_size(std::min<size_t>(buf_size_, DBMS_MAX_COMPRESSED_SIZE))
+    , buf_size(codec_->capUncompressedFrameSize(buf_size_))
     , num_threads(num_threads_)
     , pool(pool_)
 {

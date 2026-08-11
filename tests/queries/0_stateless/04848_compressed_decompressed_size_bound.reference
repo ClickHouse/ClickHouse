@@ -12,8 +12,13 @@
 frames above the bound: 0
 -- the same holds for the parallel writer
 frames above the bound: 0
+-- a codec that does not compress expands the frame by the header alone, and still fits
+frames above the bound: 0
+-- and so does a compressing codec handed incompressible input
+frames above the bound: 0
 -- the capped output round-trips
 1207959552
+incompressible input round-trips
 -- a reader of data an uncapped writer produced accepts an over-bound frame
 0
 -- and so does its seeking path

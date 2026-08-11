@@ -3429,11 +3429,16 @@ Strings getPartsNames(const MergeTreeDataPartsVector & parts)
     return part_names;
 }
 
+namespace
+{
+
 bool isCompressedFromFileName(const String & file_name)
 {
     std::string extension = fs::path(file_name).extension();
     return (MarkType::isMarkFileExtension(extension) && MarkType(extension).compressed)
         || isCompressedFromIndexExtension(extension);
+}
+
 }
 
 std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_name) const

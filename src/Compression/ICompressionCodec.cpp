@@ -1,5 +1,6 @@
 #include <Compression/ICompressionCodec.h>
 
+#include <algorithm>
 
 #include <Parsers/ASTFunction.h>
 #include <base/unaligned.h>
@@ -86,6 +87,40 @@ UInt64 ICompressionCodec::getHash() const
     SipHash hash;
     updateHash(hash);
     return hash.get64();
+}
+
+size_t ICompressionCodec::capUncompressedFrameSize(size_t buf_size) const
+{
+    constexpr size_t limit = DBMS_MAX_COMPRESSED_SIZE;
+    /// Covers every element width in use (up to Decimal256/UUID): codecs that reject a partial
+    /// element must not be handed one.
+    constexpr size_t alignment = 32;
+    static_assert(limit % alignment == 0);
+
+    const size_t requested = std::min(buf_size, limit);
+
+    UInt32 reserve = 0;
+    try
+    {
+        reserve = getCompressedReserveSize(static_cast<UInt32>(requested));
+    }
+    catch (const Exception &)
+    {
+        /// A codec that refuses this size states no bound for it, so there is nothing to reduce by.
+        return requested;
+    }
+
+    /// requested <= limit, so this also covers a reserve that wrapped its UInt32 arithmetic.
+    if (reserve <= limit)
+        return requested;
+
+    const size_t overhead = reserve - requested;
+    if (overhead > limit - alignment)
+        return requested;
+
+    /// reserve(n) = n + overhead(n) with overhead non-decreasing in n for every in-tree codec, so
+    /// reserve(limit - overhead(requested)) <= limit.
+    return (limit - overhead) & ~(alignment - 1);
 }
 
 UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const
