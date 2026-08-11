@@ -1331,6 +1331,7 @@ bool SchemaConverter::processSubtreeVariantTypedWrapper(TraversalNode & node, si
 
     bool has_value_child = false;
     bool has_typed_value_child = false;
+    const parq::SchemaElement * value_child = nullptr;
     size_t child_idx = schema_idx;
     for (Int32 i = 0; i < node.element->num_children; ++i)
     {
@@ -1343,6 +1344,7 @@ bool SchemaConverter::processSubtreeVariantTypedWrapper(TraversalNode & node, si
             if (has_value_child)
                 return false;
             has_value_child = true;
+            value_child = &child;
         }
         else if (child.name == "typed_value")
         {
@@ -1368,6 +1370,20 @@ bool SchemaConverter::processSubtreeVariantTypedWrapper(TraversalNode & node, si
     /// when it is present.
     if (has_clickhouse_variant_wrapper_paths_metadata
         && !clickhouse_variant_wrapper_paths.contains(node.schema_path))
+    {
+        return false;
+    }
+
+    /// Without the footer metadata, `{value, typed_value}` child names alone don't prove this
+    /// group is a wrapper: they are also legal object keys, so a foreign file can have an
+    /// ordinary payload group with exactly these names. A wrapper's `value` child is always the
+    /// standard residual — a non-repeated `BYTE_ARRAY` primitive. Any other shape (a group, or a
+    /// typed primitive like `INT32`) is decidable: it must be object payload, so decline the
+    /// wrapper interpretation and let the group be read as an object. When the shape *is*
+    /// residual-like the ambiguity is undecidable and we keep the spec-first wrapper reading.
+    if (!has_clickhouse_variant_wrapper_paths_metadata && value_child
+        && (!isPrimitiveNode(*value_child) || !value_child->__isset.type || value_child->type != parq::Type::BYTE_ARRAY
+            || value_child->repetition_type == parq::FieldRepetitionType::REPEATED))
     {
         return false;
     }
