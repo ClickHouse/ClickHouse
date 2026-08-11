@@ -412,8 +412,8 @@ BuildBlockPtr BuildSideBlockReader::read(size_t index)
 
 void BuildSideBlockReader::release()
 {
-    current.reset();
-    spill_stream.reset();
+    current = nullptr;
+    spill_stream = nullptr;
     next_spill_ordinal = 0;
 }
 

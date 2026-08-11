@@ -556,8 +556,8 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
     const size_t num_rows = std::min(total_rows, maxOutputChunkRows(probe_row_bytes + build_row_bytes));
     chassert(num_rows != 0);
 
-    const auto pending_probe_begin = matched_probe_rows.begin() + matched_rows_offset;
-    const auto pending_build_begin = matched_build_rows.begin() + matched_rows_offset;
+    const auto * pending_probe_begin = matched_probe_rows.begin() + matched_rows_offset;
+    const auto * pending_build_begin = matched_build_rows.begin() + matched_rows_offset;
 
     Columns result;
     result.reserve(output_header->columns());
