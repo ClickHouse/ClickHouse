@@ -62,13 +62,13 @@ SETTINGS use_cache_for_count_from_files = 1, schema_inference_cache_require_modi
 # must hit the num-rows cache (otherwise the assertion below would be vacuous).
 ${CLICKHOUSE_CLIENT} -q "
 SELECT count() FROM url('${URL}', TSV, 's String')
-SETTINGS use_cache_for_count_from_files = 1, schema_inference_cache_require_modification_time_for_url = 0, log_comment = '04843_repeat_count';
+SETTINGS use_cache_for_count_from_files = 1, schema_inference_cache_require_modification_time_for_url = 0, log_comment = '04847_repeat_count';
 "
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -q "
 SELECT ProfileEvents['SchemaInferenceCacheNumRowsHits'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '04843_repeat_count' AND type = 'QueryFinish'
+WHERE current_database = currentDatabase() AND log_comment = '04847_repeat_count' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 "
 
