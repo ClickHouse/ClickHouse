@@ -8235,6 +8235,19 @@ Removes unnecessary exchanges in distributed query plan. Disable it for debuggin
     DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
 How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, lock_object_storage_task_distribution_ms, 500, R"(
+In object storage distribution queries do not distribute tasks on non-prefetched nodes until prefetched node is active.
+Determines how long the free executor node (one that finished processing all of it assigned tasks) should wait before "stealing" tasks from queue of currently busy executor nodes.
+
+Possible values:
+
+- 0  - steal tasks immediately after freeing up.
+- >0 - wait for specified period of time before stealing tasks.
+
+Having this `>0` helps with cache reuse and might improve overall query time.
+Because busy node might have warmed-up caches for this specific task, while free node needs to fetch lots of data from S3.
+Which might take longer than just waiting for the busy node and generate extra traffic.
+)", EXPERIMENTAL) \
     DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
 Force specified kind of Exchange operators between distributed query stages.
 
@@ -8288,6 +8301,9 @@ When the hash join build side was converted to a FixedHashMap (see `enable_join_
 )", 0) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_iceberg_read_optimization, true, R"(
+Allow Iceberg read optimization based on Iceberg metadata.
 )", EXPERIMENTAL) \
     \
     /** Experimental timeSeries* aggregate functions. */ \
@@ -8506,7 +8522,8 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
     MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
     MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
-    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true)
+    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
+    MAKE_OBSOLETE(M, Bool, allow_retries_in_cluster_requests, false)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
