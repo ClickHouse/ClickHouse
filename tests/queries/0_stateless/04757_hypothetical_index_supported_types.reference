@@ -1,0 +1,17 @@
+--- every allowed type is accepted ---
+accepted: minmax
+accepted: set(100)
+accepted: bloom_filter(0.01)
+accepted: ngrambf_v1(3, 256, 2, 0)
+accepted: tokenbf_v1(256, 2, 0)
+accepted: sparse_grams(3, 100, 512, 2, 0)
+--- types outside the allowlist are rejected at CREATE ---
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+--- the rejection names the supported types ---
+Supported types: bloom_filter, minmax, ngrambf_v1, set, sparse_grams, tokenbf_v1
+--- validate still runs before the allowlist check ---
+ILLEGAL_INDEX
+INCORRECT_QUERY
+--- a schema change that invalidates the index degrades to not_applicable ---
+status: not_applicable
