@@ -73,18 +73,19 @@ namespace
     struct SpeculativeMemoryReservation
     {
         Int64 size;
+        MemoryTracker * credited_query_tracker = nullptr;
 
         SpeculativeMemoryReservation()
             : size(additional_memory_tracking_per_thread.load(std::memory_order_relaxed))
         {
             if (size > 0)
-                CurrentMemoryTracker::allocGlobal(size);
+                credited_query_tracker = CurrentMemoryTracker::allocGlobal(size);
         }
 
         ~SpeculativeMemoryReservation()
         {
             if (size > 0)
-                CurrentMemoryTracker::freeGlobal(size);
+                CurrentMemoryTracker::freeGlobal(size, credited_query_tracker);
         }
     };
 }
@@ -300,7 +301,7 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
         Int64 reservation = additional_memory_tracking_per_thread.load(std::memory_order_relaxed);
         if (reservation > 0)
         {
-            CurrentMemoryTracker::allocGlobal(reservation);
+            single_thread_speculative_reservation_tracker = CurrentMemoryTracker::allocGlobal(reservation);
             single_thread_speculative_reservation = reservation;
         }
 
@@ -359,8 +360,9 @@ void PipelineExecutor::releaseSingleThreadSpeculativeReservation() noexcept
 {
     if (single_thread_speculative_reservation > 0)
     {
-        CurrentMemoryTracker::freeGlobal(single_thread_speculative_reservation);
+        CurrentMemoryTracker::freeGlobal(single_thread_speculative_reservation, single_thread_speculative_reservation_tracker);
         single_thread_speculative_reservation = 0;
+        single_thread_speculative_reservation_tracker = nullptr;
     }
 }
 

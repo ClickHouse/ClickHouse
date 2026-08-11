@@ -134,7 +134,7 @@ AllocationTrace CurrentMemoryTracker::allocThrow(Int64 size)
     return allocImpl(size, enforce_memory_limit);
 }
 
-void CurrentMemoryTracker::allocGlobal(Int64 size)
+MemoryTracker * CurrentMemoryTracker::allocGlobal(Int64 size)
 {
     /// Find the current query's process-level tracker (if any): the total tracker uses it
     /// for the global overcommit decision (`OvercommitTracker::needToStopQuery`), so a
@@ -157,6 +157,14 @@ void CurrentMemoryTracker::allocGlobal(Int64 size)
     /// amount stays an upper bound), while the opposite order could leave the corrected
     /// amount below the actual usage after `freeGlobal`.
     MemoryTracker::global_speculative_reservations.fetch_add(size, std::memory_order_relaxed);
+
+    /// Credit the reservation to the query before the overcommit decision inside `allocImpl`:
+    /// a real allocation enters the query tracker's `amount` before the total tracker ranks
+    /// the queries, so without this credit the reserving query would be ranked short of the
+    /// very bytes that trip the limit and the kill could shift to another query.
+    if (process_tracker)
+        process_tracker->addSpeculativeReservation(size);
+
     try
     {
         /// The returned trace is intentionally dropped: no actual allocation backs
@@ -165,13 +173,20 @@ void CurrentMemoryTracker::allocGlobal(Int64 size)
     }
     catch (...)
     {
+        if (process_tracker)
+            process_tracker->subSpeculativeReservation(size);
         MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_relaxed);
         throw;
     }
+
+    return process_tracker;
 }
 
-void CurrentMemoryTracker::freeGlobal(Int64 size)
+void CurrentMemoryTracker::freeGlobal(Int64 size, MemoryTracker * credited_query_tracker)
 {
+    if (credited_query_tracker)
+        credited_query_tracker->subSpeculativeReservation(size);
+
     /// The reverse order of `allocGlobal`: subtract from the total tracker first, then lower
     /// the reservations counter, so an interleaved external correction can only overcount.
     std::ignore = total_memory_tracker.free(size);

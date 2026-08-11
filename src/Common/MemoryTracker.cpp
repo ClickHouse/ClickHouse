@@ -683,13 +683,20 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 
 OvercommitRatio MemoryTracker::getOvercommitRatio()
 {
-    return { amount.load(std::memory_order_relaxed), soft_limit.load(std::memory_order_relaxed) };
+    /// Live speculative reservations are ranked together with the tracked usage so the
+    /// overcommit victim selection treats them like real allocations (see the comment
+    /// on `speculative_reservations`).
+    return
+    {
+        amount.load(std::memory_order_relaxed) + speculative_reservations.load(std::memory_order_relaxed),
+        soft_limit.load(std::memory_order_relaxed)
+    };
 }
 
 
 OvercommitRatio MemoryTracker::getOvercommitRatio(Int64 limit)
 {
-    return { amount.load(std::memory_order_relaxed), limit };
+    return { amount.load(std::memory_order_relaxed) + speculative_reservations.load(std::memory_order_relaxed), limit };
 }
 
 

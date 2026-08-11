@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <Common/AllocationTrace.h>
 
+class MemoryTracker;
+
 /// Convenience methods, that use current thread's memory_tracker if it is available.
 struct CurrentMemoryTracker
 {
@@ -26,8 +28,13 @@ struct CurrentMemoryTracker
     /// that compensate for unreported per-thread allocations at the server level
     /// without distorting query-level and user-level accounting.
     /// `allocGlobal` throws MEMORY_LIMIT_EXCEEDED if the server-wide hard limit would be exceeded.
-    static void allocGlobal(Int64 size);
-    static void freeGlobal(Int64 size);
+    /// It returns the query's Process-level tracker the reservation was credited to for the
+    /// overcommit victim ranking (nullptr when the thread is not attached to a query); the
+    /// caller must pass that tracker back to the paired `freeGlobal` — the release may run
+    /// on a different thread (e.g. executor destruction on cancellation), so re-deriving it
+    /// from the current thread there could uncredit the wrong tracker.
+    [[nodiscard]] static MemoryTracker * allocGlobal(Int64 size);
+    static void freeGlobal(Int64 size, MemoryTracker * credited_query_tracker);
 
     /// Throws MEMORY_LIMIT_EXCEEDED (if it's allowed to throw exceptions)
     static void injectFault();

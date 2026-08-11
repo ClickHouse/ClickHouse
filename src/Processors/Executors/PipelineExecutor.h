@@ -14,6 +14,8 @@
 
 #include <boost/container/devector.hpp>
 
+class MemoryTracker;
+
 
 namespace DB
 {
@@ -99,6 +101,11 @@ private:
     /// held here from the first `executeStep` call until `finalizeExecution` (or the executor
     /// destruction, if the pipeline is cancelled). Zero when no reservation is held.
     Int64 single_thread_speculative_reservation = 0;
+    /// The query tracker the reservation above was credited to for the overcommit victim
+    /// ranking (see `CurrentMemoryTracker::allocGlobal`); it must be passed back on release
+    /// because the destruction path may run on a different thread. The pointee is owned by
+    /// the query's thread group, which `process_list_element` keeps alive.
+    MemoryTracker * single_thread_speculative_reservation_tracker = nullptr;
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
 
