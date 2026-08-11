@@ -126,6 +126,131 @@ def is_latest_release_branch(branch: str, repo: str = GITHUB_REPOSITORY) -> bool
     return latest_branch == branch
 
 
+def _list_matching_refs(kind: str, prefix: str, repo: str) -> List[str]:
+    """Short names of the `kind` ("heads" / "tags") refs that start with `prefix`.
+
+    `git/matching-refs` is authoritative and needs nothing fetched locally —
+    unlike the eventually-consistent PR search index (`gh pr list --search
+    "head:..."` misses recently-created PRs) and unlike a local `git tag` scan,
+    which the release job deliberately avoids. A zero-match prefix returns `[]`
+    (HTTP 200), so an empty command output means the retried read itself failed;
+    raise rather than let a caller mistake a transient GitHub error for a clean
+    state."""
+    api_path = f"/repos/{repo}/git/matching-refs/{kind}/{prefix}"
+    raw = GH.get_output_with_retries(f"gh api {shlex.quote(api_path)} --jq '[.[].ref]'")
+    if not raw:
+        raise RuntimeError(
+            f"gh api matching-refs failed for [{kind}/{prefix}] in repo [{repo}] "
+            f"after retries; refusing to treat a failed lookup as 'no match'"
+        )
+    return [ref.removeprefix(f"refs/{kind}/") for ref in json.loads(raw)]
+
+
+def find_unbumped_release_tag(
+    version: CHVersion, release_tag: str, repo: str = GITHUB_REPOSITORY
+) -> str:
+    """Tag of a release already published at the same patch as `release_tag`, or
+    '' if there is none.
+
+    Every release is followed by a version bump that increments the patch on the
+    release branch, so there is at most one release per patch: another tag at
+    `version.patch` means that release's bump never landed. The branch then
+    still describes the released patch and keeps counting the tweak from the
+    *previous* release's `VERSION_GITHASH`, so the next run mints a second,
+    higher-tweak release at the same patch that supersedes the first one for
+    good — this is how `v26.6.2.160` stranded `v26.6.2.158`.
+
+    Only `stable` / `lts` tags count — the whole codename universe a patch
+    release can produce (`get_stable_release_type`). `v{major}.{minor}.1.1-new`
+    marks the master commit a release branch was cut from, and the long-retired
+    `-testing` / `-prestable` tags (none past 22.4) were not releases on a branch
+    either, yet all of them share the `v{major}.{minor}.1.` prefix of the
+    branch's own first release (`v26.6.1.1-new` alongside `v26.6.1.1193-stable`),
+    so counting them would refuse every first release of a freshly cut branch.
+    `release_tag` itself is skipped too: an exact-tag collision is the
+    same-commit rerun / stale-version-file case that `prepare` decides below."""
+    release_codenames = (f"-{VersionType.STABLE}", f"-{VersionType.LTS}")
+    prefix = f"v{version.major}.{version.minor}.{version.patch}."
+    for tag in _list_matching_refs("tags", prefix, repo):
+        if tag == release_tag or not tag.endswith(release_codenames):
+            continue
+        return tag
+    return ""
+
+
+def find_orphaned_bump_version_pr(
+    current_version: str, repo: str = GITHUB_REPOSITORY
+) -> str:
+    """URL of an OPEN version-bump PR of an *earlier* new release, or '' if there
+    is none.
+
+    A new release bumps master's version through a `bump_version_<version>` PR.
+    That head branch is deleted when the PR merges, so a surviving branch whose
+    PR is still OPEN means master's version was never bumped for that release.
+    Cutting the next release on top of it leaves a PR that must not be merged any
+    more — its version file is a downgrade of the newer bump — while master keeps
+    describing a version that has already shipped. The PR state is confirmed with
+    the retried, fail-close `get_pr_state_by_branch`, so a transient GitHub error
+    raises instead of passing for 'no orphan'."""
+    for branch in _list_matching_refs("heads", "bump_version_", repo):
+        if branch == f"bump_version_{current_version}":
+            continue
+        if GH.get_pr_state_by_branch(branch, repo=repo) != "OPEN":
+            continue
+        return GH.get_pr_url_by_branch(branch, repo=repo)
+    return ""
+
+
+def find_orphaned_changelog_pr(
+    release_branch: str, current_release_tag: str, repo: str = GITHUB_REPOSITORY
+) -> str:
+    """URL of an OPEN changelog PR for an *earlier* release on `release_branch`,
+    or '' if there is none.
+
+    Such a PR is the signature of an orphaned release: a previous release on
+    this branch was published (tag, packages, docker images) but never
+    finalized because its `Update version_date.tsv and changelog` PR was never
+    merged. Cutting the next patch on top of it strands that changelog for good
+    — the new release supersedes the old tag, so no rerun will ever re-open and
+    merge it (this is exactly how v26.6.2.158 was stranded when a rerun minted
+    v26.6.2.160 instead of recovering it).
+
+    An open changelog PR alone is not proof: `release_job.py` opens it *before*
+    creating the GitHub Release and before package/docker publish, so a run that
+    died right after "Create ChangeLog PR" leaves an open PR for a release that
+    never shipped — not an orphan to finalize (merging it would land metadata
+    for a release that does not exist). The orphan signal therefore also
+    requires the release to have been published: a PUBLISHED GitHub Release for
+    the tag, which the job creates only after the changelog PR.
+
+    Changelog PR branches are `auto/v{major}.{minor}.{patch}.{tweak}-{codename}`
+    and are deleted when their PR merges, so a surviving `auto/v{branch}.` head
+    branch with an OPEN PR is the candidate. Both the PR state and the release
+    publish state are confirmed with retried, fail-close reads, so a transient
+    GitHub error raises rather than being mistaken for 'no orphan'."""
+    own_branch = f"auto/{current_release_tag}"
+    for branch in _list_matching_refs("heads", f"auto/v{release_branch}.", repo):
+        # Defensive: never flag this release's own changelog branch. It cannot
+        # reach this path anyway (the create branch runs before the changelog PR
+        # is opened, and a rerun with an existing tag recovers instead), but
+        # excluding it keeps the guard correct if that ordering ever changes.
+        if branch == own_branch:
+            continue
+        if GH.get_pr_state_by_branch(branch, repo=repo) != "OPEN":
+            continue
+        # Confirm the release actually shipped before treating the open PR as an
+        # orphan (see the post-publish-signal note above).
+        release_tag = branch.removeprefix("auto/")
+        if GH.get_release_publish_state(release_tag, repo=repo) != "PUBLISHED":
+            print(
+                f"Open changelog PR for [{release_tag}] but no published GitHub "
+                f"Release — nothing shipped, not an orphan; ignoring."
+            )
+            continue
+        return GH.get_pr_url_by_branch(branch, repo=repo)
+    return ""
+
+
 def update_contributors(raise_error: bool = False) -> None:
     if Git.is_shallow():
         msg = "The repository is shallow, refusing to update contributors"
@@ -299,6 +424,18 @@ class ReleaseInfo:
                 release_branch = f"{version.major}.{version.minor}"
                 expected_prev_tag = f"v{version.major}.{version.minor}.1.1-new"
                 version.bump_release().with_description(VersionType.NEW)
+                # An unmerged bump PR causes the latest-tag mismatch asserted below.
+                orphaned_bump_pr = find_orphaned_bump_version_pr(version.string)
+                if orphaned_bump_pr:
+                    raise RuntimeError(
+                        f"Refusing to release [{version.describe}] from "
+                        f"[{commit_ref}]: the version bump PR [{orphaned_bump_pr}] "
+                        f"of an earlier release is still open, so master's version "
+                        f"was never bumped for it. Merge it — or close it if that "
+                        f"release was abandoned — then retry; merging it after this "
+                        f"release would overwrite master's version file with an "
+                        f"older version."
+                    )
                 assert (
                     git.latest_tag == expected_prev_tag
                 ), f"BUG: latest tag [{git.latest_tag}], expected [{expected_prev_tag}]"
@@ -428,6 +565,35 @@ class ReleaseInfo:
                     f"so the only commit since the previous release is the "
                     f"automated version bump — there is nothing to release."
                 )
+            # Refuse to create the next patch while a previous release on this
+            # branch is unfinalized — published but with its version bump not
+            # landed or its changelog PR not merged; creating supersedes it and
+            # strands its metadata for good (see the two finders below). A
+            # branch/SHA ref reaches this create path, recovering an existing tag
+            # does not, so this never blocks the fix itself.
+            if release_type == "patch":
+                unbumped_tag = find_unbumped_release_tag(version, release_tag)
+                if unbumped_tag:
+                    raise RuntimeError(
+                        f"Refusing to create patch release [{release_tag}] from "
+                        f"[{commit_ref}]: release [{unbumped_tag}] is already "
+                        f"published at the same patch, so its post-release version "
+                        f"bump never landed on branch [{release_branch}] — the "
+                        f"version file at [{commit_ref}] still describes patch "
+                        f"[{version.patch}] and counts its tweak from the release "
+                        f"before [{unbumped_tag}]. Recover that release by "
+                        f"dispatching its tag (ref={unbumped_tag}), or land the "
+                        f"version bump on the branch, then retry."
+                    )
+                orphaned_pr = find_orphaned_changelog_pr(release_branch, release_tag)
+                if orphaned_pr:
+                    raise RuntimeError(
+                        f"Refusing to create patch release [{release_tag}] from "
+                        f"[{commit_ref}]: branch [{release_branch}] has an orphaned "
+                        f"release whose changelog PR [{orphaned_pr}] is still open. "
+                        f"Finalize it first — dispatch that release's tag to recover "
+                        f"it (ref=<tag>), or merge the PR — then retry."
+                    )
             recover = False
         self.create_new_release = not recover
         self.release_type = release_type

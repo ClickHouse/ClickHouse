@@ -272,6 +272,43 @@ class GH:
         return ""
 
     @classmethod
+    def get_release_publish_state(cls, tag, repo=None):
+        """'PUBLISHED' / 'DRAFT' / 'ABSENT' for the GitHub Release at `tag`.
+
+        Distinguishes a definitive "no such release" (HTTP 404, which
+        `gh release view` reports as ``release not found``) — returned as
+        ABSENT — from a transient/ambiguous failure, which raises after
+        retries (fail closed), so a flaky lookup is never mistaken for "no
+        release". Callers use a *published* release as a post-publish signal:
+        the release job creates the GitHub Release only after opening the
+        changelog PR, so a published release proves the run shipped, not merely
+        that its changelog PR was opened."""
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        cmd = (
+            f"gh release view {shlex.quote(tag)} --repo {shlex.quote(repo)}"
+            f' --json isDraft --jq \'if .isDraft then "DRAFT" else "PUBLISHED" end\''
+        )
+        retry_count = 0
+        out, err, ret_code = "", "", -1
+        while retry_count < Settings.MAX_RETRIES_GH:
+            ret_code, out, err = Shell.get_res_stdout_stderr(cmd)
+            if ret_code == 0 and out in ("PUBLISHED", "DRAFT"):
+                return out
+            # `gh release view` prints this for a tag that has no release
+            # (HTTP 404) — a definitive answer, not a transient failure.
+            if "release not found" in err.lower() or "HTTP 404" in err:
+                return "ABSENT"
+            retry_count += 1
+            delay = min(2 ** (retry_count + 1), 60)
+            time.sleep(delay)
+        raise RuntimeError(
+            f"gh release view failed for tag [{tag}] in repo [{repo}] after "
+            f"[{retry_count}] attempts (out:[{out}] err:[{err}]); refusing to "
+            f"treat a failed lookup as 'release absent'"
+        )
+
+    @classmethod
     def post_pr_comment(
         cls, comment_body, or_update_comment_with_substring="", pr=None, repo=None
     ):
