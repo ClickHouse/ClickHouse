@@ -278,7 +278,7 @@ Chunk KafkaSource::generateImpl()
                 if (!dead_letter_queue)
                     LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
                 else
-                    dead_letter_queue->add(DeadLetterQueueElement{
+                    dead_letter_queue->add([&](DeadLetterQueueElement & element) { element = DeadLetterQueueElement{
                             .table_engine = DeadLetterQueueElement::StreamType::Kafka,
                             .event_time = timeInSeconds(time_now),
                             .event_time_microseconds = timeInMicroseconds(time_now),
@@ -290,7 +290,7 @@ Chunk KafkaSource::generateImpl()
                                 .topic_name = consumer->currentTopic(),
                                 .partition = consumer->currentPartition(),
                                 .offset = consumer->currentOffset(),
-                                .key = consumer->currentKey()}});
+                                .key = consumer->currentKey()}}; });
             }
 
             total_rows = total_rows + new_rows;

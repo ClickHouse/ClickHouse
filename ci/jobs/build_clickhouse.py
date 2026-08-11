@@ -2,7 +2,7 @@ import argparse
 import os
 import shutil
 
-from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
+from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -96,6 +96,11 @@ def parse_args():
         help="Optional user-defined job start stage (for local run)",
         default=None,
     )
+    parser.add_argument(
+        "--build-examples",
+        help="Build `clickhouse-examples` in addition to the regular targets",
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -145,13 +150,6 @@ def setup_build_caches_env(info):
         if info.pr_number > 0:
             os.environ["CTCACHE_S3_READ_ONLY"] = "true"
 
-        os.environ["CH_HOSTNAME"] = (
-            "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        )
-        os.environ["CH_USER"] = "ci_builder"
-        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
-        os.environ["CH_USE_LOCAL_CACHE"] = "false"
-
 
 def main():
     args = parse_args()
@@ -172,8 +170,14 @@ def main():
     assert (
         build_type in BUILD_TYPE_TO_CMAKE
     ), f"--build_type option is invalid [{build_type}]"
+    assert not args.build_examples or build_type in (
+        BuildTypes.ARM_RELEASE,
+        BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+    ), "--build-examples is only supported for ARM release builds"
 
     cmake_cmd = BUILD_TYPE_TO_CMAKE[build_type]
+    if args.build_examples:
+        cmake_cmd += " -DENABLE_EXAMPLES=1"
     info = Info()
 
     # Cache-warmup build (MasterCI): compile with the PR release build's cmake
@@ -370,6 +374,8 @@ def main():
     if res and JobStages.BUILD in stages:
         if build_type == BuildTypes.ARM_FUZZERS:
             targets = "fuzzers"
+        elif args.build_examples:
+            targets = "clickhouse-bundle clickhouse-examples"
         elif build_type == BuildTypes.ARM_BINARY:
             targets = "clickhouse-bundle"
         elif build_type in (

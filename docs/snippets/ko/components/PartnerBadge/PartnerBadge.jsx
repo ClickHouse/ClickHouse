@@ -15,3 +15,5 @@ export const PartnerBadge = () => {
         </div>
     )
 }
+
+export default PartnerBadge;

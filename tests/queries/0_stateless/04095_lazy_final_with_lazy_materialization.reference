@@ -15,26 +15,27 @@
 === Full EXPLAIN ===
 Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
   Expression
-    JoinLazyColumnsStep
-      Limit (preliminary LIMIT)
-        Sorting (Sorting for ORDER BY)
-          Expression
-            Filter
-              Union
-                InputSelector
-                  LazyFinalKeyAnalysis
-                    CreatingSet
-                      Expression
+    Expression
+      JoinLazyColumnsStep
+        Limit (preliminary LIMIT)
+          Sorting (Sorting for ORDER BY)
+            Expression
+              Filter
+                Union
+                  InputSelector
+                    LazyFinalKeyAnalysis
+                      CreatingSet
                         Expression
-                          ReadFromMergeTree (default.t_lazy_both)
-                  JoinLazyColumnsStep
-                    LazyReadReplacingFinal
-                      Expression
-                        Aggregating
                           Expression
+                            ReadFromMergeTree (default.t_lazy_both)
+                    JoinLazyColumnsStep
+                      LazyReadReplacingFinal
+                        Expression
+                          Aggregating
                             Expression
-                              ReadFromMergeTree (default.t_lazy_both)
-                    LazilyReadFromMergeTree
+                              Expression
+                                ReadFromMergeTree (default.t_lazy_both)
+                      LazilyReadFromMergeTree
+                    ReadFromMergeTree (default.t_lazy_both)
                   ReadFromMergeTree (default.t_lazy_both)
-                ReadFromMergeTree (default.t_lazy_both)
-      LazilyReadFromMergeTree
+        LazilyReadFromMergeTree

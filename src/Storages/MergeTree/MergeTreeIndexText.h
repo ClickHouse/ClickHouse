@@ -445,6 +445,9 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 struct ITokenizer;
 using TokenizerPtr = const ITokenizer *;
 
+class MergeTreeIndexTextPostprocessor;
+struct MergeTreeIndexTextInlineFilter;
+
 struct MergeTreeIndexTextGranuleBuilder
 {
     MergeTreeIndexTextGranuleBuilder(
@@ -480,6 +483,9 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Position data for phrase query support.
     /// Only allocated when params.positions is true.
     std::unique_ptr<TokenToPositionListMap> position_map;
+    /// Fast path for IN/NOT IN filter-only postprocessors: when set, addToken drops a token before inserting it,
+    /// so dropped tokens allocate no map entry and build no postings. Non-owning.
+    const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
 };
 
 class MergeTreeIndexTextPreprocessor;
@@ -513,10 +519,15 @@ private:
 
     String index_column_name;
     MergeTreeIndexTextParams params;
+    /// A private clone of the index tokenizer when it is stateful (e.g. the Japanese or sparse-grams
+    /// tokenizers), so concurrent aggregators do not share mutable parsing state; null otherwise.
+    std::shared_ptr<const ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// True when the postprocessor is an IN/NOT IN filter handled by the per-distinct-token drop fast path.
+    bool use_postprocessor_drop_fast_path = false;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
@@ -535,10 +546,7 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(
-        const MergeTreeDataPartChecksums & checksums,
-        const std::string & path_prefix,
-        const IDataPartStorage * storage) const override;
+    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
@@ -552,6 +560,8 @@ public:
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
     MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
+    std::optional<String> normalized_index_column_name;
 };
 
 }

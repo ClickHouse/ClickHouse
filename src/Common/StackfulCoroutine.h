@@ -58,11 +58,9 @@ public:
         current_coroutine = parent_coroutine;
     }
 
-    static CoroutinePtr & getCurrentCoroutine()
-    {
-        thread_local static CoroutinePtr current_coroutine;
-        return current_coroutine;
-    }
+    /// Defined in `StackfulCoroutine.cpp`: a static local in a header-defined function gives every
+    /// shared object its own copy.
+    static CoroutinePtr & getCurrentCoroutine();
 
 private:
     template <typename Fn>

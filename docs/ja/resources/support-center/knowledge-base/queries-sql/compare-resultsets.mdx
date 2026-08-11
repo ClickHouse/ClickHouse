@@ -24,7 +24,7 @@ WITH
         SELECT sum(cityHash64(*))
         FROM
         (
-            -- クエリ1をここに記述
+            -- your query 1 here
             -- SELECT ...
         )
     ) AS q1_resultset_hash,
@@ -32,14 +32,14 @@ WITH
         SELECT sum(cityHash64(*))
         FROM
         (
-            -- クエリ2をここに記述
+            -- your query 2 here
             -- SELECT ...
         )
     ) AS q2_resultset_hash
 SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
 ```
 
-この例では、[CTE](/ja/reference/statements/select/with) を使って、これら 2 つのクエリにおける各行の [cityHash](/ja/reference/functions/regular-functions/hash-functions#cityhash64) 値の合計を計算し、2 つの結果セットが同一であれば `1` を返します。
+この例では、[CTE](/ja/reference/statements/select/with) を使って、これら 2 つのクエリにおける各行の [cityHash](/ja/reference/functions/regular-functions/hash-functions#cityHash64) 値の合計を計算し、2 つの結果セットが同一であれば `1` を返します。
 
 整数のシーケンスデータと Pretty フォーマットを使用した例:
 

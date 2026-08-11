@@ -40,7 +40,7 @@ ClickPipes 目前尚不支持 AWS Glue Schema Registry 或 Azure Schema Registry
 
 ClickPipes 会通过您提供的 URL 使用 HTTPS 连接到 Schema Registry。Schema Registry 无需可通过公网访问。
 
-如果您的 Kafka 消息代理是通过[反向专用终结点](/zh/integrations/clickpipes/aws-privatelink) (AWS PrivateLink 或 GCP Private Service Connect) 访问的，Schema Registry 也可以使用相同的私有连接。ClickPipes 会通过反向专用终结点的私有 DNS 解析 registry 主机名，因此，只要其主机名解析到反向专用终结点的私有 IP 地址 (通过该端点的私有 DNS 支持或自定义私有 DNS 映射) ，与消息代理一起私有托管的 registry 就可以访问。
+如果您的 Kafka 消息代理是通过[反向专用终结点](/zh/integrations/clickpipes/aws-privatelink) (AWS PrivateLink 或 GCP Private Service Connect) 访问的，Schema Registry 也可以使用相同的私有连接。ClickPipes 会通过反向专用终结点的私有 DNS 解析 registry 主机名，因此，只要其主机名解析到反向专用终结点的私有 IP 地址 (通过该端点的私有 DNS 支持或[自定义私有 DNS 映射](/zh/integrations/clickpipes/aws-privatelink#custom-private-dns))，与消息代理一起私有托管的 registry 就可以访问。
 
 请注意以下事项：
 

@@ -19,7 +19,11 @@ IConnectionPool::IConnectionPool(String host_, UInt16 port_, Priority config_pri
 
 Poco::Timespan::TimeDiff connectionPoolMaxWaitMilliseconds(const Settings & settings)
 {
-    return settings[Setting::connection_pool_max_wait_ms].totalMilliseconds();
+    /// `connection_pool_max_wait_ms` documents 0 as an infinite timeout and is unsigned, so a
+    /// negative value cannot be written. `PoolBase::get` spells "infinite" as a negative timeout,
+    /// hence the translation: without it 0 selects a zero-length wait and the retry loop spins.
+    const Int64 wait_ms = settings[Setting::connection_pool_max_wait_ms].totalMilliseconds();
+    return wait_ms > 0 ? wait_ms : -1;
 }
 
 

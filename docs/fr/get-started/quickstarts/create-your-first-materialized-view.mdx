@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Introduction aux vues matérialisées'
 title: 'Créez votre première vue matérialisée'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['Analyse en temps réel', 'Entreposage de données']
 products: ['Cloud']
 description: 'Apprenez à utiliser les vues matérialisées dans ClickHouse pour précalculer et stocker les résultats d’une requête avec un ordre de tri différent, afin d’effectuer rapidement des recherches sur des colonnes non couvertes par votre clé primaire.'
 ---
@@ -15,8 +15,8 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">Analytique en temps réel</Badge>
-  <Badge size="lg" color="blue">Data warehousing</Badge>
+  <Badge size="lg" color="blue">Analyse en temps réel</Badge>
+  <Badge size="lg" color="blue">Entreposage de données</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
 
@@ -39,9 +39,7 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
 À la fin, vous comprendrez comment les vues matérialisées fonctionnent comme des déclencheurs à l’insertion, comment réinjecter les données existantes, ainsi que le compromis en espace disque qu’implique le stockage des données en double.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Comprendre pourquoi vous avez besoin d’une vue matérialisée
-
+  <Step title="Comprendre pourquoi vous avez besoin d’une vue matérialisée" id="understand-why-you-need-a-materialized-view">
     Votre table `uk_price_paid` est triée selon `(postcode, addr1, addr2)`. Cela signifie que ClickHouse peut ignorer de grands blocs de données lorsque vous filtrez sur `postcode`, `addr1` ou `addr2`, mais les requêtes qui filtrent sur `town` doivent parcourir chaque ligne — les 30 millions.
 
     Vous pourriez créer une deuxième table avec un `ORDER BY` différent, mais il faudrait alors penser à insérer les nouvelles données dans les deux tables à chaque arrivée. Une **vue matérialisée** automatise cela : elle surveille les insertions dans une table source, transforme les lignes, puis les écrit automatiquement dans une table de destination.
@@ -49,9 +47,7 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
     Considérez une vue matérialisée comme un **déclencheur d’insertion** : chaque fois que des lignes sont insérées dans la table source, la requête `SELECT` de la MV s’exécute sur le nouveau bloc de lignes, puis le résultat est inséré dans la table de destination.
   </Step>
 
-  <Step>
-    ### Créer la table de destination
-
+  <Step title="Créer la table de destination" id="create-the-destination-table">
     Une vue matérialisée a besoin d’un emplacement où stocker sa sortie. Il s’agit simplement d’une table MergeTree standard : vous avez un contrôle total sur son schéma, `ORDER BY` et `PARTITION BY`.
 
     Créez une table triée par `(town, date)` avec uniquement les colonnes nécessaires aux requêtes par ville :
@@ -78,9 +74,7 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
     ```
   </Step>
 
-  <Step>
-    ### Créer la vue matérialisée
-
+  <Step title="Créer la vue matérialisée" id="create-the-materialized-view">
     Créez maintenant la vue matérialisée qui relie la table source (`uk_price_paid`) à la table de destination (`uk_price_paid_by_town`) :
 
     ```sql
@@ -99,9 +93,7 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
     Attention toutefois : les vues matérialisées ne se déclenchent que lors des **insertions**. Si vous supprimez ou mettez à jour des lignes dans la table source, la table de destination n’en est pas informée - les vues matérialisées ne restent pas synchronisées avec les suppressions ou les mises à jour. Si vous avez besoin de ce type de synchronisation, envisagez plutôt d’utiliser des [projections](/fr/reference/statements/alter/projection).
   </Step>
 
-  <Step>
-    ### Charger les données historiques
-
+  <Step title="Charger les données historiques" id="backfill-existing-data">
     La vue matérialisée ne traite que les insertions *futures*. Les 30 millions de lignes déjà présentes dans `uk_price_paid` ont été insérées avant que la vue matérialisée n’existe, la table de destination est donc actuellement vide.
 
     Chargez-les manuellement :
@@ -133,9 +125,7 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
     Les deux tables doivent avoir le même nombre de lignes.
   </Step>
 
-  <Step>
-    ### Interroger la table de destination de la vue matérialisée
-
+  <Step title="Interroger la table de destination de la vue matérialisée" id="query-the-materialized-view-destination-table">
     Exécutez maintenant une requête avec un filtre sur `town` dans la table de destination, puis comparez le résultat à celui obtenu en interrogeant directement la table source.
 
     Commencez par interroger la table source :
@@ -178,9 +168,7 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
     Il est donc recommandé de créer des vues matérialisées avec la clause `TO`.
   </Step>
 
-  <Step>
-    ### Observez que les données sont stockées en double
-
+  <Step title="Observez que les données sont stockées en double" id="observe-the-data-is-stored-twice">
     Les vues matérialisées offrent des lectures plus rapides, au prix d&#39;un espace disque supplémentaire. Interrogez `system.parts` pour voir combien d&#39;espace chaque table utilise :
 
     ```sql
@@ -201,9 +189,11 @@ Dans ce guide de démarrage rapide, vous allez résoudre ce problème en créant
   </Step>
 </Steps>
 
-## Étapes suivantes
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
 
-Dans ce guide de démarrage rapide, vous avez créé une vue matérialisée pour stocker des données de ventes immobilières au Royaume-Uni avec un ordre de tri différent, afin de permettre des recherches rapides par ville sans modifier votre table d’origine. Vous avez appris que les MV agissent comme des déclencheurs à l’insertion, que les données existantes doivent être rechargées manuellement pour compléter l’historique, et que cela se fait au prix d’un espace disque supplémentaire.
+Dans ce guide de démarrage rapide, vous avez créé une vue matérialisée pour stocker des données de ventes immobilières au Royaume-Uni avec un ordre de tri différent, afin de permettre des recherches rapides par ville sans modifier votre table d’origine. Vous avez appris que les MV agissent comme des déclencheurs à l’insertion, que les données existantes doivent être réinjectées manuellement pour compléter l’historique, et que cela se fait au prix d’un espace disque supplémentaire.
 
 Consultez ensuite les guides de démarrage rapide suivants :
 

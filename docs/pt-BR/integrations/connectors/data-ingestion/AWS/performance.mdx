@@ -9,14 +9,13 @@ keywords: ['s3', 'desempenho', 'otimização', 'armazenamento de objetos', 'carr
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-Esta seção se concentra em otimizar o desempenho da leitura e inserção de dados no S3 usando as [funções de tabela S3](/pt-BR/reference/functions/table-functions/s3).
+Esta seção se concentra em otimizar o desempenho da leitura e inserção de dados no S3 usando as [funções de tabela do S3](/pt-BR/reference/functions/table-functions/s3).
 
 <Info>
   **A lição descrita neste guia pode ser aplicada a outras implementações de armazenamento de objetos com suas próprias funções de tabela dedicadas, como [GCS](/pt-BR/reference/functions/table-functions/gcs) e [Azure Blob storage](/pt-BR/reference/functions/table-functions/azureBlobStorage).**
-
 </Info>
 
-Antes de ajustar threads e tamanhos de bloco para melhorar o desempenho de inserção, recomendamos que os usuários entendam como funcionam as inserções no S3. Se você já conhece esse processo, ou só quer algumas dicas rápidas, pule para o exemplo [abaixo](/pt-BR/integrations/connectors/data-ingestion/AWS/performance#example-dataset).
+Antes de ajustar threads e tamanhos de bloco para melhorar o desempenho de inserção, recomendamos que os usuários entendam o mecanismo de inserção no S3. Se você já conhece esse processo, ou só quer algumas dicas rápidas, pule para o exemplo [abaixo](/pt-BR/integrations/connectors/data-ingestion/AWS/performance#example-dataset).
 
 <div id="insert-mechanics-single-node">
   ## Mecanismos de inserção (nó único)
@@ -41,19 +40,19 @@ Ao usar uma consulta `INSERT INTO SELECT` em combinação com um motor de tabela
 Até que os dados sejam totalmente carregados, o servidor executa um loop:
 
 ```bash
-① Extrair e analisar a próxima porção de dados e formar um bloco de dados em memória (um por chave de particionamento) a partir dela.
+① Pull and parse the next portion of data and form an in-memory data block (one per partitioning key) from it.
 
-② Gravar o bloco em uma nova parte no armazenamento.
+② Write the block into a new part on storage.
 
-Ir para ① 
+Go to ① 
 ```
 
-Em ①, o tamanho depende do tamanho do bloco de insert, que pode ser controlado com duas configurações:
+Em ①, o tamanho depende do tamanho do bloco de inserção, que pode ser controlado com duas configurações:
 
 * [`min_insert_block_size_rows`](/pt-BR/reference/settings/session-settings#min_insert_block_size_rows) (padrão: `1048545` linhas)
 * [`min_insert_block_size_bytes`](/pt-BR/reference/settings/session-settings#min_insert_block_size_bytes) (padrão: `256 MiB`)
 
-Quando o número especificado de linhas for coletado no bloco de insert, ou a quantidade de dados configurada for atingida (o que ocorrer primeiro), isso acionará a gravação do bloco em uma nova parte. O loop de insert continua no passo ①.
+Quando o número especificado de linhas for coletado no bloco de inserção, ou a quantidade de dados configurada for atingida (o que ocorrer primeiro), isso acionará a gravação do bloco em uma nova parte. O loop de inserção continua no passo ①.
 
 Observe que o valor de `min_insert_block_size_bytes` indica o tamanho do bloco não compactado em memória (e não o tamanho da parte compactada em disco). Além disso, observe que os blocos e partes criados raramente contêm exatamente a quantidade configurada de linhas ou bytes, porque o ClickHouse faz streaming e [processa](https://clickhouse.com/company/events/query-performance-introspection) os dados em [blocos](/pt-BR/reference/settings/session-settings#max_block_size) de linhas. Portanto, essas configurações especificam limites mínimos.
 
@@ -97,23 +96,23 @@ Um servidor ClickHouse pode processar e inserir dados em paralelo. O nível de p
 
 Funções de tabela como `s3` permitem especificar conjuntos de nomes de arquivos a serem carregados por meio de padrões glob. Quando um padrão glob corresponde a vários arquivos existentes, o ClickHouse pode paralelizar as leituras entre esses arquivos e dentro de cada arquivo e inserir os dados em paralelo em uma tabela, utilizando threads de insert executadas em paralelo (por servidor):
 
-<Image img="/images/integrations/data-ingestion/s3/insert_threads.webp" size="lg" border alt="Threads de insert paralelas no ClickHouse" />
+<Image img="/images/integrations/data-ingestion/s3/insert_threads.webp" size="lg" border alt="Threads de inserção paralelas no ClickHouse" />
 
 Até que todos os dados de todos os arquivos sejam processados, cada thread de insert executa um loop:
 
 ```bash
-① Obter a próxima porção de dados de arquivo não processados (o tamanho da porção é baseado no tamanho de bloco configurado) e criar um bloco de dados em memória a partir dela.
+① Get the next portion of unprocessed file data (portion size is based on the configured block size) and create an in-memory data block from it.
 
-② Gravar o bloco em uma nova part no armazenamento.
+② Write the block into a new part on storage.
 
-Ir para ①. 
+Go to ①. 
 ```
 
 O número dessas threads paralelas de insert pode ser configurado pela setting [`max_insert_threads`](/pt-BR/reference/settings/session-settings#max_insert_threads). O valor padrão é `1` no ClickHouse open-source e 4 no [ClickHouse Cloud](https://clickhouse.com/cloud).
 
 Com um grande número de arquivos, o processamento paralelo por várias threads de insert funciona bem. Ele pode saturar completamente tanto os núcleos de CPU disponíveis quanto a largura de banda da rede (para downloads paralelos de arquivos). Em cenários em que apenas alguns arquivos grandes serão carregados em uma tabela, o ClickHouse estabelece automaticamente um alto nível de paralelismo no processamento de dados e otimiza o uso da largura de banda da rede criando threads de leitura adicionais por thread de insert para ler (baixar) em paralelo mais intervalos distintos dentro de arquivos grandes.
 
-Para a função s3 e a tabela s3, o download paralelo de um arquivo individual é determinado pelos valores [max&#95;download&#95;threads](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_threads) e [max&#95;download&#95;buffer&#95;size](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_buffer_size). Os arquivos só serão baixados em paralelo se o tamanho deles for maior que `2 * max_download_buffer_size`. Por padrão, `max_download_buffer_size` é definido como 10MiB. Em alguns casos, você pode aumentar com segurança esse tamanho de buffer para 50 MB (`max_download_buffer_size=52428800`), com o objetivo de garantir que cada arquivo seja baixado por uma única thread. Isso pode reduzir o tempo que cada thread gasta fazendo chamadas ao S3 e, assim, também diminuir o tempo de espera no S3. Além disso, para arquivos pequenos demais para leitura paralela, o ClickHouse faz automaticamente a pré-busca de dados, pré-lendo esses arquivos de forma assíncrona para aumentar a taxa de transferência.
+Para a função s3 e a tabela s3, o download paralelo de um arquivo individual é determinado pelos valores [max&#95;download&#95;threads](/operations/settings/settings#max_download_threads) e [max&#95;download&#95;buffer&#95;size](/operations/settings/settings#max_download_buffer_size). Os arquivos só serão baixados em paralelo se o tamanho deles for maior que `2 * max_download_buffer_size`. Por padrão, `max_download_buffer_size` é definido como 10MiB. Em alguns casos, você pode aumentar com segurança esse tamanho de buffer para 50 MB (`max_download_buffer_size=52428800`), com o objetivo de garantir que cada arquivo seja baixado por uma única thread. Isso pode reduzir o tempo que cada thread gasta fazendo chamadas ao S3 e, assim, também diminuir o tempo de espera no S3. Além disso, para arquivos pequenos demais para leitura paralela, o ClickHouse faz automaticamente a pré-busca de dados, pré-lendo esses arquivos de forma assíncrona para aumentar a taxa de transferência.
 
 <div id="measuring-performance">
   ## Medição de desempenho
@@ -350,11 +349,11 @@ SETTINGS max_threads = 92
   ### Escalonamento horizontal
 </div>
 
-Com o tempo, o escalonamento horizontal costuma se tornar necessário devido à disponibilidade de hardware e ao melhor custo-benefício. No ClickHouse Cloud, clusters de produção têm pelo menos 3 nós. Por isso, talvez você também queira utilizar todos os nós para um insert.
+Com o tempo, o escalonamento horizontal costuma se tornar necessário devido à disponibilidade de hardware e ao melhor custo-benefício. No ClickHouse Cloud, clusters de produção têm pelo menos 3 nós. Por isso, talvez você também queira utilizar todos os nós para uma inserção.
 
 Utilizar um cluster para leituras do S3 exige o uso da função `s3Cluster`, conforme descrito em [Utilizando clusters](/pt-BR/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters). Isso permite distribuir as leituras entre os nós.
 
-O servidor que recebe inicialmente a consulta de insert primeiro resolve o padrão glob e, em seguida, distribui dinamicamente o processamento de cada arquivo correspondente entre si e os outros servidores.
+O servidor que recebe inicialmente a consulta de inserção primeiro resolve o padrão glob e, em seguida, distribui dinamicamente o processamento de cada arquivo correspondente entre si e os outros servidores.
 
 <Image img="/images/integrations/data-ingestion/s3/s3Cluster.webp" size="lg" border alt="função s3Cluster no ClickHouse" />
 

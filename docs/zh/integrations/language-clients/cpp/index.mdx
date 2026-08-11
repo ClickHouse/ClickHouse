@@ -1,0 +1,178 @@
+---
+description: 'ClickHouse C++ 客户端库及其与 u-server 框架集成的文档'
+sidebarTitle: 'C++'
+slug: /interfaces/cpp
+title: 'C++ 客户端库'
+doc_type: 'reference'
+---
+
+`clickhouse-cpp` 是 ClickHouse 官方的 C++ 客户端库，使用其原生二进制协议为 ClickHouse 提供快速且类型安全的接口。
+
+构建说明、使用示例以及更多文档可在该项目的
+GitHub 存储库中找到：[https://github.com/ClickHouse/clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp)。
+
+<Note>
+  该库仍在持续积极开发中。虽然它已支持 ClickHouse 的核心功能，
+  但部分功能和数据类型可能尚未完全实现或支持。
+
+  您的反馈非常宝贵，有助于我们确定新功能和改进的优先级。
+  如果您遇到限制、功能缺失或异常行为，请通过 issue 跟踪器提交您的观察或功能请求： 
+  [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
+</Note>
+
+<div id="including-library-into-project">
+  ## 将库纳入你的项目
+</div>
+
+将库纳入项目的最简单方法是使用 CMake 的 `FetchContent`
+模块。通过这种方式，你可以锁定特定的库版本，并将其作为常规
+CMake 工作流的一部分进行构建。
+
+```cmake
+include(FetchContent)
+
+set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
+FetchContent_Declare(
+    clickhouse-cpp
+    GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
+    GIT_TAG v2.6.0   # can also be `master` or other banch
+)
+FetchContent_MakeAvailable(clickhouse-cpp)
+```
+
+`WITH_OPENSSL` 选项会为库启用 TLS 支持，在连接到
+ClickHouse Cloud 或其他启用了 SSL 的 ClickHouse 部署时必须启用。虽然对于非 TLS
+连接可以省略该选项，但通常仍建议启用。
+
+构建带有 SSL 支持的版本需要先安装 OpenSSL 开发包。在 Debian、Ubuntu 及其衍生版上，请安装
+`libssl-dev`；在 Fedora、Red Hat 上，请安装 `openssl-devel`；在 macOS 上，请使用 homebrew 安装
+`openssl`。
+
+依赖可用后，将你的目标链接到导出的库目标：
+
+```cmake
+target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
+```
+
+<div id="examples">
+  ## 示例
+</div>
+
+<div id="example-setup-client">
+  ### 设置 Client 对象
+</div>
+
+创建一个 `Client` 实例，以建立与 ClickHouse 的连接。下面的示例
+演示了如何连接到本地 ClickHouse 实例：该实例无需密码，且未
+启用 SSL。
+
+```cpp
+#include <clickhouse/client.h>
+
+clickhouse::Client client{clickhouse::ClientOptions().SetHost("localhost")};
+```
+
+在更高级的配置中，需要进行额外设置。以下示例演示了
+如何使用多个附加参数连接到 ClickHouse Cloud 实例：
+
+```cpp
+#include <clickhouse/client.h>
+
+clickhouse::Client client{
+    clickhouse::ClientOptions{}
+      .SetHost("your.instance.clickhouse.cloud")
+      .SetUser("default")
+      .SetPassword("your-password")
+      .SetSSLOptions({})   // Enable SSL
+      .SetPort(9440)       // for connections over SSL ClickHouse Cloud uses port 9440
+    };
+```
+
+<div id="example-create-table">
+  ### 创建表并执行不返回数据的查询
+</div>
+
+要执行不返回任何数据的查询 (例如创建表) ，请使用 `Execute` 方法。
+同样的方法也适用于其他语句，例如 `ALTER TABLE`、`DROP` 等。
+
+```cpp
+client.Execute(R"(
+    CREATE TABLE IF NOT EXISTS greetings (
+        id UInt64,
+        message String,
+        language String)
+    ENGINE = MergeTree ORDER BY id)");
+```
+
+<div id="example-insert-data">
+  ### 插入数据
+</div>
+
+要将数据插入表中，请先构造一个 `Block`，并用与表 schema 匹配的列对象填充它。数据按列依次追加，随后通过 `Insert` 方法一次性插入；该方法针对高效批次写入进行了优化。
+
+```cpp
+auto id = std::make_shared<clickhouse::ColumnUInt64>();
+auto message = std::make_shared<clickhouse::ColumnString>();
+auto language = std::make_shared<clickhouse::ColumnString>();
+
+id->Append(1);
+message->Append("Hello, World!");
+language->Append("English");
+
+id->Append(2);
+message->Append("¡Hola, Mundo!");
+language->Append("Spanish");
+
+id->Append(3);
+message->Append("Hallo wereld!");
+language->Append("Dutch");
+
+clickhouse::Block block{};
+block.AppendColumn("id", id);
+block.AppendColumn("message", message);
+block.AppendColumn("language", language);
+
+client.Insert("greetings", block);
+```
+
+<div id="example-select">
+  ### 选择数据
+</div>
+
+要执行返回数据的查询，请使用 `Select` 方法，并提供一个回调函数来处理结果。查询结果会以 `Block` 对象的形式返回，这反映了 ClickHouse 原生的列式数据表示。
+
+```cpp
+client.Select(
+    "SELECT id, message, language FROM greetings",
+    [](const clickhouse::Block & block){
+        for (size_t i = 0; i < block.GetRowCount(); ++i) {
+            auto id = block[0]->AsStrict<clickhouse::ColumnUInt64>()->At(i);
+            auto message = block[1]->AsStrict<clickhouse::ColumnString>()->At(i);
+            auto language = block[2]->AsStrict<clickhouse::ColumnString>()->At(i);
+            std::cout << id << "\t" << message << "\t" << language << "\n";
+        }
+    });
+```
+
+<div id="supported-data-types">
+  ## 支持的数据类型
+</div>
+
+* `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
+* `UInt128`, `Int128`
+* `Decimal32`, `Decimal64`, `Decimal128`
+* `Float32`, `Float64`
+* `Date`
+* `DateTime`, `DateTime64`
+* `DateTime([timezone])`, `DateTime64(N, [timezone])`
+* `UUID`
+* `Enum8`, `Enum16`
+* `String`
+* `FixedString(N)`
+* `LowCardinality(String)` 和 `LowCardinality(FixedString(N))`
+* `Nullable(T)`
+* `Array(T)`
+* `Tuple`
+* `Map`
+* `IPv4`, `IPv6`
+* `Point`, `Ring`, `Polygon`, `MultiPolygon`

@@ -10,6 +10,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -52,6 +53,14 @@ void CompressionCodecFactory::validateCodec(
         validateCodecAndGetPreprocessedAST(makeASTFunction("CODEC", identifier),
             {}, sanity_check, allow_experimental_codecs);
     }
+}
+
+void CompressionCodecFactory::validateCodecString(
+    const String & compression_codec, bool sanity_check, bool allow_experimental_codecs) const
+{
+    ParserCodec codec_parser;
+    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    validateCodecAndGetPreprocessedAST(ast, {}, sanity_check, allow_experimental_codecs);
 }
 
 namespace
