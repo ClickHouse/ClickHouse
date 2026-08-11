@@ -1097,6 +1097,16 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
         /// PostgreSQL('host:port', 'database', 'user', 'password')
         findMySQLDatabaseSecretArguments();
     }
+    else if (engine_name == "Remote" || engine_name == "RemoteSecure")
+    {
+        /// Remote('addresses_expr', 'database', 'user', 'password')
+        /// RemoteSecure(...) - same as Remote(...)
+        /// The password is the last positional argument (or `password = ...` in the named-collection
+        /// form), exactly like the MySQL/PostgreSQL database engines. Note this differs from the
+        /// `Remote`/`RemoteSecure` *table* engine signature (which also has a table name), so the
+        /// database engine cannot reuse `findRemoteFunctionSecretArguments`.
+        findMySQLDatabaseSecretArguments();
+    }
     else if (engine_name == "S3")
     {
         /// S3('url', 'access_key_id', 'secret_access_key')
