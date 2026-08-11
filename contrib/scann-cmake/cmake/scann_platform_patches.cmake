@@ -15,6 +15,22 @@ if (ARCH_AMD64)
     )
 endif()
 
+# In debug builds Highway does not expose constexpr lane counts, so ScaNN aliases its
+# `highway` namespace to `fallback`. The non-x86 dispatch calls
+# `highway::OneToManyInt8FloatImpl`, but upstream only provides fallback implementations
+# for `BFloat16` and `UInt4`. Add the missing `Int8` implementation to a generated header copy;
+# release builds with Highway SIMD still use the original optimized implementation.
+set(_asymmetric_src "${SCANN_SOURCE_DIR}/scann/distance_measures/one_to_many/one_to_many_asymmetric.h")
+set(_asymmetric_dst "${CMAKE_CURRENT_BINARY_DIR}/scann/distance_measures/one_to_many/one_to_many_asymmetric.h")
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/scann/distance_measures/one_to_many")
+configure_file("${_asymmetric_src}" "${_asymmetric_dst}" COPYONLY)
+file(READ "${_asymmetric_dst}" _asymmetric_content)
+scann_checked_replace(
+    "namespace fallback {\n\ntemplate <bool kHasIndices, bool kIsSquaredL2"
+    "namespace fallback {\n\n#include \"scann_one_to_many_int8_fallback.h\"\n\ntemplate <bool kHasIndices, bool kIsSquaredL2"
+    _asymmetric_content "${_asymmetric_content}")
+file(WRITE "${_asymmetric_dst}" "${_asymmetric_content}")
+
 # ScaNN's SCANN_SSE4 attribute is empty and relies on Bazel applying SSE4.1
 # flags to every translation unit that instantiates the corresponding header
 # templates.  That assumption does not hold for amd_compat.  Give only these
