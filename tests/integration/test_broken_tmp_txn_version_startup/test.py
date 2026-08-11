@@ -138,7 +138,12 @@ def test_dummy_tid_load_with_stale_tmp_txn_version(started_cluster):
             "SELECT"
             " 'rolled_back_part',"
             " active,"
-            " creation_tid = (1, 2, '00000000-0000-0000-0000-000000000000') AS is_dummy_tid,"
+            # Compare the TID components rather than the whole tuple: downstream builds
+            # extend the `creation_tid` tuple with extra elements, and comparing tuples
+            # of different sizes throws `ILLEGAL_TYPE_OF_ARGUMENT`.
+            " creation_tid.1 = 1 AND creation_tid.2 = 2"
+            " AND creation_tid.3 = toUUID('00000000-0000-0000-0000-000000000000')"
+            " AS is_dummy_tid,"
             " creation_csn = 18446744073709551615 AS is_rolled_back_csn"
             " FROM system.parts"
             " WHERE database = 'default'"
