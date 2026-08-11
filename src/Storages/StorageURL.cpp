@@ -431,6 +431,14 @@ StorageURLSource::StorageURLSource(
         }
         while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
 
+        /// A cancellation which has arrived while the URI was being chosen - after the loop above
+        /// passed its checks, see getFirstAvailableURIAndReadBuffer - must not start the requests
+        /// below for the metadata of a file no one is left to read: end the stream. Both kinds of
+        /// the cancellation converge here: after a soft one the query succeeds with what it has
+        /// already read, and after a hard teardown the failure or the kill is reported elsewhere.
+        if (cancellation->isCancelled())
+            return false;
+
         curr_uri = uri_and_buf.first;
         current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
         read_buf = std::move(uri_and_buf.second);
