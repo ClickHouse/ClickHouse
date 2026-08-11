@@ -179,7 +179,7 @@ export const ReferenceExplorer = ({ index }) => {
         paddingRight: '1.75rem',
       }}
     >
-      <header className="max-w-3xl pt-5 mb-6">
+      <header className="pt-5 mb-6">
         <h1 id="reference" className="m-0 text-4xl font-bold tracking-tight text-gray-900 dark:text-zinc-50">
           Reference
         </h1>
