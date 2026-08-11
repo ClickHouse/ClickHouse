@@ -89,3 +89,34 @@ DROP TABLE events_04872;
 DROP TABLE events_date_04872;
 DROP TABLE events_dt64_04872;
 DROP TABLE keys_04872;
+
+-- A key expression must be deterministic, so this function is refused for one on every path,
+-- including the attach path an upgraded server takes for a table an earlier version accepted.
+-- `ATTACH TABLE` with an inline schema is the only shape reaching the storage constructor in
+-- attach mode from a query, and only an Ordinary database parses it.
+SET allow_deprecated_database_ordinary = 1;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
+
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_sorting_key
+    (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree
+    ORDER BY runningConcurrency(s, e); -- { serverError BAD_ARGUMENTS }
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.legacy_partition_key
+    (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree
+    PARTITION BY runningConcurrency(s, e) ORDER BY a; -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.rejected
+    (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree
+    ORDER BY runningConcurrency(s, e); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.rejected
+    (a UInt64, s DateTime, e DateTime) ENGINE = MergeTree
+    PARTITION BY runningConcurrency(s, e) ORDER BY a; -- { serverError BAD_ARGUMENTS }
+
+-- `MODIFY ORDER BY` may only extend the key with newly added columns, and such a column may not
+-- carry a default, so both columns are added in the same statement without one.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.altered (a UInt64) ENGINE = MergeTree ORDER BY a;
+ALTER TABLE {CLICKHOUSE_DATABASE_1:Identifier}.altered
+    ADD COLUMN s2 DateTime, ADD COLUMN e2 DateTime,
+    MODIFY ORDER BY (a, runningConcurrency(s2, e2)); -- { serverError BAD_ARGUMENTS }
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
