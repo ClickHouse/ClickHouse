@@ -14,23 +14,23 @@ SYSTEM STOP MERGES t_vrow_select_final;
 INSERT INTO t_vrow_select_final SELECT number, 1 FROM numbers(8192);
 INSERT INTO t_vrow_select_final SELECT number, 2 FROM numbers(8192);
 
+-- Every SETTINGS clause below sits on the outermost statement: one attached to an inner subquery
+-- loses to the same setting arriving as a client option.
 SELECT count(), sum(y)
-FROM (SELECT x, y FROM t_vrow_select_final FINAL ORDER BY x LIMIT 20000
-      SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1);
+FROM (SELECT x, y FROM t_vrow_select_final FINAL ORDER BY x LIMIT 20000)
+SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, enable_parallel_replicas = 0;
 
 SELECT x, y FROM t_vrow_select_final FINAL ORDER BY x LIMIT 3
-SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1;
+SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, enable_parallel_replicas = 0;
 
 SELECT count()
-FROM (SELECT x FROM t_vrow_select_final ORDER BY x LIMIT 20000
-      SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1);
+FROM (SELECT x FROM t_vrow_select_final ORDER BY x LIMIT 20000)
+SETTINGS optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, enable_parallel_replicas = 0;
 
 -- The row counts above stay correct whenever the virtual row is never attempted, so assert as a
 -- pair that the in-order FINAL read carries no virtual row conversion while the same fixture
 -- without FINAL does build one. `ReadType:` is matched whitespace-insensitively: the label prints
--- as `Read type: ` or `ReadType: ` depending on `pretty`. The settings belong on the EXPLAIN
--- statement, not the inner subquery, so they win over session defaults; parallel replicas replace
--- the local read with `ReadFromRemoteParallelReplicas`, which carries neither line.
+-- as `Read type: ` or `ReadType: ` depending on `pretty`.
 SELECT countIf(replaceAll(explain, ' ', '') ILIKE '%ReadType:InOrder%') > 0
    AND countIf(explain ILIKE '%Virtual row conversions%') = 0
 FROM (EXPLAIN actions = 1
