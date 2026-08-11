@@ -43,6 +43,7 @@
 #include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
@@ -77,6 +78,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char storage_url_pause_between_metadata_probes[];
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
@@ -442,6 +448,16 @@ StorageURLSource::StorageURLSource(
         curr_uri = uri_and_buf.first;
         current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
         read_buf = std::move(uri_and_buf.second);
+
+        FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_between_metadata_probes);
+
+        /// The two probes above and below share the metadata of one HEAD request, but when that
+        /// request has failed with a network error, the probe of the modification time has nothing
+        /// to remember, and the probe of the file size would send a fresh HEAD - which a cancellation
+        /// that has arrived in between must prevent the same way the check above prevents the first one.
+        if (cancellation->isCancelled())
+            return false;
+
         current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
 
         if (auto file_progress_callback = getContext()->getFileProgressCallback())
