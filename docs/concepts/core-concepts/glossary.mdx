@@ -4,6 +4,7 @@ description: 'Definitions of database concepts and ClickHouse terminology, with 
 title: 'Glossary'
 slug: /concepts/glossary
 keywords: ['glossary', 'definitions', 'terminology']
+mode: 'wide'
 doc_type: 'reference'
 ---
 
@@ -19,30 +20,30 @@ export const glossaryMetadata = {
   dictionary: { learnMore: '/dictionary' },
   'distributed-table': { learnMore: '/engines/table-engines/special/distributed' },
   final: { aliases: ['still see duplicates', 'query-time merge'], code: true, learnMore: '/sql-reference/statements/select/from#final-modifier' },
-  granule: { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design' },
+  granule: { aliases: ['micro-partition'], learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design' },
   'incremental-materialized-view': { aliases: ['insert trigger'], learnMore: '/materialized-view/incremental-materialized-view' },
   'materialized-view': { aliases: ['MV', 'stored query', 'insert trigger'], learnMore: '/materialized-views' },
   merge: { learnMore: '/merges' },
   mergetree: { code: true, learnMore: '/engines/table-engines/mergetree-family/mergetree' },
-  mutation: { aliases: ['ALTER UPDATE', 'ALTER DELETE', 'row update'], learnMore: '/concepts/best-practices/avoid-mutations' },
+  mutation: { aliases: ['ALTER UPDATE', 'ALTER DELETE', 'row update', 'MERGE statement'], learnMore: '/concepts/best-practices/avoid-mutations' },
   'nullable-column': { aliases: ['NULL', 'default value'], learnMore: '/sql-reference/data-types/nullable' },
-  parts: { learnMore: '/concepts/core-concepts/parts' },
-  partition: { aliases: ['PARTITION BY', 'partition pruning'], learnMore: '/partitions' },
+  parts: { aliases: ['micro-partition'], learnMore: '/concepts/core-concepts/parts' },
+  partition: { aliases: ['PARTITION BY', 'partition pruning', 'micro-partition'], learnMore: '/partitions' },
   'partitioning-key': { learnMore: '/concepts/core-concepts/partitions' },
   'primary-key': { aliases: ['ORDER BY', 'sorting key', 'unique key', 'unique constraint'], learnMore: '/concepts/core-concepts/primary-indexes' },
   projection: { aliases: ['projection vs materialized view', 'alternate ordering'], learnMore: '/data-modeling/projections' },
-  'refreshable-materialized-view': { aliases: ['scheduled materialized view', 'refresh materialized view'], learnMore: '/materialized-view/refreshable-materialized-view' },
-  replacingmergetree: { aliases: ['upsert', 'deduplication', 'still have duplicates'], code: true, learnMore: '/guides/replacing-merge-tree' },
+  'refreshable-materialized-view': { aliases: ['scheduled materialized view', 'refresh materialized view', 'scheduled query', 'dynamic table'], learnMore: '/materialized-view/refreshable-materialized-view' },
+  replacingmergetree: { aliases: ['upsert', 'deduplication', 'still have duplicates', 'MERGE statement'], code: true, learnMore: '/guides/replacing-merge-tree' },
   'secondary-index': { learnMore: '/optimize/skipping-indexes' },
   'skipping-index': { learnMore: '/optimize/skipping-indexes' },
-  'sorting-key': { aliases: ['ORDER BY', 'primary key', 'on-disk order'], learnMore: '/concepts/best-practices/choosing-a-primary-key' },
+  'sorting-key': { aliases: ['ORDER BY', 'primary key', 'on-disk order', 'clustering key', 'clustered table'], learnMore: '/concepts/best-practices/choosing-a-primary-key' },
   'sparse-index': { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes' },
   'table-engine': { learnMore: '/engines/table-engines' },
   transaction: { learnMore: '/guides/developer/transactional' },
-  ttl: { aliases: ['expiration', 'retention'], code: true, learnMore: '/concepts/features/operations/delete/ttl' },
+  ttl: { aliases: ['expiration', 'retention', 'data retention'], code: true, learnMore: '/concepts/features/operations/delete/ttl' },
   update: { learnMore: '/updating-data/overview' },
-  upsert: { aliases: ['ON CONFLICT', 'insert or update'], learnMore: '/guides/replacing-merge-tree' },
-  warehouse: { aliases: ['compute-compute separation', 'shared storage', 'workload isolation'], learnMore: '/cloud/reference/warehouses' },
+  upsert: { aliases: ['ON CONFLICT', 'insert or update', 'MERGE statement'], learnMore: '/guides/replacing-merge-tree' },
+  warehouse: { aliases: ['compute-compute separation', 'shared storage', 'workload isolation', 'virtual warehouse'], learnMore: '/cloud/reference/warehouses' },
 }
 
 <Glossary metadata={glossaryMetadata}>
