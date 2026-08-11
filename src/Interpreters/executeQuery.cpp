@@ -2561,7 +2561,7 @@ bool outputFormatProducesText(
     if (FormatFactory::instance().checkIfOutputFormatMayProduceRawBytes(format_name, format_settings, header))
         return false;
     const String content_type = FormatFactory::instance().getContentType(format_name, output_format_settings);
-    return content_type.starts_with("text/") || content_type.find("charset=") != String::npos;
+    return content_type.starts_with("text/") || content_type.contains("charset=");
 }
 
 FramingFormatPtr createFramingFormatIfApplicable(
