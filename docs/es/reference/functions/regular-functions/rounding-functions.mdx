@@ -244,7 +244,7 @@ SELECT *, roundAge(*) FROM system.numbers WHERE number IN (0, 5, 20, 31, 37, 54,
 Introducido en: v20.1.0
 
 Redondea un número a la posición decimal `N` especificada.
-Si el número a redondear está exactamente a mitad de camino entre dos números, la función utiliza un método de redondeo llamado redondeo bancario, que es el método de redondeo predeterminado para los números de coma flotante definidos en IEEE 754.
+Si el número que se va a redondear está exactamente a mitad de camino entre dos números, la función utiliza un método de redondeo llamado redondeo bancario, que es el método de redondeo predeterminado para los números de coma flotante definidos en IEEE 754.
 
 * Si `N > 0`, la función redondea a la derecha del punto decimal
 * Si `N < 0`, la función redondea a la izquierda del punto decimal
@@ -253,7 +253,7 @@ Si el número a redondear está exactamente a mitad de camino entre dos números
 <Info>
   **Notas**
 
-  * Cuando el número a redondear está exactamente a mitad de camino entre dos números, se redondea al dígito par más cercano en la posición decimal especificada.
+  * Cuando el número que se va a redondear está exactamente a mitad de camino entre dos números, se redondea al dígito par más cercano en la posición decimal especificada.
     Por ejemplo: `3.5` se redondea hacia arriba a `4`, `2.5` se redondea hacia abajo a `2`.
   * La función `round` realiza el mismo tipo de redondeo para números de coma flotante.
   * La función `roundBankers` también redondea enteros de la misma forma; por ejemplo, `roundBankers(45, -1) = 40`.

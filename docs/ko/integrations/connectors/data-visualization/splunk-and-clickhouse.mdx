@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -30,7 +30,7 @@ Splunk는 보안 및 관측성에 널리 사용되는 기술입니다. 또한 �
   ## 목표​
 </div>
 
-이 가이드에서는 ClickHouse JDBC 드라이버를 사용해 ClickHouse를 Splunk에 연결합니다. 로컬 버전의 Splunk Enterprise를 설치하지만, 데이터는 인덱싱하지 않습니다. 대신 DB Connect 쿼리 엔진을 통해 검색 기능만 사용합니다.
+이 가이드에서는 ClickHouse JDBC 드라이버를 사용해 ClickHouse를 Splunk에 연결합니다. 로컬 버전의 Splunk Enterprise를 설치하지만, 어떤 데이터도 인덱싱하지 않습니다. 대신 DB Connect 쿼리 엔진을 통해 검색 기능을 사용합니다.
 
 이 가이드를 따르면 다음과 같이 ClickHouse에 연결된 대시보드를 만들 수 있습니다.
 
@@ -63,13 +63,13 @@ Splunk는 보안 및 관측성에 널리 사용되는 기술입니다. 또한 �
 Splunk Enterprise에 DB Connect App이 설치되어 있는지 확인하십시오. Splunk Web UI의 Apps 섹션에서 찾을 수 있습니다:
 
 * Splunk Web에 로그인한 후 Apps &gt; Find More Apps로 이동합니다
-* 검색 상자에서 DB Connect를 검색합니다
-* Splunk DB Connect 옆에 있는 녹색 &quot;Install&quot; 버튼을 클릭합니다
+* 검색 상자를 사용해 DB Connect를 찾습니다
+* Splunk DB Connect 옆의 초록색 &quot;Install&quot; 버튼을 클릭합니다
 * &quot;Restart Splunk&quot;를 클릭합니다
 
 DB Connect App 설치에 문제가 있으면 추가 지침은 [이 링크](https://splunkbase.splunk.com/app/2686)를 참조하십시오.
 
-DB Connect App이 설치되어 있는 것을 확인한 후, Configuration -&gt; 설정에서 `java_home` 경로를 DB Connect App에 추가하고 save를 클릭한 다음 reset을 클릭하십시오.
+DB Connect App이 설치되어 있는지 확인한 후 Configuration -&gt; Settings에서 `java_home` 경로를 DB Connect App에 추가하고 save를 클릭한 다음 reset을 클릭하십시오.
 
 <Image img="/images/integrations/splunk/splunk-2.webp" size="md" border alt="Java Home 구성을 보여주는 Splunk DB Connect 설정 페이지" />
 

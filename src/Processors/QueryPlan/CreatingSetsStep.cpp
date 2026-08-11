@@ -57,9 +57,9 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 {
     pipeline.addCreatingSetsTransform(
         getOutputHeader(),
-        std::move(set_and_key),
+        set_and_key,
         network_transfer_limits,
-        std::move(prepared_sets_cache));
+        prepared_sets_cache);
 }
 
 void CreatingSetStep::updateOutputHeader()

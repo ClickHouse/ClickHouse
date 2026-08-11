@@ -1,5 +1,7 @@
 #include <Disks/getDiskConfigurationFromAST.h>
 
+#include "config.h"
+
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/logger_useful.h>
@@ -98,7 +100,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     auto is_s3_credential_or_auth_field = [](const std::string & k)
     {
         return k == "access_key_id" || k == "secret_access_key" || k == "session_token" || k == "role_arn"
-            || k == "role_session_name" || k == "use_environment_credentials" || k == "http_client"
+            || k == "role_session_name" || k == "external_id" || k == "use_environment_credentials" || k == "http_client"
             || k == "service_account" || k == "metadata_service" || k == "request_token_path"
             || k == "google_adc_client_id" || k == "google_adc_client_secret" || k == "google_adc_refresh_token"
             || k == "server_side_encryption_customer_key_base64" || k == "server_side_encryption_kms_key_id"
@@ -283,8 +285,11 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                 "A dynamic S3 disk created from user SQL must provide a complete explicit "
                 "`access_key_id`/`secret_access_key` pair, `no_sign_request`, or `use_environment_credentials = 0` "
                 "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values "
-                "and no `include`. It may not fall back to the server's own credentials. Enable the setting "
-                "`s3_allow_server_credentials_in_user_queries` to allow it.");
+                "and no `include`. It may not fall back to the server's own credentials."
+#if !CLICKHOUSE_CLOUD
+                " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
+#endif
+                );
     }
 
     return xml_document;
@@ -450,7 +455,11 @@ void validateResolvedS3DiskCredentials(
             "in the SQL definition (a complete `access_key_id`/`secret_access_key` pair, `no_sign_request`, or "
             "`use_environment_credentials = 0`; or, for `http_client = gcp_oauth`, a complete explicit Google ADC "
             "triple). It may not take the S3 type or credentials from the included configuration, which could "
-            "resolve the server's own credentials. Enable `s3_allow_server_credentials_in_user_queries` to allow it.");
+            "resolve the server's own credentials."
+#if !CLICKHOUSE_CLOUD
+            " Enable `s3_allow_server_credentials_in_user_queries` to allow it."
+#endif
+            );
 }
 
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)

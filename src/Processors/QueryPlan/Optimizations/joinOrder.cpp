@@ -842,14 +842,32 @@ const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UI
         if (dpsub_data.edge_pinned[i] && (dpsub_data.edge_pin_mask[i] & ~joined))
             continue;
 
-        if ((sources & left_mask) && (sources & right_mask))
+        /// Relations that must all be present before the predicate is applicable: the relations it
+        /// references (`sources`) plus any relations it is pinned to. For a plain equi-predicate the
+        /// pin is empty, so this is just `sources`. For a single-table conjunct of an outer join's ON
+        /// clause (e.g. `t2.value = 'x'` in `... LEFT JOIN t3 ON t2.id = t3.id AND t2.value = 'x'`),
+        /// `sources` is only `{t2}` but the pin is `{t3}`: the predicate belongs to the ON condition of
+        /// the join that brings in `t3`, not to `t2` as a base-table filter. Placing it by `sources`
+        /// alone would push it below (or drop it from) that join, silently changing outer-join
+        /// semantics, since `t2` may already have been NULL-extended (or default-filled) by an
+        /// earlier join.
+        const UInt32 pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : 0;
+        const UInt32 applicable = sources | pin;
+
+        if (std::popcount(applicable) <= 1)
         {
-            /// Predicate connects the two sides
-            out.push_back(&edge);
+            /// Base-relation filter or constant predicate: it becomes applicable as soon as its single
+            /// relation is present, so attach it at the earliest (two-relation) join to filter as low
+            /// as possible.
+            if (two_relations && (edge.fromLeft() || edge.fromRight() || edge.fromNone()))
+                out.push_back(&edge);
         }
-        else if (two_relations && (edge.fromLeft() || edge.fromRight() || edge.fromNone()))
+        else if ((applicable & ~left_mask) && (applicable & ~right_mask))
         {
-            /// Single-table or constant predicate attached at the earliest (two-relation) stage
+            /// The predicate spans the split (a connecting equi-predicate, or a single-table ON-clause
+            /// conjunct pinned to the opposite side): neither side alone contains all the relations it
+            /// needs. This join is the lowest one that makes it applicable, so attach it here — into the
+            /// correct join's ON condition.
             out.push_back(&edge);
         }
     }

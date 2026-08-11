@@ -22,7 +22,6 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   * Maven Central (프로젝트 웹 페이지): https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * 나이틀리 빌드(리포지토리 링크): https://central.sonatype.com/repository/maven-snapshots/
-  * 이전 Nightly 빌드용 아티팩토리(리포지토리 링크): https://s01.oss.sonatype.org/content/repositories/snapshots/
 
   <br />
 
@@ -465,7 +464,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings)
 
-  데이터베이스에 쓰기 요청을 보냅니다. 객체 목록은 효율적인 형식으로 변환된 후 서버로 전송됩니다. 목록 항목의 클래스는 `register(Class, TableSchema)` 메서드를 사용해 사전에 등록해야 합니다.
+  데이터베이스에 쓰기 요청을 보냅니다. 객체 목록은 효율적인 포맷으로 변환된 후 서버로 전송됩니다. 목록 항목의 클래스는 `register(Class, TableSchema)` 메서드를 사용해 사전에 등록해야 합니다.
 
   **서명**
 
@@ -505,15 +504,15 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **구성 방법**
 
-  | 메서드                                             | 설명                                                                                  |
-  | ----------------------------------------------- | ----------------------------------------------------------------------------------- |
-  | `setQueryId(String queryId)`                    | 작업에 할당할 쿼리 ID를 설정합니다. 기본값: `null`.                                                  |
-  | `setDeduplicationToken(String token)`           | 중복 제거 토큰을 설정합니다. 이 토큰은 서버에 전송되며 쿼리를 식별하는 데 사용할 수 있습니다. 기본값: `null`.                 |
-  | `setInputStreamCopyBufferSize(int size)`        | 복사 버퍼 크기입니다. 이 버퍼는 쓰기 작업 중 사용자가 제공한 입력 스트림의 데이터를 출력 스트림으로 복사할 때 사용됩니다. 기본값: `8196`. |
-  | `serverSetting(String name, String value)`      | 작업에 대한 개별 서버 설정을 지정합니다.                                                             |
-  | `serverSetting(String name, Collection values)` | 작업에 사용할 개별 서버 설정을 여러 값으로 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                         |
-  | `setDBRoles(Collection dbRoles)`                | 작업 실행 전에 설정할 DB 역할을 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                              |
-  | `setOption(String option, Object value)`        | 구성 옵션을 원시 포맷으로 설정합니다. 서버 설정은 아닙니다.                                                  |
+  | 메서드                                             | 설명                                                                                   |
+  | ----------------------------------------------- | ------------------------------------------------------------------------------------ |
+  | `setQueryId(String queryId)`                    | 작업에 할당할 쿼리 ID를 설정합니다. 기본값: `null`.                                                   |
+  | `setDeduplicationToken(String token)`           | 중복 제거 토큰을 설정합니다. 이 토큰은 서버에 전송되며 쿼리를 식별하는 데 사용할 수 있습니다. 기본값: `null`.                  |
+  | `setInputStreamCopyBufferSize(int size)`        | 복사 버퍼 크기입니다. 이 버퍼는 쓰기 작업 중 사용자가 제공한 입력 스트림에서 출력 스트림으로 데이터를 복사할 때 사용됩니다. 기본값: `8196`. |
+  | `serverSetting(String name, String value)`      | 작업에 대한 개별 서버 설정을 지정합니다.                                                              |
+  | `serverSetting(String name, Collection values)` | 작업에 사용할 개별 서버 설정을 여러 값으로 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                          |
+  | `setDBRoles(Collection dbRoles)`                | 작업 실행 전에 설정할 DB 역할을 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                               |
+  | `setOption(String option, Object value)`        | 구성 옵션을 원시 포맷으로 설정합니다. 서버 설정은 아닙니다.                                                   |
 
   ### InsertResponse
 
@@ -599,7 +598,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   **반환 값**
 
-  `QueryResponse` 유형의 Future - 결과 데이터셋과 서버 측 메트릭 등의 추가 정보를 포함합니다. Response 객체는 데이터셋을 모두 사용한 후에는 반드시 닫아야 합니다.
+  `QueryResponse` 유형의 Future로, 결과 데이터셋과 서버 측 메트릭 등의 추가 정보를 포함합니다. Response 객체는 데이터셋을 사용한 후 반드시 닫아야 합니다.
 
   **예시**
 
@@ -682,7 +681,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   | `serverSetting(String name, String value)`        | 작업에 대한 개별 서버 설정을 지정합니다.                                                                                                            |
   | `serverSetting(String name, Collection values)`   | 작업에 사용할 개별 서버 설정을 여러 값으로 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                                                                        |
   | `setDBRoles(Collection dbRoles)`                  | 작업 실행 전에 설정할 DB 역할을 지정합니다. 컬렉션의 항목은 `String` 값이어야 합니다.                                                                             |
-  | `setOption(String option, Object value)`          | raw 포맷으로 구성 옵션을 지정합니다. 이것은 서버 설정이 아닙니다.                                                                                            |
+  | `setOption(String option, Object value)`          | 구성 옵션을 raw 포맷으로 설정합니다. 서버 설정은 아닙니다.                                                                                                |
 
   ### QueryResponse
 
@@ -807,7 +806,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
       ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
       while (reader.next() != null) {
-          
+
           Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
           Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 
@@ -847,7 +846,7 @@ import WideTableWrapper from "/snippets/ko/components/WideTableWrapper/WideTable
 
   이전 클라이언트(V1)는 `com.clickhouse.client.ClickHouseClient#builder`를 시작점으로 사용했습니다. 새 클라이언트(V2)는 `com.clickhouse.client.api.Client.Builder`를 사용하는 유사한 패턴을 따릅니다. 주요 차이점은 다음과 같습니다:
 
-  * 구현을 로드하는 데 service loader를 사용하지 않습니다. `com.clickhouse.client.api.Client`는 향후 다양한 구현을 지원하기 위한 파사드 클래스입니다.
+  * 구현을 가져오기 위해 service loader를 사용하지 않습니다. `com.clickhouse.client.api.Client`는 향후 다양한 구현을 위한 파사드 클래스입니다.
   * 구성 소스 수가 더 적습니다. 하나는 빌더에 제공되고, 다른 하나는 작업 설정(`QuerySettings`, `InsertSettings`)에 있습니다. 이전 버전에서는 노드별 구성을 사용했고, 경우에 따라 환경 변수도 불러왔습니다.
 
   ### 구성 매개변수 일치

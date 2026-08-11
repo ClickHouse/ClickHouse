@@ -323,15 +323,15 @@ SELECT clamp(15, 0, 7) AS result;
 Добавленный в: v1.1.0
 
 Возвращает наибольшее значение среди аргументов.
-Аргументы со значением `NULL` игнорируются.
+Аргументы `NULL` игнорируются.
 
 * Для массивов возвращает лексикографически наибольший массив.
-* Для типов `DateTime` тип результата повышается до наиболее широкого типа (например, до `DateTime64`, если он используется вместе с `DateTime32`).
+* Для типов `DateTime` результирующий тип повышается до наиболее широкого типа (например, `DateTime64`, если он используется вместе с `DateTime32`).
 
 <Info>
   **Используйте настройку `least_greatest_legacy_null_behavior`, чтобы изменить поведение `NULL`**
 
-  В версии [24.12](/ru/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) было внесено несовместимое с предыдущими версиями изменение: значения `NULL` игнорируются, тогда как ранее функция возвращала `NULL`, если один из аргументов был `NULL`.
+  В версии [24.12](/ru/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) было внесено обратно несовместимое изменение: значения `NULL` теперь игнорируются, тогда как ранее функция возвращала `NULL`, если один из аргументов был `NULL`.
   Чтобы сохранить прежнее поведение, установите для настройки `least_greatest_legacy_null_behavior` (по умолчанию: `false`) значение `true`.
 </Info>
 
@@ -343,19 +343,19 @@ greatest(x1[, x2, ...])
 
 **Аргументы**
 
-* `x1[, x2, ...]` — Одно или несколько значений для сравнения. Все аргументы должны быть сравнимых типов. [`Any`](/ru/reference/data-types/index)
+* `x1[, x2, ...]` — Одно или несколько значений для сравнения. Все аргументы должны иметь сопоставимые типы. [`Any`](/ru/reference/data-types/index)
 
 **Возвращаемое значение**
 
-Возвращает наибольшее значение среди аргументов; результат приводится к наибольшему совместимому типу. [`Any`](/ru/reference/data-types/index)
+Возвращает наибольшее из аргументов, приведённое к наибольшему совместимому типу. [`Any`](/ru/reference/data-types/index)
 
 **Примеры**
 
 **Числовые типы**
 
 ```sql title=Query
-SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 ```
 
 ```response title=Response
@@ -376,16 +376,16 @@ SELECT greatest(['hello'], ['there'], ['world']);
 └───────────────────────────────────────────┘
 ```
 
-**Типы DateTime**
+**Тип DateTime**
 
 ```sql title=Query
-SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─greatest(toD⋯(now(), 3))─┐
-│  2025-05-28 15:50:53.000 │
+┌─greatest(toD⋯0.000', 3))─┐
+│  2025-01-02 12:00:00.000 │
 └──────────────────────────┘
 ```
 
@@ -456,7 +456,7 @@ SELECT if(1, 2 + 2, 2 + 6) AS res;
 <Info>
   **Используйте настройку `least_greatest_legacy_null_behavior`, чтобы изменить поведение `NULL`**
 
-  В версии [24.12](/ru/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) было внесено несовместимое с предыдущим поведением изменение: значения `NULL` теперь игнорируются, тогда как раньше функция возвращала `NULL`, если один из аргументов был `NULL`.
+  В версии [24.12](/ru/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) было внесено обратно несовместимое изменение: значения `NULL` теперь игнорируются, тогда как раньше функция возвращала `NULL`, если один из аргументов был `NULL`.
   Чтобы сохранить прежнее поведение, установите для настройки `least_greatest_legacy_null_behavior` (по умолчанию: `false`) значение `true`.
 </Info>
 
@@ -479,8 +479,8 @@ least(x1[, x2, ...])
 **Числовые типы**
 
 ```sql title=Query
-SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 ```
 
 ```response title=Response
@@ -504,13 +504,13 @@ SELECT least(['hello'], ['there'], ['world']);
 **Типы DateTime**
 
 ```sql title=Query
-SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─least(toDate⋯(now(), 3))─┐
-│  2025-05-27 15:55:20.000 │
+┌─least(toDate⋯0.000', 3))─┐
+│  2025-01-01 12:00:00.000 │
 └──────────────────────────┘
 ```
 

@@ -1,0 +1,613 @@
+eq_range_prune
+3	30	3	c	y	2024-06-15 12:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.i, 3), greater(__table1.i, 1), less(__table1.i, 5))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE equals(__table1.i, 3)
+SETTINGS optimize_redundant_comparisons = 1
+range_tighten
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(greater(__table1.i, 1), less(__table1.i, 5), greater(__table1.i, 3))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(less(__table1.i, 5), greater(__table1.i, 3))
+SETTINGS optimize_redundant_comparisons = 1
+three_way_conflict
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.i, 3), less(__table1.i, 5), greater(__table1.i, 5))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE 0
+SETTINGS optimize_redundant_comparisons = 1
+lc_eq_eq
+3	30	3	c	y	2024-06-15 12:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.lc, \'y\'), equals(__table1.lc, \'y\'))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE _CAST(equals(__table1.lc, \'y\'), \'UInt8\')
+SETTINGS optimize_redundant_comparisons = 1
+lc_eq_conflict
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.lc, \'y\'), equals(__table1.lc, \'z\'))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE 0
+SETTINGS optimize_redundant_comparisons = 1
+str_eq_eq
+3	30	3	c	y	2024-06-15 12:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.s, \'c\'), equals(__table1.s, \'c\'))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE equals(__table1.s, \'c\')
+SETTINGS optimize_redundant_comparisons = 1
+str_eq_conflict
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.s, \'c\'), equals(__table1.s, \'a\'))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE 0
+SETTINGS optimize_redundant_comparisons = 1
+transitive_conflict
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.i, 3), equals(__table1.i, __table1.u), equals(__table1.u, 5), equals(__table1.i, 5), equals(__table1.u, 3))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE 0
+SETTINGS optimize_redundant_comparisons = 1
+transitive_no_redundant
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(less(__table1.i, 3), greater(__table1.u, 3), less(__table1.u, 10))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(less(__table1.i, 3), greater(__table1.u, 3), less(__table1.u, 10))
+SETTINGS optimize_redundant_comparisons = 1
+transitive_infer
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(greater(__table1.i, __table1.u), greater(__table1.u, 2), greater(__table1.i, 2))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(greater(__table1.i, __table1.u), greater(__table1.u, 2), greater(__table1.i, 2))
+SETTINGS optimize_redundant_comparisons = 1
+transitive_eq_chain
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.i, __table1.u), equals(__table1.u, 3), equals(__table1.i, 3))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.i, __table1.u), equals(__table1.u, 3), equals(__table1.i, 3))
+SETTINGS optimize_redundant_comparisons = 1
+mixed_operands
+3	30	3	c	y	2024-06-15 12:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(greater(__table1.i, 1), less(__table1.i, 5), notEmpty(__table1.s))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(greater(__table1.i, 1), less(__table1.i, 5), notEmpty(__table1.s))
+SETTINGS optimize_redundant_comparisons = 1
+ne_chain_not_in
+5	50	5.5	e	z	2025-01-01 00:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE notIn(__table1.i, (1, 3, 7))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE notIn(__table1.i, (1, 3, 7))
+SETTINGS optimize_redundant_comparisons = 1
+ne_chain_dedup
+5	50	5.5	e	z	2025-01-01 00:00:00
+5	50	5.5	e	z	2025-01-01 00:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE notIn(__table1.i, (1, 3))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE notIn(__table1.i, (1, 3))
+SETTINGS optimize_redundant_comparisons = 1
+single
+3	30	3	c	y	2024-06-15 12:00:00
+3	30	3	c	y	2024-06-15 12:00:00
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE equals(__table1.i, 3)
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE equals(__table1.i, 3)
+SETTINGS optimize_redundant_comparisons = 1
+non_const
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(greater(__table1.i, __table1.u), less(__table1.i, __table1.u))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(greater(__table1.i, __table1.u), less(__table1.i, __table1.u))
+SETTINGS optimize_redundant_comparisons = 1
+null_safe
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.i, 3), greater(__table1.i, _CAST(NULL, \'Nullable(Nothing)\')))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT
+    __table1.i AS i,
+    __table1.u AS u,
+    __table1.f AS f,
+    __table1.s AS s,
+    __table1.lc AS lc,
+    __table1.dt AS dt
+FROM default.`04032_t` AS __table1
+WHERE and(equals(__table1.i, 3), greater(__table1.i, _CAST(NULL, \'Nullable(Nothing)\')))
+SETTINGS optimize_redundant_comparisons = 1
+non_deterministic
+SELECT count() AS `count()`
+FROM numbers(1) AS __table1
+WHERE and(less(modulo(rand(), 2), 1), greaterOrEquals(modulo(rand(), 2), 1))
+SETTINGS optimize_redundant_comparisons = 0
+SELECT count() AS `count()`
+FROM numbers(1) AS __table1
+WHERE and(less(modulo(rand(), 2), 1), greaterOrEquals(modulo(rand(), 2), 1))
+SETTINGS optimize_redundant_comparisons = 1
+non_deterministic_transitive
+SELECT count() AS `count()`
+FROM numbers(1) AS __table1
+WHERE and(equals(modulo(rand(), 2), modulo(__table1.number, 2)), equals(modulo(rand(), 2), 1), equals(modulo(__table1.number, 2), 0))
+SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1
+SELECT count() AS `count()`
+FROM numbers(1) AS __table1
+WHERE and(equals(modulo(rand(), 2), modulo(__table1.number, 2)), equals(modulo(rand(), 2), 1), equals(modulo(__table1.number, 2), 0))
+SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1
+nan_guard
+0
+0
+range_prunes_not_equals
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE and(notEquals(__table1.number, 2), less(__table1.number, 5))
+SETTINGS optimize_redundant_comparisons = 1
+4
+4
+boundary_strengthen
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE less(__table1.number, 5)
+SETTINGS optimize_redundant_comparisons = 1
+5
+5
+boundary_strengthen_mirrored
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE greater(__table1.number, 5)
+SETTINGS optimize_redundant_comparisons = 1
+4
+4
+equals_prunes_chain
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE equals(__table1.number, 7)
+SETTINGS optimize_redundant_comparisons = 1
+1
+1
+equals_conflicts_chain
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE 0
+SETTINGS optimize_redundant_comparisons = 1
+0
+0
+cross_type_dedup
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE notEquals(__table1.number, 3)
+SETTINGS optimize_redundant_comparisons = 1
+9
+9
+chain_to_not_in
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE notIn(__table1.number, (1, 3, 5, 7))
+SETTINGS optimize_redundant_comparisons = 1
+6
+6
+range_first
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE and(less(__table1.number, 5), notEquals(__table1.number, 2))
+SETTINGS optimize_redundant_comparisons = 1
+4
+4
+bool_chain_dedup
+SELECT count() AS `count()`
+FROM
+(
+    SELECT equals(modulo(__table2.number, 2), 0) AS b
+    FROM numbers(4) AS __table2
+) AS __table1
+WHERE notEquals(__table1.b, true)
+SETTINGS optimize_redundant_comparisons = 1
+2
+2
+bool_equals_conflicts
+SELECT count() AS `count()`
+FROM
+(
+    SELECT equals(modulo(__table2.number, 2), 0) AS b
+    FROM numbers(4) AS __table2
+) AS __table1
+WHERE 0
+SETTINGS optimize_redundant_comparisons = 1
+0
+0
+equals_first
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE equals(__table1.number, 7)
+SETTINGS optimize_redundant_comparisons = 1
+1
+1
+nan_not_equals_kept
+SELECT count() AS `count()`
+FROM
+(
+    SELECT divide(__table2.number, 2.) AS f
+    FROM numbers(4) AS __table2
+) AS __table1
+WHERE and(notEquals(__table1.f, nan), less(__table1.f, 1))
+SETTINGS optimize_redundant_comparisons = 1
+2
+2
+sole_survivor_uint32
+SELECT count() AS `count()`
+FROM
+(
+    SELECT
+        toUInt32(multiply(__table2.number, 256)) AS x,
+        toInt8(__table2.number) AS i
+    FROM numbers(3) AS __table2
+) AS __table1
+WHERE notEquals(__table1.x, 0)
+SETTINGS optimize_redundant_comparisons = 1
+2
+2
+sole_survivor_projection
+0
+1
+1
+0
+1
+1
+sole_survivor_float
+2
+2
+sole_survivor_bool
+2
+2
+derived_nested_subsumed
+SELECT count() AS `count()`
+FROM
+(
+    SELECT
+        __table2.number AS x,
+        multiply(__table2.number, 2) AS y
+    FROM numbers(10) AS __table2
+) AS __table1
+WHERE and(and(less(__table1.x, 2), less(__table1.x, __table1.y)), less(__table1.y, 3))
+SETTINGS optimize_redundant_comparisons = 1
+1
+1
+derived_flat_subsumed
+SELECT count() AS `count()`
+FROM
+(
+    SELECT
+        __table2.number AS x,
+        multiply(__table2.number, 2) AS y
+    FROM numbers(10) AS __table2
+) AS __table1
+WHERE and(less(__table1.x, 2), less(__table1.x, __table1.y), less(__table1.y, 3))
+SETTINGS optimize_redundant_comparisons = 1
+derived_kept
+SELECT count() AS `count()`
+FROM
+(
+    SELECT
+        __table2.number AS x,
+        multiply(__table2.number, 2) AS y
+    FROM numbers(10) AS __table2
+) AS __table1
+WHERE and(less(__table1.x, __table1.y), less(__table1.y, 3), less(__table1.x, 3))
+SETTINGS optimize_redundant_comparisons = 1
+1
+derived_conflict
+SELECT count() AS `count()`
+FROM
+(
+    SELECT
+        __table2.number AS x,
+        __table2.number AS y
+    FROM numbers(10) AS __table2
+) AS __table1
+WHERE 0
+SETTINGS optimize_redundant_comparisons = 1
+rewrite_materialized_float
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE and(greaterOrEquals(__table1.number, 4), lessOrEquals(__table1.number, 8))
+SETTINGS optimize_redundant_comparisons = 1
+5
+5
+rewrite_materialized_boundary
+SELECT count() AS `count()`
+FROM
+(
+    SELECT toUInt8(__table2.number) AS n
+    FROM numbers(3) AS __table2
+) AS __table1
+WHERE equals(__table1.n, 255)
+SETTINGS optimize_redundant_comparisons = 1
+0
+0
+rewrite_materialized_two_columns
+SELECT count() AS `count()`
+FROM
+(
+    SELECT
+        toUInt8(__table2.number) AS n,
+        toInt32(__table2.number) AS i
+    FROM numbers(3) AS __table2
+) AS __table1
+WHERE and(equals(__table1.n, 255), greater(__table1.i, 0))
+SETTINGS optimize_redundant_comparisons = 1
+0
+0
+strengthen_then_conflict
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE 0
+SETTINGS optimize_redundant_comparisons = 1
+0
+0
+strengthen_then_conflict_mirrored
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE 0
+SETTINGS optimize_redundant_comparisons = 1
+0
+0
+strengthen_no_conflict
+SELECT count() AS `count()`
+FROM numbers(10) AS __table1
+WHERE and(less(__table1.number, 3), greaterOrEquals(__table1.number, 1))
+SETTINGS optimize_redundant_comparisons = 1
+2
+2

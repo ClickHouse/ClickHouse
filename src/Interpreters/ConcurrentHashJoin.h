@@ -56,6 +56,7 @@ public:
 
     std::string getName() const override { return "ConcurrentHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
     bool addBlockToJoin(const Block & right_block_, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
@@ -111,10 +112,10 @@ public:
         std::unique_ptr<HashJoin> data;
         bool space_was_preallocated = false;
 
-        /// Snapshot of the total rows and bytes held by the hash join. This is updated during
-        /// `addBlockToJoin` and is used to track the whole join state without locking.
-        std::atomic<size_t> total_rows{0};
-        std::atomic<size_t> total_bytes{0};
+        /// Snapshot of the total rows and bytes held locally by the hash join. This is updated during
+        /// `addBlockToJoin` and is used to track the join state.
+        size_t local_total_rows = 0;
+        size_t local_total_bytes = 0;
     };
 
     friend class NotJoinedHash;
@@ -133,7 +134,14 @@ private:
     std::mutex totals_mutex;
     Block totals;
 
+    /// Snapshot of the total rows and bytes held globally by the concurrent hash join. This is updated during
+    /// `addBlockToJoin` and is used to track the join state.
+    std::atomic<size_t> global_total_rows{0};
+    std::atomic<size_t> global_total_bytes{0};
+
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
+    std::pair<size_t, size_t> updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
+    void resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
 };
 
 }

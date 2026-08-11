@@ -40,11 +40,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 在数据完全加载之前，服务器会执行一个循环：
 
 ```bash
-① 拉取并解析下一批数据，从中构建内存中的数据块（每个分区键对应一个）。
+① Pull and parse the next portion of data and form an in-memory data block (one per partitioning key) from it.
 
-② 将该数据块作为新的数据分片写入存储。
+② Write the block into a new part on storage.
 
-跳转至 ① 
+Go to ① 
 ```
 
 在 ① 中，其大小取决于插入块大小，可通过以下两个设置控制：
@@ -60,7 +60,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   #### 注意合并操作
 </div>
 
-配置的插入块大小越小，大规模数据加载时创建的初始 parts 就越多，并且在数据摄取过程中并发执行的后台 parts 合并也会越多。这可能导致资源争用 (CPU 和内存) ，并且在摄取完成后，还需要额外的时间才能让 parts 数量降到[健康](/zh/reference/settings/merge-tree-settings#parts_to_throw_insert) (3000) 水平。
+配置的插入块大小越小，大规模数据加载时创建的初始 parts 就越多，并且在数据摄取过程中并发执行的后台合并也会越多。这可能导致资源争用 (CPU 和内存) ，并且在摄取完成后，还需要额外的时间才能让 parts 数量降到[健康](/zh/reference/settings/merge-tree-settings#parts_to_throw_insert) (3000) 水平。
 
 <Warning>
   如果 part 数量超过[建议限制](/zh/reference/settings/merge-tree-settings#parts_to_throw_insert)，ClickHouse 查询性能会受到负面影响。
@@ -101,18 +101,18 @@ s3 等表函数支持通过 glob 模式指定一组待加载的文件名。当�
 在所有文件中的全部数据处理完成之前，每个插入线程都会执行一个循环：
 
 ```bash
-① 获取下一批未处理的文件数据（批次大小基于已配置的块大小），并从中创建内存数据块。
+① Get the next portion of unprocessed file data (portion size is based on the configured block size) and create an in-memory data block from it.
 
-② 将该数据块写入存储中的新分片。
+② Write the block into a new part on storage.
 
-跳转至 ①。 
+Go to ①. 
 ```
 
 此类并行插入线程的数量可通过 [`max_insert_threads`](/zh/reference/settings/session-settings#max_insert_threads) 设置进行配置。对于开源 ClickHouse，默认值为 `1`；对于 [ClickHouse Cloud](https://clickhouse.com/cloud)，默认值为 4。
 
 当文件数量很多时，多个插入线程并行处理的效果很好。它可以充分利用可用的 CPU 核心和网络带宽 (用于并行下载文件) 。在只有少量大文件需要加载到表中的场景下，ClickHouse 会自动实现较高的数据处理并行度，并通过为每个插入线程额外派生读取线程，并行读取 (下载) 大文件中更多不同区间的数据，从而优化网络带宽利用率。
 
-对于 s3 函数和表，单个文件是否会并行下载取决于 [max&#95;download&#95;threads](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_threads) 和 [max&#95;download&#95;buffer&#95;size](https://clickhouse.com/codebrowser/ClickHouse/src/Core/Settings.h.html#DB::SettingsTraits::Data::max_download_buffer_size) 的取值。只有当文件大小大于 `2 * max_download_buffer_size` 时，才会并行下载。默认情况下，`max_download_buffer_size` 设置为 10MiB。在某些情况下，你可以放心地将该缓冲区大小增大到 50 MB (`max_download_buffer_size=52428800`) ，以确保每个文件仅由单个线程下载。这样可以减少每个线程花在发起 S3 调用上的时间，从而降低 S3 等待时间。此外，对于小到无法并行读取的文件，为了提高吞吐量，ClickHouse 还会通过异步预读这些文件来自动预取数据。
+对于 s3 函数和表，单个文件是否会并行下载取决于 [max&#95;download&#95;threads](/zh/operations/settings/settings#max_download_threads) 和 [max&#95;download&#95;buffer&#95;size](/zh/operations/settings/settings#max_download_buffer_size) 的取值。只有当文件大小大于 `2 * max_download_buffer_size` 时，才会并行下载。默认情况下，`max_download_buffer_size` 设置为 10MiB。在某些情况下，你可以放心地将该缓冲区大小增大到 50 MB (`max_download_buffer_size=52428800`) ，以确保每个文件仅由单个线程下载。这样可以减少每个线程花在发起 S3 调用上的时间，从而降低 S3 等待时间。此外，对于小到无法并行读取的文件，为了提高吞吐量，ClickHouse 还会通过异步预读这些文件来自动预取数据。
 
 <div id="measuring-performance">
   ## 性能评估
@@ -359,7 +359,7 @@ SETTINGS max_threads = 92
 
 我们重复之前的读取查询，通过将查询调整为使用 `s3Cluster`，把工作负载分布到 3 个节点上。在 ClickHouse Cloud 中，只需引用 `default` 集群，此过程会自动完成。
 
-如 [利用集群](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters) 中所述，这项工作是在文件级别分发的。要从此功能中受益，你需要有足够数量的文件，即文件数至少要 &gt; 节点数。
+如 [利用集群](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters) 中所述，这项工作是在文件级别分发的。要从此功能中受益，你需要有足够数量的文件，即文件数至少要大于节点数。
 
 ```sql
 SELECT
@@ -383,7 +383,7 @@ SETTINGS max_threads = 16
 └──────────────────┴───────────┘
 
 5 rows in set. Elapsed: 0.622 sec. Processed 59.82 million rows, 24.03 GB (96.13 million rows/s., 38.62 GB/s.)
-峰值内存占用: 176.74 MiB.
+Peak memory usage: 176.74 MiB.
 ```
 
 同样，我们的插入查询也可以采用分布式方式，并沿用前面为单节点确定的优化设置：
@@ -410,7 +410,7 @@ SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows=0, m
 
 ```response
 0 rows in set. Elapsed: 54.571 sec. Processed 59.82 million rows, 24.03 GB (1.10 million rows/s., 440.38 MB/s.)
-峰值内存占用: 11.75 GiB.
+Peak memory usage: 11.75 GiB.
 ```
 
 正如预期，这会使插入性能下降到原来的 1/3。

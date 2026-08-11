@@ -1,15 +1,63 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'Changelog de ClickHouse Cloud - 2026'
+title: 'Changelog Cloud - 2026'
 description: 'Changelog de ClickHouse Cloud présentant les nouveautés de chaque version de ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['changelog', 'notes de version', 'mises à jour', 'nouvelles fonctionnalités', 'modifications de ClickHouse Cloud']
+keywords: ['changelog', 'notes de version', 'mises à jour', 'nouvelles fonctionnalités', 'changements Cloud']
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-En plus de ce changelog de ClickHouse Cloud, veuillez consulter la page [Compatibilité Cloud](/fr/products/cloud/guides/cloud-compatibility).
+En plus de ce changelog ClickHouse Cloud, veuillez consulter la page [Cloud Compatibility](/fr/products/cloud/guides/cloud-compatibility).
+
+<Update label="13 juillet 2026">
+  Les mises à jour de cette semaine incluent le routage sticky des réplicas via HTTPS standard, des dates de début de période de facturation personnalisées, ainsi que de nouveaux contrôles de chargement initial pour les Object Storage ClickPipes.
+
+  ### Routage sticky des réplicas via HTTPS (aperçu privé)
+
+  Vous pouvez désormais épingler les queries sur une replica spécifique via HTTPS standard en ajoutant un paramètre `?session_id=` à votre URL de service habituelle, sans qu’aucun nom d’hôte spécial ni aucune modification DNS ne soient nécessaires. Cela permet de conserver d’une query à l’autre les objets de session, comme les tables temporaires, et aide les queries répétées à atteindre des caches locaux de replica déjà chauds. Le déploiement est en cours en aperçu privé pour tous les clients Enterprise, ainsi que pour les clients Scale sur demande. Le routage existant basé sur les sous-domaines continue de fonctionner, mais migrera à terme vers cette approche. Consultez la documentation [replica-aware routing](/manage/replica-aware-routing).
+
+  ### Dates de début de période de facturation personnalisées
+
+  Vous pouvez désormais demander une modification de la date de facturation de votre organisation, c’est-à-dire le jour du mois où commence chaque période de facturation, par exemple pour aligner les invoices sur le mois calendaire. Ouvrez un ticket de support avec la date demandée. Les dates de facturation s’appliquent en UTC, et chaque invoice couvre l’usage depuis la date de facturation jusqu’à la même date du mois suivant (sans l’inclure).
+
+  ### Ignorer le chargement initial pour les Object Storage ClickPipes
+
+  Les [ClickPipes](/fr/integrations/clickpipes) Object Storage (S3, GCS et Azure Blob Storage) offrent désormais deux moyens de contrôler le chargement initial lorsque vous créez un pipe : **Démarrer après**, qui ignore les fichiers jusqu’à une clé d’objet donnée incluse, et **Ignorer le chargement initial**, qui ignore entièrement les fichiers préexistants et traite uniquement les nouvelles notifications d’objet. Auparavant, un nouveau pipe effectuait toujours un backfill de tous les fichiers du chemin. Les deux options sont mutuellement exclusives et permanentes pour un pipe donné : un backfill ignoré ne peut pas être déclenché ultérieurement. Disponible dans l’UI, l’API Cloud, ainsi qu’à partir de Terraform v3.18.0.
+</Update>
+
+<Update label="30 juin 2026">
+  Les mises à jour de cette semaine incluent de nouvelles fonctionnalités d’observabilité pour Postgres et les composants internes de ClickHouse, des contrôles ClickPipes étendus, notamment la livraison exactly-once de Kafka, ainsi que plusieurs ajouts à la plateforme : BYOC sur Azure Marketplace, le provider Airflow officiel et des mises à jour de ClickHouse Agents.
+
+  ### Livraison exactly-once de Kafka dans ClickPipes
+
+  Vous pouvez désormais activer la livraison exactly-once pour les imports Kafka directement dans le flux d’import ClickPipes [ClickPipes](/fr/integrations/clickpipes/kafka/index), la même option étant également exposée via l’API publique pour une configuration programmatique.
+
+  ### Contrôles TLS unifiés pour les sources CDC
+
+  Les niveaux d’activation et de vérification TLS sont désormais cohérents pour toutes les sources CDC. Les endpoints OpenAPI de création et de mise à jour propagent les champs `postgres_skip_cert_verification`, `postgres_disable_tls` et `mongo_skip_cert_verification`, afin que vous puissiez gérer le traitement des certificats via l’API.
+
+  ### Les bases de données Replicated reviennent dans le sélecteur ClickPipes
+
+  Les bases de données Replicated peuvent de nouveau être sélectionnées dans le sélecteur de destination ClickPipes.
+
+  ### Mises à jour de ClickHouse Agents (bêta publique)
+
+  [ClickHouse Agents](/fr/products/cloud/features/ai-ml/agents/index) prennent désormais en charge les Chat Projects pour organiser les conversations, une jauge d’utilisation du contexte affichant l’usage des jetons et de la fenêtre de contexte, des Skills créées par les agents, ainsi que des Skills ClickHouse intégrées autour des bonnes pratiques. Cette version inclut également des améliorations des paramètres, de la navigation, des raccourcis et de l’épinglage.
+
+  ### ClickHouse BYOC sur Azure Marketplace
+
+  Le [Bring Your Own Cloud](/fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview) de ClickHouse est désormais proposé sur Azure Marketplace, ce qui permet aux clients d’acheter via une private offer et de déployer BYOC avec une facturation via leur compte Azure. La prise en charge de la facturation pour les offres marketplace Azure BYOC et les ID produit a été ajoutée côté plateforme.
+
+  ### Provider ClickHouse officiel pour Airflow
+
+  Un provider Apache Airflow officiel pour ClickHouse est désormais disponible sur PyPI et référencé dans le registre Airflow, remplaçant la dépendance à l’ancien plugin communautaire pour acheminer les données vers et depuis ClickHouse.
+
+  ### Visibilité de la facturation et améliorations de la marketplace
+
+  La facturation inclut désormais une table d’historique des crédits en libre-service, un récapitulatif prépayé affichant les montants utilisés et expirés, ainsi que la prise en charge des e-mails GCP MPPO.
+</Update>
 
 <Update label="3 juin 2026">
   La semaine Open House 2026 a été marquée par une vague de lancements axés sur l&#39;exécution de ClickHouse là où résident vos données, ainsi que sur l&#39;intégration de workflows agentiques assistés par IA dans la plateforme.
@@ -159,7 +207,7 @@ En plus de ce changelog de ClickHouse Cloud, veuillez consulter la page [Compati
 
   ### Terraform et OpenAPI pour ClickPipes (disponibilité générale)
 
-  Les ressources ClickPipes du [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) ClickHouse sont désormais généralement disponibles dans le cadre de versions stables, et les [API endpoints OpenAPI](/fr/api-reference/organization/get-list-of-available-organizations) ne sont plus marqués comme bêta. Cela inclut une couverture complète des connecteurs CDC (Postgres, MySQL, MongoDB). Consultez la [documentation Terraform](/fr/integrations/clickpipes/programmatic-access/terraform), la [documentation OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et le [billet de blog](https://clickhouse.com/blog/terraform-ga) pour plus de détails.
+  Les ressources ClickPipes du [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) ClickHouse sont désormais généralement disponibles dans le cadre de versions stables, et les [API endpoints OpenAPI](/fr/products/cloud/api-reference/organization/get-list-of-available-organizations) ne sont plus marqués comme bêta. Cela inclut une couverture complète des connecteurs CDC (Postgres, MySQL, MongoDB). Consultez la [documentation Terraform](/fr/integrations/clickpipes/programmatic-access/terraform), la [documentation OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et le [billet de blog](https://clickhouse.com/blog/terraform-ga) pour plus de détails.
 </Update>
 
 <Update label="17 avril 2026">
@@ -169,7 +217,7 @@ En plus de ce changelog de ClickHouse Cloud, veuillez consulter la page [Compati
 
   ### Alertes de dépenses de l’organisation (aperçu privé)
 
-  Les alertes de dépenses de l’organisation sont désormais disponibles en aperçu privé. Recevez des notifications lorsque les dépenses configurées de votre organisation atteignent 50 %, 75 % et 100 % par période de facturation. Choisissez parmi les canaux de notification Email, Cloud console et/ou Slack. Les alertes sont basées sur l’utilisation brute de l’organisation, se déclenchent toutes les heures et se réinitialisent automatiquement à chaque période de facturation. Nécessite le rôle Org Admin ou Billing Admin.
+  Les alertes de dépenses de l’organisation sont désormais disponibles en aperçu privé. Recevez des notifications lorsque les dépenses configurées de votre organisation atteignent 50 %, 75 % et 100 % par période de facturation. Choisissez parmi les canaux de notification E-mail, Cloud console et/ou Slack. Les alertes sont basées sur l’utilisation brute de l’organisation, se déclenchent toutes les heures et se réinitialisent automatiquement à chaque période de facturation. Nécessite le rôle Org Admin ou Billing Admin.
 
   ### Parité régionale de ClickPipes sur AWS
 
