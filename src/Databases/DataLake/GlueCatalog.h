@@ -74,7 +74,7 @@ public:
         const String & new_metadata_path,
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id,
-        Poco::JSON::Object::Ptr full_metadata = nullptr) const override;
+        Int32 new_last_column_id) const override;
 
     void dropTable(const String & namespace_name, const String & table_name) const override;
 

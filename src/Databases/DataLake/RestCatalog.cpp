@@ -59,6 +59,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::Setting
@@ -1543,6 +1544,12 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
+    if (!new_snapshot)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "REST catalog does not support metadata-only updates without a snapshot "
+            "(required for EXPIRE SNAPSHOTS)");
+
     fiu_do_on(DB::FailPoints::iceberg_alter_catalog_update_metadata_fail, { return false; });
 
     const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
@@ -1570,58 +1577,46 @@ bool RestCatalog::updateSchema(
     const String & /*new_metadata_path*/,
     Poco::JSON::Object::Ptr new_schema,
     Int32 previous_schema_id,
-    Poco::JSON::Object::Ptr full_metadata) const
+    Int32 new_last_column_id) const
 {
     const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 
-    Poco::JSON::Object::Ptr request_body;
-
-    /// When full metadata is available, use the richer builder which handles
-    /// equivalent-schema dedup and sort-order reset.
-    if (full_metadata)
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
-        request_body = buildUpdateMetadataRequestBody(namespace_name, table_name, full_metadata);
-        if (!request_body)
-            return true;
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+        request_body->set("identifier", identifier);
     }
-    else
+
     {
-        request_body = new Poco::JSON::Object;
-        {
-            Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-            identifier->set("name", table_name);
-            Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-            namespaces->add(namespace_name);
-            identifier->set("namespace", namespaces);
-            request_body->set("identifier", identifier);
-        }
+        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+        requirement->set("type", "assert-current-schema-id");
+        requirement->set("current-schema-id", previous_schema_id);
 
-        {
-            Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-            requirement->set("type", "assert-current-schema-id");
-            requirement->set("current-schema-id", previous_schema_id);
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        requirements->add(requirement);
+        request_body->set("requirements", requirements);
+    }
 
-            Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
-            requirements->add(requirement);
-            request_body->set("requirements", requirements);
-        }
-
+    {
+        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
         {
-            Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
-            {
-                Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
-                add_schema->set("action", "add-schema");
-                add_schema->set("schema", new_schema);
-                updates->add(add_schema);
-            }
-            {
-                Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
-                set_current_schema->set("action", "set-current-schema");
-                set_current_schema->set("schema-id", -1);
-                updates->add(set_current_schema);
-            }
-            request_body->set("updates", updates);
+            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
+            add_schema->set("action", "add-schema");
+            add_schema->set("schema", new_schema);
+            add_schema->set("last-column-id", new_last_column_id);
+            updates->add(add_schema);
         }
+        {
+            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
+            set_current_schema->set("action", "set-current-schema");
+            set_current_schema->set("schema-id", -1);
+            updates->add(set_current_schema);
+        }
+        request_body->set("updates", updates);
     }
 
     try

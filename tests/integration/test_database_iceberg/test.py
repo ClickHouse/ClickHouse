@@ -1087,6 +1087,36 @@ def test_writes_schema_evolution(started_cluster):
     )
 
 
+def test_writes_schema_evolution_drop_last_column(started_cluster):
+    """DROP COLUMN of the highest-id column must not be rejected by the catalog.
+
+    Reproducer for the bug where the REST add-schema update omitted
+    last-column-id, causing the catalog to derive it from the schema's
+    highestFieldId which decreases after dropping the last-added column.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_schema_evolution_drop_last_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('abc', 1);", settings=write_settings)
+
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
+    assert "z" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+
+    node.query(f"ALTER TABLE {table_ref} DROP COLUMN z;", settings=write_settings)
+    desc = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert "z" not in desc
+
+    assert node.query(f"SELECT x, y FROM {table_ref} ORDER BY ALL", settings=write_settings) == "abc\t1\n"
+
+
 def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
     node = started_cluster.instances["node1"]
 

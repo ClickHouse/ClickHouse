@@ -63,6 +63,54 @@ static constexpr const char * block_datafile_path = "_iceberg_metadata_file_path
 static constexpr const char * block_row_number = "_row_number";
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
 
+/// Walk an Iceberg type descriptor and return the highest field id found.
+static Int32 getHighestFieldIdFromType(const Poco::Dynamic::Var & type_var)
+{
+    if (type_var.type() != typeid(Poco::JSON::Object::Ptr))
+        return 0;
+    auto obj = type_var.extract<Poco::JSON::Object::Ptr>();
+    Int32 result = 0;
+
+    auto type_str = obj->optValue<String>(Iceberg::f_type, "");
+    if (type_str == "struct")
+    {
+        auto fields = obj->getArray(Iceberg::f_fields);
+        for (UInt32 i = 0; i < fields->size(); ++i)
+        {
+            auto field = fields->getObject(i);
+            result = std::max(result, field->getValue<Int32>(Iceberg::f_id));
+            result = std::max(result, getHighestFieldIdFromType(field->get(Iceberg::f_type)));
+        }
+    }
+    else if (type_str == "list")
+    {
+        result = std::max(result, obj->getValue<Int32>(Iceberg::f_element_id));
+        result = std::max(result, getHighestFieldIdFromType(obj->get(Iceberg::f_element)));
+    }
+    else if (type_str == "map")
+    {
+        result = std::max(result, obj->getValue<Int32>(Iceberg::f_key_id));
+        result = std::max(result, obj->getValue<Int32>(Iceberg::f_value_id));
+        result = std::max(result, getHighestFieldIdFromType(obj->get(Iceberg::f_key)));
+        result = std::max(result, getHighestFieldIdFromType(obj->get(Iceberg::f_value)));
+    }
+    return result;
+}
+
+/// Return the highest field id across all fields in an Iceberg schema object.
+static Int32 getHighestFieldId(Poco::JSON::Object::Ptr schema)
+{
+    Int32 result = 0;
+    auto fields = schema->getArray(Iceberg::f_fields);
+    for (UInt32 i = 0; i < fields->size(); ++i)
+    {
+        auto field = fields->getObject(i);
+        result = std::max(result, field->getValue<Int32>(Iceberg::f_id));
+        result = std::max(result, getHighestFieldIdFromType(field->get(Iceberg::f_type)));
+    }
+    return result;
+}
+
 struct DeleteFileWriteResult
 {
     /// Metadata path (e.g. "wasb://container@account/table/data/uuid-deletes.parquet")
@@ -851,7 +899,10 @@ void alter(
         {
             auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id))
+            const auto new_last_column_id = std::max(
+                metadata->getValue<Int32>(Iceberg::f_last_column_id),
+                getHighestFieldId(new_schema));
+            if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id, new_last_column_id))
             {
                 ++i;
                 continue;
