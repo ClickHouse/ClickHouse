@@ -2034,8 +2034,8 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                 throwSyntaxError("missing '(' after 'switch'");
             lex.nextToken();
 
-            /// Each case is an independent conditional aggregate (a row may be counted into several
-            /// matching cases), and `default` matches the rows matching none of the `case` filters.
+            /// The cases partition the rows: a row is counted into the first `case` whose filter it
+            /// matches, and `default` matches the rows matching none of the `case` filters.
             struct SwitchCase
             {
                 ASTPtr condition;
@@ -2079,24 +2079,49 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
             if (switch_cases.empty())
                 throwSyntaxError("switch(...) must contain at least a single 'case' or 'default'");
 
+            /// A `case` without a filter matches every row, which makes all the subsequent cases empty.
+            auto case_condition = [](const SwitchCase & entry) -> ASTPtr
+            {
+                if (entry.condition)
+                    return entry.condition->clone();
+                return make_intrusive<ASTLiteral>(Field(static_cast<UInt8>(1)));
+            };
+
+            auto disjunction_of = [](ASTs conditions) -> ASTPtr
+            {
+                if (conditions.size() == 1)
+                    return conditions[0];
+                auto disjunction = makeASTFunction("or");
+                disjunction->arguments->children = std::move(conditions);
+                return disjunction;
+            };
+
+            ASTs preceding_conditions;
             for (const auto & entry : switch_cases)
             {
-                ASTPtr combined = entry.condition;
+                ASTPtr combined;
                 if (entry.is_default)
                 {
                     /// The rows matching none of the case filters (all rows if there are no cases).
                     ASTs case_conditions;
                     for (const auto & other : switch_cases)
-                        if (other.condition)
-                            case_conditions.push_back(other.condition->clone());
-                    if (case_conditions.size() == 1)
-                        combined = makeASTFunction("not", case_conditions[0]);
-                    else if (!case_conditions.empty())
+                        if (!other.is_default)
+                            case_conditions.push_back(case_condition(other));
+                    if (!case_conditions.empty())
+                        combined = makeASTFunction("not", disjunction_of(std::move(case_conditions)));
+                }
+                else
+                {
+                    /// Only the rows not taken by an earlier case, so that the cases partition the rows.
+                    combined = case_condition(entry);
+                    if (!preceding_conditions.empty())
                     {
-                        auto disjunction = makeASTFunction("or");
-                        disjunction->arguments->children = std::move(case_conditions);
-                        combined = makeASTFunction("not", disjunction);
+                        ASTs cloned;
+                        for (const auto & condition : preceding_conditions)
+                            cloned.push_back(condition->clone());
+                        combined = makeASTFunction("and", combined, makeASTFunction("not", disjunction_of(std::move(cloned))));
                     }
+                    preceding_conditions.push_back(case_condition(entry));
                 }
                 ASTPtr case_aggregate = stats_func.build(combined ? combined->clone() : nullptr);
                 case_aggregate->setAlias(entry.result_name);
@@ -2256,7 +2281,7 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
         if (current_stats_time_bucket_is_calendar)
             throwNotImplemented(fmt::format("{}() over week, month, or year buckets", name));
 
-        ASTPtr column = args.empty() ? nullptr : columnExpr(args[0]);
+        ASTPtr column = args.empty() ? nullptr : numericValueExpr(args[0]);
         std::optional<Float64> range_seconds;
         ASTPtr range_seconds_expr;
         bool range_may_be_empty = false;
@@ -2417,7 +2442,7 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
         auto phi = tryParseNumber(args[0]);
         if (!phi || *phi < 0 || *phi > 1)
             throwSyntaxError(fmt::format("cannot parse the quantile level {}", args[0]));
-        ASTPtr column = columnExpr(args[1]);
+        ASTPtr column = numericValueExpr(args[1]);
         Float64 phi_value = *phi;
         return {canonical, [column, phi_value](ASTPtr condition)
         {
@@ -2479,7 +2504,7 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
         std::vector<ASTPtr> columns;
         columns.reserve(args.size());
         for (const auto & arg : args)
-            columns.push_back(columnExpr(arg));
+            columns.push_back(numericValueExpr(arg));
         bool is_avg = name == "avg";
         return {canonical, [columns, is_avg](ASTPtr condition) -> ASTPtr
         {
@@ -2540,7 +2565,8 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
     {
         if (args.size() > 1)
             throwNotImplemented(fmt::format("{}() over multiple fields", name));
-        ASTPtr column = columnExpr(args[0]);
+        /// `any` returns the value itself, the other two are numeric.
+        ASTPtr column = name == "any" ? columnExpr(args[0]) : numericValueExpr(args[0]);
         String aggregate_name = it->second;
         return {canonical, [aggregate_name, column](ASTPtr condition) { return makeAggregate(aggregate_name, {column->clone()}, condition); }};
     }

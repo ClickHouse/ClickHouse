@@ -173,7 +173,7 @@ api
 {"level":"error","app":"api"}
 ['{"level":"info"}','{"level":"warn"}','{"level":"error"}']
 3
-1	2	1
+1	1	1
 0.00003472222222222222
 50	1
 150	1

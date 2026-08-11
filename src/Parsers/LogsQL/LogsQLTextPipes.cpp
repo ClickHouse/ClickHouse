@@ -825,7 +825,11 @@ void LogsQLParser::parsePipeRunningStats(Layer & layer, bool is_total)
                 throwNotImplemented(fmt::format("The running_stats function {}() over multiple fields", name));
             aggregate = name;
             if (!args.empty())
-                arguments.push_back(columnExpr(args[0]));
+            {
+                /// `sum` is numeric, so it takes the parsed numeric value of the field
+                /// and skips the non-numeric values; `count`, `min` and `max` take the value itself.
+                arguments.push_back(name == "sum" ? numericValueExpr(args[0]) : columnExpr(args[0]));
+            }
         }
         else if (name == "first" || name == "last")
         {

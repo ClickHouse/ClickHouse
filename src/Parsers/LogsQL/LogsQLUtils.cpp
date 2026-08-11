@@ -626,7 +626,7 @@ std::optional<TimeValue> tryParseTimestamp(const String & text)
         for (char c : text)
             if (!isDigit(c) && c != '.')
                 all_digits = false;
-        if (all_digits && text.find('.') == String::npos && text.size() >= 5)
+        if (all_digits && !text.contains('.') && text.size() >= 5)
         {
             UInt64 value = 0;
             auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);

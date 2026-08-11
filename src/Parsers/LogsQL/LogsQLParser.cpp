@@ -196,6 +196,16 @@ ASTPtr LogsQLParser::columnExpr(const String & field_name) const
     return make_intrusive<ASTIdentifier>(columnName(field_name));
 }
 
+ASTPtr LogsQLParser::numericValueExpr(const String & field_name) const
+{
+    /// In VictoriaLogs every field value is a string, and the numeric stats functions
+    /// (`sum`, `avg`, `median`, `quantile`, `stddev`, `rate_sum`) parse the numeric value out of
+    /// it, skipping the values that are not numbers. The value is a `Float64`, like in
+    /// VictoriaLogs, where the stats are computed in `float64`; a numeric column is therefore
+    /// summed with `Float64` precision, not exactly.
+    return makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Float64"))));
+}
+
 String LogsQLParser::columnName(const String & field_name) const
 {
     if (field_name.empty() || field_name == "_msg")
@@ -1625,7 +1635,7 @@ ASTPtr LogsQLParser::makeValueLiteral(const String & text, bool quoted)
     /// ClickHouse converts string literals to the column type in comparisons.
     if (!quoted && isPlainNumber(text))
     {
-        if (text.find('.') == String::npos)
+        if (!text.contains('.'))
         {
             std::string_view digits = text;
             if (digits.starts_with('+'))
@@ -1969,10 +1979,21 @@ ASTPtr LogsQLParser::parseFilterDayRange()
     auto parse_time_of_day = [&]() -> Int64
     {
         String text = lex.nextCompoundToken();
-        unsigned hour = 0;
-        unsigned minute = 0;
-        if (sscanf(text.c_str(), "%u:%u", &hour, &minute) != 2 || hour > 23 || minute > 59)  /// NOLINT(cert-err34-c)
+        auto parse_part = [&](std::string_view part, unsigned max_value) -> unsigned
+        {
+            unsigned value = 0;
+            auto [end, ec] = std::from_chars(part.data(), part.data() + part.size(), value);
+            if (ec != std::errc() || end != part.data() + part.size() || value > max_value)
+                throwSyntaxError(fmt::format("cannot parse {} as hh:mm in day_range", text));
+            return value;
+        };
+
+        std::string_view view = text;
+        auto colon = view.find(':');
+        if (colon == std::string_view::npos)
             throwSyntaxError(fmt::format("cannot parse {} as hh:mm in day_range", text));
+        unsigned hour = parse_part(view.substr(0, colon), 23);
+        unsigned minute = parse_part(view.substr(colon + 1), 59);
         return static_cast<Int64>(hour) * 3600 + minute * 60;
     };
 

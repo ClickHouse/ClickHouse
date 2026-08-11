@@ -144,6 +144,8 @@ private:
 
     /// The identifier for the column backing the given LogsQL field.
     ASTPtr columnExpr(const String & field_name) const;
+    /// The numeric value of the field, for the numeric stats functions.
+    ASTPtr numericValueExpr(const String & field_name) const;
     ASTPtr makeNumericComparison(const String & field_name, const String & function_name, ASTPtr literal, const String & original_text = {}) const;
     String columnName(const String & field_name) const;
 
