@@ -297,9 +297,25 @@ HashJoin::HashJoin(
         for (const auto & input : required_cols)
         {
             if (data->sample_block.has(input.name))
+            {
+                /// `buildAdditionalFilter` creates the column for this input from `input.type` and fills
+                /// it from the stored right blocks, so resolving the input by name alone is not enough:
+                /// a same-named column of a different type would be read through a mismatched
+                /// `IColumn` interface. Fail here instead, where both types are still known.
+                const auto & stored = data->sample_block.getByName(input.name);
+                if (!stored.type->equals(*input.type))
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Column {} required by the mixed JOIN ON condition has type {}, "
+                        "but the stored right column of that name has type {}",
+                        input.name,
+                        input.type->getName(),
+                        stored.type->getName());
+
                 additional_filter_required_rhs_pos.emplace_back(
                     pos,
                     data->sample_block.getPositionByName(input.name));
+            }
             ++pos;
         }
     }
