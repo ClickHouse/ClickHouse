@@ -55,12 +55,45 @@ def wait_query_result(expected, query, timeout=120):
 
 
 def stop_pulsar(pulsar_cluster):
-    subprocess.check_call(["docker", "stop", pulsar_cluster.pulsar_docker_id])
+    # Give the broker time to shut down gracefully: the default 10s grace period
+    # ends with SIGKILL, and a broker killed mid-write recovers much slower on
+    # the next start.
+    subprocess.check_call(["docker", "stop", "-t", "30", pulsar_cluster.pulsar_docker_id])
 
 
 def start_pulsar(pulsar_cluster):
     subprocess.check_call(["docker", "start", pulsar_cluster.pulsar_docker_id])
-    pulsar_cluster.wait_pulsar_is_available()
+    # On a loaded CI machine several standalone brokers restart concurrently and
+    # a single restart can take well over two minutes.
+    pulsar_cluster.wait_pulsar_is_available(max_retries=150)
+
+
+def broker_is_healthy(pulsar_cluster):
+    result = subprocess.run(
+        [
+            "docker",
+            "exec",
+            pulsar_cluster.pulsar_docker_id,
+            "bin/pulsar-admin",
+            "brokers",
+            "healthcheck",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+@pytest.fixture(autouse=True)
+def ensure_broker_is_available(pulsar_cluster):
+    # A slow broker restart in one test (stop_pulsar/start_pulsar on a loaded CI
+    # machine) must fail that test alone instead of cascading into every test
+    # that runs after it: recheck the broker before each test and revive it if
+    # it is not healthy.
+    if not broker_is_healthy(pulsar_cluster):
+        subprocess.check_call(["docker", "restart", "-t", "30", pulsar_cluster.pulsar_docker_id])
+        pulsar_cluster.wait_pulsar_is_available(max_retries=150)
 
 
 def test_experimental_gate(pulsar_cluster):
