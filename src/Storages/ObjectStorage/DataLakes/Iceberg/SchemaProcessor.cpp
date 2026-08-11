@@ -448,8 +448,8 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
             clickhouse_types_by_source_ids[{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, type};
             clickhouse_ids_by_source_names[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
         }
-        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
         clickhouse_table_schemas_by_ids[schema_id] = clickhouse_schema;
+        iceberg_table_schemas_by_ids[schema_id] = schema_ptr;
     }
     current_schema_id = std::nullopt;
 }
