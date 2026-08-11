@@ -1623,7 +1623,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         /// `chooseDelimitedListingStartPrefix`.
         std::optional<std::string> listing_start_prefix;
         if (parallelism > 1
-            && key_with_globs.path.find("**") == std::string::npos
+            && !key_with_globs.path.contains("**")
             && !globSelectorSpansPathComponents(key_with_globs.path))
         {
             listing_start_prefix = chooseDelimitedListingStartPrefix(

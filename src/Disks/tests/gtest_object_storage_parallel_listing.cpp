@@ -727,10 +727,10 @@ TEST(ObjectStorageParallelListing, BudgetTrimKeepsListingExactlyOnce)
     s3.add("x/zz.csv"); /// plain files sorting after all the groups
     s3.finalize();
 
-    auto should_descend = [](const std::string & prefix) { return prefix.find("skip") == std::string::npos; };
+    auto should_descend = [](const std::string & prefix) { return !prefix.contains("skip"); };
     std::vector<std::string> expected;
     for (const auto & key : s3.keys)
-        if (key.find("skip") == std::string::npos)
+        if (!key.contains("skip"))
             expected.push_back(key);
     std::sort(expected.begin(), expected.end());
 
@@ -778,10 +778,10 @@ TEST(ObjectStorageParallelListing, BudgetTrimAvoidsStartAfterOnDirectoryBuckets)
     s3.add("x/zz.csv"); /// plain files sorting after all the groups
     s3.finalize();
 
-    auto should_descend = [](const std::string & prefix) { return prefix.find("skip") == std::string::npos; };
+    auto should_descend = [](const std::string & prefix) { return !prefix.contains("skip"); };
     std::vector<std::string> expected;
     for (const auto & key : s3.keys)
-        if (key.find("skip") == std::string::npos)
+        if (!key.contains("skip"))
             expected.push_back(key);
     std::sort(expected.begin(), expected.end());
 
@@ -937,7 +937,7 @@ TEST(ObjectStorageParallelListing, Pruning)
         s3.add("root/skip/b" + std::to_string(f));
     s3.finalize();
 
-    auto should_descend = [](const std::string & prefix) { return prefix.find("skip") == std::string::npos; };
+    auto should_descend = [](const std::string & prefix) { return !prefix.contains("skip"); };
     ObjectStorageParallelListingIterator iterator("root/", 4, 1000, makeListLevel(s3), makeProbeLevel(s3), should_descend);
     auto got = drain(iterator);
     std::sort(got.begin(), got.end());
@@ -964,11 +964,11 @@ TEST(ObjectStorageParallelListing, MixedPrefixLooksFlatThenExposesSubdirectory)
         s3.add(fmt::format("root/zsub/{:07}.bin", i));
     s3.finalize();
 
-    auto should_descend = [](const std::string & prefix) { return prefix.find("zsub") == std::string::npos; };
+    auto should_descend = [](const std::string & prefix) { return !prefix.contains("zsub"); };
 
     std::vector<std::string> expected_csvs;
     for (const auto & key : s3.keys)
-        if (key.find("zsub") == std::string::npos)
+        if (!key.contains("zsub"))
             expected_csvs.push_back(key);
     std::sort(expected_csvs.begin(), expected_csvs.end());
 
@@ -982,7 +982,7 @@ TEST(ObjectStorageParallelListing, MixedPrefixLooksFlatThenExposesSubdirectory)
         /// The pruned `zsub` sub-tree must never be scanned (that is the "much larger scan" the split
         /// would otherwise turn an opt-in speedup into).
         for (const auto & key : listed)
-            EXPECT_EQ(key.find("zsub"), std::string::npos) << "scanned pruned sub-tree: " << key << " threads=" << threads;
+            EXPECT_FALSE(key.contains("zsub")) << "scanned pruned sub-tree: " << key << " threads=" << threads;
 
         /// The flat files must still all be produced exactly once.
         std::vector<std::string> csvs = listed;
